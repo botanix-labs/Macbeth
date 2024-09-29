@@ -79,7 +79,8 @@ pub async fn utxo_sync(
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
-    let botanix_eth_client = targeted_fed_member.botanix_eth_client.clone();
+    let botanix_eth_client =
+        targeted_fed_member.botanix_eth_client.clone().expect("Botanix Client must be initialized");
 
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");
@@ -89,7 +90,7 @@ pub async fn utxo_sync(
         .unwrap()
         .unwrap();
 
-    let eth_clients = suite.local_context.eth_providers.clone().unwrap();
+    let poa_eth_clients = suite.local_context.poa_eth_providers.clone().unwrap();
 
     // wait for canonical chain updates reported by the node, then send new tx
     while let Ok(notification) = rx.recv().await {
@@ -104,7 +105,7 @@ pub async fn utxo_sync(
 
             // Check that all members accepted the block
             let latest_block_hash = canon_state_notification.notification.tip().hash();
-            for (index, client) in eth_clients.iter().enumerate() {
+            for (index, client) in poa_eth_clients.iter().enumerate() {
                 let block_hash = client.get_latest_block_hash().await.unwrap();
                 it_info_print!(
                     "eth client response",
@@ -139,7 +140,8 @@ pub async fn utxo_sync(
     target_client.reset_all_utxos(client::ResetAllUtxosRequest { utxos: vec![] }).await.unwrap();
 
     // Create a another eoa which should kick off utxo sync
-    let botanix_eth_client = targeted_fed_member.botanix_eth_client.clone();
+    let botanix_eth_client =
+        targeted_fed_member.botanix_eth_client.clone().expect("Botanix Client must be initialized");
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");
     let last_tx_hash = botanix_eth_client
@@ -152,7 +154,7 @@ pub async fn utxo_sync(
     // wait for fed members to sync on the block
     tokio::time::sleep(Duration::from_secs(10)).await;
     let mut hash_set = HashSet::new();
-    for (index, client) in eth_clients.iter().enumerate() {
+    for (index, client) in poa_eth_clients.iter().enumerate() {
         let block_hash = client.get_latest_block_hash().await.unwrap();
         hash_set.insert(block_hash.clone());
     }
@@ -170,7 +172,7 @@ pub async fn utxo_sync(
     assert_eq!(hash_set.len(), 1);
 
     // Lets comapre the merkel root of the utxo set from the btc server with the latest block header
-    let latest_extra_data = eth_clients[0].get_latest_block().await.unwrap().extra_data;
+    let latest_extra_data = poa_eth_clients[0].get_latest_block().await.unwrap().extra_data;
 
     let _latest_edh = ExtraDataHeader::deserialize(&mut latest_extra_data.reader()).unwrap();
     Ok(())

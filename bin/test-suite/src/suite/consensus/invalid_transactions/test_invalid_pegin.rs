@@ -166,7 +166,11 @@ pub async fn invalid_pegin(
     // send the pegin transactions to all fed members
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
-    let botanix_eth_client = mint_contract_instances.first().cloned().unwrap();
+    let botanix_eth_client = mint_contract_instances
+        .first()
+        .cloned()
+        .unwrap()
+        .expect("Botanix Client must be initialized");
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
 
     // pegin address balance before pegin
@@ -236,7 +240,11 @@ pub async fn invalid_pegin(
     // send the pegin transactions to all fed members
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
-    let botanix_eth_client = mint_contract_instances.first().cloned().unwrap();
+    let botanix_eth_client = mint_contract_instances
+        .first()
+        .cloned()
+        .unwrap()
+        .expect("Botanix Client must be initialized");
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
 
     // pegin address balance before pegin

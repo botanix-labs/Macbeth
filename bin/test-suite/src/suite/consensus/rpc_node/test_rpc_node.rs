@@ -25,10 +25,16 @@ pub async fn test_rpc_node(
         .expect("broadcast sender to be set")
         .subscribe();
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
+
     // create botanix clients
     let mut botanix_clients: Vec<BotanixEthClient> = vec![];
     for (index, fed_member_config) in test_fed_members.iter() {
-        botanix_clients.push(fed_member_config.botanix_eth_client.clone());
+        botanix_clients.push(
+            fed_member_config
+                .botanix_eth_client
+                .clone()
+                .expect("Botanix Client must be initialized"),
+        );
         it_info_print!("Botanix client created for poa member {}", index);
     }
 
@@ -57,9 +63,9 @@ pub async fn test_rpc_node(
     // create rpc node and sync with federation peers
     let rpc_node = suite
         .local_context
-        .rpc_node
+        .rpc_nodes
         .as_ref()
-        .map(|rpc| rpc.first())
+        .map(|rpc| rpc.get(&0))
         .flatten()
         .cloned()
         .expect("first rpc node to be valid");

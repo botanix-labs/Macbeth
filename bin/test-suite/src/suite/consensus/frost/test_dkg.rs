@@ -10,7 +10,7 @@ use tonic::transport::Channel;
 pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<(), Error> {
     // create btc server clients
     let mut clients: Vec<BtcServerClient<Channel>> = vec![];
-    for instance in 0..suite.global_context.instances {
+    for instance in 0..suite.global_context.fed_instances {
         let port = suite
             .local_context
             .btc_processes

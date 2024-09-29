@@ -7,7 +7,7 @@ use ethers::{
         types::{Address as EtherAddress, BlockNumber},
     },
     middleware::{signer::SignerMiddlewareError, SignerMiddleware},
-    providers::{Http, Middleware, Provider, ProviderError},
+    providers::{Http, Middleware, PeerInfo, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
     types::{BlockId, NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
     utils,
@@ -220,6 +220,46 @@ impl BotanixEthClient {
             .expect("block hash exists");
 
         Ok(block_hash)
+    }
+
+    pub async fn get_peers_counts(&self) -> Result<Vec<PeerInfo>, Error> {
+        let connected_peers = self.client.peers().await.map_err(Error::SignerMiddleware)?;
+
+        Ok(connected_peers)
+    }
+
+    pub async fn add_peer(&self, enode_url: &str) -> Result<bool, Error> {
+        let was_added =
+            self.client.add_peer(enode_url.to_owned()).await.map_err(Error::SignerMiddleware)?;
+
+        Ok(was_added)
+    }
+
+    pub async fn add_trusted_peer(&self, enode_url: &str) -> Result<bool, Error> {
+        let was_added = self
+            .client
+            .add_trusted_peer(enode_url.to_owned())
+            .await
+            .map_err(Error::SignerMiddleware)?;
+
+        Ok(was_added)
+    }
+
+    pub async fn remove_peer(&self, enode_url: &str) -> Result<bool, Error> {
+        let was_removed =
+            self.client.remove_peer(enode_url.to_owned()).await.map_err(Error::SignerMiddleware)?;
+
+        Ok(was_removed)
+    }
+
+    pub async fn remove_trusted_peer(&self, enode_url: &str) -> Result<bool, Error> {
+        let was_removed = self
+            .client
+            .remove_trusted_peer(enode_url.to_owned())
+            .await
+            .map_err(Error::SignerMiddleware)?;
+
+        Ok(was_removed)
     }
 
     pub async fn get_latest_block_by_hash(

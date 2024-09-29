@@ -8,7 +8,7 @@ use std::{
 };
 use tokio::process::Child;
 
-use super::spawn_child_process;
+use super::{kill_process_at_port, spawn_child_process};
 
 pub const BTC_SERVER_START_PORT: u16 = 8000;
 #[derive(Debug)]
@@ -16,6 +16,34 @@ pub struct SpawnedBtcServerProcess {
     pub port: u16,
     pub db_path: PathBuf,
     pub child_process: Child,
+}
+
+impl SpawnedBtcServerProcess {
+    pub async fn destroy_all_async(&mut self) {
+        // kill the process
+        let _ = self.child_process.kill().await;
+        // additionally make sure all ports used are freed
+        kill_process_at_port(self.port);
+        // delete the created db
+        if let Err(e) = std::fs::remove_dir_all(&self.db_path) {
+            warn!("Couldn't remove btc server db dir at {}: {}", self.db_path.display(), e);
+        }
+    }
+
+    pub async fn destroy_all_sync(&mut self) {
+        // kill the process
+        let pid = self.child_process.id().expect("Expected a process id");
+        let _ = std::process::Command::new("kill")
+            .arg("-9") // Use SIGKILL for immediate termination
+            .arg(format!("{pid}"))
+            .output();
+        // additionally make sure all ports used are freed
+        kill_process_at_port(self.port);
+        // delete the created db
+        if let Err(e) = std::fs::remove_dir_all(&self.db_path) {
+            warn!("Couldn't remove btc server db dir at {}: {}", self.db_path.display(), e);
+        }
+    }
 }
 
 fn spawn_btc_server_process(
@@ -65,7 +93,7 @@ fn spawn_btc_server_process(
         "--fee-rate-diff-percentage",
         "30",
         "--fall-back-fee-rate-sat-per-vbyte",
-        "3",
+        "5",
     ];
 
     Ok(SpawnedBtcServerProcess {
@@ -75,19 +103,11 @@ fn spawn_btc_server_process(
     })
 }
 
-pub fn clean_db(processes: &[SpawnedBtcServerProcess]) {
-    for processes in processes.iter() {
-        if let Err(e) = std::fs::remove_dir_all(&processes.db_path) {
-            warn!("Couldn't remove db dir at {}: {}", processes.db_path.display(), e);
-        }
-    }
-}
-
 pub fn spawn_n_btc_server_processes(
     global_context: Arc<GlobalContext>,
 ) -> anyhow::Result<Vec<SpawnedBtcServerProcess>> {
     let mut processes = vec![];
-    for i in 0..global_context.instances {
+    for i in 0..global_context.fed_instances {
         let temp_db_path = tempfile::TempDir::new()
             .context("error creating tempdir")?
             .into_path()

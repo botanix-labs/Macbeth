@@ -202,7 +202,11 @@ pub async fn frost_e2e_stable(
     );
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
-    let mint_contract = mint_contract_instances.first().cloned().unwrap();
+    let mint_contract = mint_contract_instances
+        .first()
+        .cloned()
+        .unwrap()
+        .expect("Botanix Client must be initialized");
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
         .mint(

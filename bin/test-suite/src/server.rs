@@ -45,7 +45,7 @@ impl TestServer {
         tokio::select! {
             _ = stop_tx.recv() => {
                 it_info_print!(">>>> Term Sig received.");
-                test_suite.destroy_context().await;
+                test_suite.destroy_local_context().await;
                 return Err(Error::TestRunStopped);
             },
             res = async {

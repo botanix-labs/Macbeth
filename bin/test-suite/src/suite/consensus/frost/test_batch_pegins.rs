@@ -214,7 +214,12 @@ pub async fn batch_pegins(
     // mint all the pegins
     let refund_address = ethers::core::types::Address::random();
     let mut tx_hashes = vec![];
-    let provider = test_fed_members.get(&0).unwrap().botanix_eth_client.clone();
+    let provider = test_fed_members
+        .get(&0)
+        .unwrap()
+        .botanix_eth_client
+        .clone()
+        .expect("Botanix Client must be initialized");
     let mut nonce = provider.nonce().await;
     for (_, pegin) in pegins.iter().enumerate() {
         // There is only one pegin that needs to be serialized

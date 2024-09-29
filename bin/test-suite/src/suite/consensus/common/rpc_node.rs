@@ -1,9 +1,8 @@
 use crate::{
-    it_info_print,
+    it_error_print, it_info_print,
     suite::consensus::{
         common::{
-            poa_node::{CannonStateNofificationPayload, FederationMemberTestConfig, Notifications},
-            spawn_child_process, MINTING_CONTRACT_BYTECODE,
+            poa_node::FederationMemberTestConfig, spawn_child_process, MINTING_CONTRACT_BYTECODE,
         },
         GlobalContext,
     },
@@ -15,17 +14,13 @@ use reth_node_core::args::FederationTomlConfig;
 
 use askama::Template;
 use bitcoin::{hashes::Hash, BlockHash};
-use reth::{
-    args::FedMemberPubKey, commands::poa::PoaNodeComponents,
-    consensus_common::utils::unix_timestamp, network::Peers,
-};
+use reth::{args::FedMemberPubKey, consensus_common::utils::unix_timestamp};
 use reth_primitives::{
     constants::nums_secp256k1_pk,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     hex::encode as hex_encode,
     Address,
 };
-use reth_provider::CanonStateSubscriptions;
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SECP256K1};
 use std::{
@@ -38,14 +33,42 @@ use std::{
 use tokio::process::Child;
 use url::Url;
 
-const RPC_PORT_BASE: u16 = 8545;
-const DISCOVERY_PORT_BASE: u16 = 30321;
+use super::{
+    botanix_client::BotanixEthClient,
+    kill_process_at_port,
+    poa_node::{DISCOVERY_PORT_BASE, RPC_PORT_BASE},
+};
+
+#[derive(Clone, Debug)]
+pub enum Notifications {}
 
 #[derive(Debug)]
 pub struct SpawnedRpcServerProcess {
     pub rpc_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
+}
+
+impl SpawnedRpcServerProcess {
+    pub async fn destroy_all_async(&mut self) {
+        // kill the process
+        let _ = self.child_process.kill().await;
+        // additionally make sure all ports used are freed
+        kill_process_at_port(self.discovery_port);
+        kill_process_at_port(self.rpc_port);
+    }
+
+    pub async fn destroy_all_sync(&mut self) {
+        // kill the process
+        let pid = self.child_process.id().expect("Expected a process id");
+        let _ = std::process::Command::new("kill")
+            .arg("-9") // Use SIGKILL for immediate termination
+            .arg(format!("{pid}"))
+            .output();
+        // additionally make sure all ports used are freed
+        kill_process_at_port(self.discovery_port);
+        kill_process_at_port(self.rpc_port);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -62,11 +85,12 @@ pub struct NonFederationMemberTestConfig {
     pub sender: tokio::sync::broadcast::Sender<Notifications>,
     pub peer_id: PeerId,
     pub botanix_fee_recipient: String,
+    pub botanix_eth_client: Option<BotanixEthClient>,
 }
 
 impl NonFederationMemberTestConfig {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         index: u16,
         secret_key: String,
         sender: tokio::sync::broadcast::Sender<Notifications>,
@@ -75,9 +99,9 @@ impl NonFederationMemberTestConfig {
         bitcoind_password: String,
         peer_id: PeerId,
         botanix_fee_recipient: String,
+        rpc_port: u16,
+        discovery_port: u16,
     ) -> anyhow::Result<Self> {
-        let rpc_port = RPC_PORT_BASE + index;
-        let discovery_port = DISCOVERY_PORT_BASE + index;
         Ok(Self {
             index,
             temp_path: {
@@ -98,6 +122,7 @@ impl NonFederationMemberTestConfig {
             sender,
             peer_id,
             botanix_fee_recipient,
+            botanix_eth_client: None,
         })
     }
 
@@ -108,10 +133,10 @@ impl NonFederationMemberTestConfig {
     pub fn spawn_service(
         &mut self,
         edh_authorities_list: Arc<Vec<PublicKey>>,
-        fed_member_peers_list: Vec<FederationMemberTestConfig>,
+        poa_nodes: Vec<FederationMemberTestConfig>,
     ) -> anyhow::Result<SpawnedRpcServerProcess> {
         it_info_print!(format!("RPC Engine {} secret key = {}", self.index, &self.secret_key));
-        self.insert_peers_list(fed_member_peers_list.clone());
+        self.insert_peers_list(poa_nodes.clone());
 
         let datadir = self.temp_path.to_str().context("created temp path is unparsable")?;
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
@@ -146,7 +171,7 @@ impl NonFederationMemberTestConfig {
         // Need to create a chain.toml in the data dir
         // Need to zip together the soc address and pk
         let mut fed_member_pks = vec![];
-        for peer in fed_member_peers_list.iter() {
+        for peer in poa_nodes.iter() {
             let pk = FedMemberPubKey {
                 key: peer.secret_key.public_key(SECP256K1).to_string(),
                 socket_addr: format!("127.0.0.1:{}", peer.discovery_port),
@@ -235,22 +260,18 @@ impl NonFederationMemberTestConfig {
             rpc_port: self.rpc_port,
         })
     }
-}
 
-impl NonFederationMemberTestConfig {
-    fn start_node<P>(&self, components: PoaNodeComponents<P>) -> anyhow::Result<()> {
+    pub fn await_initialization(&self) -> anyhow::Result<()> {
         it_info_print!("Engine started non federation task with index: ", self.index);
-
-        let PoaNodeComponents { task_executor, provider: db, network, .. } = components;
-
-        let mut canon_events = db.subscribe_to_canonical_state();
-        let rx_sender = self.sender.clone();
         let engine_index = self.index;
-
         let peers_list = self.peers_list.clone();
         it_info_print!("RPC Engine peers list", peers_list.len());
+        let botanix_eth_client = self
+            .botanix_eth_client
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("Uninitialized botanix eth client"))?;
 
-        task_executor.spawn(Box::pin(async move {
+        tokio::spawn(Box::pin(async move {
             // add the peers
             'inner: loop {
                 for peer in peers_list.iter() {
@@ -258,12 +279,16 @@ impl NonFederationMemberTestConfig {
                         IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                         peer.discovery_port,
                     );
-                    network.add_trusted_peer(peer.peer_id, peer_socket);
-                    it_info_print!("RPC added peer", peer.peer_id);
+                    let enode_url =
+                        format!("enode://{}@{}", peer.peer_id.to_string(), peer_socket.to_string());
+                    if let Err(_) = botanix_eth_client.add_trusted_peer(&enode_url).await {
+                        it_error_print!("RPC failed to add a peer", peer.peer_id);
+                    } else {
+                        it_info_print!("RPC added peer", peer.peer_id);
+                    }
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                let all_peers =
-                    network.get_all_peers().await.expect("Error getting all peers from network");
+                let all_peers = botanix_eth_client.get_peers_counts().await.unwrap_or_default();
                 it_info_print!(
                     "RPC Engine connected with peers",
                     format!("index={}: peers_count={}", engine_index, all_peers.len())
@@ -272,17 +297,6 @@ impl NonFederationMemberTestConfig {
                     break 'inner;
                 }
             }
-
-            // start waiting for canon event notifications
-            while let Ok(canon_state_notification) = canon_events.recv().await {
-                let _ = rx_sender
-                    .send(Notifications::CanonState(CannonStateNofificationPayload {
-                        engine_index,
-                        ts: tokio::time::Instant::now(),
-                        notification: canon_state_notification,
-                    }))
-                    .expect("Error sending a canon state notification payload");
-            }
         }));
 
         Ok(())
@@ -290,35 +304,41 @@ impl NonFederationMemberTestConfig {
 }
 
 #[allow(clippy::cast_possible_truncation)]
-pub async fn create_rpc_node(
+pub async fn create_rpc_nodes(
     global_context: Arc<GlobalContext>,
-    federation_members: HashMap<u16, FederationMemberTestConfig>,
-    botanix_fee_recipeint: String,
-) -> anyhow::Result<(NonFederationMemberTestConfig, tokio::sync::broadcast::Sender<Notifications>)>
-{
-    let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
-
+) -> anyhow::Result<(
+    HashMap<u16, NonFederationMemberTestConfig>,
+    tokio::sync::broadcast::Sender<Notifications>,
+)> {
     let secp = secp256k1::Secp256k1::new();
-    let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
-    let pk = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-    let rpc_secret_key = hex_encode(secret_key.as_ref());
-    let rpc_peer_id = pk2id(&pk);
+    let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
+    let mut rpc_members: HashMap<u16, NonFederationMemberTestConfig> = HashMap::new();
 
-    // set index as federation_members length + 1:
-    // this will ensure the correct ports are used
-    let index = federation_members.len() as u16 + 1;
-    let rpc_node = NonFederationMemberTestConfig::new(
-        index,
-        rpc_secret_key,
-        tx.clone(),
-        global_context.bitcoind_url.clone(),
-        global_context.bitcoind_user.clone(),
-        global_context.bitcoind_pass.clone(),
-        rpc_peer_id,
-        botanix_fee_recipeint,
-    );
+    // create all rpc instances
+    for member_index in 0..global_context.rpc_instances {
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+        let rpc_secret_key = hex_encode(secret_key.as_ref());
+        let rpc_peer_id = pk2id(&pk);
+
+        let rpc_node = NonFederationMemberTestConfig::new(
+            global_context.fed_instances + member_index, /* indexing follows up from poa nodes
+                                                          * onwards */
+            rpc_secret_key,
+            tx.clone(),
+            global_context.bitcoind_url.clone(),
+            global_context.bitcoind_user.clone(),
+            global_context.bitcoind_pass.clone(),
+            rpc_peer_id,
+            global_context.botanix_fee_recipient.clone(),
+            RPC_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we
+                                                                          * start port assigning
+                                                                          * after poa servers */
+            DISCOVERY_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we start port assigning after poa servers */
+        ).await?;
+        rpc_members.insert(global_context.fed_instances + member_index, rpc_node);
+    }
 
     // Note: before we create the chain.toml edh and authorities list need to be set
-
-    Ok((rpc_node?, tx))
+    Ok((rpc_members, tx))
 }

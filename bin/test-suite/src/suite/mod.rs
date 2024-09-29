@@ -8,12 +8,12 @@ use self::consensus::CreateTestConfig;
 pub trait Suite: Send + Sync + 'static {
     fn name(&self) -> &str;
     async fn run(&mut self, test_to_run: String) -> Vec<Outcome>;
-    async fn create_new_context(
+    async fn create_new_local_context(
         &mut self,
         create_test_config: CreateTestConfig,
     ) -> anyhow::Result<()>;
-    async fn destroy_context(&mut self);
-    fn set_panic_hook(&self);
+    async fn destroy_local_context(&mut self);
+    fn set_panic_hook(&mut self);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, AsRefStr, EnumString)]

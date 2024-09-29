@@ -230,7 +230,12 @@ pub async fn test_edh_size_limit(
     // mint all the pegins across multiple blocks
     let refund_address = ethers::core::types::Address::random();
     let mut tx_hashes = vec![];
-    let provider = test_fed_members.get(&0).unwrap().botanix_eth_client.clone();
+    let provider = test_fed_members
+        .get(&0)
+        .unwrap()
+        .botanix_eth_client
+        .clone()
+        .expect("Botanix Client must be initialized");
     let mut nonce = provider.nonce().await;
     for (index, pegin) in pegins.iter().enumerate() {
         it_info_print!("Pegin #", index);

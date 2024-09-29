@@ -1,0 +1,2 @@
+
+{"priv_key":{"type":"tendermint/PrivKeyEd25519","value":"{{validator_node_key}}"}}
