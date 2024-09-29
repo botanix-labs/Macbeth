@@ -11,20 +11,19 @@ use tokio::process::Child;
 use super::spawn_child_process;
 
 pub const BTC_SERVER_START_PORT: u16 = 8000;
-
 #[derive(Debug)]
-pub struct SpawnedBtcServer {
+pub struct SpawnedBtcServerProcess {
     pub port: u16,
     pub db_path: PathBuf,
     pub child_process: Child,
 }
 
-fn spawn_btc_server(
+fn spawn_btc_server_process(
     global_context: Arc<GlobalContext>,
     id: u16,
     port: u16,
     db_path: PathBuf,
-) -> anyhow::Result<SpawnedBtcServer> {
+) -> anyhow::Result<SpawnedBtcServerProcess> {
     let db_path_arg = db_path.display().to_string();
 
     let mut working_directory = std::env::current_dir().unwrap();
@@ -69,14 +68,14 @@ fn spawn_btc_server(
         "3",
     ];
 
-    Ok(SpawnedBtcServer {
+    Ok(SpawnedBtcServerProcess {
         child_process: spawn_child_process(command, args, working_directory)?,
         db_path,
         port,
     })
 }
 
-pub fn clean_db(processes: &[SpawnedBtcServer]) {
+pub fn clean_db(processes: &[SpawnedBtcServerProcess]) {
     for processes in processes.iter() {
         if let Err(e) = std::fs::remove_dir_all(&processes.db_path) {
             warn!("Couldn't remove db dir at {}: {}", processes.db_path.display(), e);
@@ -84,9 +83,9 @@ pub fn clean_db(processes: &[SpawnedBtcServer]) {
     }
 }
 
-pub fn spawn_n_btc_servers(
+pub fn spawn_n_btc_server_processes(
     global_context: Arc<GlobalContext>,
-) -> anyhow::Result<Vec<SpawnedBtcServer>> {
+) -> anyhow::Result<Vec<SpawnedBtcServerProcess>> {
     let mut processes = vec![];
     for i in 0..global_context.instances {
         let temp_db_path = tempfile::TempDir::new()
@@ -97,7 +96,8 @@ pub fn spawn_n_btc_servers(
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
 
         let port = BTC_SERVER_START_PORT + i;
-        let child_process = spawn_btc_server(global_context.clone(), i, port, db_path.clone())?;
+        let child_process =
+            spawn_btc_server_process(global_context.clone(), i, port, db_path.clone())?;
         processes.push(child_process);
     }
     Ok(processes)

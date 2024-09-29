@@ -32,7 +32,7 @@ use crate::{
 
 pub async fn frost_e2e_failed_signing_disconnect(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     let pegin_conf_depth = 6; //TODO(stevenroose) set this from chain constant?
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 

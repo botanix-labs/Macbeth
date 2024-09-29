@@ -22,7 +22,6 @@ use reth_network::{NetworkSyncUpdater, SyncState};
 use reth_network_api::{BlockDownloaderProvider, NetworkEventListenerProvider};
 use reth_node_api::{BuiltPayload, FullNodeTypes, NodeAddOns};
 use reth_node_core::{
-    cli::config::BtcServerConfig,
     dirs::{ChainPath, DataDirPath},
     exit::NodeExitFuture,
     primitives::Head,
@@ -263,19 +262,9 @@ where
         };
 
         // create botanix client
-        let btc_signing_server_jwt_secret = node_config.rpc.btc_signing_server_jwt_secret()?;
-        let bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
-
-        let botanix_config = BotanixConfig::default()
-            .btc_server(node_config.rpc.btc_server.clone())
-            .bitcoin_network(node_config.rpc.btc_network)
-            .bitcoind(
-                bitcoind_config.url().to_owned(),
-                bitcoind_config.username().to_owned(),
-                bitcoind_config.password().to_owned(),
-            )
-            .btc_server_jwt_secret(btc_signing_server_jwt_secret);
-
+        // Creating a noop btc server for now as this crate should not be used to create the poa
+        // client
+        let botanix_config = BotanixConfig::default();
         let engine_api = EngineApi::new(
             ctx.blockchain_db().clone(),
             ctx.chain_spec(),

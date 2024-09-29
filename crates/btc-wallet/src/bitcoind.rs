@@ -77,7 +77,7 @@ pub trait BitcoindFactory: Clone + Send + Sync {
     fn build_and_connect(&self) -> Result<impl RpcApiExt, JsonRPCError>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BitcoindClientFactory {
     config: BitcoindConfig,
 }
@@ -106,15 +106,6 @@ impl RpcApiExt for Client {
                 Ok(false)
             }
         }
-
-        // match self.get_blockchain_info().map_err(BitcoindError::BlockchainInfoFailed) {
-        //     Ok(blockchain_info_result) => Ok(!blockchain_info_result.initial_block_download),
-        //     Err(err) => {
-        //         // TODO (armins) use logger library
-        //         println!("error getting get_blockchain_info(): {:?}", err);
-        //         Ok(false)
-        //     }
-        // }
     }
 
     async fn wait_until_synced(&self) {

@@ -19,7 +19,7 @@ use crate::{
 #[allow(clippy::too_many_lines)]
 pub async fn invalid_pegin(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::InvalidTransactionError> {
+) -> anyhow::Result<(), super::error::InvalidTransactionError> {
     let pegin_conf_depth = 6; //TODO(stevenroose) set this from chain constant?
 
     // Set up regtest connection

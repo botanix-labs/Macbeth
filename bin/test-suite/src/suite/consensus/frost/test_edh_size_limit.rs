@@ -33,7 +33,9 @@ const NUM_PEGINS: u16 = 1000;
 // NOTE: this test cannot run as currently implemented
 // TODO: revist if test is needed after new consensus implementation
 
-pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
+pub async fn test_edh_size_limit(
+    suite: &ConsensusIntegrationTestSuite,
+) -> anyhow::Result<(), Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
@@ -55,7 +57,7 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Print wallet balancee
-    let mut balance = bitcoind_rpc.get_balance(None, None).expect("get balance");
+    let balance = bitcoind_rpc.get_balance(None, None).expect("get balance");
     it_info_print!("Wallet Balance", balance);
 
     let test_fed_members = suite

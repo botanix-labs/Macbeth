@@ -15,7 +15,7 @@ use crate::{
 #[allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
 pub async fn test_rpc_node(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), NonFederationMemberTestConfigError> {
+) -> anyhow::Result<(), NonFederationMemberTestConfigError> {
     it_info_print!("Running rpc node test");
     // subscribe to rpc node events
     let _rx = suite
@@ -55,7 +55,14 @@ pub async fn test_rpc_node(
 
     tokio::time::sleep(Duration::from_secs(10)).await;
     // create rpc node and sync with federation peers
-    let rpc_node = suite.local_context.rpc_node.as_ref().unwrap();
+    let rpc_node = suite
+        .local_context
+        .rpc_node
+        .as_ref()
+        .map(|rpc| rpc.first())
+        .flatten()
+        .cloned()
+        .expect("first rpc node to be valid");
     // get latest header hash from rpc node
     // Note: alternative way is to wait for cannon state notification from rpc node and get hash
     // from notification but this way also tests that rpc node can handle rpc requests

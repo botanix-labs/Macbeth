@@ -12,7 +12,7 @@ use crate::{
 /// test that nodes will propogate txs using mempool gossip
 pub async fn test_mempool_gossip(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     let leader_selection_window =
         BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();

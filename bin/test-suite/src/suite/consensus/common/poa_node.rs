@@ -1,5 +1,5 @@
 use super::{
-    botanix_client::BotanixEthClient, btc_server::SpawnedBtcServer, MINT_CONTRACT_ADDRESS,
+    botanix_client::BotanixEthClient, btc_server::SpawnedBtcServerProcess, MINT_CONTRACT_ADDRESS,
     PREFUNDED_ACCOUNT_SECRET_KEY,
 };
 use crate::{
@@ -19,7 +19,7 @@ use reth::{
     consensus_common::utils::unix_timestamp,
     network::{PeerInfo, Peers},
 };
-use reth_chainspec::{create_botanix_config_with_genesis, ChainSpec, BOTANIX_TESTNET};
+use reth_chainspec::{create_botanix_config_with_genesis, BOTANIX_TESTNET};
 use reth_network_peers::pk2id;
 use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
@@ -63,7 +63,7 @@ pub enum TestSignal {
 }
 
 #[derive(Debug)]
-pub struct SpawnedPoaServer {
+pub struct SpawnedPoaServerProcess {
     pub rpc_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
@@ -192,7 +192,7 @@ impl FederationMemberTestConfig {
     pub fn spawn_service(
         &self,
         edh_authorities_list: Arc<Vec<PublicKey>>,
-    ) -> anyhow::Result<SpawnedPoaServer> {
+    ) -> anyhow::Result<SpawnedPoaServerProcess> {
         // print secret key
         it_info_print!(format!("sk: {:?}", self.secret_key));
         it_info_print!(format!("Building federation member index: {}", self.index));
@@ -338,7 +338,7 @@ impl FederationMemberTestConfig {
             self.botanix_fee_recipient.clone(),
         );
 
-        Ok(SpawnedPoaServer {
+        Ok(SpawnedPoaServerProcess {
             child_process: spawn_child_process(command, args, working_directory)?,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
@@ -577,7 +577,7 @@ pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfi
 
 pub async fn create_poa_federation_members(
     global_context: Arc<GlobalContext>,
-    btc_servers: Option<&Vec<SpawnedBtcServer>>,
+    btc_server_processes: Option<&Vec<SpawnedBtcServerProcess>>,
     botanix_fee_recipient: String,
 ) -> anyhow::Result<(
     HashMap<u16, FederationMemberTestConfig>,
@@ -611,8 +611,8 @@ pub async fn create_poa_federation_members(
     let member_peer_id = pk2id(&members_keypairs[0].1);
 
     for member_index in 0..global_context.instances {
-        let port = btc_servers
-            .and_then(|servers| servers.iter().nth(member_index as usize).map(|val| val.port))
+        let port = btc_server_processes
+            .and_then(|processes| processes.iter().nth(member_index as usize).map(|val| val.port))
             .unwrap();
 
         let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
