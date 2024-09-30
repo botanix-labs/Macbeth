@@ -64,7 +64,7 @@ mod utxo_sync;
 pub use builder::AuthorityConsensusBuilder;
 
 /// Max EDH size, assuming max inputs spent are 1000 and the only spends are keyspends
-/// This was calulated with the following formula
+/// This was calculated with the following formula
 /// version + optional_fields bitmask + signers pk + witness (vec of sigs) + blockhash +
 /// utxo_commit + block_witness + agg_pk For specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 80050;

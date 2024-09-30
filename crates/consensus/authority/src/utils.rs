@@ -92,7 +92,7 @@ pub(crate) enum FrostParseError {
     InvalidSigningSessionId,
 }
 
-/// recieve a psbt containing all pending pegouts awaiting signing
+/// receive a psbt containing all pending pegouts awaiting signing
 pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
     pegouts: &[PegoutData],

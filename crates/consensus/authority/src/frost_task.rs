@@ -191,7 +191,7 @@ where
         // Calling get pk
         // Attempt to get the aggregate public key and store in storage
         if let Ok(public_key) = self.dkg_state_machine.get_public_key().await {
-            info!(target: "consensus::authority::frost_task::start_task", " recieved aggregate public key from dkg state machine {:?}", public_key);
+            info!(target: "consensus::authority::frost_task::start_task", " received aggregate public key from dkg state machine {:?}", public_key);
             if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
                 hex::decode(public_key.publickey).unwrap().as_slice(),
             ) {

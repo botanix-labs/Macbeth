@@ -40,7 +40,7 @@ where
         if let Some(round1_dkg) = self.frost_round1_dkg.lock().await.clone() {
             // Retrieve round 1 packages from peers
             // Here we don't check we have enough that should be done by the frost lib
-            // So we just propogate the error
+            // So we just propagate the error
             let round1_packages = self.db.get_round1_dkg_packages()?;
 
             let (round2_secret_package, round2_packages) =

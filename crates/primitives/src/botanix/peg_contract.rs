@@ -255,7 +255,7 @@ impl PegoutData {
         address: String,
         btc_network: bitcoin::Network,
     ) -> Result<Self, PegoutDataError> {
-        // Check for valid addres
+        // Check for valid address
         let destination: bitcoin::address::Address<bitcoin::address::NetworkUnchecked> =
             bitcoin::address::Address::from_str(address.as_str())
                 .map_err(|_e| PegoutDataError::Invalid("Invalid Bitcoin Address"))?;

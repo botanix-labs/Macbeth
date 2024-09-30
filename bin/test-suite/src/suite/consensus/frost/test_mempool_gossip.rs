@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-/// test that nodes will propogate txs using mempool gossip
+/// test that nodes will propagate txs using mempool gossip
 pub async fn test_mempool_gossip(
     suite: &ConsensusIntegrationTestSuite,
 ) -> Result<(), super::error::Error> {
@@ -21,7 +21,7 @@ pub async fn test_mempool_gossip(
     let total_authorities = test_fed_members.len();
 
     // Pick an authority member that is not inturn
-    // Send the eoa to them and they should propogate it to the inturn member
+    // Send the eoa to them and they should propagate it to the inturn member
     let inturn_member_index = (current_inturn_index(
         total_authorities as u64,
         unix_timestamp(),
@@ -30,7 +30,7 @@ pub async fn test_mempool_gossip(
         total_authorities as u64;
     it_info_print!("Inturn member index", inturn_member_index);
 
-    // assign targeted fed memeber
+    // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create eth client
@@ -52,7 +52,7 @@ pub async fn test_mempool_gossip(
                 canon_state_notification.engine_index
             );
 
-            // block verfication
+            // block verification
             let block_receipts = canon_state_notification.notification.block_receipts();
             it_info_print!("Block receipts ?", block_receipts);
             assert_eq!(block_receipts.len(), 1);

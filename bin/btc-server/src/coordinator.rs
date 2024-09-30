@@ -285,7 +285,7 @@ where
         Ok(psbt)
     }
 
-    /// If no Err is return the orignial psbt served to this function is good to go out to the
+    /// If no Err is return the original psbt served to this function is good to go out to the
     /// signers nothing needs to be added to it as the signers all provided their signing
     /// commitments already and the coordinator just need to verify them
     pub(crate) fn get_to_sign(
@@ -445,7 +445,7 @@ where
             .map_err(|_| CoordinatorError::CouldNotFindPsbt)
     }
 
-    /// Retruns signing status
+    /// Returns signing status
     pub(crate) async fn get_session_ids(
         &self,
         max_requested_results: u32,

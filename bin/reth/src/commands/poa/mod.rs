@@ -425,7 +425,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     }};
                 }
 
-                // Note: we should be panicing if our connection to bitcoind is severed
+                // Note: we should be panicking if our connection to bitcoind is severed
                 let bitcoind =
                     bitcoind_factory_clone.build_and_connect().expect("can connect to bitcoind");
                 let mut last_tip = bitcoin::BlockHash::all_zeros();
@@ -664,7 +664,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         if !is_fed_node {
             // block import is only needed for non-federation nodes
-            // federation nodes will recieve blocks via their consensus layer
+            // federation nodes will receive blocks via their consensus layer
             network_cfg_builder = network_cfg_builder.block_import(Box::new(block_import.clone()))
         }
 
@@ -909,7 +909,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             botanix_provider.clone(),
         );
 
-        // generate deault jwt for the rpc server (as required by reth)
+        // generate default jwt for the rpc server (as required by reth)
         let default_jwt_path = data_dir.jwt();
         let _reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 

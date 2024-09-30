@@ -125,7 +125,7 @@ impl From<ParseBurnEventError> for MintContractError {
 }
 
 fn topic_to_address(t: B256) -> Option<Address> {
-    // topics are 32 byte values that padd the actual value within,
+    // topics are 32 byte values that pad the actual value within,
     // so for addresses we have 12 zero bytes of padding in front
     let tokens = decode(&[ethers::abi::param_type::ParamType::Address], &t.0).ok()?;
     let bytes = tokens.first()?.clone().into_address()?;

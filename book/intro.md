@@ -21,4 +21,4 @@ Botanix Federation is a alpha software that has not been audited. Please only de
 
 > **Note**
 >
->This book is copied over from The Reth book modified to fit the requirments needed for the Botanix Federation.
+>This book is copied over from The Reth book modified to fit the requirements needed for the Botanix Federation.

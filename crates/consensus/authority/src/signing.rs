@@ -738,7 +738,7 @@ where
     }
 
     /// A signer processes round 1 signing packages
-    /// Note: since this is a request idenfitier has no use
+    /// Note: since this is a request identifier has no use
     pub(crate) async fn signer_process_round1(
         &mut self,
         _identifier: Vec<u8>,
@@ -936,7 +936,7 @@ where
     // ====================================== 2 =========================================
 
     /// A signer processes round 2 signing request
-    /// Note that since this is a request idenfitier has no use
+    /// Note that since this is a request identifier has no use
     pub(crate) async fn signer_process_round2(
         &mut self,
         _identifier: Vec<u8>,
@@ -1106,7 +1106,7 @@ where
             // check if we can repeat the session, if not abort and return
             if time_remaining < time_passed {
                 self.abort_signing().await?;
-                warn!(target: "consensus::authority::signing::handle_errored_signing_process", "Insuficient time remaining to retry the signing request");
+                warn!(target: "consensus::authority::signing::handle_errored_signing_process", "Insufficient time remaining to retry the signing request");
                 return Ok(());
             }
 

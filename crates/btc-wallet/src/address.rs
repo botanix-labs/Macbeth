@@ -36,7 +36,7 @@ lazy_static::lazy_static! {
     /// Compressed 33 byte public key of the recovery signer
     /// After SAFE_SPEND_TIMELOCK_SECOND blocks this recovery signer can recover funds for the user
     /// Keep in mind this is temporary solution for the POC testnet.alloc
-    /// Note this key is not derived from proper entropy nor is it dervied from a BIP-32 path
+    /// Note this key is not derived from proper entropy nor is it derived from a BIP-32 path
     /// Mainnet funds should not be spendable via this path
     static ref RECOVERY_PK: PublicKey = PublicKey::from_slice(
         hex::decode("02e2af4a49570e224fdddc6443863281ff9d96e6311547943a7628ed925e767a7a")

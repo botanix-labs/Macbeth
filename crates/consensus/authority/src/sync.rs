@@ -44,7 +44,7 @@ impl SyncController {
                         }
                         Err(err) => {
                             error!(target: "consensus::authority", "Failed to send fork choice update with new tip {} from peer {}: {:?}", blockhash, peer_id, err);
-                            //TODO(armins) If we cannot talk to the engine sould we panic?
+                            //TODO(armins) If we cannot talk to the engine should we panic?
                             return;
                         }
                     }
@@ -80,7 +80,7 @@ mod tests {
         let (engine_tx, mut engine_rx) =
             mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
 
-        // intialize the SyncController
+        // initialize the SyncController
         let mut sync_controller = SyncController::new(network_stream, peer_id, engine_tx);
 
         // spawn start_task

@@ -450,7 +450,7 @@ mod test {
         assert_eq!(round1_dkg.unwrap(), round1_dkg2.unwrap());
 
         // However if we modify the round1_dkg we should get a different result
-        // we dont' have to modify the whole package, the rng should create new coefficients
+        // we don't have to modify the whole package, the rng should create new coefficients
         app.frost_round1_dkg = Arc::new(Mutex::new(Some(
             frost::keys::dkg::part1(app.identifier, app.max_signers, app.min_signers, rng.clone())
                 .unwrap(),

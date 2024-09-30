@@ -27,7 +27,7 @@ pub trait EthBotanixApi: EthApiTypes {
     /// Returns a handle to the botanix provider
     fn botanix_provider(&self) -> &Botanix;
 
-    /// Retrives the gateway address for deposits
+    /// Retrieves the gateway address for deposits
     fn get_gateway_address(
         &self,
         eth_address: Address,

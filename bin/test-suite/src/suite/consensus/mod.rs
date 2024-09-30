@@ -42,7 +42,7 @@ fn kill_process_at_port(port: u16) {
     match kill(port) {
         Ok(pid) => {
             if pid {
-                info!("Sucessfully killed server process on port process on port {:?}", port);
+                info!("Successfully killed server process on port process on port {:?}", port);
             } else {
                 warn!("Unable to kill server process on port {:?}", port);
             }
@@ -293,7 +293,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 let fed_member_config = fed_member_config.clone();
                 let build_command_authorities_list = Arc::clone(&build_command_authorities_list);
 
-                // Need to spawn a seperate thread due to nested runtime issues
+                // Need to spawn a separate thread due to nested runtime issues
                 let _ = std::thread::spawn(move || {
                     let (fed_member_command, _chain_spec) =
                         fed_member_config.build_command(build_command_authorities_list);

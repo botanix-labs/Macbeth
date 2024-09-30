@@ -304,7 +304,7 @@ where
                         return;
                     }
                     _ => {
-                        warn!(target: "consensus::authority", "Recieved unknown message from frost task");
+                        warn!(target: "consensus::authority", "Received unknown message from frost task");
                         return;
                     }
                 };
@@ -375,7 +375,7 @@ where
                 return;
             }
             msg => {
-                warn!(target: "consensus::authority", "Recieved unknown message from pbft task: {:?}", msg);
+                warn!(target: "consensus::authority", "Received unknown message from pbft task: {:?}", msg);
                 return;
             }
         };

@@ -62,7 +62,7 @@ pub async fn block_builder(
     let inturn_member_index =
         current_inturn_index(total_authorities as u64, unix_timestamp(), leader_selection_window);
 
-    // assign targeted fed memeber
+    // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
