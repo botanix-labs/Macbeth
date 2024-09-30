@@ -447,7 +447,7 @@ where
                 .send(FrostPeerCommand::PeerMessage(resp))
                 .map_err(Error::Send)?;
         } else {
-            warn!(target: "consensus::authority::dkg::gossip_to_peer", "Peer {:?} not found durring DKG protocol", peer_id);
+            warn!(target: "consensus::authority::dkg::gossip_to_peer", "Peer {:?} not found during DKG protocol", peer_id);
         }
 
         Ok(())
@@ -620,7 +620,7 @@ where
     }
 
     /// All peers processing round 2 packages
-    /// The coordinator DOES NOT have any special responsiblities here for round 2
+    /// The coordinator DOES NOT have any special responsibilities here for round 2
     pub(crate) async fn process_round2(
         &mut self,
         identifier: Vec<u8>,
