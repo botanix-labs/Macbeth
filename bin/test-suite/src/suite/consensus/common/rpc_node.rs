@@ -9,7 +9,6 @@ use crate::{
     },
 };
 use reth_chainspec::BotanixTestnetGenesisConfig;
-use reth_cli_commands::node::NoArgs;
 use reth_network_peers::pk2id;
 use reth_node_core::args::FederationTomlConfig;
 
@@ -18,6 +17,7 @@ use bitcoin::{hashes::Hash, BlockHash};
 use clap::Parser;
 use reth::{
     args::FedMemberPubKey,
+    cli::NoArgs,
     commands::poa::{PoaNodeCommand, PoaNodeComponents},
     consensus_common::utils::unix_timestamp,
     network::Peers,
@@ -167,7 +167,6 @@ impl NonFederationMemberTestConfig {
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
 
-        // let no_args = NoArgs::with(self.clone());
         let command = PoaNodeCommand::parse_from([
             "poa",
             "--is-testnet",
@@ -200,7 +199,6 @@ impl NonFederationMemberTestConfig {
             "--p2p-secret-key",
             discovery_secret_path.to_str().expect("discovery secret path to exist"),
         ]);
-        // .with_ext::<NoArgs<NonFederationMemberTestConfig>>(no_args);
 
         command
     }
