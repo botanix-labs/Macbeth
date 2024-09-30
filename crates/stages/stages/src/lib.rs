@@ -16,7 +16,7 @@
 //! # use reth_downloaders::bodies::bodies::BodiesDownloaderBuilder;
 //! # use reth_downloaders::headers::reverse_headers::ReverseHeadersDownloaderBuilder;
 //! # use reth_network_p2p::test_utils::{TestBodiesClient, TestHeadersClient};
-//! # use reth_evm_ethereum::execute::EthExecutorProvider;
+//! # use reth_evm_ethereum::create_noop_executor_provider;
 //! # use reth_primitives::B256;
 //! # use reth_chainspec::MAINNET;
 //! # use reth_prune_types::PruneModes;
@@ -47,7 +47,7 @@
 //! #    provider_factory.clone()
 //! # );
 //! # let (tip_tx, tip_rx) = watch::channel(B256::default());
-//! # let executor_provider = EthExecutorProvider::mainnet();
+//! # let executor_provider = create_noop_executor_provider(chain_spec.clone());
 //! # let static_file_producer = StaticFileProducer::new(
 //! #    provider_factory.clone(),
 //! #    PruneModes::default()
