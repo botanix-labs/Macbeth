@@ -6,12 +6,12 @@ use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus
 use ethers::core::types::Address as EtherAddress;
 use reth::{
     args::{FedMemberPubKey, FederationTomlConfig},
+    cli::NoArgs,
     commands::poa::{PoaNodeCommand, PoaNodeComponents},
     consensus_common::utils::unix_timestamp,
     network::{PeerInfo, Peers},
 };
 use reth_chainspec::{create_botanix_config_with_genesis, ChainSpec, BOTANIX_TESTNET};
-use reth_cli_commands::node::NoArgs;
 use reth_network_peers::pk2id;
 use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
@@ -243,7 +243,6 @@ impl FederationMemberTestConfig {
         let federation_config_path = Path::new(datadir).join("federation.toml");
         federation_config.write_to_path(&federation_config_path).unwrap();
 
-        // let no_args = NoArgs::with(self.clone());
         let command = PoaNodeCommand::parse_from([
             "poa",
             "--is-testnet",
@@ -284,7 +283,6 @@ impl FederationMemberTestConfig {
             "--p2p-secret-key",
             discovery_secret_path.to_str().unwrap(),
         ]);
-        // .with_ext::<NoArgs<FederationMemberTestConfig>>(no_args);
 
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
