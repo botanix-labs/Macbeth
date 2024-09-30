@@ -10,8 +10,6 @@
 //!
 //! The [`RpcServerConfig`] is used to assemble and start the http server, ws server, ipc servers,
 //! it requires the [`TransportRpcModules`] so it can start the servers with the configured modules.
-//!
-
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/paradigmxyz/reth/main/assets/reth-docs.png",

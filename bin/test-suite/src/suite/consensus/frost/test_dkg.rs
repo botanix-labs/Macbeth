@@ -120,7 +120,7 @@ pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<
         }
     }
 
-    // Send dkg round2 shares to each recepient
+    // Send dkg round2 shares to each recipient
     for (i, p) in round2_packages.iter().enumerate() {
         let from_frost_id = frost_id!(i as u16).serialize().to_vec();
         let round2_shares = p.payload.clone();
