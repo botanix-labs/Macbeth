@@ -510,7 +510,7 @@ impl PegoutScheduler {
             }
         }
 
-        // Here we can aditionally check for txs are tracked for a long periods of time
+        // Here we can additionally check for txs are tracked for a long periods of time
         // And no longer are in the mempool
         // TODO
 

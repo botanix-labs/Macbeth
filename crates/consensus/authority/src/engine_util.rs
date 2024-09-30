@@ -22,7 +22,7 @@ pub(crate) enum SendNewPayloadError {
     EngineError,
     #[error("Engine returned invalid payload")]
     InvalidPayload(String),
-    #[error("Engine recieve error")]
+    #[error("Engine receive error")]
     RecvError,
     #[error("Beacon new payload error: {0}")]
     BeaconError(BeaconOnNewPayloadError),
@@ -78,7 +78,7 @@ pub(crate) enum SendForkChoiceUpdateError {
     EngineError,
     #[error("Engine returned invalid payload")]
     InvalidPayload,
-    #[error("Engine recieve error")]
+    #[error("Engine receive error")]
     RecvError,
 }
 
@@ -162,7 +162,7 @@ pub(crate) async fn start_new_payload(
 pub(crate) enum BestTransactionsError {
     #[error("Engine error")]
     EngineError(PayloadBuilderError),
-    #[error("Empy payload error")]
+    #[error("Empty payload error")]
     PayloadEmpty,
 }
 

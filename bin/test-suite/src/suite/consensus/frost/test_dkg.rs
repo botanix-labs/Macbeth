@@ -113,7 +113,7 @@ pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<
         round2_packages.push(p);
     }
     // Ensure all packages have correct props
-    // Not much to assert here, we can check the lenght of the ids
+    // Not much to assert here, we can check the length of the ids
     for p in round2_packages.iter() {
         if p.identifier.len() != 32 {
             return Err(Error::Round2PackagesLenghtMismatch);

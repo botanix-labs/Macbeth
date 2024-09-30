@@ -79,7 +79,7 @@ pub async fn pbft_e2e_failed_disconnect(
             let runner = CliRunner::default();
             runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
         });
-        // wait for one second inbetween members start
+        // wait for one second in between members start
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
@@ -174,7 +174,7 @@ pub async fn pbft_e2e_failed_disconnect(
         block_headers,
     };
 
-    // send the pegin transactions to all fed memebers
+    // send the pegin transactions to all fed members
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta:", hex::encode(serialized_pegin_meta.clone()));
 
@@ -299,7 +299,7 @@ pub async fn pbft_e2e_failed_disconnect(
         }
     }
     assert!(match_found);
-    // TODO We could do a percise amounts check here
+    // TODO We could do a precise amounts check here
     assert!(pegout_tx.output[1].value > Amount::ZERO);
 
     Ok(())

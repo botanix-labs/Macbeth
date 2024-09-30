@@ -6,14 +6,14 @@
 
 # Purpose
 
-Staking of BTC by authority members helps secure the network through concensus. Honest authority members will receive the block subsidy reward. Malicious authority members will be fully slashed resulting in a total loss of staked bitcoin and removal from the list of authority members.
+Staking of BTC by authority members helps secure the network through consensus. Honest authority members will receive the block subsidy reward. Malicious authority members will be fully slashed resulting in a total loss of staked bitcoin and removal from the list of authority members.
 
 # Assumptions and Context
 
 - The genesis block header will include one authority member in the extra data header field which will produce the first (n) post genesis blocks. The extra data header field is the source of truth when determining authority members.
 - A known staking contract will exist on Botanix which holds a whitelist of potential stakers and a list of stakers. Only authority members are included in the whitelist and can be stakers. Authority members move from the whitelist to the stakers list once they have staked the required funds. The contract will be deployed with the genesis block authority member as the only member in the stakers list with all other authority members in the whitelist. The initial staker is Botanix.
   - After the genesis block, the initial staker will add an authority member to the list in the extra data header field once a member in the whitelist has staked the required funds and moved to the stakers list.
-  - Newly added members may add additional members to the extra data header field in the same manner as the initital genesis block staker.
+  - Newly added members may add additional members to the extra data header field in the same manner as the initial genesis block staker.
   - The process of initial whitelisted members moving to the stakers list and being included in the extra data header field will conclude once all initial whitelisted members have become stakers.
   - A staker is not allowed to withdraw funds and leave the federation.
   - A staker may be voted out by a majority of authority members because of a slashable offense. The offender's staked funds will be transferred to the member who identified the slashable offense.
@@ -75,7 +75,7 @@ Voting to remove or add an authority member occurs across the length of an epoch
 
 # Penalties
 
-There are no penalities only fully slashable events
+There are no penalties only fully slashable events
 
 # Slashing
 

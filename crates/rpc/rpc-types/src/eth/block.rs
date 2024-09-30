@@ -187,7 +187,7 @@ pub struct Header {
 /// a boolean requireCanonical field.
 /// If false, an RPC call should raise if a block
 /// matching the hash is not found.
-/// If true, an RPC call should additionaly raise if
+/// If true, an RPC call should additionally raise if
 /// the block is not in the canonical chain.
 /// <https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1898.md#specification>
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
@@ -471,7 +471,7 @@ impl<'de> Deserialize<'de> for BlockId {
             where
                 E: serde::de::Error,
             {
-                // Since there is no way to clearly distinguish between a DATA parameter and a QUANTITY parameter. A str is therefor deserialized into a Block Number: <https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1898.md>
+                // Since there is no way to clearly distinguish between a DATA parameter and a QUANTITY parameter. A str is therefore deserialized into a Block Number: <https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1898.md>
                 // However, since the hex string should be a QUANTITY, we can safely assume that if the len is 66 bytes, it is in fact a hash, ref <https://github.com/ethereum/go-ethereum/blob/ee530c0d5aa70d2c00ab5691a89ab431b73f8165/rpc/types.go#L184-L184>
                 if v.len() == 66 {
                     Ok(BlockId::Hash(v.parse::<B256>().map_err(serde::de::Error::custom)?.into()))

@@ -46,7 +46,7 @@ impl ToFrostManager for FrostHandle {
 pub struct PeerData {
     /// peer id
     pub peer_id: PeerId,
-    /// chanel use for sending commands to the peer
+    /// channel use for sending commands to the peer
     pub peer_commands_tx: Option<UnboundedSender<FrostPeerCommand>>,
     /// in or outgoing connection
     pub direction: Option<Direction>,
@@ -251,7 +251,7 @@ impl FrostManager {
                     reconnected_peers += 1;
                 }
                 if reconnected_peers > 0 {
-                    info!(target: "network::frost::on_command", "Readded/Reconnected {}/{} peers", reconnected_peers, peers_to_reconnect);
+                    info!(target: "network::frost::on_command", "Re-added/Reconnected {}/{} peers", reconnected_peers, peers_to_reconnect);
                 }
             }
             FrostCommand::CheckConnectedToAll(tx) => {
@@ -324,7 +324,7 @@ impl Future for FrostManager {
 pub enum FrostCommand {
     /// sends healthcheck messages to all peers
     SendHealtcheckToPeers,
-    /// Reconect peers in case their connection got dropped
+    /// Reconnect peers in case their connection got dropped
     ReconnectPeers(Vec<(PeerId, SocketAddr)>),
     /// Check if connection to all federated peers is established
     CheckConnectedToAll(oneshot::Sender<bool>),

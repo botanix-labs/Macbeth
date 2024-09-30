@@ -19,7 +19,7 @@ use tracing::{error, info, warn};
 pub struct BlockFetcherTask<EF, BF, DB> {
     /// Authority consensus
     consensus: AuthorityConsensus,
-    /// Channel to recieve new blocks
+    /// Channel to receive new blocks
     block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
     /// Channel to send new blocks to the engine
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
@@ -85,7 +85,7 @@ where
 
             let block = new_block.block.block.clone();
             let block_hash = block.header.hash_slow();
-            info!(target: "consensus::authority", "Recieved new block from peer {:?}", block_hash);
+            info!(target: "consensus::authority", "Received new block from peer {:?}", block_hash);
 
             // This shouldn't happen but check that the block we are importing is not already in the
             // chain
@@ -98,7 +98,7 @@ where
                     panic!("best block hash is valid");
                 });
             if block_hash == best_hash {
-                warn!(target: "consensus::authority", "Recieved block is already in the chain");
+                warn!(target: "consensus::authority", "Received block is already in the chain");
                 continue;
             }
 

@@ -8,7 +8,7 @@ Additionally this service does not need to be publicly accessible. It is recomme
 ### Additional notes
 #### What is the identifier?
 Your identifier is your index into the federation list. More about this list can be found in [chain-config.md](../installation/chain-config.md).
-For example if my public key's index into the list is the first one my indentifier is 0.
+For example if my public key's index into the list is the first one my identifier is 0.
 If its the fourth, my identifier is 3. 
 
 #### What is the database?

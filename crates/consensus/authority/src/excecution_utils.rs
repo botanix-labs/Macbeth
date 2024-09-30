@@ -269,7 +269,7 @@ pub(crate) mod authority_execution_utils {
                 Some(calculate_excess_blob_gas(parent_excess_blob_gas, parent_blob_gas_used))
         }
 
-        // TODO (armins) Poa shouldnt be minging empty blocks
+        // TODO (armins) Poa shouldn't be minging empty blocks
         header.transactions_root = if transactions.is_empty() {
             EMPTY_TRANSACTIONS
         } else {

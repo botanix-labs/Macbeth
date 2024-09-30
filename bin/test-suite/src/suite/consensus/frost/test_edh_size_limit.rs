@@ -31,7 +31,7 @@ use std::{str::FromStr, time::Duration};
 const NUM_PEGINS: u16 = 1000;
 
 // NOTE: this test cannot run as currently implemented
-// TODO: revist if test is needed after new consensus implementation
+// TODO: revisit if test is needed after new consensus implementation
 
 pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;

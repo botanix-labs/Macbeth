@@ -441,11 +441,11 @@ where
                         } => {} // Do nothing
                         reth_transaction_pool::TransactionValidationOutcome::Invalid(_, e) => {
                             error!("Txinvalid: Error validating transaction: {:?}", e);
-                            error = (ERROR, "Error occured while validating transaction");
+                            error = (ERROR, "Error occurred while validating transaction");
                         }
                         reth_transaction_pool::TransactionValidationOutcome::Error(_, e) => {
                             error!("TxError: Error validating transaction: {:?}", e);
-                            error = (ERROR, "Error occured while validating transaction");
+                            error = (ERROR, "Error occurred while validating transaction");
                         }
                     }
                 } else {
@@ -719,7 +719,7 @@ enum ABCIDriverMessage {
 }
 
 // The driver is mainly responsible for driving block completion and finalization
-// Once a finalize block is recieved the drive is reponsible for
+// Once a finalize block is received the drive is responsible for
 // * Updating the canonical chain via DB
 // * Sending the finalized block to the network
 // * Sending the finalized block to the engine (FCU)

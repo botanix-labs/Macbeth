@@ -23,8 +23,8 @@ socket-addr="127.0.0.1:30304"
 
 ### Additional fee-recipient
 The Botanix Federation requires you to setup an additional fee recipient. Any 20-byte eth address will work for this field.
-The additional fee recepient is traditionally the party responsible for setting up the federation, coordinating setup and maintaince and responding to emergencies.
-For their additional responsibilities they will recieve 20% of all block fees. 
+The additional fee recipient is traditionally the party responsible for setting up the federation, coordinating setup and maintenance and responding to emergencies.
+For their additional responsibilities they will receive 20% of all block fees. 
 
 
 ### Minting Contract bytecode

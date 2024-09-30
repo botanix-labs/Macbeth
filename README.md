@@ -16,7 +16,7 @@ To run the stack locally, please go through the following steps to ensure you ha
 1. Install `foundry/forge` on your system - simply follow the instructions here: [foundry](https://book.getfoundry.sh/getting-started/installation)
 1. Install and set up `git` to use ssh.
 1. Install protobuf native dependencies: `apt update && apt upgrade -y && apt install -y protobuf-compiler libprotobuf-dev` (for ubuntu only)
-1. Install libclang dependeny: `sudo apt-get install libclang-dev` (for ubuntu only)
+1. Install libclang dependency: `sudo apt-get install libclang-dev` (for ubuntu only)
 1. Install gcp-cli: [google-cloud-cli](https://cloud.google.com/sdk/docs/install)
 1. Install [k9s](https://k9scli.io/topics/install/)
 
@@ -71,14 +71,14 @@ bitcoind -conf=[path to your config file above]
 
 ```
 
-## Runing a local federation
+## Running a local federation
 
 Once you have connected to bitcoind, you can run a local federation of two and more nodes easily.
 These instructions set up federation nodes running poa consensus on your local set up.
 Please note that the federation on feature/poA-consensus consists of at least two federation members
 
 
-1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIND_NETWORK`, `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD`. If you are connecting to bitcoind on the cloud, ask adminstrator for username and password. If you are using the local instance with `regtest`, these parameters should be directly accessible to you.
+1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIND_NETWORK`, `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD`. If you are connecting to bitcoind on the cloud, ask administrator for username and password. If you are using the local instance with `regtest`, these parameters should be directly accessible to you.
 
 ```bash
 BITCOIND_NETWORK=[BTC NETWORK e.g. regtest]

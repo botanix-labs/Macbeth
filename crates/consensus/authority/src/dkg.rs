@@ -47,7 +47,7 @@ pub(crate) enum Error {
     FailedToStoreKeyPackage,
     #[error("Failed to store public key package")]
     FailedToStorePublicKeyPackage,
-    #[error("Failed to perisist pk to db")]
+    #[error("Failed to persist pk to db")]
     FailedToPeristPkToDb,
     #[error("Failed to add round 1 package")]
     FailedToAddRound1Package,
@@ -55,7 +55,7 @@ pub(crate) enum Error {
     FailedToAddRound2Package,
     #[error("Failed to parse public key package")]
     PublicKeyParse(secp256k1::Error),
-    #[error("Unknwon internal error")]
+    #[error("Unknown internal error")]
     InternalGrpc,
     #[error("Failed to get connected peers handles")]
     FailedToGetConnectedPeersHandles,
