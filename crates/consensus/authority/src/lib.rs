@@ -47,7 +47,6 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
 
-mod block_fetcher;
 mod builder;
 mod comet_bft;
 

@@ -1,5 +1,4 @@
 use crate::{
-    block_fetcher::BlockFetcherTask,
     comet_bft::abci::ABCIClientBuilder,
     compressor::Compressor,
     frost_task::{FrostNotificationMessage, FrostTask},
@@ -200,7 +199,6 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        Option<BlockFetcherTask<EF, BF, DB>>,
         Option<FrostTask<EF, BF, DB, ToFrostMan>>,
         SyncController,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
@@ -275,7 +273,6 @@ where
         let mut frost_task = None;
         let mut healthcheck_task = None;
         let mut abci_client_builder = None;
-        let block_fetcher_task = None;
         if is_fed_node {
             let task = HealthcheckTask::new(
                 network_handle.clone(),
@@ -312,13 +309,6 @@ where
             cometbft_rpc_factory.clone(),
         ));
 
-        (
-            consensus,
-            block_fetcher_task,
-            frost_task,
-            sync_task,
-            healthcheck_task,
-            abci_client_builder,
-        )
+        (consensus, frost_task, sync_task, healthcheck_task, abci_client_builder)
     }
 }

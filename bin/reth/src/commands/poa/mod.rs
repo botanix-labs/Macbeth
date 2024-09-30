@@ -744,7 +744,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Build authority Consensus
         let (
             _authority_consensus,
-            block_fetcher_task,
             frost_task,
             mut sync_controller,
             _healthcheck_task,
