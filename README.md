@@ -20,6 +20,11 @@ To run the stack locally, please go through the following steps to ensure you ha
 1. Install gcp-cli: [google-cloud-cli](https://cloud.google.com/sdk/docs/install)
 1. Install [k9s](https://k9scli.io/topics/install/)
 
+## Codespell
+
+On ci we run `codespell` on the codebase to ensure there are no typos.
+If you want to run it locally you can install it with `pip install codespell` and then run it in the root of the repo with `codespell -w .` to automatically fix the typos.
+
 ## Connecting to bitcoind on the cluster
 
 1. Install google cloud cli following the link here [gpc](https://cloud.google.com/sdk/docs/install) depending on your platform.
@@ -224,7 +229,3 @@ If the answer is not there:
 ## Security
 
 See [`SECURITY.md`](./SECURITY.md).
-
-## Acknowledgements
-
-The Botanix Project team
