@@ -638,7 +638,6 @@ mod tests {
         let pk2 = secp256k1::PublicKey::from_secret_key(&secp, &secret_key2);
 
         let mut extra_data_header = ExtraDataHeader::default();
-        extra_data_header.add_authority_signers(vec![pk1, pk2]);
 
         let edh = hex::encode(extra_data_header.serialize());
         let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
