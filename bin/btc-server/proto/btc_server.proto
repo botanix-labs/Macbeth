@@ -13,6 +13,8 @@ service BtcServer {
 
     rpc NotifyPegout(NotifyPegoutRequest) returns (Empty) {}
 
+    rpc GetPendingPegouts(Empty) returns (GetPendingPegoutsResponse) {}
+
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
@@ -69,6 +71,17 @@ message NotifyPegoutRequest {
     bytes spk = 2;
     uint64 amount = 3;
     uint64 height = 4;
+}
+
+message PendingPegout {
+    bytes pegout_id = 1;
+    bytes spk = 2;
+    uint64 amount = 3;
+    uint64 height = 4;
+}
+    
+message GetPendingPegoutsResponse {
+    repeated PendingPegout pending_pegouts = 1;
 }
 
 message SyncTxIndexRequest {

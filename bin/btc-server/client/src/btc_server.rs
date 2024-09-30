@@ -13,6 +13,24 @@ pub struct NotifyPegoutRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PendingPegout {
+    #[prost(bytes = "vec", tag = "1")]
+    pub pegout_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub spk: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "3")]
+    pub amount: u64,
+    #[prost(uint64, tag = "4")]
+    pub height: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPendingPegoutsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncTxIndexRequest {
     /// The checkpoint of the best finalized Bitcoin block hash.
     #[prost(bytes = "vec", tag = "1")]
@@ -396,6 +414,25 @@ pub mod btc_server_client {
             req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "NotifyPegout"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_pending_pegouts(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<tonic::Response<super::GetPendingPegoutsResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path =
+                http::uri::PathAndQuery::from_static("/btc_server.BtcServer/GetPendingPegouts");
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "GetPendingPegouts"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn get_gateway_address(
             &mut self,
             request: impl tonic::IntoRequest<super::GetGatewayAddressRequest>,
@@ -594,7 +631,7 @@ pub mod btc_server_client {
             req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "AbortSigning"));
             self.inner.unary(req, path, codec).await
         }
-        /// only meant to be used by the coordinator
+        /// only meant to be used by the cordinator
         pub async fn new_round1_signing_package(
             &mut self,
             request: impl tonic::IntoRequest<super::SigningPackage>,

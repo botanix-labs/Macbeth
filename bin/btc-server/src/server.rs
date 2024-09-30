@@ -221,6 +221,27 @@ where
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
+    /// Admin util endpoing to get all pending pegouts
+    async fn get_pending_pegouts(
+        &self,
+        req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetPendingPegoutsResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let pending_pegouts = self.db.get_pending_pegouts()?;
+        let res = tonic::Response::new(rpc::GetPendingPegoutsResponse {
+            pending_pegouts: pending_pegouts
+                .into_iter()
+                .map(|p| rpc::PendingPegout {
+                    pegout_id: p.id.as_bytes().to_vec(),
+                    spk: p.spk.into_bytes().to_vec(),
+                    amount: p.value.to_sat(),
+                    height: p.botanix_height,
+                })
+                .collect(),
+        });
+        Ok(res)
+    }
+
     /// Resets all utxos in the database
     async fn reset_all_utxos(
         &self,
