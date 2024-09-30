@@ -151,7 +151,7 @@ pub async fn send_pegout_notification(
     client: &mut client::BtcServerClient<Channel>,
     amount: u64,
     bitcoin_height: u64,
-) -> Result<(), Error> {
+) -> Result<(bitcoin::ScriptBuf, PegoutId), Error> {
     // Using stdRng here as it implements Send
     let mut rand = StdRng::from_entropy();
     let mut pegout_id_bytes = [0u8; 36];
@@ -171,7 +171,7 @@ pub async fn send_pegout_notification(
         }))
         .await
         .map_err(Error::PegoutNotification)?;
-    Ok(())
+    Ok((spk, pegout_id))
 }
 
 pub async fn send_pegin_notification(
