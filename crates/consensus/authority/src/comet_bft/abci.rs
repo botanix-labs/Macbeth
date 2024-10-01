@@ -871,9 +871,6 @@ mod tests {
     use tendermint_proto::google::protobuf::Timestamp;
     use tokio::sync::RwLock;
 
-    const GENESIS_APP_HASH_HEX: &str =
-        "a10f8cfbcf437a97e37d8d63f4b0bbdd55d2bee7aec1b629e701ecb12d4e7a88";
-
     /// Build the db and the ABCI client
     fn abci_client_builder() -> ABCIClient<
         MockExecutorProvider,
@@ -979,7 +976,7 @@ mod tests {
         assert_eq!(response.consensus_params, expected_consensus_params);
         assert_eq!(response.validators, expected_validators);
         let response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
-        assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
+        assert_eq!(response.app_hash.to_vec(), BOTANIX_TESTNET.genesis_hash.unwrap().0.to_vec());
     }
 
     #[test]
@@ -994,7 +991,10 @@ mod tests {
         assert_eq!(response.app_version, 1);
         assert_eq!(response.last_block_height, 0);
         let response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
-        assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
+        assert_eq!(
+            response.last_block_app_hash.to_vec(),
+            BOTANIX_TESTNET.genesis_hash.unwrap().0.to_vec()
+        );
     }
 
     #[test]
