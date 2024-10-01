@@ -125,7 +125,7 @@ pub const DEV_GENESIS_HASH: B256 =
 // TODO include botanix and botanix testnet genesis hash
 /// Botanix Testnet genesis hash.
 pub const BOTANIX_TESTNET_GENESIS: B256 =
-    b256!("25a5cc106eea7138acab33231d7160d69cb777ee0c2c553fcddf5138993e6dd9");
+    b256!("3797638175875c37cefa72ef546db685e43c81ba4af8238b48a495f98d61588d");
 
 /// Keccak256 over empty array: `0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`
 pub const KECCAK_EMPTY: B256 =
