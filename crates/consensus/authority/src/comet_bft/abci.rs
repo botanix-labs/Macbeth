@@ -143,6 +143,21 @@ where
         // CometBFT will always run on the same machine and container
         let server = server_builder.bind(format!("{abci_host}:{abci_port}"), app)?;
 
+        // TODO should wait here till we have a aggregate public key stored in the storage
+
+        loop {
+            let storage = self.storage.inner.read().await;
+            if storage.aggregate_public_key.is_some() {
+                info!(
+                    "Aggregate public key is stored in the storage continuing to start ABCI server"
+                );
+                break;
+            }
+            info!("Waiting for aggregate public key to be stored in the storage before starting ABCI server");
+            drop(storage);
+            tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
+        }
+
         task_executor.spawn_critical(
             "ABCI Client",
             Box::pin(async move {
@@ -169,6 +184,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, SealedBlockWithPeg>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+    #[allow(dead_code)]
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
 }
