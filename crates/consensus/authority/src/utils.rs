@@ -123,6 +123,15 @@ pub(crate) async fn call_notify_pegin(
     Ok(())
 }
 
+// pub(crate) async fn call_notify_pegout(
+//     btc_server: &mut BtcServerExtendedClient,
+//     pegouts: &[PegoutData],
+// ) -> Result<(), GrpcClientError> {
+//     if pegouts.is_empty() {
+//         return Ok(());
+//     }
+// }
+
 fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
     let tx_out = pegin_meta.tx.output.get(pegin_meta.outpoint.vout as usize).expect("valid vout");
     let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);

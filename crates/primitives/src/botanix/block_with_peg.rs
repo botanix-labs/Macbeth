@@ -1,6 +1,6 @@
 use crate::SealedBlockWithSenders;
 
-use super::peg_contract::{PeginData, PegoutData};
+use super::peg_contract::{PeginData, PegoutData, PegoutWithId};
 
 /// Sealed block with pegin and pegout data
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,7 +10,7 @@ pub struct SealedBlockWithPeg {
     /// Pegins
     pegins: Vec<PeginData>,
     /// Pegouts
-    pegouts: Vec<PegoutData>,
+    pegouts: Vec<PegoutWithId>,
 }
 
 impl SealedBlockWithPeg {
@@ -18,7 +18,7 @@ impl SealedBlockWithPeg {
     pub fn new(
         block: SealedBlockWithSenders,
         pegins: Vec<PeginData>,
-        pegouts: Vec<PegoutData>,
+        pegouts: Vec<PegoutWithId>,
     ) -> Self {
         Self { block, pegins, pegouts }
     }
@@ -34,7 +34,7 @@ impl SealedBlockWithPeg {
     }
 
     /// Pegouts
-    pub fn pegouts(&self) -> &[PegoutData] {
+    pub fn pegouts(&self) -> &[PegoutWithId] {
         &self.pegouts
     }
 }
