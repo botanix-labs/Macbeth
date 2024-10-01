@@ -54,7 +54,7 @@ use crate::{
     },
     engine_util,
     excecution_utils::authority_execution_utils::build_and_execute,
-    utils::call_notify_pegin,
+    utils::{call_notify_pegin, call_notify_pegout},
     AuthorityConsensus, Storage,
 };
 
@@ -822,6 +822,7 @@ where
 
                         // Annount to the network
                         let block_to_commit = sealed_block_with_senders.block.clone().unseal();
+                        let block_height = block_to_commit.number;
                         self.network_handle.announce_block(
                             NewBlock { block: block_to_commit, td: Uint::ZERO },
                             block_hash,
@@ -839,12 +840,22 @@ where
                         // TODO what happens if the pegins fail? Should we panic? Should this be
                         // called in commit?
                         if self.btc_server.is_some() {
+                            // pegins
                             call_notify_pegin(
                                 &mut self.btc_server.as_mut().expect("btc server to exist"),
                                 &pegins,
                             )
                             .await
                             .expect("Should notify pegins");
+
+                            // pegouts
+                            call_notify_pegout(
+                                &mut self.btc_server.as_mut().expect("btc server to exist"),
+                                pegouts,
+                                block_height,
+                            )
+                            .await
+                            .expect("Should notify pegouts");
                         }
 
                         tx.send(()).expect("to send");
