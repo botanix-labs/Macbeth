@@ -212,7 +212,7 @@ where
             let my_frost_id =
                 authority_index_to_frost_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
-            // start dkg only when we are in turn + initial state + no public key
+            // start dkg only when we are the coordinator+ initial state + no public key
             if is_coordinator &&
                 !self.dkg_state_machine.get_dkg_state().is_running() &&
                 self.dkg_state_machine.get_public_key().await.is_err()
