@@ -10,6 +10,7 @@ use bitcoin::{
     merkle_tree::PartialMerkleTree,
     TxOut,
 };
+use btcserverlib::pegout_id::PegoutId;
 use ethers::types::U256;
 use secp256k1::PublicKey;
 use thiserror::Error;
@@ -246,6 +247,15 @@ pub struct PegoutData {
     pub destination: bitcoin::Address,
     /// Network the pegout should be performed on
     pub network: bitcoin::Network,
+}
+
+/// Pegout with PegoutId data structure
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PegoutWithId {
+    /// Pegout data
+    pub data: PegoutData,
+    /// Pegout id
+    pub id: PegoutId,
 }
 
 impl PegoutData {

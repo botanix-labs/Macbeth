@@ -833,6 +833,9 @@ where
                             .map(|p| p.meta.clone())
                             .flatten()
                             .collect::<Vec<_>>();
+
+                        let pegouts = sealed_block_with_peg.pegouts();
+
                         // TODO what happens if the pegins fail? Should we panic? Should this be
                         // called in commit?
                         if self.btc_server.is_some() {

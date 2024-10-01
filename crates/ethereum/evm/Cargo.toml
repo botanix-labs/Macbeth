@@ -32,6 +32,9 @@ alloy-sol-types.workspace = true
 bitcoin.workspace = true
 reth-btc-wallet.workspace = true
 
+# BTC server
+btc-server = {path = "../../../bin/btc-server"}
+
 # tracing
 tracing.workspace = true
 
