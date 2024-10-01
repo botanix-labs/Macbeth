@@ -7,13 +7,15 @@ use bitcoin::{
     BlockHash,
 };
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
-use client::{MakeTxRequest, NotifyPeginsRequest, Output, ScriptBuf, SigningPackage, TxOut, Utxo};
+use client::{
+    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest, ScriptBuf, SigningPackage, TxOut, Utxo,
+};
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{
     botanix::{
         mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
-        peg_contract::{PeginMeta, PegoutData},
+        peg_contract::{PeginMeta, PegoutData, PegoutWithId},
     },
     constants::EPOCH_LENGTH,
     Bloom, BloomInput,
@@ -123,14 +125,29 @@ pub(crate) async fn call_notify_pegin(
     Ok(())
 }
 
-// pub(crate) async fn call_notify_pegout(
-//     btc_server: &mut BtcServerExtendedClient,
-//     pegouts: &[PegoutData],
-// ) -> Result<(), GrpcClientError> {
-//     if pegouts.is_empty() {
-//         return Ok(());
-//     }
-// }
+pub(crate) async fn call_notify_pegout(
+    btc_server: &mut BtcServerExtendedClient,
+    pegouts: &[PegoutWithId],
+    height: u64,
+) -> Result<(), GrpcClientError> {
+    if pegouts.is_empty() {
+        return Ok(());
+    }
+
+    // TODO: do we want to modify NotifyPegoutRequest to take a list of pegouts?
+    // loop through pegouts and notify
+    for pegout in pegouts {
+        let request = NotifyPegoutRequest {
+            pegout_id: pegout.id.as_bytes().to_vec(),
+            spk: pegout.data.destination.script_pubkey().to_bytes().to_vec(),
+            amount: pegout.data.amount.to_sat(),
+            height,
+        };
+        btc_server.notify_pegout(request).await?;
+    }
+
+    Ok(())
+}
 
 fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
     let tx_out = pegin_meta.tx.output.get(pegin_meta.outpoint.vout as usize).expect("valid vout");
