@@ -817,28 +817,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             //     }),
             // );
         }
-
-        let eth_tx_validator = validator.validator;
-        let abci_client_builder = abci_client_builder.expect("abci client builder exists");
-        let fut = || async {
-            abci_client_builder
-                .start_server(
-                    &executor.clone(),
-                    eth_tx_validator.clone(),
-                    transaction_pool.clone(),
-                    abci_host.to_string(),
-                    *abci_port,
-                )
-                .await
-        };
-
-        match retry_exec(fut, 3, Duration::from_secs(2)).await {
-            Ok(()) => {}
-            Err(err) => {
-                error!(target: "reth::cli", "Failed to connect to abci client: {}", err);
-                return Err(eyre::eyre!("Failed to connect to abci client: {}", err));
-            }
-        };
+        // TODO can remove this
         if !is_fed_node {
             executor.spawn_critical(
                 "PoA Block Sync Controller Task",
@@ -951,6 +930,29 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             });
 
             launch_rpc.await?
+        };
+
+        // NOTE: the node will block here until DKG has completed
+        let eth_tx_validator = validator.validator.clone();
+        let abci_client_builder = abci_client_builder.expect("abci client builder exists");
+        let fut = || async {
+            abci_client_builder
+                .start_server(
+                    &executor.clone(),
+                    eth_tx_validator.clone(),
+                    transaction_pool.clone(),
+                    abci_host.to_string(),
+                    *abci_port,
+                )
+                .await
+        };
+
+        match retry_exec(fut, 3, Duration::from_secs(2)).await {
+            Ok(()) => {}
+            Err(err) => {
+                error!(target: "reth::cli", "Failed to connect to abci client: {}", err);
+                return Err(eyre::eyre!("Failed to connect to abci client: {}", err));
+            }
         };
 
         // Run consensus engine to completion
