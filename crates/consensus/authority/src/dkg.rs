@@ -485,6 +485,33 @@ where
         Ok(())
     }
 
+    async fn distribute_round2_packages(
+        &mut self,
+        round2_packages: DkgPayload,
+    ) -> Result<(), Error> {
+        let round2_shares = round2_packages.payload.clone();
+        info!(target: "consensus::authority::dkg::process_round1", "ready to move to round 2");
+        let shares = serde_json::from_slice::<
+            BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
+        >(&round2_shares)
+        .map_err(|_| Error::FailedToGetRound2Packages)?;
+
+        for (identifier, round2_payload) in shares.iter() {
+            let peer_id = self.frost_id_map.get(&identifier).ok_or(Error::PeerIdNotFound)?;
+            self.gossip_to_peer(
+                DkgPayload {
+                    // From us
+                    identifier: self.personal_frost_identifier.serialize().to_vec(),
+                    payload: serde_json::to_vec(&round2_payload).unwrap(),
+                },
+                DkgEventResponseType::DkgRound2,
+                peer_id.clone(),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
     /// Coordinator processing round 1 packages
     /// During round1 dkg the coordinator collects round 1 packages from peers and gossips them to
     /// all peers
@@ -524,7 +551,7 @@ where
             "round 1 package added successfully"
         );
         // Check if we are ready to progress to round 2
-        let _ = match self.get_round2_dkg_package().await {
+        let round2_dkg_package = match self.get_round2_dkg_package().await {
             Ok(dkg2_package) => dkg2_package,
             Err(e) => {
                 // its ok to error here if we don't have enough packages
@@ -544,6 +571,10 @@ where
             .await?;
         }
 
+        // Lets wait some time for all nodes to get their round 1 packages then gossip round 2
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        self.distribute_round2_packages(round2_dkg_package).await?;
+
         Ok(())
     }
 
@@ -551,7 +582,6 @@ where
     /// This is a request from the coordinator to send round 1 packages to the coordinator
     pub(crate) async fn process_round1_request(&mut self) -> Result<(), Error> {
         let round1_package = self.get_round1_dkg_package().await?;
-        // Gossip to coordinator
         self.gossip_to_coordinator(round1_package, DkgEventResponseType::DkgRound1).await?;
         Ok(())
     }
@@ -595,26 +625,7 @@ where
                 return Err(e);
             }
         };
-        let round2_shares = dkg2_package.payload.clone();
-        info!(target: "consensus::authority::dkg::process_round1", "ready to move to round 2");
-        let shares = serde_json::from_slice::<
-            BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
-        >(&round2_shares)
-        .map_err(|_| Error::FailedToGetRound2Packages)?;
-
-        for (identifier, round2_payload) in shares.iter() {
-            let peer_id = self.frost_id_map.get(&identifier).ok_or(Error::PeerIdNotFound)?;
-            self.gossip_to_peer(
-                DkgPayload {
-                    // From us
-                    identifier: self.personal_frost_identifier.serialize().to_vec(),
-                    payload: serde_json::to_vec(&round2_payload).unwrap(),
-                },
-                DkgEventResponseType::DkgRound2,
-                peer_id.clone(),
-            )
-            .await?;
-        }
+        self.distribute_round2_packages(dkg2_package).await?;
 
         Ok(())
     }
