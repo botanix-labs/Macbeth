@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration};
+use std::{collections::HashSet, str::FromStr, time::Duration};
 
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
@@ -33,9 +33,10 @@ struct Pegin {
 pub async fn do_signing(
     clients: &mut Vec<BtcServerClient<Channel>>,
     bitcoind: &bitcoincore_rpc::Client,
+    signing_session_id: &[u8; 32],
 ) -> Result<bitcoin::Transaction, Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
-    let signing_session_id = [0u8; 32];
+
     let coordinator_index = clients.len() - 1;
     let mut coordinator = clients.get(coordinator_index).cloned().unwrap();
     // First step: get the PSBT
@@ -54,7 +55,7 @@ pub async fn do_signing(
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
             signing_session_id: signing_session_id.to_vec(),
             checkpoint_block_hash: checkpoint[..].to_vec(),
-            utxo_merkle_root: utxo_merkle,
+            utxo_merkle_root: utxo_merkle.clone(),
         }))
         .await
         .map_err(Error::Request)?
@@ -133,6 +134,28 @@ pub async fn do_signing(
     assert!(finalized.is_ok());
     let psbt = bitcoin::Psbt::deserialize(&finalized.unwrap().into_inner().psbt).unwrap();
     let final_tx = psbt.extract_tx().expect("valid tx");
+    let mut witnesses = vec![];
+    for input in final_tx.input.iter() {
+        let mut bytes = vec![];
+        input.witness.consensus_encode(&mut bytes).unwrap();
+        witnesses.push(bytes);
+    }
+
+    for (index, client) in clients.iter_mut().enumerate() {
+        // skip the coordinator here
+        if coordinator_index == index {
+            continue;
+        }
+
+        client
+            .signer_finalize(tonic::Request::new(client::FinalizeSignerRequest {
+                witness: witnesses.clone(),
+                checkpoint_block_hash: checkpoint[..].to_vec(),
+                utxo_merkle_root: utxo_merkle.clone(),
+            }))
+            .await
+            .map_err(Error::Request)?;
+    }
 
     Ok(final_tx)
 }
@@ -242,7 +265,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         send_pegout_notification(c, amount.to_sat(), 1).await?;
     }
 
-    let final_tx = do_signing(&mut clients, &bitcoind).await?;
+    let final_tx = do_signing(&mut clients, &bitcoind, &[0u8; 32]).await?;
 
     // Lets make sure it was broadcasted
     let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None).expect("valid tx");
@@ -252,98 +275,15 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // One output should be the change output
     assert_eq!(final_tx.output.len(), 2);
 
-    // check that all the inputs are from the pegins
-    // let err = finalized.err().unwrap();
-    // assert_eq!(err.code(), tonic::Code::Internal);
-    // Test should fail here after `psbt.finalize_mut()`.
-    // These inputs don't actually exist on the regtest chain so there is nothing to be spent.
-    // In the future we can generate some addresses send funds and use those outpoints for this
-    // test.
-    // assert!(
-    //     err.message().contains("bad-txns-inputs-missingorspent")
-    //         || err.message().contains("Missing inputs")
-    // );
-
-    /*
-    // Lets try spending again, this time should be spending non tweaked inputs (change)
-    // First lets get a new signing session id
-    let signing_session_id = [1u8; 32];
-    // First step: get the PSBT
-    let original_psbt = coordinator
-        .get_psbt(tonic::Request::new(client::MakeTxRequest {
-            outputs: vec![client::Output {
-                address: "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string(),
-                // At this point there should be 200 sats in the wallet
-                value: 200,
-            }],
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .map_err(Error::Request)?
-        .into_inner()
-        .psbt;
-
-    // Round 1 signing
-    // Signers will add their signing commitments to the psbt
-    let mut round1_signing_commitments: Vec<SigningPackage> = vec![];
-    for (_, client) in clients.iter_mut().enumerate() {
-        let c_signing = client
-            .get_round1_signing_package(tonic::Request::new(client::SigningPackageRequest {
-                psbt: original_psbt.clone(),
-                signing_session_id: signing_session_id.to_vec(),
-            }))
+    for c in clients.iter_mut() {
+        let utxos = c
+            .get_all_utxos(tonic::Request::new(client::Empty {}))
             .await
-            .map_err(Error::Request)?
-            .into_inner();
-        round1_signing_commitments.push(c_signing);
+            .unwrap()
+            .into_inner()
+            .utxos;
+        it_info_print!("utxos: {:?}", utxos);
+        assert_eq!(utxos.len(), 5);
     }
-
-    // Coordinating node will collect the PSBTs with the signing commitments
-    for signing_package in round1_signing_commitments.into_iter() {
-        coordinator
-            .new_round1_signing_package(tonic::Request::new(signing_package))
-            .await
-            .map_err(Error::Request)?;
-    }
-
-    // Get signing package
-    let signing_package = coordinator
-        .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .map_err(Error::Request)?
-        .into_inner();
-
-    // Signers should add their partial sigs to the psbt for each input
-    let mut round2_signing_commitments: Vec<SigningPackage> = vec![];
-    for (_, client) in clients.iter_mut().enumerate() {
-        let c_signing2 = client
-            .get_round2_signing_package(tonic::Request::new(client::SignPayload {
-                psbt: signing_package.clone().psbt,
-                signing_session_id: signing_session_id.to_vec(),
-            }))
-            .await
-            .map_err(Error::Request)?
-            .into_inner();
-        round2_signing_commitments.push(c_signing2);
-    }
-
-    // Coordinating node will collect the PSBTs with the partial sigs
-    for signing_package in round2_signing_commitments.into_iter() {
-        coordinator
-            .new_round2_signing_package(tonic::Request::new(signing_package))
-            .await
-            .map_err(Error::Request)?;
-    }
-
-    let _finalized = coordinator
-        .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
-            signing_session_id: signing_session_id.to_vec(),
-        }))
-        .await
-        .map_err(Error::Request)?;
-    */
-
     Ok(())
 }
