@@ -253,7 +253,6 @@ where
             }),
             bdk::wallet::coin_selection::Excess::NoChange { .. } => None,
         };
-        println!("change: {:?}", change);
 
         let pegout_ids = outputs
             .into_iter()

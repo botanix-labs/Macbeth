@@ -41,13 +41,11 @@ pub struct SyncTxIndexRequest {
 pub struct FinalizeSignerRequest {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub witness: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    #[prost(message, repeated, tag = "2")]
-    pub outputs: ::prost::alloc::vec::Vec<Output>,
     /// The checkpoint of the best finalized Bitcoin block hash.
-    #[prost(bytes = "vec", tag = "3")]
+    #[prost(bytes = "vec", tag = "2")]
     pub checkpoint_block_hash: ::prost::alloc::vec::Vec<u8>,
     /// The merkle root of our wallet's UTXO set.
-    #[prost(bytes = "vec", tag = "4")]
+    #[prost(bytes = "vec", tag = "3")]
     pub utxo_merkle_root: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

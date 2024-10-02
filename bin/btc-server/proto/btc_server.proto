@@ -91,11 +91,10 @@ message SyncTxIndexRequest {
 
 message FinalizeSignerRequest {
     repeated bytes witness = 1;
-    repeated Output outputs = 2;
     // The checkpoint of the best finalized Bitcoin block hash.
-    bytes checkpoint_block_hash = 3;
+    bytes checkpoint_block_hash = 2;
     // The merkle root of our wallet's UTXO set.
-    bytes utxo_merkle_root = 4;
+    bytes utxo_merkle_root = 3;
 }
 
 message ResetAllUtxosRequest {
