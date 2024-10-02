@@ -1,6 +1,6 @@
 use std::{str::FromStr, time::Duration};
 
-use bitcoin::Address;
+use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
 use client::{SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
@@ -18,18 +18,13 @@ use crate::{
     },
 };
 
-const INPUTS_TO_SPEND: usize = 2;
+const NUM_PEGINS: usize = 5;
 
-struct Pegins {
-    pub eth_addresses: Vec<ethers::core::types::Address>,
-    pub btc_addresses: Vec<Address>,
-    pub txids: Vec<[u8; 32]>,
-}
-
-impl Pegins {
-    fn new() -> Self {
-        Pegins { eth_addresses: Vec::new(), btc_addresses: Vec::new(), txids: Vec::new() }
-    }
+struct Pegin {
+    pub eth_address: ethers::core::types::Address,
+    pub btc_address: bitcoin::Address,
+    pub outpoint: bitcoin::OutPoint,
+    pub amount: bitcoin::Amount,
 }
 
 pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
@@ -47,18 +42,11 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     }
     let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
     // generate a block to the network looks live
-    bitcoind.generate_to_address(1, &address).expect("generate to address");
+    bitcoind.generate_to_address(202, &address).expect("generate to address");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // create pegins container
-    let mut pegins = Pegins::new();
-
-    // create INPUTS_TO_SPEND pegins
-    for _ in 0..INPUTS_TO_SPEND {
-        let eth_address = ethers::core::types::Address::random();
-        pegins.eth_addresses.push(eth_address);
-        pegins.txids.push(rand::random::<[u8; 32]>());
-    }
+    let mut pegins = vec![];
 
     // create a signing session id
     let signing_session_id = [0u8; 32];
@@ -81,16 +69,13 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
 
     // run the dkg
     do_dkg(&mut clients).await?;
-
-    // let say coordinator is account 0
-    let coordinator_index: usize = clients.len() - 1;
-    let mut coordinator = clients.get(coordinator_index).cloned().unwrap();
-
-    // get the aggregate pk from any of the clients
-    // Here we are signing for a INPUTS_TO_SPEND inputs that are tweaked differently
-    for input in 0..INPUTS_TO_SPEND {
-        let eth_address = pegins.eth_addresses.get(input).copied().unwrap();
-        let pk = coordinator
+    let amount_to_send = bitcoin::Amount::from_sat(100_000);
+    // create NUM_PEGINS pegins
+    for _ in 0..NUM_PEGINS {
+        let eth_address = ethers::core::types::Address::random();
+        // Lets get the gateway address for this eth address
+        let mut client = clients.get(0).cloned().unwrap();
+        let res = client
             .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
@@ -98,23 +83,50 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             .map_err(Error::Request)?
             .into_inner();
         let btc_address =
-            Address::from_str(&pk.gateway_address).expect("valid address").assume_checked();
-        pegins.btc_addresses.push(btc_address);
+            Address::from_str(&res.gateway_address).expect("valid address").assume_checked();
+        let txid = bitcoind
+            .send_to_address(&btc_address, amount_to_send, None, None, None, None, None, None)
+            .expect("send to address");
+
+        // Generate some block to confirm it
+        bitcoind.generate_to_address(2, &address).expect("generate to address");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let tx_res = bitcoind.get_transaction(&txid, None).expect("valid tx");
+        let pegin_tx = tx_res.transaction().expect("valid tx");
+        let spk = btc_address.script_pubkey();
+        let (vout, pegin_output) =
+            pegin_tx.output.iter().enumerate().find(|(_, o)| o.script_pubkey == spk).unwrap();
+
+        pegins.push(Pegin {
+            eth_address,
+            btc_address,
+            outpoint: bitcoin::OutPoint { txid, vout: vout as u32 },
+            amount: pegin_output.value,
+        });
     }
+
+    // let say coordinator is account 0
+    let coordinator_index: usize = clients.len() - 1;
+    let mut coordinator = clients.get(coordinator_index).cloned().unwrap();
+
+    // get the aggregate pk from any of the clients
+    // Here we are signing for a NUM_PEGINS inputs that are tweaked differently
 
     // Notify peg ins to all peers
     // signers will not sign if they cannot locate the UTXOs they are being requested to sign
     for c in clients.iter_mut() {
-        for input in 0..INPUTS_TO_SPEND {
-            let txid = pegins.txids.get(input).copied().unwrap();
-            let eth_address = pegins.eth_addresses.get(input).copied().unwrap();
-            let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
+        for pegin in pegins.iter() {
+            let ot = pegin.outpoint;
+            let mut txid_bytes = Vec::with_capacity(32);
+            ot.txid.consensus_encode(&mut txid_bytes).unwrap();
             send_pegin_notification(
                 c,
-                btc_address.clone(),
-                hex_encode(eth_address),
-                txid,
-                100_000_000, // Amount
+                pegin.btc_address.clone(),
+                hex_encode(pegin.eth_address),
+                txid_bytes.try_into().unwrap(),
+                ot.vout,
+                pegin.amount.to_sat(),
             )
             .await?;
         }
@@ -122,7 +134,9 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
 
     // Notify some pending pegouts
     for c in clients.iter_mut() {
-        send_pegout_notification(c, 1_000, 1).await?;
+        // Each pegin is 100_000 satoshis, spending 100_000 should spend at least 2 inputs
+        let amount = bitcoin::Amount::from_sat(100_000);
+        send_pegout_notification(c, amount.to_sat(), 1).await?;
     }
 
     // First step: get the PSBT
@@ -216,17 +230,29 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         }))
         .await;
 
-    assert!(finalized.is_err());
-    let err = finalized.err().unwrap();
-    assert_eq!(err.code(), tonic::Code::Internal);
+    assert!(finalized.is_ok());
+    let psbt = bitcoin::Psbt::deserialize(&finalized.unwrap().into_inner().psbt).unwrap();
+    let final_tx = psbt.extract_tx().expect("valid tx");
+
+    // Lets make sure it was broadcasted
+    let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None).expect("valid tx");
+    it_info_print!("final tx_res: {:?}", tx_res);
+
+    assert_eq!(final_tx.input.len(), 2);
+    // One output should be the change output
+    assert_eq!(final_tx.output.len(), 2);
+
+    // check that all the inputs are from the pegins
+    // let err = finalized.err().unwrap();
+    // assert_eq!(err.code(), tonic::Code::Internal);
     // Test should fail here after `psbt.finalize_mut()`.
     // These inputs don't actually exist on the regtest chain so there is nothing to be spent.
     // In the future we can generate some addresses send funds and use those outpoints for this
     // test.
-    assert!(
-        err.message().contains("bad-txns-inputs-missingorspent") ||
-            err.message().contains("Missing inputs")
-    );
+    // assert!(
+    //     err.message().contains("bad-txns-inputs-missingorspent")
+    //         || err.message().contains("Missing inputs")
+    // );
 
     /*
     // Lets try spending again, this time should be spending non tweaked inputs (change)
