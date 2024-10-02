@@ -418,6 +418,10 @@ where
                         // verification
                         txs.insert(0, non_deterministic_data_bytes);
 
+                        // clear the mempool of txs that are in the block
+                        let tx_hashes = block.body.iter().map(|tx| tx.hash()).collect::<Vec<_>>();
+                        self.pool.remove_transactions(tx_hashes);
+
                         ResponsePrepareProposal { txs }
                     }
                 }
