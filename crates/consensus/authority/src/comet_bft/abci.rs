@@ -236,6 +236,12 @@ where
             .expect("have block")
             .seal(best_header.hash());
 
+        let parent_block =
+            BlockReaderIdExt::block_by_id(&client, BlockId::hash(best_header.parent_hash))
+                .expect("have parent")
+                .expect("have block")
+                .seal(best_header.parent_hash);
+
         // let builder_config = EthPayloadBuilderAttributes::new(best_block.hash(), );
         let payload_attributes = PayloadAttributes {
             // Attributes here dont really matter
@@ -244,7 +250,7 @@ where
             prev_randao: FixedBytes::<32>::random(),
             suggested_fee_recipient: Address::ZERO,
             withdrawals: None,
-            parent_beacon_block_root: None,
+            parent_beacon_block_root: parent_block.parent_beacon_block_root,
         };
 
         let payload_builder_attributes =
