@@ -179,6 +179,7 @@ pub async fn send_pegin_notification(
     address: Address,
     eth_address: String,
     txid: [u8; 32],
+    vout: u32,
     amount: u64,
 ) -> Result<(), Error> {
     let mut prev_out_bytes = Vec::new();
@@ -188,7 +189,7 @@ pub async fn send_pegin_notification(
             value: Amount::from_sat(amount).to_sat(),
             script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
         }),
-        outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout: 1 }),
+        outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout }),
         eth_address,
     }]
     .to_vec();

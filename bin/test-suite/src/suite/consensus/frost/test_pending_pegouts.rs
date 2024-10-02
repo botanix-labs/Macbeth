@@ -4,7 +4,6 @@ use bitcoin::Address;
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::pegout_id::PegoutId;
 use hex::{self, encode as hex_encode};
-use reth_chainspec::BOTANIX_TESTNET;
 
 use crate::{
     it_info_print,
@@ -110,6 +109,7 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
                 btc_address.clone(),
                 hex_encode(eth_address),
                 txid,
+                0,           // vout
                 100_000_000, // Amount
             )
             .await?;
