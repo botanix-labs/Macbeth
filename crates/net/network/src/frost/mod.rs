@@ -167,6 +167,8 @@ pub struct SigningResponse {
     pub signing_session_id: Vec<u8>,
     /// Frost data
     pub psbt: Vec<u8>,
+    /// Epoch block hash
+    pub epoch_block_hash: Vec<u8>,
 }
 
 impl fmt::Display for SigningResponse {

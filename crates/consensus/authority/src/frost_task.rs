@@ -50,6 +50,8 @@ pub(crate) struct FrostNotification {
     pub(crate) signing_session_id: Vec<u8>,
     /// The agglomerated psbts
     pub(crate) psbt: Vec<u8>,
+    /// Optional epoch block hash used to determine the coordinator
+    pub(crate) epoch_block_hash: Option<Vec<u8>>,
 }
 
 pub struct FrostTask<EF, BF, DB, ToFrostMan> {
@@ -226,6 +228,7 @@ where
                         .initate_signing_session(
                             frost_notification.signing_session_id,
                             frost_notification.psbt,
+                            frost_notification.epoch_block_hash.expect("epoch block hash to exist"),
                         )
                         .await
                     {
@@ -330,8 +333,13 @@ where
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, identifier, signing_session_id, psbt } =
-                            signing_response;
+                        let SigningResponse {
+                            response_type,
+                            identifier,
+                            signing_session_id,
+                            psbt,
+                            epoch_block_hash,
+                        } = signing_response;
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
                                 match self
@@ -340,6 +348,7 @@ where
                                         identifier,
                                         signing_session_id.clone(),
                                         psbt,
+                                        epoch_block_hash.clone(),
                                     )
                                     .await
                                 {
@@ -350,7 +359,10 @@ where
                                         error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 1 signing {:?}", e);
                                         let _ = self
                                             .signing_state_machine
-                                            .handle_errored_signing_process(signing_session_id)
+                                            .handle_errored_signing_process(
+                                                signing_session_id,
+                                                epoch_block_hash.clone(),
+                                            )
                                             .await;
                                     }
                                 }
@@ -361,6 +373,7 @@ where
                                     identifier,
                                     signing_session_id.clone(),
                                     psbt,
+                                    epoch_block_hash.clone(),
                                 )
                                 .await
                             {
@@ -371,7 +384,10 @@ where
                                     error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 1 signing package {:?}", e);
                                     let _ = self
                                         .signing_state_machine
-                                        .handle_errored_signing_process(signing_session_id)
+                                        .handle_errored_signing_process(
+                                            signing_session_id,
+                                            epoch_block_hash.clone(),
+                                        )
                                         .await;
                                 }
                             },
@@ -382,6 +398,7 @@ where
                                         identifier,
                                         signing_session_id.clone(),
                                         psbt,
+                                        epoch_block_hash.clone(),
                                     )
                                     .await
                                 {
@@ -392,7 +409,10 @@ where
                                         error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 2 signing package {:?}", e);
                                         let _ = self
                                             .signing_state_machine
-                                            .handle_errored_signing_process(signing_session_id)
+                                            .handle_errored_signing_process(
+                                                signing_session_id,
+                                                epoch_block_hash.clone(),
+                                            )
                                             .await;
                                     }
                                 }
@@ -403,6 +423,7 @@ where
                                     identifier,
                                     signing_session_id.clone(),
                                     psbt,
+                                    epoch_block_hash.clone(),
                                 )
                                 .await
                             {
@@ -413,7 +434,10 @@ where
                                     error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 2 signing package {:?}", e);
                                     let _ = self
                                         .signing_state_machine
-                                        .handle_errored_signing_process(signing_session_id)
+                                        .handle_errored_signing_process(
+                                            signing_session_id,
+                                            epoch_block_hash,
+                                        )
                                         .await;
                                 }
                             },

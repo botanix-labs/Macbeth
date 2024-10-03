@@ -91,13 +91,26 @@ pub struct SignRequest {
     pub signing_session_id: Vec<u8>,
     /// Frost data
     pub psbt: Vec<u8>,
+    /// Epoch block hash
+    pub epoch_block_hash: Vec<u8>,
 }
 
 impl SignRequest {
     /// Constructs a new sign Request using a frost identifier, signing session id and a psbt
     /// payload.
-    pub fn new(identifier: Vec<u8>, signing_session_id: Vec<u8>, psbt: Vec<u8>) -> Self {
-        SignRequest { version: MESSAGE_VERSION as u16, identifier, signing_session_id, psbt }
+    pub fn new(
+        identifier: Vec<u8>,
+        signing_session_id: Vec<u8>,
+        psbt: Vec<u8>,
+        epoch_block_hash: Vec<u8>,
+    ) -> Self {
+        SignRequest {
+            version: MESSAGE_VERSION as u16,
+            identifier,
+            signing_session_id,
+            psbt,
+            epoch_block_hash,
+        }
     }
 }
 
@@ -396,6 +409,9 @@ impl FrostProtoMessage {
                 // psbt
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
+                // epoch block hash
+                buf.put_u32_le(resource.epoch_block_hash.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.epoch_block_hash);
             }
             FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource) => {
                 // identifier
@@ -407,6 +423,9 @@ impl FrostProtoMessage {
                 // psbt
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
+                // epoch block hash
+                buf.put_u32_le(resource.epoch_block_hash.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.epoch_block_hash);
             }
             FrostProtoMessageKind::SignerRound2SigningPackage(resource) => {
                 // identifier
@@ -418,6 +437,9 @@ impl FrostProtoMessage {
                 // psbt
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
+                // epoch block hash
+                buf.put_u32_le(resource.epoch_block_hash.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.epoch_block_hash);
             }
             FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
                 // identifier
@@ -429,6 +451,9 @@ impl FrostProtoMessage {
                 // psbt
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
+                // epoch block hash
+                buf.put_u32_le(resource.epoch_block_hash.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.epoch_block_hash);
             }
             FrostProtoMessageKind::CoordinatorBlockProposal(resource) |
             FrostProtoMessageKind::PeerPreCommitment(resource) |
@@ -565,11 +590,17 @@ impl FrostProtoMessage {
                 buf.advance(4);
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
+                // epoch block hash
+                let epoch_block_hash_len =
+                    u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let epoch_block_hash = buf[..epoch_block_hash_len].to_vec();
 
                 FrostProtoMessageKind::SignerRound1SigningPackage(SignRequest::new(
                     identifier,
                     signing_session_id,
                     psbt,
+                    epoch_block_hash,
                 ))
             }
             FrostProtoMessageId::CoordinatorRound1SigningPackage => {
@@ -590,11 +621,17 @@ impl FrostProtoMessage {
                 buf.advance(4);
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
+                // epoch block hash
+                let epoch_block_hash_len =
+                    u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let epoch_block_hash = buf[..epoch_block_hash_len].to_vec();
 
                 FrostProtoMessageKind::CoordinatorRound1SigningPackage(SignRequest::new(
                     identifier,
                     signing_session_id,
                     psbt,
+                    epoch_block_hash,
                 ))
             }
             FrostProtoMessageId::SignerRound2SigningPackage => {
@@ -615,11 +652,17 @@ impl FrostProtoMessage {
                 buf.advance(4);
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
+                // epoch block hash
+                let epoch_block_hash_len =
+                    u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let epoch_block_hash = buf[..epoch_block_hash_len].to_vec();
 
                 FrostProtoMessageKind::SignerRound2SigningPackage(SignRequest::new(
                     identifier,
                     signing_session_id,
                     psbt,
+                    epoch_block_hash,
                 ))
             }
             FrostProtoMessageId::CoordinatorRound2SigningPackage => {
@@ -640,11 +683,17 @@ impl FrostProtoMessage {
                 buf.advance(4);
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
+                // epoch block hash
+                let epoch_block_hash_len =
+                    u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                buf.advance(4);
+                let epoch_block_hash = buf[..epoch_block_hash_len].to_vec();
 
                 FrostProtoMessageKind::CoordinatorRound2SigningPackage(SignRequest::new(
                     identifier,
                     signing_session_id,
                     psbt,
+                    epoch_block_hash,
                 ))
             }
             FrostProtoMessageId::CoordinatorBlockProposal => {
@@ -810,8 +859,12 @@ mod tests {
 
     #[test]
     fn test_signing_encoding_decoding() {
-        let signing_request =
-            SignRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0]);
+        let signing_request = SignRequest::new(
+            vec![1, 2, 3, 4],
+            vec![5, 6, 7, 8, 9],
+            vec![0, 1, 0, 1, 0],
+            vec![1, 0, 1, 0, 1],
+        );
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::SignerRound1SigningPackage,

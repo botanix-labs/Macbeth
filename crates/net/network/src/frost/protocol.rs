@@ -228,17 +228,32 @@ impl Stream for FrostProtoConnection {
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, identifier, signing_session_id, psbt } =
-                            signing_response;
+                        let SigningResponse {
+                            response_type,
+                            identifier,
+                            signing_session_id,
+                            psbt,
+                            epoch_block_hash,
+                        } = signing_response;
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
-                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                let req = SignRequest::new(
+                                    identifier,
+                                    signing_session_id,
+                                    psbt,
+                                    epoch_block_hash,
+                                );
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round1_signer_package_message(req).encoded(),
                                 ))
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => {
-                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                let req = SignRequest::new(
+                                    identifier,
+                                    signing_session_id,
+                                    psbt,
+                                    epoch_block_hash,
+                                );
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round1_coordinator_signing_package_message(
                                         req,
@@ -247,13 +262,23 @@ impl Stream for FrostProtoConnection {
                                 ))
                             }
                             SigningEventResponseType::SignerRound2SigningPackage => {
-                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                let req = SignRequest::new(
+                                    identifier,
+                                    signing_session_id,
+                                    psbt,
+                                    epoch_block_hash,
+                                );
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round2_signer_package_message(req).encoded(),
                                 ))
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => {
-                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                let req = SignRequest::new(
+                                    identifier,
+                                    signing_session_id,
+                                    psbt,
+                                    epoch_block_hash,
+                                );
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round2_coordinator_signing_package_message(
                                         req,
@@ -399,6 +424,7 @@ impl Stream for FrostProtoConnection {
                         identifier: data.identifier,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
+                        epoch_block_hash: data.epoch_block_hash,
                     }),
                     peer_id: this.peer_id,
                 }) {
@@ -412,6 +438,7 @@ impl Stream for FrostProtoConnection {
                         identifier: data.identifier,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
+                        epoch_block_hash: data.epoch_block_hash,
                     }),
                     peer_id: this.peer_id,
                 }) {
@@ -425,6 +452,7 @@ impl Stream for FrostProtoConnection {
                         identifier: data.identifier,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
+                        epoch_block_hash: data.epoch_block_hash,
                     }),
                     peer_id: this.peer_id,
                 }) {
@@ -438,6 +466,7 @@ impl Stream for FrostProtoConnection {
                         identifier: data.identifier,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
+                        epoch_block_hash: data.epoch_block_hash,
                     }),
                     peer_id: this.peer_id,
                 }) {

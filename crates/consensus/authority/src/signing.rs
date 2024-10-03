@@ -545,8 +545,11 @@ where
     }
 
     /// Gets the current federation coordinator. Returns None if it is us, otherwise Some if someone
-    /// else is
-    pub(crate) async fn get_coordinator(&self) -> Result<Option<(PeerData, u64)>, Error> {
+    /// The coordinator is determined by the epoch block hash: hash % len(authorities)
+    pub(crate) async fn get_coordinator(
+        &self,
+        epoch_block_hash: Vec<u8>,
+    ) -> Result<Option<(PeerData, u64)>, Error> {
         // check if we are in turn
         let leader_selection_window = self
             .chain_spec
@@ -556,6 +559,7 @@ where
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
             leader_selection_window,
+            epoch_block_hash,
         );
         match is_inturn {
             true => {
@@ -588,7 +592,7 @@ where
     }
 
     /// Returns if we are a coordinator or not
-    pub(crate) fn is_coordinator(&self) -> bool {
+    pub(crate) fn is_coordinator(&self, epoch_block_hash: Vec<u8>) -> bool {
         let leader_selection_window = self
             .chain_spec
             .leader_selection_window
@@ -597,6 +601,7 @@ where
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
             leader_selection_window,
+            epoch_block_hash,
         )
     }
 
@@ -623,6 +628,7 @@ where
         signing_package: SigningPackage,
         frost_identifier: Vec<u8>,
         response_type: SigningEventResponseType,
+        epoch_block_hash: Vec<u8>,
     ) -> Result<(), Error> {
         let SigningPackage { identifier: _, signing_session_id, psbt } = signing_package;
 
@@ -643,6 +649,7 @@ where
                         identifier: frost_identifier.clone(),
                         signing_session_id: signing_session_id.clone(),
                         psbt: psbt.clone(),
+                        epoch_block_hash: epoch_block_hash.clone(),
                     });
                     if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
                         peer_commands_tx
@@ -663,15 +670,17 @@ where
         &mut self,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
+        epoch_block_hash: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
         // the coordinator is always expected to be us in this case, i.e. None
-        let coordinator = self.get_coordinator().await?;
+        let coordinator = self.get_coordinator(epoch_block_hash.clone()).await?;
         if coordinator.is_some() {
             error!(target: "consensus::authority::signing::initate_signing_session", "A non-coordinator is trying to (re)initiate a signing process!");
             return Ok(());
         }
+        // TODO: refactor to use blockhash instead of timestamp
         let (start, end, time_passed, time_remaining) =
             self.get_inturn_interval_for_coordinator(None);
 
@@ -727,6 +736,7 @@ where
                 signing_round1_package,
                 self.personal_frost_identifier.serialize().to_vec(),
                 SigningEventResponseType::SignerRound1SigningPackage,
+                epoch_block_hash,
             )
             .await
         {
@@ -744,19 +754,21 @@ where
         _identifier: Vec<u8>,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
+        epoch_block_hash: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
         // return if we are a coordinator
-        if self.is_coordinator() {
+        if self.is_coordinator(epoch_block_hash.clone()) {
             return Ok(());
         }
 
         // get coordinator
-        let (coordinator_peer_data, coordinator_id) = match self.get_coordinator().await? {
-            Some(coord_data) => (coord_data.0, coord_data.1),
-            None => return Ok(()),
-        };
+        let (coordinator_peer_data, coordinator_id) =
+            match self.get_coordinator(epoch_block_hash.clone()).await? {
+                Some(coord_data) => (coord_data.0, coord_data.1),
+                None => return Ok(()),
+            };
         info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_id);
 
         // get coordinator time interval validity
@@ -831,6 +843,7 @@ where
                 identifier: signing_package_round1.identifier.clone(),
                 signing_session_id: signing_package_round1.signing_session_id.clone(),
                 psbt: signing_package_round1.psbt.clone(),
+                epoch_block_hash,
             });
 
             retry_future(
@@ -861,6 +874,7 @@ where
         identifier: Vec<u8>,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
+        epoch_block_hash: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
@@ -870,7 +884,7 @@ where
             warn!(target: "consensus::authority::signing::coordinator_process_round1", "is not in round1");
             return Ok(());
         }
-        if !self.is_coordinator() {
+        if !self.is_coordinator(epoch_block_hash.clone()) {
             warn!(target: "consensus::authority::signing::coordinator_process_round1", "we are not the coordinator");
             return Ok(());
         }
@@ -920,6 +934,7 @@ where
                     to_sign_payload.clone(),
                     identifier,
                     SigningEventResponseType::SignerRound2SigningPackage,
+                    epoch_block_hash,
                 )
                 .await
             {
@@ -942,11 +957,12 @@ where
         _identifier: Vec<u8>,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
+        epoch_block_hash: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
         // return if we are a coordinator
-        if self.is_coordinator() {
+        if self.is_coordinator(epoch_block_hash.clone()) {
             warn!(
                 target: "consensus::authority::signing::signer_process_round2",
                 "we are the coordinator",
@@ -972,7 +988,7 @@ where
             };
 
         // get coordinator
-        let coordinator = self.get_coordinator().await?;
+        let coordinator = self.get_coordinator(epoch_block_hash.clone()).await?;
         // if none, we are coordinator, if some, someone else is
         let (coordinator_peer_data, _coordinator_authority_index) = match coordinator {
             Some(coord_data) => (coord_data.0, coord_data.1),
@@ -994,6 +1010,7 @@ where
                 identifier: signing_package_round2.identifier.clone(),
                 signing_session_id: signing_package_round2.signing_session_id.clone(),
                 psbt: signing_package_round2.psbt.clone(),
+                epoch_block_hash,
             });
 
             retry_future(
@@ -1024,6 +1041,7 @@ where
         identifier: Vec<u8>,
         signing_session_id: Vec<u8>,
         psbt: Vec<u8>,
+        epoch_block_hash: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
@@ -1034,7 +1052,7 @@ where
         }
 
         // return if we are not a coordinator
-        if !self.is_coordinator() {
+        if !self.is_coordinator(epoch_block_hash.clone()) {
             warn!(
                 target: "consensus::authority::signing::coordinator_process_round2",
                 " we are not the coordinator",
@@ -1069,7 +1087,12 @@ where
         // try to finalize the signing
         if let Ok(sign_payload) = self.finalize_signing(signing_session_id.clone()).await {
             if let Err(e) = self.frost_task_tx.send(FrostNotificationMessage::FinalizedSignature(
-                FrostNotification { signing_session_id, psbt: sign_payload.psbt },
+                FrostNotification {
+                    signing_session_id,
+                    psbt: sign_payload.psbt,
+                    // don't need to pass the epoch block hash since it's not used at this point
+                    epoch_block_hash: None,
+                },
             )) {
                 error!(target: "consensus::authority::signing::coordinator_process_round2", "Error sending finalized signature {:?}", e);
             }
@@ -1083,6 +1106,7 @@ where
     pub(crate) async fn handle_errored_signing_process(
         &mut self,
         signing_session_id: Vec<u8>,
+        epoch_block_hash: Vec<u8>,
     ) -> Result<(), Error> {
         // parse the session id
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -1098,7 +1122,7 @@ where
 
         // only if we are coordinator AND we are in a failed state, then we can restart the signing
         // process provided there is enough time left
-        if self.is_coordinator() {
+        if self.is_coordinator(epoch_block_hash.clone()) {
             // check there is sufficient time remaining to retry the signing request
             let (_start, _end, time_passed, time_remaining) =
                 self.get_inturn_interval_for_coordinator(None);
@@ -1124,6 +1148,7 @@ where
                     psbt: signing_session
                         .original_psbt
                         .expect("Original psbt to be valid and present"),
+                    epoch_block_hash: Some(epoch_block_hash),
                 },
                 None => {
                     warn!(target: "consensus::authority::signing::handle_errored_signing_process", "Signing session psbt is empty for session id {:?}", &session_id);

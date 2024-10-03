@@ -47,12 +47,20 @@ pub fn validate_chain_version(edh_chain_version: u32) -> Result<(), ConsensusErr
 }
 
 /// Returns true if the authority is in turn
-pub fn is_inturn(authorities_len: u64, signer_index: u64, block_time: u64) -> bool {
-    let timestamp = unix_timestamp(); // Keep the timestamp in seconds
+/// Uses the epoch block hash to determine inturness
+pub fn is_inturn(
+    authorities_len: u64,
+    signer_index: u64,
+    block_time: u64,
+    epoch_block_hash: Vec<u8>,
+) -> bool {
+    // Convert the first 8 bytes of the hash into a u64
+    let hash_u64 =
+        u64::from_be_bytes(epoch_block_hash[0..8].try_into().expect("u64 from block hash"));
     let cycle_length = authorities_len * block_time; // Full cycle length in seconds
 
     // Calculate the position in the current cycle
-    let position_in_cycle = timestamp % cycle_length;
+    let position_in_cycle = hash_u64 % cycle_length;
 
     // Determine the current signer index based on the position in the cycle
     // Each signer's turn lasts for `block_time` seconds
