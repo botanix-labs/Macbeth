@@ -123,6 +123,14 @@ pub enum SigningFinalizeError {
     ExtractTxError(#[from] ExtractTxError),
     #[error("coordinator internal error: {0}")]
     CoordinatorError(#[from] CoordinatorError),
+    #[error("missing pegout: {0}")]
+    MissingPegout(PegoutId),
+    #[error("psbt to signing package conversion error: {0}")]
+    PsbtToSigningPackageConversionError(
+        #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError,
+    ),
+    #[error("FROST error: {0}")]
+    FrostError(#[from] frost::Error),
 }
 
 #[derive(Debug, Error)]
@@ -290,9 +298,33 @@ where
         &self,
         finalized_psbt: Psbt,
     ) -> Result<Psbt, SigningFinalizeError> {
+        let mut finalized_psbt = finalized_psbt.clone();
         let key_package =
             self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
-        let _secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
+        let pk_package =
+            self.db.get_public_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
+
+        let signing_packages = finalized_psbt
+            .signing_packages()
+            .map_err(SigningFinalizeError::PsbtToSigningPackageConversionError)?;
+
+        // Verify each inputs signature by aggregating and then verifying
+        for (index, psbt_input) in finalized_psbt.inputs.iter_mut().enumerate() {
+            let signing_package = signing_packages.get(index).expect("valid index").clone();
+            let partial_sig = psbt_input.all_partial_signatures();
+            let agg_sig = frost::aggregate(&signing_package, &partial_sig, &pk_package)?;
+
+            // Verify signature
+            if let Some(e) = psbt_input.eth_address() {
+                pk_package.verifying_key().verify(
+                    signing_package.message(),
+                    &agg_sig,
+                    Some(e.clone().as_slice()),
+                )?;
+            } else {
+                pk_package.verifying_key().verify(signing_package.message(), &agg_sig, None)?;
+            }
+        }
 
         let pending_pegouts = self.db.get_pending_pegouts()?;
         let outputs = pending_pegouts
@@ -306,10 +338,17 @@ where
             .map(|o| o.expect("valid pegout id"))
             .collect::<Vec<_>>();
 
+        let pending_pegouts = self.db.get_pending_pegouts()?;
+        // Check all pending pegouts are being settled in this tx
+        // TODO this should be checked at every step of the way. Put this check in validate_psbt
+        for pegout in pending_pegouts.iter() {
+            if !pegouts_ids.contains(&pegout.id) {
+                return Err(SigningFinalizeError::MissingPegout(pegout.id));
+            }
+        }
         let tx = finalized_psbt.clone().extract_tx()?;
-
-        info!("tx: {:?}", tx);
-        let tx_timestamp = SystemTime::now(); // We're finalizing it for the first time now.
+        // We're finalizing it for the first time now.
+        let tx_timestamp = SystemTime::now();
         self.add_tracked_tx(tx, &pending_pegouts, tx_timestamp).await?;
         self.db.remove_pending_pegout(&pegouts_ids)?;
         self.db.flush()?;

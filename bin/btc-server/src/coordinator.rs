@@ -292,7 +292,7 @@ where
         &self,
         signing_session_id: &[u8; 32],
     ) -> Result<Psbt, CoordinatorError> {
-        let _pk_package = self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
+        self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
 
         // Note that the tweaks and signing commitments should be explicitly verified by the signers
         // before signing Instead we can add it to the psbt as a proprietary field for each
@@ -307,7 +307,6 @@ where
                 }
             }
 
-            // TODO (armins) verify that the psbt is in a valid state for end of round 1
             validate_psbt(&psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
             return Ok(psbt);
         }
@@ -361,6 +360,11 @@ where
             psbt_input.sighash_type = Some(sighash_type);
             psbt_input.tap_key_sig = Some(bitcoin::taproot::Signature { sig: secp_sig, hash_ty });
         }
+
+        // Keep a copy of the original psbt as we need to add back the signing commitments and
+        // partial signatures `finalize_mut` removes everything that is not a witness to the
+        // inputs
+        let mut original_psbt = psbt.clone();
         if let Err(errs) =
             miniscript::psbt::PsbtExt::finalize_mut(&mut psbt, bitcoin::secp256k1::SECP256K1)
         {
@@ -371,15 +375,20 @@ where
             return Err(CoordinatorError::PbstFinalizationFailed(errs));
         }
 
+        for (index, input) in original_psbt.inputs.iter_mut().enumerate() {
+            input.final_script_witness = Some(
+                psbt.inputs[index]
+                    .final_script_witness
+                    .clone()
+                    .expect("final script witness placed by finalize_mut"),
+            );
+        }
+
         // Finally we should remove the utxos from the db and add the change one
         let tx = match miniscript::psbt::PsbtExt::extract(&psbt, bitcoin::secp256k1::SECP256K1) {
             Ok(tx) => tx,
             Err(e) => return Err(CoordinatorError::PbstFinalizationFailed(vec![e])),
         };
-
-        let secp_pk = pk_package.verifying_key().to_secp_pk()?;
-        let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
         let pegout_ids = psbt
             .outputs
@@ -427,7 +436,7 @@ where
             info!("Transaction already broadcasted and in pool");
         }
 
-        Ok(psbt)
+        Ok(original_psbt)
     }
 
     /// Returns signing status
