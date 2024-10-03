@@ -46,6 +46,11 @@ pub fn validate_chain_version(edh_chain_version: u32) -> Result<(), ConsensusErr
     Ok(())
 }
 
+/// Converts a BlockHash (32 bytes) to a u64 using the first 8 bytes
+pub fn block_hash_to_u64(block_hash: Vec<u8>) -> u64 {
+    u64::from_be_bytes(block_hash[0..8].try_into().expect("u64 from block hash"))
+}
+
 /// Returns true if the authority is in turn
 /// Uses the epoch block hash to determine inturness
 pub fn is_inturn(
@@ -54,9 +59,7 @@ pub fn is_inturn(
     block_time: u64,
     epoch_block_hash: Vec<u8>,
 ) -> bool {
-    // Convert the first 8 bytes of the hash into a u64
-    let hash_u64 =
-        u64::from_be_bytes(epoch_block_hash[0..8].try_into().expect("u64 from block hash"));
+    let hash_u64 = block_hash_to_u64(epoch_block_hash); // Convert the first 8 bytes of the hash into a u64
     let cycle_length = authorities_len * block_time; // Full cycle length in seconds
 
     // Calculate the position in the current cycle
@@ -120,6 +123,8 @@ pub fn current_inturn_index(
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
+
+    use reth_primitives::BlockHash;
 
     use super::*;
 
@@ -191,5 +196,15 @@ mod tests {
         let edh_chain_version = CHAIN_VERSION + 1;
         let result = validate_chain_version(edh_chain_version);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_convert_block_hash_to_u64() {
+        let block_hash = BlockHash::random().to_vec();
+        let block_hash_u64 = block_hash_to_u64(block_hash.clone());
+
+        let expected_block_hash = u64::from_be_bytes(block_hash[0..8].try_into().unwrap());
+
+        assert_eq!(block_hash_u64, expected_block_hash);
     }
 }

@@ -680,7 +680,6 @@ where
             error!(target: "consensus::authority::signing::initate_signing_session", "A non-coordinator is trying to (re)initiate a signing process!");
             return Ok(());
         }
-        // TODO: refactor to use blockhash instead of timestamp
         let (start, end, time_passed, time_remaining) =
             self.get_inturn_interval_for_coordinator(None);
 
