@@ -151,17 +151,9 @@ pub async fn send_pegout_notification(
     client: &mut client::BtcServerClient<Channel>,
     amount: u64,
     bitcoin_height: u64,
-) -> Result<(bitcoin::ScriptBuf, PegoutId), Error> {
-    // Using stdRng here as it implements Send
-    let mut rand = StdRng::from_entropy();
-    let mut pegout_id_bytes = [0u8; 36];
-    rand.fill_bytes(&mut pegout_id_bytes);
-    let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
-    let secp = bitcoin::secp256k1::Secp256k1::new();
-    let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
-    let pk = sk.public_key(&secp);
-
-    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+    pegout_id: PegoutId,
+    spk: bitcoin::ScriptBuf,
+) -> Result<(), Error> {
     let _ = client
         .notify_pegout(tonic::Request::new(client::NotifyPegoutRequest {
             pegout_id: pegout_id.clone().as_bytes().to_vec(),
@@ -171,7 +163,7 @@ pub async fn send_pegout_notification(
         }))
         .await
         .map_err(Error::PegoutNotification)?;
-    Ok((spk, pegout_id))
+    Ok(())
 }
 
 pub async fn send_pegin_notification(

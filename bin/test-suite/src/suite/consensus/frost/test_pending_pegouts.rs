@@ -4,6 +4,7 @@ use bitcoin::Address;
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::pegout_id::PegoutId;
 use hex::{self, encode as hex_encode};
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 
 use crate::{
     it_info_print,
@@ -117,12 +118,22 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
     }
 
     let mut pending_pegouts_sent: Vec<(bitcoin::ScriptBuf, PegoutId, u64, u64)> = vec![];
+    let secp = bitcoin::secp256k1::Secp256k1::new();
     // Send 50 pegout notifications
     for _ in 0..50 {
         // generate random amount and height
         let amount = rand::random::<u64>() % 1_000_000;
         let height = rand::random::<u64>() % 100_000;
-        let (spk, pegout_id) = send_pegout_notification(&mut clients[0], amount, height).await?;
+        // Using stdRng here as it implements Send
+        let mut rand = StdRng::from_entropy();
+        let mut pegout_id_bytes = [0u8; 36];
+        rand.fill_bytes(&mut pegout_id_bytes);
+        let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
+
+        let pk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest).public_key(&secp);
+        let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+
+        send_pegout_notification(&mut clients[0], amount, height, pegout_id, spk.clone()).await?;
         pending_pegouts_sent.push((spk, pegout_id, amount, height));
     }
 
