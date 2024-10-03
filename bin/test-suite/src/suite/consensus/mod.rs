@@ -251,7 +251,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 }
 
                 tries -= 1;
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
         }
         it_info_print!("Connected to all btc servers");

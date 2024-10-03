@@ -292,7 +292,7 @@ where
     ) -> Result<Psbt, SigningFinalizeError> {
         let key_package =
             self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
-        let secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
+        let _secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
 
         let pending_pegouts = self.db.get_pending_pegouts()?;
         let outputs = pending_pegouts

@@ -2,8 +2,10 @@ use std::{collections::HashSet, str::FromStr, time::Duration};
 
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
+use btcserverlib::pegout_id::PegoutId;
 use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use reth_chainspec::BOTANIX_TESTNET;
 use tonic::transport::Channel;
 
@@ -132,15 +134,8 @@ pub async fn do_signing(
         .await;
 
     assert!(finalized.is_ok());
-    let psbt = bitcoin::Psbt::deserialize(&finalized.unwrap().into_inner().psbt).unwrap();
-    let final_tx = psbt.extract_tx().expect("valid tx");
-    let mut witnesses = vec![];
-    for input in final_tx.input.iter() {
-        let mut bytes = vec![];
-        input.witness.consensus_encode(&mut bytes).unwrap();
-        witnesses.push(bytes);
-    }
-
+    let coord_psbt = bitcoin::Psbt::deserialize(&finalized.unwrap().into_inner().psbt).unwrap();
+    let final_tx = coord_psbt.clone().extract_tx().expect("valid tx");
     for (index, client) in clients.iter_mut().enumerate() {
         // skip the coordinator here
         if coordinator_index == index {
@@ -149,19 +144,18 @@ pub async fn do_signing(
 
         client
             .signer_finalize(tonic::Request::new(client::FinalizeSignerRequest {
-                witness: witnesses.clone(),
-                checkpoint_block_hash: checkpoint[..].to_vec(),
-                utxo_merkle_root: utxo_merkle.clone(),
+                psbt: coord_psbt.clone().serialize(),
             }))
             .await
             .map_err(Error::Request)?;
+
+        // TODO Signers should end up with the same txs after they finalize
     }
 
     Ok(final_tx)
 }
 
 pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
-    let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     let bitcoind = suite.global_context.bitcoind_rpc();
     // Load up the bitcoin wallet and generate some blocks
     for wallet in bitcoind.list_wallets().unwrap() {
@@ -258,11 +252,23 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         }
     }
 
+    // Using stdRng here as it implements Send
+    let mut rand = StdRng::from_entropy();
+    let mut pegout_id_bytes = [0u8; 36];
+    rand.fill_bytes(&mut pegout_id_bytes);
+    let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
+
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
+    let pk = sk.public_key(&secp);
+
+    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+
     // Notify some pending pegouts
     for c in clients.iter_mut() {
         // Each pegin is 100_000 satoshis, spending 100_000 should spend at least 2 inputs
         let amount = bitcoin::Amount::from_sat(100_000);
-        send_pegout_notification(c, amount.to_sat(), 1).await?;
+        send_pegout_notification(c, amount.to_sat(), 1, pegout_id, spk.clone()).await?;
     }
 
     let final_tx = do_signing(&mut clients, &bitcoind, &[0u8; 32]).await?;
@@ -282,7 +288,6 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             .unwrap()
             .into_inner()
             .utxos;
-        it_info_print!("utxos: {:?}", utxos);
         assert_eq!(utxos.len(), 5);
     }
     Ok(())
