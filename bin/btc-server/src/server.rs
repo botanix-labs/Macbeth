@@ -6,7 +6,6 @@ use bitcoin::{
 };
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
-use std::collections::BTreeMap;
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
@@ -660,22 +659,14 @@ where
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         let req = req.into_inner();
         info!("Received finalize signer request");
-        let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
-            .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
-        let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
-            .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
 
-        let fee_res = self.bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
-        let mut fee_rate = self.fall_back_fee_rate;
-        if let Ok(fee) = fee_res {
-            if let Some(f) = fee.fee_rate {
-                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
-            }
-        }
+        let finalized_psbt = bitcoin::Psbt::deserialize(&req.psbt).map_err(|e| {
+            error!("Failed to deserialize psbt: {}", e);
+            badarg!("Failed to deserialize psbt: {}", e)
+        })?;
 
-        let witnesses = req.witness;
         let psbt = self
-            .finalize_signer(fee_rate, witnesses, checkpoint, utxo_root)
+            .finalize_signer(finalized_psbt)
             .await
             .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
         let psbt_bytes = hex::decode(psbt.serialize_hex())

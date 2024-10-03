@@ -380,12 +380,7 @@ where
         let secp_pk = pk_package.verifying_key().to_secp_pk()?;
         let change_script =
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-        let targets = tx
-            .output
-            .iter()
-            .filter(|o| o.script_pubkey != change_script)
-            .cloned()
-            .collect::<Vec<_>>();
+
         let pegout_ids = psbt
             .outputs
             .iter()

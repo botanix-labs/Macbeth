@@ -288,16 +288,11 @@ where
 
     pub(crate) async fn finalize_signer(
         &self,
-        fee_rate: FeeRate,
-        witness: Vec<Vec<u8>>,
-        checkpoint_block: BlockHash,
-        utxo_merkle_root: sha256::Hash,
+        finalized_psbt: Psbt,
     ) -> Result<Psbt, SigningFinalizeError> {
         let key_package =
             self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
         let secp_pk = key_package.verifying_key().to_secp_pk().expect("valid pk");
-        let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
         let pending_pegouts = self.db.get_pending_pegouts()?;
         let outputs = pending_pegouts
@@ -311,41 +306,14 @@ where
             .map(|o| o.expect("valid pegout id"))
             .collect::<Vec<_>>();
 
-        let mut original_psbt = self
-            .make_tx(outputs, fee_rate, change_script.clone(), checkpoint_block, utxo_merkle_root)
-            .await?;
+        let tx = finalized_psbt.clone().extract_tx()?;
 
-        let hash_ty = bitcoin::sighash::TapSighashType::All;
-        let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
-        // Add witness to the psbt
-        for (index, w) in witness.iter().enumerate() {
-            let signature = bitcoin::taproot::Signature::from_slice(w.as_slice())?;
-            original_psbt.inputs[index].sighash_type = Some(sighash_type);
-            original_psbt.inputs[index].tap_key_sig = Some(signature);
-        }
-
-        if let Err(errs) = miniscript::psbt::PsbtExt::finalize_mut(
-            &mut original_psbt,
-            bitcoin::secp256k1::SECP256K1,
-        ) {
-            error!("Signer finalize: Had {} PSBT finalization errors:", errs.len());
-            for e in &errs {
-                error!("  PSBT finalization error: {}", e);
-            }
-            return Err(SigningFinalizeError::PsbtFinalizationFailed(errs));
-        }
-
-        let tx =
-            match miniscript::psbt::PsbtExt::extract(&original_psbt, bitcoin::secp256k1::SECP256K1)
-            {
-                Ok(tx) => tx,
-                Err(e) => return Err(SigningFinalizeError::PsbtFinalizationFailed(vec![e])),
-            };
-        let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
+        info!("tx: {:?}", tx);
+        let tx_timestamp = SystemTime::now(); // We're finalizing it for the first time now.
         self.add_tracked_tx(tx, &pending_pegouts, tx_timestamp).await?;
         self.db.remove_pending_pegout(&pegouts_ids)?;
         self.db.flush()?;
 
-        Ok(original_psbt)
+        Ok(finalized_psbt)
     }
 }
