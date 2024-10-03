@@ -49,4 +49,5 @@ pub mod context;
 pub mod macros;
 pub mod minting;
 pub mod server;
+pub mod shutdown;
 pub mod suite;

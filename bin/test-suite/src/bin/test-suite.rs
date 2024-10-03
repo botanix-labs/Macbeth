@@ -7,10 +7,6 @@ use std::sync::Arc;
 use test_suite::{
     config::CliArgs, context::GlobalContext, it_error_print, it_info_print, server::TestServer,
 };
-use tokio::{
-    signal::unix::{signal, SignalKind},
-    sync::broadcast,
-};
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<()> {
@@ -40,13 +36,7 @@ async fn main() -> Result<()> {
     // create the test server instance
     let suite_test_server = TestServer::new(resources_ctx.clone());
 
-    // stop signal for suite
-    let (stop_tx, stop_rx) = broadcast::channel(1);
-
-    // spawn terminate handlers routine
-    tokio::spawn(stop_signal(stop_tx, resources_ctx));
-
-    let result = tokio::spawn(async move { suite_test_server.start(stop_rx, test_to_run).await });
+    let result = tokio::spawn(async move { suite_test_server.start(test_to_run).await });
     match result.await.context("Failed to read test server result")? {
         Ok(_) => {
             it_info_print!("Testing complete.");
@@ -55,21 +45,6 @@ async fn main() -> Result<()> {
         Err(err) => {
             it_error_print!("Testing failed: {}", err);
             std::process::exit(1);
-        }
-    }
-}
-
-async fn stop_signal(stop_tx: broadcast::Sender<()>, _resources_ctx: Arc<GlobalContext>) {
-    let mut sigint = signal(SignalKind::interrupt()).expect("shutdown_listener");
-    let mut sigterm = signal(SignalKind::terminate()).expect("shutdown_listener");
-    tokio::select! {
-        _ = sigint.recv() => {
-            it_info_print!("Received SIGINT ...");
-            let _ = stop_tx.send(());
-        }
-        _ = sigterm.recv() => {
-            it_info_print!("Received SIGTERM ...");
-            let _ = stop_tx.send(());
         }
     }
 }

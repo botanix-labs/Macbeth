@@ -1,6 +1,7 @@
 use crate::{
     context::GlobalContext,
     it_info_print,
+    shutdown::StopHandle,
     suite::{consensus::ConsensusIntegrationTestSuite, Outcome, Suite},
 };
 use displaydoc::Display as DisplayDoc;
@@ -12,7 +13,7 @@ use thiserror::Error;
 pub enum Error {
     /// Test Run Failed.
     TestRunFailed,
-    /// Test Run Stopped
+    /// Test Run Stopped.
     TestRunStopped,
 }
 
@@ -25,28 +26,25 @@ impl TestServer {
         Self { context }
     }
 
-    pub async fn start(
-        mut self,
-        stop_tx: tokio::sync::broadcast::Receiver<()>,
-        test_to_run: String,
-    ) -> Result<(), Error> {
+    pub async fn start(mut self, test_to_run: String) -> Result<(), Error> {
         info!("Starting test instance...");
-        let result = self.run(stop_tx, test_to_run).await;
+        let result = self.run(test_to_run).await;
         result
     }
 
-    async fn run(
-        &mut self,
-        mut stop_tx: tokio::sync::broadcast::Receiver<()>,
-        test_to_run: String,
-    ) -> Result<(), Error> {
+    async fn run(&mut self, test_to_run: String) -> Result<(), Error> {
+        let mut stop_handle = StopHandle::new();
+        stop_handle.spawn_signal_listener();
         let mut test_suite = self.create_consensus_test_suite();
 
         tokio::select! {
-            _ = stop_tx.recv() => {
-                it_info_print!(">>>> Term Sig received.");
-                test_suite.destroy_local_context().await;
-                return Err(Error::TestRunStopped);
+            shutdown = stop_handle.wait_for_signal() => {
+                if shutdown {
+                    it_info_print!("Shutdown signal received. Destroying local context...");
+                    test_suite.destroy_local_context().await;
+                    return Err(Error::TestRunStopped);
+                }
+                Ok(())
             },
             res = async {
                     // TODO this will always be a vec of one element
