@@ -59,40 +59,6 @@ pub fn is_inturn(authorities_len: u64, signer_index: u64, block_time: u64) -> bo
     (position_in_cycle / block_time) % authorities_len == signer_index
 }
 
-/// Typedef for (start of current turn, end of current turn, time taken, time remaining)
-pub type CoordinatorInterval = (u64, u64, u64, u64);
-
-/// Returns the inturn interval for a signer index based on the seconds passed
-pub fn get_in_turn_interval(
-    authorities_len: u64,
-    signer_index: u64,
-    reference_timestamp: u64,
-    block_time: u64,
-) -> CoordinatorInterval {
-    assert!(block_time > 0, "block_time must be greater than 0");
-    // Calculate the length of one complete cycle
-    let cycle_length = authorities_len * block_time;
-
-    // Calculate how many complete cycles have passed since the epoch
-    let cycles_since_epoch = reference_timestamp / cycle_length;
-
-    // Calculate the start time of the current cycle
-    let current_cycle_start = cycles_since_epoch * cycle_length;
-
-    // Calculate the start time of the current turn for the given signer_index
-    let start_of_current_turn = current_cycle_start + (signer_index * block_time);
-
-    // End time of the current turn, ensuring full `block_time` seconds
-    let end_of_current_turn = start_of_current_turn + block_time - 1;
-
-    (
-        start_of_current_turn,
-        end_of_current_turn,
-        reference_timestamp - start_of_current_turn,
-        end_of_current_turn - reference_timestamp,
-    )
-}
-
 /// Returns the index of the authority which is currently in turn based on the seconds passed
 pub fn current_inturn_index(
     authorities_len: u64,
@@ -146,32 +112,6 @@ mod tests {
         let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
         assert_eq!(botanix_reward, 20);
         assert_eq!(beneficiary_reward, 80);
-    }
-
-    #[test]
-    fn get_inturn_interval_secs_based() {
-        let current_ts = super::unix_timestamp();
-        let authorities_len = 10;
-        let current_in_turn_signer =
-            current_inturn_index(authorities_len, current_ts, BLOCK_TIME_SECONDS);
-        let (start, end, time_passed, time_remaining) = get_in_turn_interval(
-            authorities_len,
-            current_in_turn_signer,
-            current_ts,
-            BLOCK_TIME_SECONDS,
-        );
-
-        println!(
-            "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
-            current_in_turn_signer,
-            start,
-            end,
-            current_ts,
-            time_passed,
-            time_remaining,
-        );
-        assert!(current_ts >= start);
-        assert!(current_ts <= end);
     }
 
     #[test]
