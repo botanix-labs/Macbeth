@@ -104,17 +104,20 @@ pub fn get_in_turn_interval(
     )
 }
 
-/// Returns the index of the authority which is currently in turn based on the seconds passed
+/// Returns the index of the authority which is currently in turn based on the epoch block hash
 pub fn current_inturn_index(
     authorities_len: u64,
-    reference_timestamp: u64,
+    epoch_block_hash: Vec<u8>,
     block_time: u64,
 ) -> u64 {
     // Calculate the length of one complete cycle
     let cycle_length = authorities_len * block_time;
 
+    // Convert the first 8 bytes of the hash into a u64
+    let hash_u64 = block_hash_to_u64(epoch_block_hash);
+
     // Calculate the position in the current cycle
-    let position_in_cycle = reference_timestamp % cycle_length;
+    let position_in_cycle = hash_u64 % cycle_length;
 
     // Determine the current signer index based on the position in the cycle
     (position_in_cycle / block_time) % authorities_len
@@ -164,9 +167,10 @@ mod tests {
     #[test]
     fn get_inturn_interval_secs_based() {
         let current_ts = super::unix_timestamp();
+        let epoch_block_hash = BlockHash::random().to_vec();
         let authorities_len = 10;
         let current_in_turn_signer =
-            current_inturn_index(authorities_len, current_ts, BLOCK_TIME_SECONDS);
+            current_inturn_index(authorities_len, epoch_block_hash, BLOCK_TIME_SECONDS);
         let (start, end, time_passed, time_remaining) = get_in_turn_interval(
             authorities_len,
             current_in_turn_signer,

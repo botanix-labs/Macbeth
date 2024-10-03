@@ -668,8 +668,9 @@ mod tests {
     #[test]
     fn get_inturn_interval_secs_based() {
         let current_ts = reth_consensus_common::utils::unix_timestamp();
+        let epoch_block_hash = BlockHash::random().to_vec();
         let authorities_len = 10;
-        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts, 5);
+        let current_in_turn_signer = current_inturn_index(authorities_len, epoch_block_hash, 5);
         let (start, end, time_passed, time_remaining) =
             get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts, 5);
 

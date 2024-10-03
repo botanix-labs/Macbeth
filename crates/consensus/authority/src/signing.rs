@@ -559,7 +559,7 @@ where
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
             leader_selection_window,
-            epoch_block_hash,
+            epoch_block_hash.clone(),
         );
         match is_inturn {
             true => {
@@ -571,7 +571,7 @@ where
                 let all_connected_frost_peers = self.get_all_peers_handle().await?;
                 let current_inturn_authority_index = current_inturn_index(
                     self.frost_config.authorities.len() as u64,
-                    unix_timestamp(),
+                    epoch_block_hash,
                     leader_selection_window,
                 );
                 let current_inturn_authority_frost_identifier =
