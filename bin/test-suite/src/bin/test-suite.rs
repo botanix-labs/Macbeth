@@ -1,4 +1,3 @@
-extern crate tracing;
 use anyhow::{Context, Result};
 use reth_tracing::{
     tracing_subscriber::filter::LevelFilter, LayerInfo, LogFormat, RethTracer, Tracer,

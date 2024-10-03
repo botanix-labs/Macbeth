@@ -38,18 +38,19 @@ use std::{
 use tonic::transport::Channel;
 use tracing::info;
 // scopes
+mod cometbft;
 mod common;
 mod frost;
 mod invalid_transactions;
 mod pbft;
 mod rpc_node;
+
 pub struct ConsensusIntegrationTestSuite {
     pub timeout: Duration,
     pub global_context: Arc<GlobalContext>,
     pub outcomes: Vec<Outcome>,
     pub local_context: LocalContext,
 }
-
 pub struct LocalContext {
     // btc
     pub btc_processes: Option<Vec<SpawnedBtcServerProcess>>,
@@ -255,13 +256,31 @@ impl LocalContext {
 }
 
 pub struct CreateTestConfig {
-    pub should_create_poa_nodes: bool,
-    pub should_create_rpc_node: bool,
+    pub create_poa_nodes: bool,
+    pub create_rpc_nodes: bool,
+    pub create_btc_servers: bool,
+    pub create_cometbft_nodes: bool,
+}
+
+impl CreateTestConfig {
+    fn full_scope() -> Self {
+        Self {
+            create_poa_nodes: true,
+            create_rpc_nodes: true,
+            create_btc_servers: true,
+            create_cometbft_nodes: true,
+        }
+    }
 }
 
 impl Default for CreateTestConfig {
     fn default() -> Self {
-        Self { should_create_poa_nodes: true, should_create_rpc_node: false }
+        Self {
+            create_poa_nodes: false,
+            create_rpc_nodes: false,
+            create_btc_servers: false,
+            create_cometbft_nodes: false,
+        }
     }
 }
 
@@ -276,72 +295,103 @@ impl Suite for ConsensusIntegrationTestSuite {
         match test_to_run.as_str() {
             "dkg_flow" => run_test!(
                 self,
-                CreateTestConfig { should_create_poa_nodes: false, should_create_rpc_node: false },
+                CreateTestConfig { create_btc_servers: true, ..Default::default() },
                 frost::test_dkg::dkg_flow
             ),
             "many_inputs_signing" => run_test!(
                 self,
-                CreateTestConfig { should_create_poa_nodes: false, should_create_rpc_node: false },
+                CreateTestConfig { create_btc_servers: true, ..Default::default() },
                 frost::test_signing::test_many_inputs_signing
             ),
             "utxo_commitment" => run_test!(
                 self,
-                CreateTestConfig { should_create_poa_nodes: false, should_create_rpc_node: false },
+                CreateTestConfig { create_btc_servers: true, ..Default::default() },
                 frost::test_utxo_commitment::test_utxo_commitment
+            ),
+            "cometbft_networking" => run_test!(
+                self,
+                CreateTestConfig { create_cometbft_nodes: true, ..Default::default() },
+                cometbft::test_cometbft_networking::test_cometbft_networking
             ),
             // TODO comment these back in as we fix the test suite
             // "block_builder" => {
-            //     run_test!(self, Default::default(), frost::test_block_builder::block_builder)
+            //     run_test!(
+            //         self,
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         frost::test_block_builder::block_builder
+            //     )
             // }
             // "batch_pegins" => {
-            //     run_test!(self, Default::default(), frost::test_batch_pegins::batch_pegins)
+            //     run_test!(
+            //         self,
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         frost::test_batch_pegins::batch_pegins
+            //     )
             // }
             // "utxo_sync" => {
-            //     run_test!(self, Default::default(), frost::test_utxo_sync::utxo_sync)
+            //     run_test!(
+            //         self,
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         frost::test_utxo_sync::utxo_sync
+            //     )
             // }
             // "frost_e2e_stable" => {
-            //     run_test!(self, Default::default(), frost::test_frost_e2e::frost_e2e_stable)
+            //     run_test!(
+            //         self,
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         frost::test_frost_e2e::frost_e2e_stable
+            //     )
             // }
-            // "frost_e2e_failed_signing_disconnect" => run_test!(
-            //     self,
-            //     Default::default(),
-            //     frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
-            // ),
-            // "e2e_peer_disconnect" => run_test!(
-            //     self,
-            //     Default::default(),
-            //     frost::test_e2e_peer_disconnect::e2e_peer_disconnect,
-            // ),
+            // "frost_e2e_failed_signing_disconnect" => {
+            //     run_test!(
+            //         self,
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },
+            //         frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
+            //     )
+            // }
+            // "e2e_peer_disconnect" => {
+            //     run_test!(
+            //         self,
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         frost::test_e2e_peer_disconnect::e2e_peer_disconnect,
+            //     )
+            // }
             // "test_edh_size_limit" => {
-            //     run_test!(self, Default::default(),
-            // frost::test_edh_size_limit::test_edh_size_limit,) }
+            //     run_test!(
+            //         self,
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         frost::test_edh_size_limit::test_edh_size_limit,
+            //     )
+            // }
             // "rpc_node" => {
             //     run_test!(
             //         self,
-            //         CreateTestConfig {
-            //             should_create_poa_nodes: true,
-            //             should_create_rpc_node: true
-            //         },
+            //         CreateTestConfig::full_scope(),
             //         rpc_node::test_rpc_node::test_rpc_node
             //     )
             // }
             // "invalid_pegin" => {
             //     run_test!(
             //         self,
-            //         Default::default(),
-            //         invalid_transactions::test_invalid_pegin::invalid_pegin
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         invalid_transactions::test_invalid_pegin::invalid_pegin
             //     )
             // }
             // "invalid_pegout" => {
             //     run_test!(
             //         self,
-            //         Default::default(),
-            //         invalid_transactions::test_invalid_pegout::invalid_pegout
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         invalid_transactions::test_invalid_pegout::invalid_pegout
             //     )
             // }
             // "test_mempool_gossip" => {
-            //     run_test!(self, Default::default(),
-            // frost::test_mempool_gossip::test_mempool_gossip) }
+            //     run_test!(
+            //         self,
+            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
+            // },         frost::test_mempool_gossip::test_mempool_gossip
+            //     )
+            // }
             _ => {
                 panic!("Test not found");
             }
@@ -481,73 +531,78 @@ impl Suite for ConsensusIntegrationTestSuite {
         create_test_config: CreateTestConfig,
     ) -> anyhow::Result<()> {
         // =================== BTC SERVERS ================== //
-        self.local_context.btc_processes =
-            Some(spawn_n_btc_server_processes(self.global_context.clone())?);
-        // let btc servers come up
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        // try to connect to each btc server before moving on
-        let mut tries = 5;
-        let mut successes = 0;
-        loop {
-            it_info_print!("Trying to connect to all btc servers");
-            if successes == self.global_context.fed_instances {
-                break;
+        let mut btc_server_clients = vec![];
+        if create_test_config.create_btc_servers {
+            self.local_context.btc_processes =
+                Some(spawn_n_btc_server_processes(self.global_context.clone())?);
+            // let btc servers come up
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            // try to connect to each btc server before moving on
+            let mut tries = 5;
+            let mut successes = 0;
+            loop {
+                it_info_print!("Trying to connect to all btc servers");
+                if successes == self.global_context.fed_instances {
+                    break;
+                }
+                if tries == 0 {
+                    panic!("Failed to connect to all btc servers");
+                }
+                successes = 0;
+                for instance in 0..self.global_context.fed_instances {
+                    let port = self
+                        .local_context
+                        .get_btc_server_process_port(instance as usize)
+                        .context("could not find btc server at instance index")?;
+                    match client::BtcServerClient::connect(format!("http://localhost:{}", port))
+                        .await
+                    {
+                        Ok(_) => {
+                            it_info_print!("Connected to btc server at port", port);
+                            successes += 1;
+                        }
+                        Err(e) => {
+                            it_warn_print!("Failed to connect to btc server at port", port, e);
+                        }
+                    }
+
+                    tries -= 1;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                }
             }
-            if tries == 0 {
-                panic!("Failed to connect to all btc servers");
-            }
-            successes = 0;
+            it_info_print!("Connected to all btc servers!");
+            // Save the btc server clients and spawned processes in local context
             for instance in 0..self.global_context.fed_instances {
                 let port = self
                     .local_context
                     .get_btc_server_process_port(instance as usize)
                     .context("could not find btc server at instance index")?;
-                match client::BtcServerClient::connect(format!("http://localhost:{}", port)).await {
-                    Ok(_) => {
-                        it_info_print!("Connected to btc server at port", port);
-                        successes += 1;
-                    }
-                    Err(e) => {
-                        it_warn_print!("Failed to connect to btc server at port", port, e);
-                    }
-                }
-
-                tries -= 1;
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                let client = client::BtcServerClient::connect(format!("http://localhost:{}", port))
+                    .await
+                    .context("Unable to create and connect to a btc server client")?;
+                btc_server_clients.push(client.clone());
             }
-        }
-        it_info_print!("Connected to all btc servers!");
-        // Save the btc server clients and spawned processes in local context
-        let mut btc_server_clients = vec![];
-        for instance in 0..self.global_context.fed_instances {
-            let port = self
-                .local_context
-                .get_btc_server_process_port(instance as usize)
-                .context("could not find btc server at instance index")?;
-            let client = client::BtcServerClient::connect(format!("http://localhost:{}", port))
-                .await
-                .context("Unable to create and connect to a btc server client")?;
-            btc_server_clients.push(client.clone());
-        }
-        self.local_context.btc_server_clients = Some(btc_server_clients.clone());
+            self.local_context.btc_server_clients = Some(btc_server_clients.clone());
 
-        // short delay to prevent btc_server hitting `Unable to get public key`
-        // when starting poa nodes in tests
-        tokio::time::sleep(Duration::from_secs(5)).await;
+            // short delay to prevent btc_server hitting `Unable to get public key`
+            // when starting poa nodes in tests
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
 
         // =================== POA NODES ================== //
-        // then generate test fed members poa nodes
-        let (mut poa_nodes, tx, edh_authorities_list) = create_poa_nodes(
-            self.global_context.clone(),
-            self.local_context.btc_processes.as_ref(),
-        )
-        .await?;
+        if create_test_config.create_poa_nodes {
+            // then generate test fed members poa nodes
+            let (mut poa_nodes, tx, edh_authorities_list) = create_poa_nodes(
+                self.global_context.clone(),
+                self.local_context.btc_processes.as_ref(),
+            )
+            .await?;
 
-        self.local_context.authorities = edh_authorities_list.clone();
-        let build_command_authorities_list = Arc::new(edh_authorities_list);
+            self.local_context.authorities = edh_authorities_list.clone();
+            let build_command_authorities_list = Arc::new(edh_authorities_list);
 
-        let mut spawned_poa_processes = vec![];
-        if create_test_config.should_create_poa_nodes {
+            let mut spawned_poa_processes = vec![];
+
             it_info_print!("Starting poa nodes");
             let mut rx = tx.subscribe();
             for (index, poa_node) in poa_nodes.iter() {
@@ -599,7 +654,7 @@ impl Suite for ConsensusIntegrationTestSuite {
 
         // =================== COMMET NODES ================== //
         let mut spawned_cometbft_processes = vec![];
-        if create_test_config.should_create_poa_nodes {
+        if create_test_config.create_cometbft_nodes {
             it_info_print!("Starting cometbft nodes ...");
             let (mut cometbft_nodes, tx, _) =
                 create_cometbft_nodes(self.global_context.clone()).await?;
@@ -611,17 +666,16 @@ impl Suite for ConsensusIntegrationTestSuite {
                 cometbft_node.await_initialization()?;
 
                 // wait for two seconds in between processes start
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
 
             // initialize cometbft botanix clients
             let mut cometbft_botanix_clients = vec![];
             for (index, cometbft_node) in cometbft_nodes.iter_mut() {
-                let botanix_eth_client =
-                    create_botanix_eth_client(cometbft_node.cometbft_rpc_app_port).await?;
-                cometbft_node.botanix_eth_client = Some(botanix_eth_client.clone());
-                cometbft_botanix_clients.push(botanix_eth_client);
-                it_info_print!("Botanix client created for poa member {}", index);
+                // let botanix_eth_client =
+                //     create_botanix_eth_client(cometbft_node.cometbft_rpc_app_port).await?;
+                // cometbft_node.botanix_eth_client = Some(botanix_eth_client.clone());
+                // cometbft_botanix_clients.push(botanix_eth_client);
             }
 
             self.local_context.cometbft_processes = Some(spawned_cometbft_processes);
@@ -630,13 +684,12 @@ impl Suite for ConsensusIntegrationTestSuite {
             self.local_context.cometbft_eth_providers = Some(cometbft_botanix_clients);
         }
 
-        // =================== RPC NODES ================== //
-        let (mut rpc_nodes, tx) = create_rpc_nodes(self.global_context.clone()).await?;
+        // // =================== RPC NODES ================== //
+        if create_test_config.create_rpc_nodes {
+            let (mut rpc_nodes, tx) = create_rpc_nodes(self.global_context.clone()).await?;
+            let build_command_authorities_list = Arc::new(self.local_context.authorities.clone());
+            let mut spawned_rpc_processes = vec![];
 
-        let build_command_authorities_list = Arc::new(self.local_context.authorities.clone());
-
-        let mut spawned_rpc_processes = vec![];
-        if create_test_config.should_create_rpc_node {
             it_info_print!("Starting rpc nodes ...");
             for (index, rpc_node) in rpc_nodes.iter_mut() {
                 it_info_print!("Starting rpc node", index);

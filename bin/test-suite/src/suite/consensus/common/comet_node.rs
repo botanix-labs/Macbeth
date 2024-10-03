@@ -2,9 +2,10 @@ use super::{botanix_client::BotanixEthClient, kill_process_at_port, poa_node::AB
 use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
 use anyhow::Context;
 use askama::Template;
+use bitcoin::hashes::{sha256, Hash};
 use reth::consensus_common::utils::unix_timestamp;
 use reth_network_peers::pk2id;
-use reth_primitives::{alloy_primitives::Keccak256, public_key_to_address, Address};
+use reth_primitives::{public_key_to_address, Address};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use serde::Serialize;
@@ -34,9 +35,10 @@ fn produce_base64_encoded_data(secret_key: &SecretKey) -> (String, String, Strin
     let public_key = secret_key.public_key(SECP256K1).serialize();
 
     // Calculate the address (first 20 bytes of the SHA-256 hash of the public key)
-    let mut hasher = Keccak256::new();
-    hasher.update(&public_key);
-    let address = &hasher.finalize()[..20]; // Take the first 20 bytes
+    let mut engine = sha256::Hash::engine();
+    engine.write_all(&public_key).expect("hashing to work");
+    let hash = sha256::Hash::from_engine(engine);
+    let address = &hash.to_byte_array()[..20];
 
     // Encode the public and private keys in Base64 format (as expected by Tendermint)
     let priv_key_base64 = base64::encode(secret_key.as_ref());
@@ -80,6 +82,8 @@ pub trait TemplateWriter {
         Self: askama::Template + Serialize,
     {
         let rendered_template = self.render().context("Failed to render dynamic template")?;
+        // tracing::info!(">>>>>>>>> {:?} <<<<<<<<<<<<< {:?}", filename.to_uppercase(),
+        // rendered_template);
 
         let mut file = OpenOptions::new()
             .write(true)
