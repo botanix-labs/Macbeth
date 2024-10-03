@@ -422,7 +422,7 @@ mod tests {
     use reth_primitives::{
         constants::ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
-        Bytes,
+        BlockHash, Bytes,
     };
 
     use super::*;
@@ -626,14 +626,28 @@ mod tests {
     fn is_inturn_true() {
         let authorities_len = 1;
         let signer_index = 0;
-        assert!(is_inturn(authorities_len, signer_index, ALLOWED_FUTURE_BLOCK_TIME_SECONDS));
+        let epoch_block_hash = BlockHash::random().to_vec();
+
+        assert!(is_inturn(
+            authorities_len,
+            signer_index,
+            ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
+            epoch_block_hash
+        ));
     }
 
     #[test]
     fn is_inturn_false() {
         let authorities_len = 1;
         let signer_index = 1;
-        assert!(!is_inturn(authorities_len, signer_index, ALLOWED_FUTURE_BLOCK_TIME_SECONDS));
+        let epoch_block_hash = BlockHash::random().to_vec();
+
+        assert!(!is_inturn(
+            authorities_len,
+            signer_index,
+            ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
+            epoch_block_hash
+        ));
     }
 
     #[test]
