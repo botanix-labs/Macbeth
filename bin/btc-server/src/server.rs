@@ -285,9 +285,7 @@ where
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
 
-        // let res = tonic::Response::new(rpc::FinalizeSigningResponse { transaction: psbt_bytes });
         let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
-
         Ok(res)
     }
 

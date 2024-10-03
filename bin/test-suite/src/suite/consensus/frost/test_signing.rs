@@ -1,4 +1,4 @@
-use std::{collections::HashSet, str::FromStr, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
@@ -93,7 +93,7 @@ pub async fn do_signing(
 
     // Signing Round 2
     // Get signing package
-    let signing_package = coordinator
+    let to_sign_package = coordinator
         .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
             signing_session_id: signing_session_id.to_vec(),
         }))
@@ -110,7 +110,7 @@ pub async fn do_signing(
         }
         let c_signing2 = client
             .get_round2_signing_package(tonic::Request::new(SigningPackageRequest {
-                psbt: signing_package.clone().psbt,
+                psbt: to_sign_package.clone().psbt,
                 signing_session_id: signing_session_id.to_vec(),
             }))
             .await
@@ -131,10 +131,12 @@ pub async fn do_signing(
         .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
             signing_session_id: signing_session_id.to_vec(),
         }))
-        .await;
+        .await
+        .expect("valid finalized request")
+        .into_inner();
 
-    assert!(finalized.is_ok());
-    let coord_psbt = bitcoin::Psbt::deserialize(&finalized.unwrap().into_inner().psbt).unwrap();
+    let coord_psbt = bitcoin::Psbt::deserialize(&finalized.clone().psbt).unwrap();
+    // TODO add some assertions for psbt here
     let final_tx = coord_psbt.clone().extract_tx().expect("valid tx");
     for (index, client) in clients.iter_mut().enumerate() {
         // skip the coordinator here
@@ -144,7 +146,7 @@ pub async fn do_signing(
 
         client
             .signer_finalize(tonic::Request::new(client::FinalizeSignerRequest {
-                psbt: coord_psbt.clone().serialize(),
+                psbt: finalized.clone().psbt,
             }))
             .await
             .map_err(Error::Request)?;
