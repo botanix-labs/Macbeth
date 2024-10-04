@@ -350,7 +350,7 @@ impl FederationMemberTestConfig {
         // use botanix chain spec
         let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
             .context("Can't deserialize Botanix Testnet genesis json")?;
-        let botanix_testnet = create_botanix_config_with_genesis(
+        let _botanix_testnet = create_botanix_config_with_genesis(
             genesis,
             BOTANIX_TESTNET.parent_confirmation_depth,
             self.botanix_fee_recipient.clone(),

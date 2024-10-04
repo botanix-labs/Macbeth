@@ -12,6 +12,10 @@ use anyhow::Context;
 use async_trait::async_trait;
 use client::BtcServerClient;
 use common::{
+    bitcoind_node::{
+        create_bitcoind_node, BitcoindNodeConfig, Notifications as BitcoindNotifications,
+        SpawnedBitcoindProcess,
+    },
     comet_node::{
         create_cometbft_nodes, CometBftNodeConfig, Notifications as CometbftNotifications,
         SpawnedCometBftProcess,
@@ -38,6 +42,7 @@ use std::{
 use tonic::transport::Channel;
 use tracing::info;
 // scopes
+mod bitcoind;
 mod cometbft;
 mod common;
 mod frost;
@@ -52,6 +57,10 @@ pub struct ConsensusIntegrationTestSuite {
     pub local_context: LocalContext,
 }
 pub struct LocalContext {
+    // bitcoind
+    pub bitcoind_process: Option<SpawnedBitcoindProcess>,
+    pub bitcoind_node: Option<BitcoindNodeConfig>,
+    pub bitcoind_notification: Option<tokio::sync::broadcast::Sender<BitcoindNotifications>>,
     // btc
     pub btc_processes: Option<Vec<SpawnedBtcServerProcess>>,
     pub btc_server_clients: Option<Vec<BtcServerClient<Channel>>>,
@@ -70,7 +79,7 @@ pub struct LocalContext {
     pub rpc_nodes: Option<HashMap<u16, NonFederationMemberTestConfig>>,
     pub rpc_notification: Option<tokio::sync::broadcast::Sender<RpcNotifications>>,
     pub rpc_eth_providers: Option<Vec<BotanixEthClient>>,
-    // all authority members in the federation
+    // authority members in the federation
     pub authorities: Vec<secp256k1::PublicKey>,
 }
 
@@ -253,9 +262,26 @@ impl LocalContext {
         let hs: HashSet<u16> = HashSet::from_iter(proxy_ports);
         hs.into_iter().collect()
     }
+
+    // bitcoind node
+    pub fn get_bitcoind_process_id(&self) -> u32 {
+        self.bitcoind_process
+            .as_ref()
+            .map(|bitcoind_process| bitcoind_process.child_process.id())
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    pub fn get_bitcoind_process_port(&self) -> u16 {
+        self.bitcoind_process
+            .as_ref()
+            .map(|bitcoind_process| bitcoind_process.port)
+            .unwrap_or_default()
+    }
 }
 
 pub struct CreateTestConfig {
+    pub create_bitcoind_node: bool,
     pub create_poa_nodes: bool,
     pub create_rpc_nodes: bool,
     pub create_btc_servers: bool,
@@ -265,6 +291,7 @@ pub struct CreateTestConfig {
 impl CreateTestConfig {
     fn full_scope() -> Self {
         Self {
+            create_bitcoind_node: true,
             create_poa_nodes: true,
             create_rpc_nodes: true,
             create_btc_servers: true,
@@ -276,6 +303,7 @@ impl CreateTestConfig {
 impl Default for CreateTestConfig {
     fn default() -> Self {
         Self {
+            create_bitcoind_node: false,
             create_poa_nodes: false,
             create_rpc_nodes: false,
             create_btc_servers: false,
@@ -295,17 +323,29 @@ impl Suite for ConsensusIntegrationTestSuite {
         match test_to_run.as_str() {
             "dkg_flow" => run_test!(
                 self,
-                CreateTestConfig { create_btc_servers: true, ..Default::default() },
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
                 frost::test_dkg::dkg_flow
             ),
             "many_inputs_signing" => run_test!(
                 self,
-                CreateTestConfig { create_btc_servers: true, ..Default::default() },
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
                 frost::test_signing::test_many_inputs_signing
             ),
             "utxo_commitment" => run_test!(
                 self,
-                CreateTestConfig { create_btc_servers: true, ..Default::default() },
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
                 frost::test_utxo_commitment::test_utxo_commitment
             ),
             "cometbft_networking" => run_test!(
@@ -313,85 +353,155 @@ impl Suite for ConsensusIntegrationTestSuite {
                 CreateTestConfig { create_cometbft_nodes: true, ..Default::default() },
                 cometbft::test_cometbft_networking::test_cometbft_networking
             ),
-            // TODO comment these back in as we fix the test suite
-            // "block_builder" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         frost::test_block_builder::block_builder
-            //     )
-            // }
-            // "batch_pegins" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         frost::test_batch_pegins::batch_pegins
-            //     )
-            // }
-            // "utxo_sync" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         frost::test_utxo_sync::utxo_sync
-            //     )
-            // }
-            // "frost_e2e_stable" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         frost::test_frost_e2e::frost_e2e_stable
-            //     )
-            // }
-            // "frost_e2e_failed_signing_disconnect" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },
-            //         frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
-            //     )
-            // }
-            // "e2e_peer_disconnect" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         frost::test_e2e_peer_disconnect::e2e_peer_disconnect,
-            //     )
-            // }
-            // "test_edh_size_limit" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         frost::test_edh_size_limit::test_edh_size_limit,
-            //     )
-            // }
-            // "rpc_node" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig::full_scope(),
-            //         rpc_node::test_rpc_node::test_rpc_node
-            //     )
-            // }
-            // "invalid_pegin" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         invalid_transactions::test_invalid_pegin::invalid_pegin
-            //     )
-            // }
-            // "invalid_pegout" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         invalid_transactions::test_invalid_pegout::invalid_pegout
-            //     )
-            // }
-            // "test_mempool_gossip" => {
-            //     run_test!(
-            //         self,
-            //         CreateTestConfig { create_rpc_nodes: false, ..CreateTestConfig::full_scope()
-            // },         frost::test_mempool_gossip::test_mempool_gossip
-            //     )
-            // }
+            "bitcoind_networking" => run_test!(
+                self,
+                CreateTestConfig { create_bitcoind_node: true, ..Default::default() },
+                bitcoind::test_bitcoind_networking::test_bitcoind_networking
+            ),
+            "block_builder" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_rpc_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_block_builder::block_builder
+                )
+            }
+            "batch_pegins" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_rpc_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_batch_pegins::batch_pegins
+                )
+            }
+            "utxo_sync" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_rpc_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_utxo_sync::utxo_sync
+                )
+            }
+            "frost_e2e_stable" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_rpc_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_frost_e2e::frost_e2e_stable
+                )
+            }
+            "frost_e2e_failed_signing_disconnect" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_rpc_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_frost_e2e_signing_disconnect::frost_e2e_failed_signing_disconnect
+                )
+            }
+            "e2e_peer_disconnect" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_rpc_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_e2e_peer_disconnect::e2e_peer_disconnect,
+                )
+            }
+            "test_edh_size_limit" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_rpc_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_edh_size_limit::test_edh_size_limit,
+                )
+            }
+            "rpc_node" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_rpc_nodes: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    rpc_node::test_rpc_node::test_rpc_node
+                )
+            }
+            "invalid_pegin" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    invalid_transactions::test_invalid_pegin::invalid_pegin
+                )
+            }
+            "invalid_pegout" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    invalid_transactions::test_invalid_pegout::invalid_pegout
+                )
+            }
+            "test_mempool_gossip" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_mempool_gossip::test_mempool_gossip
+                )
+            }
             _ => {
                 panic!("Test not found");
             }
@@ -422,6 +532,10 @@ impl Suite for ConsensusIntegrationTestSuite {
         let cometbft_processes_proxy_ports =
             self.local_context.get_cometbft_processes_proxy_ports();
         let cometbft_processes_rpc_ports = self.local_context.get_cometbft_processes_rpc_ports();
+
+        // =================== BITCOIND NODE ================== //
+        let bitcoind_process_id = self.local_context.get_bitcoind_process_id();
+        let bitcoind_port = self.local_context.get_bitcoind_process_port();
 
         // set the panic hook so it kills them whenever activated
         std::panic::set_hook(Box::new(move |panic_info| {
@@ -490,6 +604,14 @@ impl Suite for ConsensusIntegrationTestSuite {
                 kill_process_at_port(*cometbft_processes_rpc_port);
             }
 
+            // =================== BITCOIND NODE ================== //
+            // Send a termination signal to the child process
+            let _ = Command::new("kill")
+                .arg("-9") // Use SIGKILL for immediate termination
+                .arg(format!("{bitcoind_process_id}"))
+                .output();
+            kill_process_at_port(bitcoind_port);
+
             std::process::exit(1);
         }));
     }
@@ -524,12 +646,36 @@ impl Suite for ConsensusIntegrationTestSuite {
                 cometbft_process.destroy_all_async().await
             }
         }
+
+        // =================== BITCOIND NODE ================== //
+        if let Some(bitcoind_process) = self.local_context.bitcoind_process.as_mut() {
+            bitcoind_process.destroy_all_async().await
+        }
     }
 
     async fn create_new_local_context(
         &mut self,
         create_test_config: CreateTestConfig,
     ) -> anyhow::Result<()> {
+        // =================== BITCOIND NODE ================== //
+        if create_test_config.create_bitcoind_node {
+            let (bitcoind_node, tx) = create_bitcoind_node(self.global_context.clone()).await?;
+            it_info_print!("Starting bitcoind node");
+            // spawn bitcoind node as a process
+            let spawned_bitcoind_process = bitcoind_node.spawn_service()?;
+
+            // await initialization
+            bitcoind_node.await_initialization()?;
+
+            // wait for two seconds in between processes start
+            tokio::time::sleep(Duration::from_secs(2)).await;
+
+            // update local context
+            self.local_context.bitcoind_process = Some(spawned_bitcoind_process);
+            self.local_context.bitcoind_node = Some(bitcoind_node);
+            self.local_context.bitcoind_notification = Some(tx);
+        }
+
         // =================== BTC SERVERS ================== //
         let mut btc_server_clients = vec![];
         if create_test_config.create_btc_servers {
@@ -755,6 +901,9 @@ impl ConsensusIntegrationTestSuite {
                 cometbft_notification: None,
                 cometbft_eth_providers: None,
                 cometbft_processes: None,
+                bitcoind_node: None,
+                bitcoind_notification: None,
+                bitcoind_process: None,
                 authorities: vec![],
             },
         }

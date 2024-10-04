@@ -1,4 +1,7 @@
-use super::{botanix_client::BotanixEthClient, kill_process_at_port, poa_node::ABCI_PORT_BASE};
+use super::{
+    botanix_client::BotanixEthClient, kill_process_at_port, poa_node::ABCI_PORT_BASE,
+    TemplateWriter,
+};
 use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
 use anyhow::Context;
 use askama::Template;
@@ -11,7 +14,7 @@ use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    fs::{self, OpenOptions},
+    fs,
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
@@ -74,29 +77,6 @@ pub enum Notifications {}
 pub enum TestSignal {
     DisconnectAll(),
     ReconnectAll(),
-}
-
-pub trait TemplateWriter {
-    fn write_to_file(&self, path: impl AsRef<Path> + Send, filename: &str) -> anyhow::Result<()>
-    where
-        Self: askama::Template + Serialize,
-    {
-        let rendered_template = self.render().context("Failed to render dynamic template")?;
-        // tracing::info!(">>>>>>>>> {:?} <<<<<<<<<<<<< {:?}", filename.to_uppercase(),
-        // rendered_template);
-
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path.as_ref().to_path_buf().join(filename))
-            .context("Failed to create/open a file")?;
-
-        let res = file
-            .write_all(rendered_template.as_bytes())
-            .context("Failed to write contents to a file");
-        res
-    }
 }
 
 // =============================== TEMPLATES =========================== //
