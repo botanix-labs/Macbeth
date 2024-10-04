@@ -538,17 +538,19 @@ where
     }
 
     /// Gets the current federation coordinator. Returns None if it is us, otherwise Some if someone
-    /// else is
+    /// Uses a random 32 byte source to determine the current inturn authority
     pub(crate) async fn get_coordinator(&self) -> Result<Option<(PeerData, u64)>, Error> {
         // check if we are in turn
         let leader_selection_window = self
             .chain_spec
             .leader_selection_window
             .expect("block times to be set for PoA consensus");
+
         let is_inturn = is_inturn(
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
             leader_selection_window,
+            self.random_source_provider.random_source(),
         );
         match is_inturn {
             true => {
@@ -590,6 +592,7 @@ where
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
             leader_selection_window,
+            self.random_source_provider.random_source(),
         )
     }
 

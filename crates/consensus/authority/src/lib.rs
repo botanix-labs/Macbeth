@@ -414,11 +414,11 @@ pub(crate) struct StorageInner {
 mod tests {
     use std::str::FromStr;
 
+    use random_source_provider::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::{
-        block_fees_split, current_inturn_index, get_block_producer_address, get_in_turn_interval,
-        is_inturn,
+        block_fees_split, current_inturn_index, get_block_producer_address, is_inturn,
     };
     use reth_primitives::{
         constants::ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
@@ -627,14 +627,27 @@ mod tests {
     fn is_inturn_true() {
         let authorities_len = 1;
         let signer_index = 0;
-        assert!(is_inturn(authorities_len, signer_index, ALLOWED_FUTURE_BLOCK_TIME_SECONDS));
+        let random_source = RandomSourceProvider::new().random_source();
+        assert!(is_inturn(
+            authorities_len,
+            signer_index,
+            ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
+            random_source
+        ));
     }
 
     #[test]
     fn is_inturn_false() {
         let authorities_len = 1;
         let signer_index = 1;
-        assert!(!is_inturn(authorities_len, signer_index, ALLOWED_FUTURE_BLOCK_TIME_SECONDS));
+        let random_source = RandomSourceProvider::new().random_source();
+
+        assert!(!is_inturn(
+            authorities_len,
+            signer_index,
+            ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
+            random_source
+        ));
     }
 
     #[test]
@@ -650,27 +663,6 @@ mod tests {
         let header = Header::default();
         let block_producer_address = get_block_producer_address(&header);
         assert_eq!(block_producer_address, Address::ZERO,);
-    }
-
-    #[test]
-    fn get_inturn_interval_secs_based() {
-        let current_ts = reth_consensus_common::utils::unix_timestamp();
-        let authorities_len = 10;
-        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts, 5);
-        let (start, end, time_passed, time_remaining) =
-            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts, 5);
-
-        println!(
-            "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
-            current_in_turn_signer,
-            start,
-            end,
-            current_ts,
-            time_passed,
-            time_remaining,
-        );
-        assert!(current_ts >= start);
-        assert!(current_ts <= end);
     }
 
     #[test]
