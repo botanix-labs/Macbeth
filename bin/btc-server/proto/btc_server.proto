@@ -177,8 +177,6 @@ message MakeTxRequest {
     bytes signing_session_id = 2;
     // The checkpoint of the best finalized Bitcoin block hash.
     bytes checkpoint_block_hash = 3;
-    // The merkle root of our wallet's UTXOs.
-    bytes utxo_merkle_root = 4;
 }
 
 message ToSignRequest {

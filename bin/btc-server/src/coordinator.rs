@@ -173,7 +173,6 @@ where
         fee_rate: FeeRate,
         change_script: ScriptBuf,
         checkpoint_block: BlockHash,
-        utxo_merkle_root: sha256::Hash,
     ) -> Result<Psbt, CoordinatorError> {
         // We take this lock so another call doesn't do this same
         // process while we're doing it.
@@ -181,13 +180,6 @@ where
 
         // Sync the pegout scheduler and check we have the same UTXO view.
         self.sync_pegout_scheduler(checkpoint_block).await?;
-        let our_utxo_merkle = self.db.get_utxo_merkle_root()?.unwrap_or(sha256::Hash::all_zeros());
-        if utxo_merkle_root != our_utxo_merkle {
-            return Err(CoordinatorError::UtxoMerkleRootMismatch {
-                expected: utxo_merkle_root,
-                actual: our_utxo_merkle,
-            });
-        }
 
         // collect all database utxos in a hashmap
         let utxos: HashMap<OutPoint, Utxo> =

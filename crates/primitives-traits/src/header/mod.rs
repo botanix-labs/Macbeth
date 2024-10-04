@@ -283,7 +283,7 @@ impl Header {
         self.seal(hash)
     }
 
-    /// Returns true if header repersents the start of an epoch
+    /// Returns true if header represents the start of an epoch
     #[inline]
     pub fn is_poa_epoch(&self) -> bool {
         self.number % EPOCH_LENGTH == 0

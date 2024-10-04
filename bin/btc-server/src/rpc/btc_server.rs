@@ -174,9 +174,6 @@ pub struct MakeTxRequest {
     /// The checkpoint of the best finalized Bitcoin block hash.
     #[prost(bytes = "vec", tag = "3")]
     pub checkpoint_block_hash: ::prost::alloc::vec::Vec<u8>,
-    /// The merkle root of our wallet's UTXOs.
-    #[prost(bytes = "vec", tag = "4")]
-    pub utxo_merkle_root: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

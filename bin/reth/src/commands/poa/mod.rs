@@ -562,6 +562,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         )?;
 
         let canon_state_notification_sender = tree.canon_state_notification_sender();
+        let canon_state_notification_receiver = canon_state_notification_sender.subscribe();
         let blockchain_tree = Arc::new(ShareableBlockchainTree::new(tree));
         debug!(target: "reth::cli", "configured blockchain tree");
 
@@ -772,6 +773,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             evm_config.clone(),
             cometbft_rpc_factory,
             RandomSourceProvider::new(),
+            canon_state_notification_receiver,
         )
         .expect("Failed to create authority consensus builder")
         .build()

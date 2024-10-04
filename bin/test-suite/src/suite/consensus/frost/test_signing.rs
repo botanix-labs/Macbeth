@@ -57,7 +57,6 @@ pub async fn do_signing(
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
             signing_session_id: signing_session_id.to_vec(),
             checkpoint_block_hash: checkpoint[..].to_vec(),
-            utxo_merkle_root: utxo_merkle.clone(),
         }))
         .await
         .map_err(Error::Request)?

@@ -175,6 +175,10 @@ where
         }
     }
 
+    pub(crate) fn frost_task_tx(&self) -> UnboundedSender<FrostNotificationMessage> {
+        self.frost_task_tx.clone()
+    }
+
     /// Inserts a signing state into the state machine
     pub(crate) async fn update_signing_state(
         &mut self,

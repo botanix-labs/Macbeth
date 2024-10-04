@@ -303,8 +303,6 @@ where
             })?;
         let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
             .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
-        let utxo_root = sha256::Hash::from_slice(&req.utxo_merkle_root)
-            .map_err(|e| badarg!("invalid utxo merkle root: {}", e))?;
 
         let fee_res = self.bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
         let mut fee_rate = self.fall_back_fee_rate;
@@ -334,7 +332,7 @@ where
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
         let psbt = self
-            .make_tx(outputs, fee_rate, change_script, checkpoint, utxo_root)
+            .make_tx(outputs, fee_rate, change_script, checkpoint)
             .await
             .map_err(|e| internal!("Failed to make tx: {}", e))?;
 
