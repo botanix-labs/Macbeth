@@ -1,5 +1,6 @@
 use crate::{
     frost_task::{FrostNotification, FrostNotificationMessage},
+    random_source_provider::RandomSource,
     utils::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
         FrostParseError,
@@ -131,7 +132,7 @@ pub(crate) struct SigningSession {
 
 /// A state machine for transitioning between different signing states
 #[derive(Debug)]
-pub(crate) struct SigningStateMachine<ToFrostMan> {
+pub(crate) struct SigningStateMachine<ToFrostMan, Source> {
     chain_spec: Arc<ChainSpec>,
     btc_client: BtcServerExtendedClient,
     frost_handle: ToFrostMan,
@@ -139,11 +140,13 @@ pub(crate) struct SigningStateMachine<ToFrostMan> {
     personal_frost_identifier: frost::Identifier,
     frost_config: FrostConfig,
     frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+    random_source_provider: Source,
 }
 
-impl<ToFrostMan> SigningStateMachine<ToFrostMan>
+impl<ToFrostMan, Source> SigningStateMachine<ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
+    Source: RandomSource,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
@@ -153,6 +156,7 @@ where
         frost_config: FrostConfig,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         _task_executor: TaskExecutor,
+        random_source_provider: Source,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             authority_index_to_frost_identifier(frost_config.authority_index as u16);
@@ -167,6 +171,7 @@ where
             personal_frost_identifier,
             frost_config,
             frost_task_tx,
+            random_source_provider,
         }
     }
 
@@ -250,9 +255,10 @@ where
     }
 }
 
-impl<ToFrostMan> SigningStateMachine<ToFrostMan>
+impl<ToFrostMan, Source> SigningStateMachine<ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
+    Source: RandomSource,
 {
     async fn get_round1_signing_package(
         &mut self,

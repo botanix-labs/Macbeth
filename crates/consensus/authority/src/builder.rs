@@ -3,6 +3,7 @@ use crate::{
     compressor::Compressor,
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
+    random_source_provider::RandomSource,
     sync::SyncController,
     utxo_sync::UTXOSyncEngine,
     AuthorityConsensus, Storage,
@@ -38,7 +39,7 @@ use tracing::info;
 pub(crate) type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
+pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
@@ -54,6 +55,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
+    random_source_provider: Source,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -66,8 +68,8 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<EF, BF, DB, ToFrostMan, NetworkClient>
-    AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient>
+impl<EF, BF, DB, ToFrostMan, NetworkClient, Source>
+    AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
@@ -80,6 +82,7 @@ where
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
+    Source: RandomSource,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -105,6 +108,7 @@ where
         bitcoind_factory: BF,
         evm_config: EthEvmConfig,
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
+        random_source_provider: Source,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -189,6 +193,7 @@ where
             frost_config,
             payload_builder,
             cometbft_rpc_factory,
+            random_source_provider,
         })
     }
 
@@ -199,7 +204,7 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        Option<FrostTask<EF, BF, DB, ToFrostMan>>,
+        Option<FrostTask<EF, BF, DB, ToFrostMan, Source>>,
         SyncController,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
@@ -220,6 +225,7 @@ where
             frost_config,
             payload_builder: _,
             cometbft_rpc_factory,
+            random_source_provider,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let _executor_factory = storage.executor_factory.clone();
@@ -293,6 +299,7 @@ where
                 frost_task_notifications2_tx,
                 task_executor.clone(),
                 compressor,
+                random_source_provider,
             );
 
             frost_task = Some(task);

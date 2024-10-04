@@ -11,6 +11,7 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt, TryFutureExt};
 use reth_authority_consensus::{
+    random_source_provider::RandomSourceProvider,
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
@@ -770,6 +771,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             bitcoind_factory.clone(),
             evm_config.clone(),
             cometbft_rpc_factory,
+            RandomSourceProvider::new(),
         )
         .expect("Failed to create authority consensus builder")
         .build()
