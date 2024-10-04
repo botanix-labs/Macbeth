@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::{
     compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
     dkg::DKGStateMachine,
+    random_source_provider::RandomSource,
     signing::SigningStateMachine,
     Storage,
 };
@@ -53,7 +54,7 @@ pub(crate) struct FrostNotification {
     pub(crate) psbt: Vec<u8>,
 }
 
-pub struct FrostTask<EF, BF, DB, ToFrostMan> {
+pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
@@ -63,7 +64,7 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan> {
     /// dkg state machine
     pub(crate) dkg_state_machine: DKGStateMachine<EF, BF, DB, ToFrostMan>,
     /// signing state machine
-    pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan>,
+    pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<EF, BF, DB>,
     /// Channel to receive frost notifications (from the block production task)
@@ -75,12 +76,13 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan> {
     btc_server: BtcServerExtendedClient,
 }
 
-impl<EF, BF, DB, ToFrostMan> FrostTask<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
     BF: Clone,
     DB: Clone,
     EF: Clone,
+    Source: RandomSource,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -95,6 +97,7 @@ where
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         task_executor: TaskExecutor,
         compressor: Compressor,
+        random_source_provider: Source,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len());
 
@@ -112,6 +115,7 @@ where
             config.clone(),
             frost_task_tx,
             task_executor,
+            random_source_provider,
         );
 
         Self {
@@ -430,9 +434,10 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan> std::fmt::Debug for FrostTask<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan, Source> std::fmt::Debug for FrostTask<EF, BF, DB, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
+    Source: RandomSource,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FrostTask").finish_non_exhaustive()

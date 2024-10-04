@@ -62,7 +62,7 @@ mod sync;
 pub mod utils;
 mod utxo_sync;
 pub use builder::AuthorityConsensusBuilder;
-mod random_source_provider;
+pub mod random_source_provider;
 
 /// Max EDH size, assuming max inputs spent are 1000 and the only spends are keyspends
 /// This was calculated with the following formula
