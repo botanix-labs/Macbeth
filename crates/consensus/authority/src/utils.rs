@@ -98,15 +98,12 @@ pub(crate) enum FrostParseError {
 /// receive a psbt containing all pending pegouts awaiting signing
 pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
-    pegouts: &[PegoutData],
     signing_session_id: &SigningSessionId,
     bitcoin_checkpoint: BlockHash,
-    utxo_merkle_root: sha256::Hash,
 ) -> Result<SigningPackage, GrpcClientError> {
     let req = MakeTxRequest {
         signing_session_id: signing_session_id.to_vec(),
         checkpoint_block_hash: bitcoin_checkpoint[..].to_vec(),
-        utxo_merkle_root: utxo_merkle_root[..].to_vec(),
     };
 
     btc_server.get_psbt(req).await

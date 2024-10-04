@@ -25,12 +25,14 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotification, CanonStateNotificationSender,
+    StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{
+    broadcast::Receiver,
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
@@ -56,6 +58,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Sour
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
     random_source_provider: Source,
+    canon_state_notification_receiver: Receiver<CanonStateNotification>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -109,6 +112,7 @@ where
         evm_config: EthEvmConfig,
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
         random_source_provider: Source,
+        canon_state_notification_receiver: Receiver<CanonStateNotification>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -194,6 +198,7 @@ where
             payload_builder,
             cometbft_rpc_factory,
             random_source_provider,
+            canon_state_notification_receiver,
         })
     }
 
@@ -226,6 +231,7 @@ where
             payload_builder: _,
             cometbft_rpc_factory,
             random_source_provider,
+            canon_state_notification_receiver,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let _executor_factory = storage.executor_factory.clone();
@@ -300,6 +306,7 @@ where
                 task_executor.clone(),
                 compressor,
                 random_source_provider,
+                canon_state_notification_receiver,
             );
 
             frost_task = Some(task);
@@ -308,7 +315,7 @@ where
         // all nodes will have an abci client builder
         abci_client_builder = Some(ABCIClientBuilder::new(
             storage.clone(),
-            bitcoin_block_header.clone(),
+            bitcoin_block_header,
             network_handle.clone(),
             btc_server_client,
             consensus.clone(),

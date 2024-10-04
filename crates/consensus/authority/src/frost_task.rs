@@ -18,9 +18,12 @@ use reth_network::{
     },
     NetworkHandle,
 };
+use reth_primitives::header_ext::HeaderExt;
+use reth_provider::CanonStateNotification;
 use reth_revm::primitives::FixedBytes;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
+    broadcast::Receiver,
     mpsc::{UnboundedReceiver, UnboundedSender},
     oneshot::error::RecvError,
 };
@@ -74,6 +77,8 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     compressor: Compressor,
     /// btc server client
     btc_server: BtcServerExtendedClient,
+    /// Channel to receive canon state notifications
+    canon_state_notification_receiver: Receiver<CanonStateNotification>,
 }
 
 impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
@@ -98,6 +103,7 @@ where
         task_executor: TaskExecutor,
         compressor: Compressor,
         random_source_provider: Source,
+        canon_state_notification_receiver: Receiver<CanonStateNotification>,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len());
 
@@ -128,6 +134,7 @@ where
             frost_task_rx,
             btc_server,
             compressor,
+            canon_state_notification_receiver,
         }
     }
 
@@ -248,6 +255,63 @@ where
                     );
                 }
             }
+
+            // Receive canon state notifications
+            while let Ok(notification) = self.canon_state_notification_receiver.try_recv() {
+                match notification {
+                    CanonStateNotification::Commit { new } => {
+                        // check if epoch block and if we are the coordinator
+                        // if so, send init signing message
+                        let tip = new.tip();
+                        if tip.is_poa_epoch() {
+                            if !self.signing_state_machine.is_coordinator() {
+                                info!("Received canon state notification but we're not the coordinator");
+                                continue;
+                            } else {
+                                // create psbt and send init signing message
+                                let bitcoin_checkpoint = match tip
+                                    .header
+                                    .header()
+                                    .deserialize_extra_data_header()
+                                {
+                                    Ok(edh) => edh.bitcoin_block_hash,
+                                    Err(e) => {
+                                        error!(target: "consensus::authority", ?e, "Failed to deserialize extra data header in frost task");
+                                        continue;
+                                    }
+                                };
+                                match crate::utils::get_psbt(
+                                    &mut self.btc_server,
+                                    &tip.hash(),
+                                    bitcoin_checkpoint,
+                                )
+                                .await
+                                {
+                                    Ok(psbt_payload) => self
+                                        .signing_state_machine
+                                        .frost_task_tx()
+                                        .send(FrostNotificationMessage::InitiateSigning(
+                                            FrostNotification {
+                                                signing_session_id: tip.hash(),
+                                                psbt: psbt_payload.psbt,
+                                            },
+                                        ))
+                                        .expect("send frost task message"),
+
+                                    Err(e) => {
+                                        error!(target: "consensus::authority", ?e, "Failed to get psbt");
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        // Ignore other notifications
+                    }
+                }
+            }
+
             // receive over a channel message from other peers and update our state machine
             while let Ok((peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {

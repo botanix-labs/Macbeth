@@ -1110,7 +1110,6 @@ mod test {
         let request = Request::new(rpc::MakeTxRequest {
             signing_session_id: [0u8; 32].to_vec(),
             checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
-            utxo_merkle_root: [0u8; 32].to_vec(),
         });
         let response = app.get_psbt(request).await;
         assert!(response.is_err());
