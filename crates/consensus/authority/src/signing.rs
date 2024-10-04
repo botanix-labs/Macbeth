@@ -16,6 +16,7 @@ use reth_network::frost::{
     },
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
+use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -255,12 +256,15 @@ where
 {
     async fn get_round1_signing_package(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<SigningPackage, Error> {
         let round1_payload = self
             .btc_client
-            .get_round1_signing_package(SigningPackageRequest { psbt, signing_session_id })
+            .get_round1_signing_package(SigningPackageRequest {
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await;
 
         let round1_payload = match round1_payload {
@@ -297,12 +301,15 @@ where
 
     async fn get_round2_signing_package(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<SigningPackage, Error> {
         let round2_payload = self
             .btc_client
-            .get_round2_signing_package(SigningPackageRequest { psbt, signing_session_id })
+            .get_round2_signing_package(SigningPackageRequest {
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await;
 
         let round2_payload = match round2_payload {
@@ -336,12 +343,16 @@ where
     async fn new_round1_signing_package(
         &mut self,
         identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let new_round1_signing_package = self
             .btc_client
-            .new_round1_signing_package(SigningPackage { identifier, psbt, signing_session_id })
+            .new_round1_signing_package(SigningPackage {
+                identifier,
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await;
 
         match new_round1_signing_package {
@@ -377,12 +388,16 @@ where
     async fn new_round2_signing_package(
         &mut self,
         identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let new_round1_signing_package = self
             .btc_client
-            .new_round2_signing_package(SigningPackage { identifier, psbt, signing_session_id })
+            .new_round2_signing_package(SigningPackage {
+                identifier,
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await;
 
         match new_round1_signing_package {
@@ -417,11 +432,13 @@ where
 
     async fn get_to_sign_package(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
     ) -> Result<SigningPackage, Error> {
         let package = match self
             .btc_client
-            .get_to_sign_package(client::ToSignRequest { signing_session_id })
+            .get_to_sign_package(client::ToSignRequest {
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await
         {
             Ok(sign_payload) => sign_payload,
@@ -448,11 +465,13 @@ where
 
     async fn finalize_signing(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
     ) -> Result<FinalizeSigningResponse, Error> {
         let finalized_signing = match self
             .btc_client
-            .finalize_signing(client::FinalizeSigningRequest { signing_session_id })
+            .finalize_signing(client::FinalizeSigningRequest {
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await
         {
             Ok(finalized_signing) => finalized_signing,
@@ -611,7 +630,7 @@ where
     // Coordinator initiates a new signing session
     pub(crate) async fn initate_signing_session(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -686,7 +705,7 @@ where
     pub(crate) async fn signer_process_round1(
         &mut self,
         _identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -777,7 +796,7 @@ where
     pub(crate) async fn coordinator_process_round1(
         &mut self,
         identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -858,7 +877,7 @@ where
     pub(crate) async fn signer_process_round2(
         &mut self,
         _identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -940,7 +959,7 @@ where
     pub(crate) async fn coordinator_process_round2(
         &mut self,
         identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -1000,7 +1019,7 @@ where
     /// Handles an errored singing process
     pub(crate) async fn handle_errored_signing_process(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
     ) -> Result<(), Error> {
         // parse the session id
         let session_id = parse_signing_session_id(&signing_session_id)?;

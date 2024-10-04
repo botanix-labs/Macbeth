@@ -17,6 +17,7 @@ use reth_network::{
     },
     NetworkHandle,
 };
+use reth_revm::primitives::FixedBytes;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
@@ -47,7 +48,7 @@ pub(crate) enum UtxoSetSyncSerializationError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FrostNotification {
     /// The signing session id
-    pub(crate) signing_session_id: Vec<u8>,
+    pub(crate) signing_session_id: FixedBytes<32>,
     /// The agglomerated psbts
     pub(crate) psbt: Vec<u8>,
 }
@@ -332,6 +333,7 @@ where
                     PeerMessageResponse::Signing(signing_response) => {
                         let SigningResponse { response_type, identifier, signing_session_id, psbt } =
                             signing_response;
+                        let signing_session_id = FixedBytes::from_slice(&signing_session_id);
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
                                 match self

@@ -21,6 +21,7 @@ use reth_primitives::{
     Bloom, BloomInput,
 };
 use reth_provider::BlockReaderIdExt;
+use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
 use std::time::Duration;
 use tracing::{error, info};
@@ -230,12 +231,14 @@ pub(crate) fn deserialize_frost_peer_id(
     Ok(frost_id)
 }
 
-pub(crate) fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], FrostParseError> {
+pub(crate) fn parse_signing_session_id(
+    session_id: &FixedBytes<32>,
+) -> Result<[u8; 32], FrostParseError> {
     if session_id.len() != 32 {
         return Err(FrostParseError::InvalidSigningSessionId);
     }
     let mut session_id_array = [0u8; 32];
-    session_id_array.copy_from_slice(session_id);
+    session_id_array.copy_from_slice(session_id.as_slice());
     Ok(session_id_array)
 }
 
