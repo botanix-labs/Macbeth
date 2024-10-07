@@ -23,6 +23,8 @@ use crate::{
     App, Error,
 };
 
+const SATS_PER_KWU_DIVISOR: u64 = 4;
+
 #[derive(Debug)]
 pub enum SigningError {
     Round1(SigningRound1Error),
@@ -66,6 +68,8 @@ pub enum SigningRound1Error {
     FailedToValidatePsbt(#[from] crate::util::ValidatePSBTError),
     #[error("extract tx error: {0}")]
     ExtractTxError(#[from] ExtractTxError),
+    #[error("failed to get fee rate from psbt")]
+    FailedToGetFeeRateFromPsbt,
 }
 
 #[derive(Debug, Error)]
@@ -170,24 +174,32 @@ where
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
         // check fee is within acceptable range
-
-        // TODO(armins) handle error
-        let psbt_fee_rate = psbt.fee_rate().expect("valid fee rate");
-        debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
-
+        let psbt_fee_rate =
+            psbt.fee_rate().ok_or(SigningRound1Error::FailedToGetFeeRateFromPsbt)?;
         // fetch fee rate from bitcoind
         let fee_res = self.bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
 
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
             if let Some(f) = fee.fee_rate {
-                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
+                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / SATS_PER_KWU_DIVISOR);
             }
         }
-        let diff: f64 = fee_rate.to_sat_per_kwu().abs_diff(psbt_fee_rate.to_sat_per_kwu()) as f64;
+        let diff = fee_rate.to_sat_per_kwu().abs_diff(psbt_fee_rate.to_sat_per_kwu()) as f64;
         // convert config field to percentage
-        let acceptable_fee_rate_diff: f64 = (self.config.fee_rate_diff_percentage as f64) / 100.0;
-        if diff > acceptable_fee_rate_diff * (fee_rate.to_sat_per_kwu() as f64) {
+        let acceptable_fee_rate_diff = ((self.config.fee_rate_diff_percentage as f64) / 100.0) *
+            fee_rate.to_sat_per_kwu() as f64;
+
+        if diff > acceptable_fee_rate_diff {
+            debug!("[signer] fee rate difference is too great");
+            debug!("[signer] acceptable fee rate difference: {:?}", acceptable_fee_rate_diff);
+            debug!("[signer] fee rate difference: {:?}", diff);
+            debug!("[signer] fee rate from bitcoind/fallback: {:?}", fee_rate);
+            debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
+            debug!(
+                "[signer] config fee rate diff percentage: {:?}",
+                self.config.fee_rate_diff_percentage
+            );
             return Err(SigningRound1Error::FeeRateDifferenceTooGreat);
         }
 
@@ -301,7 +313,7 @@ where
         finalized_psbt: Psbt,
     ) -> Result<Psbt, SigningFinalizeError> {
         let mut finalized_psbt = finalized_psbt.clone();
-        let key_package =
+        let _key_package =
             self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
         let pk_package =
             self.db.get_public_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
