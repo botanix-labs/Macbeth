@@ -11,6 +11,7 @@ use crate::{
 use anyhow::Context;
 use async_trait::async_trait;
 use client::BtcServerClient;
+use comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use common::{
     bitcoind_node::{
         create_bitcoind_node, BitcoindNodeConfig, Notifications as BitcoindNotifications,
@@ -73,7 +74,7 @@ pub struct LocalContext {
     pub cometbft_processes: Option<Vec<SpawnedCometBftProcess>>,
     pub cometbft_nodes: Option<HashMap<u16, CometBftNodeConfig>>,
     pub cometbft_notification: Option<tokio::sync::broadcast::Sender<CometbftNotifications>>,
-    pub cometbft_eth_providers: Option<Vec<BotanixEthClient>>,
+    pub cometbft_lightclients: Option<Vec<tendermint_rpc::HttpClient>>,
     // rpc
     pub rpc_processes: Option<Vec<SpawnedRpcServerProcess>>,
     pub rpc_nodes: Option<HashMap<u16, NonFederationMemberTestConfig>>,
@@ -260,6 +261,22 @@ impl LocalContext {
             .unwrap_or_default();
 
         let hs: HashSet<u16> = HashSet::from_iter(proxy_ports);
+        hs.into_iter().collect()
+    }
+
+    pub fn get_cometbft_processes_p2p_ports(&self) -> Vec<u16> {
+        let p2p_ports = self
+            .cometbft_processes
+            .as_ref()
+            .map(|cometbft_processes| {
+                cometbft_processes
+                    .iter()
+                    .map(|process| process.cometbft_p2p_app_port)
+                    .collect::<Vec<u16>>()
+            })
+            .unwrap_or_default();
+
+        let hs: HashSet<u16> = HashSet::from_iter(p2p_ports);
         hs.into_iter().collect()
     }
 
@@ -529,9 +546,10 @@ impl Suite for ConsensusIntegrationTestSuite {
 
         // =================== COMETBFT NODES ================== //
         let cometbft_processes_ids = self.local_context.get_cometbft_processes_ids();
+        let cometbft_processes_rpc_ports = self.local_context.get_cometbft_processes_rpc_ports();
         let cometbft_processes_proxy_ports =
             self.local_context.get_cometbft_processes_proxy_ports();
-        let cometbft_processes_rpc_ports = self.local_context.get_cometbft_processes_rpc_ports();
+        let cometbft_processes_p2p_ports = self.local_context.get_cometbft_processes_p2p_ports();
 
         // =================== BITCOIND NODE ================== //
         let bitcoind_process_id = self.local_context.get_bitcoind_process_id();
@@ -588,7 +606,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             for btc_server_processes_used_port in &btc_server_processes_used_ports {
                 kill_process_at_port(*btc_server_processes_used_port);
             }
-            // =================== POA NODES ================== //
+            // =================== COMETBFT NODES ================== //
             for cometbft_processes_id in &cometbft_processes_ids {
                 // Send a termination signal to the child process
                 let _ = Command::new("kill")
@@ -602,6 +620,9 @@ impl Suite for ConsensusIntegrationTestSuite {
             }
             for cometbft_processes_rpc_port in &cometbft_processes_rpc_ports {
                 kill_process_at_port(*cometbft_processes_rpc_port);
+            }
+            for cometbft_processes_p2p_port in &cometbft_processes_p2p_ports {
+                kill_process_at_port(*cometbft_processes_p2p_port);
             }
 
             // =================== BITCOIND NODE ================== //
@@ -802,10 +823,10 @@ impl Suite for ConsensusIntegrationTestSuite {
         let mut spawned_cometbft_processes = vec![];
         if create_test_config.create_cometbft_nodes {
             it_info_print!("Starting cometbft nodes ...");
-            let (mut cometbft_nodes, tx, _) =
+            let (mut cometbft_nodes, tx) =
                 create_cometbft_nodes(self.global_context.clone()).await?;
             for (_, cometbft_node) in cometbft_nodes.iter() {
-                // spawn poa node as a process
+                // spawn cometbft node as a process
                 spawned_cometbft_processes.push(cometbft_node.spawn_service()?);
 
                 // await initialization
@@ -816,18 +837,21 @@ impl Suite for ConsensusIntegrationTestSuite {
             }
 
             // initialize cometbft botanix clients
-            let mut cometbft_botanix_clients = vec![];
+            let mut cometbft_lightclients = vec![];
             for (index, cometbft_node) in cometbft_nodes.iter_mut() {
-                // let botanix_eth_client =
-                //     create_botanix_eth_client(cometbft_node.cometbft_rpc_app_port).await?;
-                // cometbft_node.botanix_eth_client = Some(botanix_eth_client.clone());
-                // cometbft_botanix_clients.push(botanix_eth_client);
+                let botanix_eth_client = HttpCometBFTRpcClientFactory::new(
+                    "0.0.0.0".to_string(),
+                    cometbft_node.cometbft_rpc_app_port,
+                );
+                let http_client = botanix_eth_client.build_and_connect()?;
+                cometbft_lightclients.push(http_client);
             }
 
+            // update local context
             self.local_context.cometbft_processes = Some(spawned_cometbft_processes);
             self.local_context.cometbft_nodes = Some(cometbft_nodes);
             self.local_context.cometbft_notification = Some(tx);
-            self.local_context.cometbft_eth_providers = Some(cometbft_botanix_clients);
+            self.local_context.cometbft_lightclients = Some(cometbft_lightclients);
         }
 
         // // =================== RPC NODES ================== //
@@ -899,7 +923,7 @@ impl ConsensusIntegrationTestSuite {
                 rpc_processes: None,
                 cometbft_nodes: None,
                 cometbft_notification: None,
-                cometbft_eth_providers: None,
+                cometbft_lightclients: None,
                 cometbft_processes: None,
                 bitcoind_node: None,
                 bitcoind_notification: None,

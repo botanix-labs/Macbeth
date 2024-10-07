@@ -14,7 +14,7 @@ use reth_node_core::args::FederationTomlConfig;
 
 use askama::Template;
 use bitcoin::{hashes::Hash, BlockHash};
-use reth::{args::FedMemberPubKey, consensus_common::utils::unix_timestamp};
+use reth::args::FedMemberPubKey;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
@@ -35,7 +35,7 @@ use url::Url;
 
 use super::{
     botanix_client::BotanixEthClient,
-    kill_process_at_port,
+    create_temp_working_directory, kill_process_at_port,
     poa_node::{DISCOVERY_PORT_BASE, RPC_PORT_BASE},
 };
 
@@ -104,14 +104,7 @@ impl NonFederationMemberTestConfig {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
-            temp_path: {
-                let ret = tempfile::TempDir::new()
-                    .context("error creating tempdir")?
-                    .into_path()
-                    .join(format!("_{}", unix_timestamp().to_string()));
-                let _ = std::fs::create_dir_all(&ret).context("error creating tmpdir subdir")?;
-                ret
-            },
+            temp_path: create_temp_working_directory(),
             secret_key,
             rpc_port,
             discovery_port,

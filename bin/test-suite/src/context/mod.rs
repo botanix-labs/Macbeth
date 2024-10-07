@@ -41,7 +41,7 @@ impl GlobalContext {
             test_suite_id: uuid::Uuid::new_v4(),
             dry_run: args.dry_run,
             fed_instances,
-            rpc_instances: args.validators,
+            rpc_instances: args.rpc_nodes,
             run_suite: args.run_suite,
             timeout: args.timeout,
             min_signers: frost_min_signers,

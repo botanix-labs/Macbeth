@@ -1,5 +1,6 @@
 use super::{
-    botanix_client::BotanixEthClient, btc_server::SpawnedBtcServerProcess, kill_process_at_port,
+    botanix_client::BotanixEthClient, btc_server::SpawnedBtcServerProcess,
+    create_temp_working_directory, kill_process_at_port,
 };
 use crate::{
     context::GlobalContext,
@@ -12,10 +13,7 @@ use bitcoin::hashes::Hash;
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::providers::PeerInfo;
-use reth::{
-    args::{FedMemberPubKey, FederationTomlConfig},
-    consensus_common::utils::unix_timestamp,
-};
+use reth::args::{FedMemberPubKey, FederationTomlConfig};
 use reth_chainspec::{create_botanix_config_with_genesis, BOTANIX_TESTNET};
 use reth_network_peers::pk2id;
 use reth_primitives::{
@@ -152,14 +150,7 @@ impl FederationMemberTestConfig {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
-            temp_path: {
-                let ret = tempfile::TempDir::new()
-                    .expect("tempdir is okay")
-                    .into_path()
-                    .join(format!("_{}", unix_timestamp().to_string()));
-                std::fs::create_dir_all(&ret).expect("failed to create tempdir subdir");
-                ret
-            },
+            temp_path: create_temp_working_directory(),
             secret_key,
             authorities,
             rpc_port,

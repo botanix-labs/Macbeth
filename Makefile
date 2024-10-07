@@ -516,7 +516,7 @@ start-test-suite:
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--min-signers 3 \
 	--max-signers 4 \
-	--validators 1
+	--rpc-nodes 1
 
 start-btc-server-1:
 	cd ./bin/btc-server && \

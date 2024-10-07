@@ -19,8 +19,10 @@ reth-cli-commands.workspace = true
 reth-node-core.workspace = true
 reth-network-peers.workspace = true
 reth-authority-consensus.workspace = true
+comet-bft-rpc.workspace = true
 reth-consensus.workspace = true
 reth-cli-runner.workspace = true
+tendermint-rpc.workspace = true
 
 ## Ethereum
 ethers = "2.0.11"

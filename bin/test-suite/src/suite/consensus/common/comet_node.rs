@@ -1,74 +1,22 @@
-use super::{
-    botanix_client::BotanixEthClient, kill_process_at_port, poa_node::ABCI_PORT_BASE,
-    TemplateWriter,
+use super::{botanix_client::BotanixEthClient, kill_process_at_port, poa_node::ABCI_PORT_BASE};
+use crate::{
+    context::GlobalContext,
+    suite::consensus::common::{create_temp_working_directory, spawn_child_process},
 };
-use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
 use anyhow::Context;
-use askama::Template;
-use bitcoin::hashes::{sha256, Hash};
-use reth::consensus_common::utils::unix_timestamp;
-use reth_network_peers::pk2id;
-use reth_primitives::{public_key_to_address, Address};
-use reth_rpc_types::PeerId;
-use secp256k1::{PublicKey, SecretKey, SECP256K1};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
     collections::HashMap,
     fs,
-    io::Write,
     path::{Path, PathBuf},
+    process::ExitStatus,
     sync::Arc,
 };
 use tokio::{
     process::Child,
     sync::broadcast::{channel, Sender},
 };
-
-fn generate_secrets() -> (SecretKey, PublicKey, PeerId, Address, String) {
-    let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
-    let public_key = secret_key.public_key(SECP256K1);
-    let peer_id = pk2id(&public_key);
-    let address = public_key_to_address(public_key);
-    let extended_key = [public_key.serialize_uncompressed()].concat();
-    let extended_key_base64 = base64::encode(extended_key);
-    (secret_key, public_key, peer_id, address, extended_key_base64)
-}
-
-fn produce_base64_encoded_data(secret_key: &SecretKey) -> (String, String, String) {
-    let public_key = secret_key.public_key(SECP256K1).serialize();
-
-    // Calculate the address (first 20 bytes of the SHA-256 hash of the public key)
-    let mut engine = sha256::Hash::engine();
-    engine.write_all(&public_key).expect("hashing to work");
-    let hash = sha256::Hash::from_engine(engine);
-    let address = &hash.to_byte_array()[..20];
-
-    // Encode the public and private keys in Base64 format (as expected by Tendermint)
-    let priv_key_base64 = base64::encode(secret_key.as_ref());
-    let pub_key_base64 = base64::encode(&public_key); // Base64 encoding of the public key
-    let address_hex = hex::encode(address);
-
-    (priv_key_base64, pub_key_base64, address_hex)
-}
-
-// fn generate_extended_priv_key_ed25519() -> String {
-//     let mut csprng = OsRng {};
-//     let signing_key = ed25519_dalek::SigningKey::generate(&mut csprng);
-
-//     // Extract the 32-byte private key
-//     let secret_key_bytes = signing_key.to_bytes();
-
-//     // Extract the 32-byte public key
-//     let public_key_bytes = signing_key.verifying_key().to_bytes();
-
-//     // Combine the private key and public key (64 bytes total)
-//     let extended_key = [secret_key_bytes.as_slice(), public_key_bytes.as_slice()].concat();
-
-//     // Encode the combined key in Base64
-//     let extended_key_base64 = base64::encode(extended_key);
-
-//     extended_key_base64
-// }
 
 #[derive(Clone, Debug)]
 pub enum Notifications {}
@@ -79,66 +27,46 @@ pub enum TestSignal {
     ReconnectAll(),
 }
 
-// =============================== TEMPLATES =========================== //
-/// Templates
-#[derive(Template, Clone, Debug, Serialize)]
-#[template(path = "cometbft/config/node_key.json", ext = "json", escape = "none")]
-struct NodeKeyConfigTemplate<'a> {
-    validator_node_key: &'a str,
-}
+// =============================== COMETBFT CONFIG FILES =========================== //
 
-impl TemplateWriter for NodeKeyConfigTemplate<'_> {}
-
-#[derive(Template, Clone, Debug, Serialize)]
-#[template(path = "cometbft/config/priv_validator_key.json", ext = "json", escape = "none")]
-struct PrivValidatorKeyConfigTemplate<'a> {
-    validator_address: &'a str,
-    validator_pub_key: &'a str,
-    validator_priv_key: &'a str,
-}
-
-impl TemplateWriter for PrivValidatorKeyConfigTemplate<'_> {}
-
-#[derive(Template, Clone, Debug, Serialize)]
-#[template(path = "cometbft/data/priv_validator_state.json", ext = "json", escape = "none")]
-struct PrivValidatorStateTemplate<'a> {
-    height: &'a str,
-}
-
-impl TemplateWriter for PrivValidatorStateTemplate<'_> {}
-
-#[derive(Template, Clone, Debug, Serialize)]
-#[template(path = "cometbft/config/config.toml", ext = "toml", escape = "none")]
-struct ValidatorConfigTemplate<'a> {
-    rpc_app_port: u16,
-    proxy_app_port: u16,
-    persistent_peers: &'a str,
-}
-
-impl TemplateWriter for ValidatorConfigTemplate<'_> {}
-
-#[derive(Clone, Debug, Template, Serialize)]
-#[template(path = "cometbft/config/genesis.txt", ext = "json", escape = "none")]
-pub struct GenesisTemplate {
-    validators: Vec<Validator>,
-}
-
-impl TemplateWriter for GenesisTemplate {}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct Validator {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenesisValidator {
     address: String,
-    pub_key_type: String,
-    pub_key_value: String,
+    pub_key: ValidatorData,
     power: String,
     name: String,
 }
-// ================================================================= //
+
+impl From<&PrivValidator> for GenesisValidator {
+    fn from(priv_validator: &PrivValidator) -> Self {
+        Self {
+            address: priv_validator.address.clone(),
+            pub_key: priv_validator.pub_key.clone(),
+            power: "10".to_string(),
+            name: "".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PrivValidator {
+    address: String,
+    pub_key: ValidatorData,
+    priv_key: ValidatorData,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidatorData {
+    #[serde(rename = "type")]
+    type_: String,
+    value: String,
+}
 
 #[derive(Debug)]
 pub struct SpawnedCometBftProcess {
     pub cometbft_proxy_app_port: u16,
     pub cometbft_rpc_app_port: u16,
+    pub cometbft_p2p_app_port: u16,
     pub child_process: Child,
 }
 
@@ -149,6 +77,7 @@ impl SpawnedCometBftProcess {
         // additionally make sure all ports used are freed
         kill_process_at_port(self.cometbft_proxy_app_port);
         kill_process_at_port(self.cometbft_rpc_app_port);
+        kill_process_at_port(self.cometbft_p2p_app_port);
     }
 
     pub async fn destroy_all_sync(&mut self) {
@@ -161,18 +90,20 @@ impl SpawnedCometBftProcess {
         // additionally make sure all ports used are freed
         kill_process_at_port(self.cometbft_proxy_app_port);
         kill_process_at_port(self.cometbft_rpc_app_port);
+        kill_process_at_port(self.cometbft_p2p_app_port);
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CometBftNodeConfig {
     pub index: u16,
-    pub temp_path: PathBuf,
-    pub secret_key: SecretKey,
+    pub working_directory: PathBuf,
+    pub validator: PrivValidator,
     pub cometbft_proxy_app_port: u16,
     pub cometbft_rpc_app_port: u16,
+    pub cometbft_p2p_app_port: u16,
     pub peers_list: Vec<CometBftNodeConfig>,
-    pub peer_id: PeerId,
+    pub peer_id: String,
     pub botanix_eth_client: Option<BotanixEthClient>,
     pub test_signal_tx: Sender<TestSignal>,
 }
@@ -180,28 +111,24 @@ pub struct CometBftNodeConfig {
 impl CometBftNodeConfig {
     pub async fn new(
         index: u16,
-        secret_key: SecretKey,
-        peer_id: PeerId,
+        validator: PrivValidator,
+        peer_id: String,
         cometbft_proxy_app_port: u16,
         cometbft_rpc_app_port: u16,
+        cometbft_p2p_app_port: u16,
         test_signal_tx: Sender<TestSignal>,
+        working_directory: PathBuf,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
-            temp_path: {
-                let ret = tempfile::TempDir::new()
-                    .expect("tempdir is okay")
-                    .into_path()
-                    .join(format!("_{}", unix_timestamp().to_string()));
-                std::fs::create_dir_all(&ret).expect("failed to create tempdir subdir");
-                ret
-            },
-            secret_key,
+            working_directory,
+            validator,
             peers_list: vec![],
             peer_id,
             botanix_eth_client: None,
             cometbft_proxy_app_port,
             cometbft_rpc_app_port,
+            cometbft_p2p_app_port,
             test_signal_tx,
         })
     }
@@ -215,24 +142,17 @@ impl CometBftNodeConfig {
     }
 
     pub fn spawn_service(&self) -> anyhow::Result<SpawnedCometBftProcess> {
-        // point to the relevant working directory
-        let mut working_directory =
-            std::env::current_dir().context("Error obtaining current directory")?;
-        for _ in 0..2 {
-            working_directory.pop();
-        }
-        working_directory.push("cometbft");
-
         // prepare run arguments
-        let home_path = self.temp_path.to_path_buf();
+        let home_path = self.working_directory.to_path_buf();
         let home_path_str = home_path.display().to_string();
         let command = "cometbft";
         let args = vec!["start", "--home", &home_path_str];
 
         Ok(SpawnedCometBftProcess {
-            child_process: spawn_child_process(command, args, working_directory)?,
+            child_process: spawn_child_process(command, args, self.working_directory.clone())?,
             cometbft_proxy_app_port: self.cometbft_proxy_app_port,
             cometbft_rpc_app_port: self.cometbft_rpc_app_port,
+            cometbft_p2p_app_port: self.cometbft_p2p_app_port,
         })
     }
 }
@@ -243,143 +163,227 @@ impl CometBftNodeConfig {
     }
 }
 
+async fn init_cometbft_node(
+    working_directory: &PathBuf,
+) -> anyhow::Result<(ExitStatus, String, String)> {
+    let working_dir_str = working_directory.display().to_string();
+    let command = "cometbft";
+    let args = vec!["init", "--home", &working_dir_str];
+    let child = spawn_child_process(command, args, working_directory)?;
+    let output = child.wait_with_output().await?;
+    let exit_status = output.status;
+    let stdout = String::from_utf8(output.stdout)?;
+    let stderr = String::from_utf8(output.stderr)?;
+    Ok((exit_status, stdout, stderr))
+}
+
+async fn get_enode(working_directory: &PathBuf) -> anyhow::Result<(ExitStatus, String, String)> {
+    let working_dir_str = working_directory.display().to_string();
+    let command = "cometbft";
+    let args = vec!["show-node-id", "--home", &working_dir_str];
+    let child = spawn_child_process(command, args, working_directory)?;
+    let output = child.wait_with_output().await?;
+    let exit_status = output.status;
+    let stdout = String::from_utf8(output.stdout)?;
+    let stderr = String::from_utf8(output.stderr)?;
+    Ok((exit_status, stdout, stderr))
+}
+
+fn updated_genesis_file(
+    working_directory: &PathBuf,
+    all_validators: Vec<GenesisValidator>,
+) -> anyhow::Result<()> {
+    // read genesis.json file and update some keys
+    let genesis_file = Path::new(&working_directory).join("config").join("genesis.json");
+    let mut genesis_object =
+        serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&genesis_file)?)
+            .context("Error reading genesis.json file")?;
+
+    if let Some(chain_id) = genesis_object.get_mut("chain_id") {
+        *chain_id = serde_json::Value::String("3636".to_string());
+    }
+
+    if let Some(max_gas) = genesis_object.pointer_mut("/consensus_params/block/max_gas") {
+        *max_gas = json!("-1");
+    }
+
+    if let Some(vote_extensions_enable_height) =
+        genesis_object.pointer_mut("/consensus_params/feature/vote_extensions_enable_height")
+    {
+        *vote_extensions_enable_height = json!("0");
+    }
+
+    if let Some(vote_extensions_enable_height) =
+        genesis_object.pointer_mut("/consensus_params/feature/pbts_enable_height")
+    {
+        *vote_extensions_enable_height = json!("1");
+    }
+
+    if let Some(validators) = genesis_object.pointer_mut("/validators") {
+        *validators = json!(all_validators);
+    }
+
+    // Serialize the modified object and write it back to the file
+    let updated_content = serde_json::to_string_pretty(&genesis_object)
+        .context("Failed to serialize updated genesis.json content")?;
+
+    fs::write(&genesis_file, updated_content)
+        .context("Failed to write updated genesis.json file")?;
+
+    Ok(())
+}
+
+fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> {
+    let config_file =
+        Path::new(&cometbft_node.working_directory).join("config").join("config.toml");
+    let mut toml: toml::Value = toml::from_str(&fs::read_to_string(&config_file)?)
+        .context("Unable to parse toml config file")?;
+    if let Some(proxy_app_port) = toml.get_mut("proxy_app") {
+        *proxy_app_port = toml::value::Value::String(format!(
+            "tcp://127.0.0.1:{}",
+            cometbft_node.cometbft_proxy_app_port.to_string()
+        ));
+    }
+    if let Some(rpc) = toml.get_mut("rpc") {
+        if let Some(laddr) = rpc.get_mut("laddr") {
+            *laddr = toml::value::Value::String(cometbft_node.cometbft_rpc_app_port.to_string());
+        }
+    }
+    if let Some(rpc) = toml.get_mut("p2p") {
+        if let Some(allow_duplicate_ip) = rpc.get_mut("allow_duplicate_ip") {
+            *allow_duplicate_ip = toml::value::Value::Boolean(true);
+        }
+        if let Some(addr_book_strict) = rpc.get_mut("addr_book_strict") {
+            *addr_book_strict = toml::value::Value::Boolean(false);
+        }
+        if let Some(cometbft_p2p_app_port) = rpc.get_mut("laddr") {
+            *cometbft_p2p_app_port = toml::value::Value::String(format!(
+                "tcp://0.0.0.0:{}",
+                cometbft_node.cometbft_p2p_app_port.to_string()
+            ));
+        }
+        if let Some(persistent_peers) = rpc.get_mut("persistent_peers") {
+            let peer_ids = cometbft_node
+                .peers_list
+                .iter()
+                .map(|peer| format!("{}@127.0.0.1:{}", peer.peer_id, peer.cometbft_p2p_app_port))
+                .collect::<Vec<String>>()
+                .join(",");
+            *persistent_peers = toml::value::Value::String(peer_ids);
+        }
+    }
+
+    // Serialize the modified object and write it back to the file
+    let updated_content =
+        toml::to_string_pretty(&toml).context("Failed to serialize updated config.toml content")?;
+    fs::write(&config_file, updated_content).context("Failed to write updated config.toml file")?;
+
+    Ok(())
+}
+
 pub async fn create_cometbft_nodes(
     global_context: Arc<GlobalContext>,
-) -> anyhow::Result<(
-    HashMap<u16, CometBftNodeConfig>,
-    tokio::sync::broadcast::Sender<Notifications>,
-    Vec<PublicKey>,
-)> {
+) -> anyhow::Result<(HashMap<u16, CometBftNodeConfig>, tokio::sync::broadcast::Sender<Notifications>)>
+{
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
-
     let mut cometbft_nodes: HashMap<u16, CometBftNodeConfig> = HashMap::new();
-    let mut members_signing_keypairs: Vec<(SecretKey, PublicKey, PeerId, Address, String)> = vec![];
-    let mut members_cometbft_ports: Vec<(u16, u16)> = vec![];
 
+    // loop and crete all cometbft nodes
     for member_index in 0..global_context.fed_instances {
-        members_signing_keypairs.push(generate_secrets());
+        // allocate ports
         let cometbft_proxy_app_port = ABCI_PORT_BASE + 10000 * member_index;
         let cometbft_rpc_app_port = cometbft_proxy_app_port - 1;
-        members_cometbft_ports.push((cometbft_proxy_app_port, cometbft_rpc_app_port));
-    }
-    let authorities =
-        members_signing_keypairs.iter().map(|(_, pk, _, _, _)| pk.clone()).collect::<Vec<_>>();
+        let cometbft_p2p_app_port = cometbft_rpc_app_port - 1;
 
-    for member_index in 0..global_context.fed_instances {
+        // init working directory
+        let working_directory = create_temp_working_directory();
+
+        // init cometbft node
+        let (exit_status, stdout, stderr) = init_cometbft_node(&working_directory)
+            .await
+            .context("Error initializing cometbft node")?;
+        if !exit_status.success() {
+            tracing::error!(
+                "CometBFT node failed to initialize: {:?} {:?} {:?}",
+                exit_status,
+                stdout,
+                stderr
+            );
+            return Err(anyhow::anyhow!(
+                "CometBFT node failed to initialize: {:?} {:?}",
+                exit_status,
+                stderr
+            ));
+        }
+        tracing::info!("CometBFT node initialized: {:?}", exit_status.success());
+
+        // read priv_validator_key.json file
+        let priv_validator_key_file =
+            Path::new(&working_directory).join("config").join("priv_validator_key.json");
+        let validator =
+            serde_json::from_str::<PrivValidator>(&fs::read_to_string(priv_validator_key_file)?)
+                .context("Error reading priv_validator_key.json file")?;
+
+        // get enode
+        let (exit_status, stdout, stderr) =
+            get_enode(&working_directory).await.context("Error getting enode")?;
+        if !exit_status.success() {
+            tracing::error!(
+                "CometBFT enode failed to be obtained: {:?} {:?} {:?}",
+                exit_status,
+                stdout,
+                stderr
+            );
+            return Err(anyhow::anyhow!(
+                "CometBFT enode failed to be obtained: {:?} {:?}",
+                exit_status,
+                stderr
+            ));
+        }
+        let enode = stdout;
+        tracing::info!("CometBFT enode: {:?}", enode);
+
+        // prepare test signal
         let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
-        let cometbft_proxy_app_port = ABCI_PORT_BASE + 10000 * member_index;
-        let cometbft_rpc_app_port = cometbft_proxy_app_port - 1;
-        let (
-            cometbft_signing_secretkey,
-            _cometbft_signing_pubkey,
-            cometbft_signing_peerid,
-            _cometbft_signing_address,
-            cometbft_signing_extended_key,
-        ) = members_signing_keypairs
-            .get(member_index as usize)
-            .cloned()
-            .expect("To have keypair information");
+
+        // create the cometbft node
         let cometbft_node = CometBftNodeConfig::new(
             member_index,
-            cometbft_signing_secretkey,
-            cometbft_signing_peerid,
+            validator,
+            enode,
             cometbft_proxy_app_port,
             cometbft_rpc_app_port,
+            cometbft_p2p_app_port,
             test_signal_tx,
+            working_directory,
         )
         .await?;
 
-        // ~~~~~~~~~~~~~~~~~~ write config.toml file ~~~~~~~~~~~~~~~~~
-        let cometbft_config_file = Path::new(&cometbft_node.temp_path).join("config");
-        fs::create_dir_all(&cometbft_config_file)?;
-        let counterpeer_enodes = members_signing_keypairs
-            .iter()
-            .enumerate()
-            .filter_map(|(index, peer_data)| {
-                let (_cometbft_proxy_app_port, cometbft_rpc_app_port) =
-                    members_cometbft_ports.get(index).cloned().expect("to have cometbft ports");
-                if index as u16 != member_index {
-                    let enode_url =
-                        format!("enode://{}@{}", peer_data.2.to_string(), cometbft_rpc_app_port);
-                    return Some(enode_url);
-                } else {
-                    return None;
-                }
-            })
-            .collect::<Vec<String>>();
-        ValidatorConfigTemplate {
-            proxy_app_port: cometbft_node.cometbft_proxy_app_port,
-            rpc_app_port: cometbft_node.cometbft_rpc_app_port,
-            persistent_peers: &counterpeer_enodes.join(","),
-        }
-        .write_to_file(&cometbft_config_file, "config.toml")
-        .context("Error writing cometbft_config_file to path")?;
-
-        // ~~~~~~~~~~~~~~~~~~ write priv_validator_state json file ~~~~~~~~~~~~~~~~~~
-        let cometbft_priv_validator_state_file = Path::new(&cometbft_node.temp_path).join("data");
-        fs::create_dir_all(&cometbft_priv_validator_state_file)?;
-        PrivValidatorStateTemplate { height: "0" }
-            .write_to_file(&cometbft_priv_validator_state_file, "priv_validator_state.json")
-            .context("Error writing cometbft_priv_validator_state_file to path")?;
-
-        // ~~~~~~~~~~~~~~~~~~ write node_key json file ~~~~~~~~~~~~~~~~~~
-        let cometbft_nodekey_file = Path::new(&cometbft_node.temp_path).join("config");
-        fs::create_dir_all(&cometbft_nodekey_file)?;
-        NodeKeyConfigTemplate { validator_node_key: &cometbft_signing_extended_key }
-            .write_to_file(&cometbft_nodekey_file, "node_key.json")
-            .context("Error writing node_key to path")?;
-
-        // ~~~~~~~~~~~~~~~~~~ write priv_validator_key json file ~~~~~~~~~~~~~~~~~~
-        let (
-            cometbft_signing_secretkey,
-            _cometbft_signing_pubkey,
-            _cometbft_peerid,
-            _cometbft_signing_address,
-            _cometbft_signing_extended_key,
-        ) = members_signing_keypairs
-            .get(member_index as usize)
-            .cloned()
-            .expect("To have keypair information");
-        let cometbft_priv_validator_key_file = Path::new(&cometbft_node.temp_path).join("config");
-        fs::create_dir_all(&cometbft_priv_validator_key_file)?;
-        let (priv_key_base64, pub_key_base64, address_hex) =
-            produce_base64_encoded_data(&cometbft_signing_secretkey);
-        PrivValidatorKeyConfigTemplate {
-            validator_address: &address_hex,
-            validator_priv_key: &priv_key_base64,
-            validator_pub_key: &pub_key_base64,
-        }
-        .write_to_file(&cometbft_priv_validator_key_file, "priv_validator_key.json")
-        .context("Error writing node_key to path")?;
-        // ~~~~~~~~~~~~~~~~~~ write cometbft_genesis_file json file ~~~~~~~~~~~~~~~~~~
-        let validators = members_signing_keypairs
-            .iter()
-            .map(|(secret_key, _public_key, _peer_id, _address, _extended_key)| {
-                let (_priv_key_base64, pub_key_base64, address_hex) =
-                    produce_base64_encoded_data(secret_key);
-                Validator {
-                    address: address_hex,
-                    name: "".to_string(),
-                    power: "10".to_string(),
-                    pub_key_type: "tendermint/PubKeySecp256k1".to_string(),
-                    pub_key_value: pub_key_base64,
-                }
-            })
-            .collect::<Vec<_>>();
-        let cometbft_genesis_file = Path::new(&cometbft_node.temp_path).join("config");
-        fs::create_dir_all(&cometbft_priv_validator_key_file)?;
-        GenesisTemplate { validators }
-            .write_to_file(&cometbft_genesis_file, "genesis.json")
-            .context("Error writing cometbft_genesis_file to path")?;
+        // persist node config
         cometbft_nodes.insert(member_index, cometbft_node);
     }
 
-    // now insert peers and edh into each federation member
+    // extract validators set
+    let all_genesis_validators = cometbft_nodes
+        .iter()
+        .map(|(_, config)| GenesisValidator::from(&config.validator))
+        .collect::<Vec<GenesisValidator>>();
+
+    // now insert peers into each cometbft member
     for member_index in 0..global_context.fed_instances {
-        let peer_members = cometbft_nodes
+        // get the cometbft node
+        let cometbft_node =
+            cometbft_nodes.get(&member_index).cloned().expect("To have cometbft node");
+
+        // read genesis.json file and update some keys
+        updated_genesis_file(&cometbft_node.working_directory, all_genesis_validators.clone())
+            .context("Error updating genesis file")?;
+
+        // get all node counterpeers
+        let validator_peer_members = cometbft_nodes
             .iter()
             .filter_map(
-                |(index, &ref fed_mem)| {
+                |(index, fed_mem)| {
                     if *index != member_index {
                         Some(fed_mem.clone())
                     } else {
@@ -389,124 +393,12 @@ pub async fn create_cometbft_nodes(
             )
             .collect::<Vec<_>>();
 
-        if let Some(fed_member) = cometbft_nodes.get_mut(&member_index) {
-            fed_member.insert_peers_list(peer_members);
+        if let Some(cometbft_node) = cometbft_nodes.get_mut(&member_index) {
+            cometbft_node.insert_peers_list(validator_peer_members);
+            // update config.toml file
+            update_config_toml(&cometbft_node).context("Error updating config toml file")?;
         };
     }
 
-    Ok((cometbft_nodes, tx, authorities))
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use askama::Template;
-    use reth_primitives::alloy_primitives::Keccak256;
-
-    #[test]
-    fn test_config_toml_template() {
-        let validator_config = ValidatorConfigTemplate {
-            proxy_app_port: 26658,
-            rpc_app_port: 26657,
-            persistent_peers: "",
-        };
-        let rendered = validator_config.render().unwrap();
-        let toml: toml::Value = toml::from_str(&rendered).unwrap();
-        let proxy_app_port = toml.get("proxy_app").map(|val| val.as_str()).flatten();
-        assert_eq!(proxy_app_port, Some("tcp://127.0.0.1:26658"));
-        let rpc_app_port =
-            toml.get("rpc").map(|val| val.get("laddr")).flatten().map(|val| val.as_str()).flatten();
-        assert_eq!(rpc_app_port, Some("tcp://0.0.0.0:26657"));
-    }
-
-    #[test]
-    fn test_genesis_template() {
-        let validators = vec![
-            Validator {
-                address: "7A58E9295D0593F6FECA345FFCC3855B75B5FA8D".to_string(),
-                pub_key_type: "tendermint/PubKeySecp256k1".to_string(),
-                pub_key_value: "An95QAPC0caOmiUs2D1zkcu3wmgGmOS2IpGQUinTxcl6".to_string(),
-                power: "10".to_string(),
-                name: "".to_string(),
-            },
-            Validator {
-                address: "4D03752E0CDF6463E6076F7570F5F89D96D9DE8D".to_string(),
-                pub_key_type: "tendermint/PubKeySecp256k1".to_string(),
-                pub_key_value: "AsDmE5uZBz0+0kc3y2Af8N+gsgBuymXmi/GHW/fwyaJD".to_string(),
-                power: "10".to_string(),
-                name: "".to_string(),
-            },
-        ];
-
-        let genesis = GenesisTemplate { validators };
-
-        // Render the template
-        let rendered = genesis.render().unwrap();
-        let jsonified: serde_json::Value = serde_json::from_str(&rendered).unwrap();
-        let validators = jsonified.get("validators").unwrap().clone().as_array().unwrap().clone();
-        assert!(validators.len() == validators.len());
-    }
-
-    #[test]
-    fn test_nodekey_template() {
-        let ret = tempfile::TempDir::new()
-            .expect("tempdir is okay")
-            .into_path()
-            .join(format!("_{}", unix_timestamp().to_string()));
-        std::fs::create_dir_all(&ret).expect("failed to create tempdir subdir");
-
-        let (_, _, _, _, extended_key) = generate_secrets();
-        let template = NodeKeyConfigTemplate { validator_node_key: &extended_key };
-
-        // Render the template
-        let rendered = template.render().unwrap();
-        let jsonified: serde_json::Value = serde_json::from_str(&rendered).unwrap();
-        let privkey = jsonified
-            .get("priv_key")
-            .unwrap()
-            .as_object()
-            .map(|x| x.get("value"))
-            .flatten()
-            .map(|x| x.as_str())
-            .flatten()
-            .map(|x| x.len())
-            .unwrap_or_default();
-        assert!(privkey > 0);
-    }
-
-    #[test]
-    fn test_priv_validator_key_template() {
-        let ret = tempfile::TempDir::new()
-            .expect("tempdir is okay")
-            .into_path()
-            .join(format!("_{}", unix_timestamp().to_string()));
-        std::fs::create_dir_all(&ret).expect("failed to create tempdir subdir");
-
-        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let public_key = secret_key.public_key(SECP256K1).serialize();
-
-        // Calculate the address (first 20 bytes of the SHA-256 hash of the public key)
-        let mut hasher = Keccak256::new();
-        hasher.update(&public_key);
-        let address = &hasher.finalize()[..20]; // Take the first 20 bytes
-
-        // Encode the public and private keys in Base64 format (as expected by Tendermint)
-        let priv_key_base64 = base64::encode(secret_key.as_ref());
-        let pub_key_base64 = base64::encode(&public_key); // Base64 encoding of the public key
-        let address_hex = hex::encode(address);
-
-        let template = PrivValidatorKeyConfigTemplate {
-            validator_address: &address_hex,
-            validator_priv_key: &priv_key_base64,
-            validator_pub_key: &pub_key_base64,
-        };
-
-        // Render the template
-        let rendered = template.render().unwrap();
-        let jsonified: serde_json::Value = serde_json::from_str(&rendered).unwrap();
-        assert!(jsonified.get("pub_key").is_some());
-        assert!(jsonified.get("priv_key").is_some());
-        assert!(jsonified.get("address").is_some());
-    }
+    Ok((cometbft_nodes, tx))
 }

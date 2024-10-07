@@ -1,14 +1,8 @@
-use super::{botanix_client::BotanixEthClient, kill_process_at_port, TemplateWriter};
-use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
-use anyhow::Context;
-use askama::Template;
-use reth::consensus_common::utils::unix_timestamp;
-use serde::Serialize;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
+use super::{
+    botanix_client::BotanixEthClient, create_temp_working_directory, kill_process_at_port,
 };
+use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
+use std::{fs, path::PathBuf, sync::Arc};
 use tokio::{
     process::Child,
     sync::broadcast::{channel, Sender},
@@ -22,20 +16,6 @@ pub enum TestSignal {
     Disconnect(),
     Reconnect(),
 }
-
-// =============================== TEMPLATES =========================== //
-
-#[derive(Template, Clone, Debug, Serialize)]
-#[template(path = "bitcoind.conf", ext = "json", escape = "none")]
-struct BitcoindConfigTemplate<'a> {
-    datadir: &'a str,
-    rpc_user: &'a str,
-    rpc_password: &'a str,
-}
-
-impl TemplateWriter for BitcoindConfigTemplate<'_> {}
-
-// ================================================================= //
 
 #[derive(Debug)]
 pub struct SpawnedBitcoindProcess {
@@ -63,45 +43,47 @@ impl SpawnedBitcoindProcess {
 
 #[derive(Clone, Debug)]
 pub struct BitcoindNodeConfig {
-    pub temp_path: PathBuf,
+    pub working_directory: PathBuf,
     pub botanix_eth_client: Option<BotanixEthClient>,
     pub test_signal_tx: Sender<TestSignal>,
+    pub bitcoind_user: String,
+    pub bitcoind_password: String,
 }
 
 impl BitcoindNodeConfig {
-    pub async fn new(test_signal_tx: Sender<TestSignal>) -> anyhow::Result<Self> {
+    pub async fn new(
+        test_signal_tx: Sender<TestSignal>,
+        bitcoind_user: String,
+        bitcoind_password: String,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
-            temp_path: {
-                let ret = tempfile::TempDir::new()
-                    .expect("tempdir is okay")
-                    .into_path()
-                    .join(format!("_{}", unix_timestamp().to_string()));
-                std::fs::create_dir_all(&ret).expect("failed to create tempdir subdir");
-                let bitcoind_conf_file = Path::new(&ret).join("bitcoin");
-                fs::create_dir_all(&bitcoind_conf_file)?;
-                bitcoind_conf_file
-            },
+            working_directory: create_temp_working_directory(),
             botanix_eth_client: None,
             test_signal_tx,
+            bitcoind_user,
+            bitcoind_password,
         })
     }
 
     pub fn spawn_service(&self) -> anyhow::Result<SpawnedBitcoindProcess> {
-        // point to the relevant working directory
-        let mut working_directory =
-            std::env::current_dir().context("Error obtaining current directory")?;
-        for _ in 0..2 {
-            working_directory.pop();
-        }
-
         // prepare run arguments
-        let home_path = self.temp_path.to_path_buf();
-        let home_path_str = home_path.display().to_string();
         let command = "bitcoind";
-        let args = vec!["-conf", &home_path_str];
+        let datadir =
+            format!("-datadir={}", self.working_directory.join("data").display().to_string());
+        let bitcoind_user = format!("-rpcuser={}", self.bitcoind_user);
+        let bitcoind_pwd = format!("-rpcpassword={}", self.bitcoind_password);
+        let args = vec![
+            &datadir,
+            "-regtest=1",
+            &bitcoind_user,
+            &bitcoind_pwd,
+            "-server=1",
+            "-txindex=1",
+            "-fallbackfee=0.00005",
+        ];
 
         Ok(SpawnedBitcoindProcess {
-            child_process: spawn_child_process(command, args, working_directory)?,
+            child_process: spawn_child_process(command, args, &self.working_directory)?,
             port: 18443, // Note: using default port
         })
     }
@@ -118,16 +100,31 @@ pub async fn create_bitcoind_node(
 ) -> anyhow::Result<(BitcoindNodeConfig, tokio::sync::broadcast::Sender<Notifications>)> {
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
     let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
-    let bitcoind_node = BitcoindNodeConfig::new(test_signal_tx).await?;
-
-    // ~~~~~~~~~~~~~~~~~~ write bitcoind.conf file ~~~~~~~~~~~~~~~~~~
-    BitcoindConfigTemplate {
-        datadir: bitcoind_node.temp_path.display().to_string().as_str(),
-        rpc_password: &global_context.bitcoind_pass.as_str(),
-        rpc_user: global_context.bitcoind_user.as_str(),
-    }
-    .write_to_file(&bitcoind_node.temp_path, "bitcoind.conf")
-    .context("Error writing bitcoind.conf to path")?;
-
+    let bitcoind_node = BitcoindNodeConfig::new(
+        test_signal_tx,
+        global_context.bitcoind_user.clone(),
+        global_context.bitcoind_pass.clone(),
+    )
+    .await?;
+    let datadir = bitcoind_node.working_directory.join("data");
+    fs::create_dir_all(datadir.clone())?;
     Ok((bitcoind_node, tx))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use crate::suite::consensus::common::{create_temp_working_directory, spawn_child_process};
+
+    #[tokio::test]
+    async fn run_core() {
+        spawn_child_process(
+            "bitcoind",
+            ["-conf", "/home/evgeni/Documents/.bitcoin/bitcoind.conf"].to_vec(),
+            create_temp_working_directory(),
+        )
+        .unwrap();
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
 }
