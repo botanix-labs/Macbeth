@@ -5,7 +5,7 @@ use super::{
 use crate::{
     context::GlobalContext,
     it_error_print, it_info_print, it_warn_print,
-    suite::consensus::common::{spawn_child_process, MINTING_CONTRACT_BYTECODE},
+    suite::consensus::common::{spawn_child_process, Scope, MINTING_CONTRACT_BYTECODE},
 };
 use anyhow::Context;
 use askama::Template;
@@ -348,7 +348,12 @@ impl FederationMemberTestConfig {
         );
 
         Ok(SpawnedPoaServerProcess {
-            child_process: spawn_child_process(command, args, working_directory)?,
+            child_process: spawn_child_process(
+                Scope::PoaNode(self.index),
+                command,
+                args,
+                working_directory,
+            )?,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
         })

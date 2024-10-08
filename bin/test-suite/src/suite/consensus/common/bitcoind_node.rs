@@ -1,5 +1,5 @@
 use super::{
-    botanix_client::BotanixEthClient, create_temp_working_directory, kill_process_at_port,
+    botanix_client::BotanixEthClient, create_temp_working_directory, kill_process_at_port, Scope,
 };
 use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
 use std::{fs, path::PathBuf, sync::Arc};
@@ -83,7 +83,12 @@ impl BitcoindNodeConfig {
         ];
 
         Ok(SpawnedBitcoindProcess {
-            child_process: spawn_child_process(command, args, &self.working_directory)?,
+            child_process: spawn_child_process(
+                Scope::Bitcoind,
+                command,
+                args,
+                &self.working_directory,
+            )?,
             port: 18443, // Note: using default port
         })
     }
@@ -109,22 +114,4 @@ pub async fn create_bitcoind_node(
     let datadir = bitcoind_node.working_directory.join("data");
     fs::create_dir_all(datadir.clone())?;
     Ok((bitcoind_node, tx))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use crate::suite::consensus::common::{create_temp_working_directory, spawn_child_process};
-
-    #[tokio::test]
-    async fn run_core() {
-        spawn_child_process(
-            "bitcoind",
-            ["-conf", "/home/evgeni/Documents/.bitcoin/bitcoind.conf"].to_vec(),
-            create_temp_working_directory(),
-        )
-        .unwrap();
-        tokio::time::sleep(Duration::from_secs(30)).await;
-    }
 }

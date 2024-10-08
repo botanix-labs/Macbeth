@@ -1,4 +1,6 @@
-use super::{botanix_client::BotanixEthClient, kill_process_at_port, poa_node::ABCI_PORT_BASE};
+use super::{
+    botanix_client::BotanixEthClient, kill_process_at_port, poa_node::ABCI_PORT_BASE, Scope,
+};
 use crate::{
     context::GlobalContext,
     suite::consensus::common::{create_temp_working_directory, spawn_child_process},
@@ -149,7 +151,12 @@ impl CometBftNodeConfig {
         let args = vec!["start", "--home", &home_path_str];
 
         Ok(SpawnedCometBftProcess {
-            child_process: spawn_child_process(command, args, self.working_directory.clone())?,
+            child_process: spawn_child_process(
+                Scope::CometBFT(self.index),
+                command,
+                args,
+                self.working_directory.clone(),
+            )?,
             cometbft_proxy_app_port: self.cometbft_proxy_app_port,
             cometbft_rpc_app_port: self.cometbft_rpc_app_port,
             cometbft_p2p_app_port: self.cometbft_p2p_app_port,
@@ -164,12 +171,13 @@ impl CometBftNodeConfig {
 }
 
 async fn init_cometbft_node(
+    index: u16,
     working_directory: &PathBuf,
 ) -> anyhow::Result<(ExitStatus, String, String)> {
     let working_dir_str = working_directory.display().to_string();
     let command = "cometbft";
     let args = vec!["init", "--home", &working_dir_str];
-    let child = spawn_child_process(command, args, working_directory)?;
+    let child = spawn_child_process(Scope::CometBFT(index), command, args, working_directory)?;
     let output = child.wait_with_output().await?;
     let exit_status = output.status;
     let stdout = String::from_utf8(output.stdout)?;
@@ -177,11 +185,14 @@ async fn init_cometbft_node(
     Ok((exit_status, stdout, stderr))
 }
 
-async fn get_enode(working_directory: &PathBuf) -> anyhow::Result<(ExitStatus, String, String)> {
+async fn get_enode(
+    index: u16,
+    working_directory: &PathBuf,
+) -> anyhow::Result<(ExitStatus, String, String)> {
     let working_dir_str = working_directory.display().to_string();
     let command = "cometbft";
     let args = vec!["show-node-id", "--home", &working_dir_str];
-    let child = spawn_child_process(command, args, working_directory)?;
+    let child = spawn_child_process(Scope::CometBFT(index), command, args, working_directory)?;
     let output = child.wait_with_output().await?;
     let exit_status = output.status;
     let stdout = String::from_utf8(output.stdout)?;
@@ -299,7 +310,7 @@ pub async fn create_cometbft_nodes(
         let working_directory = create_temp_working_directory();
 
         // init cometbft node
-        let (exit_status, stdout, stderr) = init_cometbft_node(&working_directory)
+        let (exit_status, stdout, stderr) = init_cometbft_node(member_index, &working_directory)
             .await
             .context("Error initializing cometbft node")?;
         if !exit_status.success() {
@@ -326,7 +337,7 @@ pub async fn create_cometbft_nodes(
 
         // get enode
         let (exit_status, stdout, stderr) =
-            get_enode(&working_directory).await.context("Error getting enode")?;
+            get_enode(member_index, &working_directory).await.context("Error getting enode")?;
         if !exit_status.success() {
             tracing::error!(
                 "CometBFT enode failed to be obtained: {:?} {:?} {:?}",

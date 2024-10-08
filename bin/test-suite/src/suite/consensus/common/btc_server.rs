@@ -8,7 +8,7 @@ use std::{
 };
 use tokio::process::Child;
 
-use super::{kill_process_at_port, spawn_child_process};
+use super::{kill_process_at_port, spawn_child_process, Scope};
 
 pub const BTC_SERVER_START_PORT: u16 = 8000;
 #[derive(Debug)]
@@ -97,7 +97,7 @@ fn spawn_btc_server_process(
     ];
 
     Ok(SpawnedBtcServerProcess {
-        child_process: spawn_child_process(command, args, working_directory)?,
+        child_process: spawn_child_process(Scope::BtcServer(id), command, args, working_directory)?,
         db_path,
         port,
     })

@@ -2,7 +2,8 @@ use crate::{
     it_error_print, it_info_print,
     suite::consensus::{
         common::{
-            poa_node::FederationMemberTestConfig, spawn_child_process, MINTING_CONTRACT_BYTECODE,
+            poa_node::FederationMemberTestConfig, spawn_child_process, Scope,
+            MINTING_CONTRACT_BYTECODE,
         },
         GlobalContext,
     },
@@ -248,7 +249,12 @@ impl NonFederationMemberTestConfig {
         ];
 
         Ok(SpawnedRpcServerProcess {
-            child_process: spawn_child_process(command, args, working_directory)?,
+            child_process: spawn_child_process(
+                Scope::RpcNode(self.index),
+                command,
+                args,
+                working_directory,
+            )?,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
         })
