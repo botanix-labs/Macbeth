@@ -24,7 +24,10 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_primitives::{botanix::mint_validation::try_parse_burn_event, header_ext::HeaderExt};
+use reth_primitives::{
+    botanix::{mint_validation::try_parse_burn_event, peg_contract::PegoutData},
+    header_ext::HeaderExt,
+};
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotification, StateProviderFactory,
 };
@@ -216,14 +219,6 @@ where
 
         // get pegouts from db
         for PegoutId { txid, idx } in pegout_ids.iter() {
-            // let pegout = match client.transaction_by_hash(txid.into()) {
-            //     Ok(Some(pegout)) => pegout,
-            //     _ => {
-            //         error!(target: "consensus::authority::frost_task::validate_psbt_by_ids",
-            // "Failed to get pegout from db");         return
-            // Err(PsbtValidationError::FailedToValidatePsbtByIds);     }
-            // };
-
             let log = self
                 .storage
                 .client
@@ -236,7 +231,7 @@ where
                     PsbtValidationError::FailedToValidatePsbtByIds
                 })?;
 
-            let pegout_data = try_parse_burn_event(&log, self.storage.btc_network)
+            let PegoutData { amount, destination, network: _} = try_parse_burn_event(&log, self.storage.btc_network)
                 .map_err(|e| {
                     error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to parse burn event {:?}", e);
                     PsbtValidationError::FailedToValidatePsbtByIds
@@ -246,7 +241,18 @@ where
                     PsbtValidationError::FailedToValidatePsbtByIds
                 })?;
 
-            // TODO: validate pegout data against psbt
+            // check if a corresponding output exists in the psbt
+            if let Ok(transaction) = psbt.clone().extract_tx() {
+                if let None = transaction.output.iter().find(|output| {
+                    output.script_pubkey == destination.script_pubkey() && output.value == amount
+                }) {
+                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
+                    return Err(PsbtValidationError::FailedToValidatePsbtByIds);
+                };
+            } else {
+                error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt");
+                return Err(PsbtValidationError::FailedToValidatePsbtByIds);
+            }
         }
 
         Ok(())
