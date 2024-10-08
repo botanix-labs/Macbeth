@@ -247,16 +247,25 @@ where
                 })?;
 
             // check if a corresponding output exists in the psbt
-            if let Ok(transaction) = psbt.clone().extract_tx() {
-                if let None = transaction.output.iter().find(|output| {
-                    output.script_pubkey == destination.script_pubkey() && output.value == amount
-                }) {
-                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
+            match psbt.clone().extract_tx() {
+                Ok(transaction) => {
+                    match transaction.output.iter().find(|output| {
+                        output.script_pubkey == destination.script_pubkey() &&
+                            output.value == amount
+                    }) {
+                        Some(_) => {
+                            info!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Found matching output in psbt");
+                        }
+                        None => {
+                            error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
+                            return Err(PsbtValidationError::FailedToValidatePsbtByIds);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt {:?}", e);
                     return Err(PsbtValidationError::FailedToValidatePsbtByIds);
-                };
-            } else {
-                error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt");
-                return Err(PsbtValidationError::FailedToValidatePsbtByIds);
+                }
             }
         }
 
