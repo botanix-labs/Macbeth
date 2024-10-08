@@ -298,13 +298,7 @@ where
     ) -> Result<(), pegout_scheduler::SyncError> {
         let mut lock = self.pegout_scheduler.lock().await;
 
-        let db = &self.db;
-        lock.sync_until(&self.bitcoind_client, checkpoint, move |utxo| {
-            // We want to store the change outputs of the pegout transactions as spendable UTXOs.
-            db.store_utxos(&[&utxo])?;
-            db.flush()?;
-            Ok(())
-        })?;
+        lock.sync_until(&self.bitcoind_client, checkpoint)?;
         self.db.store_pegout_mgr_finalized_block(lock.last_finalized())?;
         self.db.update_utxo_merkle_root()?;
         self.db.flush()?;

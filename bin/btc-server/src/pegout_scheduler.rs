@@ -119,6 +119,8 @@ impl PegoutRequest {
     }
 }
 
+#[allow(dead_code)]
+/// A pegout that is pending to be signed and broadcasted.
 struct PendingPegout {
     request: PegoutRequest,
     attempts: HashSet<bitcoin::Txid>,
@@ -342,23 +344,23 @@ impl PegoutScheduler {
 
     /// Finalize a block by adding the UTXOs that are deeply confirmed back to the database.
     /// This is also where we remove tracked transactions
-    fn finalize_block(
-        &mut self,
-        finalize_utxo: &mut impl FnMut(database::Utxo) -> Result<(), database::Error>,
-        block: &BlockInfo,
-    ) -> Result<(), database::Error> {
+    fn finalize_block(&mut self, block: &BlockInfo) -> Result<(), database::Error> {
         // To make sure we only update the index when the db is also synced,
         // first try store the new finalized UTXOs to the db, then update the index.
         let mut all_inputs = block.relevant_inputs.iter().copied().collect::<HashSet<_>>();
         for txid in &block.relevant_txs {
             let tx = self.txs.get(txid).expect("corrupt db");
+            // Add back the change to the utxo set
+            let mut change_utxos = vec![];
             for (outpoint, output) in tx.change() {
-                finalize_utxo(database::Utxo {
+                change_utxos.push(database::Utxo {
                     outpoint,
                     output: output.clone(),
                     eth_address: None,
-                })?;
+                });
             }
+            self.db.store_utxos(change_utxos.iter().map(|c| c).collect::<Vec<_>>().as_slice())?;
+            self.db.flush()?;
             all_inputs.extend(tx.tx.input.iter().map(|i| i.previous_output));
         }
 
@@ -426,7 +428,6 @@ impl PegoutScheduler {
         &mut self,
         bitcoind: &impl RpcApi,
         checkpoint: BlockHash,
-        mut finalize_utxo: impl FnMut(database::Utxo) -> Result<(), database::Error>,
     ) -> Result<(), SyncError> {
         info!(
             "Syncing pegout scheduler: last={}:{}, cp={}:{}",
@@ -507,7 +508,7 @@ impl PegoutScheduler {
 
             if self.last_blocks.len() > self.conf_window as usize {
                 let deeply_confirmed_block = self.last_blocks.pop_front().unwrap();
-                self.finalize_block(&mut finalize_utxo, &deeply_confirmed_block)?;
+                self.finalize_block(&deeply_confirmed_block)?;
             }
         }
 
@@ -732,20 +733,12 @@ mod tests {
         let last_blocks = pegout_scheduler.last_blocks.clone();
         assert_eq!(last_blocks.len(), 2);
         let last_block = last_blocks.back().unwrap();
-        let mut utxos = vec![];
-        pegout_scheduler
-            .finalize_block(
-                &mut |utxo| {
-                    utxos.push(utxo);
-                    Ok(())
-                },
-                last_block,
-            )
-            .expect("finalize block");
+        pegout_scheduler.finalize_block(last_block).expect("finalize block");
 
         assert_eq!(pegout_scheduler.last_finalized, block.block_hash());
 
         let tracked_txs = pegout_scheduler.txs.clone();
+        let utxos = db.get_all_utxos().unwrap();
         assert_eq!(tracked_txs.len(), 0);
         assert_eq!(utxos.len(), 2);
 
@@ -760,7 +753,7 @@ mod tests {
     fn finalizing_non_change_pegout() {
         let db = setup_db().0;
         let mut pegout_scheduler =
-            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
         let tx = create_n_outputs_tx(3, 1);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
@@ -776,17 +769,9 @@ mod tests {
         let last_blocks = pegout_scheduler.last_blocks.clone();
         let last_block = last_blocks.back().unwrap();
 
-        let mut utxos = vec![];
-        pegout_scheduler
-            .finalize_block(
-                &mut |utxo| {
-                    utxos.push(utxo);
-                    Ok(())
-                },
-                last_block,
-            )
-            .expect("finalize block");
+        pegout_scheduler.finalize_block(last_block).expect("finalize block");
 
+        let utxos = db.get_all_utxos().unwrap();
         // No change so there is no UTXO to add back to UTXO set
         assert_eq!(utxos.len(), 0);
     }
@@ -805,7 +790,7 @@ mod tests {
             pegout_requests: pegouts,
         };
 
-        let mut pegout_scheduler =
+        let pegout_scheduler =
             PegoutScheduler::new(1, vec![tracked_tx], bitcoin::BlockHash::all_zeros(), db);
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
         assert_eq!(last_tx_txid, tx.txid());
@@ -817,9 +802,9 @@ mod tests {
     fn test_finalize_many_blocks() {
         let db = setup_db().0;
         let mut pegout_scheduler =
-            PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros(), db);
+            PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
         let mut last_block_hash = bitcoin::BlockHash::all_zeros();
-        let mut utxos = vec![];
+
         for _ in 0..100 {
             let tx = create_n_outputs_tx(1, 2);
             let pegouts = pegout_requests_from_tx(&tx, &[0]);
@@ -830,17 +815,9 @@ mod tests {
 
             let last_block = last_blocks.back().unwrap();
             last_block_hash = last_block.hash;
-            pegout_scheduler
-                .finalize_block(
-                    &mut |utxo| {
-                        utxos.push(utxo);
-                        Ok(())
-                    },
-                    last_block,
-                )
-                .expect("finalize block");
+            pegout_scheduler.finalize_block(last_block).expect("finalize block");
         }
-
+        let utxos = db.get_all_utxos().unwrap();
         assert_eq!(utxos.len(), 100);
     }
 
