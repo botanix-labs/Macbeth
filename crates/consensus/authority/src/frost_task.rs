@@ -8,7 +8,13 @@ use crate::{
     Storage,
 };
 
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use bitcoin::Psbt;
+use btcserverlib::{
+    extended_client::{BtcServerExtendedClient, GrpcClientError},
+    pegout_id::PegoutId,
+};
+use reth_blockchain_tree::BlockchainTreeEngine;
+use reth_btc_wallet::psbt::PsbtOutputExt;
 use reth_chainspec::ChainSpec;
 use reth_network::{
     frost::{
@@ -18,8 +24,10 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_primitives::header_ext::HeaderExt;
-use reth_provider::CanonStateNotification;
+use reth_primitives::{botanix::mint_validation::try_parse_burn_event, header_ext::HeaderExt};
+use reth_provider::{
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotification, StateProviderFactory,
+};
 use reth_revm::primitives::FixedBytes;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
@@ -57,6 +65,12 @@ pub(crate) struct FrostNotification {
     pub(crate) psbt: Vec<u8>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum PsbtValidationError {
+    #[error("Failed to validate psbt by ids")]
+    FailedToValidatePsbtByIds,
+}
+
 pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
@@ -85,7 +99,12 @@ impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
     BF: Clone,
-    DB: Clone,
+    DB: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonChainTracker
+        + BlockchainTreeEngine
+        + Clone
+        + 'static,
     EF: Clone,
     Source: RandomSource,
 {
@@ -184,6 +203,55 @@ where
         Ok(prost_serialized_compressed)
     }
 
+    /// Validate psbt by pegout ids
+    pub(crate) async fn validate_psbt_by_ids(&self, psbt: Psbt) -> Result<(), PsbtValidationError> {
+        let pegout_ids = psbt
+            .outputs
+            .iter()
+            .filter_map(|output| match output.pegout_id() {
+                Some(pegout_id) => PegoutId::from_bytes(pegout_id.as_slice()).ok(),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        // get pegouts from db
+        for PegoutId { txid, idx } in pegout_ids.iter() {
+            // let pegout = match client.transaction_by_hash(txid.into()) {
+            //     Ok(Some(pegout)) => pegout,
+            //     _ => {
+            //         error!(target: "consensus::authority::frost_task::validate_psbt_by_ids",
+            // "Failed to get pegout from db");         return
+            // Err(PsbtValidationError::FailedToValidatePsbtByIds);     }
+            // };
+
+            let log = self
+                .storage
+                .client
+                .receipt_by_hash(txid.into())
+                .ok()
+                .flatten()
+                .and_then(|receipts| receipts.logs.get(*idx as usize).cloned())
+                .ok_or_else(|| {
+                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to get log from receipts");
+                    PsbtValidationError::FailedToValidatePsbtByIds
+                })?;
+
+            let pegout_data = try_parse_burn_event(&log, self.storage.btc_network)
+                .map_err(|e| {
+                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to parse burn event {:?}", e);
+                    PsbtValidationError::FailedToValidatePsbtByIds
+                })?
+                .ok_or_else(|| {
+                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to get pegout data from burn event");
+                    PsbtValidationError::FailedToValidatePsbtByIds
+                })?;
+
+            // TODO: validate pegout data against psbt
+        }
+
+        Ok(())
+    }
+
     pub async fn start_task(&mut self) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
@@ -230,6 +298,44 @@ where
                 self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
+            }
+            while let Ok(message) = self.frost_task_rx.try_recv() {
+                if let FrostNotificationMessage::InitiateSigning(frost_notification) = message {
+                    // validate psbt using pegout ids
+                    let psbt = bitcoin::Psbt::deserialize(frost_notification.psbt.as_slice())
+                        .expect("deserialize psbt");
+
+                    match self.validate_psbt_by_ids(psbt).await {
+                        Ok(_) => {
+                            info!(target: "consensus::authority::frost_task::start_task", "Validated psbt successfully")
+                        }
+                        Err(e) => {
+                            error!(target: "consensus::authority::frost_task::start_task", "Error validating psbt {:?}", e);
+                            continue;
+                        }
+                    }
+
+                    match self
+                        .signing_state_machine
+                        .initate_signing_session(
+                            frost_notification.signing_session_id,
+                            frost_notification.psbt,
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            info!(target: "consensus::authority::frost_task::start_task", "Started new signing session successfully")
+                        }
+                        Err(e) => {
+                            error!(target: "consensus::authority::frost_task::start_task", "Error starting new signing session {:?}", e);
+                        }
+                    }
+                } else {
+                    warn!(
+                        target: "consensus::authority::frost_task::start_task", "Unhandled frost notification message {:?}",
+                        message
+                    );
+                }
             }
 
             // Receive canon state notifications
