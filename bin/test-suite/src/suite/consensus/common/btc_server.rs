@@ -91,7 +91,7 @@ fn spawn_btc_server_process(
         "--bitcoind-pass",
         global_context.bitcoind_pass.as_str(),
         "--fee-rate-diff-percentage",
-        "30",
+        "50",
         "--fall-back-fee-rate-sat-per-vbyte",
         "5",
     ];

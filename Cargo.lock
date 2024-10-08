@@ -12128,6 +12128,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bitcoin",
+ "bitcoin_hashes",
  "bitcoincore-rpc",
  "btc-server",
  "bytes",

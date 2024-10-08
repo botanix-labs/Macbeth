@@ -1,12 +1,14 @@
 use std::str::FromStr;
 
 use bitcoin::{consensus::Encodable, Address};
+use bitcoin_hashes::Hash;
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::pegout_id::PegoutId;
 use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
-use rand::{rngs::StdRng, RngCore, SeedableRng};
+use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
 use reth_chainspec::BOTANIX_TESTNET;
+use serde::Deserialize;
 use tonic::transport::Channel;
 
 use crate::{
@@ -265,6 +267,13 @@ pub async fn test_many_inputs_signing(
 
     let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
 
+    // Calling do_signing should fail as we have no pending pegouts
+    let err_res = do_signing(&mut clients, &bitcoind, &[0u8; 32]).await.err().expect("error");
+    println!("err_res: {:?}", err_res);
+
+    assert!(err_res.to_string().contains("Failed to validate psbt: inputs cannot be 0"));
+
+    // let num_pegouts = 2;
     // Notify some pending pegouts
     for c in clients.iter_mut() {
         // Each pegin is 100_000 satoshis, spending 100_000 should spend at least 2 inputs
@@ -273,10 +282,12 @@ pub async fn test_many_inputs_signing(
     }
 
     let final_tx = do_signing(&mut clients, &bitcoind, &[0u8; 32]).await?;
+    bitcoind.generate_to_address(1, &address).expect("generate regtest block");
 
     // Lets make sure it was broadcasted
     let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None).expect("valid tx");
     it_info_print!("final tx_res: {:?}", tx_res);
+    assert_eq!(tx_res.txid(), final_tx.txid());
 
     assert_eq!(final_tx.input.len(), 2);
     // One output should be the change output
@@ -291,5 +302,101 @@ pub async fn test_many_inputs_signing(
             .utxos;
         assert_eq!(utxos.len(), 5);
     }
+
+    let mut pending_pegouts = vec![];
+    let number_of_pending_pegouts = 5;
+    for _ in 0..number_of_pending_pegouts {
+        let mut pegout_id_bytes = [0u8; 36];
+        rand.fill_bytes(&mut pegout_id_bytes);
+        let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
+        let rand_amound = rand.gen::<u64>() % 75_000;
+        let amount = bitcoin::Amount::from_sat(rand_amound);
+
+        // get new a key
+        let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
+        let pk = sk.public_key(&secp);
+
+        let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+
+        pending_pegouts.push((pegout_id, amount, spk.clone(), pegout_id));
+    }
+
+    // Lets settle multiple pegouts
+    for c in clients.iter_mut() {
+        for pending_pegout in pending_pegouts.iter() {
+            send_pegout_notification(
+                c,
+                pending_pegout.1.to_sat(),
+                1,
+                pending_pegout.0,
+                pending_pegout.2.clone(),
+            )
+            .await?;
+        }
+    }
+
+    let final_tx = do_signing(&mut clients, &bitcoind, &[1u8; 32]).await?;
+    bitcoind.generate_to_address(1, &address).expect("generate regtest block");
+    let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None).expect("valid tx");
+
+    assert_eq!(tx_res.txid(), final_tx.txid());
+
+    it_info_print!("final_tx: {:?}", final_tx);
+    assert!(final_tx.input.len() > 1);
+    // 5 pegout outputs + 1 change output
+    assert_eq!(final_tx.output.len(), 6);
+    // last output is the change output
+    let change_address =
+        bitcoin::Address::from_script(&final_tx.output[5].script_pubkey, bitcoin::Network::Regtest)
+            .unwrap();
+    assert_eq!(change_address.address_type().unwrap(), bitcoin::AddressType::P2tr);
+
+    let utxos = clients[0]
+        .get_all_utxos(tonic::Request::new(client::Empty {}))
+        .await
+        .unwrap()
+        .into_inner()
+        .utxos;
+
+    it_info_print!("utxos: {:?}", utxos);
+    // We still have the same UTXOs we started with however some of them should be used with tracked
+    // txs
+    assert_eq!(utxos.len(), 5);
+
+    bitcoind.generate_to_address(1, &address).expect("generate regtest block");
+
+    // Need to define a custom struct as breaking changes in bitcoin-core will cause the
+    // deserialization to fail
+    #[derive(Deserialize)]
+    struct BlockChainInfoRes {
+        blocks: u64,
+    }
+
+    let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks -
+        (BOTANIX_TESTNET.parent_confirmation_depth as u64);
+
+    let deep_block_hash = bitcoind.get_block_hash(deep_tip).unwrap();
+
+    clients[0]
+        .tx_index_new_checkpoint(tonic::Request::new(client::SyncTxIndexRequest {
+            checkpoint_block_hash: deep_block_hash.to_byte_array().to_vec(),
+        }))
+        .await
+        .expect("valid checkpoint");
+
+    let utxos = clients[0]
+        .get_all_utxos(tonic::Request::new(client::Empty {}))
+        .await
+        .unwrap()
+        .into_inner()
+        .utxos;
+
+    it_info_print!("utxos: {:?}", utxos);
+    it_info_print!("len(utxos): {:?}", utxos.len());
+
+    // assert_eq!(utxos.len(), 7);
+
+    // TODO check that all clients have the same UTXOs
+
     Ok(())
 }
