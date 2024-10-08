@@ -47,7 +47,6 @@ use reth_revm::{
     Evm, State,
 };
 use revm_primitives::{
-    bitvec::view::AsMutBits,
     db::{Database, DatabaseCommit},
     BlockEnv, Bytes, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, EvmState, ExecutionResult,
     ResultAndState,

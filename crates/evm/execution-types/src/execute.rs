@@ -1,5 +1,5 @@
 use reth_primitives::{
-    botanix::peg_contract::{PeginData, PegoutData, PegoutWithId},
+    botanix::peg_contract::{PeginData, PegoutWithId},
     Request, U256,
 };
 use revm::db::BundleState;
