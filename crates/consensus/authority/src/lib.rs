@@ -417,9 +417,7 @@ mod tests {
     use random_source_provider::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
-    use reth_consensus_common::utils::{
-        block_fees_split, current_inturn_index, get_block_producer_address, is_inturn,
-    };
+    use reth_consensus_common::utils::{block_fees_split, is_inturn};
     use reth_primitives::{
         constants::ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
@@ -660,9 +658,19 @@ mod tests {
 
     #[test]
     fn should_get_block_producer_address_from_header() {
-        let header = Header::default();
-        let block_producer_address = get_block_producer_address(&header);
-        assert_eq!(block_producer_address, Address::ZERO,);
+        let mut header = Header::default();
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
+        let block_producer_address = header.block_producer_address().unwrap();
+        assert_eq!(block_producer_address, Address::ZERO);
+
+        let mut header2 = Header::default();
+        let mut edh2 = ExtraDataHeader::default();
+        edh2.block_producer_address =
+            Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
+        header2.add_extra_data_header(&edh2);
+        let block_producer_address2 = header2.block_producer_address().unwrap();
+        assert_eq!(block_producer_address2, edh2.block_producer_address);
     }
 
     #[test]

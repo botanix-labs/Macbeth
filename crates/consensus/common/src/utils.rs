@@ -1,8 +1,7 @@
 use reth_consensus::ConsensusError;
 
 use reth_primitives::{
-    extra_data_header::CHAIN_VERSION, header_ext::HeaderExt, revm_primitives::FixedBytes, Address,
-    Header, U256,
+    extra_data_header::CHAIN_VERSION, revm_primitives::FixedBytes, Address, Header, U256,
 };
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -12,16 +11,6 @@ pub fn unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
-// TODO move this into header ext
-// not in authority utils because of circular dependency
-/// Get the authority address from the header
-pub fn get_block_producer_address(header: &Header) -> Address {
-    if let Ok(block_producer_address) = header.block_producer_address() {
-        return block_producer_address;
-    }
-
-    Address::ZERO
-}
 // not in authority utils because of circular dependency
 /// Calculate the block reward split between botanix and the beneficiary
 pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
@@ -100,8 +89,6 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-
-    const BLOCK_TIME_SECONDS: u64 = 10;
 
     #[test]
     fn unix_timestamp() {
