@@ -348,7 +348,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 },
                 frost::test_dkg::dkg_flow
             ),
-            "many_inputs_signing" => run_test!(
+            "signing_flow" => run_test!(
                 self,
                 CreateTestConfig {
                     create_bitcoind_node: true,
