@@ -308,8 +308,14 @@ where
             while let Ok(message) = self.frost_task_rx.try_recv() {
                 if let FrostNotificationMessage::InitiateSigning(frost_notification) = message {
                     // validate psbt using pegout ids
-                    let psbt = bitcoin::Psbt::deserialize(frost_notification.psbt.as_slice())
-                        .expect("deserialize psbt");
+                    let psbt = match bitcoin::Psbt::deserialize(frost_notification.psbt.as_slice())
+                    {
+                        Ok(psbt) => psbt,
+                        Err(e) => {
+                            error!(target: "consensus::authority::frost_task::start_task", "Error deserializing psbt {:?}", e);
+                            continue;
+                        }
+                    };
 
                     match self.validate_psbt_by_ids(psbt).await {
                         Ok(_) => {
