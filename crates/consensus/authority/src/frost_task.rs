@@ -217,6 +217,11 @@ where
             })
             .collect::<Vec<_>>();
 
+        if pegout_ids.is_empty() {
+            error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "No pegout ids found in psbt");
+            return Err(PsbtValidationError::FailedToValidatePsbtByIds);
+        }
+
         // get pegouts from db
         for PegoutId { txid, idx } in pegout_ids.iter() {
             let log = self
