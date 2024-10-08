@@ -384,6 +384,12 @@ impl Db {
         }
     }
 
+    /// Remove a UTXO from the database
+    pub fn remove_utxo(&self, op: &OutPoint) -> Result<(), Error> {
+        self.utxos.remove(op.to_bytes())?;
+        Ok(())
+    }
+
     pub fn iter_utxos(&self) -> impl Iterator<Item = Result<Utxo, Error>> {
         self.utxos.iter().map(|res| {
             let (k, v) = res?;
@@ -430,7 +436,7 @@ impl Db {
             .map(|_| true)
     }
 
-    /// Resetting all utxos
+    /// Resetting all utxos, and re-adding the functions arguments back in
     pub fn reset_utxos(&self, utxos: &[&Utxo]) -> Result<(), Error> {
         self.clear_utxos()?;
         for utxo in utxos.iter() {

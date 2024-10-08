@@ -372,7 +372,10 @@ impl PegoutScheduler {
             if let Some(tx) = self.txs.remove(&input.txid) {
                 info!("Dropping tx that conflicts with finalized tx: {:?}", tx);
             }
-            // TODO need to remove all inputs from set of spendable UTXOs
+            // Those inputs are no longer worth tracking
+            // And no longer spendable, we can safely remove them
+            self.db.remove_utxo(&input)?;
+            self.db.flush()?;
         }
         for txid in &block.relevant_txs {
             self.txs.remove(txid);
