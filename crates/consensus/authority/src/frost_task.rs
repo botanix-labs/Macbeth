@@ -231,41 +231,17 @@ where
             {
                 self.start_dkg().await;
             }
-            while let Ok(message) = self.frost_task_rx.try_recv() {
-                if let FrostNotificationMessage::InitiateSigning(frost_notification) = message {
-                    match self
-                        .signing_state_machine
-                        .initate_signing_session(
-                            frost_notification.signing_session_id,
-                            frost_notification.psbt,
-                        )
-                        .await
-                    {
-                        Ok(_) => {
-                            info!(target: "consensus::authority::frost_task::start_task", "Started new signing session successfully")
-                        }
-                        Err(e) => {
-                            error!(target: "consensus::authority::frost_task::start_task", "Error starting new signing session {:?}", e);
-                        }
-                    }
-                } else {
-                    warn!(
-                        target: "consensus::authority::frost_task::start_task", "Unhandled frost notification message {:?}",
-                        message
-                    );
-                }
-            }
 
             // Receive canon state notifications
             while let Ok(notification) = self.canon_state_notification_receiver.try_recv() {
                 match notification {
                     CanonStateNotification::Commit { new } => {
                         // check if epoch block and if we are the coordinator
-                        // if so, send init signing message
+                        // if so, initiate signing session
                         let tip = new.tip();
                         if tip.is_poa_epoch() {
                             if !self.signing_state_machine.is_coordinator() {
-                                info!("Received canon state notification but we're not the coordinator");
+                                info!("Received canon state notification during epoch block but we're not the coordinator");
                                 continue;
                             } else {
                                 // create psbt and send init signing message
@@ -287,17 +263,18 @@ where
                                 )
                                 .await
                                 {
-                                    Ok(psbt_payload) => self
+                                    Ok(psbt_payload) => match self
                                         .signing_state_machine
-                                        .frost_task_tx()
-                                        .send(FrostNotificationMessage::InitiateSigning(
-                                            FrostNotification {
-                                                signing_session_id: tip.hash(),
-                                                psbt: psbt_payload.psbt,
-                                            },
-                                        ))
-                                        .expect("send frost task message"),
-
+                                        .initate_signing_session(tip.hash(), psbt_payload.psbt)
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            info!(target: "consensus::authority::frost_task::start_task", "Started new signing session successfully")
+                                        }
+                                        Err(e) => {
+                                            error!(target: "consensus::authority::frost_task::start_task", "Error starting new signing session {:?}", e);
+                                        }
+                                    },
                                     Err(e) => {
                                         error!(target: "consensus::authority", ?e, "Failed to get psbt");
                                         return;
