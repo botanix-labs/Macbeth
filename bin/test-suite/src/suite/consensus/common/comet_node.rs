@@ -169,6 +169,20 @@ impl CometBftNodeConfig {
     }
 }
 
+async fn get_cometbft_version(
+    index: u16,
+    working_directory: &PathBuf,
+) -> anyhow::Result<(ExitStatus, String, String)> {
+    let command = "cometbft";
+    let args = vec!["version"];
+    let child = spawn_child_process(Scope::CometBFT(index), command, args, working_directory)?;
+    let output = child.wait_with_output().await?;
+    let exit_status = output.status;
+    let stdout = String::from_utf8(output.stdout)?;
+    let stderr = String::from_utf8(output.stderr)?;
+    Ok((exit_status, stdout, stderr))
+}
+
 async fn init_cometbft_node(
     index: u16,
     working_directory: &PathBuf,
@@ -307,6 +321,12 @@ pub async fn create_cometbft_nodes(
 
         // init working directory
         let working_directory = create_temp_working_directory();
+
+        let (_exit_status, stdout, _stderr) =
+            get_cometbft_version(member_index, &working_directory)
+                .await
+                .context("Failed to get cometbft node version")?;
+        tracing::info!("CometBFT version: {:?}", stdout);
 
         // init cometbft node
         let (exit_status, stdout, stderr) = init_cometbft_node(member_index, &working_directory)
