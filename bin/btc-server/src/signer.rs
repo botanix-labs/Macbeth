@@ -349,9 +349,29 @@ where
         let tx = finalized_psbt.clone().extract_tx()?;
         // We're finalizing it for the first time now.
         let tx_timestamp = SystemTime::now();
-        self.add_tracked_tx(tx, &pending_pegouts, tx_timestamp).await?;
+        self.add_tracked_tx(tx.clone(), &pending_pegouts, tx_timestamp).await?;
         self.db.remove_pending_pegout(&pegouts_ids)?;
         self.db.flush()?;
+
+        // Lets broadcast the tx
+        let tx_id = match self.bitcoind_client.send_raw_transaction(&tx) {
+            Ok(tx_id) => Ok(Some(tx_id)),
+            Err(err) => {
+                let err_msg = err.to_string();
+                if err_msg.contains("already in chain") {
+                    Ok(None)
+                } else {
+                    error!("Failed to broadcast tx: {}", err);
+                    Err(CoordinatorError::FailedToBroadcastTx(err))
+                }
+            }
+        }?;
+
+        if let Some(tx_id) = tx_id {
+            info!("Broadcasted tx: {:?}", tx_id);
+        } else {
+            info!("Transaction already broadcasted and in pool");
+        }
 
         Ok(finalized_psbt)
     }
