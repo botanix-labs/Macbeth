@@ -384,7 +384,7 @@ mod test {
 
         assert!(
             prost_serialized.len() > prost_serialized_compressed.len(),
-            "serialzied message length is greater than the compressed length"
+            "serialized message length is greater than the compressed length"
         );
 
         // now decompress the prost message

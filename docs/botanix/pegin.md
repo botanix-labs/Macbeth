@@ -19,7 +19,7 @@ Pegin procedure
 
 1. Alice sends `[ethAddrress]` to SideCar. SideCar will query the Botanix network via RPC to get the current aggregated public key i.e FROST pubkey.
 
-1. SideCar will send all neccecary components for a Gateway Address(GA) to Botanix via RPC to get a GA. Note that the RPC to get a GA is purely a utility that abstracts away the complexity of generating the taproot address. To verify, SideCar can generate the same taproot address. Additinally this RPC node should be authenticated or rate-limited. Without a rate-limiting method this utlity method is subject to spam attack.
+1. SideCar will send all necessary components for a Gateway Address(GA) to Botanix via RPC to get a GA. Note that the RPC to get a GA is purely a utility that abstracts away the complexity of generating the taproot address. To verify, SideCar can generate the same taproot address. Additionally this RPC node should be authenticated or rate-limited. Without a rate-limiting method this utility method is subject to spam attack.
 
 1. Botanix Protocol will combine this info with the FROST pubkey to create the internal key for her taproot gateway address: `I = FROST + H(FROST | ethAddress ) * G`. The taproot would then be calculated using the taproot equation `Q = I + TapTweak(I | S) * G`. And she sends her pegin transaction to that taproot address on the Bitcoin chain. Additional tapscripts will include the safe spend path. More to come on that in a different spec.
 

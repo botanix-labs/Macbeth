@@ -19,8 +19,8 @@ subgraph Cloudflare Reverse Proxy
 end
 
 subgraph Google Compute Engine
-    subgraph Ngnix Reverse Proxy
-        E[Ngnix]
+    subgraph Nginx Reverse Proxy
+        E[Nginx]
     end
     subgraph Docker Containers
         F[Node]

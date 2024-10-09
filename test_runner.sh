@@ -16,6 +16,9 @@ for test in "${tests_to_run[@]}"; do
   # Set the environment variable
   export TEST_TO_RUN="$test"
 
+  # kill all btc-servers that may be running from previous test runs
+  killall btc-server || true
+
   # Call make
   make start-test-suite
   exit_codes+=("$?")

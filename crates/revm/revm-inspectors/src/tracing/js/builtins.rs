@@ -20,7 +20,7 @@ pub(crate) fn register_builtins(ctx: &mut Context<'_>) -> JsResult<()> {
     let big_int = ctx.eval(Source::from_bytes(BIG_INT_JS.as_bytes()))?;
     ctx.register_global_property("bigint", big_int, Attribute::all())?;
     ctx.register_global_builtin_callable("toHex", 1, NativeFunction::from_fn_ptr(to_hex))?;
-    ctx.register_global_callable("toWord", 1, NativeFunction::from_fn_ptr(to_word))?;
+    ctx.register_global_callable("toward", 1, NativeFunction::from_fn_ptr(to_word))?;
     ctx.register_global_callable("toAddress", 1, NativeFunction::from_fn_ptr(to_address))?;
     ctx.register_global_callable("toContract", 2, NativeFunction::from_fn_ptr(to_contract))?;
     ctx.register_global_callable("toContract2", 3, NativeFunction::from_fn_ptr(to_contract2))?;

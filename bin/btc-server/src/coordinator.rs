@@ -173,7 +173,6 @@ where
         fee_rate: FeeRate,
         change_script: ScriptBuf,
         checkpoint_block: BlockHash,
-        utxo_merkle_root: sha256::Hash,
     ) -> Result<Psbt, CoordinatorError> {
         // We take this lock so another call doesn't do this same
         // process while we're doing it.
@@ -181,13 +180,6 @@ where
 
         // Sync the pegout scheduler and check we have the same UTXO view.
         self.sync_pegout_scheduler(checkpoint_block).await?;
-        let our_utxo_merkle = self.db.get_utxo_merkle_root()?.unwrap_or(sha256::Hash::all_zeros());
-        if utxo_merkle_root != our_utxo_merkle {
-            return Err(CoordinatorError::UtxoMerkleRootMismatch {
-                expected: utxo_merkle_root,
-                actual: our_utxo_merkle,
-            });
-        }
 
         // collect all database utxos in a hashmap
         let utxos: HashMap<OutPoint, Utxo> =
@@ -285,14 +277,14 @@ where
         Ok(psbt)
     }
 
-    /// If no Err is return the orignial psbt served to this function is good to go out to the
+    /// If no Err is return the original psbt served to this function is good to go out to the
     /// signers nothing needs to be added to it as the signers all provided their signing
     /// commitments already and the coordinator just need to verify them
     pub(crate) fn get_to_sign(
         &self,
         signing_session_id: &[u8; 32],
     ) -> Result<Psbt, CoordinatorError> {
-        let _pk_package = self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
+        self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
 
         // Note that the tweaks and signing commitments should be explicitly verified by the signers
         // before signing Instead we can add it to the psbt as a proprietary field for each
@@ -307,7 +299,6 @@ where
                 }
             }
 
-            // TODO (armins) verify that the psbt is in a valid state for end of round 1
             validate_psbt(&psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
             return Ok(psbt);
         }
@@ -361,6 +352,11 @@ where
             psbt_input.sighash_type = Some(sighash_type);
             psbt_input.tap_key_sig = Some(bitcoin::taproot::Signature { sig: secp_sig, hash_ty });
         }
+
+        // Keep a copy of the original psbt as we need to add back the signing commitments and
+        // partial signatures `finalize_mut` removes everything that is not a witness to the
+        // inputs
+        let mut original_psbt = psbt.clone();
         if let Err(errs) =
             miniscript::psbt::PsbtExt::finalize_mut(&mut psbt, bitcoin::secp256k1::SECP256K1)
         {
@@ -371,21 +367,21 @@ where
             return Err(CoordinatorError::PbstFinalizationFailed(errs));
         }
 
+        for (index, input) in original_psbt.inputs.iter_mut().enumerate() {
+            input.final_script_witness = Some(
+                psbt.inputs[index]
+                    .final_script_witness
+                    .clone()
+                    .expect("final script witness placed by finalize_mut"),
+            );
+        }
+
         // Finally we should remove the utxos from the db and add the change one
         let tx = match miniscript::psbt::PsbtExt::extract(&psbt, bitcoin::secp256k1::SECP256K1) {
             Ok(tx) => tx,
             Err(e) => return Err(CoordinatorError::PbstFinalizationFailed(vec![e])),
         };
 
-        let secp_pk = pk_package.verifying_key().to_secp_pk()?;
-        let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-        let targets = tx
-            .output
-            .iter()
-            .filter(|o| o.script_pubkey != change_script)
-            .cloned()
-            .collect::<Vec<_>>();
         let pegout_ids = psbt
             .outputs
             .iter()
@@ -432,7 +428,7 @@ where
             info!("Transaction already broadcasted and in pool");
         }
 
-        Ok(psbt)
+        Ok(original_psbt)
     }
 
     /// Returns signing status
@@ -445,7 +441,7 @@ where
             .map_err(|_| CoordinatorError::CouldNotFindPsbt)
     }
 
-    /// Retruns signing status
+    /// Returns signing status
     pub(crate) async fn get_session_ids(
         &self,
         max_requested_results: u32,

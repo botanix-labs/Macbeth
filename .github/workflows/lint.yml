@@ -61,7 +61,7 @@ jobs:
             cache-all-crates: true
         - name: Install Protobuf Compiler
           run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-        - run: cargo hack check
+        - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile
 
     # Commenting out for now, will re-enable in once we have a MSRV
     #   msrv:

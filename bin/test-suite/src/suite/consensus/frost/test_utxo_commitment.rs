@@ -72,6 +72,7 @@ pub async fn test_utxo_commitment(
                 btc_address.clone(),
                 hex_encode(eth_address),
                 txid,
+                1, // vout
                 100_000_000,
             )
             .await?;
@@ -162,6 +163,7 @@ pub async fn test_utxo_commitment(
             btc_address.clone(),
             hex_encode(eth_address),
             txid,
+            1, // vout
             100_000_000,
         )
         .await?;

@@ -46,7 +46,7 @@ impl ToFrostManager for FrostHandle {
 pub struct PeerData {
     /// peer id
     pub peer_id: PeerId,
-    /// chanel use for sending commands to the peer
+    /// channel use for sending commands to the peer
     pub peer_commands_tx: Option<UnboundedSender<FrostPeerCommand>>,
     /// in or outgoing connection
     pub direction: Option<Direction>,
@@ -195,7 +195,8 @@ impl FrostManager {
                     // only if we have an already connection established
                     if let Some(peer_data) = self.peers_connections.get_mut(&peer_id) {
                         // add the peer conn mapped to a frost id based on authority index
-                        peer_data.frost_identifier = index.map(|i| peer_id_to_identifier(i as u16));
+                        peer_data.frost_identifier =
+                            index.map(|i| authority_index_to_frost_identifier(i as u16));
                         info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event from peer with id = {}, frost identifier = {:?}", peer_id, peer_data.frost_identifier);
                     } else {
                         warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} does not seem to be connected yet", peer_id);
@@ -250,7 +251,7 @@ impl FrostManager {
                     reconnected_peers += 1;
                 }
                 if reconnected_peers > 0 {
-                    info!(target: "network::frost::on_command", "Readded/Reconnected {}/{} peers", reconnected_peers, peers_to_reconnect);
+                    info!(target: "network::frost::on_command", "Re-added/Reconnected {}/{} peers", reconnected_peers, peers_to_reconnect);
                 }
             }
             FrostCommand::CheckConnectedToAll(tx) => {
@@ -323,7 +324,7 @@ impl Future for FrostManager {
 pub enum FrostCommand {
     /// sends healthcheck messages to all peers
     SendHealtcheckToPeers,
-    /// Reconect peers in case their connection got dropped
+    /// Reconnect peers in case their connection got dropped
     ReconnectPeers(Vec<(PeerId, SocketAddr)>),
     /// Check if connection to all federated peers is established
     CheckConnectedToAll(oneshot::Sender<bool>),
@@ -389,8 +390,7 @@ impl FrostConfig {
 }
 
 /// Maps an authority index to a frost specific identifier
-// TODO rename this to authority_index to frost id
-pub fn peer_id_to_identifier(authority_index: u16) -> frost::Identifier {
+pub fn authority_index_to_frost_identifier(authority_index: u16) -> frost::Identifier {
     frost::Identifier::derive(authority_index.to_le_bytes().as_slice())
         .expect("can derive identifier")
 }

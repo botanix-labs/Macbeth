@@ -7,18 +7,21 @@ use bitcoin::{
     BlockHash,
 };
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
-use client::{MakeTxRequest, NotifyPeginsRequest, ScriptBuf, SigningPackage, TxOut, Utxo};
+use client::{
+    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest, ScriptBuf, SigningPackage, TxOut, Utxo,
+};
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{
     botanix::{
         mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
-        peg_contract::{PeginMeta, PegoutData},
+        peg_contract::{PeginMeta, PegoutData, PegoutWithId},
     },
     constants::EPOCH_LENGTH,
     Bloom, BloomInput,
 };
 use reth_provider::BlockReaderIdExt;
+use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
 use std::time::Duration;
 use tracing::{error, info};
@@ -92,18 +95,15 @@ pub(crate) enum FrostParseError {
     InvalidSigningSessionId,
 }
 
-/// recieve a psbt containing all pending pegouts awaiting signing
+/// receive a psbt containing all pending pegouts awaiting signing
 pub(crate) async fn get_psbt(
     btc_server: &mut BtcServerExtendedClient,
-    pegouts: &[PegoutData],
     signing_session_id: &SigningSessionId,
     bitcoin_checkpoint: BlockHash,
-    utxo_merkle_root: sha256::Hash,
 ) -> Result<SigningPackage, GrpcClientError> {
     let req = MakeTxRequest {
         signing_session_id: signing_session_id.to_vec(),
         checkpoint_block_hash: bitcoin_checkpoint[..].to_vec(),
-        utxo_merkle_root: utxo_merkle_root[..].to_vec(),
     };
 
     btc_server.get_psbt(req).await
@@ -120,6 +120,30 @@ pub(crate) async fn call_notify_pegin(
     let request = NotifyPeginsRequest { utxos };
     btc_server.notify_pegins(request).await?;
     info!(target: "consensus::authority", "notifying btc server about pegin utxos");
+    Ok(())
+}
+
+pub(crate) async fn call_notify_pegout(
+    btc_server: &mut BtcServerExtendedClient,
+    pegouts: &[PegoutWithId],
+    height: u64,
+) -> Result<(), GrpcClientError> {
+    if pegouts.is_empty() {
+        return Ok(());
+    }
+
+    // TODO: do we want to modify NotifyPegoutRequest to take a list of pegouts?
+    // loop through pegouts and notify
+    for pegout in pegouts {
+        let request = NotifyPegoutRequest {
+            pegout_id: pegout.id.as_bytes().to_vec(),
+            spk: pegout.data.destination.script_pubkey().to_bytes().to_vec(),
+            amount: pegout.data.amount.to_sat(),
+            height,
+        };
+        btc_server.notify_pegout(request).await?;
+    }
+
     Ok(())
 }
 
@@ -204,12 +228,14 @@ pub(crate) fn deserialize_frost_peer_id(
     Ok(frost_id)
 }
 
-pub(crate) fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], FrostParseError> {
+pub(crate) fn parse_signing_session_id(
+    session_id: &FixedBytes<32>,
+) -> Result<[u8; 32], FrostParseError> {
     if session_id.len() != 32 {
         return Err(FrostParseError::InvalidSigningSessionId);
     }
     let mut session_id_array = [0u8; 32];
-    session_id_array.copy_from_slice(session_id);
+    session_id_array.copy_from_slice(session_id.as_slice());
     Ok(session_id_array)
 }
 

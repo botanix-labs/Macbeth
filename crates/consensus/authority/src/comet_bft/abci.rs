@@ -54,7 +54,7 @@ use crate::{
     },
     engine_util,
     excecution_utils::authority_execution_utils::build_and_execute,
-    utils::call_notify_pegin,
+    utils::{call_notify_pegin, call_notify_pegout},
     AuthorityConsensus, Storage,
 };
 
@@ -72,7 +72,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     bitcoin_checkpoint: BitcoinCheckpoint,
     network_handle: NetworkHandle,
-    btc_server: BtcServerExtendedClient,
+    btc_server: Option<BtcServerExtendedClient>,
     authority_consensus: AuthorityConsensus,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -93,7 +93,7 @@ where
         storage: Storage<EF, BF, DB>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         network_handle: NetworkHandle,
-        btc_server: BtcServerExtendedClient,
+        btc_server: Option<BtcServerExtendedClient>,
         authority_consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -143,6 +143,21 @@ where
         // CometBFT will always run on the same machine and container
         let server = server_builder.bind(format!("{abci_host}:{abci_port}"), app)?;
 
+        // TODO should wait here till we have a aggregate public key stored in the storage
+
+        loop {
+            let storage = self.storage.inner.read().await;
+            if storage.aggregate_public_key.is_some() {
+                info!(
+                    "Aggregate public key is stored in the storage continuing to start ABCI server"
+                );
+                break;
+            }
+            info!("Waiting for aggregate public key to be stored in the storage before starting ABCI server");
+            drop(storage);
+            tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
+        }
+
         task_executor.spawn_critical(
             "ABCI Client",
             Box::pin(async move {
@@ -169,6 +184,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, SealedBlockWithPeg>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+    #[allow(dead_code)]
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
 }
@@ -220,6 +236,12 @@ where
             .expect("have block")
             .seal(best_header.hash());
 
+        let parent_block =
+            BlockReaderIdExt::block_by_id(&client, BlockId::hash(best_header.parent_hash))
+                .expect("have parent")
+                .expect("have block")
+                .seal(best_header.parent_hash);
+
         // let builder_config = EthPayloadBuilderAttributes::new(best_block.hash(), );
         let payload_attributes = PayloadAttributes {
             // Attributes here dont really matter
@@ -228,7 +250,7 @@ where
             prev_randao: FixedBytes::<32>::random(),
             suggested_fee_recipient: Address::ZERO,
             withdrawals: None,
-            parent_beacon_block_root: None,
+            parent_beacon_block_root: parent_block.parent_beacon_block_root,
         };
 
         let payload_builder_attributes =
@@ -441,11 +463,11 @@ where
                         } => {} // Do nothing
                         reth_transaction_pool::TransactionValidationOutcome::Invalid(_, e) => {
                             error!("Txinvalid: Error validating transaction: {:?}", e);
-                            error = (ERROR, "Error occured while validating transaction");
+                            error = (ERROR, "Error occurred while validating transaction");
                         }
                         reth_transaction_pool::TransactionValidationOutcome::Error(_, e) => {
                             error!("TxError: Error validating transaction: {:?}", e);
-                            error = (ERROR, "Error occured while validating transaction");
+                            error = (ERROR, "Error occurred while validating transaction");
                         }
                     }
                 } else {
@@ -719,7 +741,7 @@ enum ABCIDriverMessage {
 }
 
 // The driver is mainly responsible for driving block completion and finalization
-// Once a finalize block is recieved the drive is reponsible for
+// Once a finalize block is received the drive is responsible for
 // * Updating the canonical chain via DB
 // * Sending the finalized block to the network
 // * Sending the finalized block to the engine (FCU)
@@ -729,7 +751,7 @@ pub(crate) struct ABCIDriver<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
-    btc_server: BtcServerExtendedClient,
+    btc_server: Option<BtcServerExtendedClient>,
     network_handle: NetworkHandle,
     driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
@@ -750,7 +772,7 @@ where
         storage: Storage<EF, BF, DB>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         authority_consensus: AuthorityConsensus,
-        btc_server: BtcServerExtendedClient,
+        btc_server: Option<BtcServerExtendedClient>,
         network_handle: NetworkHandle,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
@@ -800,6 +822,7 @@ where
 
                         // Annount to the network
                         let block_to_commit = sealed_block_with_senders.block.clone().unseal();
+                        let block_height = block_to_commit.number;
                         self.network_handle.announce_block(
                             NewBlock { block: block_to_commit, td: Uint::ZERO },
                             block_hash,
@@ -811,11 +834,29 @@ where
                             .map(|p| p.meta.clone())
                             .flatten()
                             .collect::<Vec<_>>();
+
+                        let pegouts = sealed_block_with_peg.pegouts();
+
                         // TODO what happens if the pegins fail? Should we panic? Should this be
                         // called in commit?
-                        call_notify_pegin(&mut self.btc_server, &pegins)
+                        if self.btc_server.is_some() {
+                            // pegins
+                            call_notify_pegin(
+                                &mut self.btc_server.as_mut().expect("btc server to exist"),
+                                &pegins,
+                            )
                             .await
                             .expect("Should notify pegins");
+
+                            // pegouts
+                            call_notify_pegout(
+                                &mut self.btc_server.as_mut().expect("btc server to exist"),
+                                pegouts,
+                                block_height,
+                            )
+                            .await
+                            .expect("Should notify pegouts");
+                        }
 
                         tx.send(()).expect("to send");
                     }
@@ -865,9 +906,6 @@ mod tests {
     use tendermint_abci::Application;
     use tendermint_proto::google::protobuf::Timestamp;
     use tokio::sync::RwLock;
-
-    const GENESIS_APP_HASH_HEX: &str =
-        "a10f8cfbcf437a97e37d8d63f4b0bbdd55d2bee7aec1b629e701ecb12d4e7a88";
 
     /// Build the db and the ABCI client
     fn abci_client_builder() -> ABCIClient<
@@ -974,7 +1012,7 @@ mod tests {
         assert_eq!(response.consensus_params, expected_consensus_params);
         assert_eq!(response.validators, expected_validators);
         let response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
-        assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
+        assert_eq!(response.app_hash.to_vec(), BOTANIX_TESTNET.genesis_hash.unwrap().0.to_vec());
     }
 
     #[test]
@@ -989,7 +1027,10 @@ mod tests {
         assert_eq!(response.app_version, 1);
         assert_eq!(response.last_block_height, 0);
         let response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
-        assert_eq!(response_app_hash_hex, GENESIS_APP_HASH_HEX);
+        assert_eq!(
+            response.last_block_app_hash.to_vec(),
+            BOTANIX_TESTNET.genesis_hash.unwrap().0.to_vec()
+        );
     }
 
     #[test]

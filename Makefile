@@ -717,3 +717,41 @@ check-features:
 		--package reth-primitives \
 		--package reth-rpc-types \
 		--feature-powerset
+
+start-docker-bitcoin:
+	cd ./docker-local && \
+	docker compose --env-file .bitcoin.env -f bitcoin.docker-compose.yml up -d
+
+start-docker-local:
+	cd ./docker-local && \
+	docker-compose --env-file .bitcoin.env -f docker-compose.yml up -d
+
+build-docker-local:
+	cd ./docker-local && \
+	docker-compose --env-file .bitcoin.env -f docker-compose.yml up --build -d 
+
+clean-docker-poa:
+	cd ./docker-local && \
+	sudo rm -rf ./poa-1/db && \
+	sudo rm -rf ./poa-1/static_files && \
+	sudo rm -rf ./poa-2/db && \
+	sudo rm -rf ./poa-2/static_files
+
+clean-docker-btc:
+	cd ./docker-local && \
+	sudo rm -rf ./btc-server-1/db && \
+	sudo rm -rf ./btc-server-2/db
+
+clean-docker-comet:
+	cd ./docker-local && \
+	sudo rm -rf ./consensus-node-1/data/*.db && \
+	sudo rm -rf ./consensus-node-2/data/*.db
+
+stop-docker-local:
+	cd ./docker-local && \
+	docker-compose --env-file .bitcoin.env -f docker-compose.yml down && \
+	cd ../ && \
+	make clean-docker-poa && \
+	make clean-docker-btc && \
+	make clean-docker-comet
+	

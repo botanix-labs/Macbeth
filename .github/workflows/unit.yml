@@ -55,7 +55,7 @@ jobs:
         run: |
           cargo nextest run \
             --locked --features "ethereum" \
-            --workspace --exclude example-custom-evm --exclude example-stateful-precompile --exclude test-suite --exclude ef-tests \
+            --workspace --exclude example-custom-evm --exclude example-stateful-precompile --exclude ef-tests \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
 
   state:

@@ -44,7 +44,7 @@ pub struct FeeHistory {
     ///
     /// # Note
     ///
-    /// The `Option` is only for compatability with Erigon and Geth.
+    /// The `Option` is only for compatibility with Erigon and Geth.
     pub gas_used_ratio: Vec<f64>,
     /// Lowest number block of the returned range.
     pub oldest_block: U256,

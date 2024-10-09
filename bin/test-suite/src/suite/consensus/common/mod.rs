@@ -21,6 +21,7 @@ use std::{
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
+    sync::mpsc::UnboundedReceiver,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -54,7 +55,7 @@ pub fn kill_process_at_port(port: u16) {
         Ok(pid) => {
             if pid {
                 tracing::info!(
-                    "Sucessfully killed server process on port process on port {:?}",
+                    "Successfully killed server process on port process on port {:?}",
                     port
                 );
             } else {
@@ -77,61 +78,126 @@ pub fn spawn_child_process(
     args: Vec<&str>,
     process_pwd: impl AsRef<Path>,
 ) -> anyhow::Result<Child> {
+    let (child, _, _) = spawn_child_process_internal(scope, command, args, process_pwd, false)?;
+    Ok(child)
+}
+
+pub async fn spawn_await_child_process(
+    scope: Scope,
+    command: &str,
+    args: Vec<&str>,
+    process_pwd: impl AsRef<Path>,
+) -> anyhow::Result<(Child, String, String)> {
+    let (child, mut stdout_rx, mut stderr_rx) =
+        spawn_child_process_internal(scope, command, args, process_pwd, true)?;
+
+    let stdout_jh = tokio::task::spawn(async move {
+        let mut stdout_buffer = String::new();
+        while let Some(line) = stdout_rx.recv().await {
+            stdout_buffer.push_str(&line);
+        }
+        stdout_buffer
+    });
+
+    let stderr_jh = tokio::task::spawn(async move {
+        let mut stderr_buffer = String::new();
+        while let Some(line) = stderr_rx.recv().await {
+            stderr_buffer.push_str(&line);
+        }
+        stderr_buffer
+    });
+
+    let stdout = stdout_jh.await?;
+    let stderr = stderr_jh.await?;
+
+    Ok((child, stdout, stderr))
+}
+
+pub fn spawn_child_process_internal(
+    scope: Scope,
+    command: &str,
+    args: Vec<&str>,
+    process_pwd: impl AsRef<Path>,
+    forward_messages: bool,
+) -> anyhow::Result<(Child, UnboundedReceiver<String>, UnboundedReceiver<String>)> {
     let mut cmd = Command::new(command);
     cmd.args(&args).current_dir(process_pwd).stdout(Stdio::piped()).stderr(Stdio::piped());
+
     let mut child = cmd.spawn()?;
 
     // Open the log file for both stdout and stderr
     let log_file_path = PathBuf::from(format!("{}.txt", scope.to_string()));
     let log_file = OpenOptions::new().append(true).create(true).open(log_file_path)?;
 
-    // Clone the file handler for both stdout and stderr logging
+    // Clone the log file
     let log_file_stdout = log_file.try_clone()?;
     let log_file_stderr = log_file.try_clone()?;
 
-    // Spawn a task to handle stdout
+    // Set up channels for stdout and stderr
+    let (stdout_tx, stdout_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (stderr_tx, stderr_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // Handle stdout logging and capturing
     if let Some(stdout) = child.stdout.take() {
+        let stdout_tx = stdout_tx.clone();
+        let mut file = tokio::fs::File::from_std(log_file_stdout);
+
         tokio::task::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
-            let mut file = tokio::fs::File::from_std(log_file_stdout);
 
             while let Ok(Some(line)) = lines.next_line().await {
                 tracing::info!("[{}] >>>>>> {}", scope, line);
 
-                // Write the line to the file
+                // Write the line to the log file
                 if let Err(e) =
                     tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", line).as_bytes())
                         .await
                 {
                     tracing::error!("Failed to write to log file: {}", e);
                 }
+
+                if forward_messages {
+                    // Send the line over the channel
+                    if let Err(e) = stdout_tx.send(format!("{}\n", line)) {
+                        tracing::error!("Failed to send stdout over channel: {}", e);
+                    }
+                }
             }
         });
     }
 
-    // Spawn a task to handle stderr
+    // Handle stderr logging and capturing
     if let Some(stderr) = child.stderr.take() {
+        let stderr_tx = stderr_tx.clone();
+        let mut file = tokio::fs::File::from_std(log_file_stderr);
+
         tokio::task::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
-            let mut file = tokio::fs::File::from_std(log_file_stderr);
 
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::error!("[{}] >>>>>> {}", scope, line);
+                tracing::info!("[{}] >>>>>> {}", scope, line);
 
-                // Write the line to the file
+                // Write the line to the log file
                 if let Err(e) =
                     tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", line).as_bytes())
                         .await
                 {
                     tracing::error!("Failed to write to log file: {}", e);
                 }
+
+                if forward_messages {
+                    // Send the line over the channel
+                    if let Err(e) = stderr_tx.send(format!("{}\n", line)) {
+                        tracing::error!("Failed to send stderr over channel: {}", e);
+                    }
+                }
             }
         });
     }
 
-    Ok(child)
+    Ok((child, stdout_rx, stderr_rx))
 }
 
 pub async fn create_botanix_eth_client(rpc_port: u16) -> anyhow::Result<BotanixEthClient> {

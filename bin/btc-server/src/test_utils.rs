@@ -176,7 +176,7 @@ pub mod test_utils {
             identifier: frost_id!(1u16),
             max_signers: 3,
             min_signers: 2,
-            frost_round1_dkg: None,
+            frost_round1_dkg: Arc::new(Mutex::new(None)),
             frost_round2_dkg: Arc::new(Mutex::new(None)),
             frost_round1_nonces: Arc::new(Mutex::new(None)),
             btc_signing_server_jwt_secret: None,
@@ -201,7 +201,6 @@ pub mod test_utils {
                 fall_back_fee_rate_sat_per_vbyte: 30,
             },
         };
-        println!("App setup complete");
 
         app
     }

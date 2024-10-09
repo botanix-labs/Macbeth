@@ -16,9 +16,14 @@ To run the stack locally, please go through the following steps to ensure you ha
 1. Install `foundry/forge` on your system - simply follow the instructions here: [foundry](https://book.getfoundry.sh/getting-started/installation)
 1. Install and set up `git` to use ssh.
 1. Install protobuf native dependencies: `apt update && apt upgrade -y && apt install -y protobuf-compiler libprotobuf-dev` (for ubuntu only)
-1. Install libclang dependeny: `sudo apt-get install libclang-dev` (for ubuntu only)
+1. Install libclang dependency: `sudo apt-get install libclang-dev` (for ubuntu only)
 1. Install gcp-cli: [google-cloud-cli](https://cloud.google.com/sdk/docs/install)
 1. Install [k9s](https://k9scli.io/topics/install/)
+
+## Codespell
+
+On ci we run `codespell` on the codebase to ensure there are no typos.
+If you want to run it locally you can install it with `pip install codespell` and then run it in the root of the repo with `codespell -w .` to automatically fix the typos.
 
 ## Connecting to bitcoind on the cluster
 
@@ -66,14 +71,14 @@ bitcoind -conf=[path to your config file above]
 
 ```
 
-## Runing a local federation
+## Running a local federation
 
 Once you have connected to bitcoind, you can run a local federation of two and more nodes easily.
 These instructions set up federation nodes running poa consensus on your local set up.
 Please note that the federation on feature/poA-consensus consists of at least two federation members
 
 
-1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIND_NETWORK`, `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD`. If you are connecting to bitcoind on the cloud, ask adminstrator for username and password. If you are using the local instance with `regtest`, these parameters should be directly accessible to you.
+1. Configure `.env` file adjusting the values of the bitcoind server you want to connect to updating the values of `BITCOIND_NETWORK`, `BITCOIND_URL`, `BITCOIND_USER`, `BITCOIND_PWD`. If you are connecting to bitcoind on the cloud, ask administrator for username and password. If you are using the local instance with `regtest`, these parameters should be directly accessible to you.
 
 ```bash
 BITCOIND_NETWORK=[BTC NETWORK e.g. regtest]
@@ -127,9 +132,41 @@ NODE_2_DIR=[your node 2 directory path]
 `cast rpc admin_addPeer "enode://bdc272b244f717604fffe659d2d98205d1e6764fdf453d1631f42c2db4d8d710606084da81495d55673bfc038bdf41e3f4c17d09c875a0bcc1ea809219e34826@127.0.0.1:30304"`
 ```
 
-> **Note**
->
-> you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
+## Run a local federation (Docker-Compose)
+
+1. Change directory to `docker-local` and configure `.bitcoin.env` file adjusting the values of the bitcoind server in the docker-compose.
+
+2. Start the bitcoind server using  `make start-docker-bitcoin`.
+
+3. Copy `federation.template.toml` to the `docker-local/poa-1 && docker-local/poa-2` directory using:
+
+```bash
+cp federation.template.toml docker-local/poa-1/chain.toml
+cp federation.template.toml docker-local/poa-2/chain.toml
+```
+
+4. Update the `chain.toml` federation members ip addresses to host machine ip to avoid network connectivity issues.
+
+5. Start local-federation with 2/2/2 nodes using:
+
+```bash
+make start-docker-local
+```
+
+6. Update the `genesis.json` for cometbft nodes with the appropriate validator keys
+
+7. Update the `PERSISTENT_PEERS` value for cometbft nodes with the appropriate id. To get the peer id run:
+
+```bash
+docker exec -it consensus-node-1 cometbft show-node-id --home /cometbft
+docker exec -it consensus-node-2 cometbft show-node-id --home /cometbft
+```
+
+***Notes***
+>> To build poa-node locally for feature or refactor testing use `make build-docker-local`
+
+>> you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
+
 
 ## Testing
 
@@ -192,7 +229,3 @@ If the answer is not there:
 ## Security
 
 See [`SECURITY.md`](./SECURITY.md).
-
-## Acknowledgements
-
-The Botanix Project team

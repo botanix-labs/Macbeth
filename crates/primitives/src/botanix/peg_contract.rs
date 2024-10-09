@@ -10,6 +10,7 @@ use bitcoin::{
     merkle_tree::PartialMerkleTree,
     TxOut,
 };
+use btcserverlib::pegout_id::PegoutId;
 use ethers::types::U256;
 use secp256k1::PublicKey;
 use thiserror::Error;
@@ -248,6 +249,15 @@ pub struct PegoutData {
     pub network: bitcoin::Network,
 }
 
+/// Pegout with PegoutId data structure
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PegoutWithId {
+    /// Pegout data
+    pub data: PegoutData,
+    /// Pegout id
+    pub id: PegoutId,
+}
+
 impl PegoutData {
     /// Create a new pegout data
     pub fn new(
@@ -255,7 +265,7 @@ impl PegoutData {
         address: String,
         btc_network: bitcoin::Network,
     ) -> Result<Self, PegoutDataError> {
-        // Check for valid addres
+        // Check for valid address
         let destination: bitcoin::address::Address<bitcoin::address::NetworkUnchecked> =
             bitcoin::address::Address::from_str(address.as_str())
                 .map_err(|_e| PegoutDataError::Invalid("Invalid Bitcoin Address"))?;

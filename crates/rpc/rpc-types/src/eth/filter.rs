@@ -77,7 +77,7 @@ impl<T: Eq + Hash> From<ValueOrArray<Option<T>>> for FilterSet<T> {
 }
 
 impl<T: Eq + Hash> FilterSet<T> {
-    /// Returns wheter the filter is empty
+    /// Returns whether the filter is empty
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -253,7 +253,7 @@ pub struct Filter {
     pub block_option: FilterBlockOption,
     /// Address
     pub address: FilterSet<Address>,
-    /// Topics (maxmimum of 4)
+    /// Topics (maximum of 4)
     pub topics: [Topic; 4],
 }
 

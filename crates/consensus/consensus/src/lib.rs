@@ -485,8 +485,8 @@ pub enum ConsensusError {
         child_gas_limit: u64,
     },
 
-    /// Cannot add and existing federation memeber to the federation
-    #[display("Cannot add and existing federation memeber to the federation")]
+    /// Cannot add and existing federation member to the federation
+    #[display("Cannot add and existing federation member to the federation")]
     CannotAddExistingFederationMember,
 }
 

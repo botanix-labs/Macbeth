@@ -176,7 +176,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
         block_headers: headers,
     };
 
-    // send the pegin transactions to all fed memebers
+    // send the pegin transactions to all fed members
     it_info_print!(
         "Sending pegin tx: block headers",
         meta.block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
@@ -290,7 +290,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
         }
     }
     assert!(match_found);
-    // TODO We could do a percise amounts check here
+    // TODO We could do a precise amounts check here
     assert!(pegout_tx.output[1].value > Amount::ZERO);
 
     Ok(())

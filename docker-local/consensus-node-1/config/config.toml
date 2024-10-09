@@ -19,7 +19,7 @@ version = "1.0.0-rc1"
 proxy_app = "tcp://127.0.0.1:26658"
 
 # A custom human readable name for this node
-moniker = "cometbft-node-2"
+moniker = "8765954ba023"
 
 # Database backend: goleveldb | cleveldb | boltdb | rocksdb | badgerdb | pebbledb
 # * goleveldb (github.com/syndtr/goleveldb)
@@ -54,7 +54,7 @@ db_backend = "goleveldb"
 db_dir = "data"
 
 # Output level for logging, including package level options
-log_level = "debug"
+log_level = "info"
 
 # Output format: 'plain' (colored text) or 'json'
 log_format = "plain"
@@ -95,7 +95,7 @@ filter_peers = false
 [rpc]
 
 # TCP or UNIX socket address for the RPC server to listen on
-laddr = "tcp://127.0.0.1:26657"
+laddr = "tcp://0.0.0.0:26657"
 
 # A list of origins a cross-domain request can be executed from
 # Default value '[]' disables cors support
@@ -275,7 +275,7 @@ addr_book_file = "config/addrbook.json"
 
 # Set true for strict address routability rules
 # Set false for private or local networks
-addr_book_strict = false 
+addr_book_strict = false
 
 # Maximum number of inbound peers
 max_num_inbound_peers = 40
@@ -314,7 +314,7 @@ seed_mode = false
 private_peer_ids = ""
 
 # Toggle to disable guard against peers connecting from the same ip.
-allow_duplicate_ip = false
+allow_duplicate_ip = true
 
 # Peer connection configuration.
 handshake_timeout = "20s"
@@ -583,7 +583,7 @@ psql-conn = ""
 # When true, Prometheus metrics are served under /metrics on
 # PrometheusListenAddr.
 # Check out the documentation for the list of available metrics.
-prometheus = false
+prometheus = true
 
 # Address to listen for Prometheus collector(s) connections
 prometheus_listen_addr = ":26660"
@@ -596,3 +596,4 @@ max_open_connections = 3
 
 # Instrumentation namespace
 namespace = "cometbft"
+

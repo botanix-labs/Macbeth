@@ -1,9 +1,9 @@
-use super::{
-    botanix_client::BotanixEthClient, kill_process_at_port, poa_node::ABCI_PORT_BASE, Scope,
-};
+use super::{kill_process_at_port, poa_node::ABCI_PORT_BASE, Scope};
 use crate::{
     context::GlobalContext,
-    suite::consensus::common::{create_temp_working_directory, spawn_child_process},
+    suite::consensus::common::{
+        create_temp_working_directory, spawn_await_child_process, spawn_child_process,
+    },
 };
 use anyhow::Context;
 use reth_chainspec::BOTANIX_TESTNET;
@@ -175,11 +175,10 @@ async fn get_cometbft_version(
 ) -> anyhow::Result<(ExitStatus, String, String)> {
     let command = "cometbft";
     let args = vec!["version"];
-    let child = spawn_child_process(Scope::CometBFT(index), command, args, working_directory)?;
+    let (child, stdout, stderr) =
+        spawn_await_child_process(Scope::CometBFT(index), command, args, working_directory).await?;
     let output = child.wait_with_output().await?;
     let exit_status = output.status;
-    let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
     Ok((exit_status, stdout, stderr))
 }
 
@@ -190,11 +189,10 @@ async fn init_cometbft_node(
     let working_dir_str = working_directory.display().to_string();
     let command = "cometbft";
     let args = vec!["init", "-k", "secp256k1", "--home", &working_dir_str];
-    let child = spawn_child_process(Scope::CometBFT(index), command, args, working_directory)?;
+    let (child, stdout, stderr) =
+        spawn_await_child_process(Scope::CometBFT(index), command, args, working_directory).await?;
     let output = child.wait_with_output().await?;
     let exit_status = output.status;
-    let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
     Ok((exit_status, stdout, stderr))
 }
 
@@ -205,11 +203,10 @@ async fn get_enode(
     let working_dir_str = working_directory.display().to_string();
     let command = "cometbft";
     let args = vec!["show-node-id", "--home", &working_dir_str];
-    let child = spawn_child_process(Scope::CometBFT(index), command, args, working_directory)?;
+    let (child, stdout, stderr) =
+        spawn_await_child_process(Scope::CometBFT(index), command, args, working_directory).await?;
     let output = child.wait_with_output().await?;
     let exit_status = output.status;
-    let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
     Ok((exit_status, stdout, stderr))
 }
 
@@ -229,6 +226,12 @@ fn updated_genesis_file(
 
     if let Some(max_gas) = genesis_object.pointer_mut("/consensus_params/block/max_gas") {
         *max_gas = json!("-1");
+    }
+
+    if let Some(pub_key_types) =
+        genesis_object.pointer_mut("/consensus_params/validator/pub_key_types")
+    {
+        *pub_key_types = json!(["secp256k1"]);
     }
 
     if let Some(vote_extensions_enable_height) =
@@ -370,7 +373,8 @@ pub async fn create_cometbft_nodes(
                 stderr
             ));
         }
-        let enode = stdout;
+        let output_parts = stdout.split("\n").filter(|x| !x.is_empty()).collect::<Vec<&str>>();
+        let enode = output_parts[output_parts.len() - 1].to_string();
         tracing::info!("CometBFT enode: {:?}", enode);
 
         // prepare test signal

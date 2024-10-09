@@ -14,8 +14,9 @@ use reth_ethereum_forks::{
 use reth_network_peers::NodeRecord;
 use reth_primitives_traits::{
     constants::{
-        BOTANIX_INITIAL_BASE_FEE, DEV_GENESIS_HASH, EIP1559_INITIAL_BASE_FEE, EMPTY_WITHDRAWALS,
-        ETHEREUM_BLOCK_GAS_LIMIT, HOLESKY_GENESIS_HASH, MAINNET_GENESIS_HASH, SEPOLIA_GENESIS_HASH,
+        BOTANIX_INITIAL_BASE_FEE, BOTANIX_TESTNET_GENESIS, DEV_GENESIS_HASH,
+        EIP1559_INITIAL_BASE_FEE, EMPTY_WITHDRAWALS, ETHEREUM_BLOCK_GAS_LIMIT,
+        HOLESKY_GENESIS_HASH, MAINNET_GENESIS_HASH, SEPOLIA_GENESIS_HASH,
     },
     Header, SealedHeader,
 };
@@ -144,20 +145,20 @@ pub struct BotanixTestnetGenesisConfig<'a> {
 }
 
 /// The Botanix Testnet
+/// NOTE: this is not used! Please use `create_botanix_config_with_genesis()` defined below at a top
+/// level and use generate spec throughout the application
 pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
     let mut spec = ChainSpec {
         chain: Chain::from_id(3636),
         genesis: serde_json::from_str(include_str!("../res/genesis/botanix_testnet.json"))
             .expect("Can't deserialize Botanix Testnet genesis json"),
-        genesis_hash: None,
+        genesis_hash: Some(BOTANIX_TESTNET_GENESIS),
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        // TODO set hardfork configs
         hardforks: EthereumHardfork::botanix().into(),
         deposit_contract: None, // only relevant for PoS chains
-        // Signet confirmation depth requirment
+        // Signet confirmation depth requirement
         parent_confirmation_depth: 1,
         leader_selection_window: Some(20),
-        // TODO (armins) do we need this?
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 1700,
@@ -176,14 +177,15 @@ pub fn create_botanix_config_with_genesis(
     ChainSpec {
         chain: Chain::from_id(3636),
         genesis,
-        genesis_hash: None,
+        genesis_hash: Some(BOTANIX_TESTNET_GENESIS),
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        // TODO set hardfork configs
         hardforks: EthereumHardfork::botanix().into(),
-        deposit_contract: None, // TODO: do we even have?
+        deposit_contract: None, // Only relevant for PoS chains
         parent_confirmation_depth: pegin_conf_depth,
-        leader_selection_window: Some(5),
+        leader_selection_window: Some(20),
         botanix_fee_recipient: Some(botanix_fee_recipient),
+        max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
+        prune_delete_limit: 1700,
         ..Default::default()
     }
 }

@@ -53,9 +53,9 @@ impl BotanixConfig {
 /// Errors from get gateway address RPC endpoint
 #[derive(Debug)]
 pub enum GatewayAddressRPCError {
-    /// Failed to decode value recieved from `btc_server`
+    /// Failed to decode value received from `btc_server`
     FailedToDecodeAggregatePublicKey(hex::FromHexError),
-    /// Invalid param recieved from client
+    /// Invalid param received from client
     Client(GrpcClientError),
     /// Address generation failed
     FailedToGenerateGatewayAddress,
@@ -281,7 +281,7 @@ impl Botanix {
 
         if let Some(fee) = fee_result.fee_rate {
             let sats_kb = bitcoin::FeeRate::from_sat_per_kwu(fee.to_sat() / 4);
-            // this really doesnt need to be a U256 can be U64
+            // this really doesn't need to be a U256 can be U64
             Ok(U256::from(sats_kb.to_sat_per_vb_ceil()))
         } else {
             // Use errors if available

@@ -2,18 +2,18 @@
 
 The following document describes the technical details of the Federated Botanix Sidechain.
 
-## Requirments
+## Requirements
 
 ##### What are we building?
 
 - Federation of a block producing and validating nodes
-- FROST-style multisig consisiting of federation memebers
+- FROST-style multisig consisiting of federation members
 
 ## Non-Requirments
 
 #### What are we not building?
 
-This document outlines many different components and how they may be softforked in the future. However, we should clearly lable what we are not delivering as part of v1.
+This document outlines many different components and how they may be softforked in the future. However, we should clearly label what we are not delivering as part of v1.
 These components are
 
 - Staking
@@ -40,7 +40,7 @@ The ecosystem includes Botanix nodes, adhering to the standards set by the Botan
 
 Within testnet v1, each federation member will run a solitary bitcoin signer accessible via gRPC, aptly named the BTC Signer. This entity administers a database of spendable Unspent Transaction Outputs (UTXOs), dynamically updating this inventory upon the introduction of new peg ins and outs. Furthermore, the BTC Signer exposes an endpoint facilitating the retrieval of its internal taproot key's public key. Lastly, the BTC Signer shoulders the responsibility of executing all pegouts. Specifically, upon the emission of a burn topic from the minting/genesis contract, the BTC Signer orchestrates the construction of a bitcoin transaction, drawing from the available pool of UTXOs.
 
-Lastly, the BTC Signer will also be encumbered with the responsibilites of FROST signing. Including participating in Distributed Key Generation (DKG) and signing.
+Lastly, the BTC Signer will also be encumbered with the responsibilities of FROST signing. Including participating in Distributed Key Generation (DKG) and signing.
 
 ### Diagram
 
@@ -80,16 +80,16 @@ The following describes in detail each technical component needed to build a fed
 #### Proof Of Authority (PoA)
 
 Our consensus mechanism will follow the [EIP-225 Clique Specification](https://eips.ethereum.org/EIPS/eip-225).
-There are some details that needs to change due to technical constraits of the federation.
+There are some details that needs to change due to technical constraints of the federation.
 
-1. Federation memebers will be stored as 33-byte compressed secp256k1 public keys and stored in the EDH. More on this below
-1. The Federation memeber being voted on will be repersented at a 33-byte compressed secp256k1 public key and will live in EDH.
+1. Federation members will be stored as 33-byte compressed secp256k1 public keys and stored in the EDH. More on this below
+1. The Federation member being voted on will be repersented at a 33-byte compressed secp256k1 public key and will live in EDH.
 1. In turn Block producer index is selected via: `bitcoin_block_hash % n`
 
 There are several clear drawbacks from this approach. Mainly a dishonest node maybe able to sign non-optimal block or sign for a block that fails consensus protocol check.
 If a node fails to provide a valid block while `IN_TURN` then the network suffers a chain halt of ~10 min till a new bitcoin block is mined.
 
-**Note:** Federation memebers are only block producers. A seperate set of keys are responsible for spending and managing the multisig wallet.
+**Note:** Federation members are only block producers. A separate set of keys are responsible for spending and managing the multisig wallet.
 
 **Open Question:**
 * Do we need a threshold consensus on valid blocks before they are produced (liquid's 3 stage commitment). If so this could reduce block time.
@@ -123,7 +123,7 @@ Botanix will encounter numerous new consensus-critical components that require m
 
 As an alternative, this document proposes extending the header's extradata field to accommodate these emerging consensus properties. This approach aims to avoid compatibility challenges and streamline the integration of new components without introducing unnecessary refactoring complexities.
 
-The following data serlialization format outlines how the EDH will be formated
+The following data serlialization format outlines how the EDH will be formatted
 | Field | Description | Size |
 |------------------------|-------------------------------|-------|
 | Version | | 4 byte|
@@ -132,7 +132,7 @@ The following data serlialization format outlines how the EDH will be formated
 | Bitcoin block hash | Current bitcoin Tip according to the block producer | 32 bytes |
 | Bitcoin base fee | Current competitive L1 fee | 4 bytes |
 | Root of UTXO merkel tree | | 32 bytes |
-| Federation Signature | secp256k1 recoverable signature. Signing over the entire eth header with the EDH concatinated at the end. Also optional, the data structure itself should encodable/decodable without the signature | 65 bytes |
+| Federation Signature | secp256k1 recoverable signature. Signing over the entire eth header with the EDH concatenated at the end. Also optional, the data structure itself should encodable/decodable without the signature | 65 bytes |
 
 **Note**: The list of federation members will not be changing during the epochs. Since nodes will only start sync at the start of an epoch, there is no need to store the federation in in its entirety every blocks.
 
@@ -144,13 +144,13 @@ The following data serlialization format outlines how the EDH will be formated
 
 ##### V1 Version
 
-V1 testnet will consume version `0x0` for EDH. For version 0 Botanix consensus will not allow EDH with a vote field. Additionally the number of federation memebers will be limited to 15.
+V1 testnet will consume version `0x0` for EDH. For version 0 Botanix consensus will not allow EDH with a vote field. Additionally the number of federation members will be limited to 15.
 
 #### Epochs
 
 Epoch serve multiple purposes. Mainly they serve as a statless checkpoint in which consensus descions are made and which nodes can use to sync from.
 
-Epoch lenghts are defined by the eip-255 `EPOCH_LENGTH` field.
+Epoch lengths are defined by the eip-255 `EPOCH_LENGTH` field.
 
 ##### Epoch events
 
@@ -186,7 +186,7 @@ FROST is a multi-round interactive protocol. There are two main ways to solve th
 1. FROST participants store and commuinicate with one another using the EDH and the botanix blocks. There are clear drawbacks with this approach. Participants will have to contribute signatures during blocks and oncurr the block delay
 1. (Liquid Approach) Utilizing the gossip network.
 
-The rest of this document assumes FROST interactivity will occur over an authenitcated and confidential gossip network.
+The rest of this document assumes FROST interactivity will occur over an authenticated and confidential gossip network.
 
 TODO: specify gossip message structure
 
@@ -206,10 +206,10 @@ The Bitcoin signer must adhere to the following steps:
 1. If there are no shares or some are missing, DKG must commence.
 1. Upon successful DKG, the reconstructed aggregate key must be saved in the database along side partial shares of each participant.
 
-**Note:** FROST reqiures each particiapant to have a identifier. While some protocols use indecies, we can use the federation public key in lexigraphical order.
+**Note:** FROST requires each particiapant to have a identifier. While some protocols use indices, we can use the federation public key in lexicographical order.
 
 **Repeating DKG**
-Upon removing or adding a federation memeber all three rounds DKG must be repeated. There is a startegy called [proactive secret sharing](https://en.wikipedia.org/wiki/Proactive_secret_sharing) which reduces the interactivity needs but its not supported in software yet. The bitcoin signer must be signaled to the repeat DKG. It's important that the bitcoin signer can verify the need to DKG for itself by refrencing the last two epoch blocks.
+Upon removing or adding a federation member all three rounds DKG must be repeated. There is a strategy called [proactive secret sharing](https://en.wikipedia.org/wiki/Proactive_secret_sharing) which reduces the interactivity needs but its not supported in software yet. The bitcoin signer must be signaled to the repeat DKG. It's important that the bitcoin signer can verify the need to DKG for itself by referencing the last two epoch blocks.
 
 ##### Signing
 
@@ -224,7 +224,7 @@ The round coordinator is responsible for performing UTXO selection for the set o
 It's important to note that the coordinator and peers will relay messages encapsulating a Partially Signed Bitcoin Transaction (PSBT). This document will be updated to specify the custom PSBT properties that Botanix will utilize in its implementation of FROST. This includes incorporating Nonce pairs, group nonces, group commitments, and sighash within the PSBT. The rationale behind this approach is to create a robust data structure containing all input-output pairs that can be validated at any point by any participant in the Botanix network, whether a federation member or not.
 
 **Softfork considerations**
-While consensus is not aware of how multisig spends are signed for, the network gossip message should still be version for future upgrades. Such as dyanmic federations.
+While consensus is not aware of how multisig spends are signed for, the network gossip message should still be version for future upgrades. Such as dynamic federations.
 
 #### UTXO Set
 
@@ -269,8 +269,8 @@ Each federation member's secures the keys used to sign blocks, pegout txs and au
 
 **Key consideration**:
 
-- There are no softfork requirments around the HSM. Consensus should be agnostic to how the keys are managed.
-- Physical HSM's require hands-on managment as well as a paper back up in the case the hardware fails. During the first iterations on the Botanix federation (while in Alpha and Beta state) it may be possible to secure the key on an encrypted drive for each cloud compute instance.
+- There are no softfork requirements around the HSM. Consensus should be agnostic to how the keys are managed.
+- Physical HSM's require hands-on management as well as a paper back up in the case the hardware fails. During the first iterations on the Botanix federation (while in Alpha and Beta state) it may be possible to secure the key on an encrypted drive for each cloud compute instance.
 
 #### Finality commitment
 
@@ -305,7 +305,7 @@ TBD
 
 ### Cloud Infrastructure Needs
 
-The following describes a list of cloud infrasture requirments.
+The following describes a list of cloud infrasture requirements.
 
 ##### Alerting
 

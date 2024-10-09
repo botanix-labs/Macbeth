@@ -11,8 +11,9 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::{stream_select, StreamExt, TryFutureExt};
 use reth_authority_consensus::{
+    random_source_provider::RandomSourceProvider,
     utils::{is_known_minting_contract, retry_exec},
-    AuthorityConsensus, AuthorityConsensusBuilder, LightCBFTClientBuilder,
+    AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
@@ -425,7 +426,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     }};
                 }
 
-                // Note: we should be panicing if our connection to bitcoind is severed
+                // Note: we should be panicking if our connection to bitcoind is severed
                 let bitcoind =
                     bitcoind_factory_clone.build_and_connect().expect("can connect to bitcoind");
                 let mut last_tip = bitcoin::BlockHash::all_zeros();
@@ -561,6 +562,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         )?;
 
         let canon_state_notification_sender = tree.canon_state_notification_sender();
+        let canon_state_notification_receiver = canon_state_notification_sender.subscribe();
         let blockchain_tree = Arc::new(ShareableBlockchainTree::new(tree));
         debug!(target: "reth::cli", "configured blockchain tree");
 
@@ -664,7 +666,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         if !is_fed_node {
             // block import is only needed for non-federation nodes
-            // federation nodes will recieve blocks via their consensus layer
+            // federation nodes will receive blocks via their consensus layer
             network_cfg_builder = network_cfg_builder.block_import(Box::new(block_import.clone()))
         }
 
@@ -741,21 +743,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
-        let light_client = {
-            if !is_fed_node {
-                let light_client = LightCBFTClientBuilder::new(cometbft_rpc_factory.clone())
-                    .build_and_verify()
-                    .await;
-
-                Some(light_client)
-            } else {
-                None
-            }
-        };
         // Build authority Consensus
         let (
             _authority_consensus,
-            block_fetcher_task,
             frost_task,
             mut sync_controller,
             _healthcheck_task,
@@ -782,7 +772,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             bitcoind_factory.clone(),
             evm_config.clone(),
             cometbft_rpc_factory,
-            light_client,
+            RandomSourceProvider::new(),
+            canon_state_notification_receiver,
         )
         .expect("Failed to create authority consensus builder")
         .build()
@@ -830,36 +821,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             //     }),
             // );
         }
-
-        let eth_tx_validator = validator.validator;
-        let abci_client_builder = abci_client_builder.expect("abci client builder exists");
-        let fut = || async {
-            abci_client_builder
-                .start_server(
-                    &executor.clone(),
-                    eth_tx_validator.clone(),
-                    transaction_pool.clone(),
-                    abci_host.to_string(),
-                    *abci_port,
-                )
-                .await
-        };
-
-        match retry_exec(fut, 3, Duration::from_secs(2)).await {
-            Ok(()) => {}
-            Err(err) => {
-                error!(target: "reth::cli", "Failed to connect to abci client: {}", err);
-                return Err(eyre::eyre!("Failed to connect to abci client: {}", err));
-            }
-        };
+        // TODO can remove this
         if !is_fed_node {
-            info!(target: "reth::cli", "Starting PoA Block Fetcher Task");
-            executor.spawn_critical(
-                "PoA Block Fetcher Task",
-                Box::pin(async move {
-                    block_fetcher_task.expect("block fetcher task exists").start_task().await;
-                }),
-            );
             executor.spawn_critical(
                 "PoA Block Sync Controller Task",
                 Box::pin(async move {
@@ -929,7 +892,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             botanix_provider.clone(),
         );
 
-        // generate deault jwt for the rpc server (as required by reth)
+        // generate default jwt for the rpc server (as required by reth)
         let default_jwt_path = data_dir.jwt();
         let _reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
 
@@ -971,6 +934,29 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             });
 
             launch_rpc.await?
+        };
+
+        // NOTE: the node will block here until DKG has completed
+        let eth_tx_validator = validator.validator.clone();
+        let abci_client_builder = abci_client_builder.expect("abci client builder exists");
+        let fut = || async {
+            abci_client_builder
+                .start_server(
+                    &executor.clone(),
+                    eth_tx_validator.clone(),
+                    transaction_pool.clone(),
+                    abci_host.to_string(),
+                    *abci_port,
+                )
+                .await
+        };
+
+        match retry_exec(fut, 3, Duration::from_secs(2)).await {
+            Ok(()) => {}
+            Err(err) => {
+                error!(target: "reth::cli", "Failed to connect to abci client: {}", err);
+                return Err(eyre::eyre!("Failed to connect to abci client: {}", err));
+            }
         };
 
         // Run consensus engine to completion

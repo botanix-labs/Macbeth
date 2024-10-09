@@ -118,7 +118,7 @@ pub enum BlockValidationError {
     InvalidExtraData,
 
     /// Poa specific error when Extra data header is failed to deserialize\
-    /// TODO sepcify which serilaize/deserialzie error
+    /// TODO specify which serilaize/deserialize error
     #[display("Failed to serialize extra header")]
     ExtraDataSerializeError,
 
@@ -190,8 +190,8 @@ pub enum BlockExecutionError {
     Consensus(ConsensusError),
     /// Internal, i.e. non consensus or validation related Block Executor Errors
     Internal(InternalBlockExecutionError),
-    // /// Cannot add and existing federation memeber to the federation
-    // #[display("Cannot add and existing federation memeber to the federation")]
+    // /// Cannot add and existing federation member to the federation
+    // #[display("Cannot add and existing federation member to the federation")]
     // CannotAddExistingFederationMember,
 
     // /// Failed to deserialize previous block header

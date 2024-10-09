@@ -11,7 +11,7 @@ path = "src/bin/test-suite.rs"
 
 eyre.workspace = true
 reth.workspace = true
-reth-primitives.workspace = true
+reth-primitives = { workspace = true, features = ["secp256k1"] }
 reth-provider.workspace = true
 reth-chainspec.workspace = true
 reth-rpc-types.workspace = true
@@ -44,6 +44,11 @@ reth-tracing.workspace = true
 
 ## Bitcoin rpc
 bitcoincore-rpc.workspace = true
+
+
+# frost
+# TODO update this to the zcash frost library when tr is merged in
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
 
 # crates.io dependencies
 askama = "0.12.1"

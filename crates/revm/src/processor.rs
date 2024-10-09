@@ -72,7 +72,7 @@ pub struct EVMProcessor<'a, EvmConfig, BF> {
     pub(crate) stats: BlockExecutorStats,
     /// The type that is able to configure the EVM environment.
     _evm_config: EvmConfig,
-    /// Bitcoin resouces in case processor is configured for botanix uses
+    /// Bitcoin resources in case processor is configured for botanix uses
     bitcoin_resource: Option<(BF, bitcoin::Network)>,
     /// valid pegins being recorded in current block(s) execution
     pegins: Vec<PeginData>,
@@ -576,7 +576,7 @@ where
 
             // Execute transaction.
             let ResultAndState { result, state } =
-                // TOOD(armins) can we pass a ref here?
+                // TODO(armins) can we pass a ref here?
                 self.transact(transaction, *sender, botanix_consensus_pkg.clone())?;
             trace!(
                 target: "evm",

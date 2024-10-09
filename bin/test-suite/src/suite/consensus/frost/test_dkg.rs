@@ -3,11 +3,17 @@ use crate::{it_error_print, suite::consensus::ConsensusIntegrationTestSuite};
 use bitcoin::{consensus::Encodable, Address, Amount};
 use btcserverlib::pegout_id::PegoutId;
 use client::{self, BtcServerClient};
-use rand::{rngs::StdRng, RngCore, SeedableRng};
-use std::{str::FromStr, vec};
+use frost_secp256k1_tr as frost;
+use std::{collections::BTreeMap, str::FromStr, vec};
 use tonic::transport::Channel;
 
-pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<(), Error> {
+macro_rules! frost_id {
+    ($index:expr) => {
+        frost::Identifier::derive($index.to_le_bytes().as_slice()).expect("valid id")
+    };
+}
+
+pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
     // create btc server clients
     let mut clients: Vec<BtcServerClient<Channel>> = vec![];
     for instance in 0..suite.global_context.fed_instances {
@@ -59,6 +65,12 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<(
 }
 
 pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<(), Error> {
+    // creating a mapping of client index to fronst identifier
+    let mut frost_id_map = BTreeMap::new();
+    for (i, _) in clients.iter().enumerate() {
+        let frost_id = frost_id!(i as u16);
+        frost_id_map.insert(frost_id, i);
+    }
     // Round 1 dkg
     let mut round1_packages = vec![];
     for c in clients.iter_mut() {
@@ -100,24 +112,34 @@ pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<
         round2_packages.push(p);
     }
     // Ensure all packages have correct props
-    // Not much to assert here, we can check the lenght of the ids
+    // Not much to assert here, we can check the length of the ids
     for p in round2_packages.iter() {
         if p.identifier.len() != 32 {
             return Err(Error::Round2PackagesLenghtMismatch);
         }
     }
 
-    // Send round 2 dkg packages to each respective participant
-    for (i, c) in clients.iter_mut().enumerate() {
-        for (j, p) in round2_packages.iter().enumerate() {
-            if i != j {
-                c.new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
-                    identifier: p.identifier.clone(),
-                    payload: p.payload.clone(),
+    // Send dkg round2 shares to each recipient
+    for (i, p) in round2_packages.iter().enumerate() {
+        let from_frost_id = frost_id!(i as u16).serialize().to_vec();
+        let round2_shares = p.payload.clone();
+        let shares = serde_json::from_slice::<
+            BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
+        >(&round2_shares)
+        .expect("Failed to deserialize round 2 shares");
+
+        // there should always be n-1 shares
+        assert_eq!(shares.len(), clients.len() - 1);
+        for (_j, (identifier, payload)) in shares.iter().enumerate() {
+            let client_index = frost_id_map.get(&identifier).unwrap();
+            let mut client = clients[*client_index].clone();
+            client
+                .new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
+                    identifier: from_frost_id.clone(),
+                    payload: serde_json::to_vec(&payload).unwrap(),
                 }))
                 .await
                 .map_err(Error::Request)?;
-            }
         }
     }
     Ok(())
@@ -128,17 +150,9 @@ pub async fn send_pegout_notification(
     client: &mut client::BtcServerClient<Channel>,
     amount: u64,
     bitcoin_height: u64,
+    pegout_id: PegoutId,
+    spk: bitcoin::ScriptBuf,
 ) -> Result<(), Error> {
-    // Using stdRng here as it implements Send
-    let mut rand = StdRng::from_entropy();
-    let mut pegout_id_bytes = [0u8; 36];
-    rand.fill_bytes(&mut pegout_id_bytes);
-    let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
-    let secp = bitcoin::secp256k1::Secp256k1::new();
-    let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
-    let pk = sk.public_key(&secp);
-
-    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
     let _ = client
         .notify_pegout(tonic::Request::new(client::NotifyPegoutRequest {
             pegout_id: pegout_id.clone().as_bytes().to_vec(),
@@ -156,6 +170,7 @@ pub async fn send_pegin_notification(
     address: Address,
     eth_address: String,
     txid: [u8; 32],
+    vout: u32,
     amount: u64,
 ) -> Result<(), Error> {
     let mut prev_out_bytes = Vec::new();
@@ -165,7 +180,7 @@ pub async fn send_pegin_notification(
             value: Amount::from_sat(amount).to_sat(),
             script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
         }),
-        outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout: 1 }),
+        outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout }),
         eth_address,
     }]
     .to_vec();

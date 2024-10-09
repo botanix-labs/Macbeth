@@ -1,9 +1,9 @@
 use crate::{
-    block_fetcher::BlockFetcherTask,
     comet_bft::abci::ABCIClientBuilder,
     compressor::Compressor,
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
+    random_source_provider::RandomSource,
     sync::SyncController,
     utxo_sync::UTXOSyncEngine,
     AuthorityConsensus, Storage,
@@ -25,13 +25,14 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotificationSender, StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotification, CanonStateNotificationSender,
+    StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
 use std::{net::SocketAddr, sync::Arc};
-use tendermint_light_client::instance::Instance;
 use tokio::sync::{
+    broadcast::Receiver,
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
@@ -40,7 +41,7 @@ use tracing::info;
 pub(crate) type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
 
 /// Builder type for confirguring the setup
-pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
+pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
@@ -55,8 +56,9 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient> {
     task_executor: TaskExecutor,
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
-    light_client: Option<Instance>,
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
+    random_source_provider: Source,
+    canon_state_notification_receiver: Receiver<CanonStateNotification>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -69,8 +71,8 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<EF, BF, DB, ToFrostMan, NetworkClient>
-    AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient>
+impl<EF, BF, DB, ToFrostMan, NetworkClient, Source>
+    AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
@@ -83,6 +85,7 @@ where
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
+    Source: RandomSource,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -108,7 +111,8 @@ where
         bitcoind_factory: BF,
         evm_config: EthEvmConfig,
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
-        light_client: Option<Instance>,
+        random_source_provider: Source,
+        canon_state_notification_receiver: Receiver<CanonStateNotification>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -192,8 +196,9 @@ where
             task_executor,
             frost_config,
             payload_builder,
-            light_client,
             cometbft_rpc_factory,
+            random_source_provider,
+            canon_state_notification_receiver,
         })
     }
 
@@ -204,8 +209,7 @@ where
         self,
     ) -> (
         AuthorityConsensus,
-        Option<BlockFetcherTask<EF, BF, DB>>,
-        Option<FrostTask<EF, BF, DB, ToFrostMan>>,
+        Option<FrostTask<EF, BF, DB, ToFrostMan, Source>>,
         SyncController,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
@@ -225,8 +229,9 @@ where
             task_executor,
             frost_config,
             payload_builder: _,
-            light_client,
             cometbft_rpc_factory,
+            random_source_provider,
+            canon_state_notification_receiver,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let _executor_factory = storage.executor_factory.clone();
@@ -279,8 +284,6 @@ where
         // only federation nodes will have btc_server
         let mut frost_task = None;
         let mut healthcheck_task = None;
-        let mut abci_client_builder = None;
-        let mut block_fetcher_task = None;
         if is_fed_node {
             let task = HealthcheckTask::new(
                 network_handle.clone(),
@@ -301,36 +304,24 @@ where
                 frost_task_notifications2_tx,
                 task_executor.clone(),
                 compressor,
+                random_source_provider,
+                canon_state_notification_receiver,
             );
 
             frost_task = Some(task);
-            abci_client_builder = Some(ABCIClientBuilder::new(
-                storage.clone(),
-                bitcoin_block_header.clone(),
-                network_handle.clone(),
-                btc_server_client.expect("to be defined").clone(),
-                consensus.clone(),
-                to_engine.clone(),
-                cometbft_rpc_factory.clone(),
-            ));
-        } else {
-            block_fetcher_task = Some(BlockFetcherTask::new(
-                consensus.clone(),
-                block_import_rx,
-                to_engine.clone(),
-                storage.clone(),
-                network_handle.clone(),
-                light_client.unwrap(),
-            ));
         }
 
-        (
-            consensus,
-            block_fetcher_task,
-            frost_task,
-            sync_task,
-            healthcheck_task,
-            abci_client_builder,
-        )
+        // all nodes will have an abci client builder
+        let abci_client_builder = Some(ABCIClientBuilder::new(
+            storage.clone(),
+            bitcoin_block_header,
+            network_handle.clone(),
+            btc_server_client,
+            consensus.clone(),
+            to_engine.clone(),
+            cometbft_rpc_factory.clone(),
+        ));
+
+        (consensus, frost_task, sync_task, healthcheck_task, abci_client_builder)
     }
 }

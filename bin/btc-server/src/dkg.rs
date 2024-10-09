@@ -37,10 +37,10 @@ where
             return Err(DKGError::AlreadyHaveKeyPackage);
         }
 
-        if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
+        if let Some(round1_dkg) = self.frost_round1_dkg.lock().await.clone() {
             // Retrieve round 1 packages from peers
             // Here we don't check we have enough that should be done by the frost lib
-            // So we just propogate the error
+            // So we just propagate the error
             let round1_packages = self.db.get_round1_dkg_packages()?;
 
             let (round2_secret_package, round2_packages) =
@@ -53,13 +53,15 @@ where
         }
     }
 
-    pub(crate) fn get_round1_dkg(&self) -> Result<frost::keys::dkg::round1::Package, DKGError> {
+    pub(crate) async fn get_round1_dkg(
+        &self,
+    ) -> Result<frost::keys::dkg::round1::Package, DKGError> {
         // Already have done dkg
         // This function should error
         if self.db.get_key_package()?.is_some() {
             return Err(DKGError::AlreadyHaveKeyPackage);
         }
-        if let Some(round1_dkg) = self.frost_round1_dkg.clone() {
+        if let Some(round1_dkg) = self.frost_round1_dkg.lock().await.clone() {
             Ok(round1_dkg.1)
         } else {
             Err(DKGError::MissingRound1DkgPackage)
@@ -68,8 +70,10 @@ where
 
     pub(crate) async fn add_round2_dkg(
         &self,
+        // Peer's identifier
         frost_id: frost::Identifier,
-        packages: BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
+        // Peer's round 2 package
+        package: frost::keys::dkg::round2::Package,
     ) -> Result<(), DKGError> {
         if self.db.get_key_package()?.is_some() {
             return Err(DKGError::AlreadyHaveKeyPackage);
@@ -78,39 +82,43 @@ where
         if frost_id == self.identifier {
             return Err(DKGError::InvalidFrostPeerId);
         }
-        for (id, package) in packages.iter() {
-            // Look for our package and store it
-            if self.identifier == *id {
-                if self.db.add_round2_dkg(frost_id, package.clone())? {
-                    self.db.flush()?;
-                    debug!("Stored round2 dkg from peer: {:?}", frost_id);
-                } else {
-                    warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
-                }
-                // If we have a max_signers round2 packages we can generate and save the key package
-                let round2_packages = self.db.get_round2_dkg_packages()?;
-                if round2_packages.len() as u16 == self.max_signers - 1 {
-                    let round1_packages = self.db.get_round1_dkg_packages()?;
-                    if let Some(round2_secret) = self.frost_round2_dkg.lock().await.clone() {
-                        let pk_res = frost::keys::dkg::part3(
-                            &round2_secret,
-                            &round1_packages,
-                            &round2_packages,
-                        )?;
 
-                        self.db.set_key_package(pk_res.0.clone())?;
-                        self.db.set_pubkey_package(pk_res.1.clone())?;
-                        self.db.flush()?;
-                    }
-                }
+        if self.db.add_round2_dkg(frost_id, package.clone())? {
+            self.db.flush()?;
+            debug!("Stored round2 dkg from peer: {:?}", frost_id);
+        } else {
+            warn!("Duplicate round2 dkg from peer: {:?}", frost_id);
+        }
+        // If we have a max_signers round2 packages we can generate and save the key package
+        let mut dkg_done = false;
+        let round2_packages = self.db.get_round2_dkg_packages()?;
+        if round2_packages.len() as u16 == self.max_signers - 1 {
+            let round1_packages = self.db.get_round1_dkg_packages()?;
+            if let Some(round2_secret) = self.frost_round2_dkg.lock().await.clone() {
+                let pk_res =
+                    frost::keys::dkg::part3(&round2_secret, &round1_packages, &round2_packages)?;
 
-                return Ok(());
+                self.db.set_key_package(pk_res.0.clone())?;
+                self.db.set_pubkey_package(pk_res.1.clone())?;
+                self.db.flush()?;
+
+                dkg_done = true;
+            } else {
+                return Err(DKGError::InvalidRound2DkgPayloadMissingPackage);
             }
         }
-        Err(DKGError::InvalidRound2DkgPayloadMissingPackage)
+
+        // Signing at this point is successful
+        // Clear out round 2 secret
+        if dkg_done {
+            self.frost_round2_dkg.lock().await.take();
+            self.frost_round1_dkg.lock().await.take();
+        }
+
+        return Ok(());
     }
 
-    pub(crate) fn add_round1_dkg(
+    pub(crate) async fn add_round1_dkg(
         &self,
         frost_id: frost::Identifier,
         dkg_round1: frost::keys::dkg::round1::Package,
@@ -122,7 +130,7 @@ where
         if frost_id == self.identifier {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
-        if self.frost_round1_dkg.as_ref().expect("valid dkg round1").1 == dkg_round1 {
+        if self.frost_round1_dkg.lock().await.as_ref().expect("valid dkg round1").1 == dkg_round1 {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
         // Should not add if we have max signers

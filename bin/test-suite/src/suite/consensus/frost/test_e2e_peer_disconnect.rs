@@ -26,7 +26,7 @@ pub async fn e2e_peer_disconnect(
     // wait for the disconnected peer to be re-connected again
     tokio::time::sleep(Duration::from_secs(45)).await;
 
-    // assign targeted fed memeber
+    // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(0u16)).cloned().unwrap();
 
     // create eth client
@@ -50,7 +50,7 @@ pub async fn e2e_peer_disconnect(
                 canon_state_notification.engine_index
             );
 
-            // block verfication
+            // block verification
             let block_receipts = canon_state_notification.notification.block_receipts();
             it_info_print!("Block receipts ?", block_receipts);
             assert_eq!(block_receipts.len(), 1);

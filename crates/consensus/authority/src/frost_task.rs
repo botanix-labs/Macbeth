@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::{
     compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
     dkg::DKGStateMachine,
+    random_source_provider::RandomSource,
     signing::SigningStateMachine,
     Storage,
 };
@@ -11,14 +12,18 @@ use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use reth_chainspec::ChainSpec;
 use reth_network::{
     frost::{
-        manager::{peer_id_to_identifier, FrostCommand, FrostConfig, ToFrostManager},
+        manager::{authority_index_to_frost_identifier, FrostCommand, FrostConfig, ToFrostManager},
         DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
         SigningEventResponseType, SigningResponse,
     },
     NetworkHandle,
 };
+use reth_primitives::header_ext::HeaderExt;
+use reth_provider::CanonStateNotification;
+use reth_revm::primitives::FixedBytes;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
+    broadcast::Receiver,
     mpsc::{UnboundedReceiver, UnboundedSender},
     oneshot::error::RecvError,
 };
@@ -47,12 +52,12 @@ pub(crate) enum UtxoSetSyncSerializationError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FrostNotification {
     /// The signing session id
-    pub(crate) signing_session_id: Vec<u8>,
+    pub(crate) signing_session_id: FixedBytes<32>,
     /// The agglomerated psbts
     pub(crate) psbt: Vec<u8>,
 }
 
-pub struct FrostTask<EF, BF, DB, ToFrostMan> {
+pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
@@ -62,7 +67,7 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan> {
     /// dkg state machine
     pub(crate) dkg_state_machine: DKGStateMachine<EF, BF, DB, ToFrostMan>,
     /// signing state machine
-    pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan>,
+    pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<EF, BF, DB>,
     /// Channel to receive frost notifications (from the block production task)
@@ -72,14 +77,17 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan> {
     compressor: Compressor,
     /// btc server client
     btc_server: BtcServerExtendedClient,
+    /// Channel to receive canon state notifications
+    canon_state_notification_receiver: Receiver<CanonStateNotification>,
 }
 
-impl<EF, BF, DB, ToFrostMan> FrostTask<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
     BF: Clone,
     DB: Clone,
     EF: Clone,
+    Source: RandomSource,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
@@ -94,6 +102,8 @@ where
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
         task_executor: TaskExecutor,
         compressor: Compressor,
+        random_source_provider: Source,
+        canon_state_notification_receiver: Receiver<CanonStateNotification>,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len());
 
@@ -111,6 +121,7 @@ where
             config.clone(),
             frost_task_tx,
             task_executor,
+            random_source_provider,
         );
 
         Self {
@@ -123,6 +134,7 @@ where
             frost_task_rx,
             btc_server,
             compressor,
+            canon_state_notification_receiver,
         }
     }
 
@@ -191,7 +203,7 @@ where
         // Calling get pk
         // Attempt to get the aggregate public key and store in storage
         if let Ok(public_key) = self.dkg_state_machine.get_public_key().await {
-            info!(target: "consensus::authority::frost_task::start_task", " recieved aggregate public key from dkg state machine {:?}", public_key);
+            info!(target: "consensus::authority::frost_task::start_task", " received aggregate public key from dkg state machine {:?}", public_key);
             if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
                 hex::decode(public_key.publickey).unwrap().as_slice(),
             ) {
@@ -209,9 +221,10 @@ where
         }
 
         loop {
-            let my_frost_id = peer_id_to_identifier(self.frost_config.authority_index as u16);
+            let my_frost_id =
+                authority_index_to_frost_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
-            // start dkg only when we are in turn + initial state + no public key
+            // start dkg only when we are the coordinator+ initial state + no public key
             if is_coordinator &&
                 !self.dkg_state_machine.get_dkg_state().is_running() &&
                 self.dkg_state_machine.get_public_key().await.is_err()
@@ -242,6 +255,63 @@ where
                     );
                 }
             }
+
+            // Receive canon state notifications
+            while let Ok(notification) = self.canon_state_notification_receiver.try_recv() {
+                match notification {
+                    CanonStateNotification::Commit { new } => {
+                        // check if epoch block and if we are the coordinator
+                        // if so, send init signing message
+                        let tip = new.tip();
+                        if tip.is_poa_epoch() {
+                            if !self.signing_state_machine.is_coordinator() {
+                                info!("Received canon state notification but we're not the coordinator");
+                                continue;
+                            } else {
+                                // create psbt and send init signing message
+                                let bitcoin_checkpoint = match tip
+                                    .header
+                                    .header()
+                                    .deserialize_extra_data_header()
+                                {
+                                    Ok(edh) => edh.bitcoin_block_hash,
+                                    Err(e) => {
+                                        error!(target: "consensus::authority", ?e, "Failed to deserialize extra data header in frost task");
+                                        continue;
+                                    }
+                                };
+                                match crate::utils::get_psbt(
+                                    &mut self.btc_server,
+                                    &tip.hash(),
+                                    bitcoin_checkpoint,
+                                )
+                                .await
+                                {
+                                    Ok(psbt_payload) => self
+                                        .signing_state_machine
+                                        .frost_task_tx()
+                                        .send(FrostNotificationMessage::InitiateSigning(
+                                            FrostNotification {
+                                                signing_session_id: tip.hash(),
+                                                psbt: psbt_payload.psbt,
+                                            },
+                                        ))
+                                        .expect("send frost task message"),
+
+                                    Err(e) => {
+                                        error!(target: "consensus::authority", ?e, "Failed to get psbt");
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        // Ignore other notifications
+                    }
+                }
+            }
+
             // receive over a channel message from other peers and update our state machine
             while let Ok((peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {
@@ -331,6 +401,7 @@ where
                     PeerMessageResponse::Signing(signing_response) => {
                         let SigningResponse { response_type, identifier, signing_session_id, psbt } =
                             signing_response;
+                        let signing_session_id = FixedBytes::from_slice(&signing_session_id);
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
                                 match self
@@ -427,9 +498,10 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan> std::fmt::Debug for FrostTask<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan, Source> std::fmt::Debug for FrostTask<EF, BF, DB, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
+    Source: RandomSource,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FrostTask").finish_non_exhaustive()

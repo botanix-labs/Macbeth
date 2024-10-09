@@ -4,6 +4,7 @@ use crate::{
     dao_fork::{DAO_HARDFORK_BENEFICIARY, DAO_HARDKFORK_ACCOUNTS},
     EthEvmConfig,
 };
+use btcserverlib::pegout_id::PegoutId;
 use core::fmt::Display;
 use ethers::types::U256 as EthersU256;
 use tracing::{error, info};
@@ -32,10 +33,11 @@ use reth_primitives::{
         mint_validation::{
             try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
         },
-        peg_contract::{PeginData, PegoutData},
+        peg_contract::{PeginData, PegoutWithId},
     },
     header_ext::HeaderExt,
-    Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, U256,
+    Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
+    U256,
 };
 use reth_prune_types::PruneModes;
 use reth_revm::{
@@ -72,7 +74,7 @@ pub fn create_noop_executor_provider(
         chain_spec,
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
-        bitcoin::Network::Bitcoin,
+        bitcoin::Network::Regtest,
     )
 }
 
@@ -153,7 +155,7 @@ struct EthExecuteOutput {
     gas_used: u64,
     total_block_fees: u128,
     pegins: Vec<PeginData>,
-    pegouts: Vec<PegoutData>,
+    pegouts: Vec<PegoutWithId>,
 }
 
 /// Helper container type for EVM with chain spec.
@@ -266,7 +268,11 @@ where
 
             let new_result = {
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(&result, &botanix_consensus_pkg) {
+                    match Self::botanix_mint_contract_checks(
+                        &result,
+                        &botanix_consensus_pkg,
+                        transaction.hash,
+                    ) {
                         Ok((new_pegins, new_pegouts)) => {
                             pegins.extend(new_pegins);
                             pegouts.extend(new_pegouts);
@@ -407,7 +413,8 @@ where
     fn botanix_mint_contract_checks(
         result: &ExecutionResult,
         botanix_consensus_pkg: &BotanixConsensusPackage,
-    ) -> Result<(Vec<PeginData>, Vec<PegoutData>), MintContractError> {
+        tx_hash: TxHash,
+    ) -> Result<(Vec<PeginData>, Vec<PegoutWithId>), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
 
@@ -460,9 +467,13 @@ where
         }
 
         // Check pegouts
-        for log in result.logs() {
+        for (index, log) in result.logs().iter().enumerate() {
             if let Some(pegout_data) = try_parse_burn_event(log, btc_network)? {
-                pegouts.push(pegout_data);
+                let mut tx_hash_array = [0u8; 32];
+                tx_hash_array.copy_from_slice(tx_hash.as_slice());
+                let pegout_id = PegoutId::new(tx_hash_array, index as u32);
+                let pegout_with_id = PegoutWithId { data: pegout_data, id: pegout_id };
+                pegouts.push(pegout_with_id);
             }
         }
 

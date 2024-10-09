@@ -4,7 +4,7 @@ language = "en"
 multilingual = false
 src = "book"
 title = "Botanix Federation book"
-description = "Book desribing the Botanix Federation"
+description = "Book describing the Botanix Federation"
 
 [output.html]
 theme = "book/theme"

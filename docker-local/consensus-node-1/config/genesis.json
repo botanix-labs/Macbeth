@@ -1,5 +1,5 @@
 {
-  "genesis_time": "2024-09-18T18:49:09.12047921Z",
+  "genesis_time": "2024-09-18T18:49:09.164370585Z",
   "chain_id": "3636",
   "initial_height": "0",
   "consensus_params": {
@@ -31,19 +31,19 @@
   },
   "validators": [
     {
-      "address": "CF79675B096ED740CC4BDB101DCC6C9EAB9D0C99",
+      "address": "7A58E9295D0593F6FECA345FFCC3855B75B5FA8D",
       "pub_key": {
         "type": "tendermint/PubKeySecp256k1",
-        "value": "Ale1PdbCVHAHQw0Mbn+SqBo1nxEbaWD2RmfBW29wm/si"
+        "value": "An95QAPC0caOmiUs2D1zkcu3wmgGmOS2IpGQUinTxcl6"
       },
       "power": "10",
       "name": ""
     },
     {
-      "address": "FCD451048F8A6CC37AD80783D63C172F89E6C9DD",
+      "address": "4D03752E0CDF6463E6076F7570F5F89D96D9DE8D",
       "pub_key": {
         "type": "tendermint/PubKeySecp256k1",
-        "value": "Asq1Khd++5hSIwFU/Nj2KzdoXv3GKwo5Qh8OxsizVxJl"
+        "value": "AsDmE5uZBz0+0kc3y2Af8N+gsgBuymXmi/GHW/fwyaJD"
       },
       "power": "10",
       "name": ""

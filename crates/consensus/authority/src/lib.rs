@@ -47,7 +47,6 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
 
-mod block_fetcher;
 mod builder;
 mod comet_bft;
 
@@ -63,9 +62,10 @@ mod sync;
 pub mod utils;
 mod utxo_sync;
 pub use builder::AuthorityConsensusBuilder;
+pub mod random_source_provider;
 
 /// Max EDH size, assuming max inputs spent are 1000 and the only spends are keyspends
-/// This was calulated with the following formula
+/// This was calculated with the following formula
 /// version + optional_fields bitmask + signers pk + witness (vec of sigs) + blockhash +
 /// utxo_commit + block_witness + agg_pk For specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 80050;
@@ -414,12 +414,10 @@ pub(crate) struct StorageInner {
 mod tests {
     use std::str::FromStr;
 
+    use random_source_provider::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
-    use reth_consensus_common::utils::{
-        block_fees_split, current_inturn_index, get_block_producer_address, get_in_turn_interval,
-        is_inturn,
-    };
+    use reth_consensus_common::utils::{block_fees_split, is_inturn};
     use reth_primitives::{
         constants::ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
@@ -627,14 +625,27 @@ mod tests {
     fn is_inturn_true() {
         let authorities_len = 1;
         let signer_index = 0;
-        assert!(is_inturn(authorities_len, signer_index, ALLOWED_FUTURE_BLOCK_TIME_SECONDS));
+        let random_source = RandomSourceProvider::new().random_source();
+        assert!(is_inturn(
+            authorities_len,
+            signer_index,
+            ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
+            random_source
+        ));
     }
 
     #[test]
     fn is_inturn_false() {
         let authorities_len = 1;
         let signer_index = 1;
-        assert!(!is_inturn(authorities_len, signer_index, ALLOWED_FUTURE_BLOCK_TIME_SECONDS));
+        let random_source = RandomSourceProvider::new().random_source();
+
+        assert!(!is_inturn(
+            authorities_len,
+            signer_index,
+            ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
+            random_source
+        ));
     }
 
     #[test]
@@ -647,30 +658,19 @@ mod tests {
 
     #[test]
     fn should_get_block_producer_address_from_header() {
-        let header = Header::default();
-        let block_producer_address = get_block_producer_address(&header);
-        assert_eq!(block_producer_address, Address::ZERO,);
-    }
+        let mut header = Header::default();
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
+        let block_producer_address = header.block_producer_address().unwrap();
+        assert_eq!(block_producer_address, Address::ZERO);
 
-    #[test]
-    fn get_inturn_interval_secs_based() {
-        let current_ts = reth_consensus_common::utils::unix_timestamp();
-        let authorities_len = 10;
-        let current_in_turn_signer = current_inturn_index(authorities_len, current_ts, 5);
-        let (start, end, time_passed, time_remaining) =
-            get_in_turn_interval(authorities_len, current_in_turn_signer, current_ts, 5);
-
-        println!(
-            "Signer index {} is in turn from {}s to {}s. Current ts = {:?}s. Time passed = {:?}s, time remaining = {:?}s",
-            current_in_turn_signer,
-            start,
-            end,
-            current_ts,
-            time_passed,
-            time_remaining,
-        );
-        assert!(current_ts >= start);
-        assert!(current_ts <= end);
+        let mut header2 = Header::default();
+        let mut edh2 = ExtraDataHeader::default();
+        edh2.block_producer_address =
+            Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394").unwrap();
+        header2.add_extra_data_header(&edh2);
+        let block_producer_address2 = header2.block_producer_address().unwrap();
+        assert_eq!(block_producer_address2, edh2.block_producer_address);
     }
 
     #[test]

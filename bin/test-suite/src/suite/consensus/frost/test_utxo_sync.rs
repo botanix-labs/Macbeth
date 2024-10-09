@@ -35,7 +35,7 @@ pub async fn utxo_sync(
     let mut btc_server_clients =
         suite.local_context.btc_server_clients.clone().expect("btc server clients");
 
-    // Create a fake utxo -- this utxo doesnt need to exist on regtest
+    // Create a fake utxo -- this utxo doesn't need to exist on regtest
     // We are just testing the UTXO sync mechanism. All nodes should have the same UTXOs before
     // attempting to build or verify a block
     let mut pegins = Pegins::new();
@@ -50,7 +50,7 @@ pub async fn utxo_sync(
                 eth_address: hex_encode(eth_address),
             }))
             .await
-            .expect("get reponse")
+            .expect("get response")
             .into_inner();
         let btc_address =
             Address::from_str(&pk.gateway_address).expect("valid address").assume_checked();
@@ -75,7 +75,7 @@ pub async fn utxo_sync(
     let inturn_member_index =
         current_inturn_index(total_authorities as u64, unix_timestamp(), leader_selection_window);
 
-    // assign targeted fed memeber
+    // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
@@ -171,7 +171,7 @@ pub async fn utxo_sync(
     // This asserts that the node that was reset is now in sync with the other nodes
     assert_eq!(hash_set.len(), 1);
 
-    // Lets comapre the merkel root of the utxo set from the btc server with the latest block header
+    // Lets compare the merkel root of the utxo set from the btc server with the latest block header
     let latest_extra_data = poa_eth_clients[0].get_latest_block().await.unwrap().extra_data;
 
     let _latest_edh = ExtraDataHeader::deserialize(&mut latest_extra_data.reader()).unwrap();

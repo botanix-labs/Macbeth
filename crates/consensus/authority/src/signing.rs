@@ -1,5 +1,6 @@
 use crate::{
     frost_task::{FrostNotification, FrostNotificationMessage},
+    random_source_provider::RandomSource,
     utils::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
         FrostParseError,
@@ -9,13 +10,14 @@ use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
 use reth_chainspec::ChainSpec;
-use reth_consensus_common::utils::{
-    current_inturn_index, get_in_turn_interval, is_inturn, unix_timestamp, CoordinatorInterval,
-};
+use reth_consensus_common::utils::{current_inturn_index, is_inturn, unix_timestamp};
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
+    manager::{
+        authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager,
+    },
     FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
+use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -126,15 +128,11 @@ pub(crate) struct SigningSession {
     coordinator_index: u64,
     /// The original session payload
     original_psbt: Option<Vec<u8>>,
-    /// Validity from
-    validity_from: u64,
-    /// Validity to
-    validity_to: u64,
 }
 
 /// A state machine for transitioning between different signing states
 #[derive(Debug)]
-pub(crate) struct SigningStateMachine<ToFrostMan> {
+pub(crate) struct SigningStateMachine<ToFrostMan, Source> {
     chain_spec: Arc<ChainSpec>,
     btc_client: BtcServerExtendedClient,
     frost_handle: ToFrostMan,
@@ -142,11 +140,13 @@ pub(crate) struct SigningStateMachine<ToFrostMan> {
     personal_frost_identifier: frost::Identifier,
     frost_config: FrostConfig,
     frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+    random_source_provider: Source,
 }
 
-impl<ToFrostMan> SigningStateMachine<ToFrostMan>
+impl<ToFrostMan, Source> SigningStateMachine<ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
+    Source: RandomSource,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
@@ -155,29 +155,13 @@ where
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
         frost_task_tx: UnboundedSender<FrostNotificationMessage>,
-        task_executor: TaskExecutor,
+        _task_executor: TaskExecutor,
+        random_source_provider: Source,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
-            peer_id_to_identifier(frost_config.authority_index as u16);
+            authority_index_to_frost_identifier(frost_config.authority_index as u16);
 
         let signing_states: SigningStatesMap = Arc::new(RwLock::new(HashMap::default()));
-        let signing_states_clone = Arc::clone(&signing_states);
-        let sleep_duration = Duration::from_secs(
-            2 * chain_spec.leader_selection_window.expect("block time to be set"),
-        );
-        task_executor.spawn(async move {
-            loop {
-                // remove stale signing sessions
-                let mut guard = signing_states_clone.write().await;
-                guard.retain(|_, signing_session| {
-                    signing_session.validity_to >= unix_timestamp() - sleep_duration.as_secs()
-                });
-                drop(guard);
-
-                // sleep until next cleanup round
-                tokio::time::sleep(sleep_duration).await;
-            }
-        });
 
         Self {
             chain_spec,
@@ -187,7 +171,12 @@ where
             personal_frost_identifier,
             frost_config,
             frost_task_tx,
+            random_source_provider,
         }
+    }
+
+    pub(crate) fn frost_task_tx(&self) -> UnboundedSender<FrostNotificationMessage> {
+        self.frost_task_tx.clone()
     }
 
     /// Inserts a signing state into the state machine
@@ -216,22 +205,13 @@ where
         coordinator_index: u64,
         original_psbt: Option<Vec<u8>>,
         signing_state: SigningState,
-        validity_from: u64,
-        validity_to: u64,
     ) {
         if self.signing_states.read().await.contains_key(&session_id) {
             return;
         }
         self.signing_states.write().await.insert(
             session_id,
-            SigningSession {
-                session_id,
-                state: signing_state,
-                coordinator_index,
-                original_psbt,
-                validity_from,
-                validity_to,
-            },
+            SigningSession { session_id, state: signing_state, coordinator_index, original_psbt },
         );
     }
 
@@ -279,18 +259,22 @@ where
     }
 }
 
-impl<ToFrostMan> SigningStateMachine<ToFrostMan>
+impl<ToFrostMan, Source> SigningStateMachine<ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
+    Source: RandomSource,
 {
     async fn get_round1_signing_package(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<SigningPackage, Error> {
         let round1_payload = self
             .btc_client
-            .get_round1_signing_package(SigningPackageRequest { psbt, signing_session_id })
+            .get_round1_signing_package(SigningPackageRequest {
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await;
 
         let round1_payload = match round1_payload {
@@ -327,12 +311,15 @@ where
 
     async fn get_round2_signing_package(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<SigningPackage, Error> {
         let round2_payload = self
             .btc_client
-            .get_round2_signing_package(SigningPackageRequest { psbt, signing_session_id })
+            .get_round2_signing_package(SigningPackageRequest {
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await;
 
         let round2_payload = match round2_payload {
@@ -366,12 +353,16 @@ where
     async fn new_round1_signing_package(
         &mut self,
         identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let new_round1_signing_package = self
             .btc_client
-            .new_round1_signing_package(SigningPackage { identifier, psbt, signing_session_id })
+            .new_round1_signing_package(SigningPackage {
+                identifier,
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await;
 
         match new_round1_signing_package {
@@ -407,12 +398,16 @@ where
     async fn new_round2_signing_package(
         &mut self,
         identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let new_round1_signing_package = self
             .btc_client
-            .new_round2_signing_package(SigningPackage { identifier, psbt, signing_session_id })
+            .new_round2_signing_package(SigningPackage {
+                identifier,
+                psbt,
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await;
 
         match new_round1_signing_package {
@@ -447,11 +442,13 @@ where
 
     async fn get_to_sign_package(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
     ) -> Result<SigningPackage, Error> {
         let package = match self
             .btc_client
-            .get_to_sign_package(client::ToSignRequest { signing_session_id })
+            .get_to_sign_package(client::ToSignRequest {
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await
         {
             Ok(sign_payload) => sign_payload,
@@ -478,11 +475,13 @@ where
 
     async fn finalize_signing(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
     ) -> Result<FinalizeSigningResponse, Error> {
         let finalized_signing = match self
             .btc_client
-            .finalize_signing(client::FinalizeSigningRequest { signing_session_id })
+            .finalize_signing(client::FinalizeSigningRequest {
+                signing_session_id: signing_session_id.to_vec(),
+            })
             .await
         {
             Ok(finalized_signing) => finalized_signing,
@@ -543,17 +542,19 @@ where
     }
 
     /// Gets the current federation coordinator. Returns None if it is us, otherwise Some if someone
-    /// else is
+    /// Uses a random 32 byte source to determine the current inturn authority
     pub(crate) async fn get_coordinator(&self) -> Result<Option<(PeerData, u64)>, Error> {
         // check if we are in turn
         let leader_selection_window = self
             .chain_spec
             .leader_selection_window
             .expect("block times to be set for PoA consensus");
+
         let is_inturn = is_inturn(
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
             leader_selection_window,
+            self.random_source_provider.random_source(),
         );
         match is_inturn {
             true => {
@@ -569,7 +570,7 @@ where
                     leader_selection_window,
                 );
                 let current_inturn_authority_frost_identifier =
-                    peer_id_to_identifier(current_inturn_authority_index as u16);
+                    authority_index_to_frost_identifier(current_inturn_authority_index as u16);
                 let coord = all_connected_frost_peers.iter().find_map(|(_peer_id, peer_data)| {
                     peer_data.frost_identifier.as_ref().and_then(|frost_id| {
                         if *frost_id == current_inturn_authority_frost_identifier {
@@ -595,24 +596,7 @@ where
             self.frost_config.authorities.len() as u64,
             self.frost_config.authority_index as u64,
             leader_selection_window,
-        )
-    }
-
-    /// Returns the inturn time data or a given coordinator index. If None, our authority index is
-    /// being used
-    pub(crate) fn get_inturn_interval_for_coordinator(
-        &self,
-        coordinator_index: Option<u64>,
-    ) -> CoordinatorInterval {
-        let leader_selection_window = self
-            .chain_spec
-            .leader_selection_window
-            .expect("block times to be set for PoA consensus");
-        get_in_turn_interval(
-            self.frost_config.authorities.len() as u64,
-            coordinator_index.unwrap_or(self.frost_config.authority_index as u64),
-            unix_timestamp(),
-            leader_selection_window,
+            self.random_source_provider.random_source(),
         )
     }
 
@@ -659,7 +643,7 @@ where
     // Coordinator initiates a new signing session
     pub(crate) async fn initate_signing_session(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -670,8 +654,6 @@ where
             error!(target: "consensus::authority::signing::initate_signing_session", "A non-coordinator is trying to (re)initiate a signing process!");
             return Ok(());
         }
-        let (start, end, time_passed, time_remaining) =
-            self.get_inturn_interval_for_coordinator(None);
 
         // try to find the signing session in cache in case it was re-triggered by the same
         // coordinator
@@ -680,9 +662,7 @@ where
                 // session was previously already registered, maybe it got retriggered
                 // check if it was the same coordinator
                 // check if it is still valid time-wise
-                if (signing_session.coordinator_index != self.frost_config.authority_index as u64) ||
-                    time_remaining < time_passed
-                {
+                if signing_session.coordinator_index != self.frost_config.authority_index as u64 {
                     // session is no longer valid, remove it from cache and return
                     self.remove_signing_session(session_id).await;
                     return Ok(());
@@ -698,8 +678,6 @@ where
                     self.frost_config.authority_index as u64,
                     Some(psbt.clone()),
                     SigningState::Initial,
-                    start,
-                    end,
                 )
                 .await;
             }
@@ -736,11 +714,11 @@ where
     }
 
     /// A signer processes round 1 signing packages
-    /// Note: since this is a request idenfitier has no use
+    /// Note: since this is a request identifier has no use
     pub(crate) async fn signer_process_round1(
         &mut self,
         _identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -757,42 +735,16 @@ where
         };
         info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_id);
 
-        // get coordinator time interval validity
-        let (start, end, _time_passed, _time_remaining) =
-            self.get_inturn_interval_for_coordinator(Some(coordinator_id));
-
         // no already existing signing session found
         if !self.signing_session_exists(session_id).await {
             // abort any previous session
             self.abort_signing().await?;
 
             // insert a new signing session
-            self.insert_new_signing_session(
-                session_id,
-                coordinator_id,
-                None,
-                SigningState::Round1,
-                start,
-                end,
-            )
-            .await;
+            self.insert_new_signing_session(session_id, coordinator_id, None, SigningState::Round1)
+                .await;
         } else {
-            // check session is still valid
-            let (_prev_validity_from, prev_validity_to) = self
-                .get_signing_session(session_id)
-                .await
-                .as_ref()
-                .map(|s| (s.validity_from, s.validity_to))
-                .unwrap_or_default();
-
-            // abort this previous session as it is outdated
-            if unix_timestamp() >= prev_validity_to {
-                self.abort_signing().await?;
-                self.update_signing_state(session_id, SigningState::Failed).await;
-                return Ok(());
-            }
-
-            // session exists and is valid, return if we are not in round 2
+            // session exists, return if we are not in round 2
             if self.is_round2_state(&session_id).await {
                 return Ok(());
             } else {
@@ -857,7 +809,7 @@ where
     pub(crate) async fn coordinator_process_round1(
         &mut self,
         identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -934,11 +886,11 @@ where
     // ====================================== 2 =========================================
 
     /// A signer processes round 2 signing request
-    /// Note that since this is a request idenfitier has no use
+    /// Note that since this is a request identifier has no use
     pub(crate) async fn signer_process_round2(
         &mut self,
         _identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -1020,7 +972,7 @@ where
     pub(crate) async fn coordinator_process_round2(
         &mut self,
         identifier: Vec<u8>,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -1080,7 +1032,7 @@ where
     /// Handles an errored singing process
     pub(crate) async fn handle_errored_signing_process(
         &mut self,
-        signing_session_id: Vec<u8>,
+        signing_session_id: FixedBytes<32>,
     ) -> Result<(), Error> {
         // parse the session id
         let session_id = parse_signing_session_id(&signing_session_id)?;
@@ -1097,17 +1049,6 @@ where
         // only if we are coordinator AND we are in a failed state, then we can restart the signing
         // process provided there is enough time left
         if self.is_coordinator() {
-            // check there is sufficient time remaining to retry the signing request
-            let (_start, _end, time_passed, time_remaining) =
-                self.get_inturn_interval_for_coordinator(None);
-
-            // check if we can repeat the session, if not abort and return
-            if time_remaining < time_passed {
-                self.abort_signing().await?;
-                warn!(target: "consensus::authority::signing::handle_errored_signing_process", "Insuficient time remaining to retry the signing request");
-                return Ok(());
-            }
-
             // get the signing session, if not found abort and return
             let signing_session = self.get_signing_session(session_id).await;
             if signing_session.is_none() {

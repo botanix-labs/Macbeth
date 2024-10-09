@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 hex = "0.4.3"
-reth-primitives.workspace = true
+reth-primitives = { workspace = true, features = ["secp256k1"] }
 
 # CLI
 clap = { version = "4", features = [ "derive" ] }

@@ -8,7 +8,7 @@ use reth_consensus_common::utils::{current_inturn_index, is_inturn, unix_timesta
 use reth_evm::execute::{BlockExecutorProvider, Executor};
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
 use reth_network::frost::{
-    manager::{peer_id_to_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
+    manager::{authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager},
     FrostPeerCommand, PbftEventResponseType, PbftResponse, PeerMessageResponse,
 };
 use reth_network_p2p::HeadersClient;
@@ -81,7 +81,7 @@ pub(crate) enum Error {
     RecoverSignature(#[from] secp256k1::Error),
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
-    #[error("Recieved block is not valid: {0}")]
+    #[error("Received block is not valid: {0}")]
     InvalidBlock(#[from] ValidateBlockError),
     #[error("Peer for time slot {0} already processed")]
     PeerAlreadyProcessedTimeSlot(u64),
@@ -233,7 +233,7 @@ where
         consensus: AuthorityConsensus,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
-            peer_id_to_identifier(config.authority_index as u16);
+            authority_index_to_frost_identifier(config.authority_index as u16);
         info!(
             target: "consensus::authority::pbft::new",
             "Frost identifier used: {:?} - {:?}",
@@ -286,7 +286,7 @@ where
 
     /// Sets state machine state
     pub(crate) fn set_state(&mut self, state: PbftState, block_hash: BlockHash) {
-        // if the state doesnt exist for a block hash create it and set the state
+        // if the state doesn't exist for a block hash create it and set the state
         self.state.insert(block_hash, state);
     }
 }
@@ -854,17 +854,17 @@ where
             return Ok(None);
         }
 
-        // Check that the commited block is the same as the block we are tracking
+        // Check that the committed block is the same as the block we are tracking
         if current_header.segregated_signature_block_hash()? !=
             block.header.segregated_signature_block_hash()?
         {
-            warn!(target: "consensus::authority::pbft::process_commitment" ,"Block hash recieved from peer does not match the block we are tracking");
+            warn!(target: "consensus::authority::pbft::process_commitment" ,"Block hash received from peer does not match the block we are tracking");
             return Ok(None);
         }
-        // Check all the signatures on the commited block from the peer
+        // Check all the signatures on the committed block from the peer
         block.header().check_authority_sig_add(&self.config.authorities)?;
 
-        // Should merge this peers siganture into the main block where we are tracking all
+        // Should merge this peers signature into the main block where we are tracking all
         // signatures If that signature provided is not valid fail
         // If they did not provide a sig fail
         // merge signature from peer
@@ -1198,7 +1198,7 @@ pub(crate) mod tests {
     //     );
     //     assert_eq!(pbft_state_machine.get_state(block_hash), PbftState::Finished);
 
-    //     // Re initialing with the same block proposal after re-setting the state to inital
+    //     // Re initialing with the same block proposal after re-setting the state to initial
     //     pbft_state_machine.set_state(PbftState::Initial, block_hash);
     //     pbft_state_machine
     //         .init_block_proposal(block_to_propose.clone())
@@ -1539,7 +1539,7 @@ pub(crate) mod tests {
     //     invalid_block_header.sign_block(&non_coord_sk).expect("to sign block");
     //     let invalid_block =
     //         SealedBlock::new(invalid_block_header.seal_slow(), BlockBody::default());
-    //     // try to propose an a block singed by a non coord
+    //     // try to propose an a block signed by a non coord
     //     let res = non_coords[0]
     //         .process_block_proposal(invalid_block.clone(), coord.peer_id.clone())
     //         .await;
@@ -1574,7 +1574,7 @@ pub(crate) mod tests {
 
     //     let invalid_block =
     //         SealedBlock::new(invalid_block_header.seal_slow(), BlockBody::default());
-    //     // try to propose an a block singed by a non coord
+    //     // try to propose an a block signed by a non coord
     //     let res = non_coords[0]
     //         .process_block_proposal(invalid_block.clone(), coord.peer_id.clone())
     //         .await;
@@ -1806,7 +1806,7 @@ pub(crate) mod tests {
     //     // both non-coords should be awaiting commitments
     //     assert!(non_coords[0].get_state(block_hash).is_awaiting_commitments());
     //     assert!(non_coords[1].get_state(block_hash).is_awaiting_commitments());
-    //     // Coordinator still havent received enough commitments
+    //     // Coordinator still haven't received enough commitments
     //     assert!(coord.get_state(block_hash).is_awaiting_precommitments());
 
     //     coord
@@ -1924,7 +1924,7 @@ pub(crate) mod tests {
 
     // #[tokio::test]
     // async fn can_suggest_the_same_block_twice() {
-    //     // This test ensure thats peers will commit to the same block twice as long
+    //     // This test ensure that's peers will commit to the same block twice as long
     //     // as the block hash is the same
     //     // Peers should still reject if the same block producer is suggesting two different blocks
     //     // in the same time slot Note: set up test signs with the first authorities key

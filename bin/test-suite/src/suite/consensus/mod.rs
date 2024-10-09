@@ -766,32 +766,29 @@ impl Suite for ConsensusIntegrationTestSuite {
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
 
-        // =================== COMMET NODES ================== //
+        // =================== COMMETBFT NODES ================== //
+        let mut cometbft_lightclients = vec![];
         let mut spawned_cometbft_processes = vec![];
         if create_test_config.create_cometbft_nodes {
             it_info_print!("Starting cometbft nodes ...");
-            let (mut cometbft_nodes, tx) =
-                create_cometbft_nodes(self.global_context.clone()).await?;
+            let (cometbft_nodes, tx) = create_cometbft_nodes(self.global_context.clone()).await?;
             for (_, cometbft_node) in cometbft_nodes.iter() {
                 // spawn cometbft node as a process
                 spawned_cometbft_processes.push(cometbft_node.spawn_service()?);
 
-                // await initialization
-                cometbft_node.await_initialization()?;
-
-                // wait for two seconds in between processes start
-                tokio::time::sleep(Duration::from_secs(5)).await;
-            }
-
-            // initialize cometbft botanix clients
-            let mut cometbft_lightclients = vec![];
-            for (_, cometbft_node) in cometbft_nodes.iter_mut() {
+                // create lightclient
                 let botanix_eth_client = HttpCometBFTRpcClientFactory::new(
                     "0.0.0.0".to_string(),
                     cometbft_node.cometbft_rpc_app_port,
                 );
                 let http_client = botanix_eth_client.build_and_connect()?;
                 cometbft_lightclients.push(http_client);
+
+                // await initialization
+                cometbft_node.await_initialization()?;
+
+                // wait for two seconds in between processes start
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
 
             // update local context
@@ -802,6 +799,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         }
 
         // =================== POA NODES ================== //
+        let mut poa_botanix_clients = vec![];
         if create_test_config.create_poa_nodes {
             // then generate test fed members poa nodes
             let (mut poa_nodes, tx, edh_authorities_list) = create_poa_nodes(
@@ -817,12 +815,18 @@ impl Suite for ConsensusIntegrationTestSuite {
 
             it_info_print!("Starting poa nodes");
             let mut rx = tx.subscribe();
-            for (index, poa_node) in poa_nodes.iter() {
+            for (index, poa_node) in poa_nodes.iter_mut() {
                 it_info_print!("Starting poa node", index);
                 let build_command_authorities_list = Arc::clone(&build_command_authorities_list);
 
                 // spawn poa node as a process
                 spawned_poa_processes.push(poa_node.spawn_service(build_command_authorities_list)?);
+
+                // create botanix client
+                let botanix_eth_client = create_botanix_eth_client(poa_node.rpc_port).await?;
+                poa_node.botanix_eth_client = Some(botanix_eth_client.clone());
+                poa_botanix_clients.push(botanix_eth_client);
+                it_info_print!("Botanix client created for poa member {}", index);
 
                 // await initialization
                 poa_node.await_initialization()?;
@@ -848,15 +852,6 @@ impl Suite for ConsensusIntegrationTestSuite {
             // All keys should be the same
             assert_eq!(keys.len(), 1);
 
-            // initialize poa botanix clients
-            let mut poa_botanix_clients = vec![];
-            for (index, poa_node) in poa_nodes.iter_mut() {
-                let botanix_eth_client = create_botanix_eth_client(poa_node.rpc_port).await?;
-                poa_node.botanix_eth_client = Some(botanix_eth_client.clone());
-                poa_botanix_clients.push(botanix_eth_client);
-                it_info_print!("Botanix client created for poa member {}", index);
-            }
-
             // update local context
             self.local_context.poa_processes = Some(spawned_poa_processes);
             self.local_context.poa_nodes = Some(poa_nodes);
@@ -871,6 +866,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             let mut spawned_rpc_processes = vec![];
 
             it_info_print!("Starting rpc nodes ...");
+            let mut rpc_botanix_clients = vec![];
             for (index, rpc_node) in rpc_nodes.iter_mut() {
                 it_info_print!("Starting rpc node", index);
                 let build_command_authorities_list = Arc::clone(&build_command_authorities_list);
@@ -887,20 +883,17 @@ impl Suite for ConsensusIntegrationTestSuite {
                 spawned_rpc_processes
                     .push(rpc_node.spawn_service(build_command_authorities_list, poa_nodes_clone)?);
 
+                // create botanix client
+                let botanix_eth_client = create_botanix_eth_client(rpc_node.rpc_port).await?;
+                rpc_node.botanix_eth_client = Some(botanix_eth_client.clone());
+                rpc_botanix_clients.push(botanix_eth_client);
+                it_info_print!("Botanix client created for rpc member {}", index);
+
                 // await initialization
                 rpc_node.await_initialization()?;
 
                 // wait for two seconds in between processes start
                 tokio::time::sleep(Duration::from_secs(2)).await;
-            }
-
-            // initialize rpc botanix clients
-            let mut rpc_botanix_clients = vec![];
-            for (index, rpc_node) in rpc_nodes.iter_mut() {
-                let botanix_eth_client = create_botanix_eth_client(rpc_node.rpc_port).await?;
-                rpc_node.botanix_eth_client = Some(botanix_eth_client.clone());
-                rpc_botanix_clients.push(botanix_eth_client);
-                it_info_print!("Botanix client created for rpc member {}", index);
             }
 
             // update local context

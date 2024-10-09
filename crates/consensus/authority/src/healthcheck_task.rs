@@ -70,7 +70,7 @@ where
             .filter_map(|(index, authority_pk)| {
                 let authority_peer_id = pk2id(authority_pk);
                 if authority_peer_id != *self.network_handle.peer_id() {
-                    // excluse our own peer_id
+                    // exclude our own peer_id
                     let authority_socket_addr =
                         self.storage.authority_socket_addresses.get(index).cloned();
                     Some(authority_peer_id).zip(authority_socket_addr)
@@ -117,7 +117,7 @@ where
                 // sleep for some time before the next check
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
-                // check for any authority peers whose health checks havent been recently received
+                // check for any authority peers whose health checks haven't been recently received
                 let mut none_responding_authority_peers = peers_healthcheck_tracker
                     .read()
                     .await
