@@ -1,12 +1,11 @@
-use super::{
-    botanix_client::BotanixEthClient, create_temp_working_directory, kill_process_at_port, Scope,
-};
+use super::{create_temp_working_directory, kill_process_at_port, Scope};
 use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
 use std::{fs, path::PathBuf, sync::Arc};
 use tokio::{
     process::Child,
     sync::broadcast::{channel, Sender},
 };
+use url::Url;
 
 #[derive(Clone, Debug)]
 pub enum Notifications {}
@@ -44,8 +43,8 @@ impl SpawnedBitcoindProcess {
 #[derive(Clone, Debug)]
 pub struct BitcoindNodeConfig {
     pub working_directory: PathBuf,
-    pub botanix_eth_client: Option<BotanixEthClient>,
     pub test_signal_tx: Sender<TestSignal>,
+    pub bitcoind_url: Url,
     pub bitcoind_user: String,
     pub bitcoind_password: String,
 }
@@ -53,13 +52,14 @@ pub struct BitcoindNodeConfig {
 impl BitcoindNodeConfig {
     pub async fn new(
         test_signal_tx: Sender<TestSignal>,
+        bitcoind_url: Url,
         bitcoind_user: String,
         bitcoind_password: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             working_directory: create_temp_working_directory(),
-            botanix_eth_client: None,
             test_signal_tx,
+            bitcoind_url,
             bitcoind_user,
             bitcoind_password,
         })
@@ -107,6 +107,7 @@ pub async fn create_bitcoind_node(
     let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
     let bitcoind_node = BitcoindNodeConfig::new(
         test_signal_tx,
+        global_context.bitcoind_url.clone(),
         global_context.bitcoind_user.clone(),
         global_context.bitcoind_pass.clone(),
     )

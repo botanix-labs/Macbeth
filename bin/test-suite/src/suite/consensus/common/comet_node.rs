@@ -6,6 +6,7 @@ use crate::{
     suite::consensus::common::{create_temp_working_directory, spawn_child_process},
 };
 use anyhow::Context;
+use reth_chainspec::BOTANIX_TESTNET;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -106,7 +107,6 @@ pub struct CometBftNodeConfig {
     pub cometbft_p2p_app_port: u16,
     pub peers_list: Vec<CometBftNodeConfig>,
     pub peer_id: String,
-    pub botanix_eth_client: Option<BotanixEthClient>,
     pub test_signal_tx: Sender<TestSignal>,
 }
 
@@ -127,7 +127,6 @@ impl CometBftNodeConfig {
             validator,
             peers_list: vec![],
             peer_id,
-            botanix_eth_client: None,
             cometbft_proxy_app_port,
             cometbft_rpc_app_port,
             cometbft_p2p_app_port,
@@ -176,7 +175,7 @@ async fn init_cometbft_node(
 ) -> anyhow::Result<(ExitStatus, String, String)> {
     let working_dir_str = working_directory.display().to_string();
     let command = "cometbft";
-    let args = vec!["init", "--home", &working_dir_str];
+    let args = vec!["init", "-k", "secp256k1", "--home", &working_dir_str];
     let child = spawn_child_process(Scope::CometBFT(index), command, args, working_directory)?;
     let output = child.wait_with_output().await?;
     let exit_status = output.status;
@@ -211,7 +210,7 @@ fn updated_genesis_file(
             .context("Error reading genesis.json file")?;
 
     if let Some(chain_id) = genesis_object.get_mut("chain_id") {
-        *chain_id = serde_json::Value::String("3636".to_string());
+        *chain_id = serde_json::Value::String(BOTANIX_TESTNET.chain().id().to_string());
     }
 
     if let Some(max_gas) = genesis_object.pointer_mut("/consensus_params/block/max_gas") {

@@ -31,6 +31,9 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
+use reth_btc_wallet::bitcoind::{
+    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
+};
 use reth_tracing::tracing::error;
 use std::{
     collections::{HashMap, HashSet},
@@ -688,6 +691,13 @@ impl Suite for ConsensusIntegrationTestSuite {
             // await initialization
             bitcoind_node.await_initialization()?;
 
+            let bitcoind_factory = BitcoindClientFactory::new(BitcoindConfig::new(
+                self.global_context.bitcoind_url.clone(),
+                self.global_context.bitcoind_user.clone(),
+                self.global_context.bitcoind_pass.clone(),
+            ));
+            let _bitcoind_client = bitcoind_factory.build_and_connect()?;
+
             // wait for two seconds in between processes start
             tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -756,6 +766,41 @@ impl Suite for ConsensusIntegrationTestSuite {
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
 
+        // =================== COMMET NODES ================== //
+        let mut spawned_cometbft_processes = vec![];
+        if create_test_config.create_cometbft_nodes {
+            it_info_print!("Starting cometbft nodes ...");
+            let (mut cometbft_nodes, tx) =
+                create_cometbft_nodes(self.global_context.clone()).await?;
+            for (_, cometbft_node) in cometbft_nodes.iter() {
+                // spawn cometbft node as a process
+                spawned_cometbft_processes.push(cometbft_node.spawn_service()?);
+
+                // await initialization
+                cometbft_node.await_initialization()?;
+
+                // wait for two seconds in between processes start
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+
+            // initialize cometbft botanix clients
+            let mut cometbft_lightclients = vec![];
+            for (_, cometbft_node) in cometbft_nodes.iter_mut() {
+                let botanix_eth_client = HttpCometBFTRpcClientFactory::new(
+                    "0.0.0.0".to_string(),
+                    cometbft_node.cometbft_rpc_app_port,
+                );
+                let http_client = botanix_eth_client.build_and_connect()?;
+                cometbft_lightclients.push(http_client);
+            }
+
+            // update local context
+            self.local_context.cometbft_processes = Some(spawned_cometbft_processes);
+            self.local_context.cometbft_nodes = Some(cometbft_nodes);
+            self.local_context.cometbft_notification = Some(tx);
+            self.local_context.cometbft_lightclients = Some(cometbft_lightclients);
+        }
+
         // =================== POA NODES ================== //
         if create_test_config.create_poa_nodes {
             // then generate test fed members poa nodes
@@ -783,7 +828,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 poa_node.await_initialization()?;
 
                 // wait for two seconds in between processes start
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
 
             // run the dkg
@@ -817,41 +862,6 @@ impl Suite for ConsensusIntegrationTestSuite {
             self.local_context.poa_nodes = Some(poa_nodes);
             self.local_context.poa_notification = Some(tx);
             self.local_context.poa_eth_providers = Some(poa_botanix_clients);
-        }
-
-        // =================== COMMET NODES ================== //
-        let mut spawned_cometbft_processes = vec![];
-        if create_test_config.create_cometbft_nodes {
-            it_info_print!("Starting cometbft nodes ...");
-            let (mut cometbft_nodes, tx) =
-                create_cometbft_nodes(self.global_context.clone()).await?;
-            for (_, cometbft_node) in cometbft_nodes.iter() {
-                // spawn cometbft node as a process
-                spawned_cometbft_processes.push(cometbft_node.spawn_service()?);
-
-                // await initialization
-                cometbft_node.await_initialization()?;
-
-                // wait for two seconds in between processes start
-                tokio::time::sleep(Duration::from_secs(5)).await;
-            }
-
-            // initialize cometbft botanix clients
-            let mut cometbft_lightclients = vec![];
-            for (index, cometbft_node) in cometbft_nodes.iter_mut() {
-                let botanix_eth_client = HttpCometBFTRpcClientFactory::new(
-                    "0.0.0.0".to_string(),
-                    cometbft_node.cometbft_rpc_app_port,
-                );
-                let http_client = botanix_eth_client.build_and_connect()?;
-                cometbft_lightclients.push(http_client);
-            }
-
-            // update local context
-            self.local_context.cometbft_processes = Some(spawned_cometbft_processes);
-            self.local_context.cometbft_nodes = Some(cometbft_nodes);
-            self.local_context.cometbft_notification = Some(tx);
-            self.local_context.cometbft_lightclients = Some(cometbft_lightclients);
         }
 
         // // =================== RPC NODES ================== //

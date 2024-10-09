@@ -40,7 +40,6 @@ use url::Url;
 pub const RPC_PORT_BASE: u16 = 8545;
 pub const DISCOVERY_PORT_BASE: u16 = 30330;
 pub const ABCI_PORT_BASE: u16 = 26658;
-
 #[derive(Template, Clone, Debug)]
 #[template(path = "botanix_testnet.json", ext = "json", escape = "none")]
 struct BotanixTestnetGenesisConfig<'a> {

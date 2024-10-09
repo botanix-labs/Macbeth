@@ -71,7 +71,6 @@ impl SpawnedRpcServerProcess {
         kill_process_at_port(self.rpc_port);
     }
 }
-
 #[derive(Clone, Debug)]
 pub struct NonFederationMemberTestConfig {
     pub index: u16,
