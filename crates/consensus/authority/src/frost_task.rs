@@ -70,8 +70,8 @@ pub(crate) struct FrostNotification {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum PsbtValidationError {
-    #[error("Failed to validate psbt by ids")]
-    FailedToValidatePsbtByIds,
+    #[error("Failed to validate psbt by ids: {0}")]
+    FailedToValidatePsbtByIds(String),
 }
 
 pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
@@ -219,7 +219,9 @@ where
 
         if pegout_ids.is_empty() {
             error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "No pegout ids found in psbt");
-            return Err(PsbtValidationError::FailedToValidatePsbtByIds);
+            return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+                "No pegout ids found in psbt",
+            )));
         }
 
         // get pegouts from db
@@ -233,17 +235,17 @@ where
                 .and_then(|receipts| receipts.logs.get(*idx as usize).cloned())
                 .ok_or_else(|| {
                     error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to get log from receipts");
-                    PsbtValidationError::FailedToValidatePsbtByIds
+                    PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get log from receipts"))
                 })?;
 
             let PegoutData { amount, destination, network: _} = try_parse_burn_event(&log, self.storage.btc_network)
                 .map_err(|e| {
                     error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to parse burn event {:?}", e);
-                    PsbtValidationError::FailedToValidatePsbtByIds
+                    PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to parse burn event"))
                 })?
                 .ok_or_else(|| {
                     error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to get pegout data from burn event");
-                    PsbtValidationError::FailedToValidatePsbtByIds
+                    PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get pegout data from burn event"))
                 })?;
 
             // check if a corresponding output exists in the psbt
@@ -251,6 +253,7 @@ where
                 Ok(transaction) => {
                     match transaction.output.iter().find(|output| {
                         output.script_pubkey == destination.script_pubkey() &&
+                            // TODO: strict value checking will need to account for fees
                             output.value == amount
                     }) {
                         Some(_) => {
@@ -258,13 +261,17 @@ where
                         }
                         None => {
                             error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
-                            return Err(PsbtValidationError::FailedToValidatePsbtByIds);
+                            return Err(PsbtValidationError::FailedToValidatePsbtByIds(
+                                String::from("Failed to find matching output in psbt"),
+                            ));
                         }
                     }
                 }
                 Err(e) => {
                     error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt {:?}", e);
-                    return Err(PsbtValidationError::FailedToValidatePsbtByIds);
+                    return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+                        "Failed to extract transaction from psbt",
+                    )));
                 }
             }
         }
