@@ -1,13 +1,11 @@
-use std::{str::FromStr, time::Duration};
+use std::str::FromStr;
 
-use anyhow::Context;
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::pegout_id::PegoutId;
 use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use reth_btc_wallet::bitcoind::RpcApiExt;
 use reth_chainspec::BOTANIX_TESTNET;
 use tonic::transport::Channel;
 
@@ -21,6 +19,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 
 const NUM_PEGINS: usize = 5;
@@ -173,17 +172,7 @@ pub async fn test_many_inputs_signing(
         // wallet already exists, load wallet
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
-    tracing::info!("wallet address {:?}", address.to_string());
-    // generate a block to the network looks live
-    match bitcoind.generate_to_address(202, &address) {
-        Ok(_) => {}
-        Err(e) => {
-            it_info_print!("Error generating blocks: {:?}", e);
-            panic!("generate to address failed");
-        }
-    }
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    generate_blocks(&bitcoind, 202).await;
 
     // create pegins container
     let mut pegins = vec![];
@@ -226,8 +215,7 @@ pub async fn test_many_inputs_signing(
             .expect("send to address");
 
         // Generate some block to confirm it
-        bitcoind.generate_to_address(2, &address).expect("generate to address");
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        generate_blocks(&bitcoind, 2).await;
 
         let tx_res = bitcoind.get_transaction(&txid, None).expect("valid tx");
         let pegin_tx = tx_res.transaction().expect("valid tx");

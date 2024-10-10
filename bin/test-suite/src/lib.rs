@@ -51,3 +51,4 @@ pub mod minting;
 pub mod server;
 pub mod shutdown;
 pub mod suite;
+pub mod utils;
