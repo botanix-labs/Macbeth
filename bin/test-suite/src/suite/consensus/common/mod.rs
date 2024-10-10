@@ -201,7 +201,7 @@ pub fn spawn_child_process_internal(
 pub async fn create_botanix_eth_client(rpc_port: u16) -> anyhow::Result<BotanixEthClient> {
     let mint_contract_address: EtherAddress =
         MINT_CONTRACT_ADDRESS.parse().context("Must be a valid ethereum address")?;
-    Ok(BotanixEthClient::new(rpc_port, PREFUNDED_ACCOUNT_SECRET_KEY, mint_contract_address).await)
+    Ok(BotanixEthClient::new(rpc_port, PREFUNDED_ACCOUNT_SECRET_KEY, mint_contract_address).await?)
 }
 
 pub trait TemplateWriter {

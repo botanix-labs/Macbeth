@@ -1,3 +1,4 @@
+use anyhow::Context;
 use ethers::types::U64;
 use tokio::time::Duration;
 
@@ -7,15 +8,12 @@ use crate::{
         common::{
             botanix_client::BotanixEthClient, events::SEND_AMOUNT, PREFUNDED_ACCOUNT_SECRET_KEY,
         },
-        rpc_node::error::NonFederationMemberTestConfigError,
         ConsensusIntegrationTestSuite,
     },
 };
 
 #[allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
-pub async fn test_rpc_node(
-    suite: &ConsensusIntegrationTestSuite,
-) -> anyhow::Result<(), NonFederationMemberTestConfigError> {
+pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<()> {
     it_info_print!("Running rpc node test");
     // subscribe to rpc node events
     let _rx = suite
@@ -77,7 +75,8 @@ pub async fn test_rpc_node(
         PREFUNDED_ACCOUNT_SECRET_KEY,
         ethers::core::types::Address::random(),
     )
-    .await;
+    .await
+    .context("Failed to create rpc botanix client")?;
 
     let rpc_latest_block_header = rpc_botanix_client.get_latest_block_hash().await.unwrap();
     it_info_print!("RPC node latest header hash", rpc_latest_block_header);

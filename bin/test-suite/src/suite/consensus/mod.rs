@@ -32,7 +32,7 @@ use common::{
     },
 };
 use reth_btc_wallet::bitcoind::{
-    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
+    BitcoindClientFactory, BitcoindConfig, BitcoindFactory,
 };
 use reth_tracing::tracing::error;
 use std::{
@@ -821,19 +821,39 @@ impl Suite for ConsensusIntegrationTestSuite {
                 // spawn poa node as a process
                 spawned_poa_processes.push(poa_node.spawn_service(build_command_authorities_list)?);
 
-                tokio::time::sleep(Duration::from_secs(20)).await;
-
-                // create botanix client
-                // let botanix_eth_client = create_botanix_eth_client(poa_node.rpc_port).await?;
-                // poa_node.botanix_eth_client = Some(botanix_eth_client.clone());
-                // poa_botanix_clients.push(botanix_eth_client);
-                // it_info_print!("Botanix client created for poa member {}", index);
-
-                // // await initialization
-                // poa_node.await_initialization()?;
-
                 // wait for two seconds in between processes start
                 tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+
+            // loop over the poa nodes and wait until they become initialized so the eth clients can
+            // connect with them
+            for (index, poa_node) in poa_nodes.iter_mut() {
+                // create botanix client and await initialization
+                let botanix_eth_client = loop {
+                    match create_botanix_eth_client(poa_node.rpc_port).await {
+                        Ok(client) => {
+                            it_info_print!(
+                                "Botanix client for poa member {} just connected!",
+                                index
+                            );
+                            break client;
+                        }
+                        Err(e) => {
+                            it_warn_print!(
+                                "Failed to create botanix client for poa member",
+                                index,
+                                e
+                            );
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                        }
+                    }
+                };
+                poa_node.botanix_eth_client = Some(botanix_eth_client.clone());
+                poa_botanix_clients.push(botanix_eth_client);
+                it_info_print!("Botanix client created for poa member {}", index);
+
+                // await initialization
+                poa_node.await_initialization()?;
             }
 
             // run the dkg
@@ -884,17 +904,39 @@ impl Suite for ConsensusIntegrationTestSuite {
                 spawned_rpc_processes
                     .push(rpc_node.spawn_service(build_command_authorities_list, poa_nodes_clone)?);
 
-                // create botanix client
-                // let botanix_eth_client = create_botanix_eth_client(rpc_node.rpc_port).await?;
-                // rpc_node.botanix_eth_client = Some(botanix_eth_client.clone());
-                // rpc_botanix_clients.push(botanix_eth_client);
-                // it_info_print!("Botanix client created for rpc member {}", index);
-
-                // // await initialization
-                // rpc_node.await_initialization()?;
-
                 // wait for two seconds in between processes start
                 tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+
+            // loop over the poa nodes and wait until they become initialized so the eth clients can
+            // connect with them
+            for (index, rpc_node) in rpc_nodes.iter_mut() {
+                // create botanix client and await initialization
+                let botanix_eth_client = loop {
+                    match create_botanix_eth_client(rpc_node.rpc_port).await {
+                        Ok(client) => {
+                            it_info_print!(
+                                "Botanix client for rpc member {} just connected!",
+                                index
+                            );
+                            break client;
+                        }
+                        Err(e) => {
+                            it_warn_print!(
+                                "Failed to create botanix client for rpc member",
+                                index,
+                                e
+                            );
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                        }
+                    }
+                };
+                rpc_node.botanix_eth_client = Some(botanix_eth_client.clone());
+                rpc_botanix_clients.push(botanix_eth_client);
+                it_info_print!("Botanix client created for poa member {}", index);
+
+                // await initialization
+                rpc_node.await_initialization()?;
             }
 
             // update local context
