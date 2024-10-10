@@ -7,6 +7,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
@@ -53,7 +54,7 @@ pub async fn test_edh_size_limit(
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 101).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Print wallet balancee
@@ -116,7 +117,7 @@ pub async fn test_edh_size_limit(
         let agg_pk =
             secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
                 .expect("valid agg pk");
-        let blocks = bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
+        let blocks = generate_blocks(&bitcoind_rpc, 1).await;
 
         pegin_txsids.push((
             pegin_txid,
@@ -129,9 +130,7 @@ pub async fn test_edh_size_limit(
     }
 
     // Generate some block to confirm all pegins
-    bitcoind_rpc
-        .generate_to_address(1 + pegin_conf_depth as u64, &address)
-        .expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 1 + pegin_conf_depth).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Lets assemble the headers we need for the proof

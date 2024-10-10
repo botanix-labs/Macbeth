@@ -6,25 +6,25 @@ use crate::{
                 await_botanix_event, await_dkg, await_signing_completion, GatewayAddressResponse,
                 BITCOIND_WALLET_NAME, SEND_AMOUNT,
             },
-            poa_node::{create_poa_federation_members, TestSignal},
+            poa_node::{create_poa_nodes, TestSignal},
         },
         ConsensusIntegrationTestSuite,
-    },
+    }, utils::generate_blocks,
 };
 use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
-    types::{NameOrAddress, U256},
+    types::NameOrAddress,
 };
 use reth::consensus_common::utils::{current_inturn_index, unix_timestamp};
+use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::botanix::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::PeginMeta,
     utils::AmountExt,
 };
 use reth_btc_wallet::address::EthAddress;
-use reth_cli_runner::CliRunner;
 use reth_primitives::Address;
 use std::{str::FromStr, time::Duration};
 
@@ -62,37 +62,18 @@ pub async fn pbft_e2e_failed_disconnect(
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 101).await;
 
     // generate test fed members poa nodes
-    let (mut test_fed_members, mut rx) = create_poa_federation_members(
+    let (mut test_fed_members, mut rx, _) = create_poa_nodes(
         suite.global_context.clone(),
-        suite.local_context.btc_servers.as_ref(),
+        suite.local_context.btc_processes.as_ref(),
     )
-    .await;
-
-    // run all poa nodes in the background
-    for (_index, fed_member_config) in test_fed_members.iter() {
-        let fed_member_config = fed_member_config.clone();
-        let _ = std::thread::spawn(move || {
-            let (fed_member_command, _chain_spec) = fed_member_config.build_command();
-            let runner = CliRunner::default();
-            runner.run_command_until_exit(|ctx| fed_member_command.execute(ctx)).unwrap();
-        });
-        // wait for one second in between members start
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
+    .await?;
 
     // wait for the dkg to finish for each of them
     await_dkg(&mut test_fed_members, &mut rx).await;
 
-    // generate mint contract test instances
-    let mut mint_contract_instances = Vec::new();
-    for (index, _) in test_fed_members.iter() {
-        let botanix_eth_client =
-            test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
-        mint_contract_instances.push(botanix_eth_client);
-    }
 
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();
@@ -123,7 +104,7 @@ pub async fn pbft_e2e_failed_disconnect(
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
-    bitcoind_rpc.generate_to_address(2, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 2).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
@@ -194,7 +175,9 @@ pub async fn pbft_e2e_failed_disconnect(
 
     // find out who is in turn
     let total_authorities = test_fed_members.len();
-    let inturn_member_index = current_inturn_index(total_authorities as u64, unix_timestamp());
+    let leader_selection_window =
+        BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");
+    let inturn_member_index = current_inturn_index(total_authorities as u64, unix_timestamp(), leader_selection_window);
 
     // wait for the signing to finish for coordinator
     await_signing_completion(inturn_member_index as u16, &mut rx).await;
@@ -273,7 +256,7 @@ pub async fn pbft_e2e_failed_disconnect(
     )
     .expect("bitcoind client");
     // mine some btc blocks (needed for confirmed pegout)
-    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 1).await;
 
     // Retrieve the last block
     let tip = bitcoind_rpc.get_block_count().expect("valid block count");

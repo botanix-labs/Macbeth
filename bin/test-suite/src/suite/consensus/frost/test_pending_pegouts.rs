@@ -16,6 +16,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 
 const INPUTS_TO_SPEND: usize = 2;
@@ -44,9 +45,9 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
         // wallet already exists, load wallet
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
+    let _address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
     // generate a block to the network looks live
-    bitcoind.generate_to_address(1, &address).expect("generate to address");
+    generate_blocks(&bitcoind, 1).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // create pegins container

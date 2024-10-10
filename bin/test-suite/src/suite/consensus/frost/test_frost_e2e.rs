@@ -25,6 +25,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -49,10 +50,10 @@ pub async fn frost_e2e_stable(
         // load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let address =
+    let _address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 101).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let test_fed_members = suite
@@ -104,9 +105,7 @@ pub async fn frost_e2e_stable(
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
-    bitcoind_rpc
-        .generate_to_address(1 + pegin_conf_depth as u64, &address)
-        .expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 1 + pegin_conf_depth).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
@@ -259,7 +258,7 @@ pub async fn frost_e2e_stable(
     // processes connecting
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
     // mine some btc blocks (needed for confirmed pegout)
-    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 1).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Retrieve the last block
