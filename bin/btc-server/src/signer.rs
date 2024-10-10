@@ -19,7 +19,7 @@ use crate::{
     coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
-    util::{validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
+    util::{validate_psbt, ROUND1, ROUND1_TRANSITION},
     App, Error,
 };
 
