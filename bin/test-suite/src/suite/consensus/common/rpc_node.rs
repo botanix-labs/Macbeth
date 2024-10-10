@@ -104,7 +104,7 @@ impl NonFederationMemberTestConfig {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
-            temp_path: create_temp_working_directory(),
+            temp_path: create_temp_working_directory()?,
             secret_key,
             rpc_port,
             discovery_port,

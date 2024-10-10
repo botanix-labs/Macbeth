@@ -149,7 +149,7 @@ impl FederationMemberTestConfig {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
-            temp_path: create_temp_working_directory(),
+            temp_path: create_temp_working_directory()?,
             secret_key,
             authorities,
             rpc_port,

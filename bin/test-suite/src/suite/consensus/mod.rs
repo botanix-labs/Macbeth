@@ -31,9 +31,7 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
-use reth_btc_wallet::bitcoind::{
-    BitcoindClientFactory, BitcoindConfig, BitcoindFactory,
-};
+use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_tracing::tracing::error;
 use std::{
     collections::{HashMap, HashSet},

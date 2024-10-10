@@ -223,11 +223,11 @@ pub trait TemplateWriter {
     }
 }
 
-pub fn create_temp_working_directory() -> PathBuf {
+pub fn create_temp_working_directory() -> anyhow::Result<PathBuf> {
     let ret = tempfile::TempDir::new()
-        .expect("tempdir is okay")
+        .context("could not create temp. directory")?
         .into_path()
         .join(format!("_{}", unix_timestamp().to_string()));
     std::fs::create_dir_all(&ret).expect("failed to create tempdir subdir");
-    ret
+    Ok(ret)
 }

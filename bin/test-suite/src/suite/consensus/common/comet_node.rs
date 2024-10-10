@@ -326,7 +326,7 @@ pub async fn create_cometbft_nodes(
         let cometbft_p2p_app_port = cometbft_rpc_app_port - 1;
 
         // init working directory
-        let working_directory = create_temp_working_directory();
+        let working_directory = create_temp_working_directory()?;
 
         let (_exit_status, stdout, _stderr) =
             get_cometbft_version(member_index, &working_directory)
@@ -409,8 +409,10 @@ pub async fn create_cometbft_nodes(
     // now insert peers into each cometbft member
     for member_index in 0..global_context.fed_instances {
         // get the cometbft node
-        let cometbft_node =
-            cometbft_nodes.get(&member_index).cloned().expect("To have cometbft node");
+        let cometbft_node = cometbft_nodes
+            .get(&member_index)
+            .cloned()
+            .context("Error getting cometbft node at index")?;
 
         // read genesis.json file and update some keys
         updated_genesis_file(&cometbft_node.working_directory, all_genesis_validators.clone())

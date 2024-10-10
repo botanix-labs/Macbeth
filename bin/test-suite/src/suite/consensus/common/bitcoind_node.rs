@@ -59,7 +59,7 @@ impl BitcoindNodeConfig {
         bitcoind_password: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            working_directory: create_temp_working_directory(),
+            working_directory: create_temp_working_directory()?,
             test_signal_tx,
             bitcoind_url,
             bitcoind_user,
@@ -132,7 +132,7 @@ impl BitcoindNodeConfig {
             "50",
             &wallet_address,
         ];
-        let (_, stdout, _) =
+        let (_, _, _) =
             spawn_await_child_process(Scope::Bitcoind, command, args, &self.working_directory)
                 .await?;
 
