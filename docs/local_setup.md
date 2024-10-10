@@ -2,7 +2,7 @@
 
 ## Requirements
 
-To develop and run this project locally, ensure you have the following tools installed.
+To develop and run this project locally, ensure you have the following prerequisite installed.
 
 1. [Rust](https://www.rust-lang.org/).
 2. [Bitcoin](https://github.com/bitcoin/bitcoin).
