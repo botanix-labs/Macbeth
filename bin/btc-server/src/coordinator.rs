@@ -73,6 +73,8 @@ pub enum CoordinatorError {
     PegoutMgrSync(#[from] crate::pegout_scheduler::SyncError),
     #[error("utxo merkle root mismatch: expected {expected}, actual {actual:?}")]
     UtxoMerkleRootMismatch { expected: sha256::Hash, actual: sha256::Hash },
+    #[error("Failed to serialize signature")]
+    FailedToSerializeSignature,
 }
 
 impl<BitcoindClient> App<BitcoindClient>
@@ -330,10 +332,10 @@ where
 
             // Skipping first byte which is encoding the parity of the y cord of R
             // We only use x-only elements. So we can skip this byte. FROST library only produces
-            // x-only keys / points TODO (armins) remove the unwrap here
+            // x-only keys / points
             let secp_sig =
                 bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()[1..])
-                    .unwrap();
+                    .map_err(|_| CoordinatorError::FailedToSerializeSignature)?;
 
             // Verify signature -- redundant check finalize psbt already checks this
             if let Some(e) = psbt_input.eth_address() {
@@ -387,7 +389,7 @@ where
             .iter()
             .map(|o| o.pegout_id())
             .filter(|o| o.is_some())
-            .map(|o| PegoutId::from_bytes(&o.unwrap()).expect("valid pegout id"))
+            .map(|o| PegoutId::from_bytes(&o.expect("is some")).expect("valid pegout id"))
             .collect::<Vec<_>>();
         let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
         let pegout_reqs = {
