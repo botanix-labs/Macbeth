@@ -8,9 +8,9 @@
 ![](./images/botanix.jpg)
 
 # Running and Testing the Project. 
- 1. [Run nodes locally](./docs/local_setup.md)
- 2. [Run nodes using docker](./docs/docker_setup.md)
- 3. [How to run test suite](./docs/test-suite.md)
+ 1. [Setting up nodes locally](./docs/local_setup.md)
+ 2. [Running nodes with Docker](./docs/docker_setup.md)
+ 3. [Executing the test suite](./docs/test-suite.md)
 
 ## Getting Help
 

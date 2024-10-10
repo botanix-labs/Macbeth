@@ -11,7 +11,7 @@ To develop and run this project locally, ensure you have the following tools ins
 
 ## Project Execution Steps: 
    
-### SetUp Bitcoin Node & Run in Regtest Mode.
+### Setup Bitcoin Node & Run in Regtest Mode.
  1. Ensure you have the `bitcoind` and `bitcoin-cli` binaries either compiled from source or downloaded.
  2. We need to create a `bitcoin.conf` file, regtest configuration file. You can find the details below.  
    
@@ -41,8 +41,8 @@ To develop and run this project locally, ensure you have the following tools ins
  ./build/src/bitcoin-cli -rpcport=18443 -rpcuser=test123 -rpcpassword=test123 -generate 200 
 ```
 
-### SetUp MacBeth Node.
- To run a local federation, we may need to operate multiple nodes, which include both a Bitcoin server-client and a reth node. Each node must be configured individually for proper operation.
+### Setup MacBeth Node.
+ To run a local federation, we may need to operate multiple nodes, which include both a bitcoin server and a reth node. Each node must be configured individually for proper operation.Please note that federation on reth node consists of at least two federation members.
  
  1. create two folder in your home directory `Node0` and `Node1` as shown below
   
@@ -50,9 +50,9 @@ To develop and run this project locally, ensure you have the following tools ins
   mkdir -p ~/federation/node0/ ~/federation/node1/
  ```
 
- 2. Create a file named federation.toml and copy the contents of the [Federational.Toml]([Federational.Toml](https://github.com/botanix-labs/Macbeth/blob/cf1d3272ace7df42e016b4dcb98bcbf1fcfd9add/book/installation/chain-config.md?plain=1#L4)) file into the previously  created `federation.toml` and save it Node0 and Node1 folders.
+ 2. Create a file named federation.toml and copy the contents of the [Federational.Toml](https://github.com/botanix-labs/Macbeth/blob/cf1d3272ace7df42e016b4dcb98bcbf1fcfd9add/book/installation/chain-config.md?plain=1#L4) file and save it Node0 and Node1 folders. Which contains federation members keys.
  
- 3. Create `.env` folder inside project macbeth folder and add below env config.
+ 3. Create `.env` inside project macbeth folder and add below env config.
 
  ```
  cd ~/macbeth 
@@ -67,8 +67,6 @@ To develop and run this project locally, ensure you have the following tools ins
 
   NODE_1_DIR= {folder_path}/federation/node0  
   NODE_2_DIR= {folder_path}/federation/node1
-  
-  
  ```  
  * Ensure that you provide the correct path for the `federation/node0` directory that was previously created in `NODE_1_DIR` & NODE_2_DIR, along with the Bitcoin RPC username, RPC password, and Bitcoin port.
 
@@ -89,7 +87,7 @@ To develop and run this project locally, ensure you have the following tools ins
           For more env variable details and for clearing `db`  refer macbeth `MakeFile`.
 
 
-### CometBFT Node Setup
+### Setup CometBFT Node 
  We will be running two CometBFT nodes that will synchronize with each other via peer-to-peer communication and connect to an reth ABCI client.
 
 1. Ensure you have the 'cometbft' binaries either compiled from source or downloaded.
@@ -121,4 +119,4 @@ To develop and run this project locally, ensure you have the following tools ins
 ```
  
 
-**Note:** Make sure all the 6 nodes are running and producing empty blocks with proper heights.
+**Note:** Make sure all the 6 nodes with bitcond in regtest are running and producing empty blocks with proper heights.
