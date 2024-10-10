@@ -172,7 +172,7 @@ pub async fn test_many_inputs_signing(
         // wallet already exists, load wallet
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
-    generate_blocks(&bitcoind, 101).await;
+    generate_blocks(&bitcoind, 202).await;
 
     // create pegins container
     let mut pegins = vec![];

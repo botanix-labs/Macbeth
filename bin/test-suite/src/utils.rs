@@ -15,6 +15,6 @@ pub async fn generate_blocks(bitcoind: &impl RpcApi, num_blocks: u32) {
                 panic!("generate to address failed");
             }
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
     }
 }
