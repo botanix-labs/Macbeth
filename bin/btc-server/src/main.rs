@@ -674,7 +674,7 @@ mod test {
         app1.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1)
             .await
             .expect("valid round1 dkg");
-        let p1_dkg2 = app1.get_round2_dkg().await.expect("valid round 2 transition");
+        let _p1_dkg2 = app1.get_round2_dkg().await.expect("valid round 2 transition");
 
         // 2nd participant round 1
         app2.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[1].clone())));
@@ -685,7 +685,7 @@ mod test {
         app2.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1)
             .await
             .expect("valid round1 dkg");
-        let p2_dkg2 = app2.get_round2_dkg().await.expect("valid round 2 transition");
+        let _p2_dkg2 = app2.get_round2_dkg().await.expect("valid round 2 transition");
 
         // 3rd participant round 1
         app3.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[2].clone())));

@@ -574,6 +574,7 @@ pub enum BlockError {
     CantConnectBlock,
 }
 
+#[cfg(test)]
 mod tests {
     use bitcoin::hashes::Hash;
 
