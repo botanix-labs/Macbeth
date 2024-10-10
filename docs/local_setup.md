@@ -83,7 +83,7 @@ To develop and run this project locally, ensure you have the following tools ins
 ```
 
 **Note:** Make sure 2 btc-server running properly and conncected to bitcoind regtest node &
-          make sure 2 reth node is running and established the connection by participating singature sharing. 
+          make sure 2 reth node is running and established the connection by participating signature sharing. 
           For more env variable details and for clearing `db`  refer macbeth `MakeFile`.
 
 
