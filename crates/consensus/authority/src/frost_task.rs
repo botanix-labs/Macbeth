@@ -5,10 +5,13 @@ use crate::{
     dkg::DKGStateMachine,
     random_source_provider::RandomSource,
     signing::SigningStateMachine,
+    utils::{
+        extract_pegout_ids, validate_psbt_by_ids, validate_psbt_by_output, PsbtValidationError,
+    },
     Storage,
 };
 
-use bitcoin::Psbt;
+use bitcoin::{Address, Amount, Psbt};
 use btcserverlib::{
     extended_client::{BtcServerExtendedClient, GrpcClientError},
     pegout_id::PegoutId,
@@ -66,12 +69,6 @@ pub(crate) struct FrostNotification {
     pub(crate) signing_session_id: FixedBytes<32>,
     /// The agglomerated psbts
     pub(crate) psbt: Vec<u8>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum PsbtValidationError {
-    #[error("Failed to validate psbt by ids: {0}")]
-    FailedToValidatePsbtByIds(String),
 }
 
 pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
@@ -206,79 +203,6 @@ where
         Ok(prost_serialized_compressed)
     }
 
-    /// Validate psbt by pegout ids
-    pub(crate) async fn validate_psbt_by_ids(&self, psbt: Psbt) -> Result<(), PsbtValidationError> {
-        let pegout_ids = psbt
-            .outputs
-            .iter()
-            .filter_map(|output| match output.pegout_id() {
-                Some(pegout_id) => PegoutId::from_bytes(pegout_id.as_slice()).ok(),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-
-        if pegout_ids.is_empty() {
-            error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "No pegout ids found in psbt");
-            return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-                "No pegout ids found in psbt",
-            )));
-        }
-
-        // get pegouts from db
-        for PegoutId { txid, idx } in pegout_ids.iter() {
-            let log = self
-                .storage
-                .client
-                .receipt_by_hash(txid.into())
-                .ok()
-                .flatten()
-                .and_then(|receipts| receipts.logs.get(*idx as usize).cloned())
-                .ok_or_else(|| {
-                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to get log from receipts");
-                    PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get log from receipts"))
-                })?;
-
-            let PegoutData { amount, destination, network: _} = try_parse_burn_event(&log, self.storage.btc_network)
-                .map_err(|e| {
-                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to parse burn event {:?}", e);
-                    PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to parse burn event"))
-                })?
-                .ok_or_else(|| {
-                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to get pegout data from burn event");
-                    PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get pegout data from burn event"))
-                })?;
-
-            // check if a corresponding output exists in the psbt
-            match psbt.clone().extract_tx() {
-                Ok(transaction) => {
-                    match transaction.output.iter().find(|output| {
-                        output.script_pubkey == destination.script_pubkey() &&
-                            // TODO: strict value checking will need to account for fees
-                            output.value == amount
-                    }) {
-                        Some(_) => {
-                            info!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Found matching output in psbt");
-                        }
-                        None => {
-                            error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
-                            return Err(PsbtValidationError::FailedToValidatePsbtByIds(
-                                String::from("Failed to find matching output in psbt"),
-                            ));
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt {:?}", e);
-                    return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-                        "Failed to extract transaction from psbt",
-                    )));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     pub async fn start_task(&mut self) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
@@ -338,7 +262,13 @@ where
                         }
                     };
 
-                    match self.validate_psbt_by_ids(psbt).await {
+                    match validate_psbt_by_ids(
+                        self.storage.client.clone(),
+                        self.storage.btc_network,
+                        &psbt,
+                    )
+                    .await
+                    {
                         Ok(_) => {
                             info!(target: "consensus::authority::frost_task::start_task", "Validated psbt successfully")
                         }
