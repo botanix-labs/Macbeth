@@ -523,8 +523,8 @@ start-btc-server-1:
 	--identifier 0 \
 	--address 0.0.0.0:8081 \
 	--db "./db1" \
-	--min-signers 3 \
-	--max-signers 3 \
+	--min-signers 2 \
+	--max-signers 2 \
 	--toml ./config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -540,8 +540,8 @@ start-btc-server-2:
 	--identifier 1 \
 	--address 0.0.0.0:8082 \
 	--db "./db2" \
-	--min-signers 3 \
-	--max-signers 3 \
+	--min-signers 2 \
+	--max-signers 2 \
 	--toml ./config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -588,8 +588,8 @@ start-poa-server-1:
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
-	--frost.min_signers 3 \
-	--frost.max_signers 3 \
+	--frost.min_signers 2 \
+	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
 	--port 30303 \
 	--abci-port=26658
@@ -614,8 +614,8 @@ start-poa-server-2:
 	--bitcoind.url "${BITCOIND_URL}" \
 	--bitcoind.username "${BITCOIND_USER}" \
 	--bitcoind.password "${BITCOIND_PWD}" \
-	--frost.min_signers 3 \
-	--frost.max_signers 3 \
+	--frost.min_signers 2 \
+	--frost.max_signers 2 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304 \
 	--abci-port=36658
