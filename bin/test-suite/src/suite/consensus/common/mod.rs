@@ -58,8 +58,6 @@ pub fn kill_process_at_port(port: u16) {
                     "Successfully killed server process on port process on port {:?}",
                     port
                 );
-            } else {
-                tracing::warn!("Unable to kill server process on port {:?}", port);
             }
         }
         Err(err) => {

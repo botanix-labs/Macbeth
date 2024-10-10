@@ -4,7 +4,7 @@ use reth_tracing::{
 };
 use std::sync::Arc;
 use test_suite::{
-    config::CliArgs, context::GlobalContext, it_error_print, it_info_print, server::TestServer,
+    config::CliArgs, context::GlobalContext, it_info_print, it_warn_print, server::TestServer,
 };
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
             std::process::exit(0);
         }
         Err(err) => {
-            it_error_print!("Testing failed: {}", err);
+            it_warn_print!("Testing failed: {}", err);
             std::process::exit(1);
         }
     }

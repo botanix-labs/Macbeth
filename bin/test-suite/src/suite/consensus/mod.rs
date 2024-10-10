@@ -383,7 +383,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                     self,
                     CreateTestConfig {
                         create_bitcoind_node: true,
-                        create_rpc_nodes: true,
+                        create_poa_nodes: true,
                         create_btc_servers: true,
                         create_cometbft_nodes: true,
                         ..Default::default()
@@ -396,7 +396,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                     self,
                     CreateTestConfig {
                         create_bitcoind_node: true,
-                        create_rpc_nodes: true,
+                        create_poa_nodes: true,
                         create_btc_servers: true,
                         create_cometbft_nodes: true,
                         ..Default::default()
@@ -409,7 +409,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                     self,
                     CreateTestConfig {
                         create_bitcoind_node: true,
-                        create_rpc_nodes: true,
+                        create_poa_nodes: true,
                         create_btc_servers: true,
                         create_cometbft_nodes: true,
                         ..Default::default()
@@ -422,7 +422,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                     self,
                     CreateTestConfig {
                         create_bitcoind_node: true,
-                        create_rpc_nodes: true,
+                        create_poa_nodes: true,
                         create_btc_servers: true,
                         create_cometbft_nodes: true,
                         ..Default::default()
@@ -435,7 +435,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                     self,
                     CreateTestConfig {
                         create_bitcoind_node: true,
-                        create_rpc_nodes: true,
+                        create_poa_nodes: true,
                         create_btc_servers: true,
                         create_cometbft_nodes: true,
                         ..Default::default()
@@ -448,7 +448,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                     self,
                     CreateTestConfig {
                         create_bitcoind_node: true,
-                        create_rpc_nodes: true,
+                        create_poa_nodes: true,
                         create_btc_servers: true,
                         create_cometbft_nodes: true,
                         ..Default::default()
@@ -461,7 +461,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                     self,
                     CreateTestConfig {
                         create_bitcoind_node: true,
-                        create_rpc_nodes: true,
+                        create_poa_nodes: true,
                         create_btc_servers: true,
                         create_cometbft_nodes: true,
                         ..Default::default()
@@ -821,14 +821,16 @@ impl Suite for ConsensusIntegrationTestSuite {
                 // spawn poa node as a process
                 spawned_poa_processes.push(poa_node.spawn_service(build_command_authorities_list)?);
 
-                // create botanix client
-                let botanix_eth_client = create_botanix_eth_client(poa_node.rpc_port).await?;
-                poa_node.botanix_eth_client = Some(botanix_eth_client.clone());
-                poa_botanix_clients.push(botanix_eth_client);
-                it_info_print!("Botanix client created for poa member {}", index);
+                tokio::time::sleep(Duration::from_secs(20)).await;
 
-                // await initialization
-                poa_node.await_initialization()?;
+                // create botanix client
+                // let botanix_eth_client = create_botanix_eth_client(poa_node.rpc_port).await?;
+                // poa_node.botanix_eth_client = Some(botanix_eth_client.clone());
+                // poa_botanix_clients.push(botanix_eth_client);
+                // it_info_print!("Botanix client created for poa member {}", index);
+
+                // // await initialization
+                // poa_node.await_initialization()?;
 
                 // wait for two seconds in between processes start
                 tokio::time::sleep(Duration::from_secs(5)).await;
@@ -883,13 +885,13 @@ impl Suite for ConsensusIntegrationTestSuite {
                     .push(rpc_node.spawn_service(build_command_authorities_list, poa_nodes_clone)?);
 
                 // create botanix client
-                let botanix_eth_client = create_botanix_eth_client(rpc_node.rpc_port).await?;
-                rpc_node.botanix_eth_client = Some(botanix_eth_client.clone());
-                rpc_botanix_clients.push(botanix_eth_client);
-                it_info_print!("Botanix client created for rpc member {}", index);
+                // let botanix_eth_client = create_botanix_eth_client(rpc_node.rpc_port).await?;
+                // rpc_node.botanix_eth_client = Some(botanix_eth_client.clone());
+                // rpc_botanix_clients.push(botanix_eth_client);
+                // it_info_print!("Botanix client created for rpc member {}", index);
 
-                // await initialization
-                rpc_node.await_initialization()?;
+                // // await initialization
+                // rpc_node.await_initialization()?;
 
                 // wait for two seconds in between processes start
                 tokio::time::sleep(Duration::from_secs(2)).await;

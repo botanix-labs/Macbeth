@@ -273,7 +273,10 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
     }
     if let Some(rpc) = toml.get_mut("rpc") {
         if let Some(laddr) = rpc.get_mut("laddr") {
-            *laddr = toml::value::Value::String(cometbft_node.cometbft_rpc_app_port.to_string());
+            *laddr = toml::value::Value::String(format!(
+                "tcp://127.0.0.1:{}",
+                cometbft_node.cometbft_rpc_app_port.to_string()
+            ));
         }
     }
     if let Some(rpc) = toml.get_mut("p2p") {
