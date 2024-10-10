@@ -64,6 +64,8 @@ pub fn create_psbt(
 pub enum CalculateSighashError {
     #[error("Failed to calculate sighash: {0}")]
     FailedToCalculateSighash(#[from] bitcoin::sighash::Error),
+    #[error("Missing witness utxo")]
+    MissingWitnessUtxo,
 }
 
 /// Calculate the sighash for a taproot keyspend
@@ -73,9 +75,11 @@ pub fn calculate_sighash(
     input_index: usize,
 ) -> Result<TapSighash, CalculateSighashError> {
     let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
-
-    // TODO(armins) remove unwrap
-    let prevouts = psbt.inputs.iter().map(|i| i.witness_utxo.as_ref().unwrap()).collect::<Vec<_>>();
+    let prevouts = psbt
+        .inputs
+        .iter()
+        .map(|i| i.witness_utxo.as_ref().ok_or(CalculateSighashError::MissingWitnessUtxo))
+        .collect::<Result<Vec<_>, CalculateSighashError>>()?;
     let sighash = sighashcache.taproot_key_spend_signature_hash(
         input_index,
         &bitcoin::sighash::Prevouts::All(&prevouts),
