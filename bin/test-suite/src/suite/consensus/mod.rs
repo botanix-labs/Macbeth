@@ -688,8 +688,10 @@ impl Suite for ConsensusIntegrationTestSuite {
             // spawn bitcoind node as a process
             let spawned_bitcoind_process = bitcoind_node.spawn_service()?;
 
+            tokio::time::sleep(Duration::from_secs(6)).await;
+
             // await initialization
-            bitcoind_node.await_initialization()?;
+            bitcoind_node.await_initialization().await?;
 
             let bitcoind_factory = BitcoindClientFactory::new(BitcoindConfig::new(
                 self.global_context.bitcoind_url.clone(),
@@ -697,9 +699,6 @@ impl Suite for ConsensusIntegrationTestSuite {
                 self.global_context.bitcoind_pass.clone(),
             ));
             let _bitcoind_client = bitcoind_factory.build_and_connect()?;
-
-            // wait for two seconds in between processes start
-            tokio::time::sleep(Duration::from_secs(2)).await;
 
             // update local context
             self.local_context.bitcoind_process = Some(spawned_bitcoind_process);

@@ -374,7 +374,7 @@ pub async fn create_cometbft_nodes(
             ));
         }
         let output_parts = stdout.split("\n").filter(|x| !x.is_empty()).collect::<Vec<&str>>();
-        let enode = output_parts[output_parts.len() - 1].to_string();
+        let enode = output_parts[output_parts.len() - 1].trim().to_string();
         tracing::info!("CometBFT enode: {:?}", enode);
 
         // prepare test signal

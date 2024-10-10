@@ -1,4 +1,6 @@
-use super::{create_temp_working_directory, kill_process_at_port, Scope};
+use super::{
+    create_temp_working_directory, kill_process_at_port, spawn_await_child_process, Scope,
+};
 use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
 use std::{fs, path::PathBuf, sync::Arc};
 use tokio::{
@@ -74,9 +76,11 @@ impl BitcoindNodeConfig {
         let bitcoind_pwd = format!("-rpcpassword={}", self.bitcoind_password);
         let args = vec![
             &datadir,
-            "-regtest=1",
+            "-chain=regtest",
             &bitcoind_user,
             &bitcoind_pwd,
+            "-rpcport=18443",
+            "-rpcbind=::1",
             "-server=1",
             "-txindex=1",
             "-fallbackfee=0.00005",
@@ -95,7 +99,43 @@ impl BitcoindNodeConfig {
 }
 
 impl BitcoindNodeConfig {
-    pub fn await_initialization(&self) -> anyhow::Result<()> {
+    pub async fn await_initialization(&self) -> anyhow::Result<()> {
+        let bitcoind_user = format!("-rpcuser={}", self.bitcoind_user);
+        let bitcoind_pwd = format!("-rpcpassword={}", self.bitcoind_password);
+
+        // create wallet
+        let command = "bitcoin-cli";
+        let args = vec![
+            "-chain=regtest",
+            &bitcoind_user,
+            &bitcoind_pwd,
+            "createwallet",
+            "botanix_integration_test_wallet",
+        ];
+        spawn_await_child_process(Scope::Bitcoind, command, args, &self.working_directory).await?;
+
+        // get wallet address
+        let command = "bitcoin-cli";
+        let args = vec!["-chain=regtest", &bitcoind_user, &bitcoind_pwd, "getnewaddress"];
+        let (_, stdout, _) =
+            spawn_await_child_process(Scope::Bitcoind, command, args, &self.working_directory)
+                .await?;
+        let wallet_address = stdout.trim();
+
+        // mine blocks
+        let command = "bitcoin-cli";
+        let args = vec![
+            "-chain=regtest",
+            &bitcoind_user,
+            &bitcoind_pwd,
+            "generatetoaddress",
+            "50",
+            &wallet_address,
+        ];
+        let (_, stdout, _) =
+            spawn_await_child_process(Scope::Bitcoind, command, args, &self.working_directory)
+                .await?;
+
         Ok(())
     }
 }
