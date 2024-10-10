@@ -8,10 +8,10 @@ use bitcoin::{
 };
 use btcserverlib::{
     extended_client::{BtcServerExtendedClient, GrpcClientError},
-    pegout_id::PegoutId,
+    pegout_id::PegoutId
 };
 use client::{
-    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest, ScriptBuf, SigningPackage, TxOut, Utxo,
+    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest, SigningPackage, ScriptBuf, Utxo, TxOut
 };
 use futures_util::Future;
 use reth_btc_wallet::psbt::PsbtOutputExt;
@@ -485,16 +485,54 @@ pub async fn validate_psbt_by_ids(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use bitcoin::{
-        psbt::{Input, Psbt},
-        transaction::Version,
+        absolute::LockTime, psbt::{Input, Psbt}, transaction::Version, OutPoint, Sequence, Transaction, TxIn, Txid
     };
-    use rand::{thread_rng, Rng};
-    use reth_primitives::{address, b256, bytes, Header, B256, U256};
+    use rand::{thread_rng, Rng, RngCore};
+    use reth_primitives::{address, b256, bytes, BlockHash, Header, B256, U256};
     use std::str::FromStr;
 
     use super::*;
+
+    // Util function to create a btc tx with random inputs and outputs as defined by fn params
+    // copied over from btc-server so didn't have to expose mods
+    fn create_tx(num_inputs: usize) -> Transaction {
+        let txid = random_txid();
+
+        let mut inputs = vec![];
+        for i in 0..num_inputs {
+            let op = OutPoint::new(txid, i as u32);
+            inputs.push(TxIn {
+                previous_output: op,
+                script_sig: bitcoin::ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: Default::default(),
+            });
+        }
+
+        // Hardcoded one output
+        let outputs = vec![bitcoin::TxOut {
+            value: Amount::from_sat(1000),
+            script_pubkey: Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+                .expect("valid address")
+                .assume_checked()
+                .script_pubkey(),
+        }];
+        Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: LockTime::ZERO,
+            input: inputs,
+            output: outputs,
+        }
+    }
+
+    fn random_txid() -> Txid {
+        let mut rng = thread_rng();
+        let mut txid = [0u8; 32];
+        rng.fill_bytes(&mut txid);
+        Txid::from_slice(&txid).unwrap()
+    }
 
     #[test]
     fn generate_empty_merkel_root() {
@@ -774,5 +812,20 @@ mod test {
         // test fail path
         let deployed_bytecode = "not known minting contract bytecode".as_bytes();
         assert!(is_known_minting_contract(precompiled_bytecode, deployed_bytecode).is_err());
+    }
+
+    #[test]
+    fn extract_pegout_ids_should_return_pegout_ids() {
+        let pegout_id = PegoutId::new(*BlockHash::default(), 0).as_bytes();
+        let tx = create_tx(1);
+        let mut psbt = Psbt::from_unsigned_tx(tx).unwrap();
+
+        psbt.outputs[0].set_pegout_id(pegout_id);
+
+        let result = extract_pegout_ids(&psbt);
+        let expected = PegoutId::from(pegout_id);
+        
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], expected);
     }
 }
