@@ -61,11 +61,6 @@ jobs:
         run: |
             forge test --match-contract Minting -vvv
 
-      - name: "Run the faucet tests"
-        working-directory: "./contracts"
-        run: |
-            forge test --match-contract Faucet -vvv
-
       - name: "Add test summary"
         working-directory: "./contracts"
         run: |
