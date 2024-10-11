@@ -1001,7 +1001,8 @@ mod tests {
         let bitcoin_header = Header {
             version: Version::default(),
             prev_blockhash: BlockHash::all_zeros(),
-            merkle_root: TxMerkleNode::from_slice(&[0; 32]).unwrap(),
+            merkle_root: TxMerkleNode::from_slice(&[0; 32])
+                .expect("Failed to create merkle root from slice"),
             time: 0,
             bits: CompactTarget::from_consensus(0),
             nonce: 0,
@@ -1039,7 +1040,10 @@ mod tests {
         assert_eq!(response.consensus_params, expected_consensus_params);
         assert_eq!(response.validators, expected_validators);
         let response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
-        assert_eq!(response.app_hash.to_vec(), BOTANIX_TESTNET.genesis_hash.unwrap().0.to_vec());
+        assert_eq!(
+            response.app_hash.to_vec(),
+            BOTANIX_TESTNET.genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
+        );
     }
 
     #[test]
@@ -1056,7 +1060,7 @@ mod tests {
         let response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
         assert_eq!(
             response.last_block_app_hash.to_vec(),
-            BOTANIX_TESTNET.genesis_hash.unwrap().0.to_vec()
+            BOTANIX_TESTNET.genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
         );
     }
 
