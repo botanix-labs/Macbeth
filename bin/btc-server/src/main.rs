@@ -13,6 +13,7 @@ mod server;
 mod shutdown;
 mod signer;
 mod util;
+mod merkle;
 
 #[macro_use]
 mod test_utils;

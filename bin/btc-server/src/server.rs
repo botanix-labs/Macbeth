@@ -9,7 +9,7 @@ use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
-use crate::{database::Utxo, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, rpc, util, App};
+use crate::{database::Utxo, merkle::get_utxo_set_merkle_root, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, rpc, util, App};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -697,19 +697,14 @@ where
         request: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetUtxoMerkleRootResponse>, tonic::Status> {
         self.validate_jwt(&request)?;
-        match self.db.get_utxo_merkle_root() {
-            Ok(Some(merkle_root)) => {
-                // Successfully found the merkle root, return it
-                let response =
-                    rpc::GetUtxoMerkleRootResponse { merkle_root: merkle_root[..].to_vec() };
-                Ok(tonic::Response::new(response))
-            }
-            Ok(None) => {
-                let response = rpc::GetUtxoMerkleRootResponse { merkle_root: [0u8; 32].to_vec() };
-                Ok(tonic::Response::new(response))
-            }
-            // An error occurred while accessing the database
-            Err(e) => Err(internal!("Failed to retrieve UTXO Merkle root: {}", e)),
-        }
+        let utxo_set_merkle_root = get_utxo_set_merkle_root(&self.db).map_err(|e| {
+            error!("Failed to get utxo set merkle root: {}", e);
+            internal!("Failed to get utxo set merkle root: {}", e)
+        })?;
+
+        let res = rpc::GetUtxoMerkleRootResponse {
+            merkle_root: utxo_set_merkle_root,
+        };
+        Ok(tonic::Response::new(res))
     }
 }
