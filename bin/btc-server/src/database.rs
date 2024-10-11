@@ -32,6 +32,9 @@ const TREE_TRACKED_TXS: &[u8; 10] = b"trackedtxs";
 /// sled key for the UTXO merkle tree root
 const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
 
+/// sled key for tracked Tx merkle root
+const KEY_TRACKED_TX_MERKLE_ROOT: &[u8; 5] = b"troot";
+
 /// sled key for storing the latest finalized block of the txindex.
 const KEY_PEGOUTMGR_TIP: &[u8; 12] = b"pegoutmgrtip";
 
@@ -474,6 +477,34 @@ impl Db {
             ret.push(tx);
         }
         Ok(ret)
+    }
+
+    /// Stores the consensus Merkle root of all spendable UTXOs.
+    pub fn update_tracked_tx_merkle_root(&self) -> Result<(), Error> {
+        let mut tracked_txs = self
+            .get_tracked_txs()?
+            .iter()
+            .map(|tx| {
+                let mut engine = sha256::Hash::engine();
+                tx.txid.consensus_encode(&mut engine).expect("engine don't error");
+                Ok(sha256::Hash::from_engine(engine))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        tracked_txs.sort();
+        if tracked_txs.is_empty() {
+            return Ok(());
+        }
+
+        let root =
+            bitcoin::merkle_tree::calculate_root(tracked_txs.into_iter()).expect("not empty");
+        self.db.insert(KEY_TRACKED_TX_MERKLE_ROOT, root.to_byte_array().to_vec())?;
+        Ok(())
+    }
+
+    pub fn get_tracked_tx_merkle_root(&self) -> Result<Option<sha256::Hash>, Error> {
+        Ok(self.db.get(KEY_TRACKED_TX_MERKLE_ROOT)?.map(|b| {
+            sha256::Hash::from_slice(&b).expect("corrupt db: Merkle root should be 32 bytes")
+        }))
     }
 
     pub fn remove_tracked_tx(&self, txid: &Txid) -> Result<(), Error> {
@@ -1001,5 +1032,57 @@ mod tests {
         db.flush().unwrap();
         let tx_retrieved = db.get_tracked_txs().unwrap();
         assert_eq!(tx_retrieved.len(), 0);
+    }
+
+    #[test]
+    fn test_update_tracked_tx_merkle_root() {
+        let (db, _temp_dir) = setup_db();
+        let tx = create_n_outputs_tx(5, 2);
+        let pegout_reqs = vec![PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: create_random_pegout_id(),
+            botanix_height: 0,
+        }];
+        let tracked_tx = Tx {
+            txid: tx.txid(),
+            tx: tx.clone(),
+            change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests: pegout_reqs,
+            created: SystemTime::now(),
+        };
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        db.flush().unwrap();
+        db.update_tracked_tx_merkle_root().unwrap();
+        db.flush().unwrap();
+
+        let merkle_root = db.get_tracked_tx_merkle_root().unwrap().unwrap();
+        db.update_tracked_tx_merkle_root().unwrap();
+        db.flush().unwrap();
+        let merkle_root2 = db.get_tracked_tx_merkle_root().unwrap().unwrap();
+        assert_eq!(merkle_root, merkle_root2);
+
+        let tx2 = create_n_outputs_tx(5, 2);
+        let pegout_reqs = vec![PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: create_random_pegout_id(),
+            botanix_height: 0,
+        }];
+        let tracked_tx2 = Tx {
+            txid: tx2.txid(),
+            tx: tx2.clone(),
+            change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests: pegout_reqs,
+            created: SystemTime::now(),
+        };
+        db.store_tracked_tx(&tracked_tx2).unwrap();
+        db.update_tracked_tx_merkle_root().unwrap();
+        db.flush().unwrap();
+
+        let merkle_root3 = db.get_tracked_tx_merkle_root().unwrap().unwrap();
+        assert_ne!(merkle_root, merkle_root3);
     }
 }
