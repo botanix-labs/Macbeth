@@ -288,7 +288,7 @@ pub fn try_parse_burn_event(
 
 #[cfg(test)]
 mod test {
-    use revm_primitives::hex;
+    use revm_primitives::{hex, Bytes, Log, LogData};
 
     use super::*;
 
@@ -346,6 +346,47 @@ mod test {
         );
     }
 
-    // TODO: add decode_log_payload for pegout
-    // integration tests do cover this but unit test is nice to have
+    #[test]
+    fn decode_burn_log_payload() {
+        // create log data from burn event
+        // encoded values (amount, destination, version)
+        let amount = ethabi::Token::Uint(ethabi::ethereum_types::U256::from(100));
+        let destination = ethabi::Token::String("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string());
+        let version = ethabi::Token::Bytes(vec![0]);
+        let payload = ethabi::encode(&[amount, destination, version]);
+
+        let decoded_params: Vec<ethers::abi::Token> = decode(
+            &[
+                ethers::abi::param_type::ParamType::Uint(256_usize),
+                ethers::abi::param_type::ParamType::String,
+                ethers::abi::param_type::ParamType::Bytes,
+            ],
+            payload.as_slice(),
+        )
+        .expect("params are decoded");
+
+        let amount = decoded_params
+            .first()
+            .expect("first param exists")
+            .clone()
+            .into_uint()
+            .expect("valid uint");
+        assert_eq!(amount, ethers::types::U256::from_str_radix("100", 10).unwrap());
+
+        let destination = decoded_params
+            .get(1)
+            .expect("second param exists")
+            .clone()
+            .into_string()
+            .expect("valid string");
+        assert_eq!(destination, "mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string());
+
+        let version = decoded_params
+            .get(2)
+            .expect("third param exists")
+            .clone()
+            .into_bytes()
+            .expect("valid bytes");
+        assert_eq!(version, vec![0]);
+    }
 }
