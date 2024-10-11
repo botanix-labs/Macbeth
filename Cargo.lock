@@ -1815,12 +1815,9 @@ dependencies = [
  "prost-build",
  "rand 0.8.5",
  "reth-btc-wallet",
- "rs_merkle",
  "secp256k1 0.27.0",
  "serde",
- "serde_cbor",
  "serde_json",
- "sha2 0.10.8",
  "sled",
  "tempfile",
  "test-log",
@@ -10642,15 +10639,6 @@ name = "route-recognizer"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
-
-[[package]]
-name = "rs_merkle"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b241d2e59b74ef9e98d94c78c47623d04c8392abaf82014dfd372a16041128f"
-dependencies = [
- "sha2 0.10.8",
-]
 
 [[package]]
 name = "rsntp"
