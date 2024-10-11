@@ -389,4 +389,42 @@ mod test {
             .expect("valid bytes");
         assert_eq!(version, vec![0]);
     }
+
+    #[test]
+    fn try_parse_burn_event_should_parse_successfully() {
+        // create log generated from burn event
+        // encoded values (amount, destination, version)
+        let amount =
+            ethabi::Token::Uint(ethabi::ethereum_types::U256::from(10_000_000_000_000_u64));
+        let destination = ethabi::Token::String("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string());
+        let version = ethabi::Token::Bytes(vec![0]);
+        let payload = ethabi::encode(&[amount, destination, version]);
+
+        let log = Log {
+            address: *MINT_CONTRACT_ADDRESS,
+            data: LogData::new(
+                vec![
+                    *BURN_TOPIC,
+                    // msg.sender
+                    B256::from(hex!(
+                        "000000000000000000000000a65812bac44dadb79c3e4930dbd98d5a75376b2a"
+                    )),
+                ],
+                Bytes::copy_from_slice(payload.as_slice()),
+            )
+            .expect("log data is created"),
+        };
+
+        let result = try_parse_burn_event(&log, bitcoin::Network::Regtest);
+        assert!(result.is_ok());
+
+        let pegout_data = result.expect("result is ok").expect("pegout data exists");
+        assert_eq!(pegout_data.amount, bitcoin::Amount::from_sat(1000));
+        assert_eq!(
+            pegout_data.destination,
+            bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+                .expect("valid address")
+        );
+        assert_eq!(pegout_data.network, bitcoin::Network::Regtest);
+    }
 }
