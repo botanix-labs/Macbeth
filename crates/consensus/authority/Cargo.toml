@@ -23,7 +23,7 @@ reth-primitives = { workspace = true, features = ["secp256k1"] }
 reth-execution-errors.workspace = true
 reth-chainspec.workspace = true
 reth-evm-ethereum.workspace = true
-reth-provider.workspace = true
+reth-provider = {workspace = true, features = ["test-utils"] }
 reth-tokio-util.workspace = true
 reth-revm.workspace = true
 reth-evm.workspace = true
@@ -64,6 +64,9 @@ btc-server = {path = "../../../bin/btc-server"}
 comet-bft-rpc.workspace = true
 
 serde_json.workspace = true
+
+# ethabi 
+ethabi = "18.0.0"
 
 # hex
 hex = "0.4.3"
