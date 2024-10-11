@@ -250,56 +250,6 @@ where
             {
                 self.start_dkg().await;
             }
-            while let Ok(message) = self.frost_task_rx.try_recv() {
-                if let FrostNotificationMessage::InitiateSigning(frost_notification) = message {
-                    // validate psbt using pegout ids
-                    let psbt = match bitcoin::Psbt::deserialize(frost_notification.psbt.as_slice())
-                    {
-                        Ok(psbt) => psbt,
-                        Err(e) => {
-                            error!(target: "consensus::authority::frost_task::start_task", "Error deserializing psbt {:?}", e);
-                            continue;
-                        }
-                    };
-
-                    match validate_psbt_by_ids(
-                        self.storage.client.clone(),
-                        self.storage.btc_network,
-                        &psbt,
-                    )
-                    .await
-                    {
-                        Ok(_) => {
-                            info!(target: "consensus::authority::frost_task::start_task", "Validated psbt successfully")
-                        }
-                        Err(e) => {
-                            error!(target: "consensus::authority::frost_task::start_task", "Error validating psbt {:?}", e);
-                            continue;
-                        }
-                    }
-
-                    match self
-                        .signing_state_machine
-                        .initate_signing_session(
-                            frost_notification.signing_session_id,
-                            frost_notification.psbt,
-                        )
-                        .await
-                    {
-                        Ok(_) => {
-                            info!(target: "consensus::authority::frost_task::start_task", "Started new signing session successfully")
-                        }
-                        Err(e) => {
-                            error!(target: "consensus::authority::frost_task::start_task", "Error starting new signing session {:?}", e);
-                        }
-                    }
-                } else {
-                    warn!(
-                        target: "consensus::authority::frost_task::start_task", "Unhandled frost notification message {:?}",
-                        message
-                    );
-                }
-            }
 
             // Receive canon state notifications
             while let Ok(notification) = self.canon_state_notification_receiver.try_recv() {
@@ -332,18 +282,46 @@ where
                                 )
                                 .await
                                 {
-                                    Ok(psbt_payload) => match self
-                                        .signing_state_machine
-                                        .initate_signing_session(tip.hash(), psbt_payload.psbt)
+                                    Ok(psbt_payload) => {
+                                        // validate psbt
+                                        let psbt = match bitcoin::Psbt::deserialize(
+                                            psbt_payload.psbt.as_slice(),
+                                        ) {
+                                            Ok(psbt) => psbt,
+                                            Err(e) => {
+                                                error!(target: "consensus::authority::frost_task::start_task", "Error deserializing psbt {:?}", e);
+                                                continue;
+                                            }
+                                        };
+                                        match validate_psbt_by_ids(
+                                            self.storage.client.clone(),
+                                            self.storage.btc_network,
+                                            &psbt,
+                                        )
                                         .await
-                                    {
-                                        Ok(_) => {
-                                            info!(target: "consensus::authority::frost_task::start_task", "Started new signing session successfully")
+                                        {
+                                            Ok(_) => {
+                                                info!(target: "consensus::authority::frost_task::start_task", "Validated psbt successfully")
+                                            }
+                                            Err(e) => {
+                                                error!(target: "consensus::authority::frost_task::start_task", "Error validating psbt {:?}", e);
+                                                continue;
+                                            }
                                         }
-                                        Err(e) => {
-                                            error!(target: "consensus::authority::frost_task::start_task", "Error starting new signing session {:?}", e);
+
+                                        match self
+                                            .signing_state_machine
+                                            .initate_signing_session(tip.hash(), psbt_payload.psbt)
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                info!(target: "consensus::authority::frost_task::start_task", "Started new signing session successfully")
+                                            }
+                                            Err(e) => {
+                                                error!(target: "consensus::authority::frost_task::start_task", "Error starting new signing session {:?}", e);
+                                            }
                                         }
-                                    },
+                                    }
                                     Err(e) => {
                                         error!(target: "consensus::authority", ?e, "Failed to get psbt");
                                         return;

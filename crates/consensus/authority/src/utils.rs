@@ -536,7 +536,7 @@ mod tests {
 
         // return receipt with burn log
         fn receipt_by_hash(&self, _hash: TxHash) -> ProviderResult<Option<Receipt>> {
-            // encoded values (amount, desintation, version)
+            // encoded values (amount, destination, version)
             let amount =
                 ethabi::Token::Uint(ethabi::ethereum_types::U256::from(10_000_000_000_000_u64));
             let destination =
@@ -964,7 +964,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // TODO: mock the eth provider to return Receipt with actual minting.burn() log
     #[test]
     fn validate_psbt_by_output_should_fail_with_no_matching_destination() {
         let value = bitcoin::Amount::from_sat(1000);
