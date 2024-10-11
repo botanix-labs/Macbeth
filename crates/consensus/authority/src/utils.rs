@@ -8,10 +8,10 @@ use bitcoin::{
 };
 use btcserverlib::{
     extended_client::{BtcServerExtendedClient, GrpcClientError},
-    pegout_id::PegoutId
+    pegout_id::PegoutId,
 };
 use client::{
-    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest, SigningPackage, ScriptBuf, Utxo, TxOut
+    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest, ScriptBuf, SigningPackage, TxOut, Utxo,
 };
 use futures_util::Future;
 use reth_btc_wallet::psbt::PsbtOutputExt;
@@ -24,7 +24,7 @@ use reth_primitives::{
     constants::EPOCH_LENGTH,
     Bloom, BloomInput,
 };
-use reth_provider::BlockReaderIdExt;
+use reth_provider::{BlockReaderIdExt, ReceiptProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
 use std::time::Duration;
@@ -408,7 +408,7 @@ pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<PegoutId> {
 /// Validate psbt contains the correct output
 pub fn validate_psbt_by_output(
     psbt: &Psbt,
-    destination: Address,
+    destination: &Address,
     amount: Amount,
 ) -> Result<(), PsbtValidationError> {
     match psbt.clone().extract_tx() {
@@ -441,7 +441,7 @@ pub fn validate_psbt_by_output(
 
 /// Validate psbt by pegout ids
 pub async fn validate_psbt_by_ids(
-    client: impl BlockReaderIdExt + Clone,
+    client: impl ReceiptProvider + Clone,
     btc_network: bitcoin::Network,
     psbt: &Psbt,
 ) -> Result<(), PsbtValidationError> {
@@ -456,7 +456,7 @@ pub async fn validate_psbt_by_ids(
 
     // get pegouts from db
     for PegoutId { txid, idx } in pegout_ids.iter() {
-        let log = 
+        let log =
             client
             .receipt_by_hash(txid.into())
             .ok()
@@ -478,7 +478,7 @@ pub async fn validate_psbt_by_ids(
             })?;
 
         // check if a corresponding output exists in the psbt
-        let _ = validate_psbt_by_output(psbt, destination, amount)?;
+        let _ = validate_psbt_by_output(psbt, &destination, amount)?;
     }
 
     Ok(())
@@ -487,17 +487,109 @@ pub async fn validate_psbt_by_ids(
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        absolute::LockTime, psbt::{Input, Psbt}, transaction::Version, OutPoint, Sequence, Transaction, TxIn, Txid
+        absolute::LockTime,
+        psbt::{Input, Psbt},
+        transaction::Version,
+        FeeRate, OutPoint, Sequence, Transaction, TxIn, Txid,
     };
     use rand::{thread_rng, Rng, RngCore};
-    use reth_primitives::{address, b256, bytes, BlockHash, Header, B256, U256};
-    use std::str::FromStr;
+    use reth_primitives::{
+        address, b256, bytes, hex_literal::hex, Bytes, Header, Log, LogData, Receipt, TxHash,
+        TxNumber, TxType, B256, U256,
+    };
+    use reth_provider::ProviderResult;
+    use std::{ops::RangeBounds, str::FromStr};
 
     use super::*;
 
+    const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
+
+    #[derive(Clone)]
+    struct MockProvider {}
+
+    impl MockProvider {
+        fn new() -> Self {
+            Self {}
+        }
+
+        fn receipt() -> Receipt {
+            Receipt {
+                tx_type: TxType::Legacy,
+                cumulative_gas_used: 0x1u64,
+                logs: vec![Log::new_unchecked(
+                    address!("0000000000000000000000000000000000000011"),
+                    vec![
+                        b256!("000000000000000000000000000000000000000000000000000000000000dead"),
+                        b256!("000000000000000000000000000000000000000000000000000000000000beef"),
+                    ],
+                    bytes!("0100ff"),
+                )],
+                success: false,
+            }
+        }
+    }
+
+    impl ReceiptProvider for MockProvider {
+        fn receipt(&self, _id: TxNumber) -> ProviderResult<Option<Receipt>> {
+            Ok(Some(MockProvider::receipt()))
+        }
+
+        // return receipt with burn log
+        fn receipt_by_hash(&self, _hash: TxHash) -> ProviderResult<Option<Receipt>> {
+            // encoded values (amount, desintation, version)
+            let amount =
+                ethabi::Token::Uint(ethabi::ethereum_types::U256::from(10_000_000_000_000_u64));
+            let destination =
+                ethabi::Token::String("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string());
+            let version = ethabi::Token::Bytes(vec![0]);
+            let payload = ethabi::encode(&[amount, destination, version]);
+
+            let log = Log {
+                address: *MINT_CONTRACT_ADDRESS,
+                data: LogData::new(
+                    vec![
+                        *BURN_TOPIC,
+                        // msg.sender
+                        B256::from(hex!(
+                            "000000000000000000000000a65812bac44dadb79c3e4930dbd98d5a75376b2a"
+                        )),
+                    ],
+                    Bytes::copy_from_slice(payload.as_slice()),
+                )
+                .unwrap(),
+            };
+
+            let mut receipt = MockProvider::receipt();
+            receipt.logs = vec![log];
+
+            Ok(Some(receipt))
+        }
+
+        fn receipts_by_block(
+            &self,
+            _block: BlockHashOrNumber,
+        ) -> ProviderResult<Option<Vec<Receipt>>> {
+            Ok(Some(vec![MockProvider::receipt()]))
+        }
+
+        fn receipts_by_tx_range(
+            &self,
+            _range: impl RangeBounds<TxNumber>,
+        ) -> ProviderResult<Vec<Receipt>> {
+            Ok(vec![MockProvider::receipt()])
+        }
+    }
+
+    fn create_random_pegout_id() -> PegoutId {
+        let mut rng = thread_rng();
+        let mut pegout_id = [0u8; 36];
+        rng.fill_bytes(&mut pegout_id);
+        PegoutId::from_bytes(&pegout_id).unwrap()
+    }
+
     // Util function to create a btc tx with random inputs and outputs as defined by fn params
     // copied over from btc-server so didn't have to expose mods
-    fn create_tx(num_inputs: usize) -> Transaction {
+    fn create_tx(num_inputs: usize, address: &bitcoin::Address) -> Transaction {
         let txid = random_txid();
 
         let mut inputs = vec![];
@@ -514,10 +606,7 @@ mod tests {
         // Hardcoded one output
         let outputs = vec![bitcoin::TxOut {
             value: Amount::from_sat(1000),
-            script_pubkey: Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
-                .expect("valid address")
-                .assume_checked()
-                .script_pubkey(),
+            script_pubkey: address.script_pubkey(),
         }];
         Transaction {
             version: bitcoin::transaction::Version(2),
@@ -532,6 +621,24 @@ mod tests {
         let mut txid = [0u8; 32];
         rng.fill_bytes(&mut txid);
         Txid::from_slice(&txid).unwrap()
+    }
+
+    fn create_psbt(num_inputs: usize, address: &bitcoin::Address) -> Psbt {
+        let tx = create_tx(num_inputs, address);
+
+        let weight = tx.weight();
+        let fee = FEERATE * weight;
+        let input_needed = fee.to_sat() + tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
+        let value_per_input = input_needed / num_inputs as u64 + 1;
+
+        let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
+        for i in 0..num_inputs {
+            psbt.inputs[i].witness_utxo = Some(bitcoin::TxOut {
+                value: Amount::from_sat(value_per_input),
+                script_pubkey: bitcoin::ScriptBuf::new(),
+            });
+        }
+        psbt
     }
 
     #[test]
@@ -816,16 +923,79 @@ mod tests {
 
     #[test]
     fn extract_pegout_ids_should_return_pegout_ids() {
-        let pegout_id = PegoutId::new(*BlockHash::default(), 0).as_bytes();
-        let tx = create_tx(1);
-        let mut psbt = Psbt::from_unsigned_tx(tx).unwrap();
+        let address = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+            .expect("valid address")
+            .assume_checked();
+        let pegout_id = create_random_pegout_id().as_bytes();
+        let tx = create_tx(1, &address);
+        let mut psbt = Psbt::from_unsigned_tx(tx).expect("psbt to be created");
 
         psbt.outputs[0].set_pegout_id(pegout_id);
 
         let result = extract_pegout_ids(&psbt);
         let expected = PegoutId::from(pegout_id);
-        
+
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], expected);
+    }
+
+    #[test]
+    fn validate_psbt_by_output_should_validate() {
+        let value = bitcoin::Amount::from_sat(1000);
+        let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+            .expect("valid address")
+            .assume_checked();
+        let psbt = create_psbt(1, &destination);
+
+        let result = validate_psbt_by_output(&psbt, &destination, value);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_psbt_by_output_should_fail_with_no_matching_value() {
+        // value should be 1000
+        let value = bitcoin::Amount::from_sat(1);
+        let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+            .expect("valid address")
+            .assume_checked();
+        let psbt = create_psbt(1, &destination);
+
+        let result = validate_psbt_by_output(&psbt, &destination, value);
+        assert!(result.is_err());
+    }
+
+    // TODO: mock the eth provider to return Receipt with actual minting.burn() log
+    #[test]
+    fn validate_psbt_by_output_should_fail_with_no_matching_destination() {
+        let value = bitcoin::Amount::from_sat(1000);
+        let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+            .expect("valid address")
+            .assume_checked();
+        let psbt = create_psbt(1, &destination);
+
+        let different_address = bitcoin::Address::from_str(
+            "bcrt1pun3g8y2jjchy0834va959e0swmz8hc7gc2w4ure54ejzyekvp89scegtyh",
+        )
+        .expect("valid address")
+        .assume_checked();
+
+        let result = validate_psbt_by_output(&psbt, &different_address, value);
+        assert!(result.is_err());
+    }
+
+    // fail paths are covered by above tests (ie no matching value, no matching destination)
+    #[tokio::test]
+    async fn validate_psbt_by_ids_should_validate() {
+        let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+            .expect("valid address")
+            .assume_checked();
+        let mut psbt = create_psbt(1, &destination);
+
+        let pegout_id = PegoutId::new([0u8; 32], 0).as_bytes();
+        psbt.outputs[0].set_pegout_id(pegout_id);
+
+        let result =
+            validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
+        assert!(result.is_ok());
     }
 }
