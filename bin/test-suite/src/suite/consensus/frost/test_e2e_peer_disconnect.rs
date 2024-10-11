@@ -14,7 +14,7 @@ use crate::{
 /// test that disconnected or temporarily unresponsive nodes can re-connect automatically
 pub async fn e2e_peer_disconnect(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
     let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
 
@@ -30,7 +30,8 @@ pub async fn e2e_peer_disconnect(
     let targeted_fed_member = test_fed_members.get(&(0u16)).cloned().unwrap();
 
     // create eth client
-    let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
+    let botanix_eth_client =
+        targeted_fed_member.botanix_eth_client.clone().expect("Botanix Client must be initialized");
 
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");

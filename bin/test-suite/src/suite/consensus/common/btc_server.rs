@@ -1,28 +1,57 @@
 use crate::context::GlobalContext;
+use anyhow::Context;
 use reth::consensus_common::utils::unix_timestamp;
 use std::{
     path::{Path, PathBuf},
-    process::Stdio,
     sync::Arc,
     vec,
 };
-use tokio::process::{Child, Command};
+use tokio::process::Child;
+
+use super::{kill_process_at_port, spawn_child_process, Scope};
 
 pub const BTC_SERVER_START_PORT: u16 = 8000;
-
 #[derive(Debug)]
-pub struct SpawnedBtcServer {
+pub struct SpawnedBtcServerProcess {
     pub port: u16,
     pub db_path: PathBuf,
     pub child_process: Child,
 }
 
-fn spawn_btc_server(
+impl SpawnedBtcServerProcess {
+    pub async fn destroy_all_async(&mut self) {
+        // kill the process
+        let _ = self.child_process.kill().await;
+        // additionally make sure all ports used are freed
+        kill_process_at_port(self.port);
+        // delete the created db
+        if let Err(e) = std::fs::remove_dir_all(&self.db_path) {
+            warn!("Couldn't remove btc server db dir at {}: {}", self.db_path.display(), e);
+        }
+    }
+
+    pub async fn destroy_all_sync(&mut self) {
+        // kill the process
+        let pid = self.child_process.id().expect("Expected a process id");
+        let _ = std::process::Command::new("kill")
+            .arg("-9") // Use SIGKILL for immediate termination
+            .arg(format!("{pid}"))
+            .output();
+        // additionally make sure all ports used are freed
+        kill_process_at_port(self.port);
+        // delete the created db
+        if let Err(e) = std::fs::remove_dir_all(&self.db_path) {
+            warn!("Couldn't remove btc server db dir at {}: {}", self.db_path.display(), e);
+        }
+    }
+}
+
+fn spawn_btc_server_process(
     global_context: Arc<GlobalContext>,
     id: u16,
-    address: String,
+    port: u16,
     db_path: PathBuf,
-) -> Child {
+) -> anyhow::Result<SpawnedBtcServerProcess> {
     let db_path_arg = db_path.display().to_string();
 
     let mut working_directory = std::env::current_dir().unwrap();
@@ -35,6 +64,7 @@ fn spawn_btc_server(
     let identifier = id.to_string();
     let frost_max_signers = global_context.max_signers.to_string();
     let frost_min_signers = global_context.min_signers.to_string();
+    let address = format!("0.0.0.0:{}", port);
 
     let command = "cargo";
     let args = vec![
@@ -63,45 +93,32 @@ fn spawn_btc_server(
         "--fee-rate-diff-percentage",
         "30",
         "--fall-back-fee-rate-sat-per-vbyte",
-        "3",
+        "5",
     ];
 
-    // Create a Command instance and set the working directory
-    let mut cmd: Command = Command::new(command);
-    cmd.args(&args).current_dir(working_directory).stdout(Stdio::piped());
-
-    // Spawn the command and handle its output
-    let child = cmd.spawn().unwrap();
-    child
+    Ok(SpawnedBtcServerProcess {
+        child_process: spawn_child_process(Scope::BtcServer(id), command, args, working_directory)?,
+        db_path,
+        port,
+    })
 }
 
-pub fn clean_db(tasks: &[SpawnedBtcServer]) {
-    for task in tasks.iter() {
-        if let Err(e) = std::fs::remove_dir_all(&task.db_path) {
-            warn!("Couldn't remove db dir at {}: {}", task.db_path.display(), e);
-        }
-    }
-}
-
-pub fn spawn_n_btc_servers(global_context: Arc<GlobalContext>) -> Vec<SpawnedBtcServer> {
-    let mut tasks = vec![];
-    for i in 0..global_context.instances {
-        // let temp_db_path = tempfile::TempDir::new().expect("tempdir is okay").into_path();
+pub fn spawn_n_btc_server_processes(
+    global_context: Arc<GlobalContext>,
+) -> anyhow::Result<Vec<SpawnedBtcServerProcess>> {
+    let mut processes = vec![];
+    for i in 0..global_context.fed_instances {
         let temp_db_path = tempfile::TempDir::new()
-            .expect("tempdir is okay")
+            .context("error creating tempdir")?
             .into_path()
             .join(format!("_{}", unix_timestamp().to_string()));
-        std::fs::create_dir_all(&temp_db_path).expect("failed to create tempdir subdir");
+        std::fs::create_dir_all(&temp_db_path).context("failed to create tempdir db subdir")?;
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
 
         let port = BTC_SERVER_START_PORT + i;
-        let child_process = spawn_btc_server(
-            global_context.clone(),
-            i,
-            format!("0.0.0.0:{}", port),
-            db_path.clone(),
-        );
-        tasks.push(SpawnedBtcServer { db_path, port, child_process });
+        let child_process =
+            spawn_btc_server_process(global_context.clone(), i, port, db_path.clone())?;
+        processes.push(child_process);
     }
-    tasks
+    Ok(processes)
 }

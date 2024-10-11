@@ -28,11 +28,12 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 
 pub async fn frost_e2e_failed_signing_disconnect(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     let pegin_conf_depth = 6; //TODO(stevenroose) set this from chain constant?
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 
@@ -47,10 +48,10 @@ pub async fn frost_e2e_failed_signing_disconnect(
         // load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let address =
+    let _address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 101).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let test_fed_members = suite
@@ -65,7 +66,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
         let botanix_eth_client =
-            test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
+            test_fed_members.get(index).cloned().unwrap().botanix_eth_client.clone();
         mint_contract_instances.push(botanix_eth_client);
     }
 
@@ -76,10 +77,10 @@ pub async fn frost_e2e_failed_signing_disconnect(
         // load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let address =
+    let _address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 101).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Set up dummy eth address
@@ -111,7 +112,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some block to confirm it
-    bitcoind_rpc.generate_to_address(2 + pegin_conf_depth, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 2 + pegin_conf_depth).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
@@ -184,7 +185,11 @@ pub async fn frost_e2e_failed_signing_disconnect(
     let serialized_pegin_meta = meta.serialize();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
 
-    let mint_contract = mint_contract_instances.get(0).cloned().unwrap();
+    let mint_contract = mint_contract_instances
+        .get(0)
+        .cloned()
+        .unwrap()
+        .expect("Botanix Client must be initialized");
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
         .mint(
@@ -259,7 +264,7 @@ pub async fn frost_e2e_failed_signing_disconnect(
     )
     .expect("bitcoind client");
     // mine some btc blocks (needed for confirmed pegout)
-    bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 1).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Retrieve the last block

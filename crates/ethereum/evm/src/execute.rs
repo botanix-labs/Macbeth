@@ -33,7 +33,7 @@ use reth_primitives::{
         mint_validation::{
             try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
         },
-        peg_contract::{PeginData, PegoutData, PegoutWithId},
+        peg_contract::{PeginData, PegoutWithId},
     },
     header_ext::HeaderExt,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,

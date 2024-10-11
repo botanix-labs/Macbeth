@@ -83,7 +83,7 @@ pub struct BitcoindClientFactory {
 }
 
 #[allow(async_fn_in_trait)]
-pub trait RpcApiExt: RpcApi {
+pub trait RpcApiExt: RpcApi + Send + Sync {
     async fn is_synced(&self) -> Result<bool, BitcoindError>;
     async fn wait_until_synced(&self);
 }
@@ -101,8 +101,7 @@ impl RpcApiExt for Client {
         {
             Ok(blockchain_info_result) => Ok(blockchain_info_result.initialblockdownload == false),
             Err(err) => {
-                // TODO (armins) use logger library
-                println!("error getting get_blockchain_info(): {:?}", err);
+                tracing::error!("error getting get_blockchain_info(): {:?}", err);
                 Ok(false)
             }
         }

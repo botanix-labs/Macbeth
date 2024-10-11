@@ -7,7 +7,7 @@ use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 #[allow(clippy::too_many_lines)]
 pub async fn invalid_pegout(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::InvalidTransactionError> {
+) -> anyhow::Result<(), super::error::InvalidTransactionError> {
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap().clone();
 
     // subscribe to notifications so channel stays open
@@ -15,8 +15,13 @@ pub async fn invalid_pegout(
 
     // Generate and send pegout tx
     // invalid bitcoin address
-    let botanix_eth_client =
-        test_fed_members.get(&0).cloned().unwrap().create_botanix_eth_client().await;
+    let botanix_eth_client = test_fed_members
+        .get(&0)
+        .cloned()
+        .unwrap()
+        .botanix_eth_client
+        .clone()
+        .expect("Botanix Client must be initialized");
     let invalid_pegout_destination = ethers::core::types::Bytes::from(
         "invalid_pegout_destination".to_string().as_bytes().to_vec(),
     );

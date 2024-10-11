@@ -74,6 +74,9 @@ pub struct CliArgs {
     /// max frost signers
     #[argh(option, default = "2")]
     pub max_signers: u16,
+    /// rpc nodes
+    #[argh(option, default = "1")]
+    pub rpc_nodes: u16,
     /// btc network
     #[argh(option, default = "String::from(\"regtest\")")]
     pub btc_network: String,

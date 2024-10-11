@@ -1,3 +1,4 @@
+use anyhow::Context;
 use ethers::types::U64;
 use tokio::time::Duration;
 
@@ -5,18 +6,14 @@ use crate::{
     it_info_print,
     suite::consensus::{
         common::{
-            botanix_client::BotanixEthClient, events::SEND_AMOUNT,
-            poa_node::PREFUNDED_ACCOUNT_SECRET_KEY,
+            botanix_client::BotanixEthClient, events::SEND_AMOUNT, PREFUNDED_ACCOUNT_SECRET_KEY,
         },
-        rpc_node::error::NonFederationMemberTestConfigError,
         ConsensusIntegrationTestSuite,
     },
 };
 
 #[allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
-pub async fn test_rpc_node(
-    suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), NonFederationMemberTestConfigError> {
+pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<()> {
     it_info_print!("Running rpc node test");
     // subscribe to rpc node events
     let _rx = suite
@@ -26,11 +23,16 @@ pub async fn test_rpc_node(
         .expect("broadcast sender to be set")
         .subscribe();
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
+
     // create botanix clients
     let mut botanix_clients: Vec<BotanixEthClient> = vec![];
     for (index, fed_member_config) in test_fed_members.iter() {
-        let botanix_eth_client = fed_member_config.create_botanix_eth_client().await;
-        botanix_clients.push(botanix_eth_client);
+        botanix_clients.push(
+            fed_member_config
+                .botanix_eth_client
+                .clone()
+                .expect("Botanix Client must be initialized"),
+        );
         it_info_print!("Botanix client created for poa member {}", index);
     }
 
@@ -57,7 +59,14 @@ pub async fn test_rpc_node(
 
     tokio::time::sleep(Duration::from_secs(10)).await;
     // create rpc node and sync with federation peers
-    let rpc_node = suite.local_context.rpc_node.as_ref().unwrap();
+    let rpc_node = suite
+        .local_context
+        .rpc_nodes
+        .as_ref()
+        .map(|rpc| rpc.get(&0))
+        .flatten()
+        .cloned()
+        .expect("first rpc node to be valid");
     // get latest header hash from rpc node
     // Note: alternative way is to wait for cannon state notification from rpc node and get hash
     // from notification but this way also tests that rpc node can handle rpc requests
@@ -66,7 +75,8 @@ pub async fn test_rpc_node(
         PREFUNDED_ACCOUNT_SECRET_KEY,
         ethers::core::types::Address::random(),
     )
-    .await;
+    .await
+    .context("Failed to create rpc botanix client")?;
 
     let rpc_latest_block_header = rpc_botanix_client.get_latest_block_hash().await.unwrap();
     it_info_print!("RPC node latest header hash", rpc_latest_block_header);

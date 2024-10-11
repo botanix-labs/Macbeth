@@ -1,6 +1,4 @@
 use anyhow::{Context as AnyhowContext, Result};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use url::Url;
 
 use crate::{
@@ -8,13 +6,13 @@ use crate::{
     suite::RunSuite,
 };
 
-pub const RPC_PORT_BASE: u16 = 8545;
-pub const DISCOVERY_PORT_BASE: u16 = 30330;
+pub const BOTANIX_FEE_RECEIPIENT: &str = "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5";
 
 pub struct GlobalContext {
     pub test_suite_id: uuid::Uuid,
     pub dry_run: bool,
-    pub instances: u16,
+    pub fed_instances: u16,
+    pub rpc_instances: u16,
     pub run_suite: RunSuite,
     pub timeout: u64,
     pub min_signers: u16,
@@ -23,8 +21,7 @@ pub struct GlobalContext {
     pub bitcoind_url: Url,
     pub bitcoind_user: String,
     pub bitcoind_pass: String,
-    pub last_poa_node_rpc_port: Arc<Mutex<u16>>,
-    pub last_poa_node_discovery_port: Arc<Mutex<u16>>,
+    pub botanix_fee_recipient: String,
 }
 
 impl GlobalContext {
@@ -36,14 +33,15 @@ impl GlobalContext {
 
         // compute instances and min/max signers
         let frost_max_signers = args.max_signers;
-        let instances = frost_max_signers; // this is the total number of instances to be spawned (poa nodes and btc servers)
+        let fed_instances = frost_max_signers; // this is the total number of instances to be spawned (poa nodes and btc servers)
         let frost_min_signers = ((frost_max_signers - 1).min(args.min_signers)).max(2); //  value must be in the bounds: [2; value; max_signers - 1]
         assert!(frost_max_signers >= frost_min_signers, "frost signers rule violated");
 
         Ok(Self {
             test_suite_id: uuid::Uuid::new_v4(),
             dry_run: args.dry_run,
-            instances,
+            fed_instances,
+            rpc_instances: args.rpc_nodes,
             run_suite: args.run_suite,
             timeout: args.timeout,
             min_signers: frost_min_signers,
@@ -52,8 +50,7 @@ impl GlobalContext {
             bitcoind_url: args.bitcoind_url,
             bitcoind_user: args.bitcoind_user,
             bitcoind_pass: args.bitcoind_pass,
-            last_poa_node_discovery_port: Arc::new(Mutex::new(DISCOVERY_PORT_BASE)),
-            last_poa_node_rpc_port: Arc::new(Mutex::new(RPC_PORT_BASE)),
+            botanix_fee_recipient: BOTANIX_FEE_RECEIPIENT.to_string(),
         })
     }
 

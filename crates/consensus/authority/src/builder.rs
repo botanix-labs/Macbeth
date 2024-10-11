@@ -284,7 +284,6 @@ where
         // only federation nodes will have btc_server
         let mut frost_task = None;
         let mut healthcheck_task = None;
-        let mut abci_client_builder = None;
         if is_fed_node {
             let task = HealthcheckTask::new(
                 network_handle.clone(),
@@ -313,7 +312,7 @@ where
         }
 
         // all nodes will have an abci client builder
-        abci_client_builder = Some(ABCIClientBuilder::new(
+        let abci_client_builder = Some(ABCIClientBuilder::new(
             storage.clone(),
             bitcoin_block_header,
             network_handle.clone(),

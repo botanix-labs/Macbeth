@@ -4,7 +4,6 @@ use bitcoin::{consensus::Encodable, Address, Amount};
 use btcserverlib::pegout_id::PegoutId;
 use client::{self, BtcServerClient};
 use frost_secp256k1_tr as frost;
-use rand::{rngs::StdRng, RngCore, SeedableRng};
 use std::{collections::BTreeMap, str::FromStr, vec};
 use tonic::transport::Channel;
 
@@ -17,12 +16,12 @@ macro_rules! frost_id {
 pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
     // create btc server clients
     let mut clients: Vec<BtcServerClient<Channel>> = vec![];
-    for instance in 0..suite.global_context.instances {
+    for instance in 0..suite.global_context.fed_instances {
         let port = suite
             .local_context
-            .btc_servers
+            .btc_processes
             .as_ref()
-            .and_then(|servers| servers.iter().nth(instance as usize).map(|val| val.port))
+            .and_then(|process| process.iter().nth(instance as usize).map(|val| val.port))
             .ok_or_else(|| Error::InvalidBtcServerPort)?;
         let c = client::BtcServerClient::connect(format!("http://localhost:{}", port))
             .await
@@ -131,7 +130,7 @@ pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<
 
         // there should always be n-1 shares
         assert_eq!(shares.len(), clients.len() - 1);
-        for (j, (identifier, payload)) in shares.iter().enumerate() {
+        for (_j, (identifier, payload)) in shares.iter().enumerate() {
             let client_index = frost_id_map.get(&identifier).unwrap();
             let mut client = clients[*client_index].clone();
             client

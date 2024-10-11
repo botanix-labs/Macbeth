@@ -22,6 +22,7 @@ use crate::{
         common::events::{await_botanix_event, GatewayAddressResponse, BITCOIND_WALLET_NAME},
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 
 const NUM_PEGINS: u16 = 5;
@@ -30,7 +31,7 @@ const NUM_PEGINS: u16 = 5;
 #[allow(clippy::too_many_lines)]
 pub async fn batch_pegins(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
@@ -45,10 +46,10 @@ pub async fn batch_pegins(
         // wallet already exists, load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let address =
+    let _address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 101).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let test_fed_members = suite
@@ -63,7 +64,7 @@ pub async fn batch_pegins(
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
         let botanix_eth_client =
-            test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
+            test_fed_members.get(index).cloned().unwrap().botanix_eth_client.clone();
         mint_contract_instances.push(botanix_eth_client);
     }
 
@@ -112,9 +113,7 @@ pub async fn batch_pegins(
     }
 
     // Generate some block to confirm all pegins
-    bitcoind_rpc
-        .generate_to_address(1 + pegin_conf_depth as u64, &address)
-        .expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 1 + pegin_conf_depth).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // All the pegins should be in the same block by now
@@ -214,7 +213,12 @@ pub async fn batch_pegins(
     // mint all the pegins
     let refund_address = ethers::core::types::Address::random();
     let mut tx_hashes = vec![];
-    let provider = test_fed_members.get(&0).unwrap().create_botanix_eth_client().await;
+    let provider = test_fed_members
+        .get(&0)
+        .unwrap()
+        .botanix_eth_client
+        .clone()
+        .expect("Botanix Client must be initialized");
     let mut nonce = provider.nonce().await;
     for (_, pegin) in pegins.iter().enumerate() {
         // There is only one pegin that needs to be serialized

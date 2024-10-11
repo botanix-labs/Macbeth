@@ -1,4 +1,5 @@
 use crate::{it_info_print, minting::Minting as MintContract};
+use anyhow::Context;
 use displaydoc::Display as DisplayDoc;
 use ethers::{
     contract::ContractError,
@@ -7,7 +8,7 @@ use ethers::{
         types::{Address as EtherAddress, BlockNumber},
     },
     middleware::{signer::SignerMiddlewareError, SignerMiddleware},
-    providers::{Http, Middleware, Provider, ProviderError},
+    providers::{Http, Middleware, PeerInfo, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
     types::{BlockId, NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
     utils,
@@ -38,20 +39,20 @@ impl BotanixEthClient {
         rpc_port: u16,
         sender_secret_key: &str,
         mint_contract_address: EtherAddress,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         // Connect to the network
         let provider = Provider::<Http>::try_from(&format!("http://127.0.0.1:{rpc_port}"))
-            .expect("Provider created");
+            .context("Failed to create botanix provider")?;
         it_info_print!("Node URL: ", &format!("http://127.0.0.1:{rpc_port}"));
 
         // get chain id
-        let chain_id = provider.get_chainid().await.expect("chain id to be returned");
+        let chain_id = provider.get_chainid().await.context("chain id failed to be obtained")?;
         assert!(U256::from(BOTANIX_TESTNET.chain().id()) == chain_id, "expected same chain id");
 
         // create a local wallet
         let wallet: LocalWallet = sender_secret_key
             .parse::<LocalWallet>()
-            .expect("sender secret key to be valid")
+            .context("failed to parse sender secret key")?
             .with_chain_id(chain_id.as_u64());
 
         // connect the wallet to the provider
@@ -60,7 +61,7 @@ impl BotanixEthClient {
 
         let mint_contract = MintContract::new(mint_contract_address, Arc::new(client));
 
-        Self { mint_contract, client: client2 }
+        Ok(Self { mint_contract, client: client2 })
     }
 
     pub fn provider(&self) -> Provider<Http> {
@@ -220,6 +221,46 @@ impl BotanixEthClient {
             .expect("block hash exists");
 
         Ok(block_hash)
+    }
+
+    pub async fn get_peers_counts(&self) -> Result<Vec<PeerInfo>, Error> {
+        let connected_peers = self.client.peers().await.map_err(Error::SignerMiddleware)?;
+
+        Ok(connected_peers)
+    }
+
+    pub async fn add_peer(&self, enode_url: &str) -> Result<bool, Error> {
+        let was_added =
+            self.client.add_peer(enode_url.to_owned()).await.map_err(Error::SignerMiddleware)?;
+
+        Ok(was_added)
+    }
+
+    pub async fn add_trusted_peer(&self, enode_url: &str) -> Result<bool, Error> {
+        let was_added = self
+            .client
+            .add_trusted_peer(enode_url.to_owned())
+            .await
+            .map_err(Error::SignerMiddleware)?;
+
+        Ok(was_added)
+    }
+
+    pub async fn remove_peer(&self, enode_url: &str) -> Result<bool, Error> {
+        let was_removed =
+            self.client.remove_peer(enode_url.to_owned()).await.map_err(Error::SignerMiddleware)?;
+
+        Ok(was_removed)
+    }
+
+    pub async fn remove_trusted_peer(&self, enode_url: &str) -> Result<bool, Error> {
+        let was_removed = self
+            .client
+            .remove_trusted_peer(enode_url.to_owned())
+            .await
+            .map_err(Error::SignerMiddleware)?;
+
+        Ok(was_removed)
     }
 
     pub async fn get_latest_block_by_hash(

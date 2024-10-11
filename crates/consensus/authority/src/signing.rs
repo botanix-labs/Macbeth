@@ -637,7 +637,7 @@ where
             Ok(())
         };
 
-        retry_exec(fut, 3, Duration::from_millis(500)).await
+        retry_exec("gossip_to_peers", fut, 3, Duration::from_millis(500)).await
     }
 
     // ====================================== 1 =========================================
@@ -663,7 +663,7 @@ where
                 // session was previously already registered, maybe it got retriggered
                 // check if it was the same coordinator
                 // check if it is still valid time-wise
-                if (signing_session.coordinator_index != self.frost_config.authority_index as u64) {
+                if signing_session.coordinator_index != self.frost_config.authority_index as u64 {
                     // session is no longer valid, remove it from cache and return
                     self.remove_signing_session(session_id).await;
                     return Ok(());

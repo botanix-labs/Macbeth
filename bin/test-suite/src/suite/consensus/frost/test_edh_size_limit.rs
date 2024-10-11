@@ -7,6 +7,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
@@ -33,7 +34,9 @@ const NUM_PEGINS: u16 = 1000;
 // NOTE: this test cannot run as currently implemented
 // TODO: revisit if test is needed after new consensus implementation
 
-pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
+pub async fn test_edh_size_limit(
+    suite: &ConsensusIntegrationTestSuite,
+) -> anyhow::Result<(), Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
@@ -51,11 +54,11 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
     let address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 101).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Print wallet balancee
-    let mut balance = bitcoind_rpc.get_balance(None, None).expect("get balance");
+    let balance = bitcoind_rpc.get_balance(None, None).expect("get balance");
     it_info_print!("Wallet Balance", balance);
 
     let test_fed_members = suite
@@ -70,7 +73,7 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
     let mut mint_contract_instances = Vec::new();
     for (index, _) in test_fed_members.iter() {
         let botanix_eth_client =
-            test_fed_members.get(index).cloned().unwrap().create_botanix_eth_client().await;
+            test_fed_members.get(index).cloned().unwrap().botanix_eth_client.clone();
         mint_contract_instances.push(botanix_eth_client);
     }
 
@@ -114,7 +117,7 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
         let agg_pk =
             secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
                 .expect("valid agg pk");
-        let blocks = bitcoind_rpc.generate_to_address(1, &address).expect("generate to address");
+        let blocks = generate_blocks(&bitcoind_rpc, 1).await;
 
         pegin_txsids.push((
             pegin_txid,
@@ -127,9 +130,7 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
     }
 
     // Generate some block to confirm all pegins
-    bitcoind_rpc
-        .generate_to_address(1 + pegin_conf_depth as u64, &address)
-        .expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 1 + pegin_conf_depth).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Lets assemble the headers we need for the proof
@@ -228,7 +229,12 @@ pub async fn test_edh_size_limit(suite: &ConsensusIntegrationTestSuite) -> Resul
     // mint all the pegins across multiple blocks
     let refund_address = ethers::core::types::Address::random();
     let mut tx_hashes = vec![];
-    let provider = test_fed_members.get(&0).unwrap().create_botanix_eth_client().await;
+    let provider = test_fed_members
+        .get(&0)
+        .unwrap()
+        .botanix_eth_client
+        .clone()
+        .expect("Botanix Client must be initialized");
     let mut nonce = provider.nonce().await;
     for (index, pegin) in pegins.iter().enumerate() {
         it_info_print!("Pegin #", index);

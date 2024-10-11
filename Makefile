@@ -508,14 +508,15 @@ start-test-suite:
 	--test-to-run "${TEST_TO_RUN}" \
 	--config "./config.toml" \
 	--run-suite all \
-	--timeout 233333 \
+	--timeout 500000 \
 	--dry-run false \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind-url "${BITCOIND_URL}" \
 	--bitcoind-user "${BITCOIND_USER}" \
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--min-signers 3 \
-	--max-signers 4
+	--max-signers 4 \
+	--rpc-nodes 1
 
 start-btc-server-1:
 	cd ./bin/btc-server && \

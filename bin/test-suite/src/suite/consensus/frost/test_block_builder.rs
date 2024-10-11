@@ -18,12 +18,13 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 
 #[allow(clippy::too_many_lines)]
 pub async fn block_builder(
     suite: &ConsensusIntegrationTestSuite,
-) -> Result<(), super::error::Error> {
+) -> anyhow::Result<(), super::error::Error> {
     it_info_print!("Running block builder test...");
     let leader_selection_window =
         BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");
@@ -40,10 +41,10 @@ pub async fn block_builder(
         // load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let address =
+    let _address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    bitcoind_rpc.generate_to_address(101, &address).expect("generate to address");
+    generate_blocks(&bitcoind_rpc, 101).await;
     // sleep and wait for poa nodes to register this block
     tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -66,10 +67,11 @@ pub async fn block_builder(
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
-    let botanix_eth_client = targeted_fed_member.create_botanix_eth_client().await;
+    let botanix_eth_client =
+        targeted_fed_member.botanix_eth_client.clone().expect("Botanix Client must be initialized");
 
     let botanix_block_reward_address_balance_before = botanix_eth_client
-        .get_botanix_balance(&suite.local_context.botanix_fee_recipient)
+        .get_botanix_balance(&suite.global_context.botanix_fee_recipient)
         .await
         .unwrap();
     it_info_print!(
@@ -125,7 +127,10 @@ pub async fn block_builder(
             // Check that all members accepted the block
             let mut botanix_clients: Vec<BotanixEthClient> = vec![];
             for (index, fed_member_config) in test_fed_members.iter() {
-                let botanix_eth_client = fed_member_config.create_botanix_eth_client().await;
+                let botanix_eth_client = fed_member_config
+                    .botanix_eth_client
+                    .clone()
+                    .expect("Botanix Client must be initialized");
                 botanix_clients.push(botanix_eth_client);
                 it_info_print!("Botanix client created for poa member {}", index);
             }
@@ -173,7 +178,7 @@ pub async fn block_builder(
             // verify 80/20 block reward split is correct
             if fed_member_balance > U256::ZERO.into() {
                 let botanix_block_reward_address_balance_after = botanix_eth_client
-                    .get_botanix_balance(&suite.local_context.botanix_fee_recipient)
+                    .get_botanix_balance(&suite.global_context.botanix_fee_recipient)
                     .await
                     .unwrap();
                 it_info_print!(

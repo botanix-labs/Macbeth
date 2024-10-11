@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration};
+use std::str::FromStr;
 
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
@@ -19,6 +19,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+    utils::generate_blocks,
 };
 
 const NUM_PEGINS: usize = 5;
@@ -36,7 +37,7 @@ pub async fn do_signing(
     clients: &mut Vec<BtcServerClient<Channel>>,
     bitcoind: &bitcoincore_rpc::Client,
     signing_session_id: &[u8; 32],
-) -> Result<bitcoin::Transaction, Error> {
+) -> anyhow::Result<bitcoin::Transaction, Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
 
     let coordinator_index = clients.len() - 1;
@@ -46,7 +47,7 @@ pub async fn do_signing(
         let tip = bitcoind.get_block_count().unwrap();
         bitcoind.get_block_hash(tip - pegin_conf_depth as u64).unwrap()
     };
-    let utxo_merkle = coordinator
+    let _utxo_merkle = coordinator
         .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
         .await
         .map_err(Error::Request)?
@@ -156,7 +157,9 @@ pub async fn do_signing(
     Ok(final_tx)
 }
 
-pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
+pub async fn test_many_inputs_signing(
+    suite: &ConsensusIntegrationTestSuite,
+) -> anyhow::Result<(), Error> {
     let bitcoind = suite.global_context.bitcoind_rpc();
     // Load up the bitcoin wallet and generate some blocks
     for wallet in bitcoind.list_wallets().unwrap() {
@@ -165,13 +168,11 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     }
     let create_res = bitcoind.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
     if create_res.is_err() {
+        tracing::info!("Wallet already exists, loading wallet ...");
         // wallet already exists, load wallet
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
-    // generate a block to the network looks live
-    bitcoind.generate_to_address(202, &address).expect("generate to address");
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    generate_blocks(&bitcoind, 202).await;
 
     // create pegins container
     let mut pegins = vec![];
@@ -214,8 +215,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             .expect("send to address");
 
         // Generate some block to confirm it
-        bitcoind.generate_to_address(2, &address).expect("generate to address");
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        generate_blocks(&bitcoind, 2).await;
 
         let tx_res = bitcoind.get_transaction(&txid, None).expect("valid tx");
         let pegin_tx = tx_res.transaction().expect("valid tx");
