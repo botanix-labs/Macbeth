@@ -1,7 +1,8 @@
 /// The purpose of this module is to provide a bridge between the CometBFT and the EVM
 /// application state
 use std::{
-    io,
+    error::Error,
+    io::{self},
     sync::{Arc, RwLock},
 };
 
@@ -52,7 +53,10 @@ use crate::{
     comet_bft::{
         non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
     },
-    engine_util,
+    engine_util::{
+        self,
+        SendForkChoiceUpdateError::{EngineError, InvalidPayload, RecvError},
+    },
     excecution_utils::authority_execution_utils::build_and_execute,
     utils::{call_notify_pegin, call_notify_pegout},
     AuthorityConsensus, Storage,
@@ -165,11 +169,12 @@ where
                 server.listen().expect("to start server");
             }),
         );
-
         task_executor.spawn_critical(
             "ABCI Driver",
             Box::pin(async move {
-                abci_driver.start().await;
+                if let Err(e) = abci_driver.start().await {
+                    panic!("ABCI Driver encountered a error: {:?}", e);
+                }
             }),
         );
         Ok(())
@@ -440,7 +445,16 @@ where
         // initiating a normal recheck of a transaction.
         let _type = request.r#type;
         let tx_bytes = request.tx.clone();
-        let hex = hex::decode(tx_bytes.clone()).unwrap();
+        let hex = match hex::decode(request.tx.clone()) {
+            Ok(hex) => hex, // Proceed with the decoded hex if successful
+            Err(err) => {
+                return ResponseCheckTx {
+                    code: 1,
+                    log: format!("Failed to decode transaction: {}", err),
+                    ..Default::default()
+                };
+            }
+        };
 
         let mut error = (SUCCESS, "Ok");
         match TransactionSigned::decode_enveloped(&mut hex.as_slice()) {
@@ -712,8 +726,13 @@ where
 
     fn commit(&self) -> ResponseCommit {
         info!("commit request received");
-        let candidate_blocks = self.block_cache.write().unwrap();
-
+        let candidate_blocks = match self.block_cache.write() {
+            Ok(guard) => guard,
+            Err(err) => {
+                error!("Failed to write to block cache: {:?}", err);
+                return ResponseCommit { retain_height: -1 };
+            }
+        };
         let (cbft_block_hash, sealed_block_with_peg) =
             candidate_blocks.peek_newest().expect("to have block");
 
@@ -788,7 +807,7 @@ where
         }
     }
 
-    async fn start(&mut self) {
+    async fn start(&mut self) -> Result<(), Box<dyn Error>> {
         loop {
             if let Some(message) = self.driver_rx.recv().await {
                 match message {
@@ -806,19 +825,26 @@ where
                             Ok(_) => {}
                             Err(e) => {
                                 error!(target: "consensus::authority", ?e, "Failed to insert block");
-                                // TODO handle error here
+                                return Err(Box::new(e));
                             }
                         }
                         client.set_canonical_head(sealed_block_with_senders.header.clone());
                         client.set_safe(sealed_block_with_senders.header.clone());
                         client.set_finalized(sealed_block_with_senders.header.clone());
 
-                        engine_util::send_fork_choice_update_payload(
+                        let engine = match engine_util::send_fork_choice_update_payload(
                             block_hash,
                             self.to_engine.clone(),
                         )
                         .await
-                        .unwrap();
+                        {
+                            Ok(_) => Ok(()),
+                            Err(err) => match err {
+                                EngineError => Err(EngineError),
+                                InvalidPayload => Err(InvalidPayload),
+                                _ => Err(RecvError),
+                            },
+                        };
 
                         // Annount to the network
                         let block_to_commit = sealed_block_with_senders.block.clone().unseal();
@@ -866,6 +892,7 @@ where
                 }
             }
         }
+        Ok(())
     }
 }
 
