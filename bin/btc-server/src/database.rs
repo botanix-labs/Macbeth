@@ -892,6 +892,46 @@ mod tests {
     }
 
     #[test]
+    fn test_update_utxo_merkle_root() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut utxos = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(2);
+            let utxo = Utxo::new(
+                OutPoint::new(tx.txid(), 0),
+                tx.output.get(0).expect("one output").clone(),
+                None,
+            );
+            utxos.push(utxo);
+        }
+        let utxo_slice = utxos.iter().collect::<Vec<&Utxo>>();
+        db.store_utxos(&utxo_slice).unwrap();
+        db.update_utxo_merkle_root().unwrap();
+        db.flush().unwrap();
+
+        let merkle_root = db.get_utxo_merkle_root().unwrap().unwrap();
+        // Updating again should not change the merkle root
+        db.update_utxo_merkle_root().unwrap();
+        db.flush().unwrap();
+        let merkle_root2 = db.get_utxo_merkle_root().unwrap().unwrap();
+        assert_eq!(merkle_root, merkle_root2);
+
+        // Adding an additional utxo should change the merkle root
+        let tx = create_tx(2);
+        let utxo = Utxo::new(
+            OutPoint::new(tx.txid(), 1),
+            tx.output.get(0).expect("one output").clone(),
+            None,
+        );
+        db.store_utxo(&utxo).unwrap();
+        db.update_utxo_merkle_root().unwrap();
+        db.flush().unwrap();
+        let merkle_root3 = db.get_utxo_merkle_root().unwrap().unwrap();
+        assert_ne!(merkle_root, merkle_root3);
+    }
+
+    #[test]
     fn test_reading_session_ids() {
         let (db, _temp_dir) = setup_db();
 
