@@ -636,7 +636,7 @@ where
             Ok(())
         };
 
-        retry_exec(fut, 3, Duration::from_millis(500)).await
+        retry_exec("gossip_to_peers", fut, 3, Duration::from_millis(500)).await
     }
 
     // ====================================== 1 =========================================

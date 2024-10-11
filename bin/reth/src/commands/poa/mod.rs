@@ -356,13 +356,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
             let fut = || async { btc_server_factory.build_and_connect().await };
 
-            let mut client = match retry_exec(fut, 3, Duration::from_secs(2)).await {
-                Ok(client) => client,
-                Err(err) => {
-                    error!(target: "reth::cli", "Failed to connect to btc server: {}", err);
-                    return Err(eyre::eyre!("Failed to connect to btc server: {}", err));
-                }
-            };
+            let mut client =
+                match retry_exec("btc_server_start", fut, 3, Duration::from_secs(2)).await {
+                    Ok(client) => client,
+                    Err(err) => {
+                        error!(target: "reth::cli", "Failed to connect to btc server: {}", err);
+                        return Err(eyre::eyre!("Failed to connect to btc server: {}", err));
+                    }
+                };
             info!(target: "reth::cli", "Btc server connected");
 
             // Check our connection to the btc server is authenticated properly
@@ -951,7 +952,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 .await
         };
 
-        match retry_exec(fut, 3, Duration::from_secs(2)).await {
+        match retry_exec("abci_server_start", fut, 3, Duration::from_secs(2)).await {
             Ok(()) => {}
             Err(err) => {
                 error!(target: "reth::cli", "Failed to connect to abci client: {}", err);

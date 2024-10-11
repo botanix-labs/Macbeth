@@ -286,7 +286,7 @@ impl FederationMemberTestConfig {
         let frost_min_signers = self.frost_min_signers.to_string();
         let frost_max_signers = self.frost_max_signers.to_string();
         let discovery_port = self.discovery_port.to_string();
-        let abci_port = self.discovery_port.to_string();
+        let abci_port = self.abci_port.to_string();
 
         // prepare run arguments
         let command = "cargo";

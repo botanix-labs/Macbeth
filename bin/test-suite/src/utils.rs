@@ -8,7 +8,7 @@ pub async fn generate_blocks(bitcoind: &impl RpcApi, num_blocks: u32) -> Vec<Blo
     let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
     let mut block_hashes = vec![];
     for _ in 0..num_blocks {
-        // You could generate many blocks at once here but occassionally
+        // You could generate many blocks at once here but occasionally
         // We get a `SocketError`
         match bitcoind.generate_to_address(1, &address) {
             Ok(hashes) => {

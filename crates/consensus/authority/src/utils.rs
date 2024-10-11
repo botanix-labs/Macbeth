@@ -23,7 +23,7 @@ use reth_primitives::{
 use reth_provider::BlockReaderIdExt;
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -34,6 +34,7 @@ pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
 
 /// Function for retrying an async closure with retries and delays
 pub async fn retry_exec<T, E, F, Fut>(
+    method_name: &str,
     fut: F,
     max_retries: u32,
     retry_delay: Duration,
@@ -48,7 +49,10 @@ where
         match fut().await {
             Ok(result) => return Ok(result),
             Err(e) if retries < max_retries => {
-                error!("Error retrying the execution {:?}", e);
+                error!(
+                    "Error retrying the execution of function {:?}. Error: {:?}",
+                    method_name, e
+                );
                 retries += 1;
                 tokio::time::sleep(retry_delay).await;
             }
