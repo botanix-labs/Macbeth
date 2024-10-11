@@ -79,6 +79,6 @@ secret_key.hex
 # Coverage files
 build_rs_cov.profraw
 
-
 # test suite logs
 bin/test-suite/*.txt
+cobertura.xml
