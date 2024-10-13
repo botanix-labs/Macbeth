@@ -832,7 +832,7 @@ where
                         client.set_safe(sealed_block_with_senders.header.clone());
                         client.set_finalized(sealed_block_with_senders.header.clone());
 
-                        let engine = match engine_util::send_fork_choice_update_payload(
+                        let _engine = match engine_util::send_fork_choice_update_payload(
                             block_hash,
                             self.to_engine.clone(),
                         )
