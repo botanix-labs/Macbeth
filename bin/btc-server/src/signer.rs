@@ -11,7 +11,7 @@ use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use reth_btc_wallet::{
-    psbt::{PsbtExt, PsbtInputExt},
+    psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
     transaction::CalculateSighashError,
 };
 
@@ -123,8 +123,10 @@ pub enum SigningFinalizeError {
     ExtractTxError(#[from] ExtractTxError),
     #[error("coordinator internal error: {0}")]
     CoordinatorError(#[from] CoordinatorError),
-    #[error("missing pegout: {0}")]
-    MissingPegout(PegoutId),
+    #[error("missing pending pegout: {0}")]
+    MissingPendingPegout(PegoutId),
+    #[error("psbt pegout missing pegout id")]
+    MissingPsbtPegout,
     #[error("psbt to signing package conversion error: {0}")]
     PsbtToSigningPackageConversionError(
         #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError,
@@ -326,31 +328,42 @@ where
             }
         }
 
+        // Check all pending pegouts are being settled in this tx
+        // TODO this should be checked at every step of the way. Put this check in validate_psbt
         let pending_pegouts = self.db.get_pending_pegouts()?;
-        let outputs = pending_pegouts
+        let pending_outputs = pending_pegouts
             .iter()
             .map(|p| (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id)))
             .collect::<Vec<(TxOut, Option<PegoutId>)>>();
-        let pegouts_ids = outputs
+        let pending_pegout_ids = pending_outputs
             .iter()
             .map(|o| o.1)
             .filter(|o| o.is_some())
             .map(|o| o.expect("valid pegout id"))
             .collect::<Vec<_>>();
 
-        let pending_pegouts = self.db.get_pending_pegouts()?;
-        // Check all pending pegouts are being settled in this tx
-        // TODO this should be checked at every step of the way. Put this check in validate_psbt
+        let mut psbt_pegout_ids: Vec<PegoutId> = vec![];
+        for output in finalized_psbt.outputs.iter() {
+            match output.pegout_id() {
+                Some(id) => match PegoutId::from_bytes(&id) {
+                    Ok(id) => psbt_pegout_ids.push(id),
+                    Err(_) => return Err(SigningFinalizeError::MissingPsbtPegout),
+                },
+                None => return Err(SigningFinalizeError::MissingPsbtPegout),
+            };
+        }
+
         for pegout in pending_pegouts.iter() {
-            if !pegouts_ids.contains(&pegout.id) {
-                return Err(SigningFinalizeError::MissingPegout(pegout.id));
+            if !psbt_pegout_ids.contains(&pegout.id) {
+                return Err(SigningFinalizeError::MissingPendingPegout(pegout.id));
             }
         }
+
         let tx = finalized_psbt.clone().extract_tx()?;
         // We're finalizing it for the first time now.
         let tx_timestamp = SystemTime::now();
         self.add_tracked_tx(tx.clone(), &pending_pegouts, tx_timestamp).await?;
-        self.db.remove_pending_pegout(&pegouts_ids)?;
+        self.db.remove_pending_pegout(&pending_pegout_ids)?;
         self.db.flush()?;
 
         // Lets broadcast the tx
