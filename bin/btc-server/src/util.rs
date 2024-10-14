@@ -16,9 +16,10 @@ use reth_btc_wallet::{
 use crate::{database, pegout_id::PegoutId, signer::SigningFinalizeError, Error};
 
 lazy_static! {
-    // TODO get a fee max amount
-    static ref MAX_AMOUNT: bitcoin::Amount = bitcoin::Amount::from_sat(21_000_000 * 100_000_000);
-    static ref MAX_FEERATE: bitcoin::FeeRate = bitcoin::FeeRate::from_sat_per_vb(300).expect("valid feerate");
+    static ref MAX_BTC_AMOUNT: bitcoin::Amount =
+        bitcoin::Amount::from_sat(21_000_000 * 100_000_000);
+    static ref MAX_FEERATE: bitcoin::FeeRate =
+        bitcoin::FeeRate::from_sat_per_vb(300).expect("valid feerate");
 }
 
 // Psbt validation flags
@@ -177,7 +178,7 @@ pub enum ValidatePSBTError {
     FeeCalculationError(bitcoin::psbt::Error),
     #[error("cannot calculate fee rate")]
     FeeRateCalculationError(),
-    #[error("failed fee sanity check")]
+    #[error("{0}")]
     FeeSanityCheck(&'static str),
     #[error("missing witness utxo")]
     MissingWitnessUtxo,
@@ -228,23 +229,44 @@ pub fn validate_psbt(
         return Err(ValidatePSBTError::NoOutputs);
     }
     // Sanity fee checks
-    let fee = psbt.fee().map_err(ValidatePSBTError::FeeCalculationError)?;
-    if fee < Amount::ZERO {
-        return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"));
+    let fee = match psbt.fee() {
+        Ok(fee) => fee,
+        Err(e) => match e {
+            bitcoin::psbt::Error::NegativeFee => {
+                return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"))
+            }
+            bitcoin::psbt::Error::FeeOverflow => {
+                return Err(ValidatePSBTError::FeeSanityCheck("Fee overflow"))
+            }
+            _ => return Err(ValidatePSBTError::FeeCalculationError(e)),
+        },
+    };
+
+    // validate outputs cover all pegout ids or are change
+    if let Err(e) = validate_outputs(&psbt, db) {
+        return Err(ValidatePSBTError::InvalidOutputs(e.to_string()));
+    };
+    let total_outputs_amount =
+        psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
+            total.checked_add(output.value.clone()).unwrap_or_default()
+        });
+
+    if fee > total_outputs_amount {
+        return Err(ValidatePSBTError::FeeSanityCheck(
+            "Fee cannot be greater than the total value of all outputs",
+        ));
     }
-    if fee > *MAX_AMOUNT {
-        return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be greater than max amount"));
+
+    if total_outputs_amount > *MAX_BTC_AMOUNT {
+        return Err(ValidatePSBTError::FeeSanityCheck(
+            "The sum of all outputs cannot be greater than max btc amount",
+        ));
     }
 
     // If we are just validating sanity checks we can stop here
     if flags == NO_FLAGS {
         return Ok(());
     }
-
-    // validate outputs cover all pegout ids or are change
-    if let Err(e) = validate_outputs(&psbt, db) {
-        return Err(ValidatePSBTError::InvalidOutputs(e.to_string()));
-    };
 
     // validate signing commitments in round 1
     let scs = psbt.inputs.iter().map(|i| i.all_signing_commitments()).collect::<Vec<_>>();
@@ -402,7 +424,7 @@ mod util_tests {
     }
 
     #[test]
-    fn should_perform_sanity_checks() {
+    fn should_perform_general_sanity_checks() {
         let db = db_setup();
         let psbt = create_psbt(2, None);
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
@@ -423,6 +445,74 @@ mod util_tests {
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "outputs cannot be 0");
+    }
+
+    #[test]
+    fn should_perform_sanity_negative_fee_check() {
+        let db = db_setup();
+        let mut psbt = create_psbt(2);
+
+        let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
+            total.checked_add(output.value.clone()).unwrap_or_default()
+        });
+
+        let total_inputs = psbt.inputs.iter().fold(Amount::ZERO, |total, input| {
+            total
+                .checked_add(
+                    input.witness_utxo.as_ref().map(|utxo| utxo.value.clone()).unwrap_or_default(),
+                )
+                .unwrap_or_default()
+        });
+
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
+            psbt.unsigned_tx.output.len() as u64 +
+            1;
+
+        // increase each output accordingly to cause negative fee
+        for output in psbt.unsigned_tx.output.iter_mut() {
+            output.value = output.value.checked_add(Amount::from_sat(diff)).unwrap_or_default();
+        }
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "Fee cannot be negative");
+    }
+
+    #[test]
+    fn should_perform_sanity_total_outputs_value() {
+        let db = db_setup();
+        let mut psbt = create_psbt(2);
+
+        let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
+            total.checked_add(output.value.clone()).unwrap_or_default()
+        });
+        assert!(total_outputs > Amount::ZERO);
+        let total_inputs = psbt.inputs.iter().fold(Amount::ZERO, |total, input| {
+            total
+                .checked_add(
+                    input.witness_utxo.as_ref().map(|utxo| utxo.value.clone()).unwrap_or_default(),
+                )
+                .unwrap_or_default()
+        });
+        assert!(total_inputs > Amount::ZERO);
+
+        // assert fee > 0
+        assert!(psbt.fee().ok().unwrap_or_default().to_sat() > 0);
+
+        // set all outputs to 0
+        for output in psbt.unsigned_tx.output.iter_mut() {
+            output.value = Amount::ZERO;
+        }
+        let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
+            total.checked_add(output.value.clone()).unwrap_or_default()
+        });
+        assert!(total_outputs == Amount::ZERO);
+
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "Fee cannot be greater than the total value of all outputs"
+        );
     }
 
     #[test]
