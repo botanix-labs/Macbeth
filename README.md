@@ -9,6 +9,7 @@
 
 # Running and Testing the Project. 
  1. [Setting up nodes locally](./docs/local_setup.md)
+ 2. [Setting up nodes locally using scripts](./docs/local_setup_with_scripts.md)
  2. [Running nodes with Docker](./docs/docker_setup.md)
  3. [Executing the test suite](./docs/test-suite.md)
 
