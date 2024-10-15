@@ -630,7 +630,10 @@ where
                     if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
                         peer_commands_tx
                             .send(FrostPeerCommand::PeerMessage(resp))
-                            .map_err(Error::Send)?;
+                            .map_err(|e| {
+                                error!(target: "consensus::authority::signing", "Failed to send PeerMessage {:?}", e);
+                                Error::Send(e)
+                            })?;
                     }
                 }
             }
@@ -670,9 +673,14 @@ where
                 } else {
                     // still valid session, reinitiate it and continue
                     self.update_signing_state(session_id, SigningState::Initial).await;
+                    // need to clear the signing nonces in btc-server so session can continue
+                    self.abort_signing().await?;
                 }
             }
             None => {
+                // need to clear the signing nonces in btc-server if they exist
+                self.abort_signing().await?;
+
                 // no previous session, insert a new one and continue
                 self.insert_new_signing_session(
                     session_id,
