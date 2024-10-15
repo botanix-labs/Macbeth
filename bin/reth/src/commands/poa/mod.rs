@@ -630,8 +630,10 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
-            let authority_index =
-                genesis_authorities.iter().position(|a| a == &authority_pk).unwrap();
+            let authority_index = genesis_authorities
+                .iter()
+                .position(|a| a == &authority_pk)
+                .expect("Authority not found in genesis authorities");
             let config = FrostConfig::new(
                 authority_pk,
                 authority_index,
