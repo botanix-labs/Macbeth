@@ -16,12 +16,10 @@ use reth_primitives::{
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tracing::info;
 
-#[cfg(not(feature = "optimism"))]
 use reth_chainspec::{HOLESKY, MAINNET, SEPOLIA};
 
 use super::FederationTomlConfig;
 
-#[cfg(not(feature = "optimism"))]
 /// Chains supported by reth. First value should be used as the default.
 pub const SUPPORTED_CHAINS: &[&str] = &["mainnet", "sepolia", "holesky", "dev", "botanix_testnet"];
 
@@ -96,14 +94,10 @@ pub fn get_chain_from_federation_config(
 /// to a json file, or a json formatted string in-memory. The json needs to be a Genesis struct.
 pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
     Ok(match s {
-        #[cfg(not(feature = "optimism"))]
         "mainnet" => MAINNET.clone(),
-        #[cfg(not(feature = "optimism"))]
         "sepolia" => SEPOLIA.clone(),
-        #[cfg(not(feature = "optimism"))]
         "holesky" => HOLESKY.clone(),
         "dev" => DEV.clone(),
-        #[cfg(not(feature = "optimism"))]
         "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
         _ => {
             // try to read json from path first
@@ -134,14 +128,10 @@ pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> 
 /// a serialized [ChainSpec] or Genesis struct.
 pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
     Ok(match s {
-        #[cfg(not(feature = "optimism"))]
         "mainnet" => MAINNET.clone(),
-        #[cfg(not(feature = "optimism"))]
         "sepolia" => SEPOLIA.clone(),
-        #[cfg(not(feature = "optimism"))]
         "holesky" => HOLESKY.clone(),
         "dev" => DEV.clone(),
-        #[cfg(not(feature = "optimism"))]
         "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
         _ => {
             // try to read json from path first

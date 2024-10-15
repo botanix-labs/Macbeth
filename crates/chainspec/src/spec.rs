@@ -325,7 +325,6 @@ impl ChainSpec {
 
     /// Returns `true` if this chain contains Optimism configuration.
     #[inline]
-    #[cfg(not(feature = "optimism"))]
     pub const fn is_optimism(&self) -> bool {
         self.chain.is_optimism()
     }
@@ -726,9 +725,7 @@ impl From<Genesis> for ChainSpec {
         hardforks.extend(time_hardforks);
 
         // Uses ethereum or optimism main chains to find proper order
-        #[cfg(not(feature = "optimism"))]
         let mainnet_hardforks: ChainHardforks = EthereumHardfork::mainnet().into();
-        #[cfg(not(feature = "optimism"))]
         let mainnet_order = mainnet_hardforks.forks_iter();
 
         let mut ordered_hardforks = Vec::with_capacity(hardforks.len());

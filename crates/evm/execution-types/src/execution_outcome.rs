@@ -176,7 +176,6 @@ impl ExecutionOutcome {
     /// Note: this function calculated Bloom filters for every receipt and created merkle trees
     /// of receipt. This is a expensive operation.
     pub fn receipts_root_slow(&self, _block_number: BlockNumber) -> Option<B256> {
-        #[cfg(not(feature = "optimism"))]
         self.receipts.root_slow(self.block_number_to_index(_block_number)?)
     }
 

@@ -222,7 +222,6 @@ impl Command {
         let payload_config = PayloadConfig::new(
             Arc::clone(&best_block),
             Bytes::default(),
-            #[cfg(not(feature = "optimism"))]
             reth_payload_builder::EthPayloadBuilderAttributes::try_new(
                 best_block.hash(),
                 payload_attrs,
@@ -239,7 +238,6 @@ impl Command {
             None,
         );
 
-        #[cfg(not(feature = "optimism"))]
         let payload_builder = reth_ethereum_payload_builder::EthereumPayloadBuilder::default();
 
         match payload_builder.try_build(args)? {

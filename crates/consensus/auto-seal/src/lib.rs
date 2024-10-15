@@ -518,7 +518,6 @@ impl StorageInner {
 
         // update receipts root
         header.receipts_root = {
-            #[cfg(not(feature = "optimism"))]
             let receipts_root =
                 execution_outcome.receipts_root_slow(header.number).expect("Receipts is present");
 
