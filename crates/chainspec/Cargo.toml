@@ -51,11 +51,6 @@ op-alloy-rpc-types.workspace = true
 [features]
 default = ["std", "serde-support"]
 serde-support = ["serde"]
-optimism = [
-    "reth-ethereum-forks/optimism",
-    "serde",
-    "dep:op-alloy-rpc-types",
-]
 std = []
 arbitrary = [
     "alloy-chains/arbitrary"

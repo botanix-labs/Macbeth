@@ -49,6 +49,3 @@ clap.workspace = true
 jsonrpsee.workspace = true
 eyre.workspace = true
 serde_json.workspace = true
-
-[features]
-optimism = ["reth-provider/optimism"]

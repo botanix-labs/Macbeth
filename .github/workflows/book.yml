@@ -80,7 +80,7 @@ jobs:
         run: mdbook build
 
       - name: Build docs
-        run: cargo doc --no-deps --workspace --exclude "example-*" --exclude reth-node-optimism --exclude reth-optimism-cli --exclude reth-optimism-consensus --exclude reth-optimism-payload-builder --exclude reth-optimism-primitives --exclude "reth-optimism-rpc"
+        run: cargo doc --no-deps --workspace --exclude "example-*""
         env:
           # Keep in sync with ./ci.yml:jobs.docs
           RUSTDOCFLAGS:

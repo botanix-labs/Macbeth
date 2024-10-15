@@ -114,11 +114,6 @@ arbitrary = [
 ]
 secp256k1 = ["dep:secp256k1", "dep:bitcoincore-rpc", "dep:ethers", "dep:ethabi", "dep:frost-secp256k1-tr", "dep:lazy_static", "dep:reth-btc-wallet", "dep:btc-server", "dep:bitcoin", "dep:tracing"]
 c-kzg = ["dep:c-kzg", "revm-primitives/c-kzg", "dep:tempfile", "alloy-eips/kzg"]
-optimism = [
-    "reth-chainspec/optimism",
-    "reth-ethereum-forks/optimism",
-    "revm-primitives/optimism",
-]
 alloy-compat = ["reth-primitives-traits/alloy-compat", "dep:alloy-rpc-types"]
 test-utils = ["reth-primitives-traits/test-utils"]
 

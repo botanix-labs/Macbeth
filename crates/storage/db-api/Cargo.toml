@@ -70,4 +70,3 @@ arbitrary = [
     "dep:arbitrary",
     "dep:proptest",
 ]
-optimism = ["reth-primitives/optimism"]
