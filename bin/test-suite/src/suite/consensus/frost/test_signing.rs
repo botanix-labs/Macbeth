@@ -47,12 +47,14 @@ pub async fn do_signing(
         let tip = bitcoind.get_block_count().unwrap();
         bitcoind.get_block_hash(tip - pegin_conf_depth as u64).unwrap()
     };
-    let _utxo_merkle = coordinator
-        .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
-        .await
-        .map_err(Error::Request)?
-        .into_inner()
-        .merkle_root;
+
+    // TODO assertions on wallet state
+    // let _utxo_merkle = coordinator
+    //     .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
+    //     .await
+    //     .map_err(Error::Request)?
+    //     .into_inner()
+    //     .merkle_root;
 
     let original_psbt = coordinator
         .get_psbt(tonic::Request::new(client::MakeTxRequest {

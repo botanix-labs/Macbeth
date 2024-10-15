@@ -98,9 +98,9 @@ where
         }
 
         // get utxo set from btc server
-        let latest_utxo_commitment = Sha256Hash::from_slice(
-            btc_server.get_utxo_merkle_root(Empty {}).await?.merkle_root.as_slice(),
-        )?;
+        let latest_wallet_state = btc_server.get_wallet_state(Empty {}).await?;
+        let latest_utxo_commitment =
+            Sha256Hash::from_slice(latest_wallet_state.utxo_root.as_slice())?;
         // if latest_merkel_root == latest_utxo_commitment {
         //     debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "utxo set is in
         // sync");     // All done! We are in sync
@@ -115,6 +115,7 @@ where
         let mut peer_messages_rx = peer_messages_rx.await.unwrap();
 
         // Request the utxo set from a peer
+        // TODO should sample many wallet states from N peers
         self.to_frost_manager.send_command(FrostCommand::GetUtxoSetFromPeer)?;
         // try getting the utxo set from the random peer we pinged
         match tokio::time::timeout(Duration::from_secs(60), peer_messages_rx.recv()).await {
@@ -132,7 +133,8 @@ where
                         let utxo_set = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
                             decompressed,
                         )?;
-
+                        // TODO peers will also need to communicate their tracked txs and pending
+                        // pegouts
                         let merkel_root = generate_utxo_merkel_root(&utxo_set.utxos)?;
                         if merkel_root != latest_utxo_commitment {
                             return Err(UtxoSyncError::UtxoSetNotInSync(

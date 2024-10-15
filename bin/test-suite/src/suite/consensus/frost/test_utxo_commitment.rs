@@ -80,13 +80,9 @@ pub async fn test_utxo_commitment(
     }
     let mut hashset = HashSet::new();
     for c in clients.iter_mut() {
-        let utxo_set = c
-            .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
-            .await
-            .unwrap()
-            .into_inner()
-            .merkle_root;
-        hashset.insert(utxo_set);
+        let wallet_state =
+            c.get_wallet_state(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+        hashset.insert(wallet_state.wallet_state_commitment);
     }
     // all the btc_servers should have the same merkel commitment to the utxo set
     assert_eq!(hashset.len(), 1);
@@ -169,26 +165,22 @@ pub async fn test_utxo_commitment(
         .await?;
     }
 
-    let first_utxo_commitment = clients[0]
-        .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
+    let first_wallet_state = clients[0]
+        .get_wallet_state(tonic::Request::new(client::Empty {}))
         .await
         .unwrap()
         .into_inner()
-        .merkle_root;
+        .wallet_state_commitment;
 
     let mut hashset = HashSet::new();
     for c in clients[1..].iter_mut() {
-        let utxo_set = c
-            .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
-            .await
-            .unwrap()
-            .into_inner()
-            .merkle_root;
-        hashset.insert(utxo_set);
+        let wallet_state =
+            c.get_wallet_state(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+        hashset.insert(wallet_state.wallet_state_commitment);
     }
     // all the btc_servers should have the same merkel commitment to the utxo set
     assert_eq!(hashset.len(), 1);
-    assert_ne!(first_utxo_commitment, hashset.iter().next().unwrap().to_owned());
+    assert_ne!(first_wallet_state, hashset.iter().next().unwrap().to_owned());
 
     // Submit many pegins at the same time
     let mut pegins = Pegins::new();

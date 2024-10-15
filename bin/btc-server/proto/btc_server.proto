@@ -57,7 +57,7 @@ service BtcServer {
 
     rpc GetAllUtxos(Empty) returns (GetAllUtxosResponse) {}
 
-    rpc GetUTXOMerkleRoot(Empty) returns (GetUTXOMerkleRootResponse) {}
+    rpc GetWalletState(Empty) returns (WalletStateResponse) {}
 
     rpc ResetAllUtxos(ResetAllUtxosRequest) returns (Empty) {}
 
@@ -91,6 +91,13 @@ message SyncTxIndexRequest {
 
 message FinalizeSignerRequest {
     bytes psbt = 1;
+}
+
+message WalletStateResponse {
+    bytes utxo_root = 1;
+    bytes tracked_tx_root = 2;
+    bytes pending_pegouts_root = 3;
+    bytes wallet_state_commitment = 4;
 }
 
 message ResetAllUtxosRequest {
@@ -190,11 +197,6 @@ message FinalizeSigningRequest {
 message FinalizeSigningResponse {
     // Finalized tx which includes witness data
     bytes psbt = 1;
-}
-
-message GetUTXOMerkleRootResponse {
-    // The Merkle root of all spendable UTXOs.
-    bytes merkle_root = 1;
 }
 
 message GetSigningStatusRequest {

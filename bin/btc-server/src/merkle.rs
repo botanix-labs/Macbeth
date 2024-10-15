@@ -23,14 +23,39 @@ pub fn get_tracked_tx_set_merkle_root(db: &Db) -> Result<Vec<u8>, Error> {
     }
 }
 
+/// Get the merkle root of the pending pegouts set.
+pub fn get_pending_pegouts_set_merkle_root(db: &Db) -> Result<Vec<u8>, Error> {
+    let root = db.get_pending_pegouts_merkle_root()?;
+    if let Some(root) = root {
+        Ok(root[..].to_vec())
+    } else {
+        Ok(vec![0u8; 32])
+    }
+}
+
+#[derive(Debug)]
+pub struct WalletState {
+    pub utxo_root: Vec<u8>,
+    pub tracked_tx_root: Vec<u8>,
+    pub pending_pegouts_root: Vec<u8>,
+    pub wallet_state_commitment: Vec<u8>,
+}
+
 /// Get the wallet state commitment.
-pub fn get_wallet_state_commitment(db: &Db) -> Result<Vec<u8>, Error> {
+pub fn get_wallet_state_commitment(db: &Db) -> Result<WalletState, Error> {
     let utxo_root = get_utxo_set_merkle_root(db)?;
     let tracked_tx_root = get_tracked_tx_set_merkle_root(db)?;
+    let pending_pegouts_root = get_pending_pegouts_set_merkle_root(db)?;
     let mut engine = sha256::Hash::engine();
-    engine.write(&utxo_root);
-    engine.write(&tracked_tx_root);
+    engine.write(&utxo_root).expect("to write 32 byte value");
+    engine.write(&tracked_tx_root).expect("to write 32 byte value");
+    engine.write(&pending_pegouts_root).expect("to write 32 byte value");
     let hash = sha256::Hash::from_engine(engine);
 
-    Ok(hash.to_byte_array().to_vec())
+    Ok(WalletState {
+        utxo_root,
+        tracked_tx_root,
+        pending_pegouts_root,
+        wallet_state_commitment: hash.to_byte_array().to_vec(),
+    })
 }

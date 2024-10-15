@@ -44,6 +44,18 @@ pub struct FinalizeSignerRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WalletStateResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub utxo_root: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub tracked_tx_root: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub pending_pegouts_root: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub wallet_state_commitment: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetAllUtxosRequest {
     #[prost(message, repeated, tag = "1")]
     pub utxos: ::prost::alloc::vec::Vec<Utxo>,
@@ -193,13 +205,6 @@ pub struct FinalizeSigningResponse {
     /// Finalized tx which includes witness data
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetUtxoMerkleRootResponse {
-    /// The Merkle root of all spendable UTXOs.
-    #[prost(bytes = "vec", tag = "1")]
-    pub merkle_root: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -732,10 +737,10 @@ pub mod btc_server_client {
             req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "GetAllUtxos"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_utxo_merkle_root(
+        pub async fn get_wallet_state(
             &mut self,
             request: impl tonic::IntoRequest<super::Empty>,
-        ) -> std::result::Result<tonic::Response<super::GetUtxoMerkleRootResponse>, tonic::Status>
+        ) -> std::result::Result<tonic::Response<super::WalletStateResponse>, tonic::Status>
         {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
@@ -744,11 +749,9 @@ pub mod btc_server_client {
                 )
             })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/btc_server.BtcServer/GetUTXOMerkleRoot");
+            let path = http::uri::PathAndQuery::from_static("/btc_server.BtcServer/GetWalletState");
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "GetUTXOMerkleRoot"));
+            req.extensions_mut().insert(GrpcMethod::new("btc_server.BtcServer", "GetWalletState"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn reset_all_utxos(

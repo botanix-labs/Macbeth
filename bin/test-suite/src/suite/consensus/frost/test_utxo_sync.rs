@@ -164,9 +164,8 @@ pub async fn utxo_sync(
     // let header = eth_clients[0].get_latest_block_by_hash(hash);
     let mut hash_set = HashSet::new();
     for client in btc_server_clients.iter_mut() {
-        let utxo_set_merkel_root =
-            client.get_utxo_merkle_root(client::Empty {}).await.unwrap().into_inner().merkle_root;
-        hash_set.insert(utxo_set_merkel_root);
+        let wallet_state = client.get_wallet_state(client::Empty {}).await.unwrap().into_inner();
+        hash_set.insert(wallet_state.wallet_state_commitment);
     }
     // This asserts that the node that was reset is now in sync with the other nodes
     assert_eq!(hash_set.len(), 1);

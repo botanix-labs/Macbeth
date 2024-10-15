@@ -44,6 +44,18 @@ pub struct FinalizeSignerRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WalletStateResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub utxo_root: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub tracked_tx_root: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub pending_pegouts_root: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub wallet_state_commitment: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetAllUtxosRequest {
     #[prost(message, repeated, tag = "1")]
     pub utxos: ::prost::alloc::vec::Vec<Utxo>,
@@ -193,13 +205,6 @@ pub struct FinalizeSigningResponse {
     /// Finalized tx which includes witness data
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetUtxoMerkleRootResponse {
-    /// The Merkle root of all spendable UTXOs.
-    #[prost(bytes = "vec", tag = "1")]
-    pub merkle_root: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -356,10 +361,10 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::GetAllUtxosResponse>, tonic::Status>;
-        async fn get_utxo_merkle_root(
+        async fn get_wallet_state(
             &self,
             request: tonic::Request<super::Empty>,
-        ) -> std::result::Result<tonic::Response<super::GetUtxoMerkleRootResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::WalletStateResponse>, tonic::Status>;
         async fn reset_all_utxos(
             &self,
             request: tonic::Request<super::ResetAllUtxosRequest>,
@@ -1320,16 +1325,16 @@ pub mod btc_server_server {
                     };
                     Box::pin(fut)
                 }
-                "/btc_server.BtcServer/GetUTXOMerkleRoot" => {
+                "/btc_server.BtcServer/GetWalletState" => {
                     #[allow(non_camel_case_types)]
-                    struct GetUTXOMerkleRootSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty> for GetUTXOMerkleRootSvc<T> {
-                        type Response = super::GetUtxoMerkleRootResponse;
+                    struct GetWalletStateSvc<T: BtcServer>(pub Arc<T>);
+                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty> for GetWalletStateSvc<T> {
+                        type Response = super::WalletStateResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(&mut self, request: tonic::Request<super::Empty>) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as BtcServer>::get_utxo_merkle_root(&inner, request).await
+                                <T as BtcServer>::get_wallet_state(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1341,7 +1346,7 @@ pub mod btc_server_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = GetUTXOMerkleRootSvc(inner);
+                        let method = GetWalletStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

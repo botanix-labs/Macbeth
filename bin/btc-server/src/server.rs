@@ -1,15 +1,14 @@
 use base64::{engine::general_purpose, Engine as _};
-use bitcoin::{
-    hashes::{sha256, Hash},
-    psbt::Psbt,
-    Amount, BlockHash, FeeRate, ScriptBuf, TxOut,
-};
+use bitcoin::{hashes::Hash, psbt::Psbt, Amount, BlockHash, FeeRate, ScriptBuf, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
 use util::{parse_eth_address, VerifyingKeyExt};
 
-use crate::{database::Utxo, merkle::get_utxo_set_merkle_root, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, rpc, util, App};
+use crate::{
+    database::Utxo, merkle::get_wallet_state_commitment, pegout_id::PegoutId,
+    pegout_scheduler::PegoutRequest, rpc, util, App,
+};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -692,18 +691,21 @@ where
     }
 
     // Gets the merkle root of the utxo set
-    async fn get_utxo_merkle_root(
+    async fn get_wallet_state(
         &self,
         request: tonic::Request<rpc::Empty>,
-    ) -> Result<tonic::Response<rpc::GetUtxoMerkleRootResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<rpc::WalletStateResponse>, tonic::Status> {
         self.validate_jwt(&request)?;
-        let utxo_set_merkle_root = get_utxo_set_merkle_root(&self.db).map_err(|e| {
-            error!("Failed to get utxo set merkle root: {}", e);
-            internal!("Failed to get utxo set merkle root: {}", e)
+        let wallet_state = get_wallet_state_commitment(&self.db).map_err(|e| {
+            error!("Failed to get wallet state commitment: {}", e);
+            internal!("Failed to get wallet state commitment: {}", e)
         })?;
 
-        let res = rpc::GetUtxoMerkleRootResponse {
-            merkle_root: utxo_set_merkle_root,
+        let res = rpc::WalletStateResponse {
+            utxo_root: wallet_state.utxo_root,
+            tracked_tx_root: wallet_state.tracked_tx_root,
+            pending_pegouts_root: wallet_state.pending_pegouts_root,
+            wallet_state_commitment: wallet_state.wallet_state_commitment,
         };
         Ok(tonic::Response::new(res))
     }

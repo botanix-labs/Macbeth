@@ -1,4 +1,9 @@
-use std::{array::TryFromSliceError, collections::BTreeMap, io, path::Path};
+use std::{
+    array::TryFromSliceError,
+    collections::BTreeMap,
+    io::{self, Write},
+    path::Path,
+};
 
 use crate::{
     pegout_id::PegoutId,
@@ -34,6 +39,9 @@ const KEY_UTXO_MERKLE_ROOT: &[u8; 4] = b"root";
 
 /// sled key for tracked Tx merkle root
 const KEY_TRACKED_TX_MERKLE_ROOT: &[u8; 5] = b"troot";
+
+/// sled key for pending pegouts merkle root
+const KEY_PENDING_PEGOUTS_MERKLE_ROOT: &[u8; 5] = b"proot";
 
 /// sled key for storing the latest finalized block of the txindex.
 const KEY_PEGOUTMGR_TIP: &[u8; 12] = b"pegoutmgrtip";
@@ -465,6 +473,7 @@ impl Db {
         let mut bytes = Vec::new();
         ciborium::into_writer(tx, &mut bytes).expect("writing to buffer");
         self.tracked_txs.insert(tx.txid, &bytes[..])?;
+        self.update_tracked_tx_merkle_root()?;
         Ok(())
     }
 
@@ -556,7 +565,38 @@ impl Db {
         let mut bytes = Vec::new();
         ciborium::into_writer(&req, &mut bytes).expect("writing to buffer");
         self.pending_pegouts.insert(&req.id.as_bytes(), &bytes[..])?;
+        self.update_pending_pegouts_merkle_root()?;
         Ok(())
+    }
+
+    /// Stores the consensus Merkle root of all pending pegouts.
+    pub fn update_pending_pegouts_merkle_root(&self) -> Result<(), Error> {
+        let mut pending_pegouts = self
+            .get_pending_pegouts()?
+            .iter()
+            .map(|req| {
+                let mut engine = sha256::Hash::engine();
+                let pegout_id = req.id.as_bytes();
+                engine.write(&pegout_id).expect("to write pegout id");
+                Ok(sha256::Hash::from_engine(engine))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        pending_pegouts.sort();
+        if pending_pegouts.is_empty() {
+            return Ok(());
+        }
+
+        let root =
+            bitcoin::merkle_tree::calculate_root(pending_pegouts.into_iter()).expect("not empty");
+        self.db.insert(KEY_PENDING_PEGOUTS_MERKLE_ROOT, root.to_byte_array().to_vec())?;
+        Ok(())
+    }
+
+    /// Get pending pegouts merkle root
+    pub fn get_pending_pegouts_merkle_root(&self) -> Result<Option<sha256::Hash>, Error> {
+        Ok(self.db.get(KEY_PENDING_PEGOUTS_MERKLE_ROOT)?.map(|b| {
+            sha256::Hash::from_slice(&b).expect("corrupt db: Merkle root should be 32 bytes")
+        }))
     }
 
     /// Get a pending pegout by id
@@ -1083,6 +1123,48 @@ mod tests {
         db.flush().unwrap();
 
         let merkle_root3 = db.get_tracked_tx_merkle_root().unwrap().unwrap();
+        assert_ne!(merkle_root, merkle_root3);
+    }
+
+    #[test]
+    fn test_update_pending_pegouts_merkle_root() {
+        let (db, _temp_dir) = setup_db();
+        db.update_pending_pegouts_merkle_root().unwrap();
+        db.flush().unwrap();
+        let merkle_root = db.get_pending_pegouts_merkle_root().unwrap();
+
+        assert!(merkle_root.is_none());
+
+        let tx = create_n_outputs_tx(5, 2);
+
+        let pegout_req = PegoutRequest {
+            botanix_height: 0,
+            id: create_random_pegout_id(),
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+        };
+        db.store_pending_pegout(&pegout_req).unwrap();
+        db.flush().unwrap();
+
+        let merkle_root = db.get_pending_pegouts_merkle_root().unwrap().unwrap();
+
+        // Assert the same pending pegout added again does not change the merkle root
+        db.store_pending_pegout(&pegout_req).unwrap();
+        db.flush().unwrap();
+        let merkle_root2 = db.get_pending_pegouts_merkle_root().unwrap().unwrap();
+        assert_eq!(merkle_root, merkle_root2);
+
+        // Add a second pending pegout
+        let pegout_req2 = PegoutRequest {
+            botanix_height: 0,
+            id: create_random_pegout_id(),
+            spk: tx.output[1].script_pubkey.clone(),
+            value: tx.output[1].value,
+        };
+        db.store_pending_pegout(&pegout_req2).unwrap();
+        db.flush().unwrap();
+
+        let merkle_root3 = db.get_pending_pegouts_merkle_root().unwrap().unwrap();
         assert_ne!(merkle_root, merkle_root3);
     }
 }
