@@ -59,9 +59,6 @@ reth-trie = { workspace = true, features = ["metrics"] }
 reth-trie-db = { workspace = true, features = ["metrics"] }
 reth-btc-wallet.workspace = true
 reth-node-api.workspace = true
-reth-node-optimism = { workspace = true, optional = true, features = [
-    "optimism",
-] }
 reth-node-core.workspace = true
 reth-ethereum-payload-builder.workspace = true
 reth-db-common.workspace = true
@@ -72,7 +69,6 @@ reth-node-metrics.workspace = true
 reth-consensus.workspace = true
 reth-engine-util.workspace = true
 reth-prune.workspace = true
-reth-optimism-cli = { workspace = true, optional = true }
 reth-discv4.workspace = true
 tokio-stream.workspace = true
 thiserror.workspace = true
@@ -143,19 +139,6 @@ min-debug-logs = ["tracing/release_max_level_debug"]
 min-trace-logs = ["tracing/release_max_level_trace"]
 # no-op feature flag for switching between the `optimism` and default functionality in CI matrices
 ethereum = []
-
-optimism = [
-    "dep:reth-node-optimism",
-    "dep:reth-optimism-cli",
-    "reth-beacon-consensus/optimism",
-    "reth-blockchain-tree/optimism",
-    "reth-node-core/optimism",
-    "reth-optimism-cli?/optimism",
-    "reth-primitives/optimism",
-    "reth-provider/optimism",
-    "reth-rpc/optimism",
-]
-
 
 [[bin]]
 name = "reth"
