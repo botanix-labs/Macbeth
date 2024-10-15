@@ -84,3 +84,6 @@ bin/test-suite/*.txt
 cobertura.xml
 
 tmp
+
+# npm modules
+node_modules/
