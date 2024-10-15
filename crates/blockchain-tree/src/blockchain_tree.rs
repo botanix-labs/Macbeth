@@ -1387,14 +1387,12 @@ mod tests {
     use reth_db_api::transaction::DbTxMut;
     use reth_evm::test_utils::MockExecutorProvider;
     use reth_evm_ethereum::execute::create_noop_executor_provider;
-    #[cfg(not(feature = "optimism"))]
-    use reth_primitives::proofs::calculate_receipt_root;
     use reth_primitives::{
         constants::{EIP1559_INITIAL_BASE_FEE, EMPTY_ROOT_HASH, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::ExtraDataHeader,
         header_ext::HeaderExt,
         keccak256,
-        proofs::calculate_transaction_root,
+        proofs::{calculate_receipt_root, calculate_transaction_root},
         revm_primitives::AccountInfo,
         Account, Address, Header, Signature, Transaction, TransactionSigned,
         TransactionSignedEcRecovered, TxEip1559, Withdrawals, B256,
@@ -1599,7 +1597,6 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
 
-            #[cfg(not(feature = "optimism"))]
             let receipts_root = calculate_receipt_root(&receipts);
 
             let edh = ExtraDataHeader::default();

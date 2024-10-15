@@ -547,7 +547,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "optimism"))]
     #[test]
     fn network_args_default_sanity_test() {
         let default_args = NetworkArgs::default();

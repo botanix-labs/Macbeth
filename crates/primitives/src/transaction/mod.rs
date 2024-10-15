@@ -1168,7 +1168,6 @@ impl TransactionSigned {
             TxType::Legacy => return Err(RlpError::Custom("unexpected legacy tx type")),
         };
 
-        #[cfg(not(feature = "optimism"))]
         let signature = Signature::decode(data)?;
 
         let bytes_consumed = remaining_len - data.len();
