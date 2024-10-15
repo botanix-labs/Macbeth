@@ -1389,8 +1389,6 @@ mod tests {
     use reth_evm_ethereum::execute::create_noop_executor_provider;
     #[cfg(not(feature = "optimism"))]
     use reth_primitives::proofs::calculate_receipt_root;
-    #[cfg(feature = "optimism")]
-    use reth_primitives::proofs::calculate_receipt_root_optimism;
     use reth_primitives::{
         constants::{EIP1559_INITIAL_BASE_FEE, EMPTY_ROOT_HASH, ETHEREUM_BLOCK_GAS_LIMIT},
         extra_data_header::ExtraDataHeader,
@@ -1603,9 +1601,6 @@ mod tests {
 
             #[cfg(not(feature = "optimism"))]
             let receipts_root = calculate_receipt_root(&receipts);
-
-            #[cfg(feature = "optimism")]
-            let receipts_root = calculate_receipt_root_optimism(&receipts, &chain_spec, 0);
 
             let edh = ExtraDataHeader::default();
             let mut header = Header {

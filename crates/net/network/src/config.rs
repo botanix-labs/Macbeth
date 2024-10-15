@@ -84,17 +84,6 @@ pub struct NetworkConfig<C> {
     pub transactions_manager_config: TransactionsManagerConfig,
     /// Frost configuration
     pub frost_config: Option<FrostConfig>,
-    /// Optimism Network Config
-    #[cfg(feature = "optimism")]
-    pub optimism_network_config: OptimismNetworkConfig,
-}
-
-/// Optimism Network Config
-#[cfg(feature = "optimism")]
-#[derive(Debug, Clone, Default)]
-pub struct OptimismNetworkConfig {
-    /// The sequencer HTTP endpoint, if provided via CLI flag
-    pub sequencer_endpoint: Option<String>,
 }
 
 // === impl NetworkConfig ===
@@ -204,18 +193,6 @@ pub struct NetworkConfigBuilder {
     transactions_manager_config: TransactionsManagerConfig,
     /// Frost Configuration
     frost_config: Option<FrostConfig>,
-    /// Optimism Network Config Builder
-    #[cfg(feature = "optimism")]
-    optimism_network_config: OptimismNetworkConfigBuilder,
-}
-
-/// Optimism Network Config Builder
-#[cfg(feature = "optimism")]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Default)]
-pub struct OptimismNetworkConfigBuilder {
-    /// The sequencer HTTP endpoint, if provided via CLI flag
-    sequencer_endpoint: Option<String>,
 }
 
 // === impl NetworkConfigBuilder ===
@@ -248,8 +225,6 @@ impl NetworkConfigBuilder {
             tx_gossip_disabled: false,
             block_import: None,
             frost_config: None,
-            #[cfg(feature = "optimism")]
-            optimism_network_config: OptimismNetworkConfigBuilder::default(),
             transactions_manager_config: Default::default(),
         }
     }
@@ -535,8 +510,6 @@ impl NetworkConfigBuilder {
             tx_gossip_disabled,
             block_import,
             frost_config,
-            #[cfg(feature = "optimism")]
-                optimism_network_config: OptimismNetworkConfigBuilder { sequencer_endpoint },
             transactions_manager_config,
         } = self;
 
@@ -601,8 +574,6 @@ impl NetworkConfigBuilder {
             fork_filter,
             tx_gossip_disabled,
             frost_config,
-            #[cfg(feature = "optimism")]
-            optimism_network_config: OptimismNetworkConfig { sequencer_endpoint },
             transactions_manager_config,
         }
     }

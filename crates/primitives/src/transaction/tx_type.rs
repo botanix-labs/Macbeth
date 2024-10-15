@@ -27,10 +27,6 @@ pub const EIP4844_TX_TYPE_ID: u8 = 3;
 /// Identifier for [`TxEip7702`](crate::TxEip7702) transaction.
 pub const EIP7702_TX_TYPE_ID: u8 = 4;
 
-/// Identifier for [`TxDeposit`](crate::TxDeposit) transaction.
-#[cfg(feature = "optimism")]
-pub const DEPOSIT_TX_TYPE_ID: u8 = 126;
-
 /// Transaction Type
 ///
 /// Currently being used as 2-bit type when encoding it to `reth_codecs::Compact` on
@@ -55,9 +51,6 @@ pub enum TxType {
     Eip4844 = 3_isize,
     /// EOA Contract Code Transactions - EIP-7702
     Eip7702 = 4_isize,
-    /// Optimism Deposit transaction.
-    #[cfg(feature = "optimism")]
-    Deposit = 126_isize,
 }
 
 impl TxType {
@@ -69,8 +62,6 @@ impl TxType {
         match self {
             Self::Legacy => false,
             Self::Eip2930 | Self::Eip1559 | Self::Eip4844 | Self::Eip7702 => true,
-            #[cfg(feature = "optimism")]
-            Self::Deposit => false,
         }
     }
 }
@@ -83,8 +74,6 @@ impl From<TxType> for u8 {
             TxType::Eip1559 => EIP1559_TX_TYPE_ID,
             TxType::Eip4844 => EIP4844_TX_TYPE_ID,
             TxType::Eip7702 => EIP7702_TX_TYPE_ID,
-            #[cfg(feature = "optimism")]
-            TxType::Deposit => DEPOSIT_TX_TYPE_ID,
         }
     }
 }
@@ -99,11 +88,6 @@ impl TryFrom<u8> for TxType {
     type Error = &'static str;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        #[cfg(feature = "optimism")]
-        if value == Self::Deposit {
-            return Ok(Self::Deposit)
-        }
-
         if value == Self::Legacy {
             return Ok(Self::Legacy)
         } else if value == Self::Eip2930 {
@@ -155,11 +139,6 @@ impl reth_codecs::Compact for TxType {
                 buf.put_u8(*self as u8);
                 COMPACT_EXTENDED_IDENTIFIER_FLAG
             }
-            #[cfg(feature = "optimism")]
-            Self::Deposit => {
-                buf.put_u8(*self as u8);
-                COMPACT_EXTENDED_IDENTIFIER_FLAG
-            }
         }
     }
 
@@ -178,8 +157,6 @@ impl reth_codecs::Compact for TxType {
                     match extended_identifier {
                         EIP4844_TX_TYPE_ID => Self::Eip4844,
                         EIP7702_TX_TYPE_ID => Self::Eip7702,
-                        #[cfg(feature = "optimism")]
-                        DEPOSIT_TX_TYPE_ID => Self::Deposit,
                         _ => panic!("Unsupported TxType identifier: {extended_identifier}"),
                     }
                 }
@@ -245,10 +222,6 @@ mod tests {
         // Test for EIP7702 transaction
         assert_eq!(TxType::try_from(U64::from(4)).unwrap(), TxType::Eip7702);
 
-        // Test for Deposit transaction
-        #[cfg(feature = "optimism")]
-        assert_eq!(TxType::try_from(U64::from(126)).unwrap(), TxType::Deposit);
-
         // For transactions with unsupported values
         assert!(TxType::try_from(U64::from(5)).is_err());
     }
@@ -261,8 +234,6 @@ mod tests {
             (TxType::Eip1559, 2, vec![]),
             (TxType::Eip4844, COMPACT_EXTENDED_IDENTIFIER_FLAG, vec![EIP4844_TX_TYPE_ID]),
             (TxType::Eip7702, COMPACT_EXTENDED_IDENTIFIER_FLAG, vec![EIP7702_TX_TYPE_ID]),
-            #[cfg(feature = "optimism")]
-            (TxType::Deposit, COMPACT_EXTENDED_IDENTIFIER_FLAG, vec![DEPOSIT_TX_TYPE_ID]),
         ];
 
         for (tx_type, expected_identifier, expected_buf) in cases {
@@ -284,8 +255,6 @@ mod tests {
             (TxType::Eip1559, 2, vec![]),
             (TxType::Eip4844, COMPACT_EXTENDED_IDENTIFIER_FLAG, vec![EIP4844_TX_TYPE_ID]),
             (TxType::Eip7702, COMPACT_EXTENDED_IDENTIFIER_FLAG, vec![EIP7702_TX_TYPE_ID]),
-            #[cfg(feature = "optimism")]
-            (TxType::Deposit, COMPACT_EXTENDED_IDENTIFIER_FLAG, vec![DEPOSIT_TX_TYPE_ID]),
         ];
 
         for (expected_type, identifier, buf) in cases {
@@ -323,13 +292,5 @@ mod tests {
         // Test random byte not in range
         let buf = [rand::thread_rng().gen_range(5..=u8::MAX)];
         assert!(TxType::decode(&mut &buf[..]).is_err());
-
-        // Test for Deposit transaction
-        #[cfg(feature = "optimism")]
-        {
-            let buf = [126u8];
-            let tx_type = TxType::decode(&mut &buf[..]).unwrap();
-            assert_eq!(tx_type, TxType::Deposit);
-        }
     }
 }

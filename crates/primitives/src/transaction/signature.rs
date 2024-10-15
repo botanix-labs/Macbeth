@@ -33,15 +33,6 @@ pub struct Signature {
     pub odd_y_parity: bool,
 }
 
-impl Signature {
-    /// Returns the signature for the optimism deposit transactions, which don't include a
-    /// signature.
-    #[cfg(feature = "optimism")]
-    pub const fn optimism_deposit_tx_signature() -> Self {
-        Self { r: U256::ZERO, s: U256::ZERO, odd_y_parity: false }
-    }
-}
-
 #[cfg(any(test, feature = "reth-codec"))]
 impl reth_codecs::Compact for Signature {
     fn to_compact<B>(&self, buf: &mut B) -> usize
@@ -90,14 +81,6 @@ impl Signature {
             // EIP-155: v = {0, 1} + CHAIN_ID * 2 + 35
             self.odd_y_parity as u64 + chain_id * 2 + 35
         } else {
-            #[cfg(feature = "optimism")]
-            // pre bedrock system transactions were sent from the zero address as legacy
-            // transactions with an empty signature
-            //
-            // NOTE: this is very hacky and only relevant for op-mainnet pre bedrock
-            if *self == Self::optimism_deposit_tx_signature() {
-                return 0
-            }
             self.odd_y_parity as u64 + 27
         }
     }
@@ -110,20 +93,6 @@ impl Signature {
         let v = u64::decode(buf)?;
         let r: U256 = Decodable::decode(buf)?;
         let s: U256 = Decodable::decode(buf)?;
-
-        if v < 35 {
-            // non-EIP-155 legacy scheme, v = 27 for even y-parity, v = 28 for odd y-parity
-            if v != 27 && v != 28 {
-                #[cfg(feature = "optimism")]
-                // pre bedrock system transactions were sent from the zero address as legacy
-                // transactions with an empty signature
-                //
-                // NOTE: this is very hacky and only relevant for op-mainnet pre bedrock
-                if v == 0 && r.is_zero() && s.is_zero() {
-                    return Ok((Self { r, s, odd_y_parity: false }, None))
-                }
-            }
-        }
 
         let (odd_y_parity, chain_id) = extract_chain_id(v)?;
         Ok((Self { r, s, odd_y_parity }, chain_id))

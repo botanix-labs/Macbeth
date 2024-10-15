@@ -82,9 +82,6 @@ impl PooledTransactionsElement {
             }
             // Not supported because missing blob sidecar
             tx @ TransactionSigned { transaction: Transaction::Eip4844(_), .. } => Err(tx),
-            #[cfg(feature = "optimism")]
-            // Not supported because deposit transactions are never pooled
-            tx @ TransactionSigned { transaction: Transaction::Deposit(_), .. } => Err(tx),
         }
     }
 
@@ -253,13 +250,11 @@ impl PooledTransactionsElement {
                         signature: typed_tx.signature,
                         hash: typed_tx.hash,
                     }),
-                    Transaction::Eip7702(tx) => {Ok(Self::Eip7702 {
+                    Transaction::Eip7702(tx) => Ok(Self::Eip7702 {
                         transaction: tx,
                         signature: typed_tx.signature,
                         hash: typed_tx.hash,
-                    })},
-                    #[cfg(feature = "optimism")]
-                    Transaction::Deposit(_) => Err(RlpError::Custom("Optimism deposit transaction cannot be decoded to PooledTransactionsElement"))
+                    }),
                 }
             }
         }
@@ -630,8 +625,6 @@ impl Decodable for PooledTransactionsElement {
                         signature: typed_tx.signature,
                         hash: typed_tx.hash,
                     }),
-                    #[cfg(feature = "optimism")]
-                    Transaction::Deposit(_) => Err(RlpError::Custom("Optimism deposit transaction cannot be decoded to PooledTransactionsElement"))
                 }
             }
         }

@@ -16,8 +16,6 @@ pub use spec::{
     BotanixTestnetGenesisConfig, ChainSpec, ChainSpecBuilder, ChainSpecProvider, DepositContract,
     ForkBaseFeeParams, BOTANIX_TESTNET, DEV, HOLESKY, MAINNET, SEPOLIA,
 };
-#[cfg(feature = "optimism")]
-pub use spec::{BASE_MAINNET, BASE_SEPOLIA, OP_MAINNET, OP_SEPOLIA};
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;

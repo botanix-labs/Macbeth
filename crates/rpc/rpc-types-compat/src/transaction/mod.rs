@@ -102,14 +102,6 @@ fn fill(
         max_fee_per_blob_gas: signed_tx.max_fee_per_blob_gas(),
         blob_versioned_hashes,
         authorization_list,
-        // Optimism fields
-        #[cfg(feature = "optimism")]
-        other: reth_rpc_types::optimism::OptimismTransactionFields {
-            source_hash: signed_tx.source_hash(),
-            mint: signed_tx.mint(),
-            is_system_tx: signed_tx.is_deposit().then_some(signed_tx.is_system_transaction()),
-        }
-        .into(),
         #[cfg(not(feature = "optimism"))]
         other: Default::default(),
     }
