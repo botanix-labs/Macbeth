@@ -4,9 +4,9 @@ use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
     GetGatewayAddressResponse, GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse,
-    GetSigningStatusRequest, GetSigningStatusResponse, GetUtxoMerkleRootResponse, MakeTxRequest,
-    NotifyPeginsRequest, NotifyPegoutRequest, ResetAllUtxosRequest, SigningPackage,
-    SigningPackageRequest, SyncTxIndexRequest, ToSignRequest,
+    GetSigningStatusRequest, GetSigningStatusResponse, MakeTxRequest, NotifyPeginsRequest,
+    NotifyPegoutRequest, ResetAllUtxosRequest, SigningPackage, SigningPackageRequest,
+    SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
 };
 use displaydoc::Display as DisplayDoc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -129,7 +129,7 @@ impl BtcServerExtendedClient {
     generate_method!(new_round2_signing_package, SigningPackage, Empty);
     generate_method!(finalize_signing, FinalizeSigningRequest, FinalizeSigningResponse);
     generate_method!(signer_finalize, FinalizeSignerRequest, FinalizeSigningResponse);
-    generate_method!(get_utxo_merkle_root, Empty, GetUtxoMerkleRootResponse);
+    generate_method!(get_wallet_state, Empty, WalletStateResponse);
     generate_method!(abort_signing, Empty, Empty);
     generate_method!(get_signing_status, GetSigningStatusRequest, GetSigningStatusResponse);
     generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);

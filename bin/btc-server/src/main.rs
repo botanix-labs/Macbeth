@@ -7,13 +7,13 @@ mod config;
 mod coordinator;
 mod database;
 mod dkg;
+mod merkle;
 mod pegout_id;
 mod pegout_scheduler;
 mod server;
 mod shutdown;
 mod signer;
 mod util;
-mod merkle;
 
 #[macro_use]
 mod test_utils;
