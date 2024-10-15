@@ -88,7 +88,6 @@ mdbx = [
 test-utils = ["dep:tempfile", "arbitrary"]
 bench = []
 arbitrary = ["reth-primitives/arbitrary", "reth-db-api/arbitrary"]
-optimism = []
 disable-lock = []
 
 [[bench]]

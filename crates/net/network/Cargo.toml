@@ -106,7 +106,6 @@ pprof = { workspace = true, features = ["criterion", "flamegraph"] }
 criterion = { workspace = true, features = ["async_tokio", "html_reports"] }
 
 [features]
-optimism = []
 default = ["serde"]
 geth-tests = []
 serde = ["dep:serde", "secp256k1/serde", "enr/serde", "reth-network-types/serde"]

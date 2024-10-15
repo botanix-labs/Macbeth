@@ -70,10 +70,3 @@ reth-prune-types.workspace = true
 alloy-genesis.workspace = true
 
 assert_matches.workspace = true
-
-[features]
-optimism = [
-    "reth-primitives/optimism",
-    "reth-provider/optimism",
-    "reth-blockchain-tree/optimism",
-]

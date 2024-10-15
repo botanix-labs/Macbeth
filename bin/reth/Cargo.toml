@@ -137,14 +137,9 @@ min-warn-logs = ["tracing/release_max_level_warn"]
 min-info-logs = ["tracing/release_max_level_info"]
 min-debug-logs = ["tracing/release_max_level_debug"]
 min-trace-logs = ["tracing/release_max_level_trace"]
-# no-op feature flag for switching between the `optimism` and default functionality in CI matrices
+# no-op feature flag
 ethereum = []
 
 [[bin]]
 name = "reth"
 path = "src/main.rs"
-
-[[bin]]
-name = "op-reth"
-path = "src/optimism.rs"
-required-features = ["optimism"]

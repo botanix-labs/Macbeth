@@ -37,7 +37,7 @@ EF_TESTS_DIR := ./testing/ef-tests/ethereum-tests
 # The docker image name
 DOCKER_IMAGE_NAME ?= ghcr.io/paradigmxyz/reth
 
-# Features in reth/op-reth binary crate other than "ethereum" and "optimism"
+# Features in reth/op-reth binary crate other than "ethereum"
 BIN_OTHER_FEATURES := asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs
 
 ##@ Help
@@ -58,7 +58,7 @@ install: ## Build and install the reth binary under `~/.cargo/bin`.
 .PHONY: install-op
 install-op: ## Build and install the op-reth binary under `~/.cargo/bin`.
 	cargo install --path bin/reth --bin op-reth --force --locked \
-		--features "optimism,$(FEATURES)" \
+		--features $(FEATURES)" \
 		--profile "$(PROFILE)" \
 		$(CARGO_INSTALL_EXTRA_FLAGS)
 
@@ -72,14 +72,14 @@ build-debug: ## Build the reth binary into `target/debug` directory.
 
 .PHONY: build-op
 build-op: ## Build the op-reth binary into `target` directory.
-	cargo build --bin op-reth --features "optimism,$(FEATURES)" --profile "$(PROFILE)"
+	cargo build --bin op-reth --features $(FEATURES)" --profile "$(PROFILE)"
 
 # Builds the reth binary natively.
 build-native-%:
 	cargo build --bin reth --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
 
 op-build-native-%:
-	cargo build --bin op-reth --target $* --features "optimism,$(FEATURES)" --profile "$(PROFILE)"
+	cargo build --bin op-reth --target $* --features $(FEATURES)" --profile "$(PROFILE)"
 
 # The following commands use `cross` to build a cross-compile.
 #
@@ -111,7 +111,7 @@ build-%:
 
 op-build-%:
 	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
-		cross build --bin op-reth --target $* --features "optimism,$(FEATURES)" --profile "$(PROFILE)"
+		cross build --bin op-reth --target $* --features $(FEATURES)" --profile "$(PROFILE)"
 
 # Unfortunately we can't easily use cross to build for Darwin because of licensing issues.
 # If we wanted to, we would need to build a custom Docker image with the SDK available.
@@ -153,7 +153,7 @@ build-release-tarballs: ## Create a series of `.tar.gz` files in the BIN_DIR dir
 ##@ Test
 
 UNIT_TEST_ARGS := --locked --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
-UNIT_TEST_ARGS_OP := --locked --workspace --features 'jemalloc-prof,optimism' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
+UNIT_TEST_ARGS_OP := --locked --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
 COV_FILE := lcov.info
 
 .PHONY: test-unit
@@ -162,7 +162,7 @@ test-unit: ## Run unit tests.
 	cargo nextest run $(UNIT_TEST_ARGS)
 
 .PHONY: test-unit-op
-test-unit-op: ## Run unit tests (with optimism feature flag enabled).
+test-unit-op: ## Run unit tests
 	cargo install cargo-nextest --locked
 	cargo nextest run $(UNIT_TEST_ARGS_OP)
 
@@ -172,7 +172,7 @@ cov-unit: ## Run unit tests with coverage.
 	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS)
 
 .PHONY: cov-unit-op
-cov-unit-op: ## Run unit tests with coverage (with optimism feature flag enabled).
+cov-unit-op: ## Run unit tests with coverage
 	rm -f $(COV_FILE)
 	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS_OP)
 
@@ -319,7 +319,7 @@ maxperf: ## Builds `reth` with the most aggressive optimisations.
 
 .PHONY: maxperf-op
 maxperf-op: ## Builds `op-reth` with the most aggressive optimisations.
-	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc,asm-keccak,optimism --bin op-reth
+	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc,asm-keccak --bin op-reth
 
 .PHONY: maxperf-no-asm
 maxperf-no-asm: ## Builds `reth` with the most aggressive optimisations, minus the "asm-keccak" feature.
@@ -347,7 +347,7 @@ lint-op-reth:
 	--examples \
 	--tests \
 	--benches \
-	--features "optimism $(BIN_OTHER_FEATURES)" \
+	--features "$(BIN_OTHER_FEATURES)" \
 	-- -D warnings
 
 lint-other-targets:
@@ -398,7 +398,7 @@ fix-lint-op-reth:
 	--examples \
 	--tests \
 	--benches \
-	--features "optimism $(BIN_OTHER_FEATURES)" \
+	--features "$(BIN_OTHER_FEATURES)" \
 	--fix \
 	--allow-staged \
 	--allow-dirty \
@@ -450,7 +450,7 @@ test-op-reth:
 	--lib --examples \
 	--tests \
 	--benches \
-	--features "optimism $(BIN_OTHER_FEATURES)"
+	--features "$(BIN_OTHER_FEATURES)"
 
 test-other-targets:
 	cargo test \

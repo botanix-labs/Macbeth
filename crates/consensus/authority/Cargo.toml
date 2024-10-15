@@ -127,7 +127,3 @@ tempfile.workspace = true
 reth-evm = { workspace = true, features = ["test-utils"] }
 
 rand = "0.8.5"
-
-[features]
-# Included solely to ignore certain tests.
-optimism = []
