@@ -120,13 +120,3 @@ pub use arbitrary;
 
 #[cfg(feature = "c-kzg")]
 pub use c_kzg as kzg;
-
-/// Optimism specific re-exports
-#[cfg(feature = "optimism")]
-mod optimism {
-    pub use crate::transaction::{TxDeposit, DEPOSIT_TX_TYPE_ID};
-    pub use reth_chainspec::{BASE_MAINNET, BASE_SEPOLIA, OP_MAINNET, OP_SEPOLIA};
-}
-
-#[cfg(feature = "optimism")]
-pub use optimism::*;

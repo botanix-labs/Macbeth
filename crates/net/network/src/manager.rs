@@ -208,8 +208,6 @@ impl NetworkManager {
             extra_protocols,
             tx_gossip_disabled,
             frost_config,
-            #[cfg(feature = "optimism")]
-                optimism_network_config: crate::config::OptimismNetworkConfig { sequencer_endpoint },
             ..
         } = config;
 

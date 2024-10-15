@@ -206,10 +206,6 @@ fn block1(number: BlockNumber) -> (SealedBlockWithSenders, ExecutionOutcome) {
                 vec![B256::with_last_byte(1), B256::with_last_byte(2)],
                 Bytes::default(),
             )],
-            #[cfg(feature = "optimism")]
-            deposit_nonce: None,
-            #[cfg(feature = "optimism")]
-            deposit_receipt_version: None,
         })]]
         .into(),
         number,
@@ -266,10 +262,6 @@ fn block2(
                 vec![B256::with_last_byte(3), B256::with_last_byte(4)],
                 Bytes::default(),
             )],
-            #[cfg(feature = "optimism")]
-            deposit_nonce: None,
-            #[cfg(feature = "optimism")]
-            deposit_receipt_version: None,
         })]]
         .into(),
         number,
@@ -336,10 +328,6 @@ fn block3(
                 vec![B256::with_last_byte(3), B256::with_last_byte(4)],
                 Bytes::default(),
             )],
-            #[cfg(feature = "optimism")]
-            deposit_nonce: None,
-            #[cfg(feature = "optimism")]
-            deposit_receipt_version: None,
         })]]
         .into(),
         number,
@@ -427,10 +415,6 @@ fn block4(
                 vec![B256::with_last_byte(3), B256::with_last_byte(4)],
                 Bytes::default(),
             )],
-            #[cfg(feature = "optimism")]
-            deposit_nonce: None,
-            #[cfg(feature = "optimism")]
-            deposit_receipt_version: None,
         })]]
         .into(),
         number,
@@ -513,10 +497,6 @@ fn block5(
                 vec![B256::with_last_byte(3), B256::with_last_byte(4)],
                 Bytes::default(),
             )],
-            #[cfg(feature = "optimism")]
-            deposit_nonce: None,
-            #[cfg(feature = "optimism")]
-            deposit_receipt_version: None,
         })]]
         .into(),
         number,

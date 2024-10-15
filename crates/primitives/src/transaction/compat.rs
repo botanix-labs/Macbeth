@@ -12,13 +12,6 @@ pub trait FillTxEnv {
 
 impl FillTxEnv for TransactionSigned {
     fn fill_tx_env(&self, tx_env: &mut TxEnv, sender: Address) {
-        #[cfg(feature = "optimism")]
-        let envelope = {
-            let mut envelope = Vec::with_capacity(self.length_without_header());
-            self.encode_enveloped(&mut envelope);
-            envelope
-        };
-
         tx_env.caller = sender;
         match self.as_ref() {
             Transaction::Legacy(tx) => {
@@ -91,37 +84,6 @@ impl FillTxEnv for TransactionSigned {
                 tx_env.max_fee_per_blob_gas.take();
                 tx_env.authorization_list =
                     Some(AuthorizationList::Signed(tx.authorization_list.clone()));
-            }
-            #[cfg(feature = "optimism")]
-            Transaction::Deposit(tx) => {
-                tx_env.access_list.clear();
-                tx_env.gas_limit = tx.gas_limit;
-                tx_env.gas_price = U256::ZERO;
-                tx_env.gas_priority_fee = None;
-                tx_env.transact_to = tx.to;
-                tx_env.value = tx.value;
-                tx_env.data = tx.input.clone();
-                tx_env.chain_id = None;
-                tx_env.nonce = None;
-                tx_env.authorization_list = None;
-
-                tx_env.optimism = revm_primitives::OptimismFields {
-                    source_hash: Some(tx.source_hash),
-                    mint: tx.mint,
-                    is_system_transaction: Some(tx.is_system_transaction),
-                    enveloped_tx: Some(envelope.into()),
-                };
-                return;
-            }
-        }
-
-        #[cfg(feature = "optimism")]
-        if !self.is_deposit() {
-            tx_env.optimism = revm_primitives::OptimismFields {
-                source_hash: None,
-                mint: None,
-                is_system_transaction: Some(false),
-                enveloped_tx: Some(envelope.into()),
             }
         }
     }

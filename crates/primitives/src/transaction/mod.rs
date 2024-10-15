@@ -57,14 +57,6 @@ mod tx_type;
 pub(crate) mod util;
 mod variant;
 
-#[cfg(feature = "optimism")]
-mod optimism;
-
-#[cfg(feature = "optimism")]
-pub use optimism::TxDeposit;
-#[cfg(feature = "optimism")]
-pub use tx_type::DEPOSIT_TX_TYPE_ID;
-
 #[cfg(test)]
 use reth_codecs::Compact;
 
@@ -135,9 +127,6 @@ pub enum Transaction {
     /// EOA for a single transaction. This allows for temporarily adding smart contract
     /// functionality to the EOA.
     Eip7702(TxEip7702),
-    /// Optimism deposit transaction.
-    #[cfg(feature = "optimism")]
-    Deposit(TxDeposit),
 }
 
 // === impl Transaction ===
@@ -152,8 +141,6 @@ impl Transaction {
             Self::Eip1559(tx) => tx.signature_hash(),
             Self::Eip4844(tx) => tx.signature_hash(),
             Self::Eip7702(tx) => tx.signature_hash(),
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => B256::ZERO,
         }
     }
 
@@ -165,8 +152,6 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { chain_id, .. }) |
             Self::Eip4844(TxEip4844 { chain_id, .. }) |
             Self::Eip7702(TxEip7702 { chain_id, .. }) => Some(*chain_id),
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => None,
         }
     }
 
@@ -178,8 +163,6 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { chain_id: ref mut c, .. }) |
             Self::Eip4844(TxEip4844 { chain_id: ref mut c, .. }) |
             Self::Eip7702(TxEip7702 { chain_id: ref mut c, .. }) => *c = chain_id,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => { /* noop */ }
         }
     }
 
@@ -192,8 +175,6 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { to, .. }) |
             Self::Eip7702(TxEip7702 { to, .. }) => *to,
             Self::Eip4844(TxEip4844 { to, .. }) => TxKind::Call(*to),
-            #[cfg(feature = "optimism")]
-            Self::Deposit(TxDeposit { to, .. }) => *to,
         }
     }
 
@@ -213,8 +194,6 @@ impl Transaction {
             Self::Eip1559(dynamic_fee_tx) => dynamic_fee_tx.tx_type(),
             Self::Eip4844(blob_tx) => blob_tx.tx_type(),
             Self::Eip7702(set_code_tx) => set_code_tx.tx_type(),
-            #[cfg(feature = "optimism")]
-            Self::Deposit(deposit_tx) => deposit_tx.tx_type(),
         }
     }
 
@@ -226,8 +205,6 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { value, .. }) |
             Self::Eip4844(TxEip4844 { value, .. }) |
             Self::Eip7702(TxEip7702 { value, .. }) => value,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(TxDeposit { value, .. }) => value,
         }
     }
 
@@ -239,9 +216,6 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { nonce, .. }) |
             Self::Eip4844(TxEip4844 { nonce, .. }) |
             Self::Eip7702(TxEip7702 { nonce, .. }) => *nonce,
-            // Deposit transactions do not have nonces.
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => 0,
         }
     }
 
@@ -255,8 +229,6 @@ impl Transaction {
             Self::Eip1559(tx) => Some(&tx.access_list),
             Self::Eip4844(tx) => Some(&tx.access_list),
             Self::Eip7702(tx) => Some(&tx.access_list),
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => None,
         }
     }
 
@@ -278,8 +250,6 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { gas_limit, .. }) |
             Self::Eip4844(TxEip4844 { gas_limit, .. }) |
             Self::Eip7702(TxEip7702 { gas_limit, .. }) => *gas_limit,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(TxDeposit { gas_limit, .. }) => *gas_limit,
         }
     }
 
@@ -288,8 +258,6 @@ impl Transaction {
         match self {
             Self::Legacy(_) | Self::Eip2930(_) => false,
             Self::Eip1559(_) | Self::Eip4844(_) | Self::Eip7702(_) => true,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => false,
         }
     }
 
@@ -303,10 +271,6 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { max_fee_per_gas, .. }) |
             Self::Eip4844(TxEip4844 { max_fee_per_gas, .. }) |
             Self::Eip7702(TxEip7702 { max_fee_per_gas, .. }) => *max_fee_per_gas,
-            // Deposit transactions buy their L2 gas on L1 and, as such, the L2 gas is not
-            // refundable.
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => 0,
         }
     }
 
@@ -322,8 +286,6 @@ impl Transaction {
             Self::Eip7702(TxEip7702 { max_priority_fee_per_gas, .. }) => {
                 Some(*max_priority_fee_per_gas)
             }
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => None,
         }
     }
 
@@ -337,8 +299,6 @@ impl Transaction {
             Self::Eip4844(TxEip4844 { blob_versioned_hashes, .. }) => {
                 Some(blob_versioned_hashes.to_vec())
             }
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => None,
         }
     }
 
@@ -377,8 +337,6 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { max_priority_fee_per_gas, .. }) |
             Self::Eip4844(TxEip4844 { max_priority_fee_per_gas, .. }) |
             Self::Eip7702(TxEip7702 { max_priority_fee_per_gas, .. }) => *max_priority_fee_per_gas,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => 0,
         }
     }
 
@@ -392,8 +350,6 @@ impl Transaction {
             Self::Eip1559(dynamic_tx) => dynamic_tx.effective_gas_price(base_fee),
             Self::Eip4844(dynamic_tx) => dynamic_tx.effective_gas_price(base_fee),
             Self::Eip7702(dynamic_tx) => dynamic_tx.effective_gas_price(base_fee),
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => 0,
         }
     }
 
@@ -437,45 +393,7 @@ impl Transaction {
             Self::Eip1559(TxEip1559 { input, .. }) |
             Self::Eip4844(TxEip4844 { input, .. }) |
             Self::Eip7702(TxEip7702 { input, .. }) => input,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(TxDeposit { input, .. }) => input,
         }
-    }
-
-    /// Returns the source hash of the transaction, which uniquely identifies its source.
-    /// If not a deposit transaction, this will always return `None`.
-    #[cfg(feature = "optimism")]
-    pub const fn source_hash(&self) -> Option<B256> {
-        match self {
-            Self::Deposit(TxDeposit { source_hash, .. }) => Some(*source_hash),
-            _ => None,
-        }
-    }
-
-    /// Returns the amount of ETH locked up on L1 that will be minted on L2. If the transaction
-    /// is not a deposit transaction, this will always return `None`.
-    #[cfg(feature = "optimism")]
-    pub const fn mint(&self) -> Option<u128> {
-        match self {
-            Self::Deposit(TxDeposit { mint, .. }) => *mint,
-            _ => None,
-        }
-    }
-
-    /// Returns whether or not the transaction is a system transaction. If the transaction
-    /// is not a deposit transaction, this will always return `false`.
-    #[cfg(feature = "optimism")]
-    pub const fn is_system_transaction(&self) -> bool {
-        match self {
-            Self::Deposit(TxDeposit { is_system_transaction, .. }) => *is_system_transaction,
-            _ => false,
-        }
-    }
-
-    /// Returns whether or not the transaction is an Optimism Deposited transaction.
-    #[cfg(feature = "optimism")]
-    pub const fn is_deposit(&self) -> bool {
-        matches!(self, Self::Deposit(_))
     }
 
     /// This encodes the transaction _without_ the signature, and is only suitable for creating a
@@ -507,8 +425,6 @@ impl Transaction {
             Self::Eip7702(set_code_tx) => {
                 set_code_tx.encode_with_signature(signature, out, with_header)
             }
-            #[cfg(feature = "optimism")]
-            Self::Deposit(deposit_tx) => deposit_tx.encode(out, with_header),
         }
     }
 
@@ -520,8 +436,6 @@ impl Transaction {
             Self::Eip1559(tx) => tx.gas_limit = gas_limit,
             Self::Eip4844(tx) => tx.gas_limit = gas_limit,
             Self::Eip7702(tx) => tx.gas_limit = gas_limit,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(tx) => tx.gas_limit = gas_limit,
         }
     }
 
@@ -533,8 +447,6 @@ impl Transaction {
             Self::Eip1559(tx) => tx.nonce = nonce,
             Self::Eip4844(tx) => tx.nonce = nonce,
             Self::Eip7702(tx) => tx.nonce = nonce,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(_) => { /* noop */ }
         }
     }
 
@@ -546,8 +458,6 @@ impl Transaction {
             Self::Eip1559(tx) => tx.value = value,
             Self::Eip4844(tx) => tx.value = value,
             Self::Eip7702(tx) => tx.value = value,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(tx) => tx.value = value,
         }
     }
 
@@ -559,8 +469,6 @@ impl Transaction {
             Self::Eip1559(tx) => tx.input = input,
             Self::Eip4844(tx) => tx.input = input,
             Self::Eip7702(tx) => tx.input = input,
-            #[cfg(feature = "optimism")]
-            Self::Deposit(tx) => tx.input = input,
         }
     }
 
@@ -573,8 +481,6 @@ impl Transaction {
             Self::Eip1559(tx) => tx.size(),
             Self::Eip4844(tx) => tx.size(),
             Self::Eip7702(tx) => tx.size(),
-            #[cfg(feature = "optimism")]
-            Self::Deposit(tx) => tx.size(),
         }
     }
 
@@ -704,10 +610,6 @@ impl reth_codecs::Compact for Transaction {
             Self::Eip7702(tx) => {
                 tx.to_compact(buf);
             }
-            #[cfg(feature = "optimism")]
-            Self::Deposit(tx) => {
-                tx.to_compact(buf);
-            }
         }
         identifier
     }
@@ -750,11 +652,6 @@ impl reth_codecs::Compact for Transaction {
                         let (tx, buf) = TxEip7702::from_compact(buf, buf.len());
                         (Self::Eip7702(tx), buf)
                     }
-                    #[cfg(feature = "optimism")]
-                    126 => {
-                        let (tx, buf) = TxDeposit::from_compact(buf, buf.len());
-                        (Self::Deposit(tx), buf)
-                    }
                     _ => unreachable!("Junk data in database: unknown Transaction variant"),
                 }
             }
@@ -789,10 +686,6 @@ impl Encodable for Transaction {
             Self::Eip7702(set_code_tx) => {
                 set_code_tx.encode_for_signing(out);
             }
-            #[cfg(feature = "optimism")]
-            Self::Deposit(deposit_tx) => {
-                deposit_tx.encode(out, true);
-            }
         }
     }
 
@@ -803,8 +696,6 @@ impl Encodable for Transaction {
             Self::Eip1559(dynamic_fee_tx) => dynamic_fee_tx.payload_len_for_signature(),
             Self::Eip4844(blob_tx) => blob_tx.payload_len_for_signature(),
             Self::Eip7702(set_code_tx) => set_code_tx.payload_len_for_signature(),
-            #[cfg(feature = "optimism")]
-            Self::Deposit(deposit_tx) => deposit_tx.payload_len(),
         }
     }
 }
@@ -838,13 +729,6 @@ impl TransactionSignedNoHash {
     ///
     /// Returns `None` if the transaction's signature is invalid, see also [`Self::recover_signer`].
     pub fn recover_signer(&self) -> Option<Address> {
-        // Optimism's Deposit transaction does not have a signature. Directly return the
-        // `from` address.
-        #[cfg(feature = "optimism")]
-        if let Transaction::Deposit(TxDeposit { from, .. }) = self.transaction {
-            return Some(from);
-        }
-
         let signature_hash = self.signature_hash();
         self.signature.recover_signer(signature_hash)
     }
@@ -865,24 +749,6 @@ impl TransactionSignedNoHash {
     pub fn encode_and_recover_unchecked(&self, buffer: &mut Vec<u8>) -> Option<Address> {
         buffer.clear();
         self.transaction.encode_without_signature(buffer);
-
-        // Optimism's Deposit transaction does not have a signature. Directly return the
-        // `from` address.
-        #[cfg(feature = "optimism")]
-        {
-            if let Transaction::Deposit(TxDeposit { from, .. }) = self.transaction {
-                return Some(from);
-            }
-
-            // pre bedrock system transactions were sent from the zero address as legacy
-            // transactions with an empty signature
-            //
-            // NOTE: this is very hacky and only relevant for op-mainnet pre bedrock
-            if self.is_legacy() && self.signature == Signature::optimism_deposit_tx_signature() {
-                return Some(Address::ZERO);
-            }
-        }
-
         self.signature.recover_signer_unchecked(keccak256(buffer))
     }
 
@@ -1035,12 +901,6 @@ impl TransactionSigned {
     /// [`Self::recover_signer_unchecked`] if you want to recover the signer without ensuring that
     /// the signature has a low `s` value.
     pub fn recover_signer(&self) -> Option<Address> {
-        // Optimism's Deposit transaction does not have a signature. Directly return the
-        // `from` address.
-        #[cfg(feature = "optimism")]
-        if let Transaction::Deposit(TxDeposit { from, .. }) = self.transaction {
-            return Some(from);
-        }
         let signature_hash = self.signature_hash();
         self.signature.recover_signer(signature_hash)
     }
@@ -1051,12 +911,6 @@ impl TransactionSigned {
     /// Returns `None` if the transaction's signature is invalid, see also
     /// [`Signature::recover_signer_unchecked`].
     pub fn recover_signer_unchecked(&self) -> Option<Address> {
-        // Optimism's Deposit transaction does not have a signature. Directly return the
-        // `from` address.
-        #[cfg(feature = "optimism")]
-        if let Transaction::Deposit(TxDeposit { from, .. }) = self.transaction {
-            return Some(from);
-        }
         let signature_hash = self.signature_hash();
         self.signature.recover_signer_unchecked(signature_hash)
     }
@@ -1186,8 +1040,6 @@ impl TransactionSigned {
             Transaction::Eip7702(set_code_tx) => {
                 set_code_tx.payload_len_with_signature(&self.signature)
             }
-            #[cfg(feature = "optimism")]
-            Transaction::Deposit(deposit_tx) => deposit_tx.payload_len(),
         }
     }
 
@@ -1313,20 +1165,11 @@ impl TransactionSigned {
             TxType::Eip1559 => Transaction::Eip1559(TxEip1559::decode_inner(data)?),
             TxType::Eip4844 => Transaction::Eip4844(TxEip4844::decode_inner(data)?),
             TxType::Eip7702 => Transaction::Eip7702(TxEip7702::decode_inner(data)?),
-            #[cfg(feature = "optimism")]
-            TxType::Deposit => Transaction::Deposit(TxDeposit::decode_inner(data)?),
             TxType::Legacy => return Err(RlpError::Custom("unexpected legacy tx type")),
         };
 
         #[cfg(not(feature = "optimism"))]
         let signature = Signature::decode(data)?;
-
-        #[cfg(feature = "optimism")]
-        let signature = if tx_type == TxType::Deposit {
-            Signature::optimism_deposit_tx_signature()
-        } else {
-            Signature::decode(data)?
-        };
 
         let bytes_consumed = remaining_len - data.len();
         if bytes_consumed != header.payload_length {
@@ -1392,8 +1235,6 @@ impl TransactionSigned {
             Transaction::Eip7702(set_code_tx) => {
                 set_code_tx.payload_len_with_signature_without_header(&self.signature)
             }
-            #[cfg(feature = "optimism")]
-            Transaction::Deposit(deposit_tx) => deposit_tx.payload_len_without_header(),
         }
     }
 }
@@ -1497,24 +1338,7 @@ impl<'a> arbitrary::Arbitrary<'a> for TransactionSigned {
                 if tx_eip_4844.to != Address::default() { Some(()) } else { None };
         }
 
-        #[cfg(feature = "optimism")]
-        // Both `Some(0)` and `None` values are encoded as empty string byte. This introduces
-        // ambiguity in roundtrip tests. Patch the mint value of deposit transaction here, so that
-        // it's `None` if zero.
-        if let Transaction::Deposit(ref mut tx_deposit) = transaction {
-            if tx_deposit.mint == Some(0) {
-                tx_deposit.mint = None;
-            }
-        }
-
         let signature = Signature::arbitrary(u)?;
-
-        #[cfg(feature = "optimism")]
-        let signature = if transaction.is_deposit() {
-            Signature::optimism_deposit_tx_signature()
-        } else {
-            signature
-        };
 
         Ok(Self::from_transaction_and_signature(transaction, signature))
     }

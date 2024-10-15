@@ -25,13 +25,5 @@ pub static DEV_HARDFORKS: Lazy<ChainHardforks> = Lazy::new(|| {
         ),
         (EthereumHardfork::Shanghai.boxed(), ForkCondition::Timestamp(0)),
         (EthereumHardfork::Cancun.boxed(), ForkCondition::Timestamp(0)),
-        #[cfg(feature = "optimism")]
-        (crate::OptimismHardfork::Regolith.boxed(), ForkCondition::Timestamp(0)),
-        #[cfg(feature = "optimism")]
-        (crate::OptimismHardfork::Bedrock.boxed(), ForkCondition::Block(0)),
-        #[cfg(feature = "optimism")]
-        (crate::OptimismHardfork::Ecotone.boxed(), ForkCondition::Timestamp(0)),
-        #[cfg(feature = "optimism")]
-        (crate::OptimismHardfork::Canyon.boxed(), ForkCondition::Timestamp(0)),
     ])
 });
