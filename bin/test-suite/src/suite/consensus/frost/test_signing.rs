@@ -311,9 +311,9 @@ pub async fn test_many_inputs_signing(
     assert!(err_res.to_string().contains("Failed to validate psbt: inputs cannot be 0"));
 
     // Notify some pending pegouts
+    let amount = bitcoin::Amount::from_sat(100_000);
     for c in clients.iter_mut() {
         // Each pegin is 100_000 satoshis, spending 100_000 should spend at least 2 inputs
-        let amount = bitcoin::Amount::from_sat(100_000);
         send_pegout_notification(c, amount.to_sat(), 1, pegout_id, spk.clone()).await?;
     }
     let final_tx = do_signing(&mut clients, &bitcoind, &[0u8; 32]).await?;
