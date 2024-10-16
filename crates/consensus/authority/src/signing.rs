@@ -667,6 +667,10 @@ where
             Some(signing_session) => {
                 // a coordinator should never re-trigger an existing session
                 if signing_session.coordinator_index == self.frost_config.authority_index as u64 {
+                    // clear session and lose ability to be coordinator
+                    // this could happen if previous session failed but wasn't removed
+                    self.abort_signing().await?;
+
                     error!(target: "consensus::authority::signing::initate_signing_session", "A coordinator re-triggered an existing signing session!");
                     return Err(Error::CoordinatorRetriggeredSession);
                 }
