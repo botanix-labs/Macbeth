@@ -361,13 +361,15 @@ where
                     Ok(id) => psbt_pegout_ids.push(id),
                     Err(_) => return Err(SigningFinalizeError::MissingPsbtPegout),
                 },
-                None => return Err(SigningFinalizeError::MissingPsbtPegout),
+                // Do nothing
+                // Some outputs may not have pegout ids if they are change outputs
+                None => {}
             };
         }
 
-        for pegout in pending_pegouts.iter() {
-            if !psbt_pegout_ids.contains(&pegout.id) {
-                return Err(SigningFinalizeError::MissingPendingPegout(pegout.id));
+        for pegout_id in pending_pegout_ids.iter() {
+            if !psbt_pegout_ids.contains(&pegout_id) {
+                return Err(SigningFinalizeError::MissingPendingPegout(pegout_id.clone()));
             }
         }
 
