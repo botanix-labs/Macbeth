@@ -285,7 +285,7 @@ impl Header {
 
     /// Returns true if header represents the start of an epoch
     #[inline]
-    pub fn is_poa_epoch(&self) -> bool {
+    pub const fn is_poa_epoch(&self) -> bool {
         self.number % EPOCH_LENGTH == 0
     }
 

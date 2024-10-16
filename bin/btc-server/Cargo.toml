@@ -7,21 +7,16 @@ edition = "2021"
 name = "btcserverlib"
 
 [dependencies]
-miniscript = "11.0.0"
-bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
-bitcoin_hashes = "0.13.0"
 # Keep this version in sync with the one in the project cargo.toml
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
-reth-btc-wallet = { path = "../../crates/btc-wallet" }
-client = {path = "./client"}
-bitcoincore-rpc = "0.18.0"
 
-# TODO update this to the zcash frost library when tr is merged in
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
-
+base64 = "0.22.0"
 
 # frost-secp256k1-tr = { version = "1.0.0-rc.0", features = ["serde"], path = "../../../../frost/frost-secp256k1-tr"  }
 bdk = "1.0.0-alpha.1" # maybe try remove this dep as it's quite big
+bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
+bitcoin_hashes = "0.13.0"
+bitcoincore-rpc = "0.18.0"
 ciborium = "0.2.1"
 env_logger = "0.11.3"
 hex = "0.4.3"
@@ -36,7 +31,6 @@ sled = "0.34.7"
 thiserror = "1.0.43"
 displaydoc = "0.2"
 
-base64 = "0.22.0"
 url = "2.5.0"
 
 #config

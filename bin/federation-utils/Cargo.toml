@@ -1,13 +1,12 @@
 [package]
 name = "federation-utils-cli"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
-exclude.workspace = true
-
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+exclude = { workspace = true }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
@@ -16,14 +15,13 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = [ "derive" ] }
-thiserror.workspace = true
-tracing.workspace = true
 ethers = "2.0.10"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
 url = "2.5.0"
-serde.workspace = true
-serde_json.workspace = true
-tempfile.workspace = true
-
 
 [lints]
 workspace = true

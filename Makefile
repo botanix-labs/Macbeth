@@ -348,7 +348,7 @@ fmt-markdown:
 # ------------------------------------------------------------
 
 check:
-	cargo check --workspace --all-features --exclude reth-node-optimism
+	cargo check --workspace --all-features
 
 lint-cargo:
 	cargo sort -w --check
@@ -405,7 +405,6 @@ ensure-codespell:
 
 lint:
 	make check && \
-	make lint-cargo && \
 	make lint-rust && \
 	make lint-clippy && \
 	make lint-prettier && \

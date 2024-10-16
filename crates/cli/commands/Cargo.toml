@@ -28,8 +28,10 @@ reth-node-events.workspace = true
 reth-node-metrics.workspace = true
 reth-primitives.workspace = true
 reth-provider.workspace = true
-
+tracing.workspace = true
+eyre.workspace = true
 tokio.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
 
 # misc
 serde.workspace = true
