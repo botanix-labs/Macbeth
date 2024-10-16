@@ -64,6 +64,8 @@ pub(crate) enum Error {
     Send(SendError<FrostPeerCommand>),
     #[error("Missing key package")]
     MissingKeyPackage,
+    #[error("Coordinator re-triggered an existing signing session")]
+    CoordinatorRetriggeredSession,
 }
 
 impl From<FrostParseError> for Error {
@@ -659,29 +661,19 @@ where
             return Ok(());
         }
 
-        // try to find the signing session in cache in case it was re-triggered by the same
-        // coordinator
+        // checking coordinator is not re-triggering an existing session
+        // if not, start new session
         match self.get_signing_session(session_id).await {
             Some(signing_session) => {
-                // session was previously already registered, maybe it got retriggered
-                // check if it was the same coordinator
-                // check if it is still valid time-wise
-                if signing_session.coordinator_index != self.frost_config.authority_index as u64 {
-                    // session is no longer valid, remove it from cache and return
-                    self.remove_signing_session(session_id).await;
-                    return Ok(());
-                } else {
-                    // still valid session, reinitiate it and continue
-                    self.update_signing_state(session_id, SigningState::Initial).await;
-                    // need to clear the signing nonces in btc-server so session can continue
-                    self.abort_signing().await?;
+                // a coordinator should never re-trigger an existing session
+                if signing_session.coordinator_index == self.frost_config.authority_index as u64 {
+                    error!(target: "consensus::authority::signing::initate_signing_session", "A coordinator re-triggered an existing signing session!");
+                    return Err(Error::CoordinatorRetriggeredSession);
                 }
             }
             None => {
-                // need to clear the signing nonces in btc-server if they exist
+                // clear any existing session and start a new one
                 self.abort_signing().await?;
-
-                // no previous session, insert a new one and continue
                 self.insert_new_signing_session(
                     session_id,
                     self.frost_config.authority_index as u64,
@@ -692,7 +684,7 @@ where
             }
         }
 
-        info!(target: "consensus::authority::signing::initate_signing_session", "restarting signing session with id {:?}", session_id);
+        info!(target: "consensus::authority::signing::initate_signing_session", "starting signing session with id {:?}", session_id);
 
         // As the cord we generate round 1 nonces and save them
         // then we send the psbt to other peers
