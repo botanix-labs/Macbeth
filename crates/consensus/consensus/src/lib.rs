@@ -316,6 +316,13 @@ pub enum ConsensusError {
         len: usize,
     },
 
+    /// Error when the extra data header length exceeds the maximum allowed.
+    #[display("extra data header {len} exceeds max length")]
+    ExtraDataHeaderExceedsMax {
+        /// The length of the extra header data.
+        len: usize,
+    },
+
     /// Consensus error during PBFT
     #[display("PBFT Consensus error")]
     PBFTConsensusError,

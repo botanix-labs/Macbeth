@@ -64,11 +64,8 @@ mod utxo_sync;
 pub use builder::AuthorityConsensusBuilder;
 pub mod random_source_provider;
 
-/// Max EDH size, assuming max inputs spent are 1000 and the only spends are keyspends
-/// This was calculated with the following formula
-/// version + optional_fields bitmask + signers pk + witness (vec of sigs) + blockhash +
-/// utxo_commit + block_witness + agg_pk For specific details see [ExtraDataHeader]
-pub const MAX_EDH_SIZE: usize = 80050;
+/// Max EDH size; for specific details see [ExtraDataHeader]
+pub const MAX_EDH_SIZE: usize = 93;
 
 /// Ethereum authority consensus
 ///
@@ -249,11 +246,6 @@ impl Consensus for AuthorityConsensus {
             ));
         }
 
-        // Check total size of the extra data header
-        if header.extra_data.len() > MAX_EDH_SIZE {
-            return Err(ConsensusError::ExtraDataExceedsMax { len: MAX_EDH_SIZE });
-        }
-
         // First run the basic validation
         validate_header_extradata(header)?;
 
@@ -262,6 +254,11 @@ impl Consensus for AuthorityConsensus {
             error!("Failed to deserialize extra data header: {:?}", e);
             ConsensusError::ExtraDataInvalid
         })?;
+
+        // Check total size of the extra data header
+        if edh.edh_size() > MAX_EDH_SIZE {
+            return Err(ConsensusError::ExtraDataHeaderExceedsMax { len: edh.edh_size() });
+        }
 
         validate_chain_version(edh.chain_version)?;
 
@@ -466,7 +463,7 @@ mod tests {
         let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
         let mut header = Header::default();
         header.number = 1;
-        header.extra_data = Bytes::from([1; 80051]);
+        header.extra_data = Bytes::from([1; MAX_EDH_SIZE + 1]);
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));

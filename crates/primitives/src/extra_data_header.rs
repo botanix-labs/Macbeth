@@ -145,6 +145,17 @@ impl ExtraDataHeader {
             block_producer_address,
         })
     }
+
+    /// returns the edh max size
+    pub fn edh_max_size() -> usize {
+        let edh = ExtraDataHeader::default();
+        edh.serialize().len()
+    }
+
+    /// returns the edh size
+    pub fn edh_size(&self) -> usize {
+        self.serialize().len()
+    }
 }
 
 #[cfg(test)]
@@ -172,6 +183,12 @@ mod tests {
         assert_eq!(header.version, EXTRA_HEADER_VERSION);
         assert_eq!(header.chain_version, CHAIN_VERSION);
         assert_eq!(header.bitcoin_block_hash, mainchain);
+    }
+
+    // Test case for edh max size
+    #[test]
+    fn check_max_edh_size() {
+        assert!(ExtraDataHeader::edh_max_size() == 93);
     }
 
     // Test case for serializing without a signature
