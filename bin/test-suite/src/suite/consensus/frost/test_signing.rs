@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-use std::str::FromStr;
-=======
-use std::{collections::HashSet, str::FromStr, time::Duration};
->>>>>>> 50a8e97f9 (test: ensure we can sign and spend change UTXOs)
+use std::{collections::HashSet, str::FromStr};
 
 use bitcoin::{consensus::Encodable, Address};
 use bitcoin_hashes::Hash;
@@ -43,15 +39,18 @@ pub async fn do_signing(
     clients: &mut Vec<BtcServerClient<Channel>>,
     bitcoind: &bitcoincore_rpc::Client,
     signing_session_id: &[u8; 32],
-) -> anyhow::Result<bitcoin::Transaction, Error> {
+) -> anyhow::Result<bitcoin::Transaction, anyhow::Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
 
     let coordinator_index = clients.len() - 1;
-    let mut coordinator = clients.get(coordinator_index).cloned().unwrap();
+    let mut coordinator = clients
+        .get(coordinator_index)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("coordinator not found"))?;
     // First step: get the PSBT
     let checkpoint = {
-        let tip = bitcoind.get_block_count().unwrap();
-        bitcoind.get_block_hash(tip - pegin_conf_depth as u64).unwrap()
+        let tip = bitcoind.get_block_count()?;
+        bitcoind.get_block_hash(tip - pegin_conf_depth as u64)?
     };
     let _utxo_merkle = coordinator
         .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
@@ -137,13 +136,12 @@ pub async fn do_signing(
         .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
             signing_session_id: signing_session_id.to_vec(),
         }))
-        .await
-        .expect("valid finalized request")
+        .await?
         .into_inner();
 
-    let coord_psbt = bitcoin::Psbt::deserialize(&finalized.clone().psbt).unwrap();
+    let coord_psbt = bitcoin::Psbt::deserialize(&finalized.clone().psbt)?;
     // TODO add some assertions for psbt here
-    let final_tx = coord_psbt.clone().extract_tx().expect("valid tx");
+    let final_tx = coord_psbt.clone().extract_tx()?;
     for (index, client) in clients.iter_mut().enumerate() {
         // skip the coordinator here
         if coordinator_index == index {
@@ -172,7 +170,7 @@ pub async fn all_clients_have_same_utxo_set(
         let root = c
             .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
             .await
-            .unwrap()
+            .map_err(Error::Request)?
             .into_inner()
             .merkle_root;
         utxo_merkle_root.insert(root);
@@ -181,12 +179,14 @@ pub async fn all_clients_have_same_utxo_set(
     Ok(())
 }
 
-pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<(), Error> {
+pub async fn test_many_inputs_signing(
+    suite: &ConsensusIntegrationTestSuite,
+) -> anyhow::Result<(), anyhow::Error> {
     let bitcoind = suite.global_context.bitcoind_rpc();
     // Load up the bitcoin wallet and generate some blocks
-    for wallet in bitcoind.list_wallets().unwrap() {
+    for wallet in bitcoind.list_wallets()? {
         it_info_print!("#UNLOADING WALLET?", &wallet);
-        let _ = bitcoind.unload_wallet(Some(&wallet));
+        let _ = bitcoind.unload_wallet(Some(&wallet))?;
     }
     let create_res = bitcoind.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
     if create_res.is_err() {
@@ -195,6 +195,8 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
     generate_blocks(&bitcoind, 202).await;
+
+    let address = bitcoind.get_new_address(None, None)?.assume_checked();
 
     // create pegins container
     let mut pegins = vec![];
@@ -210,7 +212,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     for client in &mut clients {
         let pk = client.get_public_key(tonic::Request::new(client::Empty {})).await;
         assert!(pk.is_err());
-        let err = pk.err().unwrap();
+        let err = pk.err().ok_or_else(|| anyhow::anyhow!("missing key package"))?;
         assert_eq!(err.code(), tonic::Code::Internal);
         assert!(err.message().contains("missing key package"));
     }
@@ -222,7 +224,8 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     for _ in 0..NUM_PEGINS {
         let eth_address = ethers::core::types::Address::random();
         // Lets get the gateway address for this eth address
-        let mut client = clients.get(0).cloned().unwrap();
+        let mut client =
+            clients.get(0).cloned().ok_or_else(|| anyhow::anyhow!("client not found"))?;
         let res = client
             .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
@@ -230,20 +233,30 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
             .await
             .map_err(Error::Request)?
             .into_inner();
-        let btc_address =
-            Address::from_str(&res.gateway_address).expect("valid address").assume_checked();
-        let txid = bitcoind
-            .send_to_address(&btc_address, amount_to_send, None, None, None, None, None, None)
-            .expect("send to address");
+        let btc_address = Address::from_str(&res.gateway_address)?.assume_checked();
+        let txid = bitcoind.send_to_address(
+            &btc_address,
+            amount_to_send,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
 
         // Generate some block to confirm it
         generate_blocks(&bitcoind, 2).await;
 
-        let tx_res = bitcoind.get_transaction(&txid, None).expect("valid tx");
-        let pegin_tx = tx_res.transaction().expect("valid tx");
+        let tx_res = bitcoind.get_transaction(&txid, None)?;
+        let pegin_tx = tx_res.transaction()?;
         let spk = btc_address.script_pubkey();
-        let (vout, pegin_output) =
-            pegin_tx.output.iter().enumerate().find(|(_, o)| o.script_pubkey == spk).unwrap();
+        let (vout, pegin_output) = pegin_tx
+            .output
+            .iter()
+            .enumerate()
+            .find(|(_, o)| o.script_pubkey == spk)
+            .ok_or_else(|| anyhow::anyhow!("pegin output not found"))?;
 
         pegins.push(Pegin {
             eth_address,
@@ -262,12 +275,12 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
         for pegin in pegins.iter() {
             let ot = pegin.outpoint;
             let mut txid_bytes = Vec::with_capacity(32);
-            ot.txid.consensus_encode(&mut txid_bytes).unwrap();
+            ot.txid.consensus_encode(&mut txid_bytes)?;
             send_pegin_notification(
                 c,
                 pegin.btc_address.clone(),
                 hex_encode(pegin.eth_address),
-                txid_bytes.try_into().unwrap(),
+                txid_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid txid"))?,
                 ot.vout,
                 pegin.amount.to_sat(),
             )
@@ -279,16 +292,20 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     let mut rand = StdRng::from_entropy();
     let mut pegout_id_bytes = [0u8; 36];
     rand.fill_bytes(&mut pegout_id_bytes);
-    let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
+    let pegout_id =
+        PegoutId::from_bytes(&pegout_id_bytes).map_err(|_| anyhow::anyhow!("invalid pegout id"))?;
 
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
 
-    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest)?.script_pubkey();
 
     // Calling do_signing should fail as we have no pending pegouts
-    let err_res = do_signing(&mut clients, &bitcoind, &[0u8; 32]).await.err().expect("error");
+    let err_res = do_signing(&mut clients, &bitcoind, &[0u8; 32])
+        .await
+        .err()
+        .ok_or_else(|| anyhow::anyhow!("error not present"))?;
     println!("err_res: {:?}", err_res);
 
     assert!(err_res.to_string().contains("Failed to validate psbt: inputs cannot be 0"));
@@ -319,15 +336,15 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     for _ in 0..number_of_pending_pegouts {
         let mut pegout_id_bytes = [0u8; 36];
         rand.fill_bytes(&mut pegout_id_bytes);
-        let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
+        let pegout_id = PegoutId::from_bytes(&pegout_id_bytes)
+            .map_err(|_| anyhow::anyhow!("invalid pegout id"))?;
         let rand_amount = rand.gen::<u64>() % 75_000;
         let amount = bitcoin::Amount::from_sat(rand_amount);
 
         // get new a key
         let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
         let pk = sk.public_key(&secp);
-
-        let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+        let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest)?.script_pubkey();
 
         pending_pegouts.push((pegout_id, amount, spk.clone(), pegout_id));
     }
@@ -407,13 +424,15 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     let change_ots = no_eth_address_tweak_utxos
         .iter()
         .map(|u| {
-            let outpoint = u.outpoint.clone().expect("valid outpoint");
-            bitcoin::OutPoint {
-                txid: bitcoin::Txid::from_slice(&outpoint.txid).expect("valid txid"),
+            let outpoint = u.outpoint.clone().ok_or_else(|| anyhow::anyhow!("invalid outpoint"))?;
+            let ot = bitcoin::OutPoint {
+                txid: bitcoin::Txid::from_slice(&outpoint.txid)
+                    .map_err(|_| anyhow::anyhow!("invalid txid"))?,
                 vout: outpoint.vout,
-            }
+            };
+            Ok(ot)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, anyhow::Error>>()?;
     assert_eq!(no_eth_address_tweak_utxos.len(), 2);
     // And all tracked utxos are removed at this point so we are only left with change outputs + one
     // user provided input TODO this is flaky
@@ -429,8 +448,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     // get new a key
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
-
-    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest)?.script_pubkey();
 
     for c in clients.iter_mut() {
         send_pegout_notification(c, rand_amount, 1, pegout_id, spk.clone()).await?;
@@ -440,7 +458,7 @@ pub async fn test_many_inputs_signing(suite: &ConsensusIntegrationTestSuite) -> 
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
     it_info_print!("final_tx: {:?}", final_tx);
 
-    let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None).expect("valid tx");
+    let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None)?;
     let tx_ots = final_tx.input.iter().map(|i| i.previous_output).collect::<Vec<_>>();
     assert_eq!(tx_res.txid(), final_tx.txid());
 
