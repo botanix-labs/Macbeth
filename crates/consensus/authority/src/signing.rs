@@ -715,10 +715,9 @@ where
     }
 
     /// A signer processes round 1 signing packages
-    /// Note: since this is a request identifier has no use
     pub(crate) async fn signer_process_round1(
         &mut self,
-        _identifier: Vec<u8>,
+        identifier: Vec<u8>,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
@@ -745,6 +744,19 @@ where
             self.insert_new_signing_session(session_id, coordinator_id, None, SigningState::Round1)
                 .await;
         } else {
+            // check if session exists with the same coordinator
+            // if so, return error since coordinator should never re-trigger an existing session
+            // NOTE: if a session exists, the current coordinator should not be sending a request to
+            // start a new session. The previous session should have been successful or
+            // failed both leading to the session being removed
+            let coordinator_frost_identifier = coordinator_peer_data
+                .frost_identifier
+                .expect("Coordinator should have a frost identifier");
+            if coordinator_frost_identifier.serialize().to_vec() == identifier {
+                error!(target: "consensus::authority::signing::signer_process_round1", "Coordinator re-triggered an existing signing session!");
+                return Err(Error::CoordinatorRetriggeredSession);
+            }
+
             // session exists, return if we are not in round 2
             if self.is_round2_state(&session_id).await {
                 return Ok(());
