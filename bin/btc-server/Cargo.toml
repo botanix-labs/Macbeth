@@ -7,14 +7,10 @@ edition = "2021"
 name = "btcserverlib"
 
 [dependencies]
-# Keep this version in sync with the one in the project cargo.toml
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
-
 base64 = "0.22.0"
-
-# frost-secp256k1-tr = { version = "1.0.0-rc.0", features = ["serde"], path = "../../../../frost/frost-secp256k1-tr"  }
-bdk = "1.0.0-alpha.1" # maybe try remove this dep as it's quite big
-bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
+bdk = "1.0.0-alpha.1"
+bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }
 bitcoin_hashes = "0.13.0"
 bitcoincore-rpc = "0.18.0"
 ciborium = "0.2.1"
@@ -47,7 +43,37 @@ prost = "0.13.3"
 tempfile = "3.6.0"
 
 # clap
-clap = { version = "4.3.22", features = [ "derive" ] }
+clap = { version = "4.3.22", features = ["derive"] }
+client = { path = "./client" }
+confy = "0.6"
+displaydoc = "0.2"
+env_logger = "0.11.3"
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = ["serde", "serialization"] }
+futures-util = "0.3.25"
+hex = "0.4.3"
+lazy_static = "1.4.0"
+log = "0.4.18"
+miniscript = "11.0.0"
+prost = "0.12.6"
+rand = "0.8.5"
+reth-btc-wallet = { path = "../../crates/btc-wallet" }
+secp256k1 = { version = "0.27.0", features = ["global-context", "rand-std", "recovery"] }
+serde = "1.0.171"
+serde_json = "1.0"
+sled = "0.34.7"
+
+tempfile = "3.6.0"
+thiserror = "1.0.43"
+
+# for tonic
+tokio = { version = "1.37.0", features = ["full"] }
+
+# config
+toml = "0.8.4"
+tonic = { version = "0.11.0", features = ["gzip"] }
+tonic-health = { version = "0.11.0" }
+tonic-reflection = { version = "0.11.0" }
+url = "2.5.0"
 
 [build-dependencies]
 tonic-build = "0.12.3"

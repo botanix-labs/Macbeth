@@ -1,42 +1,42 @@
 [package]
 name = "reth-node-metrics"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 
 [dependencies]
-reth-db-api.workspace = true
-reth-provider.workspace = true
-reth-metrics.workspace = true
-reth-tasks.workspace = true
-
-metrics.workspace = true
-metrics-exporter-prometheus.workspace = true
-metrics-process.workspace = true
-metrics-util.workspace = true
-
-tokio.workspace = true
+eyre = { workspace = true }
+http = { workspace = true }
 
 jsonrpsee = { workspace = true, features = ["server"] }
-http.workspace = true
-tower.workspace = true
 
-tracing.workspace = true
-eyre.workspace = true
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+metrics-process = { workspace = true }
+metrics-util = { workspace = true }
+reth-db-api = { workspace = true }
+reth-metrics = { workspace = true }
+reth-provider = { workspace = true }
+reth-tasks = { workspace = true }
+
+tokio = { workspace = true }
+tower = { workspace = true }
+
+tracing = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 tikv-jemalloc-ctl = { version = "0.5.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.16.0"
+procfs = { version = "0.16.0" }
 
 [dev-dependencies]
+reqwest = { workspace = true }
+reth-chainspec = { workspace = true }
 reth-db = { workspace = true, features = ["test-utils"] }
-reqwest.workspace = true
-reth-chainspec.workspace = true
 socket2 = { version = "0.4", default-features = false }
 
 [lints]
@@ -44,7 +44,6 @@ workspace = true
 
 [features]
 jemalloc = ["dep:tikv-jemalloc-ctl"]
-
 
 [build-dependencies]
 vergen = { version = "8.0.0", features = ["build", "cargo", "git", "gitcl"] }

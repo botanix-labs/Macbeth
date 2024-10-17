@@ -1,26 +1,26 @@
 [package]
 name = "reth-metrics"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "reth metrics utilities"
 
 [lints]
 workspace = true
 
 [dependencies]
-# reth
-reth-metrics-derive.workspace = true
+futures = { workspace = true, optional = true }
 
 # metrics
-metrics.workspace = true
+metrics = { workspace = true }
+# reth
+reth-metrics-derive = { workspace = true }
 
 # async
 tokio = { workspace = true, features = ["full"], optional = true }
-futures = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 
 [features]

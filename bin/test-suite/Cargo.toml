@@ -8,24 +8,53 @@ name = "test-suite"
 path = "src/bin/test-suite.rs"
 
 [dependencies]
+ansi_term = "0.12.1"
+anyhow = "1.0.71"
+argh = "0.1.10"
 
-eyre.workspace = true
-reth.workspace = true
-reth-primitives = { workspace = true, features = ["secp256k1"] }
-reth-provider.workspace = true
-reth-chainspec.workspace = true
-reth-rpc-types.workspace = true
-reth-cli-commands.workspace = true
-reth-node-core.workspace = true
-reth-network-peers.workspace = true
-reth-authority-consensus.workspace = true
-comet-bft-rpc.workspace = true
-reth-consensus.workspace = true
-reth-cli-runner.workspace = true
-tendermint-rpc.workspace = true
+# crates.io dependencies
+askama = "0.12.1"
+async-trait = "0.1.68"
+base64 = "0.22.1"
+bitcoin = { workspace = true }
+bitcoin_hashes = "0.13.0"
+
+## Bitcoin rpc
+bitcoincore-rpc = { workspace = true }
+btc-server = { path = "../btc-server" }
+bytes = "1.4.0"
+clap = "4.3.3"
+
+# own dependencies
+client = { path = "../btc-server/client" }
+comet-bft-rpc = { workspace = true }
+displaydoc = "0.2.4"
+dotenv = { version = "0.15.0" }
 
 ## Ethereum
 ethers = { version = "2.0.14", features = ["ws"] }
+
+eyre = { workspace = true }
+
+# frost
+# TODO update this to the zcash frost library when tr is merged in
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = ["serde", "serialization"] }
+hex = "0.4.3"
+port-killer = "0.1.0"
+rand = "0.8.5"
+reth = { workspace = true }
+reth-authority-consensus = { workspace = true }
+reth-btc-wallet = { path = "../../crates/btc-wallet" }
+reth-chainspec = { workspace = true }
+reth-cli-commands = { workspace = true }
+reth-cli-runner = { workspace = true }
+reth-consensus = { workspace = true }
+reth-network-peers = { workspace = true }
+reth-node-core = { workspace = true }
+reth-primitives = { workspace = true, features = ["secp256k1"] }
+reth-provider = { workspace = true }
+reth-rpc-types = { workspace = true }
+reth-tracing = { workspace = true }
 
 ## Crypto
 secp256k1 = { workspace = true, features = [
@@ -33,50 +62,19 @@ secp256k1 = { workspace = true, features = [
     "rand-std",
     "recovery",
 ] }
-
-# own dependencies
-client = { path = "../btc-server/client" }
-btc-server = { path = "../btc-server" }
-reth-btc-wallet = { path = "../../crates/btc-wallet" }
-tempfile.workspace = true
-tracing.workspace = true
-reth-tracing.workspace = true
-
-## Bitcoin rpc
-bitcoincore-rpc.workspace = true
-
-
-# frost
-# TODO update this to the zcash frost library when tr is merged in
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
-
-# crates.io dependencies
-askama = "0.12.1"
-port-killer = "0.1.0"
-anyhow = "1.0.71"
-argh = "0.1.10"
-async-trait = "0.1.68"
-displaydoc = "0.2.4"
 serde = { version = "1.0.164", features = ["derive"] }
 serde_json = "1.0.96"
 strum = { version = "0.25.0", features = ["derive"] }
 strum_macros = "0.25.0"
+tempfile = { workspace = true }
+tendermint-rpc = { workspace = true }
 thiserror = "1.0.40"
 tokio = { version = "1.37.0", features = [ "full" ] }
 toml = "0.8.0"
-uuid = { version = "1.3.3", features = ["serde", "v4"] }
+tonic = { version = "0.11.0", features = ["gzip"] }
+tracing = { workspace = true }
 url = "2.3.1"
-bitcoin.workspace = true
-bitcoin_hashes = "0.13.0"
-tonic = { version = "0.12.3", features = ["gzip"] }
-hex = "0.4.3"
-clap = "4.3.3"
-ansi_term = "0.12.1"
-bytes = "1.4.0"
-dotenv = { version = "0.15.0" }
-rand = "0.8.5"
-base64 = "0.22.1"
-regex = "1.11.1"
+uuid = { version = "1.3.3", features = ["serde", "v4"] }
 
 [dev-dependencies]
 pretty_assertions = "1.3.0"

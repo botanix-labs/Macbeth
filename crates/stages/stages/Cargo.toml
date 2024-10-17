@@ -1,87 +1,87 @@
 [package]
 name = "reth-stages"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "Staged syncing primitives used in reth."
 
 [lints]
 workspace = true
 
 [dependencies]
+futures-util = { workspace = true }
+itertools = { workspace = true }
+num-traits = "0.2.15"
+rayon = { workspace = true }
 # reth
 reth-chainspec = { workspace = true, optional = true }
-reth-codecs.workspace = true
-reth-config.workspace = true
-reth-consensus.workspace = true
-reth-db.workspace = true
-reth-db-api.workspace = true
-reth-etl.workspace = true
-reth-evm.workspace = true
-reth-exex.workspace = true
-reth-network-p2p.workspace = true
+reth-codecs = { workspace = true }
+reth-config = { workspace = true }
+reth-consensus = { workspace = true }
+reth-db = { workspace = true }
+reth-db-api = { workspace = true }
+reth-etl = { workspace = true }
+reth-evm = { workspace = true }
+reth-execution-types = { workspace = true }
+reth-exex = { workspace = true }
+reth-network-p2p = { workspace = true }
 reth-primitives = { workspace = true, features = ["secp256k1"] }
-reth-primitives-traits.workspace = true
-reth-provider.workspace = true
-reth-execution-types.workspace = true
-reth-prune.workspace = true
-reth-prune-types.workspace = true
-reth-storage-errors.workspace = true
-reth-revm.workspace = true
-reth-stages-api = {workspace = true, features = ["test-utils"] }
-reth-trie = { workspace = true, features = ["metrics"] }
-reth-trie-db = { workspace = true, features = ["metrics"] }
+reth-primitives-traits = { workspace = true }
+reth-provider = { workspace = true }
+reth-prune = { workspace = true }
+reth-prune-types = { workspace = true }
+reth-revm = { workspace = true }
+reth-stages-api = { workspace = true, features = ["test-utils"] }
+reth-storage-errors = { workspace = true }
 
 reth-testing-utils = { workspace = true, optional = true }
+reth-trie = { workspace = true, features = ["metrics"] }
+reth-trie-db = { workspace = true, features = ["metrics"] }
+tempfile = { workspace = true, optional = true }
+
+# misc
+thiserror = { workspace = true }
 
 # async
 tokio = { workspace = true, features = ["sync"] }
-futures-util.workspace = true
 
 # observability
-tracing.workspace = true
-
-# misc
-thiserror.workspace = true
-itertools.workspace = true
-rayon.workspace = true
-num-traits = "0.2.15"
-tempfile = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
-# reth
-reth-chainspec.workspace = true
-reth-primitives = { workspace = true, features = ["test-utils", "arbitrary"] }
-reth-db = { workspace = true, features = ["test-utils", "mdbx"] }
-reth-evm-ethereum.workspace = true
-reth-execution-errors.workspace = true
-reth-consensus = { workspace = true, features = ["test-utils"] }
-reth-network-p2p = { workspace = true, features = ["test-utils"] }
-reth-downloaders.workspace = true
-reth-revm.workspace = true
-reth-static-file.workspace = true
-reth-testing-utils.workspace = true
-reth-trie = { workspace = true, features = ["test-utils"] }
-reth-provider = { workspace = true, features = ["test-utils"] }
-reth-network-peers.workspace = true
 
-alloy-rlp.workspace = true
-itertools.workspace = true
-tokio = { workspace = true, features = ["rt", "sync", "macros"] }
-assert_matches.workspace = true
-rand.workspace = true
-paste.workspace = true
-tempfile.workspace = true
-reth-btc-wallet.workspace = true
+alloy-rlp = { workspace = true }
+assert_matches = { workspace = true }
 
 # Stage benchmarks
 criterion = { workspace = true, features = ["async_tokio"] }
+itertools = { workspace = true }
+paste = { workspace = true }
+rand = { workspace = true }
+reth-btc-wallet = { workspace = true }
+# reth
+reth-chainspec = { workspace = true }
+reth-consensus = { workspace = true, features = ["test-utils"] }
+reth-db = { workspace = true, features = ["test-utils", "mdbx"] }
+reth-downloaders = { workspace = true }
+reth-evm-ethereum = { workspace = true }
+reth-execution-errors = { workspace = true }
+reth-network-p2p = { workspace = true, features = ["test-utils"] }
+reth-network-peers = { workspace = true }
+reth-primitives = { workspace = true, features = ["test-utils", "arbitrary"] }
+reth-provider = { workspace = true, features = ["test-utils"] }
+reth-revm = { workspace = true }
+reth-static-file = { workspace = true }
+reth-testing-utils = { workspace = true }
+reth-trie = { workspace = true, features = ["test-utils"] }
 
 # io
-serde_json.workspace = true
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true, features = [

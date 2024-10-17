@@ -1,22 +1,22 @@
 [package]
 name = "reth-consensus-common"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 
 [lints]
 workspace = true
 
 [dependencies]
 # reth
-reth-chainspec.workspace = true
+reth-chainspec = { workspace = true }
+reth-consensus = { workspace = true }
 reth-primitives = { workspace = true, features = ["secp256k1"] }
-reth-consensus.workspace = true
 
 [dev-dependencies]
-reth-storage-api.workspace = true
-rand.workspace = true
 mockall = "0.12"
+rand = { workspace = true }
+reth-storage-api = { workspace = true }
