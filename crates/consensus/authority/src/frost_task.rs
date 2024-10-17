@@ -124,7 +124,7 @@ where
         random_source_provider: Source,
         canon_state_notification_receiver: Receiver<CanonStateNotification>,
     ) -> Self {
-        info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len());
+        info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len() - 1);
 
         let dkg_state_machine = DKGStateMachine::new(
             btc_server.clone(),
