@@ -452,27 +452,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                         *bitcoin_block_header.write().await =
                             Some((header, finalized.height as u32));
                         last_tip = tip_hash;
-
-                        // Sync the bitcoind signing server's txindexer
-                        if let Some(btc_factory) = &bitcoind_signing_server_factory_clone {
-                            let res = btc_factory.build_and_connect().await;
-
-                            match res {
-                                Ok(mut client) => {
-                                    let _ = client
-                                        .tx_index_new_checkpoint(SyncTxIndexRequest {
-                                            checkpoint_block_hash: header
-                                                .block_hash()
-                                                .to_byte_array()
-                                                .to_vec(),
-                                        })
-                                        .await;
-                                }
-                                Err(e) => {
-                                    error!("Failed to connect to btc signing server: {}", e);
-                                }
-                            }
-                        }
                     }
                     tokio::time::sleep(SLEEP).await;
                 }
