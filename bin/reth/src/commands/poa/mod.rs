@@ -895,10 +895,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             botanix_provider.clone(),
         );
 
-        // generate default jwt for the rpc server (as required by reth)
-        let default_jwt_path = data_dir.jwt();
-        let _reth_auth_jwt_secret = node_config.rpc.auth_jwt_secret(default_jwt_path)?;
-
         let node_components = PoaNodeComponents::new(
             transaction_pool.clone(),
             evm_config.clone(),
