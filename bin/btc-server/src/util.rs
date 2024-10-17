@@ -341,19 +341,19 @@ mod util_tests {
     #[test]
     fn should_perform_sanity_checks() {
         let db = db_setup();
-        let psbt = create_psbt(2);
+        let psbt = create_psbt(2, None);
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
 
         // No inputs
-        let mut psbt = create_psbt(2);
+        let mut psbt = create_psbt(2, None);
         psbt.inputs.clear();
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "inputs cannot be 0");
 
         // No outputs
-        let mut psbt = create_psbt(2);
+        let mut psbt = create_psbt(2, None);
         psbt.outputs.clear();
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert!(res.is_err());
@@ -363,7 +363,7 @@ mod util_tests {
     #[test]
     fn should_look_for_utxo_in_db() {
         let db = db_setup();
-        let psbt = create_psbt(1);
+        let psbt = create_psbt(1, None);
         let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "cannot find UTXO in db");
@@ -384,7 +384,7 @@ mod util_tests {
     #[test]
     fn should_fail_if_eth_tweak_missing() {
         let db = db_setup();
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let eth = eth_vector_to_fixed_bytes(vec![0u8; 20]);
         let utxo = database::Utxo {
@@ -407,7 +407,7 @@ mod util_tests {
     #[test]
     fn should_fail_if_tx_out_mismatch() {
         let db = db_setup();
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // use utxo value to avoid absurdly high fee rate error
         let utxo_value = psbt.inputs[0].witness_utxo.clone().unwrap().value;
@@ -433,7 +433,7 @@ mod util_tests {
     #[test]
     fn round_1_transition_tests() {
         let db = db_setup();
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
@@ -481,7 +481,7 @@ mod util_tests {
     #[test]
     fn round2_psbt_validation_checks() {
         let db = db_setup();
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
@@ -587,7 +587,7 @@ mod util_tests {
         let (_, signing_commits2_0) = frost::round1::commit(key_package2.signing_share(), rng);
         let (_, signing_commits2_1) = frost::round1::commit(key_package2.signing_share(), rng);
 
-        let tx = create_tx(num_inputs);
+        let tx = create_tx(num_inputs, None);
 
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments to the psbt for each input
@@ -624,7 +624,7 @@ mod util_tests {
         let sig_share2_1 =
             frost::round2::SignatureShare::deserialize([4u8; 32]).expect("valid sig share");
 
-        let tx = create_tx(num_inputs);
+        let tx = create_tx(num_inputs, None);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments to the psbt for each input
         psbt.inputs[0].set_partial_signature(frost_id1, &sig_share1_0);
@@ -646,7 +646,7 @@ mod util_tests {
 
     #[test]
     fn signing_package_conversion_should_fail_when_missing_signing_commitments() {
-        let tx = create_tx(1);
+        let tx = create_tx(1, None);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         psbt.inputs[0].witness_utxo =
             Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
@@ -683,7 +683,7 @@ mod util_tests {
         let (_, signing_commits2_1) = frost::round1::commit(key_package2.signing_share(), rng);
 
         // Set up the psbt
-        let tx = create_tx(num_inputs);
+        let tx = create_tx(num_inputs, None);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments and TxOut to the psbt for each input
         psbt.inputs[0].witness_utxo =

@@ -801,7 +801,7 @@ mod tests {
 
     #[test]
     fn from_db_utxo_to_rpc_utxo() {
-        let tx = create_tx(1);
+        let tx = create_tx(1, None);
         let utxo = Utxo::new(
             OutPoint::new(tx.txid(), 0),
             tx.output.get(0).expect("one output").clone(),
@@ -826,7 +826,7 @@ mod tests {
     fn test_storing_single_utxo() {
         let (db, _temp_dir) = setup_db();
 
-        let tx = create_tx(2);
+        let tx = create_tx(2, None);
         let utxo = Utxo::new(
             OutPoint::new(tx.txid(), 0),
             tx.output.get(0).expect("one output").clone(),
@@ -845,7 +845,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(2);
+            let tx = create_tx(2, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -878,7 +878,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(1);
+            let tx = create_tx(1, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -903,7 +903,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(1);
+            let tx = create_tx(1, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -935,7 +935,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(2);
+            let tx = create_tx(2, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -968,7 +968,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(2);
+            let tx = create_tx(2, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -989,7 +989,7 @@ mod tests {
         assert_eq!(merkle_root, merkle_root2);
 
         // Adding an additional utxo should change the merkle root
-        let tx = create_tx(2);
+        let tx = create_tx(2, None);
         let utxo = Utxo::new(
             OutPoint::new(tx.txid(), 1),
             tx.output.get(0).expect("one output").clone(),
@@ -1006,7 +1006,7 @@ mod tests {
     fn test_reading_session_ids() {
         let (db, _temp_dir) = setup_db();
 
-        let tx = create_tx(2);
+        let tx = create_tx(2, None);
         let psbt = Psbt::from_unsigned_tx(tx).unwrap();
         let signing_session_id: [u8; 32] = [0; 32];
         db.update_psbt(&signing_session_id, &psbt).unwrap();
@@ -1020,7 +1020,7 @@ mod tests {
     fn test_getting_session_id_status() {
         let (db, _temp_dir) = setup_db();
 
-        let tx = create_tx(2);
+        let tx = create_tx(2, None);
         let psbt = Psbt::from_unsigned_tx(tx).unwrap();
         let signing_session_id: [u8; 32] = [0; 32];
         db.update_psbt(&signing_session_id, &psbt).unwrap();
