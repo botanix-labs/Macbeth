@@ -363,6 +363,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
     use super::*;
 
     use bitcoin::{
@@ -374,7 +376,8 @@ mod test {
     use rand::{thread_rng, Rng};
     use tonic::{Code, Request};
 
-    use reth_btc_wallet::psbt::PsbtInputExt;
+    use reth_btc_wallet::psbt::{PsbtInputExt, PsbtOutputExt};
+    use util::VerifyingKeyExt;
 
     use crate::{
         database::Utxo,
@@ -806,7 +809,7 @@ mod test {
     async fn should_fail_to_get_to_sign_package_without_dkg() {
         let app = setup();
         let signing_session_id = [0u8; 32];
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().unsigned_tx;
         // Add the utxo
         let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
@@ -850,7 +853,7 @@ mod test {
 
         app.db.set_pubkey_package(pk_package).expect("set public key package");
         app.db.set_key_package(key_package).expect("set key package");
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
@@ -874,7 +877,7 @@ mod test {
         app.frost_round1_nonces = Arc::new(Mutex::new(None));
         let signing_session_id = [1u8; 32];
 
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = Utxo::new(
             tx.input[0].previous_output,
@@ -910,7 +913,7 @@ mod test {
         app_coordinator.db.set_pubkey_package(pk_package).expect("set public key package");
         app_coordinator.db.set_key_package(key_package).expect("set key package");
 
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
@@ -984,7 +987,7 @@ mod test {
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
         // Add pegin utxo
-        let mut psbt = create_psbt(1);
+        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
@@ -1129,5 +1132,75 @@ mod test {
         app.notify_pegout(request_3).await.expect("valid pegout request");
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
         assert_eq!(pending_pegouts.len(), 2);
+    }
+
+    #[test]
+    fn validate_outputs_should_validate() {
+        let app = setup();
+
+        // store pending pegout
+        let pegout_id = PegoutId::new([1u8; 32], 0);
+        let pegout_request = PegoutRequest {
+            id: pegout_id,
+            value: Amount::from_sat(1000),
+            spk: bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+                .expect("valid address")
+                .assume_checked()
+                .script_pubkey(),
+            botanix_height: 0,
+        };
+        let _ = app.db.store_pending_pegout(&pegout_request);
+
+        let mut psbt = create_psbt(1, None);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let response = app.validate_outputs(&psbt);
+
+        assert!(response.is_ok());
+    }
+
+    #[test]
+    fn validate_outputs_should_validate_with_change_output() {
+        // store agg_pk
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // store pending pegout
+        let pegout_id = PegoutId::new([1u8; 32], 0);
+        let pegout_request = PegoutRequest {
+            id: pegout_id,
+            value: Amount::from_sat(1000),
+            spk: bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+                .expect("valid address")
+                .assume_checked()
+                .script_pubkey(),
+            botanix_height: 0,
+        };
+        let _ = app.db.store_pending_pegout(&pegout_request);
+
+        let secp_pk = app
+            .db
+            .get_public_key_package()
+            .expect("valid key package")
+            .expect("key package exists")
+            .verifying_key()
+            .to_secp_pk()
+            .expect("valid secp pk");
+        let change_script =
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+        let change = TxOut { value: Amount::from_sat(500), script_pubkey: change_script };
+
+        let mut psbt = create_psbt(1, Some(change));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let response = app.validate_outputs(&psbt);
+
+        assert!(response.is_ok());
     }
 }
