@@ -7893,6 +7893,7 @@ dependencies = [
  "async-compression",
  "bincode",
  "bitcoin",
+ "bitcoin_hashes",
  "btc-server",
  "bytes",
  "client",

@@ -5,19 +5,14 @@ use crate::{
     dkg::DKGStateMachine,
     random_source_provider::RandomSource,
     signing::SigningStateMachine,
-    utils::{
-        extract_pegout_ids, validate_psbt_by_ids, validate_psbt_by_output, PsbtValidationError,
-    },
+    utils::validate_psbt_by_ids,
     Storage,
 };
 
-use bitcoin::{Address, Amount, Psbt};
-use btcserverlib::{
-    extended_client::{BtcServerExtendedClient, GrpcClientError},
-    pegout_id::PegoutId,
-};
+use bitcoin_hashes::Hash;
+use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use client::SyncTxIndexRequest;
 use reth_blockchain_tree::BlockchainTreeEngine;
-use reth_btc_wallet::psbt::PsbtOutputExt;
 use reth_chainspec::ChainSpec;
 use reth_network::{
     frost::{
@@ -27,10 +22,7 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_primitives::{
-    botanix::{mint_validation::try_parse_burn_event, peg_contract::PegoutData},
-    header_ext::HeaderExt,
-};
+use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotification, StateProviderFactory,
 };
@@ -255,9 +247,31 @@ where
             while let Ok(notification) = self.canon_state_notification_receiver.try_recv() {
                 match notification {
                     CanonStateNotification::Commit { new } => {
+                        let tip = new.tip();
+                        let cp_block_hash = tip
+                            .header()
+                            .deserialize_extra_data_header()
+                            .unwrap()
+                            .bitcoin_block_hash;
+
+                        match self
+                            .btc_server
+                            .tx_index_new_checkpoint(SyncTxIndexRequest {
+                                checkpoint_block_hash: cp_block_hash.to_byte_array().to_vec(),
+                            })
+                            .await
+                        {
+                            Ok(_) => {
+                                info!(target: "consensus::authority::frost_task::start_task", "Sent checkpoint to btc server");
+                            }
+                            Err(e) => {
+                                error!(target: "consensus::authority::frost_task::start_task", "Error sending checkpoint to btc server: {}", e);
+                            }
+                        }
+
                         // check if epoch block and if we are the coordinator
                         // if so, initiate signing session
-                        let tip = new.tip();
+
                         if tip.is_poa_epoch() {
                             if !self.signing_state_machine.is_coordinator() {
                                 info!("Received canon state notification during epoch block but we're not the coordinator");
