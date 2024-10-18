@@ -95,7 +95,7 @@ where
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
-        validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
+        validate_psbt(psbt, ROUND1, self.min_signers, &self)?;
 
         info!("psbt() = {}", psbt);
 
@@ -128,7 +128,7 @@ where
     ) -> Result<(), CoordinatorError> {
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
         // validate PSBT
-        validate_psbt(psbt, ROUND2, self.min_signers, &self.db)?;
+        validate_psbt(psbt, ROUND2, self.min_signers, &self)?;
 
         self.db.update_psbt(signing_session_id, psbt)?;
         self.db.flush()?;
@@ -274,7 +274,7 @@ where
 
         // Sanity check that we created a valid PSBT
         // This should not fail
-        validate_psbt(&psbt, NO_FLAGS, self.min_signers, &self.db)?;
+        validate_psbt(&psbt, NO_FLAGS, self.min_signers, &self)?;
 
         Ok(psbt)
     }
@@ -301,7 +301,7 @@ where
                 }
             }
 
-            validate_psbt(&psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
+            validate_psbt(&psbt, ROUND1_TRANSITION, self.min_signers, &self)?;
             return Ok(psbt);
         }
 

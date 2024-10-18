@@ -174,8 +174,7 @@ pub async fn all_clients_have_same_wallet_state(
             .await
             .map_err(Error::Request)?
             .into_inner()
-            .wallet_state_commitment;
-
+            .utxo_root;
         utxo_merkle_root.insert(root);
     }
     assert_eq!(utxo_merkle_root.len(), 1);

@@ -20,7 +20,8 @@ pub mod test_utils {
     use url::Url;
 
     use crate::{
-        config::Config, database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, App,
+        config::Config, database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest,
+        util::VerifyingKeyExt, App,
     };
 
     #[macro_export]
@@ -319,5 +320,34 @@ pub mod test_utils {
             });
         }
         psbt
+    }
+
+    pub fn get_change(db: &database::Db) -> TxOut {
+        let secp_pk = db
+            .get_public_key_package()
+            .expect("valid key package")
+            .expect("key package exists")
+            .verifying_key()
+            .to_secp_pk()
+            .expect("valid secp pk");
+        let change_script =
+            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+        return TxOut { value: Amount::from_sat(500), script_pubkey: change_script };
+    }
+
+    pub fn store_pending_pegout(db: &database::Db) -> PegoutId {
+        let pegout_id = PegoutId::new([1u8; 32], 0);
+        let pegout_request = PegoutRequest {
+            id: pegout_id,
+            value: Amount::from_sat(1000),
+            spk: bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+                .expect("valid address")
+                .assume_checked()
+                .script_pubkey(),
+            botanix_height: 0,
+        };
+        let _ = db.store_pending_pegout(&pegout_request);
+
+        pegout_id
     }
 }
