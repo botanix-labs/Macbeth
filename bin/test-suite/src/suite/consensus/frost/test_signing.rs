@@ -164,17 +164,18 @@ pub async fn do_signing(
 }
 
 /// Assert that all clients have the same UTXO set
-pub async fn all_clients_have_same_utxo_set(
+pub async fn all_clients_have_same_wallet_state(
     clients: &mut Vec<BtcServerClient<Channel>>,
 ) -> Result<(), Error> {
     let mut utxo_merkle_root = HashSet::new();
     for c in clients.iter_mut() {
         let root = c
-            .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
+            .get_wallet_state(tonic::Request::new(client::Empty {}))
             .await
             .map_err(Error::Request)?
             .into_inner()
-            .merkle_root;
+            .wallet_state_commitment;
+
         utxo_merkle_root.insert(root);
     }
     assert_eq!(utxo_merkle_root.len(), 1);
@@ -331,7 +332,7 @@ pub async fn test_many_inputs_signing(
     assert_eq!(final_tx.output.len(), 2);
 
     // Assert that all clients have the same UTXO set
-    all_clients_have_same_utxo_set(&mut clients).await?;
+    all_clients_have_same_wallet_state(&mut clients).await?;
 
     let mut pending_pegouts = vec![];
     let number_of_pending_pegouts = 5;
@@ -389,7 +390,7 @@ pub async fn test_many_inputs_signing(
     // txs
     assert_eq!(utxos.len(), 5);
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
-    all_clients_have_same_utxo_set(&mut clients).await?;
+    all_clients_have_same_wallet_state(&mut clients).await?;
 
     // Need to define a custom struct as breaking changes in bitcoin-core will cause the
     // deserialization to fail
@@ -468,6 +469,6 @@ pub async fn test_many_inputs_signing(
     let found_match = change_ots.iter().any(|change_ot| tx_ots.contains(change_ot));
     assert!(found_match);
 
-    all_clients_have_same_utxo_set(&mut clients).await?;
+    all_clients_have_same_wallet_state(&mut clients).await?;
     Ok(())
 }
