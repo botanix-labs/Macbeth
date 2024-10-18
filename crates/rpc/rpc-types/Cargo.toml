@@ -43,6 +43,6 @@ jsonrpsee-types = [
     "dep:alloy-rpc-types-beacon",
     "dep:alloy-rpc-types-engine",
     "alloy-rpc-types/jsonrpsee-types",
-    "alloy-rpc-types-engine/jsonrpsee-types"
+    "alloy-rpc-types-engine/jsonrpsee-types",
 ]
 arbitrary = ["alloy-primitives/arbitrary", "alloy-rpc-types/arbitrary"]

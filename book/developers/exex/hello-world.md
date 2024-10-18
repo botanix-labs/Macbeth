@@ -20,11 +20,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-reth = { git = "https://github.com/paradigmxyz/reth.git" } # Reth
-reth-exex = { git = "https://github.com/paradigmxyz/reth.git" } # Execution Extensions
+reth = { git = "https://github.com/paradigmxyz/reth.git" }               # Reth
+reth-exex = { git = "https://github.com/paradigmxyz/reth.git" }          # Execution Extensions
 reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git" } # Ethereum Node implementation
-reth-tracing = { git = "https://github.com/paradigmxyz/reth.git" } # Logging
-eyre = "0.6" # Easy error handling
+reth-tracing = { git = "https://github.com/paradigmxyz/reth.git" }       # Logging
+eyre = "0.6"                                                             # Easy error handling
 ```
 
 ### Default Reth node
@@ -49,10 +49,10 @@ You can already test that it works by running the binary and initializing the Ho
 ```console
 $ cargo run -- init --chain holesky --datadir data
 
-2024-06-12T16:48:06.420296Z  INFO reth init starting
-2024-06-12T16:48:06.422380Z  INFO Opening storage db_path="data/db" sf_path="data/static_files"
-2024-06-12T16:48:06.432939Z  INFO Verifying storage consistency.
-2024-06-12T16:48:06.577673Z  INFO Genesis block written hash=0xb5f7f912443c940f21fd611f12828d75b53
+2024-06-12T16:48:06.420296Z INFO reth init starting
+2024-06-12T16:48:06.422380Z INFO Opening storage db_path="data/db" sf_path="data/static_files"
+2024-06-12T16:48:06.432939Z INFO Verifying storage consistency.
+2024-06-12T16:48:06.577673Z INFO Genesis block written hash=0xb5f7f912443c940f21fd611f12828d75b53
 4364ed9e95ca4e307729a4661bde4
 ```
 
@@ -144,11 +144,11 @@ fn main() -> eyre::Result<()> {
 
 Woah, there's a lot of new stuff here! Let's go through it step by step:
 
-- First, we've added a `while let Some(notification) = ctx.notifications.recv().await` loop that waits for new notifications to come in.
-   - The main node is responsible for sending notifications to the ExEx, so we're waiting for them to come in.
-- Next, we've added a `match &notification { ... }` block that matches on the type of the notification.
-   - In each case, we're logging the notification and the corresponding block range, be it a chain commit, revert, or reorg.
-- Finally, we're checking if the notification contains a committed chain, and if it does, we're sending a `ExExEvent::FinishedHeight` event back to the main node using the `ctx.events.send` method.
+-   First, we've added a `while let Some(notification) = ctx.notifications.recv().await` loop that waits for new notifications to come in.
+    -   The main node is responsible for sending notifications to the ExEx, so we're waiting for them to come in.
+-   Next, we've added a `match &notification { ... }` block that matches on the type of the notification.
+    -   In each case, we're logging the notification and the corresponding block range, be it a chain commit, revert, or reorg.
+-   Finally, we're checking if the notification contains a committed chain, and if it does, we're sending a `ExExEvent::FinishedHeight` event back to the main node using the `ctx.events.send` method.
 
 <div class="warning">
 

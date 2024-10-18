@@ -1,6 +1,7 @@
 # Asynchronous Bitcoin Worker
 
 ## The Issue
+
 There are occasions when the Botanix node requires access to Bitcoin blocks for transaction validation. Making direct calls to a Bitcoin block source can be expensive and lead to synchronization challenges. For instance, during processes like pegin, the reth executor needs to confirm the inclusion of a Bitcoin transaction in a block at a specific height `h`. To achieve this, we can either make network requests at that moment or maintain an accessible list of the most current Bitcoin header in our database. The latter is more favorable and we'll explain why.
 
 ## Resolution

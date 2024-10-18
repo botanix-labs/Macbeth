@@ -11,6 +11,6 @@ path = "src/main.rs"
 anyhow = "1.0.75"
 
 # CLI
-clap = { version = "4", features = [ "derive" ] }
+clap = { version = "4", features = ["derive"] }
 hex = "0.4.3"
 reth-primitives = { workspace = true, features = ["secp256k1"] }

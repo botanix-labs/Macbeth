@@ -13,7 +13,6 @@ skip-clean = true
 engine = "Llvm"
 #fail-under = 80
 
-
 [cov_botanix_fed_utils]
 name = "Botanix Federation Utils Coverage Analysis"
 packages = ["federation-utils-cli"]
@@ -29,7 +28,6 @@ skip-clean = true
 engine = "Llvm"
 #fail-under = 80
 
-
 [cov_botanix_reth]
 name = "Botanix Reth Coverage Analysis"
 packages = ["reth"]
@@ -44,7 +42,6 @@ fail-immediately = true
 skip-clean = true
 engine = "Llvm"
 #fail-under = 80
-
 
 [report]
 output-dir = "./cov-reports"

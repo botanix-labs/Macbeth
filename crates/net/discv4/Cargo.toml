@@ -29,12 +29,7 @@ reth-network-peers = { workspace = true, features = ["secp256k1"] }
 
 # misc
 schnellru = { workspace = true }
-secp256k1 = { workspace = true, features = [
-    "global-context",
-    "rand-std",
-    "recovery",
-    "serde",
-] }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery", "serde"] }
 serde = { workspace = true, optional = true }
 thiserror = { workspace = true }
 

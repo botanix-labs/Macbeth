@@ -46,8 +46,8 @@ participate in reviewing PRs.
 <!-- -   **Asking in the support Telegram:** The [Foundry Support Telegram][support-tg] is a fast and easy way to ask questions. -->
 <!-- -   **Opening a discussion:** This repository comes with a discussions board where you can also ask for help. Click the "Discussions" tab at the top. -->
 
-If you have reviewed existing documentation and still have questions, or you are having problems, you can get help by *
-*opening a discussion**. This repository comes with a discussions board where you can also ask for help. Click the "
+If you have reviewed existing documentation and still have questions, or you are having problems, you can get help by \*
+\*opening a discussion\*\*. This repository comes with a discussions board where you can also ask for help. Click the "
 Discussions" tab at the top.
 
 As Reth is still in heavy development, the documentation can be a bit scattered. The [Reth Book][reth-book] is our
@@ -63,10 +63,10 @@ unclear.
 
 The most important pieces of information we need in a bug report are:
 
-- The Reth version you are on (and that it is up to date)
-- The platform you are on (Windows, macOS, an M1 Mac or Linux)
-- Code snippets if this is happening in relation to testing or building code
-- Concrete steps to reproduce the bug
+-   The Reth version you are on (and that it is up to date)
+-   The platform you are on (Windows, macOS, an M1 Mac or Linux)
+-   Code snippets if this is happening in relation to testing or building code
+-   Concrete steps to reproduce the bug
 
 In order to rule out the possibility of the bug being in your project, the code snippets should be as minimal as
 possible. It is better if you can reproduce the bug with a small snippet as opposed to an entire project!
@@ -127,10 +127,10 @@ future.
 
 Types of tests include:
 
-- **Unit tests**: Functions which have very specific tasks should be unit tested.
-- **Integration tests**: For general purpose, far reaching functionality,
-  integration tests should be added. The best way to add a new integration test is to look at existing ones and follow
-  the style.
+-   **Unit tests**: Functions which have very specific tasks should be unit tested.
+-   **Integration tests**: For general purpose, far reaching functionality,
+    integration tests should be added. The best way to add a new integration test is to look at existing ones and follow
+    the style.
 
 #### Running Individual tests
 
@@ -227,21 +227,15 @@ want to have anything to do with Reth ever again. The goal is not just having go
 If a pull request appears to be abandoned or stalled, it is polite to first check with the contributor to see if they
 intend to continue the work before checking if they would mind if you took it over (especially if it just has nits
 left). When doing so, it is courteous to give the original contributor credit for the work they started, either by
-preserving their name and e-mail address in the commit log, or by using the `Author: ` or `Co-authored-by: ` metadata
+preserving their name and e-mail address in the commit log, or by using the `Author:` or `Co-authored-by:` metadata
 tag in the commits.
 
 _Adapted from the [Foundry contributing guide][foundry-contributing]_.
 
 [rust-coc]: https://github.com/rust-lang/rust/blob/master/CODE_OF_CONDUCT.md
-
 [coc-header]: #code-of-conduct
-
 [dev-tg]: https://t.me/paradigm_reth
-
 [reth-book]: https://github.com/paradigmxyz/reth/tree/main/book
-
 [mcve]: https://stackoverflow.com/help/mcve
-
 [hiding-a-comment]: https://help.github.com/articles/managing-disruptive-comments/#hiding-a-comment
-
 [foundry-contributing]: https://github.com/foundry-rs/foundry/blob/master/CONTRIBUTING.md

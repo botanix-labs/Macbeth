@@ -48,7 +48,10 @@ client = { path = "./client" }
 confy = "0.6"
 displaydoc = "0.2"
 env_logger = "0.11.3"
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = ["serde", "serialization"] }
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
+    "serde",
+    "serialization",
+] }
 futures-util = "0.3.25"
 hex = "0.4.3"
 lazy_static = "1.4.0"

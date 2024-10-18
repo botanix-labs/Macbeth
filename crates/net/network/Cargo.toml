@@ -28,7 +28,10 @@ enr = { workspace = true, features = ["serde", "rust-secp256k1"] }
 
 # frost
 # TODO update this to the zcash frost library when tr is merged in
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = ["serde", "serialization"] }
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
+    "serde",
+    "serialization",
+] }
 
 # async/futures
 futures = { workspace = true }
@@ -108,7 +111,13 @@ url = { workspace = true }
 default = ["serde"]
 geth-tests = []
 serde = ["dep:serde", "secp256k1/serde", "enr/serde", "reth-network-types/serde"]
-test-utils = ["dep:reth-provider", "reth-provider?/test-utils", "dep:tempfile", "reth-transaction-pool/test-utils", "reth-network-types/test-utils"]
+test-utils = [
+    "dep:reth-provider",
+    "reth-provider?/test-utils",
+    "dep:tempfile",
+    "reth-transaction-pool/test-utils",
+    "reth-network-types/test-utils",
+]
 
 [[bench]]
 name = "bench"

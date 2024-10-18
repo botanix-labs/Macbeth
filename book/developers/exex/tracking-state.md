@@ -176,18 +176,20 @@ fn main() -> eyre::Result<()> {
 ```
 
 As you can see, we added two fields to our ExEx struct:
-- `first_block` to keep track of the first block that was committed since the start of the ExEx.
-- `transactions` to keep track of the total number of transactions committed, accounting for reorgs and reverts.
+
+-   `first_block` to keep track of the first block that was committed since the start of the ExEx.
+-   `transactions` to keep track of the total number of transactions committed, accounting for reorgs and reverts.
 
 We also changed our `match` block to two `if` clauses:
-- First one checks if there's a reverted chain using `notification.reverted_chain()`. If there is:
-    - We subtract the number of transactions in the reverted chain from the total number of transactions.
-    - It's important to do the `saturating_sub` here, because if we just started our node and
-      instantly received a reorg, our `transactions` field will still be zero.
-- Second one checks if there's a committed chain using `notification.committed_chain()`. If there is:
-    - We update the `first_block` field to the first block of the committed chain.
-    - We add the number of transactions in the committed chain to the total number of transactions.
-    - We send a `FinishedHeight` event back to the main node.
+
+-   First one checks if there's a reverted chain using `notification.reverted_chain()`. If there is:
+    -   We subtract the number of transactions in the reverted chain from the total number of transactions.
+    -   It's important to do the `saturating_sub` here, because if we just started our node and
+        instantly received a reorg, our `transactions` field will still be zero.
+-   Second one checks if there's a committed chain using `notification.committed_chain()`. If there is:
+    -   We update the `first_block` field to the first block of the committed chain.
+    -   We add the number of transactions in the committed chain to the total number of transactions.
+    -   We send a `FinishedHeight` event back to the main node.
 
 Finally, on every notification, we log the total number of transactions and
 the first block that was committed since the start of the ExEx.

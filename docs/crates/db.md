@@ -34,35 +34,35 @@ The `Table` trait has two generic values, `Key` and `Value`, which need to imple
 
 There are many tables within the node, all used to store different types of data from `Headers` to `Transactions` and more. Below is a list of all of the tables. You can follow [this link](https://github.com/paradigmxyz/reth/blob/bf9cac7571f018fec581fe3647862dab527aeafb/crates/storage/db/src/tables/mod.rs#L274-L414) if you would like to see the table definitions for any of the tables below.
 
-- CanonicalHeaders
-- HeaderTerminalDifficulties
-- HeaderNumbers
-- Headers
-- BlockBodyIndices
-- BlockOmmers
-- BlockWithdrawals
-- Transactions
-- TransactionHashNumbers
-- TransactionBlocks
-- Receipts
-- Bytecodes
-- PlainAccountState
-- PlainStorageState
-- AccountsHistory
-- StoragesHistory
-- AccountChangeSets
-- StorageChangeSets
-- HashedAccounts
-- HashedStorages
-- AccountsTrie
-- StoragesTrie
-- TransactionSenders
-- StageCheckpoints
-- StageCheckpointProgresses
-- PruneCheckpoints
-- VersionHistory
-- BlockRequests
-- ChainState
+-   CanonicalHeaders
+-   HeaderTerminalDifficulties
+-   HeaderNumbers
+-   Headers
+-   BlockBodyIndices
+-   BlockOmmers
+-   BlockWithdrawals
+-   Transactions
+-   TransactionHashNumbers
+-   TransactionBlocks
+-   Receipts
+-   Bytecodes
+-   PlainAccountState
+-   PlainStorageState
+-   AccountsHistory
+-   StoragesHistory
+-   AccountChangeSets
+-   StorageChangeSets
+-   HashedAccounts
+-   HashedStorages
+-   AccountsTrie
+-   StoragesTrie
+-   TransactionSenders
+-   StageCheckpoints
+-   StageCheckpointProgresses
+-   PruneCheckpoints
+-   VersionHistory
+-   BlockRequests
+-   ChainState
 
 <br>
 

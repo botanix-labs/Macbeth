@@ -3,7 +3,7 @@
 The `admin` API allows you to configure your node, including adding and removing peers.
 
 > **Note**
-> 
+>
 > As this namespace can configure your node at runtime, it is generally **not advised** to expose it publicly.
 
 ## `admin_addPeer`
@@ -13,7 +13,7 @@ Add the given peer to the current peer set of the node.
 The method accepts a single argument, the [`enode`][enode] URL of the remote peer to connect to, and returns a `bool` indicating whether the peer was accepted or not.
 
 | Client | Method invocation                              |
-|--------|------------------------------------------------|
+| ------ | ---------------------------------------------- |
 | RPC    | `{"method": "admin_addPeer", "params": [url]}` |
 
 ### Example
@@ -27,9 +27,9 @@ The method accepts a single argument, the [`enode`][enode] URL of the remote pee
 
 Disconnects from a peer if the connection exists. Returns a `bool` indicating whether the peer was successfully removed or not.
 
-| Client | Method invocation                                  |
-|--------|----------------------------------------------------|
-| RPC    | `{"method": "admin_removePeer", "params": [url]}`  |
+| Client | Method invocation                                 |
+| ------ | ------------------------------------------------- |
+| RPC    | `{"method": "admin_removePeer", "params": [url]}` |
 
 ### Example
 
@@ -45,7 +45,7 @@ Adds the given peer to a list of trusted peers, which allows the peer to always 
 It returns a `bool` indicating whether the peer was added to the list or not.
 
 | Client | Method invocation                                     |
-|--------|-------------------------------------------------------|
+| ------ | ----------------------------------------------------- |
 | RPC    | `{"method": "admin_addTrustedPeer", "params": [url]}` |
 
 ### Example
@@ -62,7 +62,7 @@ Removes a remote node from the trusted peer set, but it does not disconnect it a
 Returns true if the peer was successfully removed.
 
 | Client | Method invocation                                        |
-|--------|----------------------------------------------------------|
+| ------ | -------------------------------------------------------- |
 | RPC    | `{"method": "admin_removeTrustedPeer", "params": [url]}` |
 
 ### Example
@@ -79,7 +79,7 @@ Returns all information known about the running node.
 These include general information about the node itself, as well as what protocols it participates in, its IP and ports.
 
 | Client | Method invocation              |
-|--------|--------------------------------|
+| ------ | ------------------------------ |
 | RPC    | `{"method": "admin_nodeInfo"}` |
 
 ### Example
@@ -122,7 +122,7 @@ Like other subscription methods, this returns the ID of the subscription, which 
 To unsubscribe from peer events, call `admin_peerEvents_unsubscribe`
 
 | Client | Method invocation                |
-|--------|----------------------------------|
+| ------ | -------------------------------- |
 | RPC    | `{"method": "admin_peerEvents"}` |
 
 ### Example

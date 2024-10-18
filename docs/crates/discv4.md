@@ -3,9 +3,11 @@
 The `discv4` crate plays an important role in Reth, enabling discovery of other peers across the network. It is recommended to know how [Kademlia distributed hash tables](https://en.wikipedia.org/wiki/Kademlia) and [Ethereum's node discovery protocol](https://github.com/ethereum/devp2p/blob/master/discv4.md) work before reading through this chapter. While all concepts will be explained through the following sections, reading through the links above will make understanding this chapter much easier! With that note out of the way, let's jump into `discv4`.
 
 ## Starting the Node Discovery Protocol
-As mentioned in the network and stages chapters, when the node is first started up, the `node::Command::execute()` function is called, which initializes the node and starts to run the Reth pipeline. Throughout the initialization of the node, there are many processes that are started. One of the processes that is initialized is the p2p network which starts the node discovery protocol amongst other tasks.  
+
+As mentioned in the network and stages chapters, when the node is first started up, the `node::Command::execute()` function is called, which initializes the node and starts to run the Reth pipeline. Throughout the initialization of the node, there are many processes that are started. One of the processes that is initialized is the p2p network which starts the node discovery protocol amongst other tasks.
 
 [File: bin/reth/src/node/mod.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/bin/reth/src/node/mod.rs#L314-L322)
+
 ```rust ignore
   pub async fn execute(&self) -> eyre::Result<()> {
     //--snip--
@@ -24,9 +26,10 @@ As mentioned in the network and stages chapters, when the node is first started 
     }
 ```
 
-During this process, a new `NetworkManager` is created through the `NetworkManager::new()` function, which starts the discovery protocol through a handful of newly spawned tasks. Let's take a look at how this actually works under the hood. 
+During this process, a new `NetworkManager` is created through the `NetworkManager::new()` function, which starts the discovery protocol through a handful of newly spawned tasks. Let's take a look at how this actually works under the hood.
 
 [File: crates/net/network/src/manager.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/network/src/manager.rs#L89)
+
 ```rust ignore
 impl<C> NetworkManager<C>
 where
@@ -67,6 +70,7 @@ where
 First, the `NetworkConfig` is deconstructed and the `disc_config` is updated to merge configured [bootstrap nodes](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/primitives/src/net.rs#L120-L151) and add the `forkid` to adhere to [EIP 868](https://eips.ethereum.org/EIPS/eip-868). This updated configuration variable is then passed into the `Discovery::new()` function. Note that `Discovery` is a catch all for all discovery services, which include discv4, DNS discovery and others in the future.
 
 [File: crates/net/network/src/discovery.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/network/src/discovery.rs#L53)
+
 ```rust ignore
 impl Discovery {
     /// Spawns the discovery service.
@@ -80,7 +84,7 @@ impl Discovery {
         dns_discovery_config: Option<DnsDiscoveryConfig>,
     ) -> Result<Self, NetworkError> {
         let local_enr = NodeRecord::from_secret_key(discovery_addr, &sk);
-        
+
         let (discv4, discv4_updates, _discv4_service) = if let Some(disc_config) = discv4_config {
             let (discv4, mut discv4_service) =
                 Discv4::bind(discovery_addr, local_enr, sk, disc_config)
@@ -127,6 +131,7 @@ The `NodeRecord::from_secret_key()` takes the socket address used for discovery 
 If the `discv4_config` supplied to the `Discovery::new()` function is `None`, the discv4 service will not be spawned. In this case, no new peers will be discovered across the network. The node will have to rely on manually added peers. However, if the `discv4_config` contains a `Some(Discv4Config)` value, then the `Discv4::bind()` function is called to bind to a new UdpSocket and create the disc_v4 service.
 
 [File: crates/net/discv4/src/lib.rs](https://github.com/paradigmxyz/reth/blob/530e7e8961b8f82ae2c675d16c368dd266ceba7d/crates/net/discv4/src/lib.rs#L178)
+
 ```rust ignore
 impl Discv4 {
     //--snip--
@@ -142,10 +147,10 @@ impl Discv4 {
         trace!(target: "discv4",  ?local_addr,"opened UDP socket");
 
         let (to_service, rx) = mpsc::channel(100);
-        
+
         let service =
             Discv4Service::new(socket, local_addr, local_node_record, secret_key, config, Some(rx));
-        
+
         let discv4 = Discv4 { local_addr, to_service };
         Ok((discv4, service))
     }
@@ -156,6 +161,7 @@ impl Discv4 {
 To better understand what is actually happening when the disc_v4 service is created, let's take a deeper look at the `Discv4Service::new()` function.
 
 [File: crates/net/discv4/src/lib.rs](https://github.com/paradigmxyz/reth/blob/530e7e8961b8f82ae2c675d16c368dd266ceba7d/crates/net/discv4/src/lib.rs#L495)
+
 ```rust ignore
 impl Discv4Service {
     /// Create a new instance for a bound [`UdpSocket`].
@@ -209,14 +215,14 @@ First, new channels are initialized to handle incoming and outgoing traffic rela
 
 Once the `Discv4Service::new()` function completes, allowing the `Discv4::bind()` function to complete as well, the `discv4_service` is then spawned into its own task and the `Discovery::new()` function returns an new instance of `Discovery`. The newly created `Discovery` type is passed into the `NetworkState::new()` function along with a few other arguments to initialize the network state. The network state is added to the `NetworkManager` where the `NetworkManager` is then spawned into its own task as well.
 
-
-
 ## Polling the Discv4Service and Discovery Events
+
 In Rust, the owner of a [`Future`](https://doc.rust-lang.org/std/future/trait.Future.html#) is responsible for advancing the computation by polling the future. This is done by calling `Future::poll`.
 
 Let's take a detailed look at how `Discv4Service::poll` works under the hood. This function has many moving parts, so we will break it up into smaller sections.
 
 [File: crates/net/discv4/src/lib.rs](https://github.com/paradigmxyz/reth/blob/530e7e8961b8f82ae2c675d16c368dd266ceba7d/crates/net/discv4/src/lib.rs#L495)
+
 ```rust ignore
 impl Discv4Service {
     //--snip--
@@ -260,6 +266,7 @@ impl Discv4Service {
 As the function starts, a `loop` is entered and the `Discv4Service.queued_events` are evaluated to see if there are any events ready to be processed. If there is an event ready, the function immediately returns the event wrapped in `Poll::Ready()`. The `queued_events` field is a `VecDeque<Discv4Event>` where `Discv4Event` is an enum containing one of the following variants.
 
 [File: crates/net/discv4/src/lib.rs](https://github.com/paradigmxyz/reth/blob/530e7e8961b8f82ae2c675d16c368dd266ceba7d/crates/net/discv4/src/lib.rs#L1770)
+
 ```rust ignore
 pub enum Discv4Event {
     /// A `Ping` message was handled.
@@ -281,11 +288,12 @@ If there is not a `Discv4Event` immediately ready, the function continues trigge
 
 To prevent traffic amplification attacks (ie. DNS attacks), implementations must verify that the sender of a query participates in the discovery protocol. The sender of a packet is considered verified if it has sent a valid Pong response with matching ping hash within the last 12 hours. This is called the ["endpoint proof"](https://github.com/ethereum/devp2p/blob/master/discv4.md#endpoint-proof).
 
-Next, the Discv4Service handles all incoming `Discv4Command`s until there are no more commands to be processed. Following this, All `IngressEvent`s are handled, which represent all incoming datagrams related to the discv4 protocol. After all events are handled, the node pings to active nodes in it's network. This process is repeated until all of the `Discv4Event`s in `queued_events` are processed. 
+Next, the Discv4Service handles all incoming `Discv4Command`s until there are no more commands to be processed. Following this, All `IngressEvent`s are handled, which represent all incoming datagrams related to the discv4 protocol. After all events are handled, the node pings to active nodes in it's network. This process is repeated until all of the `Discv4Event`s in `queued_events` are processed.
 
 In Reth, once a new `NetworkState` is initialized as the node starts up and a new task is spawned to handle the network, the `poll()` function is used to advance the state of the network.
 
 [File: crates/net/network/src/state.rs](https://github.com/paradigmxyz/reth/blob/530e7e8961b8f82ae2c675d16c368dd266ceba7d/crates/net/network/src/state.rs#L396)
+
 ```rust ignore
 impl<C> NetworkState<C>
 where

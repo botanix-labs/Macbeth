@@ -1,4 +1,4 @@
-# Botanix Protocol 
+# Botanix Protocol
 
 [![CI status](https://github.com/paradigmxyz/reth/workflows/ci/badge.svg)]
 [![cargo-deny status](https://github.com/paradigmxyz/reth/workflows/deny/badge.svg)]
@@ -10,8 +10,8 @@
 # Running and Testing the Project. 
  1. [Setting up nodes locally](./docs/local_setup.md)
  2. [Setting up nodes locally using scripts](./docs/local_setup_with_scripts.md)
- 2. [Running nodes with Docker](./docs/docker_setup.md)
- 3. [Executing the test suite](./docs/test-suite.md)
+ 3. [Running nodes with Docker](./docs/docker_setup.md)
+ 4. [Executing the test suite](./docs/test-suite.md)
 
 ## Getting Help
 
@@ -19,9 +19,9 @@ If you have any questions, first see if the answer to your question can be found
 
 If the answer is not there:
 
-- Join the [Telegram](https://botanixlabs.xyz/en/home) to get help, or
-- Open a [discussion](https://github.com/botanix-labs/Macbeth/issues/new) with your question, or
-- Open an issue with [the bug](https://github.com/botanix-labs/Macbeth/issues)
+-   Join the [Telegram](https://botanixlabs.xyz/en/home) to get help, or
+-   Open a [discussion](https://github.com/botanix-labs/Macbeth/issues/new) with your question, or
+-   Open an issue with [the bug](https://github.com/botanix-labs/Macbeth/issues)
 
 ## Security
 

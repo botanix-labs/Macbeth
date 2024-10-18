@@ -7,7 +7,7 @@ The `rpc` API provides methods to get information about the RPC server itself, s
 Lists the enabled RPC namespaces and the versions of each.
 
 | Client | Method invocation                         |
-|--------|-------------------------------------------|
+| ------ | ----------------------------------------- |
 | RPC    | `{"method": "rpc_modules", "params": []}` |
 
 ### Example

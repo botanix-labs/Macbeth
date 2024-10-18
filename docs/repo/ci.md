@@ -4,18 +4,18 @@ The CI runs a couple of workflows:
 
 ### Code
 
-- **[unit]**: Runs unit tests (tests in `src/`) and doc tests
-- **[integration]**: Runs integration tests (tests in `tests/` and sync tests)
-- **[bench]**: Runs benchmarks
+-   **[unit]**: Runs unit tests (tests in `src/`) and doc tests
+-   **[integration]**: Runs integration tests (tests in `tests/` and sync tests)
+-   **[bench]**: Runs benchmarks
 
 ### Docs
 
-- **[book]**: Builds, tests, and deploys the book.
+-   **[book]**: Builds, tests, and deploys the book.
 
 ### Meta
 
-- **[deny]**: Runs `cargo deny` to check for license conflicts and security advisories in our dependencies
-- **[release]**: Runs the release workflow
+-   **[deny]**: Runs `cargo deny` to check for license conflicts and security advisories in our dependencies
+-   **[release]**: Runs the release workflow
 
 [unit]: https://github.com/paradigmxyz/reth/blob/main/.github/workflows/unit.yml
 [integration]: https://github.com/paradigmxyz/reth/blob/main/.github/workflows/integration.yml

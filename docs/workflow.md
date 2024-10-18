@@ -23,10 +23,10 @@ gitGraph
    commit
 ```
 
-- Features and bug fixes live on feature branches off of the main branch, and they are merged onto main as well.  
-  This means that the latest version of reth (which might be unstable) always lives on main.
-- Pull requests should not be merged without the review of at least one core contributor. For larger pull requests, at least two is recommended.
-- Important pull requests that should be highlighted in the changelog should be marked with the https://github.com/paradigmxyz/reth/labels/M-changelog label.
+-   Features and bug fixes live on feature branches off of the main branch, and they are merged onto main as well.  
+    This means that the latest version of reth (which might be unstable) always lives on main.
+-   Pull requests should not be merged without the review of at least one core contributor. For larger pull requests, at least two is recommended.
+-   Important pull requests that should be highlighted in the changelog should be marked with the <https://github.com/paradigmxyz/reth/labels/M-changelog> label.
 
 ### Releases
 
@@ -51,12 +51,12 @@ gitGraph
 
 ### CI
 
-- Every PR undergoes various checks, including:
-  - Lints ([clippy], [rustfmt], ...)
-  - Unit tests
-  - Fuzz tests
-  - Integration tests (including peering and a testnet simulation)
-- Additionally, each PR is again tested before release by being run every night on a live testnet
+-   Every PR undergoes various checks, including:
+    -   Lints ([clippy], [rustfmt], ...)
+    -   Unit tests
+    -   Fuzz tests
+    -   Integration tests (including peering and a testnet simulation)
+-   Additionally, each PR is again tested before release by being run every night on a live testnet
 
 [clippy]: https://github.com/rust-lang/rust-clippy
 [rustfmt]: https://github.com/rust-lang/rustfmt

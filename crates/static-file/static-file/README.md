@@ -8,7 +8,6 @@ This crate aims to copy this data from the current database to multiple static f
 
 Below are four diagrams illustrating on how data is served from static files to the provider. A glossary is also provided to explain the different (linked) components involved in these processes.
 
-
 ### Query Diagrams ([`Provider`](../../crates/storage/provider/src/providers/database/mod.rs#L41))
 
 <details>
@@ -31,6 +30,7 @@ graph TD;
     SC--"Header"--> JP
     JP--"Header"--> SFP
 ```
+
 </details>
 
 <details>
@@ -54,6 +54,7 @@ graph TD;
     SC--"Header"--> JP
     JP--"Header"--> SFP
 ```
+
 </details>
 
 <details>
@@ -76,6 +77,7 @@ graph TD;
     SC--"Header"--> JP
     JP--"Header"--> SFP
 ```
+
 </details>
 
 <details>
@@ -99,9 +101,11 @@ graph TD;
     SC--"Header"--> JP
     JP--"Header"--> SFP
 ```
+
 </details>
 
 ### Glossary
+
 In descending order of abstraction hierarchy:
 
 [`StaticFileProducer`](../../crates/static-file/src/static_file_producer.rs#L25): A `reth` [hook](../../crates/consensus/beacon/src/engine/hooks/static_file.rs) service that when triggered, **copies** finalized data from the database to the latest static file. Upon completion, it updates the internal index at `StaticFileProvider` with the new highest block and transaction on each specific segment.

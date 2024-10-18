@@ -35,7 +35,10 @@ displaydoc = "0.2"
 ethabi = "18.0.0"
 
 # frost
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = ["serde", "serialization"] }
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
+    "serde",
+    "serialization",
+] }
 
 # async
 futures-util = { workspace = true }

@@ -84,11 +84,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
-pprof = { workspace = true, features = [
-    "flamegraph",
-    "frame-pointer",
-    "criterion",
-] }
+pprof = { workspace = true, features = ["flamegraph", "frame-pointer", "criterion"] }
 
 [features]
 test-utils = [

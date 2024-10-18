@@ -1,78 +1,74 @@
 [package]
 name = "reth-db"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "Database primitives used in reth."
 
 [lints]
 workspace = true
 
 [dependencies]
+
+# misc
+bytes = { workspace = true }
+derive_more = { workspace = true }
+eyre = { workspace = true, optional = true }
+metrics = { workspace = true, optional = true }
+page_size = { version = "0.6.0", optional = true }
+paste = { workspace = true }
 # reth
-reth-db-api.workspace = true
-reth-primitives = { workspace = true, features = ["reth-codec"] }
-reth-primitives-traits.workspace = true
-reth-fs-util.workspace = true
-reth-storage-errors.workspace = true
-reth-nippy-jar.workspace = true
-reth-prune-types.workspace = true
-reth-stages-types.workspace = true
-reth-tracing.workspace = true
-reth-trie-common.workspace = true
+reth-db-api = { workspace = true }
+reth-fs-util = { workspace = true }
 
 # mdbx
 reth-libmdbx = { workspace = true, optional = true, features = [
     "return-borrowed",
     "read-tx-timeouts",
 ] }
-eyre = { workspace = true, optional = true }
+
+# metrics
+reth-metrics = { workspace = true, optional = true }
+reth-nippy-jar = { workspace = true }
+reth-primitives = { workspace = true, features = ["reth-codec"] }
+reth-primitives-traits = { workspace = true }
+reth-prune-types = { workspace = true }
+reth-stages-types = { workspace = true }
+reth-storage-errors = { workspace = true }
+reth-tracing = { workspace = true }
+reth-trie-common = { workspace = true }
+rustc-hash = { workspace = true, optional = true }
 
 # codecs
 serde = { workspace = true, default-features = false }
 
-# metrics
-reth-metrics = { workspace = true, optional = true }
-metrics = { workspace = true, optional = true }
-
-# misc
-bytes.workspace = true
-page_size = {  version = "0.6.0", optional = true }
-thiserror.workspace = true
-tempfile = { workspace = true, optional = true }
-derive_more.workspace = true
-paste.workspace = true
-rustc-hash = { workspace = true, optional = true }
-sysinfo = { version = "0.30", default-features = false }
-
 # arbitrary utils
 strum = { workspace = true, features = ["derive"], optional = true }
+sysinfo = { version = "0.30", default-features = false }
+tempfile = { workspace = true, optional = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
-# reth libs with arbitrary
-reth-primitives = { workspace = true, features = ["arbitrary"] }
-rand.workspace = true
-serde_json.workspace = true
-
-test-fuzz.workspace = true
-
-pprof = { workspace = true, features = [
-    "flamegraph",
-    "frame-pointer",
-    "criterion",
-] }
-criterion.workspace = true
-iai-callgrind.workspace = true
 
 arbitrary = { workspace = true, features = ["derive"] }
-proptest.workspace = true
 
-paste.workspace = true
+assert_matches = { workspace = true }
+criterion = { workspace = true }
+iai-callgrind = { workspace = true }
 
-assert_matches.workspace = true
+paste = { workspace = true }
+
+pprof = { workspace = true, features = ["flamegraph", "frame-pointer", "criterion"] }
+proptest = { workspace = true }
+rand = { workspace = true }
+# reth libs with arbitrary
+reth-primitives = { workspace = true, features = ["arbitrary"] }
+serde_json = { workspace = true }
+
+test-fuzz = { workspace = true }
 
 [features]
 default = ["mdbx"]

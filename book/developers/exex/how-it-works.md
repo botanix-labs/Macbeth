@@ -7,12 +7,13 @@ An ExEx is usually driven by and acts on new notifications about chain commits, 
 
 They are installed into the node by using the [node builder](https://reth.rs/docs/reth/builder/struct.NodeBuilder.html).
 Reth manages the lifecycle of all ExExes, including:
-- Polling ExEx futures
-- Sending [notifications](https://reth.rs/docs/reth_exex/enum.ExExNotification.html) about new chain, reverts,
-  and reorgs from historical and live sync
-- Processing [events](https://reth.rs/docs/reth_exex/enum.ExExEvent.html) emitted by ExExes
-- Pruning (in case of a full or pruned node) only the data that have been processed by all ExExes
-- Shutting ExExes down when the node is shut down
+
+-   Polling ExEx futures
+-   Sending [notifications](https://reth.rs/docs/reth_exex/enum.ExExNotification.html) about new chain, reverts,
+    and reorgs from historical and live sync
+-   Processing [events](https://reth.rs/docs/reth_exex/enum.ExExEvent.html) emitted by ExExes
+-   Pruning (in case of a full or pruned node) only the data that have been processed by all ExExes
+-   Shutting ExExes down when the node is shut down
 
 ## Pruning
 

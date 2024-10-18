@@ -1,4 +1,5 @@
 # Botanix Federation Book
+
 ### What is Botanix Labs?
 
 Botanix Labs is a Bitcoin-focused company dedicated to creating decentralized sidechains. Our primary objective is to develop the Spiderchain, a sidechain scheme that utilizes a Proof-of-Stake consensus algorithm. This innovation allows anyone to validate the Bitcoin sidechain.
@@ -21,4 +22,4 @@ Botanix Federation is a alpha software that has not been audited. Please only de
 
 > **Note**
 >
->This book is copied over from The Reth book modified to fit the requirements needed for the Botanix Federation.
+> This book is copied over from The Reth book modified to fit the requirements needed for the Botanix Federation.

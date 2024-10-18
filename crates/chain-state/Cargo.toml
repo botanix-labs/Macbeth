@@ -48,9 +48,4 @@ rand = { workspace = true }
 revm = { workspace = true }
 
 [features]
-test-utils = [
-  "alloy-signer",
-  "alloy-signer-local",
-  "rand",
-  "revm"
-]
+test-utils = ["alloy-signer", "alloy-signer-local", "rand", "revm"]

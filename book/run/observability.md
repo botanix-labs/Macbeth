@@ -1,4 +1,4 @@
-# Logs and observability 
+# Logs and observability
 
 Reth exposes a number of metrics, which are listed [here][metrics]. We can serve them from an HTTP endpoint by adding the `--metrics` flag:
 
@@ -17,7 +17,12 @@ The response from this is quite descriptive, but it can be a bit verbose. Plus, 
 You can run the following command in a separate terminal to periodically poll the endpoint, and just print the values (without the header text) to the terminal:
 
 ```bash
-while true; do date; curl -s localhost:9001 | grep -Ev '^(#|$)' | sort; echo; sleep 10; done
+while true; do
+    date
+    curl -s localhost:9001 | grep -Ev '^(#|$)' | sort
+    echo
+    sleep 10
+done
 ```
 
 We're finally getting somewhere! As a final step, though, wouldn't it be great to see how these metrics progress over time (and generally, in a GUI)?
@@ -49,9 +54,9 @@ You can find an example config for the Prometheus service in the repo here: [`et
 
 Depending on your installation you may find the config for your Prometheus service at:
 
-- OSX: `/opt/homebrew/etc/prometheus.yml`
-- Linuxbrew: `/home/linuxbrew/.linuxbrew/etc/prometheus.yml`
-- Others: `/usr/local/etc/prometheus/prometheus.yml`
+-   OSX: `/opt/homebrew/etc/prometheus.yml`
+-   Linuxbrew: `/home/linuxbrew/.linuxbrew/etc/prometheus.yml`
+-   Others: `/usr/local/etc/prometheus/prometheus.yml`
 
 Next, open up "localhost:3000" in your browser, which is the default URL for Grafana. Here, "admin" is the default for both the username and password.
 
@@ -69,7 +74,4 @@ In this runbook, we took you through starting the node, exposing different log l
 
 This will all be very useful to you, whether you're simply running a home node and want to keep an eye on its performance, or if you're a contributor and want to see the effect that your (or others') changes have on Reth's operations.
 
-[installation]: ../installation/installation.md
-[release-profile]: https://doc.rust-lang.org/cargo/reference/profiles.html#release
-[docs]: https://github.com/paradigmxyz/reth/tree/main/docs
 [metrics]: https://github.com/paradigmxyz/reth/blob/main/docs/design/metrics.md#current-metrics

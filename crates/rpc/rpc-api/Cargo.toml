@@ -26,8 +26,4 @@ reth-rpc-types = { workspace = true }
 serde_json = { workspace = true }
 
 [features]
-client = [
-    "jsonrpsee/client",
-    "jsonrpsee/async-client",
-    "reth-rpc-eth-api/client"
-]
+client = ["jsonrpsee/client", "jsonrpsee/async-client", "reth-rpc-eth-api/client"]

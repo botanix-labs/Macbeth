@@ -51,6 +51,4 @@ op-alloy-rpc-types = { workspace = true }
 default = ["std", "serde-support"]
 serde-support = ["serde"]
 std = []
-arbitrary = [
-    "alloy-chains/arbitrary"
-]
+arbitrary = ["alloy-chains/arbitrary"]

@@ -49,11 +49,7 @@ rand = { workspace = true }
 reth-eth-wire-types = { workspace = true, features = ["arbitrary"] }
 reth-primitives = { workspace = true, features = ["arbitrary"] }
 reth-tracing = { workspace = true }
-secp256k1 = { workspace = true, features = [
-    "global-context",
-    "rand-std",
-    "recovery",
-] }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 serde = { workspace = true }
 
 test-fuzz = { workspace = true }
@@ -61,11 +57,7 @@ tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 tokio-util = { workspace = true, features = ["io", "codec"] }
 
 [features]
-arbitrary = [
-    "reth-primitives/arbitrary",
-    "reth-eth-wire-types/arbitrary",
-    "dep:arbitrary",
-]
+arbitrary = ["reth-primitives/arbitrary", "reth-eth-wire-types/arbitrary", "dep:arbitrary"]
 serde = ["dep:serde", "reth-eth-wire-types/serde"]
 
 [[test]]

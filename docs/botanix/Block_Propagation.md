@@ -24,7 +24,9 @@ The Consensus Layer carries two primary responsibilities:
 The beacon consensus engine functions as the driver that switches between historical and live sync modes. It operates based on messages from the Consensus Layer, which are received through the Engine API (JSON-RPC).
 
 The consensus engine has two data input sources:
+
 ##### New Payload (`engine_newPayloadV{}`)
+
 The engine receives new payloads from the CL. If the payload is connected to the canonical
 chain, it will be fully validated added to a chain in the [BlockchainTreeEngine]: `VALID`
 
@@ -73,10 +75,10 @@ CL ---> |fork_choice_update| BE
 BE ---> |update_connonical| DB
 
 ```
+
 ### Diagram New Block Discovered
+
 The following diagram displays the steps taken within reth to update the block db and notify the rest of the network about your new block
-
-
 
 ```mermaid
 graph TD;

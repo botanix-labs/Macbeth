@@ -44,4 +44,3 @@ jsonrpsee = { workspace = true }
 reth = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-

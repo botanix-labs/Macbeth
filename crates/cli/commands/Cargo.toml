@@ -57,5 +57,5 @@ dev = [
     "dep:arbitrary",
     "dep:proptest-arbitrary-interop",
     "reth-primitives/arbitrary",
-    "reth-db-api/arbitrary"
+    "reth-db-api/arbitrary",
 ]

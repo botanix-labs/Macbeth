@@ -28,10 +28,7 @@ serde = { workspace = true, optional = true }
 
 [dev-dependencies]
 alloy-consensus = { workspace = true, features = ["arbitrary"] }
-alloy-eips = { workspace = true, default-features = false, features = [
-    "arbitrary",
-    "serde",
-] }
+alloy-eips = { workspace = true, default-features = false, features = ["arbitrary", "serde"] }
 alloy-primitives = { workspace = true, features = ["arbitrary", "serde", "rand"] }
 
 arbitrary = { workspace = true, features = ["derive"] }
@@ -49,5 +46,5 @@ alloy = [
     "dep:alloy-genesis",
     "dep:modular-bitfield",
     "dep:alloy-trie",
-    "dep:serde"
+    "dep:serde",
 ]

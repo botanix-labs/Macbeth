@@ -38,7 +38,10 @@ eyre = { workspace = true }
 
 # frost
 # TODO update this to the zcash frost library when tr is merged in
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = ["serde", "serialization"] }
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
+    "serde",
+    "serialization",
+] }
 hex = "0.4.3"
 port-killer = "0.1.0"
 rand = "0.8.5"
@@ -57,11 +60,7 @@ reth-rpc-types = { workspace = true }
 reth-tracing = { workspace = true }
 
 ## Crypto
-secp256k1 = { workspace = true, features = [
-    "global-context",
-    "rand-std",
-    "recovery",
-] }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 serde = { version = "1.0.164", features = ["derive"] }
 serde_json = "1.0.96"
 strum = { version = "0.25.0", features = ["derive"] }
@@ -69,7 +68,7 @@ strum_macros = "0.25.0"
 tempfile = { workspace = true }
 tendermint-rpc = { workspace = true }
 thiserror = "1.0.40"
-tokio = { version = "1.37.0", features = [ "full" ] }
+tokio = { version = "1.37.0", features = ["full"] }
 toml = "0.8.0"
 tonic = { version = "0.11.0", features = ["gzip"] }
 tracing = { workspace = true }

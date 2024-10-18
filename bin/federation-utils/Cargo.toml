@@ -14,7 +14,7 @@ name = "utils"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4", features = [ "derive" ] }
+clap = { version = "4", features = ["derive"] }
 ethers = "2.0.10"
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,10 +1,9 @@
-# Botanix Protocol 
+# Botanix Protocol
 
 [![CI status](https://github.com/paradigmxyz/reth/workflows/ci/badge.svg)]
 [![cargo-deny status](https://github.com/paradigmxyz/reth/workflows/deny/badge.svg)]
 
 **A blazing fast and secure L2 for bitcoin using the EVM as a superstructure**
-
 
 ## Requirements
 
@@ -32,20 +31,22 @@ If you want to run it locally you can install it with `pip install codespell` an
 ```shell
 gcloud container clusters get-credentials botanixlabs-cluster-dev --region us-central1 --project botanix-391913
 ```
+
 1. Install [k9s](https://k9scli.io/topics/install/) depending on your platform.
 1. Start `k9s` using the following command:
+
 ```shell
 KUBE_EDITOR=nano k9s
 ```
+
 and automatically select the cluster context. Then find the pod where bitcoind is running, press `Shift+f` for port-forwarding and select the local port
 onto which the pod traffic is to be forwarded. Usually that is `38332`.
-
 
 ## Run a local federation (Docker-Compose)
 
 1. Change directory to `docker-local` and configure `.bitcoin.env` file adjusting the values of the bitcoind server in the docker-compose.
 
-2. Start the bitcoind server using  `make start-docker-bitcoin`.
+2. Start the bitcoind server using `make start-docker-bitcoin`.
 
 3. Copy `federation.template.toml` to the `docker-local/poa-1 && docker-local/poa-2` directory using:
 
@@ -71,13 +72,11 @@ docker exec -it consensus-node-1 cometbft show-node-id --home /cometbft
 docker exec -it consensus-node-2 cometbft show-node-id --home /cometbft
 ```
 
-***Notes***
->> To build poa-node locally for feature or refactor testing use `make build-docker-local`
+**_Notes_**
 
->> you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
+> > To build poa-node locally for feature or refactor testing use `make build-docker-local`
 
-
-
+> > you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
 
 ## Getting Help
 
@@ -85,9 +84,9 @@ If you have any questions, first see if the answer to your question can be found
 
 If the answer is not there:
 
-- Join the [Telegram](https://botanixlabs.xyz/en/home) to get help, or
-- Open a [discussion](https://github.com/botanix-labs/Macbeth/issues/new) with your question, or
-- Open an issue with [the bug](https://github.com/botanix-labs/Macbeth/issues)
+-   Join the [Telegram](https://botanixlabs.xyz/en/home) to get help, or
+-   Open a [discussion](https://github.com/botanix-labs/Macbeth/issues/new) with your question, or
+-   Open an issue with [the bug](https://github.com/botanix-labs/Macbeth/issues)
 
 ## Security
 
