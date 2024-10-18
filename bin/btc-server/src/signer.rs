@@ -1,11 +1,10 @@
 use std::time::SystemTime;
 
-use bdk::{descriptor::error, miniscript::psbt::Error as PsbtError, psbt::PsbtUtils};
+use bdk::{miniscript::psbt::Error as PsbtError, psbt::PsbtUtils};
 use bitcoin::{
-    hashes::sha256,
-    psbt::{ExtractTxError, Psbt},
+    psbt::{ExtractTxError, Output, Psbt},
     taproot::SigFromSliceError,
-    BlockHash, FeeRate, TxOut,
+    FeeRate,
 };
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
@@ -133,8 +132,8 @@ pub enum SigningFinalizeError {
     MissingPendingPegout(PegoutId),
     #[error("psbt pegout missing pegout id")]
     MissingPsbtPegout,
-    #[error("psbt includes extra output")]
-    PsbtIncludesExtraOutput,
+    #[error("psbt includes invalid change output")]
+    InvalidChangeOutput,
     #[error("psbt to signing package conversion error: {0}")]
     PsbtToSigningPackageConversionError(
         #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError,
@@ -378,39 +377,30 @@ where
         Ok(finalized_psbt)
     }
 
-    pub(crate) fn pending_pegout_ids(pegouts: Vec<PegoutRequest>) -> Vec<PegoutId> {
-        pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>()
-    }
-
     // Check all pending pegouts are being settled in this tx
     // and additional outputs are change outputs
     pub(crate) fn validate_outputs(&self, psbt: &Psbt) -> Result<(), SigningFinalizeError> {
+        // check aggregated public key exists
+        let public_key_package = match self.db.get_public_key_package() {
+            Ok(res) => match res {
+                Some(pk) => pk,
+                None => return Err(SigningFinalizeError::MissingKeyPackage),
+            },
+            Err(_e) => return Err(SigningFinalizeError::MissingKeyPackage),
+        };
+
         let pending_pegouts = self.db.get_pending_pegouts()?;
         let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
         let mut psbt_pegout_ids: Vec<PegoutId> = vec![];
+        let mut additional_outputs: Vec<Output> = vec![];
         for output in psbt.outputs.iter() {
             match output.pegout_id() {
                 Some(id) => match PegoutId::from_bytes(&id) {
                     Ok(id) => psbt_pegout_ids.push(id),
                     Err(_) => return Err(SigningFinalizeError::MissingPsbtPegout),
                 },
-                // check extra outputs are change outputs: redeem script should be change script
-                // pubkey derived from aggregated public key
-                None => {
-                    let agg_pk = self
-                        .db
-                        .get_public_key_package()?
-                        .expect("valid public key package")
-                        .verifying_key()
-                        .to_secp_pk()
-                        .expect("valid secp pk");
-                    let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
-                    let script_pubkey = output.redeem_script.as_ref().expect("valid redeem script");
-                    if script_pubkey != &expected_script_pubkey {
-                        return Err(SigningFinalizeError::PsbtIncludesExtraOutput);
-                    }
-                }
+                None => additional_outputs.push(output.clone()),
             };
         }
 
@@ -418,6 +408,21 @@ where
             if !psbt_pegout_ids.contains(&pegout_id) {
                 return Err(SigningFinalizeError::MissingPendingPegout(pegout_id.clone()));
             }
+        }
+
+        // check extra outputs are change outputs:
+        // psbt should only have one change output
+        if additional_outputs.len() != 1 {
+            return Err(SigningFinalizeError::InvalidChangeOutput);
+        }
+
+        // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
+        let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
+        let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
+        let tx = psbt.clone().extract_tx()?;
+        let has_change = tx.output.iter().any(|o| o.script_pubkey == expected_script_pubkey);
+        if !has_change {
+            return Err(SigningFinalizeError::InvalidChangeOutput);
         }
 
         Ok(())
