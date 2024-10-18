@@ -1,2 +1,6 @@
-helm
 pnpm-lock.yaml
+images
+k8s
+docker-local
+audit
+cov-reports

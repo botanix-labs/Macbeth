@@ -125,15 +125,15 @@ As an alternative, this document proposes extending the header's extradata field
 
 The following data serlialization format outlines how the EDH will be formatted
 
-| Field | Description | Size |
-|------------------------|-------------------------------|-------|
-| Version | | 4 byte|
-| Federation members | List of Secp256k1 Public Keys | Variable size |
-| Federation to be voted on | optional field, not all blocks are going to include a vote | 33 bytes |
-| Bitcoin block hash | Current bitcoin Tip according to the block producer | 32 bytes |
-| Bitcoin base fee | Current competitive L1 fee | 4 bytes |
-| Root of UTXO merkel tree | | 32 bytes |
-| Federation Signature | secp256k1 recoverable signature. Signing over the entire eth header with the EDH concatenated at the end. Also optional, the data structure itself should encodable/decodable without the signature | 65 bytes |
+| Field                     | Description                                                                                                                                                                                         | Size          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| Version                   |                                                                                                                                                                                                     | 4 byte        |
+| Federation members        | List of Secp256k1 Public Keys                                                                                                                                                                       | Variable size |
+| Federation to be voted on | optional field, not all blocks are going to include a vote                                                                                                                                          | 33 bytes      |
+| Bitcoin block hash        | Current bitcoin Tip according to the block producer                                                                                                                                                 | 32 bytes      |
+| Bitcoin base fee          | Current competitive L1 fee                                                                                                                                                                          | 4 bytes       |
+| Root of UTXO merkel tree  |                                                                                                                                                                                                     | 32 bytes      |
+| Federation Signature      | secp256k1 recoverable signature. Signing over the entire eth header with the EDH concatenated at the end. Also optional, the data structure itself should encodable/decodable without the signature | 65 bytes      |
 
 **Note**: The list of federation members will not be changing during the epochs. Since nodes will only start sync at the start of an epoch, there is no need to store the federation in in its entirety every blocks.
 

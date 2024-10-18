@@ -39,18 +39,18 @@
 
 The Botanix pegin proof will be structured as follows:
 
-| Field | Description | Size |
-|------------------------|-------------------------------|-------|
-| Pegin Message Version | | 4 byte|
-| txId | | 4 byte|
-| Vout | | 4 byte|
-| Ethereum Address | | 20 bytes|
-| Aggregate Public Key| Compressed public key | 33 bytes|
-| Number of Block | Bitcoin style var int | 1-3 bytes|
-| Headers | Variable number of 80-byte blocks headers | 80 _ num of blocks |
-| **The rest of the payload is the merkle inclusion proof** | | |
-| Number of transactions represented by merkle root | Uint32 | 4 byte|
-| Number of hashes | Bitcoin style var int | 1-3 bytes|
-| Merkle Hashes | hash pairings | 32 bytes _ number of hashes|
-| Number of bytes of Inclusion bits | Bitcoin style var int | 1-3 bytes|
-| Inclusion bits | | num of transaction / 8 bytes |
+| Field                                                     | Description                               | Size                         |
+| --------------------------------------------------------- | ----------------------------------------- | ---------------------------- |
+| Pegin Message Version                                     |                                           | 4 byte                       |
+| txId                                                      |                                           | 4 byte                       |
+| Vout                                                      |                                           | 4 byte                       |
+| Ethereum Address                                          |                                           | 20 bytes                     |
+| Aggregate Public Key                                      | Compressed public key                     | 33 bytes                     |
+| Number of Block                                           | Bitcoin style var int                     | 1-3 bytes                    |
+| Headers                                                   | Variable number of 80-byte blocks headers | 80 \_ num of blocks          |
+| **The rest of the payload is the merkle inclusion proof** |                                           |                              |
+| Number of transactions represented by merkle root         | Uint32                                    | 4 byte                       |
+| Number of hashes                                          | Bitcoin style var int                     | 1-3 bytes                    |
+| Merkle Hashes                                             | hash pairings                             | 32 bytes \_ number of hashes |
+| Number of bytes of Inclusion bits                         | Bitcoin style var int                     | 1-3 bytes                    |
+| Inclusion bits                                            |                                           | num of transaction / 8 bytes |
