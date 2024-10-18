@@ -670,6 +670,7 @@ where
                     // clear session and lose ability to be coordinator
                     // this could happen if previous session failed but wasn't removed
                     self.abort_signing().await?;
+                    self.remove_signing_session(session_id).await;
 
                     error!(target: "consensus::authority::signing::initate_signing_session", "A coordinator re-triggered an existing signing session!");
                     return Err(Error::CoordinatorRetriggeredSession);
@@ -739,35 +740,31 @@ where
         };
         info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_id);
 
+        // check coordinator is sending the request
+        let coordinator_frost_identifier = coordinator_peer_data
+            .frost_identifier
+            .expect("Coordinator should have a frost identifier");
+        if coordinator_frost_identifier.serialize().to_vec() != identifier {
+            error!(target: "consensus::authority::signing::signer_process_round1", "Round 1 signing request not from coordinator");
+            return Ok(());
+        }
+
+        // abort any previous session
+        // coordinator should only send this request once and should always be in round 1
+        self.abort_signing().await?;
+
         // no already existing signing session found
         if !self.signing_session_exists(session_id).await {
-            // abort any previous session
-            self.abort_signing().await?;
-
             // insert a new signing session
             self.insert_new_signing_session(session_id, coordinator_id, None, SigningState::Round1)
                 .await;
         } else {
-            // check if session exists with the same coordinator
-            // if so, return error since coordinator should never re-trigger an existing session
             // NOTE: if a session exists, the current coordinator should not be sending a request to
             // start a new session. The previous session should have been successful or
             // failed both leading to the session being removed
-            let coordinator_frost_identifier = coordinator_peer_data
-                .frost_identifier
-                .expect("Coordinator should have a frost identifier");
-            if coordinator_frost_identifier.serialize().to_vec() == identifier {
-                error!(target: "consensus::authority::signing::signer_process_round1", "Coordinator re-triggered an existing signing session!");
-                return Err(Error::CoordinatorRetriggeredSession);
-            }
-
-            // session exists, return if we are not in round 2
-            if self.is_round2_state(&session_id).await {
-                return Ok(());
-            } else {
-                // current session is being re-triggered, so set to round1
-                self.update_signing_state(session_id, SigningState::Round1).await;
-            }
+            error!(target: "consensus::authority::signing::signer_process_round1", "Coordinator re-triggered an existing signing session!");
+            self.remove_signing_session(session_id).await;
+            return Err(Error::CoordinatorRetriggeredSession);
         }
 
         // add the transmitted round 1 package data (the original psbt package - there is only 1x of
