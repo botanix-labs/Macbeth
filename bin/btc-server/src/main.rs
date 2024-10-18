@@ -374,6 +374,7 @@ mod test {
     };
     use frost_secp256k1_tr as frost;
     use rand::{thread_rng, Rng};
+    use test_utils::test_utils::{get_change, store_pending_pegout};
     use tonic::{Code, Request};
 
     use reth_btc_wallet::psbt::{PsbtInputExt, PsbtOutputExt};
@@ -853,7 +854,12 @@ mod test {
 
         app.db.set_pubkey_package(pk_package).expect("set public key package");
         app.db.set_key_package(key_package).expect("set key package");
-        let mut psbt = create_psbt(1, None);
+
+        let pegout_id = store_pending_pegout(&app.db);
+
+        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
@@ -877,7 +883,11 @@ mod test {
         app.frost_round1_nonces = Arc::new(Mutex::new(None));
         let signing_session_id = [1u8; 32];
 
-        let mut psbt = create_psbt(1, None);
+        let pegout_id = store_pending_pegout(&app.db);
+
+        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = Utxo::new(
             tx.input[0].previous_output,
@@ -913,7 +923,11 @@ mod test {
         app_coordinator.db.set_pubkey_package(pk_package).expect("set public key package");
         app_coordinator.db.set_key_package(key_package).expect("set key package");
 
-        let mut psbt = create_psbt(1, None);
+        let pegout_id = store_pending_pegout(&app_coordinator.db);
+
+        let mut psbt = create_psbt(1, Some(get_change(&app_coordinator.db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
@@ -986,8 +1000,12 @@ mod test {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
+        let pegout_id = store_pending_pegout(&app.db);
+
+        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
         // Add pegin utxo
-        let mut psbt = create_psbt(1, None);
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
         let utxo = Utxo::new(
@@ -1138,20 +1156,17 @@ mod test {
     fn validate_outputs_should_validate() {
         let app = setup();
 
-        // store pending pegout
-        let pegout_id = PegoutId::new([1u8; 32], 0);
-        let pegout_request = PegoutRequest {
-            id: pegout_id,
-            value: Amount::from_sat(1000),
-            spk: bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
-                .expect("valid address")
-                .assume_checked()
-                .script_pubkey(),
-            botanix_height: 0,
-        };
-        let _ = app.db.store_pending_pegout(&pegout_request);
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
 
-        let mut psbt = create_psbt(1, None);
+        // store pending pegout
+        let pegout_id = store_pending_pegout(&app.db);
+
+        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let response = app.validate_outputs(&psbt);

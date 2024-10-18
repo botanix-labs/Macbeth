@@ -221,7 +221,7 @@ where
             }
         }
         // Validate PSBT
-        validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
+        validate_psbt(psbt, ROUND1, self.min_signers, &self)?;
         let num_inputs = psbt.inputs.len();
 
         let key_package =
@@ -259,7 +259,7 @@ where
             self.db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
 
         // Validate PSBT
-        validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
+        validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self)?;
 
         let tx = psbt.clone().extract_tx()?;
         let num_inputs = tx.input.len();
