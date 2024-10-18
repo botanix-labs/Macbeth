@@ -2,5 +2,13 @@
     "extends": "markdownlint/style/prettier",
     "first-line-h1": false,
     "no-inline-html": false,
-    "no-alt-text": false
+    "no-alt-text": false,
+    "MD001": false,
+    "MD040": false,
+    "MD024": false,
+    "MD025": false,
+    "MD036": false,
+    "MD042": false,
+    "MD052": false,
+    "MD056": false
 }

@@ -3,7 +3,7 @@
 [![CI status](https://github.com/paradigmxyz/reth/workflows/ci/badge.svg)]
 [![cargo-deny status](https://github.com/paradigmxyz/reth/workflows/deny/badge.svg)]
 
-**A blazing fast and secure L2 for bitcoin using the EVM as a superstructure**
+## A blazing fast and secure L2 for bitcoin using the EVM as a superstructure
 
 ![](./images/botanix.jpg)
 
@@ -15,7 +15,9 @@
 
 ## Getting Help
 
-If you have any questions, first see if the answer to your question can be found in the [book][https://docs.botanixlabs.xyz/botanix-labs/].
+If you have any questions, first see if the answer to your question can be found in the [book].
+
+[book]: https://docs.botanixlabs.xyz/botanix-labs/
 
 If the answer is not there:
 
