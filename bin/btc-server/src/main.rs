@@ -378,7 +378,7 @@ mod test {
     use tonic::{Code, Request};
 
     use reth_btc_wallet::psbt::{PsbtInputExt, PsbtOutputExt};
-    use util::VerifyingKeyExt;
+    use util::{validate_outputs, VerifyingKeyExt};
 
     use crate::{
         database::Utxo,
@@ -1169,7 +1169,7 @@ mod test {
         let mut psbt = create_psbt(1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let response = app.validate_outputs(&psbt);
+        let response = validate_outputs(&psbt, &app.db);
 
         assert!(response.is_ok());
     }
@@ -1214,7 +1214,7 @@ mod test {
         let mut psbt = create_psbt(1, Some(change));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let response = app.validate_outputs(&psbt);
+        let response = validate_outputs(&psbt, &app.db);
 
         assert!(response.is_ok());
     }
@@ -1249,7 +1249,7 @@ mod test {
         let mut psbt = create_psbt(1, Some(change));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let response = app.validate_outputs(&psbt);
+        let response = validate_outputs(&psbt, &app.db);
 
         assert_eq!(
             response.err().expect("error exists").to_string(),
