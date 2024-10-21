@@ -745,7 +745,7 @@ where
             .frost_identifier
             .expect("Coordinator should have a frost identifier");
         if coordinator_frost_identifier.serialize().to_vec() != identifier {
-            error!(target: "consensus::authority::signing::signer_process_round1", "Round 1 signing request not from coordinator");
+            warn!(target: "consensus::authority::signing::signer_process_round1", "Round 1 signing request not from coordinator");
             return Ok(());
         }
 
@@ -903,18 +903,32 @@ where
     /// Note that since this is a request identifier has no use
     pub(crate) async fn signer_process_round2(
         &mut self,
-        _identifier: Vec<u8>,
+        identifier: Vec<u8>,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        // return if we are a coordinator
-        if self.is_coordinator() {
-            warn!(
-                target: "consensus::authority::signing::signer_process_round2",
-                "we are the coordinator",
-            );
+        // get coordinator
+        let (coordinator_peer_data, coordinator_id) = match self.get_coordinator().await? {
+            Some(coord_data) => (coord_data.0, coord_data.1),
+            None => {
+                // return if we are a coordinator
+                warn!(
+                    target: "consensus::authority::signing::signer_process_round2",
+                    "we are the coordinator",
+                );
+                return Ok(());
+            }
+        };
+        info!(target: "consensus::authority::signing::signer_process_round2", "coordinator index {:?}", coordinator_id);
+
+        // check coordinator is sending the request
+        let coordinator_frost_identifier = coordinator_peer_data
+            .frost_identifier
+            .expect("Coordinator should have a frost identifier");
+        if coordinator_frost_identifier.serialize().to_vec() != identifier {
+            warn!(target: "consensus::authority::signing::signer_process_round2", "Round 2 signing request not from coordinator");
             return Ok(());
         }
 
