@@ -38,6 +38,7 @@ use tokio::{
 use url::Url;
 
 pub const RPC_PORT_BASE: u16 = 8545;
+pub const WS_PORT_BASE: u16 = 9545;
 pub const DISCOVERY_PORT_BASE: u16 = 30330;
 pub const ABCI_PORT_BASE: u16 = 26658;
 #[derive(Template, Clone, Debug)]
@@ -63,6 +64,7 @@ pub enum TestSignal {
 #[derive(Debug)]
 pub struct SpawnedPoaServerProcess {
     pub rpc_port: u16,
+    pub ws_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
 }
@@ -74,6 +76,7 @@ impl SpawnedPoaServerProcess {
         // additionally make sure all ports used are freed
         kill_process_at_port(self.discovery_port);
         kill_process_at_port(self.rpc_port);
+        kill_process_at_port(self.ws_port);
     }
 
     pub async fn destroy_all_sync(&mut self) {
@@ -86,6 +89,7 @@ impl SpawnedPoaServerProcess {
         // additionally make sure all ports used are freed
         kill_process_at_port(self.discovery_port);
         kill_process_at_port(self.rpc_port);
+        kill_process_at_port(self.ws_port);
     }
 }
 
@@ -110,6 +114,7 @@ pub struct FederationMemberTestConfig {
     pub secret_key: SecretKey,
     pub authorities: Vec<PublicKey>,
     pub rpc_port: u16,
+    pub ws_port: u16,
     pub discovery_port: u16,
     pub abci_port: u16,
     pub bitcoind_url: Url,
@@ -142,6 +147,7 @@ impl FederationMemberTestConfig {
         frost_max_signers: u16,
         peer_id: PeerId,
         rpc_port: u16,
+        ws_port: u16,
         discovery_port: u16,
         abci_port: u16,
         test_signal_tx: Sender<TestSignal>,
@@ -153,6 +159,7 @@ impl FederationMemberTestConfig {
             secret_key,
             authorities,
             rpc_port,
+            ws_port,
             discovery_port,
             abci_port,
             bitcoind_url,
@@ -279,6 +286,7 @@ impl FederationMemberTestConfig {
 
         let federation_config_path = federation_config_path.display().to_string();
         let rpc_port = self.rpc_port.to_string();
+        let ws_port = self.ws_port.to_string();
         let bitcoin_server_url = self.bitcoin_server_url.clone();
         let bitcoind_url = self.bitcoind_url.to_string();
         let bitcoind_username = self.bitcoind_username.clone();
@@ -314,6 +322,15 @@ impl FederationMemberTestConfig {
             "--http.addr",
             "127.0.0.1",
             "--http.api",
+            "eth,net,trace,txpool,web3,rpc,admin",
+            "--ws",
+            "--ws.addr",
+            "127.0.0.1",
+            "--ws.origins",
+            "*",
+            "--ws.port",
+            ws_port.as_str(),
+            "--ws.api",
             "eth,net,trace,txpool,web3,rpc,admin",
             "--btc-network",
             "regtest",
@@ -355,6 +372,7 @@ impl FederationMemberTestConfig {
             )?,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
+            ws_port: self.ws_port,
         })
     }
 
@@ -648,6 +666,7 @@ pub async fn create_poa_nodes(
             global_context.max_signers,
             member_peerid,
             RPC_PORT_BASE + member_index,
+            WS_PORT_BASE + member_index,
             DISCOVERY_PORT_BASE + member_index,
             ABCI_PORT_BASE + 10000 * member_index,
             test_signal_tx,
