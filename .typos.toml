@@ -1,7 +1,2 @@
 [files]
-extend-exclude = [
-    "crates/fuel-streams-publisher/README.md",
-    "docker/chain-config",
-    "docker/monitoring",
-    "helm",
-]
+extend-exclude = ["docker-local"]

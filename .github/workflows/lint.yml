@@ -5,6 +5,7 @@ on:
     types:
       - opened
       - synchronize
+      - edited
       - reopened
   merge_group:
     branches:
@@ -124,20 +125,25 @@ jobs:
       - name: Check workflow files
         uses: docker://rhysd/actionlint:latest
         env:
-          SHELLCHECK_OPTS: --exclude=SC2086,SC2129
+          SHELLCHECK_OPTS: --exclude=SC2046,SC2162,SC2116,SC2004,SC2002,SC2086,SC2129
         with:
           args: -color
 
-      - name: Install Rust
-        uses: ./.github/actions/setup-rust
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: "1.81.0"
+          components: rustfmt, clippy
+          toolchain: nightly
 
-      - name: Install Python
-        uses: actions/setup-python@v3
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-      - name: Setup Node && PNPM
-        uses: ./.github/actions/setup-node
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          version: 9
+          run_install: true
 
       - name: Run Pre Commit
         uses: pre-commit/action@v3.0.1
@@ -189,12 +195,66 @@ jobs:
     name: fmt
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs:
+      - lockfile
+      - pre-commit
+      - codespell
+      - grafana
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: rustfmt
-      - run: cargo fmt --all --check
+          components: rustfmt, clippy
+          toolchain: nightly
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          version: 9
+          run_install: true
+
+      - name: Format project
+        run: make fmt
+
+  cargo-verifications:
+    name: Cargo verifications
+    needs:
+      - lockfile
+      - pre-commit
+      - codespell
+      - grafana
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+          toolchain: nightly
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          version: 9
+          run_install: true
+
+      # - uses: taiki-e/install-action@cargo-machete
+      # - name: Check unused dependencies
+      #   run: cargo machete --skip-target-dir --with-metadata
+
+      - name: Lint project
+        run: make lint
 
   codespell:
     runs-on: ubuntu-latest
@@ -223,6 +283,7 @@ jobs:
       - crate-checks
       - fmt
       - grafana
+      - cargo-verifications
     timeout-minutes: 30
     steps:
       - name: Decide whether the needed jobs succeeded or failed

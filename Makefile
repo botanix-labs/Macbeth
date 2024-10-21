@@ -335,7 +335,7 @@ fmt-cargo:
 	cargo sort -w
 
 fmt-rust:
-	cargo +nightly fmt -- --color always
+	cargo +nightly fmt --all -- --color always
 
 fmt-prettier:
 	pnpm prettier:fix

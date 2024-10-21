@@ -378,8 +378,8 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Sig
     }
 
     for pegout_id in pending_pegout_ids.iter() {
-        if !psbt_pegout_ids.contains(&pegout_id) {
-            return Err(SigningFinalizeError::MissingPendingPegout(pegout_id.clone()));
+        if !psbt_pegout_ids.contains(pegout_id) {
+            return Err(SigningFinalizeError::MissingPendingPegout(*pegout_id));
         }
     }
 
