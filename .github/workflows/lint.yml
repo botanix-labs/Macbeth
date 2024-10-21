@@ -2,6 +2,10 @@ name: lint
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
   merge_group:
     branches:
       - main
@@ -56,6 +60,9 @@ jobs:
   validate-title:
     name: Validate PR Title
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
     steps:
       - uses: amannn/action-semantic-pull-request@v5
         env:
@@ -102,8 +109,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: ./.github/actions/setup-rust
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          toolchain: stable
       - run: cargo update --workspace --locked
 
   pre-commit:
