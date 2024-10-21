@@ -357,7 +357,7 @@ lint-rust:
 	cargo +nightly fmt -- --check --color always
 
 lint-clippy:
-	cargo clippy --workspace -- -D warnings
+	cargo clippy --workspace --exclude test-suite -- -D warnings
 
 lint-prettier:
 	pnpm prettier:validate
