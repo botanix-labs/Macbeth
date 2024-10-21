@@ -37,7 +37,7 @@ use url::Url;
 use super::{
     botanix_client::BotanixEthClient,
     create_temp_working_directory, kill_process_at_port,
-    poa_node::{DISCOVERY_PORT_BASE, RPC_PORT_BASE},
+    poa_node::{DISCOVERY_PORT_BASE, RPC_PORT_BASE, WS_PORT_BASE},
 };
 
 #[derive(Clone, Debug)]
@@ -46,6 +46,7 @@ pub enum Notifications {}
 #[derive(Debug)]
 pub struct SpawnedRpcServerProcess {
     pub rpc_port: u16,
+    pub ws_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
 }
@@ -57,6 +58,7 @@ impl SpawnedRpcServerProcess {
         // additionally make sure all ports used are freed
         kill_process_at_port(self.discovery_port);
         kill_process_at_port(self.rpc_port);
+        kill_process_at_port(self.ws_port);
     }
 
     pub async fn destroy_all_sync(&mut self) {
@@ -69,6 +71,7 @@ impl SpawnedRpcServerProcess {
         // additionally make sure all ports used are freed
         kill_process_at_port(self.discovery_port);
         kill_process_at_port(self.rpc_port);
+        kill_process_at_port(self.ws_port);
     }
 }
 #[derive(Clone, Debug)]
@@ -77,6 +80,7 @@ pub struct NonFederationMemberTestConfig {
     pub temp_path: PathBuf,
     pub secret_key: String,
     pub rpc_port: u16,
+    pub ws_port: u16,
     pub discovery_port: u16,
     pub bitcoind_url: Url,
     pub bitcoind_username: String,
@@ -100,6 +104,7 @@ impl NonFederationMemberTestConfig {
         peer_id: PeerId,
         botanix_fee_recipient: String,
         rpc_port: u16,
+        ws_port: u16,
         discovery_port: u16,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -107,6 +112,7 @@ impl NonFederationMemberTestConfig {
             temp_path: create_temp_working_directory()?,
             secret_key,
             rpc_port,
+            ws_port,
             discovery_port,
             bitcoind_url,
             bitcoind_username,
@@ -207,6 +213,7 @@ impl NonFederationMemberTestConfig {
 
         let federation_config_path = federation_config_path.display().to_string();
         let rpc_port = self.rpc_port.to_string();
+        let ws_port = self.ws_port.to_string();
         let bitcoind_url = self.bitcoind_url.to_string();
         let bitcoind_username = self.bitcoind_username.clone();
         let bitcoind_password = self.bitcoind_password.clone();
@@ -233,6 +240,15 @@ impl NonFederationMemberTestConfig {
             "127.0.0.1",
             "--http.api",
             "eth,net,trace,txpool,web3,rpc,admin",
+            "--ws",
+            "--ws.addr",
+            "127.0.0.1",
+            "--ws.origins",
+            "*",
+            "--ws.port",
+            ws_port.as_str(),
+            "--ws.api",
+            "eth,net,trace,txpool,web3,rpc,admin",
             "--btc-network",
             "regtest",
             "--bitcoind.url",
@@ -256,6 +272,7 @@ impl NonFederationMemberTestConfig {
             )?,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
+            ws_port: self.ws_port,
         })
     }
 
@@ -330,6 +347,9 @@ pub async fn create_rpc_nodes(
             rpc_peer_id,
             global_context.botanix_fee_recipient.clone(),
             RPC_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we
+                                                                          * start port assigning
+                                                                          * after poa servers */
+    WS_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we
                                                                           * start port assigning
                                                                           * after poa servers */
             DISCOVERY_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we start port assigning after poa servers */

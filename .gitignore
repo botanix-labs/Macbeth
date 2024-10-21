@@ -82,3 +82,5 @@ build_rs_cov.profraw
 # test suite logs
 bin/test-suite/*.txt
 cobertura.xml
+
+node_modules

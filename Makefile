@@ -562,6 +562,11 @@ start-poa-server-1:
 	--http.port 8545 \
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	--ws \
+	--ws.origins "*" \
+	--ws.port 9545 \
+	--ws.addr "127.0.0.1" \
+	--ws.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
 	--btc-server "localhost:8081" \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -588,6 +593,11 @@ start-poa-server-2:
 	--http.port 8546 \
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	--ws \
+	--ws.origins "*" \
+	--ws.port 9546 \
+	--ws.addr "127.0.0.1" \
+	--ws.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
 	--btc-server "localhost:8082" \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -614,6 +624,11 @@ start-poa-server-3:
 	--http.port 8547 \
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	--ws \
+	--ws.origins "*" \
+	--ws.port 9547 \
+	--ws.addr "127.0.0.1" \
+	--ws.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
 	--btc-server "localhost:8083" \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -639,6 +654,11 @@ start-non-fed-server-1:
 	--http.port 8548 \
 	--http.addr "127.0.0.1" \
 	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	--ws \
+	--ws.origins "*" \
+	--ws.port 9548 \
+	--ws.addr "127.0.0.1" \
+	--ws.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--bitcoind.url "${BITCOIND_URL}" \
