@@ -15,6 +15,7 @@ use thiserror::Error;
 use tracing::error;
 use wallet::WalletConfig;
 
+#[allow(dead_code)]
 #[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 enum FederationUtilsError {

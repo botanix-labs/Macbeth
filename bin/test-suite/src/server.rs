@@ -32,7 +32,7 @@ impl TestServer {
         result
     }
 
-    async fn run(&mut self, test_to_run: String) -> Result<(), Error> {
+    async fn run(&self, test_to_run: String) -> Result<(), Error> {
         let mut stop_handle = StopHandle::new();
         stop_handle.spawn_signal_listener();
         let mut test_suite = self.create_consensus_test_suite();

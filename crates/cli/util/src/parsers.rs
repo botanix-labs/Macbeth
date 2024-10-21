@@ -38,7 +38,7 @@ pub fn hash_or_num_value_parser(value: &str) -> eyre::Result<BlockHashOrNumber, 
     }
 }
 
-/// Parse a [SocketAddr] from a `str` prefixing with http.
+/// Parse a [`SocketAddr`] from a `str` prefixing with http.
 ///
 /// An error is returned if the value is empty or if non socket value is passed
 pub fn parse_grpc_address(value: &str) -> eyre::Result<String, SocketAddressParsingError> {

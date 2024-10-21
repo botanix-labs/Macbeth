@@ -115,7 +115,7 @@ where
             self.evm_config.clone(),
             State::builder().with_database(db).with_bundle_update().without_state_clear().build(),
             self.bitcoind_factory.clone(),
-            self.bitcoin_network.clone(),
+            self.bitcoin_network,
         )
     }
 }
@@ -307,7 +307,7 @@ where
                                 }
                             }
 
-                            let new_result = ExecutionResult::Revert {
+                            ExecutionResult::Revert {
                                 gas_used: result.gas_used(),
                                 output: match result {
                                     ExecutionResult::Success { output, .. } => {
@@ -316,8 +316,7 @@ where
                                     ExecutionResult::Revert { output, .. } => output.clone(),
                                     ExecutionResult::Halt { .. } => Bytes::new(),
                                 },
-                            };
-                            new_result
+                            }
                         }
                     }
                 } else {

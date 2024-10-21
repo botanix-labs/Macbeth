@@ -71,6 +71,7 @@ where
     EngineT: EngineTypes,
 {
     /// Create new instance of [`EngineApi`].
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         provider: Provider,
         chain_spec: Arc<ChainSpec>,

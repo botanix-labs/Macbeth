@@ -40,6 +40,7 @@ pub struct GrpcConfig {
     /// limits the maximum size of an encoded message. Defaults to 4MB
     pub max_encoding_message_size: usize,
     /// limits the maximum size of streaming channel
+    #[allow(dead_code)]
     pub max_channel_size: usize,
     /// set a timeout on for all request handlers
     #[serde(deserialize_with = "deserialize_duration_from_usize")]
@@ -83,7 +84,8 @@ pub struct GrpcConfig {
     pub http2_adaptive_window: Option<bool>,
     /// set the value of `TCP_NODELAY` option for accepted connections. Enabled by default
     pub tcp_nodelay: bool,
-    /// when looking for next draw we want to look at max `draw_lookahead_period_count`
+    /// when looking for next draw we want to look at max `draw_lookahead_period_count`\
+    #[allow(dead_code)]
     pub draw_lookahead_period_count: u64,
 }
 

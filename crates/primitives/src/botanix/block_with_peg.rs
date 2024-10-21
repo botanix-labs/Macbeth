@@ -14,8 +14,8 @@ pub struct SealedBlockWithPeg {
 }
 
 impl SealedBlockWithPeg {
-    /// Create a new SealedBlockWithPeg
-    pub fn new(
+    /// Create a new `SealedBlockWithPeg`
+    pub const fn new(
         block: SealedBlockWithSenders,
         pegins: Vec<PeginData>,
         pegouts: Vec<PegoutWithId>,
@@ -24,7 +24,7 @@ impl SealedBlockWithPeg {
     }
 
     /// Returns the block
-    pub fn block(&self) -> &SealedBlockWithSenders {
+    pub const fn block(&self) -> &SealedBlockWithSenders {
         &self.block
     }
 

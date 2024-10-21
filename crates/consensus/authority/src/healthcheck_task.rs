@@ -151,7 +151,7 @@ where
                 .collect::<Vec<_>>();
 
                 // merge physically disconnected and frost non-responsive peers
-                none_responding_authority_peers.extend(disconnected_authority_peers.iter().map(|(k, _)| k.clone()));
+                none_responding_authority_peers.extend(disconnected_authority_peers.iter().map(|(k, _)| *k));
                 let peers_to_reconnect: HashSet<PeerId> = HashSet::from_iter(none_responding_authority_peers.into_iter());
 
                 // if no peers to reconnect to, skip

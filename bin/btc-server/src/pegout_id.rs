@@ -22,6 +22,7 @@ impl PegoutId {
     }
 
     /// Returns an error only if the byte string is not of length 36.
+    #[allow(clippy::result_unit_err)]
     pub fn from_bytes(bytes: &[u8]) -> Result<PegoutId, ()> {
         if bytes.len() == 36 {
             Ok(PegoutId {

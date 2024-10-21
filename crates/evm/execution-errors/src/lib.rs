@@ -37,8 +37,8 @@ pub enum MintContractErrorType {
 impl fmt::Display for MintContractErrorType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MintContractErrorType::Pegin => write!(f, "Pegin"),
-            MintContractErrorType::Pegout => write!(f, "Pegout"),
+            Self::Pegin => write!(f, "Pegin"),
+            Self::Pegout => write!(f, "Pegout"),
         }
     }
 }

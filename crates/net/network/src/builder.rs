@@ -29,7 +29,7 @@ pub struct NetworkBuilder<Tx, Eth> {
 impl<Tx, Eth> NetworkBuilder<Tx, Eth> {
     /// Consumes the type and returns all fields.
     pub fn split(self) -> (NetworkManager, Tx, Eth, Option<FrostManager>) {
-        let NetworkBuilder { network, transactions, request_handler, frost_manager } = self;
+        let Self { network, transactions, request_handler, frost_manager } = self;
         (network, transactions, request_handler, frost_manager)
     }
 
@@ -52,28 +52,23 @@ impl<Tx, Eth> NetworkBuilder<Tx, Eth> {
     pub fn split_with_handle(
         self,
     ) -> (NetworkHandle, NetworkManager, Tx, Eth, Option<FrostManager>) {
-        let NetworkBuilder { network, transactions, request_handler, frost_manager } = self;
+        let Self { network, transactions, request_handler, frost_manager } = self;
         let handle = network.handle().clone();
         (handle, network, transactions, request_handler, frost_manager)
     }
 
     /// Creates a new [`FrostManager`] and wires it to the network.
-    pub fn frost(self, frost_config: Option<FrostConfig>) -> NetworkBuilder<Tx, Eth> {
+    pub fn frost(self, frost_config: Option<FrostConfig>) -> Self {
         if frost_config.is_none() {
             self
         } else {
-            let NetworkBuilder { mut network, request_handler, transactions, .. } = self;
+            let Self { mut network, request_handler, transactions, .. } = self;
             let (tx, rx) = mpsc::unbounded_channel();
             network.set_frost_manager(tx);
             let handle = network.handle().clone();
             let frost_manager =
                 FrostManager::new(frost_config.expect("frost config exists"), handle, rx);
-            NetworkBuilder {
-                network,
-                request_handler,
-                transactions,
-                frost_manager: Some(frost_manager),
-            }
+            Self { network, request_handler, transactions, frost_manager: Some(frost_manager) }
         }
     }
 
@@ -83,7 +78,7 @@ impl<Tx, Eth> NetworkBuilder<Tx, Eth> {
         pool: Pool,
         transactions_manager_config: TransactionsManagerConfig,
     ) -> NetworkBuilder<TransactionsManager<Pool>, Eth> {
-        let NetworkBuilder { mut network, request_handler, frost_manager, .. } = self;
+        let Self { mut network, request_handler, frost_manager, .. } = self;
         let (tx, rx) = mpsc::unbounded_channel();
         network.set_transactions(tx);
         let handle = network.handle().clone();
@@ -96,7 +91,7 @@ impl<Tx, Eth> NetworkBuilder<Tx, Eth> {
         self,
         client: Client,
     ) -> NetworkBuilder<Tx, EthRequestHandler<Client>> {
-        let NetworkBuilder { mut network, transactions, frost_manager, .. } = self;
+        let Self { mut network, transactions, frost_manager, .. } = self;
         let (tx, rx) = mpsc::channel(ETH_REQUEST_CHANNEL_CAPACITY);
         network.set_eth_request_handler(tx);
         let peers = network.handle().peers_handle().clone();

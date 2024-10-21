@@ -47,9 +47,9 @@ pub fn get_wallet_state_commitment(db: &Db) -> Result<WalletState, Error> {
     let tracked_tx_root = get_tracked_tx_set_merkle_root(db)?;
     let pending_pegouts_root = get_pending_pegouts_set_merkle_root(db)?;
     let mut engine = sha256::Hash::engine();
-    engine.write(&utxo_root).expect("to write 32 byte value");
-    engine.write(&tracked_tx_root).expect("to write 32 byte value");
-    engine.write(&pending_pegouts_root).expect("to write 32 byte value");
+    let _ = engine.write(&utxo_root).expect("to write 32 byte value");
+    let _ = engine.write(&tracked_tx_root).expect("to write 32 byte value");
+    let _ = engine.write(&pending_pegouts_root).expect("to write 32 byte value");
     let hash = sha256::Hash::from_engine(engine);
 
     Ok(WalletState {

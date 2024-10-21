@@ -333,7 +333,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // setup the grpc server
     let bitcoind_client = bitcoincore_rpc::Client::new(
-        &config.bitcoind_url.to_string(),
+        config.bitcoind_url.as_str(),
         Auth::UserPass(config.bitcoind_user.clone(), config.bitcoind_pass.clone()),
     )
     .expect("bitcoind client");

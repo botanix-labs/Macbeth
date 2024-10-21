@@ -24,7 +24,7 @@ pub struct ProtocolState {
 
 impl ProtocolState {
     /// Constructs a new Protocol State.
-    pub fn new(events: mpsc::UnboundedSender<FrostProtocolEvent>, my_peer_id: PeerId) -> Self {
+    pub const fn new(events: mpsc::UnboundedSender<FrostProtocolEvent>, my_peer_id: PeerId) -> Self {
         Self { events, my_peer_id }
     }
 }
@@ -47,11 +47,11 @@ pub enum PeerMessageResponse {
 impl fmt::Display for PeerMessageResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PeerMessageResponse::Dkg(response) => write!(f, "DKG Response: {}", response),
-            PeerMessageResponse::Signing(response) => write!(f, "Signing Response: {}", response),
-            PeerMessageResponse::Pbft(response) => write!(f, "PBFT Response: {}", response),
-            PeerMessageResponse::Utxo(response) => write!(f, "Utxo Response: {}", response),
-            PeerMessageResponse::Healthcheck(response) => {
+            Self::Dkg(response) => write!(f, "DKG Response: {}", response),
+            Self::Signing(response) => write!(f, "Signing Response: {}", response),
+            Self::Pbft(response) => write!(f, "PBFT Response: {}", response),
+            Self::Utxo(response) => write!(f, "Utxo Response: {}", response),
+            Self::Healthcheck(response) => {
                 write!(f, "Health Response: {:?}", response)
             }
         }
@@ -112,7 +112,7 @@ impl fmt::Display for HealthcheckResponse {
 /// Response structure for PBFT internal communication
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum PbftEventResponseType {
-    /// in turn block producer proposes a block to sign    
+    /// in turn block producer proposes a block to sign
     CoordinatorBlockProposal,
     /// peer precommitment
     PeerPreCommitment,
@@ -123,11 +123,11 @@ pub enum PbftEventResponseType {
 impl fmt::Display for PbftEventResponseType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PbftEventResponseType::CoordinatorBlockProposal => {
+            Self::CoordinatorBlockProposal => {
                 write!(f, "coordinator block proposal")
             }
-            PbftEventResponseType::PeerPreCommitment => write!(f, "peer precommitment"),
-            PbftEventResponseType::PeerCommitment => write!(f, "peer commitment"),
+            Self::PeerPreCommitment => write!(f, "peer precommitment"),
+            Self::PeerCommitment => write!(f, "peer commitment"),
         }
     }
 }
@@ -187,9 +187,9 @@ pub enum DkgEventResponseType {
 impl fmt::Display for DkgEventResponseType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DkgEventResponseType::DkgRound1 => write!(f, "dkground 1"),
-            DkgEventResponseType::DkgRound2 => write!(f, "dkground 2"),
-            DkgEventResponseType::DkgRound1Request => write!(f, "dkground 1 request"),
+            Self::DkgRound1 => write!(f, "dkground 1"),
+            Self::DkgRound2 => write!(f, "dkground 2"),
+            Self::DkgRound1Request => write!(f, "dkground 1 request"),
         }
     }
 }
@@ -223,16 +223,16 @@ pub enum SigningEventResponseType {
 impl fmt::Display for SigningEventResponseType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SigningEventResponseType::SignerRound1SigningPackage => {
+            Self::SignerRound1SigningPackage => {
                 write!(f, "signer round 1 signing package")
             }
-            SigningEventResponseType::CoordinatorRound1SigningPackage => {
+            Self::CoordinatorRound1SigningPackage => {
                 write!(f, "coordinator round 1 signing package")
             }
-            SigningEventResponseType::SignerRound2SigningPackage => {
+            Self::SignerRound2SigningPackage => {
                 write!(f, "signer round 2 signing package")
             }
-            SigningEventResponseType::CoordinatorRound2SigningPackage => {
+            Self::CoordinatorRound2SigningPackage => {
                 write!(f, "coordinator round 2 signing package")
             }
         }

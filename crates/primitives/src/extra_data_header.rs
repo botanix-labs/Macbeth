@@ -71,7 +71,7 @@ pub enum ExtraDataHeaderSerializeError {
 
 impl ExtraDataHeader {
     /// Create a new extra data header
-    pub fn new(
+    pub const fn new(
         version: u32,
         // Chain version that determines the valid chain
         chain_version: u32,
@@ -101,7 +101,7 @@ impl ExtraDataHeader {
         self.bitcoin_block_hash.consensus_encode(writer)?;
         self.aggregated_public_key.serialize().consensus_encode(writer)?;
         let block_producer_address_bytes = self.block_producer_address.0 .0;
-        writer.write(&block_producer_address_bytes)?;
+        let _ = writer.write(&block_producer_address_bytes)?;
 
         Ok(())
     }
@@ -148,7 +148,7 @@ impl ExtraDataHeader {
 
     /// returns the edh max size
     pub fn edh_max_size() -> usize {
-        let edh = ExtraDataHeader::default();
+        let edh = Self::default();
         edh.serialize().len()
     }
 

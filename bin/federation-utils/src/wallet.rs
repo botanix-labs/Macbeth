@@ -5,12 +5,7 @@ use ethers::{
     types::U256,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    convert::TryFrom,
-    fs::File,
-    io::{self, Write},
-    path::Path,
-};
+use std::{convert::TryFrom, fs::File, io::Write, path::Path};
 use tracing::error;
 use url::ParseError;
 
@@ -24,6 +19,7 @@ pub(crate) enum WalletError {
     ConfigSerializationFailed(#[from] serde_json::Error),
     #[error("Wallet config file already exists")]
     ConfigFileExists,
+    #[allow(dead_code)]
     #[error("No chain id was provided")]
     NoChainIdProvided,
 }
@@ -86,12 +82,14 @@ impl WalletConfig {
     }
 }
 
+#[allow(dead_code)]
 trait Wallet {
     fn get_balance(&self) -> Result<U256, WalletError>;
     fn sweep_balance(&self, to: Address) -> Result<TxHash, WalletError>;
     fn get_config(&self) -> Result<WalletConfig, WalletError>;
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct WalletProvider {
     wallet: EthersWallet<k256::ecdsa::SigningKey>,
@@ -100,6 +98,7 @@ struct WalletProvider {
 }
 
 impl WalletProvider {
+    #[allow(dead_code)]
     // Create a wallet: only chain id needs to be passed if no config exists
     pub(crate) fn new(
         chain_id: Option<u64>,
@@ -145,6 +144,7 @@ impl WalletProvider {
     }
 
     // Create a wallet from the config file at the default path if none is provided
+    #[allow(dead_code)]
     pub(crate) fn from_config(path: Option<String>) -> Result<Self, WalletError> {
         let path = path.unwrap_or_else(|| DEFAULT_CONFIG_PATH.to_string());
         let file = File::open(path).expect("Failed to open file");

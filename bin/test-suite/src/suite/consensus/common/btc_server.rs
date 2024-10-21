@@ -30,7 +30,7 @@ impl SpawnedBtcServerProcess {
         }
     }
 
-    pub async fn destroy_all_sync(&mut self) {
+    pub async fn destroy_all_sync(&self) {
         // kill the process
         let pid = self.child_process.id().expect("Expected a process id");
         let _ = std::process::Command::new("kill")

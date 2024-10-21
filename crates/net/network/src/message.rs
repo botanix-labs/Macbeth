@@ -232,7 +232,7 @@ pub struct PeerRequestSender {
 
 impl PeerRequestSender {
     /// Constructs a new sender instance that's wired to a session
-    pub fn new(peer_id: PeerId, to_session_tx: mpsc::Sender<PeerRequest>) -> Self {
+    pub const fn new(peer_id: PeerId, to_session_tx: mpsc::Sender<PeerRequest>) -> Self {
         Self { peer_id, to_session_tx }
     }
 
@@ -242,7 +242,7 @@ impl PeerRequestSender {
     }
 
     /// Returns the peer id of the remote peer.
-    pub fn peer_id(&self) -> &PeerId {
+    pub const fn peer_id(&self) -> &PeerId {
         &self.peer_id
     }
 }

@@ -41,6 +41,7 @@ use tracing::info;
 pub(crate) type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
 
 /// Builder type for confirguring the setup
+#[allow(dead_code)]
 pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
@@ -174,7 +175,7 @@ where
             // block
             agg_pk,
             authority_socket_addresses,
-            evm_config.clone(),
+            evm_config,
             chain_spec.clone(),
             bitcoind_factory,
             executor_factory,
@@ -225,7 +226,7 @@ where
             network_handle,
             network_client: _,
             frost_handle,
-            block_import_rx,
+            block_import_rx: _,
             task_executor,
             frost_config,
             payload_builder: _,

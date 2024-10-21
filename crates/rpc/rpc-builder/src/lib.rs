@@ -309,12 +309,9 @@ impl<Provider, Pool, Network, Tasks, Events, EvmConfig>
     }
 
     /// Configure botanix provider
-    pub fn with_botanix_provider(
-        self,
-        botanix_provider: Botanix,
-    ) -> RpcModuleBuilder<Provider, Pool, Network, Tasks, Events, EvmConfig> {
+    pub fn with_botanix_provider(self, botanix_provider: Botanix) -> Self {
         let Self { provider, pool, executor, network, events, evm_config, .. } = self;
-        RpcModuleBuilder { provider, network, pool, executor, events, evm_config, botanix_provider }
+        Self { provider, network, pool, executor, events, evm_config, botanix_provider }
     }
 }
 
@@ -1234,7 +1231,7 @@ impl<RpcMiddleware> RpcServerConfig<RpcMiddleware> {
     }
 
     /// Configures the btc-server JWT secret.
-    pub fn with_btc_signing_server_jwt_secret(
+    pub const fn with_btc_signing_server_jwt_secret(
         mut self,
         btc_signing_server_jwt_secret: Option<JwtSecret>,
     ) -> Self {

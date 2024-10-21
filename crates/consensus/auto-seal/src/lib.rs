@@ -517,12 +517,8 @@ impl StorageInner {
         header.logs_bloom = receipts_with_bloom.iter().fold(Bloom::ZERO, |bloom, r| bloom | *r);
 
         // update receipts root
-        header.receipts_root = {
-            let receipts_root =
-                execution_outcome.receipts_root_slow(header.number).expect("Receipts is present");
-
-            receipts_root
-        };
+        header.receipts_root =
+            execution_outcome.receipts_root_slow(header.number).expect("Receipts is present");
         trace!(target: "consensus::auto", root=?header.state_root, ?body, "calculated root");
 
         // finally insert into storage

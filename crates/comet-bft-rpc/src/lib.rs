@@ -27,9 +27,7 @@ impl CometBftRpcFactory for HttpCometBFTRpcClientFactory {
     }
 
     fn build_and_connect(&self) -> Result<HttpClient, Error> {
-        let url = HttpClientUrl::from_str(
-            format!("http://{}:{}", self.host, self.port.to_string()).as_str(),
-        )?;
+        let url = HttpClientUrl::from_str(format!("http://{}:{}", self.host, self.port).as_str())?;
         HttpClient::builder(url).compat_mode(tendermint_rpc::client::CompatMode::V0_34).build()
     }
 }

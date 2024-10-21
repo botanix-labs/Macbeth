@@ -1,7 +1,7 @@
 use crate::{Address, Transaction, TransactionSigned, TxKind, U256};
 use revm_primitives::{AuthorizationList, TxEnv};
 
-#[cfg(all(not(feature = "std")))]
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 /// Implements behaviour to fill a [`TxEnv`] from another transaction.

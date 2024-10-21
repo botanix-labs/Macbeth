@@ -24,6 +24,7 @@ use crate::{
 };
 
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub(crate) enum UtxoSyncError {
     #[error("db provider error: {0}")]
     LatestBlockError(#[from] ProviderError),
@@ -47,10 +48,12 @@ pub(crate) enum UtxoSyncError {
     Sha256HashError(#[from] FromSliceError),
 }
 
+#[allow(dead_code)]
 pub(crate) trait UTXOSync {
     async fn sync_utxo_set(&self) -> Result<(), UtxoSyncError>;
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct UTXOSyncEngine<EF, BF, DB, ToFrostMan> {
     storage: Storage<EF, BF, DB>,

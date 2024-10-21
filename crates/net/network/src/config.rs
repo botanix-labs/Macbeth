@@ -609,7 +609,7 @@ pub enum NetworkMode {
     /// Network is in proof-of-stake mode
     #[default]
     Stake,
-    /// Network is in PoA mode
+    /// Network is in `PoA` mode
     Authority,
 }
 

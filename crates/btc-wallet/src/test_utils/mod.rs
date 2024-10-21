@@ -70,6 +70,12 @@ impl MockBitcoind {
     }
 }
 
+impl Default for MockBitcoind {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RpcApiExt for MockBitcoind {
     async fn is_synced(&self) -> Result<bool, BitcoindError> {
         Ok(true)

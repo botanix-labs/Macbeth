@@ -7530,6 +7530,7 @@ dependencies = [
  "async-compression",
  "bincode",
  "bitcoin",
+ "bitcoin_hashes",
  "btc-server",
  "bytes",
  "client",
@@ -7845,7 +7846,6 @@ dependencies = [
  "reth-network-peers",
  "reth-primitives-traits",
  "reth-trie-common",
- "serde",
  "serde_json",
 ]
 

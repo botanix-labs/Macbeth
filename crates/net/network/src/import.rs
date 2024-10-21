@@ -85,6 +85,7 @@ impl BlockImport for ProofOfStakeBlockImport {
 pub struct ProofOfAuthorityBlockImport {
     queue: VecDeque<(PeerId, NewBlockMessage)>,
 
+    #[allow(dead_code)]
     chain_spec: Arc<ChainSpec>,
 
     sender_stream: UnboundedSender<NewBlockMessageWithPeerId>,
@@ -92,7 +93,7 @@ pub struct ProofOfAuthorityBlockImport {
 
 impl ProofOfAuthorityBlockImport {
     /// Creates Proof of Authority Block Import with the provided consensus mechanism
-    pub fn new(
+    pub const fn new(
         chain_spec: Arc<ChainSpec>,
         sender_stream: UnboundedSender<NewBlockMessageWithPeerId>,
     ) -> Self {

@@ -33,7 +33,7 @@ pub struct FrostHandle {
     manager_tx: mpsc::UnboundedSender<FrostCommand>,
 }
 
-/// Implementations for the [`FrostHandle`]`
+/// Implementations for the [`FrostHandle`]
 impl ToFrostManager for FrostHandle {
     /// Sends a command to the Protocol
     fn send_command(&self, cmd: FrostCommand) -> Result<(), SendError<FrostCommand>> {
@@ -143,7 +143,7 @@ impl FrostManager {
     }
 
     fn send_healthcheck_to_peers(&self) {
-        for (peer_id, peer_data) in self.peers_connections.iter() {
+        for (peer_id, peer_data) in &self.peers_connections {
             let resp = HealthcheckResponse { sender: *self.network.peer_id(), receiver: *peer_id };
             match peer_data
                 .peer_commands_tx
@@ -203,7 +203,7 @@ impl FrostManager {
                     warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage message from non-authority peer {:?}", peer_id);
                     return;
                 }
-                for task_forwarder in self.task_forwarder_txs.iter() {
+                for task_forwarder in &self.task_forwarder_txs {
                     if let Err(send_res) = task_forwarder.send((peer_id, response.clone())) {
                         error!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
                     }
@@ -238,7 +238,7 @@ impl FrostManager {
                 let random_authority_index =
                     rand::thread_rng().gen_range(0..self.peers_connections.len() - 1);
                 let random_peer_id = self.peers_connections.keys().nth(random_authority_index);
-                match random_peer_id.map(|peer_id| self.peers_connections.get(peer_id)).flatten() {
+                match random_peer_id.and_then(|peer_id| self.peers_connections.get(peer_id)) {
                     Some(peer_data) => {
                         match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
                             PeerMessageResponse::Utxo(UtxoSetResponse { data: vec![] }),
@@ -263,7 +263,7 @@ impl FrostManager {
                 let peers_to_reconnect = disconnected_peers.len();
                 let mut reconnected_peers = 0;
 
-                for (disconnected_peer, peer_remote_addr) in disconnected_peers.into_iter() {
+                for (disconnected_peer, peer_remote_addr) in disconnected_peers {
                     if !self.peers_connections.contains_key(&disconnected_peer) {
                         warn!(target: "network::frost::on_command", "Could not find peer amongst own peer connections {:?}", disconnected_peer);
                         continue;
@@ -385,7 +385,7 @@ pub struct FrostConfig {
 
 impl FrostConfig {
     /// Create a new [`FrostConfig`] with default values
-    pub fn new(
+    pub const fn new(
         authority_pk: secp256k1::PublicKey,
         authority_index: usize,
         authorities: Vec<secp256k1::PublicKey>,

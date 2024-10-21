@@ -86,14 +86,14 @@ pub struct FrostConnectionHandler {
 impl ConnectionHandler for FrostConnectionHandler {
     type Connection = FrostProtoConnection;
 
-    /// Returns the protocol to announce when the RLPx connection will be established.
+    /// Returns the protocol to announce when the `RLPx` connection will be established.
     ///
     /// This will be negotiated with the remote peer.
     fn protocol(&self) -> Protocol {
         FrostProtoMessage::protocol()
     }
 
-    /// Invoked when the RLPx connection has been established by the peer does not share the
+    /// Invoked when the `RLPx` connection has been established by the peer does not share the
     /// protocol.
     fn on_unsupported_by_peer(
         self,
@@ -104,7 +104,7 @@ impl ConnectionHandler for FrostConnectionHandler {
         OnNotSupported::KeepAlive
     }
 
-    /// Invoked when the RLPx connection was established.
+    /// Invoked when the `RLPx` connection was established.
     ///
     /// The returned future should resolve when the connection should disconnect.
     fn into_connection(

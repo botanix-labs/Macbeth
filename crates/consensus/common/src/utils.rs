@@ -13,7 +13,7 @@ pub fn unix_timestamp() -> u64 {
 
 // not in authority utils because of circular dependency
 /// Calculate the block reward split between botanix and the beneficiary
-pub fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
+pub const fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
     // 20% of the block reward
     let botanix_reward = total_block_fees / 5;
     let beneficiary_reward = total_block_fees - botanix_reward;
@@ -30,7 +30,7 @@ pub fn validate_poa_block_beneficiary(header: &Header) -> Result<(), ConsensusEr
 }
 
 /// Check the extra data header field has the current chain version
-pub fn validate_chain_version(edh_chain_version: u32) -> Result<(), ConsensusError> {
+pub const fn validate_chain_version(edh_chain_version: u32) -> Result<(), ConsensusError> {
     if edh_chain_version != CHAIN_VERSION {
         return Err(ConsensusError::InvalidChainVersion);
     }
@@ -38,7 +38,7 @@ pub fn validate_chain_version(edh_chain_version: u32) -> Result<(), ConsensusErr
     Ok(())
 }
 
-/// Convert FixedBytes<32> to U256
+/// Convert `FixedBytes`<32> to U256
 pub fn fixed_bytes_32_to_u256(value: FixedBytes<32>) -> U256 {
     let mut value_array = [0u8; 32];
     value_array.copy_from_slice(value.as_slice());
@@ -69,7 +69,7 @@ pub fn is_inturn(
 }
 
 /// Returns the index of the authority which is currently in turn based on the seconds passed
-pub fn current_inturn_index(
+pub const fn current_inturn_index(
     authorities_len: u64,
     reference_timestamp: u64,
     block_time: u64,

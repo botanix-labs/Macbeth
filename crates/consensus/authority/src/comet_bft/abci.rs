@@ -272,13 +272,12 @@ where
         let payload_builder_attributes =
             EthPayloadBuilderAttributes::new(best_block.hash(), payload_attributes);
 
-        let payload_config = PayloadConfig::new(
+        PayloadConfig::new(
             Arc::new(best_block),
             reth_primitives::Bytes::default(),
             payload_builder_attributes,
             chain_spec,
-        );
-        payload_config
+        )
     }
 
     pub(crate) fn non_deterministic_data_bytes(&self) -> prost::bytes::Bytes {
@@ -292,7 +291,7 @@ where
 
     pub(crate) fn validate_block(&self, block: &SealedBlock) -> ResponseProcessProposal {
         // validate_block_post_execution() is called when inserting the block (ABCIDriver)
-        match self.authority_consensus.validate_block_pre_execution(&block) {
+        match self.authority_consensus.validate_block_pre_execution(block) {
             Ok(_) => {}
             Err(e) => {
                 error!("Error in validate_block_pre_execution(): {:?}", e);
@@ -313,8 +312,8 @@ where
         let agg_pk =
             self.storage.inner.blocking_read().aggregate_public_key.expect("agg pk to exist");
         match self.authority_consensus.validate_header_standalone(
-            &block.header(),
-            &self.storage.genesis_authorities.as_slice(),
+            block.header(),
+            self.storage.genesis_authorities.as_slice(),
             Some(&agg_pk),
         ) {
             Ok(_) => {}
@@ -358,10 +357,7 @@ where
     fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
         info!("init_chain request: {:?}", _request);
         let client = self.storage.client.clone();
-        let res =
-            ResponseInitChain { app_hash: self.application_hash(&client), ..Default::default() };
-
-        res
+        ResponseInitChain { app_hash: self.application_hash(&client), ..Default::default() }
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#info
@@ -371,15 +367,13 @@ where
         let latest_header =
             client.latest_header().expect("should have latest").expect("should have header");
 
-        let info_res = ResponseInfo {
+        ResponseInfo {
             data: String::default(),
             version: "TODO".to_string(),
             app_version: 1,
             last_block_height: latest_header.number as i64,
             last_block_app_hash: self.application_hash(&client),
-        };
-
-        info_res
+        }
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
@@ -455,7 +449,7 @@ where
         // check of the tranasaction is required. CheckTx_Recheck types are used when the mempool is
         // initiating a normal recheck of a transaction.
         let _type = request.r#type;
-        let tx_bytes = request.tx.clone();
+        let _tx_bytes = request.tx.clone();
         let hex = match hex::decode(request.tx.clone()) {
             Ok(hex) => hex, // Proceed with the decoded hex if successful
             Err(err) => {
@@ -544,7 +538,7 @@ where
         // Extract block time: this must come from the CBFT block header NOT the system time
         // As that will be underministic
         let block_time = request.time.expect("block time");
-        let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
+        let cbft_block_hash = FixedBytes::<32>::from_slice(request.hash.to_vec().as_slice());
 
         // extract first tx which contains non-deterministic data and validate
         let txs_bytes = request.txs;
@@ -566,13 +560,8 @@ where
             }
         };
 
-        let bitcoin_checkpoint_block_hash = self
-            .bitcoin_checkpoint
-            .blocking_read()
-            .expect("should have checkpoint")
-            .clone()
-            .0
-            .block_hash();
+        let bitcoin_checkpoint_block_hash =
+            self.bitcoin_checkpoint.blocking_read().expect("should have checkpoint").0.block_hash();
 
         // check non-deterministic data: btc block hash and aggregate public key
         if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash {
@@ -644,7 +633,7 @@ where
     ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
         info!("finalize_block request: {:?}", request);
-        let cbft_block_hash = FixedBytes::<32>::from_slice(&request.hash.to_vec().as_slice());
+        let cbft_block_hash = FixedBytes::<32>::from_slice(request.hash.to_vec().as_slice());
         let mut block_cache_write = self.block_cache.write().expect("should get write lock");
         let sealed_block_with_peg = match block_cache_write.get(&cbft_block_hash) {
             Some(block) => block.clone(),
@@ -774,6 +763,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
     CommitBlock((SealedBlockWithPeg, FixedBytes<32>, tokio::sync::oneshot::Sender<()>)),
@@ -787,6 +777,7 @@ enum ABCIDriverMessage {
 // * Sending the finalized block to the engine (FCU)
 // * Sending pegins / pegouts to the btc server
 // * Updating the [ExtraDataHeader] with the block witnesses
+#[allow(dead_code)]
 pub(crate) struct ABCIDriver<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -892,8 +883,7 @@ where
                         let pegins = sealed_block_with_peg
                             .pegins()
                             .iter()
-                            .map(|p| p.meta.clone())
-                            .flatten()
+                            .flat_map(|p| p.meta.clone())
                             .collect::<Vec<_>>();
 
                         let pegouts = sealed_block_with_peg.pegouts();
@@ -903,7 +893,7 @@ where
                         if self.btc_server.is_some() {
                             // pegins
                             call_notify_pegin(
-                                &mut self.btc_server.as_mut().expect("btc server to exist"),
+                                self.btc_server.as_mut().expect("btc server to exist"),
                                 &pegins,
                             )
                             .await
@@ -911,7 +901,7 @@ where
 
                             // pegouts
                             call_notify_pegout(
-                                &mut self.btc_server.as_mut().expect("btc server to exist"),
+                                self.btc_server.as_mut().expect("btc server to exist"),
                                 pegouts,
                                 block_height,
                             )

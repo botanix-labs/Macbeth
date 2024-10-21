@@ -44,6 +44,7 @@ pub(crate) enum FrostNotificationMessage {
     InitiateSigning(FrostNotification),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum UtxoSetSyncSerializationError {
     #[error("Failed to receive a frost message from a peer {0}")]
@@ -63,6 +64,7 @@ pub(crate) struct FrostNotification {
     pub(crate) psbt: Vec<u8>,
 }
 
+#[allow(dead_code)]
 pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
@@ -444,11 +446,7 @@ where
                             SigningEventResponseType::SignerRound1SigningPackage => {
                                 match self
                                     .signing_state_machine
-                                    .signer_process_round1(
-                                        identifier,
-                                        signing_session_id.clone(),
-                                        psbt,
-                                    )
+                                    .signer_process_round1(identifier, signing_session_id, psbt)
                                     .await
                                 {
                                     Ok(_) => {
@@ -465,11 +463,7 @@ where
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => match self
                                 .signing_state_machine
-                                .coordinator_process_round1(
-                                    identifier,
-                                    signing_session_id.clone(),
-                                    psbt,
-                                )
+                                .coordinator_process_round1(identifier, signing_session_id, psbt)
                                 .await
                             {
                                 Ok(_) => {
@@ -486,11 +480,7 @@ where
                             SigningEventResponseType::SignerRound2SigningPackage => {
                                 match self
                                     .signing_state_machine
-                                    .signer_process_round2(
-                                        identifier,
-                                        signing_session_id.clone(),
-                                        psbt,
-                                    )
+                                    .signer_process_round2(identifier, signing_session_id, psbt)
                                     .await
                                 {
                                     Ok(_) => {
@@ -507,11 +497,7 @@ where
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => match self
                                 .signing_state_machine
-                                .coordinator_process_round2(
-                                    identifier,
-                                    signing_session_id.clone(),
-                                    psbt,
-                                )
+                                .coordinator_process_round2(identifier, signing_session_id, psbt)
                                 .await
                             {
                                 Ok(_) => {

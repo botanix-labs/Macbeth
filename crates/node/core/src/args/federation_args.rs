@@ -59,7 +59,7 @@ impl FederationTomlConfig {
     }
 
     /// Create a new genesis config
-    pub fn new(
+    pub const fn new(
         federation_member_public_key: Vec<FedMemberPubKey>,
         botanix_fee_recipient: String,
         minting_contract_bytecode: String,

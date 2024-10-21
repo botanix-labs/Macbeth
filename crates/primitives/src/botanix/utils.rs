@@ -7,23 +7,23 @@ use frost_secp256k1_tr as frost;
 /// This equals 10^10.
 const SATOSHI_IN_WEI: U256 = U256([10_000_000_000, 0, 0, 0]);
 
-/// The maximum [bitcoin::Amount] satoshi value.
+/// The maximum [`bitcoin::Amount`] satoshi value.
 ///
-/// This equals u64::max_value().
+/// This equals `u64::max_value()`.
 const MAX_SATOSHI: U256 = U256([u64::MAX, 0, 0, 0]);
 
-/// An extension trait for [bitcoin::Amount].
+/// An extension trait for [`bitcoin::Amount`].
 pub trait AmountExt: Copy + From<bitcoin::Amount> + Into<bitcoin::Amount> {
     /// Convert this amount to the representation in wei.
     fn to_wei(self) -> U256 {
         U256::from(self.into().to_sat()) * SATOSHI_IN_WEI
     }
 
-    /// Convert the amount represented in wei into an [bitcoin::Amount], by
+    /// Convert the amount represented in wei into an [`bitcoin::Amount`], by
     /// dropping the value that is smaller than one satoshi (rounding down).
     ///
     /// Returns [None] if the wei amount exceeds the maximum value of
-    /// [bitcoin::Amount::max_value()].
+    /// [`bitcoin::Amount::max_value()`].
     fn from_wei_floor(wei: U256) -> Option<Self> {
         let sat = wei / SATOSHI_IN_WEI;
         if sat <= MAX_SATOSHI {
@@ -33,10 +33,10 @@ pub trait AmountExt: Copy + From<bitcoin::Amount> + Into<bitcoin::Amount> {
         }
     }
 
-    /// Convert the amount represented in wei into an [bitcoin::Amount].
+    /// Convert the amount represented in wei into an [`bitcoin::Amount`].
     ///
     /// Returns [None] if the wei amount exceeds the maximum value of
-    /// [bitcoin::Amount::max_value()] or if the given wei amount is not an
+    /// [`bitcoin::Amount::max_value()`] or if the given wei amount is not an
     /// exact multiple of one satoshi.
     fn from_wei(wei: U256) -> Option<Self> {
         let ret = Self::from_wei_floor(wei)?;
@@ -60,7 +60,7 @@ pub enum KeyError {
 
 impl From<secp256k1::Error> for KeyError {
     fn from(_err: secp256k1::Error) -> Self {
-        KeyError::SecpError
+        Self::SecpError
     }
 }
 

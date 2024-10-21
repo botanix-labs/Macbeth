@@ -131,11 +131,7 @@ impl reth_codecs::Compact for TxType {
             Self::Legacy => 0,
             Self::Eip2930 => 1,
             Self::Eip1559 => 2,
-            Self::Eip4844 => {
-                buf.put_u8(*self as u8);
-                COMPACT_EXTENDED_IDENTIFIER_FLAG
-            }
-            Self::Eip7702 => {
+            Self::Eip4844 | Self::Eip7702 => {
                 buf.put_u8(*self as u8);
                 COMPACT_EXTENDED_IDENTIFIER_FLAG
             }
