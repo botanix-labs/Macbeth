@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use bdk::{miniscript::psbt::Error as PsbtError, psbt::PsbtUtils};
 use bitcoin::{
-    psbt::{ExtractTxError, Output, Psbt},
+    psbt::{ExtractTxError, Psbt},
     taproot::SigFromSliceError,
     FeeRate,
 };
@@ -10,8 +10,7 @@ use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use reth_btc_wallet::{
-    address::generate_taproot_change_scriptpubkey,
-    psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
+    psbt::{PsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
 };
 
@@ -19,8 +18,7 @@ use crate::{
     coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
-    pegout_scheduler::PegoutRequest,
-    util::{validate_psbt, VerifyingKeyExt, ROUND1, ROUND1_TRANSITION},
+    util::{validate_outputs, validate_psbt, ROUND1, ROUND1_TRANSITION},
     App, Error,
 };
 
@@ -221,7 +219,7 @@ where
             }
         }
         // Validate PSBT
-        validate_psbt(psbt, ROUND1, self.min_signers, &self)?;
+        validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
         let num_inputs = psbt.inputs.len();
 
         let key_package =
@@ -259,7 +257,7 @@ where
             self.db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
 
         // Validate PSBT
-        validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self)?;
+        validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
 
         let tx = psbt.clone().extract_tx()?;
         let num_inputs = tx.input.len();
@@ -343,7 +341,7 @@ where
             }
         }
 
-        self.validate_outputs(&finalized_psbt)?;
+        validate_outputs(&finalized_psbt, &self.db)?;
 
         let tx = finalized_psbt.clone().extract_tx()?;
         // We're finalizing it for the first time now.
@@ -375,56 +373,5 @@ where
         }
 
         Ok(finalized_psbt)
-    }
-
-    // Check all pending pegouts are being settled in this tx
-    // and additional outputs are change outputs
-    pub(crate) fn validate_outputs(&self, psbt: &Psbt) -> Result<(), SigningFinalizeError> {
-        // check aggregated public key exists
-        let public_key_package = match self.db.get_public_key_package() {
-            Ok(res) => match res {
-                Some(pk) => pk,
-                None => return Err(SigningFinalizeError::MissingKeyPackage),
-            },
-            Err(_e) => return Err(SigningFinalizeError::MissingKeyPackage),
-        };
-
-        let pending_pegouts = self.db.get_pending_pegouts()?;
-        let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
-
-        let mut psbt_pegout_ids: Vec<PegoutId> = vec![];
-        let mut additional_outputs: Vec<Output> = vec![];
-        for output in psbt.outputs.iter() {
-            match output.pegout_id() {
-                Some(id) => match PegoutId::from_bytes(&id) {
-                    Ok(id) => psbt_pegout_ids.push(id),
-                    Err(_) => return Err(SigningFinalizeError::MissingPsbtPegout),
-                },
-                None => additional_outputs.push(output.clone()),
-            };
-        }
-
-        for pegout_id in pending_pegout_ids.iter() {
-            if !psbt_pegout_ids.contains(&pegout_id) {
-                return Err(SigningFinalizeError::MissingPendingPegout(pegout_id.clone()));
-            }
-        }
-
-        // check extra outputs are change outputs:
-        // psbt should only have one change output
-        if additional_outputs.len() != 1 {
-            return Err(SigningFinalizeError::InvalidChangeOutput);
-        }
-
-        // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
-        let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
-        let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
-        let tx = psbt.clone().extract_tx()?;
-        let has_change = tx.output.iter().any(|o| o.script_pubkey == expected_script_pubkey);
-        if !has_change {
-            return Err(SigningFinalizeError::InvalidChangeOutput);
-        }
-
-        Ok(())
     }
 }
