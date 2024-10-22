@@ -50,7 +50,6 @@ pub const MINTING_CONTRACT_BYTECODE: &str = "60806040526004361061003f5760003560e
 pub const MINT_CONTRACT_ADDRESS: &str = "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78";
 pub const PREFUNDED_ACCOUNT_SECRET_KEY: &str =
     "52947524bbc14bd90cc86c32b9b7564da2f7f8de343825fed68cd04da4925d29";
-
 pub fn kill_process_at_port(port: u16) {
     match kill(port) {
         Ok(pid) => {
