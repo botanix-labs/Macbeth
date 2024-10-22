@@ -45,10 +45,10 @@ confy = "0.6"
 
 # for tonic
 tokio = { version = "1.37.0", features = ["full"] }
-tonic = { version = "0.11.0", features = ["gzip"] }
-tonic-health = { version = "0.11.0" }
-tonic-reflection = { version = "0.11.0" }
-prost = "0.12.6"
+tonic = { version = "0.12.3", features = ["gzip"] }
+tonic-health = { version = "0.12.3" }
+tonic-reflection = { version = "0.12.3" }
+prost = "0.13.3"
 
 tempfile = "3.6.0"
 
@@ -56,8 +56,8 @@ tempfile = "3.6.0"
 clap = { version = "4.3.22", features = [ "derive" ] }
 
 [build-dependencies]
-tonic-build = "0.11.0"
-prost-build = "0.12.1"
+tonic-build = "0.12.3"
+prost-build = "0.13.3"
 
 [dev-dependencies]
 test-log = "0.2.12"
