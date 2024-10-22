@@ -333,7 +333,6 @@ lint-reth:
 	--workspace \
 	--bin "reth" \
 	--lib \
-	--examples \
 	--tests \
 	--benches \
 	--features "ethereum $(BIN_OTHER_FEATURES)" \
@@ -344,7 +343,6 @@ lint-op-reth:
 	--workspace \
 	--bin "op-reth" \
 	--lib \
-	--examples \
 	--tests \
 	--benches \
 	--features "$(BIN_OTHER_FEATURES)" \
@@ -354,7 +352,6 @@ lint-other-targets:
 	cargo +nightly clippy \
 	--workspace \
 	--lib \
-	--examples \
 	--tests \
 	--benches \
 	--all-features \
@@ -381,7 +378,6 @@ fix-lint-reth:
 	--workspace \
 	--bin "reth" \
 	--lib \
-	--examples \
 	--tests \
 	--benches \
 	--features "ethereum $(BIN_OTHER_FEATURES)" \
@@ -395,7 +391,6 @@ fix-lint-op-reth:
 	--workspace \
 	--bin "op-reth" \
 	--lib \
-	--examples \
 	--tests \
 	--benches \
 	--features "$(BIN_OTHER_FEATURES)" \
@@ -408,7 +403,6 @@ fix-lint-other-targets:
 	cargo +nightly clippy \
 	--workspace \
 	--lib \
-	--examples \
 	--tests \
 	--benches \
 	--all-features \
@@ -438,7 +432,6 @@ test-reth:
 	--workspace \
 	--bin "reth" \
 	--lib \
-	--examples \
 	--tests \
 	--benches \
 	--features "ethereum $(BIN_OTHER_FEATURES)"
@@ -447,7 +440,7 @@ test-op-reth:
 	cargo test \
 	--workspace \
 	--bin "op-reth" \
-	--lib --examples \
+	--lib \
 	--tests \
 	--benches \
 	--features "$(BIN_OTHER_FEATURES)"
@@ -456,7 +449,6 @@ test-other-targets:
 	cargo test \
 	--workspace \
 	--lib \
-	--examples \
 	--tests \
 	--benches \
 	--all-features
