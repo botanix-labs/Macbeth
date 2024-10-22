@@ -633,7 +633,7 @@ where
                         peer_commands_tx
                             .send(FrostPeerCommand::PeerMessage(resp))
                             .map_err(|e| {
-                                error!(target: "consensus::authority::signing", "Failed to send PeerMessage {:?}", e);
+                                error!(target: "consensus::authority::signing", "Failed to send PeerMessage {:?}", e.to_string());
                                 Error::Send(e)
                             })?;
                     }
