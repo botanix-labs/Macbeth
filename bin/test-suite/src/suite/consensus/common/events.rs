@@ -3,8 +3,7 @@ use crate::{
     suite::consensus::common::poa_node::{is_dkg_ready, FederationMemberTestConfig, Notifications},
 };
 use client::SigningStatus;
-use reth_primitives::{Receipt, B256};
-use reth_provider::BlockReceipts;
+use reth_primitives::B256;
 use std::collections::HashMap;
 
 pub const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
@@ -60,26 +59,12 @@ pub async fn await_botanix_event(
                 "Canon state notification for engine index =",
                 canon_state_notification.engine_index
             );
-            let block_receipts = canon_state_notification.notification.block_receipts();
-            let non_reverted_block_receipts = block_receipts
-                .into_iter()
-                .filter_map(|(receipt, reverted)| if !reverted { Some(receipt) } else { None })
-                .collect::<Vec<BlockReceipts>>();
-            let final_block_receipts =
-                non_reverted_block_receipts.into_iter().fold(vec![], |mut acc, receipts| {
-                    let receipts = receipts
-                        .tx_receipts
-                        .into_iter()
-                        .filter_map(|(_, r)| if r.success { Some(r) } else { None })
-                        .collect::<Vec<Receipt>>();
-                    acc.extend(receipts);
-                    acc
-                });
-            it_info_print!("Final block receipts", final_block_receipts.len());
-            for block_receipt in final_block_receipts.into_iter() {
+            let block_receipts = canon_state_notification.tx_receipts;
+            it_info_print!("Final block receipts", block_receipts.len());
+            for block_receipt in block_receipts.into_iter() {
                 for log in block_receipt.logs.into_iter() {
-                    for topic in log.topics() {
-                        if *topic == event_topic {
+                    for topic in log.topics {
+                        if topic.0 == event_topic.0 {
                             return;
                         }
                     }

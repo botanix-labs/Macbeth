@@ -12,7 +12,10 @@ use askama::Template;
 use bitcoin::hashes::Hash;
 use btcserverlib::extended_client::BtcServerExtendedClient;
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
-use ethers::providers::PeerInfo;
+use ethers::{
+    providers::{Middleware, PeerInfo, StreamExt},
+    types::{BlockId, BlockNumber, H256},
+};
 use reth::args::{FedMemberPubKey, FederationTomlConfig};
 use reth_chainspec::{create_botanix_config_with_genesis, BOTANIX_TESTNET};
 use reth_network_peers::pk2id;
@@ -104,7 +107,8 @@ pub struct DkgPayload {
 pub struct CannonStateNofificationPayload {
     pub engine_index: u16,
     pub ts: tokio::time::Instant,
-    pub notification: CanonStateNotification,
+    pub tx_receipts: Vec<ethers::core::types::TransactionReceipt>,
+    pub block: ethers::core::types::Block<H256>,
 }
 
 #[derive(Clone, Debug)]
@@ -444,6 +448,40 @@ impl FederationMemberTestConfig {
                     public_key: pub_key.publickey,
                 }))
                 .unwrap();
+        }));
+
+        // ~~~~~~~~~~~ spawn a task awaiting canon state notifications ~~~~~~~~~~~
+        let rx_sender = self.sender.clone();
+        let botanix_eth_client = self
+            .botanix_eth_client
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("Uninitialized botanix eth client"))?;
+        tokio::spawn(Box::pin(async move {
+            // get a ws stream
+            let mut stream = botanix_eth_client
+                .ws_provider()
+                .subscribe_blocks()
+                .await
+                .expect("Failed to subscribe to blocks");
+
+            while let Some(block) = stream.next().await {
+                if let Some(block_number) = block.number {
+                    let tx_receipts = botanix_eth_client
+                        .get_tx_receipts(BlockId::Number(BlockNumber::Number(block_number)))
+                        .await
+                        .expect("Failed to get block receipts");
+
+                    // send a notification about a new block
+                    let _ = rx_sender
+                        .send(Notifications::CanonState(CannonStateNofificationPayload {
+                            engine_index,
+                            ts: tokio::time::Instant::now(),
+                            tx_receipts,
+                            block,
+                        }))
+                        .unwrap();
+                }
+            }
         }));
 
         // ~~~~~~~~~~~ spawn a task awaiting test signals from the test suite ~~~~~~~~~~~
