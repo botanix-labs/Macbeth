@@ -472,14 +472,19 @@ impl FederationMemberTestConfig {
                         .expect("Failed to get block receipts");
 
                     // send a notification about a new block
-                    let _ = rx_sender
-                        .send(Notifications::CanonState(CannonStateNofificationPayload {
+                    match rx_sender.send(Notifications::CanonState(
+                        CannonStateNofificationPayload {
                             engine_index,
                             ts: tokio::time::Instant::now(),
                             tx_receipts,
                             block,
-                        }))
-                        .unwrap();
+                        },
+                    )) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            it_error_print!("Failed to send canon state notification: {:?}", e);
+                        }
+                    }
                 }
             }
         }));
