@@ -249,10 +249,6 @@ jobs:
           version: 9
           run_install: true
 
-      # - uses: taiki-e/install-action@cargo-machete
-      # - name: Check unused dependencies
-      #   run: cargo machete --skip-target-dir --with-metadata
-
       - name: Lint project
         run: make lint
 

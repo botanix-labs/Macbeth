@@ -278,7 +278,7 @@ where
         if grpc_config.enable_reflection {
             let reflection_service = tonic_reflection::server::Builder::configure()
                 .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
-                .build()
+                .build_v1()
                 .map_err(Error::ReflectionServer)?;
 
             router = router.add_service(reflection_service);

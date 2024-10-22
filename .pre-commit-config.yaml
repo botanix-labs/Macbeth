@@ -8,7 +8,9 @@ exclude: |
   (?x)^(
     CHANGELOG.md|
     pnpm-lock.yaml|
-    k8s/.*
+    contracts|
+    cov-reports|
+    docker-local
   )$
 
 repos:

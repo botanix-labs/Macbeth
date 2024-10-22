@@ -1833,7 +1833,7 @@ dependencies = [
  "lazy_static",
  "log",
  "miniscript",
- "prost 0.12.6",
+ "prost 0.13.3",
  "prost-build",
  "rand 0.8.5",
  "reth-btc-wallet",
@@ -1846,7 +1846,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "toml",
- "tonic",
+ "tonic 0.12.3",
  "tonic-build",
  "tonic-health",
  "tonic-reflection",
@@ -11760,7 +11760,6 @@ dependencies = [
  "port-killer",
  "pretty_assertions",
  "rand 0.8.5",
- "regex",
  "reth",
  "reth-authority-consensus",
  "reth-btc-wallet",
@@ -12190,28 +12189,28 @@ dependencies = [
 
 [[package]]
 name = "tonic-health"
-version = "0.11.0"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cef6e24bc96871001a7e48e820ab240b3de2201e59b517cf52835df2f1d2350"
+checksum = "1eaf34ddb812120f5c601162d5429933c9b527d901ab0e7f930d3147e33a09b2"
 dependencies = [
  "async-stream",
- "prost 0.12.6",
+ "prost 0.13.3",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.12.3",
 ]
 
 [[package]]
 name = "tonic-reflection"
-version = "0.11.0"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "548c227bd5c0fae5925812c4ec6c66ffcfced23ea370cb823f4d18f0fc1cb6a7"
+checksum = "878d81f52e7fcfd80026b7fdb6a9b578b3c3653ba987f87f0dce4b64043cba27"
 dependencies = [
- "prost 0.12.6",
+ "prost 0.13.3",
  "prost-types",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.12.3",
 ]
 
 [[package]]
