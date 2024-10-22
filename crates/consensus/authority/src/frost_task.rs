@@ -338,7 +338,7 @@ where
                                     }
                                     Err(e) => {
                                         error!(target: "consensus::authority", ?e, "Failed to get psbt");
-                                        return;
+                                        continue;
                                     }
                                 }
                             }
