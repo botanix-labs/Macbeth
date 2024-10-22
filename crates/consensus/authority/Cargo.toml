@@ -90,7 +90,7 @@ secp256k1 = { workspace = true, features = [
 ] }
 
 ### Grpc
-tonic = "0.11.0"
+tonic = "0.12.3"
 
 ## this error
 thiserror.workspace = true
@@ -106,7 +106,7 @@ strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
 
 # prost
-prost = "0.12.6"
+prost = "0.13.3"
 
 # paste
 paste = "1.0.15"
