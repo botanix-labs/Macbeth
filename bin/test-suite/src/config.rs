@@ -77,18 +77,6 @@ pub struct CliArgs {
     /// rpc nodes
     #[argh(option, default = "1")]
     pub rpc_nodes: u16,
-    /// btc network
-    #[argh(option, default = "String::from(\"regtest\")")]
-    pub btc_network: String,
-    /// btc rpc url
-    #[argh(option, from_str_fn(parse_url))]
-    pub bitcoind_url: Url,
-    /// btc user
-    #[argh(option, default = "String::from(\"foo\")")]
-    pub bitcoind_user: String,
-    #[argh(option, default = "String::from(\"bar\")")]
-    /// btc password
-    pub bitcoind_pass: String,
 }
 
 pub fn parse_suite(value: &str) -> Result<RunSuite, String> {

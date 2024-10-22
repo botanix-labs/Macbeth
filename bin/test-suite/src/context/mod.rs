@@ -7,6 +7,10 @@ use crate::{
 };
 
 pub const BOTANIX_FEE_RECEIPIENT: &str = "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5";
+pub const BTC_NETWORK: &str = "regtest";
+pub const BITCOIND_URL: &str = "http://localhost:18443";
+pub const BITCOIND_USER: &str = "foo";
+pub const BITCOIND_PASS: &str = "bar";
 
 pub struct GlobalContext {
     pub test_suite_id: uuid::Uuid,
@@ -46,10 +50,10 @@ impl GlobalContext {
             timeout: args.timeout,
             min_signers: frost_min_signers,
             max_signers: frost_max_signers,
-            btc_network: args.btc_network,
-            bitcoind_url: args.bitcoind_url,
-            bitcoind_user: args.bitcoind_user,
-            bitcoind_pass: args.bitcoind_pass,
+            btc_network: BTC_NETWORK.to_string(),
+            bitcoind_url: BITCOIND_URL.parse().context("Failed to parse BITCOIND_URL to an Url")?,
+            bitcoind_user: BITCOIND_USER.to_string(),
+            bitcoind_pass: BITCOIND_PASS.to_string(),
             botanix_fee_recipient: BOTANIX_FEE_RECEIPIENT.to_string(),
         })
     }
