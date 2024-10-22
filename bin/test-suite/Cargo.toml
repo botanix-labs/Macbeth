@@ -25,7 +25,7 @@ reth-cli-runner.workspace = true
 tendermint-rpc.workspace = true
 
 ## Ethereum
-ethers = "2.0.11"
+ethers = { version = "2.0.14", features = ["ws"] }
 
 ## Crypto
 secp256k1 = { workspace = true, features = [

@@ -3534,6 +3534,7 @@ dependencies = [
  "const-hex",
  "enr 0.10.0",
  "ethers-core",
+ "futures-channel",
  "futures-core",
  "futures-timer",
  "futures-util",

@@ -828,7 +828,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             for (index, poa_node) in poa_nodes.iter_mut() {
                 // create botanix client and await initialization
                 let botanix_eth_client = loop {
-                    match create_botanix_eth_client(poa_node.rpc_port).await {
+                    match create_botanix_eth_client(poa_node.rpc_port, poa_node.ws_port).await {
                         Ok(client) => {
                             it_info_print!(
                                 "Botanix client for poa member {} just connected!",
@@ -836,12 +836,8 @@ impl Suite for ConsensusIntegrationTestSuite {
                             );
                             break client;
                         }
-                        Err(e) => {
-                            it_warn_print!(
-                                "Failed to create botanix client for poa member",
-                                index,
-                                e
-                            );
+                        Err(_) => {
+                            it_warn_print!("Btc-server {:?} not ready yet... Re-trying", index);
                             tokio::time::sleep(Duration::from_secs(5)).await;
                         }
                     }
@@ -911,7 +907,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             for (index, rpc_node) in rpc_nodes.iter_mut() {
                 // create botanix client and await initialization
                 let botanix_eth_client = loop {
-                    match create_botanix_eth_client(rpc_node.rpc_port).await {
+                    match create_botanix_eth_client(rpc_node.rpc_port, rpc_node.ws_port).await {
                         Ok(client) => {
                             it_info_print!(
                                 "Botanix client for rpc member {} just connected!",
