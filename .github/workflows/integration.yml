@@ -11,10 +11,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   SEED: rustethereumethereumrust
-  BITCOIND_NETWORK: regtest
-  BITCOIND_URL: http:/localhost:18443
-  BITCOIND_USER: botanix-ci-user
-  BITCOIND_PWD: ${{ secrets.BITCOIND_PWD }}
   JWT_DIR: "/home/runner/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
 
 concurrency:
