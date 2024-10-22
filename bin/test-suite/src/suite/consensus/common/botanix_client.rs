@@ -5,10 +5,12 @@ use ethers::{
     contract::ContractError,
     core::{
         k256::ecdsa::SigningKey,
-        types::{Address as EtherAddress, BlockNumber},
+        types::{Address as EtherAddress, Block as EthBlock, BlockNumber},
     },
     middleware::{signer::SignerMiddlewareError, SignerMiddleware},
-    providers::{Http, Middleware, PeerInfo, Provider, ProviderError},
+    providers::{
+        ConnectionDetails, Http, Middleware, PeerInfo, Provider, ProviderError, StreamExt, Ws,
+    },
     signers::{LocalWallet, Signer, Wallet},
     types::{BlockId, NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
     utils,
@@ -16,6 +18,7 @@ use ethers::{
 use reth_chainspec::BOTANIX_TESTNET;
 use std::{str::FromStr, sync::Arc};
 use thiserror::Error;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Contract Error
 #[derive(Debug, DisplayDoc, Error)]
@@ -31,22 +34,26 @@ pub enum Error {
 #[derive(Clone, Debug)]
 pub struct BotanixEthClient {
     mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
-    client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
+    http_client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
+    ws_provider: Provider<Ws>,
 }
 
 impl BotanixEthClient {
     pub async fn new(
         rpc_port: u16,
+        ws_port: u16,
         sender_secret_key: &str,
         mint_contract_address: EtherAddress,
     ) -> anyhow::Result<Self> {
         // Connect to the network
-        let provider = Provider::<Http>::try_from(&format!("http://127.0.0.1:{rpc_port}"))
-            .context("Failed to create botanix provider")?;
-        it_info_print!("Node URL: ", &format!("http://127.0.0.1:{rpc_port}"));
+        let http_url = format!("http://127.0.0.1:{}", rpc_port);
+        let http_provider =
+            Provider::<Http>::try_from(&http_url).context("Failed to create botanix provider")?;
+        it_info_print!("Connected to http URL: ", http_url);
 
         // get chain id
-        let chain_id = provider.get_chainid().await.context("chain id failed to be obtained")?;
+        let chain_id =
+            http_provider.get_chainid().await.context("chain id failed to be obtained")?;
         assert!(U256::from(BOTANIX_TESTNET.chain().id()) == chain_id, "expected same chain id");
 
         // create a local wallet
@@ -56,22 +63,54 @@ impl BotanixEthClient {
             .with_chain_id(chain_id.as_u64());
 
         // connect the wallet to the provider
-        let client = SignerMiddleware::new(provider.clone(), wallet);
-        let client2 = client.clone();
+        let http_client = SignerMiddleware::new(http_provider.clone(), wallet);
 
-        let mint_contract = MintContract::new(mint_contract_address, Arc::new(client));
+        // create a ws client
+        let ws_url = format!("ws://127.0.0.1:{}", ws_port);
+        let ws_conn_details = ConnectionDetails { url: ws_url.clone(), auth: None };
+        let ws_provider =
+            Provider::<Ws>::connect_with_reconnects(ws_conn_details, 3).await.unwrap();
+        it_info_print!("Connecting to WS URL ... ", ws_url);
 
-        Ok(Self { mint_contract, client: client2 })
+        // create a mint contract
+        let mint_contract = MintContract::new(mint_contract_address, Arc::new(http_client.clone()));
+
+        Ok(Self { mint_contract, http_client, ws_provider })
     }
 
-    pub fn provider(&self) -> Provider<Http> {
-        self.client.provider().clone()
+    pub fn http_client(&self) -> &SignerMiddleware<Provider<Http>, Wallet<SigningKey>> {
+        &self.http_client
+    }
+
+    pub fn http_provider(&self) -> &Provider<Http> {
+        &self.http_client.provider()
+    }
+
+    pub fn ws_provider(&self) -> &Provider<Ws> {
+        &self.ws_provider
+    }
+
+    /// Subscribe to new blocks using WebSocket
+    pub async fn subscribe_to_new_blocks(
+        &self,
+        rx: UnboundedSender<EthBlock<H256>>,
+    ) -> anyhow::Result<()> {
+        // Subscribe to new blocks
+        let mut stream =
+            self.ws_provider.subscribe_blocks().await.context("Failed to subscribe to blocks")?;
+
+        // Process the blocks as they are received
+        while let Some(block) = stream.next().await {
+            let _ = rx.send(block);
+        }
+
+        Ok(())
     }
 
     pub async fn nonce(&self) -> U256 {
-        let address = self.client.address();
+        let address = self.http_client.address();
         let nonce = self
-            .client
+            .http_client
             .provider()
             .get_transaction_count(address, Some(BlockId::Number(BlockNumber::Latest)))
             .await
@@ -81,7 +120,7 @@ impl BotanixEthClient {
     }
 
     pub fn get_sender_address(&self) -> EtherAddress {
-        self.client.address()
+        self.http_client.address()
     }
 
     pub async fn non_confirmed_mint(
@@ -93,7 +132,7 @@ impl BotanixEthClient {
         refund_address: EtherAddress,
         nonce: ethers::core::types::U256,
     ) -> Result<[u8; 32], Error> {
-        let gas_price = self.client.get_gas_price().await.unwrap();
+        let gas_price = self.http_client.get_gas_price().await.unwrap();
         let binding = self
             .mint_contract
             .method::<_, H256>(
@@ -117,7 +156,7 @@ impl BotanixEthClient {
         metadata: ethers::core::types::Bytes,
         refund_address: EtherAddress,
     ) -> Result<Option<TransactionReceipt>, Error> {
-        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
+        let gas_price = self.http_client.get_gas_price().await.ok().unwrap_or_default();
 
         let tx_receipt = self
             .mint_contract
@@ -138,7 +177,7 @@ impl BotanixEthClient {
         data: ethers::core::types::Bytes,
         value: U256,
     ) -> Result<Option<TransactionReceipt>, Error> {
-        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
+        let gas_price = self.http_client.get_gas_price().await.ok().unwrap_or_default();
 
         let tx_receipt = self
             .mint_contract
@@ -157,15 +196,21 @@ impl BotanixEthClient {
     /// we leave it as string to allow for different types across ethers and reth primitives
     pub async fn get_botanix_balance(&self, address: &str) -> Result<U256, Error> {
         let sender_account = NameOrAddress::from_str(address).expect("address to be valid");
-        let sender_cur_balance =
-            self.client.get_balance(sender_account, None).await.map_err(Error::SignerMiddleware)?;
+        let sender_cur_balance = self
+            .http_client
+            .get_balance(sender_account, None)
+            .await
+            .map_err(Error::SignerMiddleware)?;
         Ok(sender_cur_balance)
     }
 
     pub async fn get_balance(&self, address: ethers::core::types::Address) -> Result<U256, Error> {
         let sender_account = NameOrAddress::Address(address);
-        let balance =
-            self.client.get_balance(sender_account, None).await.map_err(Error::SignerMiddleware)?;
+        let balance = self
+            .http_client
+            .get_balance(sender_account, None)
+            .await
+            .map_err(Error::SignerMiddleware)?;
 
         Ok(balance)
     }
@@ -176,7 +221,7 @@ impl BotanixEthClient {
         amount: u64,
     ) -> Result<Option<TransactionReceipt>, Error> {
         // Eip1559TransactionRequest
-        let gas_price = self.client.get_gas_price().await.ok().unwrap_or_default();
+        let gas_price = self.http_client.get_gas_price().await.ok().unwrap_or_default();
         let amount = utils::parse_ether(amount.to_string()).expect("amount to be valid");
 
         // this also knows to estimate the `max_priority_fee_per_gas` but added it manually too
@@ -189,7 +234,7 @@ impl BotanixEthClient {
 
         // send the tx with the initialized signer client
         let tx_receipt = self
-            .client
+            .http_client
             .send_transaction(tx, None)
             .await
             .map_err(Error::SignerMiddleware)?
@@ -201,7 +246,7 @@ impl BotanixEthClient {
 
     pub async fn get_pending_block(&self) -> Result<ethers::core::types::Block<TxHash>, Error> {
         let block = self
-            .client
+            .http_client
             .get_block(BlockNumber::Pending)
             .await
             .map_err(Error::SignerMiddleware)?
@@ -212,7 +257,7 @@ impl BotanixEthClient {
 
     pub async fn get_latest_block_hash(&self) -> Result<ethers::core::types::H256, Error> {
         let block_hash = self
-            .client
+            .http_client
             .get_block(BlockNumber::Latest)
             .await
             .map_err(Error::SignerMiddleware)?
@@ -224,21 +269,24 @@ impl BotanixEthClient {
     }
 
     pub async fn get_peers_counts(&self) -> Result<Vec<PeerInfo>, Error> {
-        let connected_peers = self.client.peers().await.map_err(Error::SignerMiddleware)?;
+        let connected_peers = self.http_client.peers().await.map_err(Error::SignerMiddleware)?;
 
         Ok(connected_peers)
     }
 
     pub async fn add_peer(&self, enode_url: &str) -> Result<bool, Error> {
-        let was_added =
-            self.client.add_peer(enode_url.to_owned()).await.map_err(Error::SignerMiddleware)?;
+        let was_added = self
+            .http_client
+            .add_peer(enode_url.to_owned())
+            .await
+            .map_err(Error::SignerMiddleware)?;
 
         Ok(was_added)
     }
 
     pub async fn add_trusted_peer(&self, enode_url: &str) -> Result<bool, Error> {
         let was_added = self
-            .client
+            .http_client
             .add_trusted_peer(enode_url.to_owned())
             .await
             .map_err(Error::SignerMiddleware)?;
@@ -247,15 +295,18 @@ impl BotanixEthClient {
     }
 
     pub async fn remove_peer(&self, enode_url: &str) -> Result<bool, Error> {
-        let was_removed =
-            self.client.remove_peer(enode_url.to_owned()).await.map_err(Error::SignerMiddleware)?;
+        let was_removed = self
+            .http_client
+            .remove_peer(enode_url.to_owned())
+            .await
+            .map_err(Error::SignerMiddleware)?;
 
         Ok(was_removed)
     }
 
     pub async fn remove_trusted_peer(&self, enode_url: &str) -> Result<bool, Error> {
         let was_removed = self
-            .client
+            .http_client
             .remove_trusted_peer(enode_url.to_owned())
             .await
             .map_err(Error::SignerMiddleware)?;
@@ -268,7 +319,7 @@ impl BotanixEthClient {
         hash: H256,
     ) -> Result<ethers::core::types::Block<TxHash>, Error> {
         let block = self
-            .client
+            .http_client
             .get_block(hash)
             .await
             .map_err(Error::SignerMiddleware)?
@@ -279,7 +330,7 @@ impl BotanixEthClient {
 
     pub async fn get_nonce(&self, address: EtherAddress) -> Result<U256, Error> {
         let nonce = self
-            .client
+            .http_client
             .get_transaction_count(address, Some(BlockId::Number(BlockNumber::Latest)))
             .await
             .map_err(Error::SignerMiddleware)
@@ -290,7 +341,7 @@ impl BotanixEthClient {
 
     pub async fn get_latest_block(&self) -> Result<ethers::core::types::Block<TxHash>, Error> {
         let latest_block = self
-            .client
+            .http_client
             .get_block(BlockNumber::Latest)
             .await
             .map_err(Error::SignerMiddleware)?

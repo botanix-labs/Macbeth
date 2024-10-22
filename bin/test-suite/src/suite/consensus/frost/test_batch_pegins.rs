@@ -241,7 +241,7 @@ pub async fn batch_pegins(
     }
 
     it_info_print!("Waiting for all Pegins to be mined!");
-    let http_provider = provider.provider().clone();
+    let http_provider = provider.http_provider().clone();
     for tx_hash in tx_hashes {
         let pending_tx =
             PendingTransaction::new(ethers::core::types::H256::from(&tx_hash), &http_provider);

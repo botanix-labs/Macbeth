@@ -72,6 +72,7 @@ pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Res
     // from notification but this way also tests that rpc node can handle rpc requests
     let rpc_botanix_client = BotanixEthClient::new(
         rpc_node.rpc_port,
+        rpc_node.ws_port,
         PREFUNDED_ACCOUNT_SECRET_KEY,
         ethers::core::types::Address::random(),
     )

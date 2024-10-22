@@ -30,22 +30,6 @@ engine = "Llvm"
 #fail-under = 80
 
 
-[cov_botanix_test_suite]
-name = "Botanix Test Suite Coverage Analysis"
-packages = ["test-suite"]
-all-features = true
-run-types = ["Lib", "Tests"]
-timeout = "120s"
-color = "Always"
-locked = true
-count = true
-no-dead-code = true
-fail-immediately = true
-skip-clean = true
-engine = "Llvm"
-#fail-under = 80
-
-
 [cov_botanix_reth]
 name = "Botanix Reth Coverage Analysis"
 packages = ["reth"]

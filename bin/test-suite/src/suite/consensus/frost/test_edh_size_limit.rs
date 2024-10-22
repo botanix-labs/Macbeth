@@ -251,7 +251,7 @@ pub async fn test_edh_size_limit(
             it_info_print!("Block is full, waiting for next block");
 
             it_info_print!("Waiting for current Pegins to be mined!");
-            let http_provider = provider.provider().clone();
+            let http_provider = provider.http_provider().clone();
             for (index, tx_hash) in tx_hashes.clone().iter().enumerate() {
                 let pending_tx = PendingTransaction::new(
                     ethers::core::types::H256::from(tx_hash),
