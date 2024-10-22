@@ -204,6 +204,36 @@ impl BotanixEthClient {
         Ok(sender_cur_balance)
     }
 
+    pub async fn get_tx_receipts(
+        &self,
+        block_id: BlockId,
+    ) -> Result<Vec<TransactionReceipt>, Error> {
+        // Get the block by ID (either hash or number)
+        let block = self
+            .http_client
+            .get_block(block_id)
+            .await
+            .map_err(Error::SignerMiddleware)?
+            .expect("block exists");
+
+        // Get all transaction hashes from the block
+        let transaction_hashes = block.transactions;
+
+        // Fetch the transaction receipts for all transactions in the block
+        let mut receipts = Vec::new();
+        for tx_hash in transaction_hashes {
+            let receipt = self
+                .http_client
+                .get_transaction_receipt(tx_hash)
+                .await
+                .map_err(Error::SignerMiddleware)?
+                .expect("tx exists");
+            receipts.push(receipt);
+        }
+
+        Ok(receipts)
+    }
+
     pub async fn get_balance(&self, address: ethers::core::types::Address) -> Result<U256, Error> {
         let sender_account = NameOrAddress::Address(address);
         let balance = self
@@ -251,7 +281,6 @@ impl BotanixEthClient {
             .await
             .map_err(Error::SignerMiddleware)?
             .expect("block exists");
-
         Ok(block)
     }
 

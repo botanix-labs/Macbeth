@@ -104,7 +104,7 @@ pub async fn utxo_sync(
             tokio::time::sleep(Duration::from_secs(9)).await;
 
             // Check that all members accepted the block
-            let latest_block_hash = canon_state_notification.notification.tip().hash();
+            let latest_block_hash = canon_state_notification.block.hash.expect("latest block hash");
             for (index, client) in poa_eth_clients.iter().enumerate() {
                 let block_hash = client.get_latest_block_hash().await.unwrap();
                 it_info_print!(
@@ -112,16 +112,12 @@ pub async fn utxo_sync(
                     format!("index={index}: block hash - {block_hash}")
                 );
 
-                assert_eq!(block_hash.as_bytes(), latest_block_hash.as_slice());
+                assert_eq!(block_hash, latest_block_hash);
             }
 
-            let header = canon_state_notification.notification.tip().header();
-            let block_receipts = canon_state_notification.notification.block_receipts();
+            let block_receipts = canon_state_notification.tx_receipts;
             it_info_print!("Block receipts ?", block_receipts);
             assert_eq!(block_receipts.len(), 1);
-            let block_payload = block_receipts.first().cloned().unwrap();
-            assert!(!block_payload.1);
-            assert_eq!(block_payload.0.tx_receipts.len(), 1);
 
             break;
         }

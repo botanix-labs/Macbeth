@@ -51,13 +51,9 @@ pub async fn e2e_peer_disconnect(
             );
 
             // block verification
-            let block_receipts = canon_state_notification.notification.block_receipts();
+            let block_receipts = canon_state_notification.tx_receipts;
             it_info_print!("Block receipts ?", block_receipts);
             assert_eq!(block_receipts.len(), 1);
-            let block_payload = block_receipts.first().cloned().unwrap();
-            assert!(!block_payload.1);
-            assert_eq!(block_payload.0.tx_receipts.len(), 1);
-            assert!(block_payload.0.block.number > 0);
 
             // add the engine index
             received_notifications_engine_indexes.push(canon_state_notification.engine_index);
