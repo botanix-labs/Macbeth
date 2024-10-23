@@ -17,7 +17,7 @@ init() {
         exit 1
     fi
 
-    Check if the directories already exist
+    # Check if the directories already exist
     if [[ -d "$NODE1_DIR" || -d "$NODE2_DIR" || -d "$BITCOIN_NODE_DIR" ]]; then
         echo "Error: One or more directories already exist."
         echo "Node1 directory: $NODE1_DIR"
