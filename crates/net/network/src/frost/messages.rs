@@ -215,7 +215,7 @@ impl FrostProtoMessage {
 
     /// Returns the protocol for the `test` protocol.
     pub fn protocol() -> Protocol {
-        Protocol::new(Self::capability(), 6)
+        Protocol::new(Self::capability(), 16)
     }
 
     /// Creates a ping message
