@@ -1,5 +1,6 @@
 #!/bin/bash
 TEMP_DIR="./tmp"
+# crate temp directory in project source.
 mkdir -p "$TEMP_DIR"
 
 NODE1_DIR="$TEMP_DIR/node1"
