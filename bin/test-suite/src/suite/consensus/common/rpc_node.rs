@@ -216,6 +216,8 @@ impl NonFederationMemberTestConfig {
         let command = "cargo";
         let args = vec![
             "poa",
+            "-vvvv",
+            "--disable-discovery",
             "--is-testnet",
             "--ntp-server",
             "time.cloudflare.com",

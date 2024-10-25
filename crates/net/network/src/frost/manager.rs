@@ -172,7 +172,7 @@ impl FrostManager {
                 }
                 for task_forwarder in self.task_forwarder_txs.iter() {
                     if let Err(send_res) = task_forwarder.send((peer_id, response.clone())) {
-                        error!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
+                        error!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
                     }
                 }
             }
