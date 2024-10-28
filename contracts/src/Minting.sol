@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity 0.8.13;
 
 contract Minting {
     uint public constant SATS_TO_WEI = 10**10;
-    uint constant GAS_SIMPLE_TRANSFER = 21000;
+    uint constant GAS_INTERNAL_TRANSFER = 2300;
     uint constant GAS_AMOUNT_UPDATE = 2003;
     uint constant GAS_REVERT_TRUE = 3;
 
@@ -62,8 +62,8 @@ contract Minting {
         // metadata is variable length and the first byte is included in BASE_GAS_MINT_EVENT
         uint256 txCost = 
             (gasStart - gasleft() 
-                + GAS_SIMPLE_TRANSFER 
-                + GAS_SIMPLE_TRANSFER 
+                + GAS_INTERNAL_TRANSFER 
+                + GAS_INTERNAL_TRANSFER 
                 + GAS_AMOUNT_UPDATE 
                 + GAS_REVERT_TRUE 
                 + BASE_GAS_MINT_EVENT 
@@ -76,7 +76,7 @@ contract Minting {
         // 3 gas for subtraction and 2000 to update the local variable
         amount -= txCost;
 
-        // 21000 gas for each transfer
+        // 2300 gas for each transfer
         payable(destination).transfer(amount);
         payable(refundAddress).transfer(txCost);
 
