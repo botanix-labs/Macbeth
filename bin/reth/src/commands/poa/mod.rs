@@ -55,8 +55,10 @@ use reth_consensus_common::utils;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
-    frost::manager::FrostConfig, import::ProofOfAuthorityBlockImport, BlockDownloaderProvider,
-    NetworkEventListenerProvider, NetworkHandle, NetworkManager,
+    frost::{manager::FrostConfig, protocol::FrostProtoHandler, FrostProtocolEvent, ProtocolState},
+    import::ProofOfAuthorityBlockImport,
+    protocol::IntoRlpxSubProtocol,
+    BlockDownloaderProvider, NetworkEventListenerProvider, NetworkHandle, NetworkManager,
 };
 use reth_node_builder::{
     setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig,
@@ -628,11 +630,22 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         };
 
         let default_peers_path = data_dir.known_peers();
+        let (protocol_events_tx, protocol_events_rx) = unbounded_channel();
+        let (frost_peer_messages_forwarder_tx, frost_peer_messages_forwarder_rx) =
+            unbounded_channel::<FrostProtocolEvent>();
+
+        let my_peer_id = pk2id(&secret_key.public_key(SECP256K1));
+
+        let protocol_state =
+            ProtocolState::new(protocol_events_tx, frost_peer_messages_forwarder_tx, my_peer_id);
+        let protocol_handler = FrostProtoHandler { state: protocol_state };
+
         let mut network_cfg_builder = self
             .network
             .network_config(&reth_config, chain_arc.clone(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
             .set_head(head)
+            .disable_discovery()
             .listener_addr(SocketAddr::new(
                 self.network.addr,
                 // set discovery port based on instance number
@@ -644,8 +657,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 self.network.port + self.instance - 1,
             ))
             .frost_config(frost_config.clone())
-            .network_mode(reth_network::config::NetworkMode::Authority);
+            .frost_protocol_events_rx(UnboundedReceiverStream::new(protocol_events_rx))
+            .frost_peers_messages_rx(UnboundedReceiverStream::new(frost_peer_messages_forwarder_rx))
+            .network_mode(reth_network::config::NetworkMode::Authority)
+            .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
 
+        // TODO remove no longer needed bc we read blocks from comet
         if !is_fed_node {
             // block import is only needed for non-federation nodes
             // federation nodes will receive blocks via their consensus layer

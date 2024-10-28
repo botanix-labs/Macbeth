@@ -32,7 +32,7 @@ use reth_metrics::common::mpsc::UnboundedMeteredSender;
 use reth_network_api::{
     test_utils::PeersHandle, EthProtocolInfo, NetworkEvent, NetworkStatus, PeerInfo, PeerRequest,
 };
-use reth_network_peers::{pk2id, NodeRecord, PeerId};
+use reth_network_peers::{NodeRecord, PeerId};
 use reth_storage_api::BlockNumReader;
 use reth_tasks::shutdown::GracefulShutdown;
 use reth_tokio_util::EventSender;
@@ -90,9 +90,12 @@ pub struct NetworkManager {
     /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
     from_handle_rx: UnboundedReceiverStream<NetworkHandleMessage>,
     /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
-    from_frost_protocol_events: UnboundedReceiverStream<FrostProtocolEvent>,
+    /// This is the reciever half used to recieve events related to the protocol, such as
+    /// connection established, messages received, etc.
+    from_frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
     /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
-    from_frost_peers_messages: UnboundedReceiverStream<FrostProtocolEvent>,
+    /// This is the reciever half used to recieve events related to the peers messages
+    from_frost_peers_messages_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
     /// Handles block imports according to the `eth` protocol.
     block_import: Box<dyn BlockImport>,
     /// Sender for high level network events.
@@ -100,8 +103,7 @@ pub struct NetworkManager {
     /// Sender half to send events to the
     /// [`TransactionsManager`](crate::transactions::TransactionsManager) task, if configured.
     to_transactions_manager: Option<UnboundedMeteredSender<NetworkTransactionEvent>>,
-    /// Sender half to send events to the
-    /// [`TransactionsManager`](crate::transactions::TransactionsManager) task, if configured.
+    /// Sender half to send events to the Frost manager
     to_frost_manager: Option<UnboundedMeteredSender<NetworkFrostEvent>>,
     /// Sender half to send events to the
     /// [`EthRequestHandler`](crate::eth_requests::EthRequestHandler) task, if configured.
@@ -207,6 +209,8 @@ impl NetworkManager {
             dns_discovery_config,
             extra_protocols,
             tx_gossip_disabled,
+            frost_peers_messages_rx,
+            frost_protocol_events_rx,
             frost_config,
             ..
         } = config;
@@ -289,15 +293,15 @@ impl NetworkManager {
         );
 
         // add frost protocol
-        let (from_frost_protocol_events, from_frost_peers_messages) =
-            NetworkManager::add_frost_protocol(&handle, frost_config);
+        // let (from_frost_protocol_events, from_frost_peers_messages) =
+        //     NetworkManager::add_frost_protocol(&handle, frost_config);
 
         Ok(Self {
             swarm,
             handle,
             from_handle_rx: UnboundedReceiverStream::new(from_handle_rx),
-            from_frost_peers_messages,
-            from_frost_protocol_events,
+            from_frost_peers_messages_rx: frost_peers_messages_rx,
+            from_frost_protocol_events_rx: frost_protocol_events_rx,
             block_import,
             event_sender,
             to_transactions_manager: None,
@@ -348,39 +352,6 @@ impl NetworkManager {
     /// Create a [`NetworkBuilder`] to configure all components of the network
     pub fn into_builder(self) -> NetworkBuilder<(), ()> {
         NetworkBuilder { network: self, transactions: (), request_handler: (), frost_manager: None }
-    }
-
-    /// adds frost protocol and returns a receiver stream for all protocol and peers events
-    pub fn add_frost_protocol(
-        handle: &NetworkHandle,
-        frost_config: Option<FrostConfig>,
-    ) -> (UnboundedReceiverStream<FrostProtocolEvent>, UnboundedReceiverStream<FrostProtocolEvent>)
-    {
-        let (protocol_events_tx, protocol_events_rx) = mpsc::unbounded_channel();
-        let (frost_peer_messages_forwarder_tx, frost_peer_messages_forwarder_rx) =
-            mpsc::unbounded_channel::<FrostProtocolEvent>();
-        let authorities = frost_config
-            .as_ref()
-            .map(|f| f.authorities.clone())
-            .unwrap_or_default()
-            .iter()
-            .map(pk2id)
-            .collect::<Vec<_>>();
-
-        let network_handle = handle.clone();
-
-        let protocol_state = ProtocolState::new(
-            protocol_events_tx,
-            frost_peer_messages_forwarder_tx,
-            network_handle,
-            authorities,
-        );
-        let protocol_handler = FrostProtoHandler { state: protocol_state };
-        handle.add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
-        (
-            UnboundedReceiverStream::new(protocol_events_rx),
-            UnboundedReceiverStream::new(frost_peer_messages_forwarder_rx),
-        )
     }
 
     /// Returns the [`SocketAddr`] that listens for incoming tcp connections.
@@ -1073,32 +1044,59 @@ impl Future for NetworkManager {
         }
 
         // process incoming events from the frost protocol
-        loop {
-            match this.from_frost_protocol_events.poll_next_unpin(cx) {
-                Poll::Pending => break,
-                Poll::Ready(None) => {
-                    // This is only possible if the channel was deliberately closed since we always
-                    // have an instance of `NetworkHandle`
-                    tracing::error!("Network message channel closed.");
-                    return Poll::Ready(());
+        let mut frost_protocol_event = None;
+        if let Some(from_frost_protocol_events_rx) = this.from_frost_protocol_events_rx.as_mut() {
+            loop {
+                match from_frost_protocol_events_rx.poll_next_unpin(cx) {
+                    Poll::Pending => break,
+                    Poll::Ready(None) => {
+                        // This is only possible if the channel was deliberately closed since we
+                        // always have an instance of `NetworkHandle`
+                        tracing::error!("Network message channel closed.");
+                        return Poll::Ready(());
+                    }
+                    Poll::Ready(Some(event)) => frost_protocol_event = Some(event),
+                };
+            }
+        }
+
+        if let Some(event) = frost_protocol_event {
+            this.on_handle_frost_protocol_event(event);
+        }
+
+        let mut frost_peers_message = None;
+        if let Some(from_frost_peers_messages_rx) = this.from_frost_peers_messages_rx.as_mut() {
+            loop {
+                match from_frost_peers_messages_rx.poll_next_unpin(cx) {
+                    Poll::Pending => break,
+                    Poll::Ready(None) => {
+                        tracing::error!("Network message channel closed.");
+                        return Poll::Ready(());
+                    }
+                    Poll::Ready(Some(event)) => frost_peers_message = Some(event),
                 }
-                Poll::Ready(Some(event)) => this.on_handle_frost_protocol_event(event),
-            };
+            }
+        }
+
+        if let Some(event) = frost_peers_message {
+            this.on_handle_frost_protocol_event(event);
         }
 
         // process incoming messages from the frost peers on the forwarder channel
-        loop {
-            match this.from_frost_peers_messages.poll_next_unpin(cx) {
-                Poll::Pending => break,
-                Poll::Ready(None) => {
-                    // This is only possible if the channel was deliberately closed since we always
-                    // have an instance of `NetworkHandle`
-                    tracing::error!("Network message channel closed.");
-                    return Poll::Ready(());
-                }
-                Poll::Ready(Some(event)) => this.on_handle_frost_protocol_event(event),
-            };
-        }
+        // if let Some(mut from_frost_peers_messages) = this.from_frost_peers_messages_rx.as_mut() {
+        // loop {
+        //     match from_frost_peers_messages.poll_next_unpin(cx) {
+        //         Poll::Pending => break,
+        //         Poll::Ready(None) => {
+        //             // This is only possible if the channel was deliberately closed since we
+        // always             // have an instance of `NetworkHandle`
+        //             tracing::error!("Network message channel closed.");
+        //             return Poll::Ready(());
+        //         }
+        //         Poll::Ready(Some(event)) => this.on_handle_frost_protocol_event(event),
+        //     };
+        // }
+        // }
 
         // This loop drives the entire state of network and does a lot of work.
         // Under heavy load (many messages/events), data may arrive faster than it can be processed

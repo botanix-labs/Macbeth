@@ -13,10 +13,12 @@ use reth_primitives::{ForkFilter, Head};
 use reth_storage_api::{BlockNumReader, BlockReader, HeaderProvider};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
 use secp256k1::SECP256K1;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::{
     error::NetworkError,
-    frost::manager::FrostConfig,
+    frost::{manager::FrostConfig, FrostProtocolEvent},
     import::{BlockImport, ProofOfStakeBlockImport},
     transactions::TransactionsManagerConfig,
     NetworkHandle, NetworkManager,
@@ -84,6 +86,9 @@ pub struct NetworkConfig<C> {
     pub transactions_manager_config: TransactionsManagerConfig,
     /// Frost configuration
     pub frost_config: Option<FrostConfig>,
+
+    pub frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
+    pub frost_peers_messages_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
 }
 
 // === impl NetworkConfig ===
@@ -193,6 +198,9 @@ pub struct NetworkConfigBuilder {
     transactions_manager_config: TransactionsManagerConfig,
     /// Frost Configuration
     frost_config: Option<FrostConfig>,
+
+    frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
+    frost_peers_messages_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
 }
 
 // === impl NetworkConfigBuilder ===
@@ -225,6 +233,8 @@ impl NetworkConfigBuilder {
             tx_gossip_disabled: false,
             block_import: None,
             frost_config: None,
+            frost_protocol_events_rx: None,
+            frost_peers_messages_rx: None,
             transactions_manager_config: Default::default(),
         }
     }
@@ -473,6 +483,24 @@ impl NetworkConfigBuilder {
         self
     }
 
+    /// Sets the frost protocol events rx.
+    pub fn frost_protocol_events_rx(
+        mut self,
+        frost_protocol_events: UnboundedReceiverStream<FrostProtocolEvent>,
+    ) -> Self {
+        self.frost_protocol_events_rx = Some(frost_protocol_events);
+        self
+    }
+
+    /// Sets the frost peers messages rx.
+    pub fn frost_peers_messages_rx(
+        mut self,
+        frost_peers_messages: UnboundedReceiverStream<FrostProtocolEvent>,
+    ) -> Self {
+        self.frost_peers_messages_rx = Some(frost_peers_messages);
+        self
+    }
+
     /// Convenience function for creating a [NetworkConfig] with a noop provider that does nothing.
     #[cfg(any(test, feature = "test-utils"))]
     /// Convenience function for creating a [`NetworkConfig`] with a noop provider that does
@@ -511,6 +539,8 @@ impl NetworkConfigBuilder {
             block_import,
             frost_config,
             transactions_manager_config,
+            frost_protocol_events_rx,
+            frost_peers_messages_rx,
         } = self;
 
         discovery_v5_builder = discovery_v5_builder.map(|mut builder| {
@@ -575,6 +605,8 @@ impl NetworkConfigBuilder {
             tx_gossip_disabled,
             frost_config,
             transactions_manager_config,
+            frost_protocol_events_rx,
+            frost_peers_messages_rx,
         }
     }
 }
