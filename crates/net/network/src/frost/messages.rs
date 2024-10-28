@@ -208,12 +208,12 @@ pub struct FrostProtoMessage {
 }
 
 impl FrostProtoMessage {
-    /// Returns the capability for the `ping` protocol.
+    /// Returns the capability for the `frost` protocol.
     pub fn capability() -> Capability {
         Capability::new_static("frost", MESSAGE_VERSION)
     }
 
-    /// Returns the protocol for the `test` protocol.
+    /// Returns the protocol for the `frost` protocol.
     pub fn protocol() -> Protocol {
         Protocol::new(Self::capability(), 16)
     }

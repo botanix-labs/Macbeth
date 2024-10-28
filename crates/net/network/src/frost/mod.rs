@@ -8,8 +8,6 @@ use reth_primitives::SealedBlock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::NetworkHandle;
-
 /// Manager implementation
 pub mod manager;
 /// Frost Messaging
@@ -22,8 +20,7 @@ pub mod protocol;
 pub struct ProtocolState {
     events: mpsc::UnboundedSender<FrostProtocolEvent>,
     peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
-    network_handle: NetworkHandle,
-    authorities: Vec<PeerId>,
+    my_peer_id: PeerId,
 }
 
 impl ProtocolState {
@@ -31,10 +28,9 @@ impl ProtocolState {
     pub fn new(
         events: mpsc::UnboundedSender<FrostProtocolEvent>,
         peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
-        network_handle: NetworkHandle,
-        authorities: Vec<PeerId>,
+        my_peer_id: PeerId,
     ) -> Self {
-        Self { events, peer_message_forwarder, network_handle, authorities }
+        Self { events, peer_message_forwarder, my_peer_id }
     }
 }
 

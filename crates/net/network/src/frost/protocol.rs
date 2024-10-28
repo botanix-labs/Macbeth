@@ -47,9 +47,9 @@ impl ProtocolHandler for FrostProtoHandler {
     /// handler.
     fn on_incoming(&self, _socket_addr: SocketAddr) -> Option<Self::ConnectionHandler> {
         // TODO (armin) constant time?
-        if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
-            return None;
-        }
+        // if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
+        //     return None;
+        // }
         // once the other side establishes conn with us, clone and send the sender half to them
         Some(FrostConnectionHandler { state: self.state.clone() })
     }
@@ -64,9 +64,9 @@ impl ProtocolHandler for FrostProtoHandler {
         _peer_id: PeerId,
     ) -> Option<Self::ConnectionHandler> {
         // TODO (armin) constant time?
-        if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
-            return None;
-        }
+        // if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
+        //     return None;
+        // }
         // once I establish conn with the other peer, clone and send the sender half to them
         Some(FrostConnectionHandler { state: self.state.clone() })
     }
@@ -117,7 +117,7 @@ impl ConnectionHandler for FrostConnectionHandler {
             to_connection: remote_peer_tx,
         };
         if let Err(e) = self.state.events.send(connection_established_event) {
-            error!(target: "network::frost::protocol::into_connection", "Failed to send ConnectionEstablished event: {:?}", e);
+            error!(target: "network::frost::protocol::into_connection", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
         }
         let peer_message_forwarder = self.state.peer_message_forwarder.clone();
         // update connection state
@@ -128,11 +128,11 @@ impl ConnectionHandler for FrostConnectionHandler {
             // outgoing - I am connecting with a peer
             initial_ping: direction
                 .is_outgoing()
-                .then(|| FrostProtoMessage::ping_message(*self.state.network_handle.peer_id())),
+                .then(|| FrostProtoMessage::ping_message(self.state.my_peer_id)),
             // used to receive commands from me to send to the other peer
             commands: UnboundedReceiverStream::new(remote_peer_rx),
             pending_pong: None, // when the conn. is just established, there is no pending pong
-            my_peer_id: *self.state.network_handle.peer_id(),
+            my_peer_id: self.state.my_peer_id,
             peer_id,
         }
     }

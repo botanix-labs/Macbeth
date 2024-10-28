@@ -52,6 +52,8 @@ pub struct PeerData {
     pub direction: Option<Direction>,
     /// the frost identifier of the peer
     pub frost_identifier: Option<frost::Identifier>,
+    /// Did we recieve a peer confirmation message from this peer?
+    pub peer_confirmed: bool,
 }
 
 /// Frost Manager implementation
@@ -152,18 +154,33 @@ impl FrostManager {
 
                 // make sure we ignore our own connection
                 let my_peer_id = self.network.peer_id();
-                if *my_peer_id != peer_id {
-                    info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, to_connection);
-                    self.peers_connections.insert(
-                        peer_id,
-                        PeerData {
-                            peer_id,
-                            direction: Some(direction),
-                            peer_commands_tx: Some(to_connection),
-                            frost_identifier: None,
-                        },
-                    );
+                if *my_peer_id == peer_id {
+                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from our own peer {:?}", peer_id);
+                    return;
                 }
+
+                let (index, _) = self
+                    .config
+                    .authorities
+                    .iter()
+                    .enumerate()
+                    .find(|(_, pk)| {
+                        peer_id == PeerId::from_slice(&pk.serialize_uncompressed()[1..])
+                    })
+                    .unzip();
+
+                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, to_connection);
+                self.peers_connections.insert(
+                    peer_id,
+                    PeerData {
+                        peer_id,
+                        peer_confirmed: false,
+                        direction: Some(direction),
+                        peer_commands_tx: Some(to_connection),
+                        frost_identifier: index
+                            .map(|i| authority_index_to_frost_identifier(i as u16)),
+                    },
+                );
             }
             NetworkFrostEvent::PeerMessage { peer_id, response } => {
                 if !self.is_authority_peer(&peer_id) {
@@ -183,21 +200,11 @@ impl FrostManager {
                 }
 
                 if self.peers_connections.contains_key(&peer_id) {
-                    let (index, _) = self
-                        .config
-                        .authorities
-                        .iter()
-                        .enumerate()
-                        .find(|(_, pk)| {
-                            peer_id == PeerId::from_slice(&pk.serialize_uncompressed()[1..])
-                        })
-                        .unzip();
                     // only if we have an already connection established
                     if let Some(peer_data) = self.peers_connections.get_mut(&peer_id) {
                         // add the peer conn mapped to a frost id based on authority index
-                        peer_data.frost_identifier =
-                            index.map(|i| authority_index_to_frost_identifier(i as u16));
-                        info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event from peer with id = {}, frost identifier = {:?}", peer_id, peer_data.frost_identifier);
+                        peer_data.peer_confirmed = true;
+                        info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event from peer with id = {}", peer_id);
                     } else {
                         warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} does not seem to be connected yet", peer_id);
                     }
