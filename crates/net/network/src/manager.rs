@@ -211,7 +211,6 @@ impl NetworkManager {
             tx_gossip_disabled,
             frost_peers_messages_rx,
             frost_protocol_events_rx,
-            frost_config,
             ..
         } = config;
 
@@ -291,10 +290,6 @@ impl NetworkManager {
             discv4,
             event_sender.clone(),
         );
-
-        // add frost protocol
-        // let (from_frost_protocol_events, from_frost_peers_messages) =
-        //     NetworkManager::add_frost_protocol(&handle, frost_config);
 
         Ok(Self {
             swarm,
@@ -1081,22 +1076,6 @@ impl Future for NetworkManager {
         if let Some(event) = frost_peers_message {
             this.on_handle_frost_protocol_event(event);
         }
-
-        // process incoming messages from the frost peers on the forwarder channel
-        // if let Some(mut from_frost_peers_messages) = this.from_frost_peers_messages_rx.as_mut() {
-        // loop {
-        //     match from_frost_peers_messages.poll_next_unpin(cx) {
-        //         Poll::Pending => break,
-        //         Poll::Ready(None) => {
-        //             // This is only possible if the channel was deliberately closed since we
-        // always             // have an instance of `NetworkHandle`
-        //             tracing::error!("Network message channel closed.");
-        //             return Poll::Ready(());
-        //         }
-        //         Poll::Ready(Some(event)) => this.on_handle_frost_protocol_event(event),
-        //     };
-        // }
-        // }
 
         // This loop drives the entire state of network and does a lot of work.
         // Under heavy load (many messages/events), data may arrive faster than it can be processed

@@ -86,8 +86,9 @@ pub struct NetworkConfig<C> {
     pub transactions_manager_config: TransactionsManagerConfig,
     /// Frost configuration
     pub frost_config: Option<FrostConfig>,
-
+    /// Receiver for frost protocol events
     pub frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
+    /// Receiver for frost peers messages
     pub frost_peers_messages_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
 }
 
