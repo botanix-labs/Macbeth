@@ -14,7 +14,7 @@ use std::{
     str::FromStr,
 };
 use tokio::sync::mpsc::error::SendError;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     utils::{deserialize_frost_peer_id, FrostParseError},
@@ -555,7 +555,7 @@ where
             Ok(dkg2_package) => dkg2_package,
             Err(e) => {
                 // its ok to error here if we don't have enough packages
-                error!("Error getting round 2 dkg package {:?}", e);
+                debug!(target: "consensus::authority::dkg::process_round1_coordinator", "Error getting round 2 dkg package {:?}", e);
                 return Err(e);
             }
         };
@@ -572,7 +572,7 @@ where
         }
 
         // Lets wait some time for all nodes to get their round 1 packages then gossip round 2
-        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
         self.distribute_round2_packages(round2_dkg_package).await?;
 
         Ok(())
@@ -621,7 +621,7 @@ where
             Ok(dkg2_package) => dkg2_package,
             Err(e) => {
                 // its ok to error here if we don't have enough packages
-                error!("Error getting round 2 dkg package {:?}", e);
+                debug!(target: "consensus::authority::dkg::process_round1", "Error getting round 2 dkg package {:?}", e);
                 return Err(e);
             }
         };
