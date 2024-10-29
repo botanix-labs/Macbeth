@@ -489,6 +489,20 @@ where
         &mut self,
         round2_packages: DkgPayload,
     ) -> Result<(), Error> {
+        loop {
+            let (check_connected_sender, check_connected_receiver) =
+                tokio::sync::oneshot::channel::<bool>();
+            self.frost_handle
+                .send_command(FrostCommand::CheckConnectedToAll(check_connected_sender))
+                .unwrap();
+            let all_connected = check_connected_receiver.await.unwrap();
+            if all_connected {
+                break;
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        }
+
         let round2_shares = round2_packages.payload.clone();
         info!(target: "consensus::authority::dkg::process_round1", "ready to move to round 2");
         let shares = serde_json::from_slice::<
