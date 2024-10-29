@@ -106,8 +106,20 @@ impl FrostManager {
     }
 
     fn all_authority_peers_connected(&self) -> bool {
-        let mut all_peer_connection_peer_ids =
-            self.peers_connections.keys().cloned().collect::<Vec<_>>();
+        // Filter out all peers that are not confirmed and have a closed channels
+        info!(target: "network::frost::all_authority_peers_connected", "Peers connections: {:?}", self.peers_connections);
+
+        let mut all_peer_connection_peer_ids = self
+            .peers_connections
+            .iter()
+            .filter(|(_, peer_data)| {
+                peer_data.peer_confirmed &&
+                    peer_data.peer_commands_tx.as_ref().is_some_and(|tx| !tx.is_closed())
+            })
+            .collect::<HashMap<_, _>>()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
 
         // retain all peer ids that are not in the authorities list
         all_peer_connection_peer_ids.retain(|peer_id| self.authority_peerid.contains(peer_id));

@@ -408,7 +408,7 @@ where
                                         info!(target: "consensus::authority::frost_task::start_task", "Processed Round 1 request dkg package successfully")
                                     }
                                     Err(e) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 1 request dkg package {:?}", e);
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 1 request dkg package {:?}", e.to_string());
                                     }
                                 }
                             }
@@ -419,7 +419,7 @@ where
                                         info!(target: "consensus::authority::frost_task::start_task", "Processed Round 1 dkg package successfully")
                                     }
                                     Err(e) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 1 dkg package {:?}", e);
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 1 dkg package {:?}", e.to_string());
                                     }
                                 }
                             }
@@ -430,7 +430,7 @@ where
                                         info!(target: "consensus::authority::frost_task::start_task", "Processed Round 2 dkg package successfully")
                                     }
                                     Err(e) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 2 dkg package {:?}", e);
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error processing round 2 dkg package {:?}", e.to_string());
                                     }
                                 }
                             }
