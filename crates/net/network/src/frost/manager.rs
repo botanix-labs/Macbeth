@@ -71,7 +71,7 @@ pub struct FrostManager {
     command_rx: UnboundedReceiverStream<FrostCommand>,
     /// All the connected peers.
     peers_connections: HashMap<PeerId, PeerData>,
-    /// total authorities to connect to
+    /// total authorities to connect to, including ourselves
     authority_peerid: Vec<PeerId>,
     /// Forwards for message to the frost task
     task_forwarder_txs: Vec<mpsc::UnboundedSender<(PeerId, PeerMessageResponse)>>,
@@ -106,15 +106,15 @@ impl FrostManager {
     }
 
     fn all_authority_peers_connected(&self) -> bool {
-        let peers_count = self.peers_connections.keys().cloned().count();
         let mut all_peer_connection_peer_ids =
             self.peers_connections.keys().cloned().collect::<Vec<_>>();
 
         // retain all peer ids that are not in the authorities list
-        all_peer_connection_peer_ids.retain(|peer_id| !self.authority_peerid.contains(peer_id));
+        all_peer_connection_peer_ids.retain(|peer_id| self.authority_peerid.contains(peer_id));
 
-        // check that the connected peers are indeed the authority peers
-        peers_count == self.authority_peerid.len() - 1 && all_peer_connection_peer_ids.is_empty()
+        info!(target: "network::frost::all_authority_peers_connected", "Connected peers: {:?}", all_peer_connection_peer_ids);
+
+        all_peer_connection_peer_ids.len() == self.authority_peerid.len() - 1
     }
 
     /// Returns a new [`FrostHandle`] that can send commands to this type.
