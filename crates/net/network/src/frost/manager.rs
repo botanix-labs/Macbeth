@@ -5,7 +5,7 @@ use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
 use rand::Rng;
-use reth_network_api::Peers;
+use reth_network_api::{test_utils::PeersHandleProvider, Peers};
 use reth_network_peers::PeerId;
 use std::{
     collections::HashMap,
@@ -107,15 +107,16 @@ impl FrostManager {
 
     fn all_authority_peers_connected(&self) -> bool {
         // Filter out all peers that are not confirmed and have a closed channels
-        info!(target: "network::frost::all_authority_peers_connected", "Peers connections: {:?}", self.peers_connections);
+        info!(target: "network::frost::all_authority_peers_connected", "Peers connections len: {:?}", self.peers_connections.len());
+        for (peer_id, peer_data) in self.peers_connections.iter() {
+            info!(target: "network::frost::all_authority_peers_connected", "Peer {:?} is connected: {:?}", peer_id, Self::filter_connected_peer(peer_data));
+            info!(target: "network::frost::all_authority_peers_connected", "channel closed: {:?}", peer_data.peer_commands_tx.as_ref().is_some_and(|tx| tx.is_closed()));
+        }
 
         let mut all_peer_connection_peer_ids = self
             .peers_connections
             .iter()
-            .filter(|(_, peer_data)| {
-                peer_data.peer_confirmed &&
-                    peer_data.peer_commands_tx.as_ref().is_some_and(|tx| !tx.is_closed())
-            })
+            .filter(|(_, peer_data)| Self::filter_connected_peer(peer_data))
             .collect::<HashMap<_, _>>()
             .keys()
             .cloned()
@@ -136,6 +137,10 @@ impl FrostManager {
 
     fn is_authority_peer(&self, peer_id: &PeerId) -> bool {
         self.authority_peerid.contains(peer_id)
+    }
+
+    fn filter_connected_peer(data: &PeerData) -> bool {
+        data.peer_confirmed && data.peer_commands_tx.as_ref().is_some_and(|tx| !tx.is_closed())
     }
 
     fn send_healthcheck_to_peers(&self) {
@@ -280,8 +285,15 @@ impl FrostManager {
                 }
             }
             FrostCommand::GetAllConnectedPeers(tx) => {
+                // Filter out all peers that are not confirmed and have a closed channels
+                let peer_connections = self
+                    .peers_connections
+                    .iter()
+                    .filter(|(_, peer_data)| Self::filter_connected_peer(peer_data))
+                    .map(|(peer_id, peer_data)| (*peer_id, peer_data.clone()))
+                    .collect::<HashMap<_, _>>();
                 // reply to caller
-                if let Err(e) = tx.send(self.peers_connections.clone()) {
+                if let Err(e) = tx.send(peer_connections) {
                     error!(target: "network::frost::on_command", "Error replying to call on GetAllConnectedPeers {:?}", e);
                 }
             }

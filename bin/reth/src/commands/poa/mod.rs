@@ -480,6 +480,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
         let secret_key = get_secret_key(&network_secret_path)?;
+        let pk = secret_key.public_key(SECP256K1);
+        info!(target: "reth::cli", "Public key: {}", pk.to_string());
 
         // add trusted nodes with --trusted-peers flag
         info!(target: "reth::cli", "Adding trusted nodes");
