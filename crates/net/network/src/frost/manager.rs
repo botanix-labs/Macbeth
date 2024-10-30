@@ -329,7 +329,7 @@ impl Future for FrostManager {
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     error!(target: "network::frost::poll", "Network message channel closed.");
-                    return Poll::Ready(());
+                    //return Poll::Ready(());
                 }
                 Poll::Ready(Some(event)) => this.on_network_event(event),
             };
@@ -342,7 +342,7 @@ impl Future for FrostManager {
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     error!(target: "network::frost::poll", "Network message channel closed.");
-                    return Poll::Ready(());
+                    //return Poll::Ready(());
                 }
                 Poll::Ready(Some(cmd)) => this.on_command(cmd),
             };

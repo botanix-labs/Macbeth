@@ -83,8 +83,6 @@ pub struct NetworkConfig<C> {
     pub tx_gossip_disabled: bool,
     /// How to instantiate transactions manager.
     pub transactions_manager_config: TransactionsManagerConfig,
-    /// Frost configuration
-    pub frost_config: Option<FrostConfig>,
     /// Receiver for frost protocol events
     pub frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
 }
@@ -194,8 +192,6 @@ pub struct NetworkConfigBuilder {
     block_import: Option<Box<dyn BlockImport>>,
     /// How to instantiate transactions manager.
     transactions_manager_config: TransactionsManagerConfig,
-    /// Frost Configuration
-    frost_config: Option<FrostConfig>,
     /// Receiver for frost protocol events
     frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
 }
@@ -229,7 +225,6 @@ impl NetworkConfigBuilder {
             head: None,
             tx_gossip_disabled: false,
             block_import: None,
-            frost_config: None,
             frost_protocol_events_rx: None,
             transactions_manager_config: Default::default(),
         }
@@ -471,14 +466,6 @@ impl NetworkConfigBuilder {
         self
     }
 
-    /// Sets the frost config.
-    pub fn frost_config(mut self, frost_config: Option<FrostConfig>) -> Self {
-        if frost_config.is_some() {
-            self.frost_config = frost_config;
-        }
-        self
-    }
-
     /// Sets the frost protocol events rx.
     pub fn frost_protocol_events_rx(
         mut self,
@@ -524,7 +511,6 @@ impl NetworkConfigBuilder {
             head,
             tx_gossip_disabled,
             block_import,
-            frost_config,
             transactions_manager_config,
             frost_protocol_events_rx,
         } = self;
@@ -589,7 +575,6 @@ impl NetworkConfigBuilder {
             extra_protocols,
             fork_filter,
             tx_gossip_disabled,
-            frost_config,
             transactions_manager_config,
             frost_protocol_events_rx,
         }
