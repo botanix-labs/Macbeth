@@ -47,10 +47,7 @@ use crate::{
     discovery::Discovery,
     error::{NetworkError, ServiceKind},
     eth_requests::IncomingEthRequest,
-    frost::{
-        manager::FrostConfig, protocol::FrostProtoHandler, FrostProtocolEvent, NetworkFrostEvent,
-        ProtocolState,
-    },
+    frost::{FrostProtocolEvent, NetworkFrostEvent},
     import::{BlockImport, BlockImportOutcome, BlockValidation},
     listener::ConnectionListener,
     message::{NewBlockMessage, PeerMessage},
@@ -92,10 +89,7 @@ pub struct NetworkManager {
     /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
     /// This is the reciever half used to recieve events related to the protocol, such as
     /// connection established, messages received, etc.
-    from_frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
-    /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
-    /// This is the reciever half used to recieve events related to the peers messages
-    from_frost_peers_messages_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
+    frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
     /// Handles block imports according to the `eth` protocol.
     block_import: Box<dyn BlockImport>,
     /// Sender for high level network events.
@@ -209,7 +203,6 @@ impl NetworkManager {
             dns_discovery_config,
             extra_protocols,
             tx_gossip_disabled,
-            frost_peers_messages_rx,
             frost_protocol_events_rx,
             ..
         } = config;
@@ -295,8 +288,7 @@ impl NetworkManager {
             swarm,
             handle,
             from_handle_rx: UnboundedReceiverStream::new(from_handle_rx),
-            from_frost_peers_messages_rx: frost_peers_messages_rx,
-            from_frost_protocol_events_rx: frost_protocol_events_rx,
+            frost_protocol_events_rx,
             block_import,
             event_sender,
             to_transactions_manager: None,
@@ -1040,9 +1032,9 @@ impl Future for NetworkManager {
 
         // process incoming events from the frost protocol
         let mut frost_protocol_event = None;
-        if let Some(from_frost_protocol_events_rx) = this.from_frost_protocol_events_rx.as_mut() {
+        if let Some(frost_protocol_events_rx) = this.frost_protocol_events_rx.as_mut() {
             loop {
-                match from_frost_protocol_events_rx.poll_next_unpin(cx) {
+                match frost_protocol_events_rx.poll_next_unpin(cx) {
                     Poll::Pending => break,
                     Poll::Ready(None) => {
                         // This is only possible if the channel was deliberately closed since we
@@ -1056,24 +1048,6 @@ impl Future for NetworkManager {
         }
 
         if let Some(event) = frost_protocol_event {
-            this.on_handle_frost_protocol_event(event);
-        }
-
-        let mut frost_peers_message = None;
-        if let Some(from_frost_peers_messages_rx) = this.from_frost_peers_messages_rx.as_mut() {
-            loop {
-                match from_frost_peers_messages_rx.poll_next_unpin(cx) {
-                    Poll::Pending => break,
-                    Poll::Ready(None) => {
-                        tracing::error!("Network message channel closed.");
-                        return Poll::Ready(());
-                    }
-                    Poll::Ready(Some(event)) => frost_peers_message = Some(event),
-                }
-            }
-        }
-
-        if let Some(event) = frost_peers_message {
             this.on_handle_frost_protocol_event(event);
         }
 

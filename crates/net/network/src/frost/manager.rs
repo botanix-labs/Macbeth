@@ -200,6 +200,7 @@ impl FrostManager {
                 );
             }
             NetworkFrostEvent::PeerMessage { peer_id, response } => {
+                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage message from peer with id = {:?}, response = {:?}", peer_id, response);
                 if !self.is_authority_peer(&peer_id) {
                     warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage message from non-authority peer {:?}", peer_id);
                     return;
