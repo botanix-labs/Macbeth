@@ -34,8 +34,11 @@ use super::{
 /// Frost Protocol Handler
 #[derive(Debug)]
 pub struct FrostProtoHandler {
-    /// The Frost Protocol State
-    pub state: ProtocolState,
+    /// My peer id
+    pub my_peer_id: PeerId,
+    /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
+    /// command
+    pub protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
 }
 
 impl ProtocolHandler for FrostProtoHandler {
@@ -47,7 +50,10 @@ impl ProtocolHandler for FrostProtoHandler {
     /// handler.
     fn on_incoming(&self, _socket_addr: SocketAddr) -> Option<Self::ConnectionHandler> {
         // once the other side establishes conn with us, clone and send the sender half to them
-        Some(FrostConnectionHandler { state: self.state.clone() })
+        Some(FrostConnectionHandler {
+            my_peer_id: self.my_peer_id,
+            protocol_events_tx: self.protocol_events_tx.clone(),
+        })
     }
 
     /// Invoked when a new outgoing connection to the remote is requested.
@@ -60,14 +66,21 @@ impl ProtocolHandler for FrostProtoHandler {
         _peer_id: PeerId,
     ) -> Option<Self::ConnectionHandler> {
         // once I establish conn with the other peer, clone and send the sender half to them
-        Some(FrostConnectionHandler { state: self.state.clone() })
+        Some(FrostConnectionHandler {
+            my_peer_id: self.my_peer_id,
+            protocol_events_tx: self.protocol_events_tx.clone(),
+        })
     }
 }
 
 /// Frost Connection Handler
 #[derive(Debug)]
 pub struct FrostConnectionHandler {
-    state: ProtocolState,
+    /// My peer id
+    my_peer_id: PeerId,
+    /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
+    /// command
+    protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
 }
 
 impl ConnectionHandler for FrostConnectionHandler {
@@ -100,6 +113,7 @@ impl ConnectionHandler for FrostConnectionHandler {
         peer_id: PeerId,
         conn: ProtocolConnection,
     ) -> Self::Connection {
+        info!(target: "network::frost::protocol::into_connection", "Establishing connection with peer with id = {:?}, direction = {:?}", peer_id, direction);
         // on every new connection to us, send over the cloned shared channel an Established event
         // to the other side and a tx handle to send Command messages to us directly
         let (remote_peer_tx, remote_peer_rx) = mpsc::unbounded_channel();
@@ -108,24 +122,27 @@ impl ConnectionHandler for FrostConnectionHandler {
             peer_id,
             to_connection: remote_peer_tx,
         };
-        if let Err(e) = self.state.events.send(connection_established_event) {
+
+        if let Err(e) = self.protocol_events_tx.send(connection_established_event) {
             error!(target: "network::frost::protocol::into_connection", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
         }
-        let protocol_events = self.state.events.clone();
+
+        let protocol_events_tx = self.protocol_events_tx.clone();
         // update connection state
         FrostProtoConnection {
-            protocol_events,
-            conn,
+            protocol_events_tx,
+            conn_rx: conn,
             // incoming - another peer is connecting with me (set the ping message to Some),
             // outgoing - I am connecting with a peer
             initial_ping: direction
                 .is_outgoing()
-                .then(|| FrostProtoMessage::ping_message(self.state.my_peer_id)),
+                .then(|| FrostProtoMessage::ping_message(self.my_peer_id)),
             // used to receive commands from me to send to the other peer
-            commands: UnboundedReceiverStream::new(remote_peer_rx),
+            commands_rx: UnboundedReceiverStream::new(remote_peer_rx),
             pending_pong: None, // when the conn. is just established, there is no pending pong
-            my_peer_id: self.state.my_peer_id,
+            my_peer_id: self.my_peer_id,
             peer_id,
+            direction,
         }
     }
 }
@@ -133,13 +150,22 @@ impl ConnectionHandler for FrostConnectionHandler {
 /// Frost Protocol Connection
 #[derive(Debug)]
 pub struct FrostProtoConnection {
-    protocol_events: mpsc::UnboundedSender<FrostProtocolEvent>,
-    conn: ProtocolConnection,
-    initial_ping: Option<FrostProtoMessage>,
-    commands: UnboundedReceiverStream<FrostPeerCommand>,
-    pending_pong: Option<oneshot::Sender<String>>,
+    /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
+    /// command
+    protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
+    /// Channel to recieve messages from other peers on the wire
+    conn_rx: ProtocolConnection,
+    /// Channel to receive commands from in the internal application to send to the other peers
+    commands_rx: UnboundedReceiverStream<FrostPeerCommand>,
+    /// My peer id
     my_peer_id: PeerId,
+    /// Remote peer id
     peer_id: PeerId,
+    /// direction of the connection
+    direction: Direction,
+
+    initial_ping: Option<FrostProtoMessage>,
+    pending_pong: Option<oneshot::Sender<String>>,
 }
 
 impl Stream for FrostProtoConnection {
@@ -147,14 +173,18 @@ impl Stream for FrostProtoConnection {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
+        info!(target: "network::frost::protocol", "Polling next message from peer with id = {:?}", this.peer_id);
 
-        // in case of outgoing (i am connecting with a peer), send him a pure PING message
-        if let Some(initial_ping) = this.initial_ping.take() {
-            return Poll::Ready(Some(initial_ping.encoded()));
-        }
+        // in case of outgoing (I am dialing this a peer), send him a pure PING message
+        // TODO there is no reason to have this initial ping and pong maybe we can just remove it
+        // if let Some(initial_ping) = this.initial_ping.take() {
+        //     return Poll::Ready(Some(initial_ping.encoded()));
+        // }
+
         loop {
-            // poll the commands sent by us to another peer
-            if let Poll::Ready(Some(cmd)) = this.commands.poll_next_unpin(cx) {
+            // poll the commands sent by us to send to another peer
+            if let Poll::Ready(Some(cmd)) = this.commands_rx.poll_next_unpin(cx) {
+                info!(target: "network::frost::protocol", "Received command: {:?}", cmd);
                 return match cmd {
                     // if I want to send a ping message, save the response channel to later (below)
                     // answer once the pong is received
@@ -279,7 +309,9 @@ impl Stream for FrostProtoConnection {
             }
 
             // poll the actual conn to peers for events from this other peer
-            let Some(msg) = ready!(this.conn.poll_next_unpin(cx)) else { return Poll::Ready(None) };
+            let Some(msg) = ready!(this.conn_rx.poll_next_unpin(cx)) else {
+                return Poll::Ready(None);
+            };
 
             // if deserialization fails, skip
             let Some(msg) = FrostProtoMessage::decode_message(&mut &msg[..]) else {
@@ -288,10 +320,10 @@ impl Stream for FrostProtoConnection {
             };
 
             // react on message type sent to us by another peer
-            let peer_message_forwarder = this.protocol_events.clone();
+            let protocol_events_tx = this.protocol_events_tx.clone();
             match msg.message {
                 FrostProtoMessageKind::Healthcheck(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         peer_id: this.peer_id,
                         response: PeerMessageResponse::Healthcheck(HealthcheckResponse {
                             receiver: data.receiver,
@@ -309,7 +341,7 @@ impl Stream for FrostProtoConnection {
                 FrostProtoMessageKind::PingMessage(peer_id) => {
                     info!(target: "network::frost::protocol", "Received ping message from peer with id = {:?} Replying with pong...", peer_id);
                     if let Err(e) =
-                        peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(peer_id))
+                        protocol_events_tx.send(FrostProtocolEvent::PeerConfirmed(peer_id))
                     {
                         error!(target: "network::frost::protocol", "Failed to forward received pong message from peer id {:?}. Error = {:?}", peer_id, e);
                     }
@@ -322,7 +354,7 @@ impl Stream for FrostProtoConnection {
                 // other peers answers with pong message with a peer id and authority index
                 FrostProtoMessageKind::PongMessage(peer_id) => {
                     if let Err(e) =
-                        peer_message_forwarder.send(FrostProtocolEvent::PeerConfirmed(peer_id))
+                        protocol_events_tx.send(FrostProtocolEvent::PeerConfirmed(peer_id))
                     {
                         error!(target: "network::frost::protocol", "Failed to forward received PongMessage from peer id {:?}. Error = {:?}", peer_id, e);
                     }
@@ -332,7 +364,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::CoordinatorBlockProposal(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         peer_id: this.peer_id,
                         response: PeerMessageResponse::Pbft(PbftResponse {
                             response_type: PbftEventResponseType::CoordinatorBlockProposal,
@@ -343,7 +375,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::PeerPreCommitment(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         peer_id: this.peer_id,
                         response: PeerMessageResponse::Pbft(PbftResponse {
                             response_type: PbftEventResponseType::PeerPreCommitment,
@@ -354,7 +386,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::PeerCommit(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         peer_id: this.peer_id,
                         response: PeerMessageResponse::Pbft(PbftResponse {
                             response_type: PbftEventResponseType::PeerCommitment,
@@ -365,7 +397,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::Round1Dkg(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Dkg(DkgResponse {
                             response_type: DkgEventResponseType::DkgRound1,
                             identifier: data.identifier,
@@ -377,7 +409,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::Round1DkgRequest(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Dkg(DkgResponse {
                             response_type: DkgEventResponseType::DkgRound1Request,
                             identifier: data.identifier,
@@ -389,7 +421,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::Round2Dkg(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Dkg(DkgResponse {
                             response_type: DkgEventResponseType::DkgRound2,
                             identifier: data.identifier,
@@ -401,7 +433,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::SignerRound1SigningPackage(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Signing(SigningResponse {
                             response_type: SigningEventResponseType::SignerRound1SigningPackage,
                             identifier: data.identifier,
@@ -414,7 +446,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::CoordinatorRound1SigningPackage(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Signing(SigningResponse {
                             response_type:
                                 SigningEventResponseType::CoordinatorRound1SigningPackage,
@@ -428,7 +460,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::SignerRound2SigningPackage(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Signing(SigningResponse {
                             response_type: SigningEventResponseType::SignerRound2SigningPackage,
                             identifier: data.identifier,
@@ -441,7 +473,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::CoordinatorRound2SigningPackage(data) => {
-                    if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Signing(SigningResponse {
                             response_type:
                                 SigningEventResponseType::CoordinatorRound2SigningPackage,
@@ -455,7 +487,7 @@ impl Stream for FrostProtoConnection {
                     }
                 }
                 FrostProtoMessageKind::Utxo(data) => {
-                    let _ = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
+                    let _ = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                         response: PeerMessageResponse::Utxo(UtxoSetResponse { data: data.data }),
                         peer_id: this.peer_id,
                     });
