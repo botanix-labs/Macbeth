@@ -126,7 +126,7 @@ pub fn spawn_child_process_internal(
 
     // Open the log file for both stdout and stderr
     let log_file_path = PathBuf::from(format!("{}.txt", scope.to_string()));
-    let log_file = OpenOptions::new().truncate(true).create(true).open(log_file_path)?;
+    let log_file = OpenOptions::new().create(true).write(true).append(true).open(log_file_path)?;
 
     // Clone the log file
     let log_file_stdout = log_file.try_clone()?;

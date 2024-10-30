@@ -685,7 +685,6 @@ impl Suite for ConsensusIntegrationTestSuite {
             it_info_print!("Starting bitcoind node");
             // spawn bitcoind node as a process
             let spawned_bitcoind_process = bitcoind_node.spawn_service()?;
-
             tokio::time::sleep(Duration::from_secs(6)).await;
 
             // await initialization
@@ -774,12 +773,12 @@ impl Suite for ConsensusIntegrationTestSuite {
                 spawned_cometbft_processes.push(cometbft_node.spawn_service()?);
 
                 // create lightclient
-                let botanix_eth_client = HttpCometBFTRpcClientFactory::new(
+                let cometbft_client = HttpCometBFTRpcClientFactory::new(
                     "0.0.0.0".to_string(),
                     cometbft_node.cometbft_rpc_app_port,
                 );
-                let http_client = botanix_eth_client.build_and_connect()?;
-                cometbft_lightclients.push(http_client);
+                let cometbft_client = cometbft_client.build_and_connect()?;
+                cometbft_lightclients.push(cometbft_client);
 
                 // await initialization
                 cometbft_node.await_initialization()?;
