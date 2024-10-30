@@ -24,7 +24,7 @@ pub struct HealthcheckRequest {
 /// Healtcheck message builder
 impl HealthcheckRequest {
     /// Constructs a new healthcheck request
-    pub fn new(sender: PeerId, receiver: PeerId) -> Self {
+    pub const fn new(sender: PeerId, receiver: PeerId) -> Self {
         Self { sender, receiver }
     }
 }
@@ -57,8 +57,8 @@ impl fmt::Display for PbftRequest {
 
 impl PbftRequest {
     /// Constructs a new PBFT Request using a data payload.
-    pub fn new(block: reth_primitives::SealedBlock) -> Self {
-        PbftRequest { version: PBFT_MESSAGE_VERSION as u16, block }
+    pub const fn new(block: reth_primitives::SealedBlock) -> Self {
+        Self { version: PBFT_MESSAGE_VERSION as u16, block }
     }
 }
 
@@ -75,8 +75,8 @@ pub struct DkgRequest {
 
 impl DkgRequest {
     /// Constructs a new DKG Request using a frost identifier and a data payload.
-    pub fn new(identifier: Vec<u8>, data: Vec<u8>) -> Self {
-        DkgRequest { version: MESSAGE_VERSION as u16, identifier, data }
+    pub const fn new(identifier: Vec<u8>, data: Vec<u8>) -> Self {
+        Self { version: MESSAGE_VERSION as u16, identifier, data }
     }
 }
 
@@ -96,8 +96,8 @@ pub struct SignRequest {
 impl SignRequest {
     /// Constructs a new sign Request using a frost identifier, signing session id and a psbt
     /// payload.
-    pub fn new(identifier: Vec<u8>, signing_session_id: Vec<u8>, psbt: Vec<u8>) -> Self {
-        SignRequest { version: MESSAGE_VERSION as u16, identifier, signing_session_id, psbt }
+    pub const fn new(identifier: Vec<u8>, signing_session_id: Vec<u8>, psbt: Vec<u8>) -> Self {
+        Self { version: MESSAGE_VERSION as u16, identifier, signing_session_id, psbt }
     }
 }
 
@@ -118,8 +118,8 @@ impl fmt::Display for UtxoRequest {
 
 impl UtxoRequest {
     /// Constructs a new PBFT Request using a data payload.
-    pub fn new(data: Vec<u8>) -> Self {
-        UtxoRequest { version: UTXO_SET_MESSAGE_VERSION as u16, data }
+    pub const fn new(data: Vec<u8>) -> Self {
+        Self { version: UTXO_SET_MESSAGE_VERSION as u16, data }
     }
 }
 
@@ -209,34 +209,34 @@ pub struct FrostProtoMessage {
 
 impl FrostProtoMessage {
     /// Returns the capability for the `frost` protocol.
-    pub fn capability() -> Capability {
+    pub const fn capability() -> Capability {
         Capability::new_static("frost", MESSAGE_VERSION)
     }
 
     /// Returns the protocol for the `frost` protocol.
-    pub fn protocol() -> Protocol {
+    pub const fn protocol() -> Protocol {
         Protocol::new(Self::capability(), 16)
     }
 
     /// Creates a ping message
-    pub fn ping() -> Self {
+    pub const fn ping() -> Self {
         Self { message_type: FrostProtoMessageId::Ping, message: FrostProtoMessageKind::Ping }
     }
 
     /// Creates a pong message
-    pub fn pong() -> Self {
+    pub const fn pong() -> Self {
         Self { message_type: FrostProtoMessageId::Pong, message: FrostProtoMessageKind::Pong }
     }
 
     /// Creates a ping message
-    pub fn ping_message(peer_id: PeerId) -> Self {
+    pub const fn ping_message(peer_id: PeerId) -> Self {
         Self {
             message_type: FrostProtoMessageId::PingMessage,
             message: FrostProtoMessageKind::PingMessage(peer_id),
         }
     }
     /// Creates a ping message
-    pub fn pong_message(peer_id: PeerId) -> Self {
+    pub const fn pong_message(peer_id: PeerId) -> Self {
         Self {
             message_type: FrostProtoMessageId::PongMessage,
             message: FrostProtoMessageKind::PongMessage(peer_id),
@@ -244,7 +244,7 @@ impl FrostProtoMessage {
     }
 
     /// Creates a round1 package request message
-    pub fn round1_dkg_request_message(resource: DkgRequest) -> Self {
+    pub const fn round1_dkg_request_message(resource: DkgRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::Round1DkgRequest,
             message: FrostProtoMessageKind::Round1Dkg(resource),
@@ -252,7 +252,7 @@ impl FrostProtoMessage {
     }
 
     /// Creates a round1 package message
-    pub fn round1_dkg_message(resource: DkgRequest) -> Self {
+    pub const fn round1_dkg_message(resource: DkgRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::Round1Dkg,
             message: FrostProtoMessageKind::Round1Dkg(resource),
@@ -260,7 +260,7 @@ impl FrostProtoMessage {
     }
 
     /// Creates a round2 package message
-    pub fn round2_dkg_message(resource: DkgRequest) -> Self {
+    pub const fn round2_dkg_message(resource: DkgRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::Round2Dkg,
             message: FrostProtoMessageKind::Round2Dkg(resource),
@@ -268,7 +268,7 @@ impl FrostProtoMessage {
     }
 
     /// Signers adding their signing commitments to the psbt
-    pub fn round1_signer_package_message(resource: SignRequest) -> Self {
+    pub const fn round1_signer_package_message(resource: SignRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::SignerRound1SigningPackage,
             message: FrostProtoMessageKind::SignerRound1SigningPackage(resource),
@@ -276,7 +276,7 @@ impl FrostProtoMessage {
     }
 
     /// Coordinating node collecting the PSBTs with the signing commitments
-    pub fn round1_coordinator_signing_package_message(resource: SignRequest) -> Self {
+    pub const fn round1_coordinator_signing_package_message(resource: SignRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::CoordinatorRound1SigningPackage,
             message: FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource),
@@ -284,7 +284,7 @@ impl FrostProtoMessage {
     }
 
     /// Signers get round 2 signing package
-    pub fn round2_signer_package_message(resource: SignRequest) -> Self {
+    pub const fn round2_signer_package_message(resource: SignRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::SignerRound2SigningPackage,
             message: FrostProtoMessageKind::SignerRound2SigningPackage(resource),
@@ -292,7 +292,7 @@ impl FrostProtoMessage {
     }
 
     /// Coordinating node collecting the PSBTs with the partial sigs
-    pub fn round2_coordinator_signing_package_message(resource: SignRequest) -> Self {
+    pub const fn round2_coordinator_signing_package_message(resource: SignRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::CoordinatorRound2SigningPackage,
             message: FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource),
@@ -300,7 +300,7 @@ impl FrostProtoMessage {
     }
 
     /// In turn block producer will propose a block
-    pub fn coordinator_block_proposal_message(resource: PbftRequest) -> Self {
+    pub const fn coordinator_block_proposal_message(resource: PbftRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::CoordinatorBlockProposal,
             message: FrostProtoMessageKind::CoordinatorBlockProposal(resource),
@@ -308,7 +308,7 @@ impl FrostProtoMessage {
     }
 
     /// Peer pre-commitment -- peer commits to signing a block
-    pub fn peer_pre_commitment_message(resource: PbftRequest) -> Self {
+    pub const fn peer_pre_commitment_message(resource: PbftRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::PeerPreCommitment,
             message: FrostProtoMessageKind::PeerPreCommitment(resource),
@@ -316,7 +316,7 @@ impl FrostProtoMessage {
     }
 
     /// Peer commitment -- peer signs a block
-    pub fn peer_commit_message(resource: PbftRequest) -> Self {
+    pub const fn peer_commit_message(resource: PbftRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::PeerCommit,
             message: FrostProtoMessageKind::PeerCommit(resource),
@@ -324,7 +324,7 @@ impl FrostProtoMessage {
     }
 
     /// Creates a utxo set message
-    pub fn utxo_message(resource: UtxoRequest) -> Self {
+    pub const fn utxo_message(resource: UtxoRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::Utxo,
             message: FrostProtoMessageKind::Utxo(resource),
@@ -332,7 +332,7 @@ impl FrostProtoMessage {
     }
 
     /// Peer healthcheck
-    pub fn peer_health_message(resource: HealthcheckRequest) -> Self {
+    pub const fn peer_health_message(resource: HealthcheckRequest) -> Self {
         Self {
             message_type: FrostProtoMessageId::Healthcheck,
             message: FrostProtoMessageKind::Healthcheck(resource),
@@ -345,14 +345,7 @@ impl FrostProtoMessage {
         let mut buf = BytesMut::new();
         buf.put_u8(self.message_type as u8);
         match &self.message {
-            FrostProtoMessageKind::Round1Dkg(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
-                // data
-                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.data);
-            }
+            FrostProtoMessageKind::Round1Dkg(resource) |
             FrostProtoMessageKind::Round2Dkg(resource) => {
                 // identifier
                 buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
@@ -370,15 +363,8 @@ impl FrostProtoMessage {
                 buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.data);
             }
-            FrostProtoMessageKind::Ping => {}
-            FrostProtoMessageKind::Pong => {}
-            FrostProtoMessageKind::PingMessage(peer_id) => {
-                // peer id
-                let peer_id_str = peer_id.to_string();
-                let peer_id_bytes = peer_id_str.as_bytes();
-                buf.put_u16_le(peer_id_bytes.len() as u16); // Store the length of the peer_id string
-                buf.put_slice(peer_id_bytes); // Store the peer_id string itself
-            }
+            FrostProtoMessageKind::Ping | FrostProtoMessageKind::Pong => {}
+            FrostProtoMessageKind::PingMessage(peer_id) |
             FrostProtoMessageKind::PongMessage(peer_id) => {
                 // peer id
                 let peer_id_str = peer_id.to_string();
@@ -386,39 +372,9 @@ impl FrostProtoMessage {
                 buf.put_u16_le(peer_id_bytes.len() as u16); // Store the length of the peer_id string
                 buf.put_slice(peer_id_bytes); // Store the peer_id string itself
             }
-            FrostProtoMessageKind::SignerRound1SigningPackage(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
-                // signing session id
-                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.signing_session_id);
-                // psbt
-                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.psbt);
-            }
-            FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
-                // signing session id
-                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.signing_session_id);
-                // psbt
-                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.psbt);
-            }
-            FrostProtoMessageKind::SignerRound2SigningPackage(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
-                // signing session id
-                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.signing_session_id);
-                // psbt
-                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.psbt);
-            }
+            FrostProtoMessageKind::SignerRound1SigningPackage(resource) |
+            FrostProtoMessageKind::SignerRound2SigningPackage(resource) |
+            FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource) |
             FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
                 // identifier
                 buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
