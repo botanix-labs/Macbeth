@@ -531,7 +531,7 @@ where
             }
 
             // short sleep
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(1250)).await;
         }
     }
 }

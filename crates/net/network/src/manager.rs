@@ -39,7 +39,7 @@ use reth_tokio_util::EventSender;
 use secp256k1::SecretKey;
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     budget::{DEFAULT_BUDGET_TRY_DRAIN_NETWORK_HANDLE_CHANNEL, DEFAULT_BUDGET_TRY_DRAIN_SWARM},
@@ -62,7 +62,7 @@ use crate::{
     state::NetworkState,
     swarm::{Swarm, SwarmEvent},
     transactions::NetworkTransactionEvent,
-    FetchClient, NetworkBuilder, NetworkProtocols,
+    FetchClient, NetworkBuilder,
 };
 use futures::{Future, StreamExt};
 use parking_lot::Mutex;
@@ -89,7 +89,7 @@ pub struct NetworkManager {
     /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
     /// This is the reciever half used to recieve events related to the protocol, such as
     /// connection established, messages received, etc.
-    frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
+    frost_protocol_events_rx: UnboundedReceiverStream<FrostProtocolEvent>,
     /// Handles block imports according to the `eth` protocol.
     block_import: Box<dyn BlockImport>,
     /// Sender for high level network events.
@@ -288,7 +288,8 @@ impl NetworkManager {
             swarm,
             handle,
             from_handle_rx: UnboundedReceiverStream::new(from_handle_rx),
-            frost_protocol_events_rx,
+            frost_protocol_events_rx: frost_protocol_events_rx
+                .expect("frost protocol events rx should be provided"),
             block_import,
             event_sender,
             to_transactions_manager: None,
@@ -578,6 +579,7 @@ impl NetworkManager {
     fn on_handle_frost_protocol_event(&mut self, protocol_event: FrostProtocolEvent) {
         match protocol_event {
             FrostProtocolEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
+                info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionEstablished {:?} {:?} {:?}", direction, peer_id, to_connection);
                 self.notify_frost_manager(NetworkFrostEvent::ConnectionEstablished {
                     direction,
                     peer_id,
@@ -1032,23 +1034,22 @@ impl Future for NetworkManager {
 
         // process incoming events from the frost protocol
         let mut frost_protocol_event = None;
-        if let Some(frost_protocol_events_rx) = this.frost_protocol_events_rx.as_mut() {
-            loop {
-                match frost_protocol_events_rx.poll_next_unpin(cx) {
-                    Poll::Pending => break,
-                    Poll::Ready(None) => {
-                        // This is only possible if the channel was deliberately closed since we
-                        // always have an instance of `NetworkHandle`
-                        tracing::error!("Network message channel closed.");
-                        return Poll::Ready(());
-                    }
-                    Poll::Ready(Some(event)) => frost_protocol_event = Some(event),
-                };
-            }
-        }
+        loop {
+            match this.frost_protocol_events_rx.poll_next_unpin(cx) {
+                Poll::Pending => break,
+                Poll::Ready(None) => {
+                    // This is only possible if the channel was deliberately closed since we
+                    // always have an instance of `NetworkHandle`
+                    tracing::error!("Network message channel closed.");
 
-        if let Some(event) = frost_protocol_event {
-            this.on_handle_frost_protocol_event(event);
+                    return Poll::Ready(());
+                }
+                Poll::Ready(Some(event)) => frost_protocol_event = Some(event),
+            };
+
+            if let Some(event) = frost_protocol_event {
+                this.on_handle_frost_protocol_event(event);
+            }
         }
 
         // This loop drives the entire state of network and does a lot of work.

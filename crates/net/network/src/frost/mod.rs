@@ -240,7 +240,7 @@ impl fmt::Display for SigningEventResponseType {
 }
 
 /// Frost Protocol Events
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FrostProtocolEvent {
     /// An emitted event once the connection is established
     ConnectionEstablished {

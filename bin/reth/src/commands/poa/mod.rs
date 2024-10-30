@@ -636,8 +636,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let my_peer_id = pk2id(&secret_key.public_key(SECP256K1));
 
-        let protocol_state = ProtocolState::new(protocol_events_tx, my_peer_id);
-        let protocol_handler = FrostProtoHandler { state: protocol_state };
+        let protocol_handler = FrostProtoHandler { my_peer_id, protocol_events_tx };
 
         let mut network_cfg_builder = self
             .network

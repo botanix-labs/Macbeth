@@ -5,7 +5,7 @@ use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
 use rand::Rng;
-use reth_network_api::{test_utils::PeersHandleProvider, Peers};
+use reth_network_api::Peers;
 use reth_network_peers::PeerId;
 use std::{
     collections::HashMap,
@@ -164,15 +164,15 @@ impl FrostManager {
     fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
         match protocol_event {
             NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
+                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, to_connection);
                 if !self.is_authority_peer(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
+                    info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
 
                 // make sure we ignore our own connection
-                let my_peer_id = self.network.peer_id();
-                if *my_peer_id == peer_id {
-                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from our own peer {:?}", peer_id);
+                if *self.network.peer_id() == peer_id {
+                    info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from our own peer {:?}", peer_id);
                     return;
                 }
 
@@ -186,12 +186,11 @@ impl FrostManager {
                     })
                     .unzip();
 
-                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, to_connection);
                 self.peers_connections.insert(
                     peer_id,
                     PeerData {
                         peer_id,
-                        peer_confirmed: false,
+                        peer_confirmed: true,
                         direction: Some(direction),
                         peer_commands_tx: Some(to_connection),
                         frost_identifier: index
@@ -322,16 +321,21 @@ impl Future for FrostManager {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
+
+        let tid = std::thread::current().id();
         loop {
+            info!(target: "network::frost::poll", "from_network len : {:?}", tid);
             match this.from_network.poll_next_unpin(cx) {
                 Poll::Pending => break,
                 Poll::Ready(None) => {
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     error!(target: "network::frost::poll", "Network message channel closed.");
-                    //return Poll::Ready(());
+                    panic!("Network message channel closed.");
                 }
-                Poll::Ready(Some(event)) => this.on_network_event(event),
+                Poll::Ready(Some(event)) => {
+                    this.on_network_event(event);
+                }
             };
         }
 
@@ -342,7 +346,7 @@ impl Future for FrostManager {
                     // This is only possible if the channel was deliberately closed since we always
                     // have an instance of `NetworkHandle`
                     error!(target: "network::frost::poll", "Network message channel closed.");
-                    //return Poll::Ready(());
+                    panic!("Network command rx message channel closed.");
                 }
                 Poll::Ready(Some(cmd)) => this.on_command(cmd),
             };
