@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     frost::{
@@ -46,10 +46,6 @@ impl ProtocolHandler for FrostProtoHandler {
     /// If protocols for this outgoing should be announced to the remote, return a connection
     /// handler.
     fn on_incoming(&self, _socket_addr: SocketAddr) -> Option<Self::ConnectionHandler> {
-        // TODO (armin) constant time?
-        // if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
-        //     return None;
-        // }
         // once the other side establishes conn with us, clone and send the sender half to them
         Some(FrostConnectionHandler { state: self.state.clone() })
     }
@@ -63,10 +59,6 @@ impl ProtocolHandler for FrostProtoHandler {
         _socket_addr: SocketAddr,
         _peer_id: PeerId,
     ) -> Option<Self::ConnectionHandler> {
-        // TODO (armin) constant time?
-        // if !self.state.authorities.contains(self.state.network_handle.peer_id()) {
-        //     return None;
-        // }
         // once I establish conn with the other peer, clone and send the sender half to them
         Some(FrostConnectionHandler { state: self.state.clone() })
     }
@@ -119,10 +111,10 @@ impl ConnectionHandler for FrostConnectionHandler {
         if let Err(e) = self.state.events.send(connection_established_event) {
             error!(target: "network::frost::protocol::into_connection", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
         }
-        let peer_message_forwarder = self.state.peer_message_forwarder.clone();
+        let protocol_events = self.state.events.clone();
         // update connection state
         FrostProtoConnection {
-            peer_message_forwarder,
+            protocol_events,
             conn,
             // incoming - another peer is connecting with me (set the ping message to Some),
             // outgoing - I am connecting with a peer
@@ -141,7 +133,7 @@ impl ConnectionHandler for FrostConnectionHandler {
 /// Frost Protocol Connection
 #[derive(Debug)]
 pub struct FrostProtoConnection {
-    peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
+    protocol_events: mpsc::UnboundedSender<FrostProtocolEvent>,
     conn: ProtocolConnection,
     initial_ping: Option<FrostProtoMessage>,
     commands: UnboundedReceiverStream<FrostPeerCommand>,
@@ -161,8 +153,7 @@ impl Stream for FrostProtoConnection {
             return Poll::Ready(Some(initial_ping.encoded()));
         }
         loop {
-            let peer_message_forwarder = this.peer_message_forwarder.clone();
-            // poll the commands send by us to another peer
+            // poll the commands sent by us to another peer
             if let Poll::Ready(Some(cmd)) = this.commands.poll_next_unpin(cx) {
                 return match cmd {
                     // if I want to send a ping message, save the response channel to later (below)
@@ -287,15 +278,17 @@ impl Stream for FrostProtoConnection {
                 };
             }
 
-            // poll the actual conn to peers for events from other peers
+            // poll the actual conn to peers for events from this other peer
             let Some(msg) = ready!(this.conn.poll_next_unpin(cx)) else { return Poll::Ready(None) };
 
             // if deserialization fails, skip
             let Some(msg) = FrostProtoMessage::decode_message(&mut &msg[..]) else {
+                warn!(target: "network::frost::protocol", "Failed to decode frost protocol message");
                 return Poll::Ready(None);
             };
 
             // react on message type sent to us by another peer
+            let peer_message_forwarder = this.protocol_events.clone();
             match msg.message {
                 FrostProtoMessageKind::Healthcheck(data) => {
                     if let Err(e) = peer_message_forwarder.send(FrostProtocolEvent::PeerMessage {
@@ -321,7 +314,7 @@ impl Stream for FrostProtoConnection {
                         error!(target: "network::frost::protocol", "Failed to forward received pong message from peer id {:?}. Error = {:?}", peer_id, e);
                     }
 
-                    // answer with pong of my_authority_index
+                    // answer with pong and my peer id
                     return Poll::Ready(Some(
                         FrostProtoMessage::pong_message(this.my_peer_id).encoded(),
                     ));

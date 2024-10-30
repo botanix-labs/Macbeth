@@ -633,13 +633,10 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let default_peers_path = data_dir.known_peers();
         let (protocol_events_tx, protocol_events_rx) = unbounded_channel();
-        let (frost_peer_messages_forwarder_tx, frost_peer_messages_forwarder_rx) =
-            unbounded_channel::<FrostProtocolEvent>();
 
         let my_peer_id = pk2id(&secret_key.public_key(SECP256K1));
 
-        let protocol_state =
-            ProtocolState::new(protocol_events_tx, frost_peer_messages_forwarder_tx, my_peer_id);
+        let protocol_state = ProtocolState::new(protocol_events_tx, my_peer_id);
         let protocol_handler = FrostProtoHandler { state: protocol_state };
 
         let mut network_cfg_builder = self
@@ -660,7 +657,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             ))
             .frost_config(frost_config.clone())
             .frost_protocol_events_rx(UnboundedReceiverStream::new(protocol_events_rx))
-            .frost_peers_messages_rx(UnboundedReceiverStream::new(frost_peer_messages_forwarder_rx))
             .network_mode(reth_network::config::NetworkMode::Authority)
             .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
 

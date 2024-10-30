@@ -19,18 +19,13 @@ pub mod protocol;
 #[derive(Clone, Debug)]
 pub struct ProtocolState {
     events: mpsc::UnboundedSender<FrostProtocolEvent>,
-    peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
     my_peer_id: PeerId,
 }
 
 impl ProtocolState {
     /// Constructs a new Protocol State.
-    pub fn new(
-        events: mpsc::UnboundedSender<FrostProtocolEvent>,
-        peer_message_forwarder: mpsc::UnboundedSender<FrostProtocolEvent>,
-        my_peer_id: PeerId,
-    ) -> Self {
-        Self { events, peer_message_forwarder, my_peer_id }
+    pub fn new(events: mpsc::UnboundedSender<FrostProtocolEvent>, my_peer_id: PeerId) -> Self {
+        Self { events, my_peer_id }
     }
 }
 
