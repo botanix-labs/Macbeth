@@ -483,8 +483,11 @@ impl FederationMemberTestConfig {
                         },
                     )) {
                         Ok(_) => {}
-                        Err(e) => {
-                            it_error_print!("Failed to send canon state notification: {:?}", e);
+                        // all receivers have been dropped temporarily here. Just sleep
+                        // and await new ones to be created
+                        Err(_) => {
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
                         }
                     }
                 }

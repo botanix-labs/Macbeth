@@ -11,6 +11,7 @@ use botanix_client::BotanixEthClient;
 use core::fmt;
 use ethers::core::types::Address as EtherAddress;
 use port_killer::kill;
+use regex::Regex;
 use reth::consensus_common::utils::unix_timestamp;
 use std::{
     fs::OpenOptions,
@@ -19,7 +20,7 @@ use std::{
     process::Stdio,
 };
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, Command},
     sync::mpsc::UnboundedReceiver,
 };
@@ -125,7 +126,7 @@ pub fn spawn_child_process_internal(
 
     // Open the log file for both stdout and stderr
     let log_file_path = PathBuf::from(format!("{}.txt", scope.to_string()));
-    let log_file = OpenOptions::new().append(true).create(true).open(log_file_path)?;
+    let log_file = OpenOptions::new().truncate(true).create(true).open(log_file_path)?;
 
     // Clone the log file
     let log_file_stdout = log_file.try_clone()?;
@@ -141,23 +142,30 @@ pub fn spawn_child_process_internal(
         let mut file = tokio::fs::File::from_std(log_file_stdout);
 
         tokio::task::spawn(async move {
+            let ansi_escape = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::info!("[{}] >>>>>> {}", scope, line);
+                let clean_line = ansi_escape.replace_all(&line, "").to_string();
+                tracing::info!("[{}] >>>>>> {}", scope, clean_line);
 
                 // Write the line to the log file
-                if let Err(e) =
-                    tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", line).as_bytes())
-                        .await
+                if let Err(e) = tokio::io::AsyncWriteExt::write_all(
+                    &mut file,
+                    format!("{}\n", clean_line).as_bytes(),
+                )
+                .await
                 {
                     tracing::error!("Failed to write to log file: {}", e);
+                }
+                if let Err(e) = file.flush().await {
+                    tracing::error!("Failed to flush log file: {}", e);
                 }
 
                 if forward_messages {
                     // Send the line over the channel
-                    if let Err(e) = stdout_tx.send(format!("{}\n", line)) {
+                    if let Err(e) = stdout_tx.send(format!("{}\n", clean_line)) {
                         tracing::error!("Failed to send stdout over channel: {}", e);
                     }
                 }
@@ -171,23 +179,30 @@ pub fn spawn_child_process_internal(
         let mut file = tokio::fs::File::from_std(log_file_stderr);
 
         tokio::task::spawn(async move {
+            let ansi_escape = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::info!("[{}] >>>>>> {}", scope, line);
+                let clean_line = ansi_escape.replace_all(&line, "").to_string();
+                tracing::info!("[{}] >>>>>> {}", scope, clean_line);
 
                 // Write the line to the log file
-                if let Err(e) =
-                    tokio::io::AsyncWriteExt::write_all(&mut file, format!("{}\n", line).as_bytes())
-                        .await
+                if let Err(e) = tokio::io::AsyncWriteExt::write_all(
+                    &mut file,
+                    format!("{}\n", clean_line).as_bytes(),
+                )
+                .await
                 {
                     tracing::error!("Failed to write to log file: {}", e);
+                }
+                if let Err(e) = file.flush().await {
+                    tracing::error!("Failed to flush log file: {}", e);
                 }
 
                 if forward_messages {
                     // Send the line over the channel
-                    if let Err(e) = stderr_tx.send(format!("{}\n", line)) {
+                    if let Err(e) = stderr_tx.send(format!("{}\n", clean_line)) {
                         tracing::error!("Failed to send stderr over channel: {}", e);
                     }
                 }
