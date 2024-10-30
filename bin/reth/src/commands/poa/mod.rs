@@ -655,7 +655,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 // set discovery port based on instance number
                 self.network.port + self.instance - 1,
             ))
-            .frost_config(frost_config.clone())
             .frost_protocol_events_rx(UnboundedReceiverStream::new(protocol_events_rx))
             .network_mode(reth_network::config::NetworkMode::Authority)
             .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
