@@ -80,6 +80,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     authority_consensus: AuthorityConsensus,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
+    is_fed_node: bool,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -101,6 +102,7 @@ where
         authority_consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
+        is_fed_node: bool,
     ) -> Self {
         Self {
             storage,
@@ -110,6 +112,7 @@ where
             authority_consensus,
             to_engine,
             cbft_rpc_client_factory,
+            is_fed_node,
         }
     }
 
@@ -131,6 +134,7 @@ where
             driver_tx,
             self.cbft_rpc_client_factory.clone(),
             self.authority_consensus.clone(),
+            self.is_fed_node,
         );
         let mut abci_driver = ABCIDriver::new(
             self.storage.clone(),
@@ -147,19 +151,21 @@ where
         // CometBFT will always run on the same machine and container
         let server = server_builder.bind(format!("{abci_host}:{abci_port}"), app)?;
 
-        // TODO should wait here till we have a aggregate public key stored in the storage
-
-        loop {
-            let storage = self.storage.inner.read().await;
-            if storage.aggregate_public_key.is_some() {
+        if self.is_fed_node {
+            loop {
+                let storage = self.storage.inner.read().await;
+                if storage.aggregate_public_key.is_some() {
+                    info!(
+                        "Aggregate public key is stored in the storage continuing to start ABCI server"
+                    );
+                    break;
+                }
                 info!(
-                    "Aggregate public key is stored in the storage continuing to start ABCI server"
+                    "Waiting for aggregate public key to be stored in the storage before starting ABCI server"
                 );
-                break;
+                drop(storage);
+                tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
             }
-            info!("Waiting for aggregate public key to be stored in the storage before starting ABCI server");
-            drop(storage);
-            tokio::time::sleep(tokio::time::Duration::from_millis(350)).await;
         }
 
         task_executor.spawn_critical(
@@ -192,6 +198,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     #[allow(dead_code)]
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
+    is_fed_node: bool,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -214,6 +221,7 @@ where
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         authority_consensus: AuthorityConsensus,
+        is_fed_node: bool,
     ) -> Self {
         Self {
             storage,
@@ -225,6 +233,7 @@ where
             driver_tx,
             cbft_rpc_provider,
             authority_consensus,
+            is_fed_node,
         }
     }
 
@@ -508,7 +517,7 @@ where
         let storage = self.storage.inner.blocking_read();
         let agg_pk = storage.aggregate_public_key;
 
-        if agg_pk.is_none() {
+        if self.is_fed_node && agg_pk.is_none() {
             warn!("Aggregate public key is not set in process proposal");
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
@@ -1022,6 +1031,7 @@ mod tests {
             driver_tx,
             cometbft_rpc_factory,
             AuthorityConsensus::new(spec),
+            false,
         );
 
         abci_client

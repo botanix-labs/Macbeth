@@ -416,7 +416,7 @@ mod tests {
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::{block_fees_split, is_inturn};
     use reth_primitives::{
-        constants::ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
+        constants::{ALLOWED_FUTURE_BLOCK_TIME_SECONDS, MAXIMUM_EXTRA_DATA_SIZE},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
         Bytes,
     };
@@ -463,14 +463,14 @@ mod tests {
         let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
         let mut header = Header::default();
         header.number = 1;
-        header.extra_data = Bytes::from([1; MAX_EDH_SIZE + 1]);
+        header.extra_data = Bytes::from([1; MAXIMUM_EXTRA_DATA_SIZE + 1]);
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap(),
-            ConsensusError::ExtraDataExceedsMax { len: MAX_EDH_SIZE }
+            ConsensusError::ExtraDataExceedsMax { len: MAXIMUM_EXTRA_DATA_SIZE + 1 }
         );
     }
 
