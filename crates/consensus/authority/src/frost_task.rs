@@ -381,7 +381,7 @@ where
 
                         response.data = serialized_compressed_utxo_set;
 
-                        if let Err(e) = peer_handle.peer_commands_tx.clone().unwrap().send(
+                        if let Err(e) = peer_handle.peer_commands_tx.send(
                             FrostPeerCommand::PeerMessage(PeerMessageResponse::Utxo(response)),
                         ) {
                             error!(target: "consensus::authority::utxo_syncer::start_task", "Error sending utxo set message to a peer: {:?}", e);
