@@ -122,9 +122,8 @@ impl FrostManager {
             .cloned()
             .collect::<Vec<_>>();
 
-        // retain all peer ids that are not in the authorities list
+        // retain all peer ids that are in the authorities list
         all_peer_connection_peer_ids.retain(|peer_id| self.authority_peerid.contains(peer_id));
-
         info!(target: "network::frost::all_authority_peers_connected", "Connected peers: {:?}", all_peer_connection_peer_ids);
 
         all_peer_connection_peer_ids.len() == self.authority_peerid.len() - 1
@@ -322,9 +321,7 @@ impl Future for FrostManager {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
-        let tid = std::thread::current().id();
         loop {
-            info!(target: "network::frost::poll", "from_network len : {:?}", tid);
             match this.from_network.poll_next_unpin(cx) {
                 Poll::Pending => break,
                 Poll::Ready(None) => {
