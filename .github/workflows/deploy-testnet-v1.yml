@@ -30,11 +30,13 @@ jobs:
       - name: Tag Docker image
         run: |
           cat /etc/gcp/sa_credentials.json | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
-          docker tag botanix_testnet_btc_server_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:latest
+          echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})"
+          docker tag botanix_testnet_btc_server_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:$VERSION
 
       - name: Push Docker image to Google Container Registry
         run: |
-          docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:latest
+          echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})"
+          docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:$VERSION
 
   build_and_deploy_poa_node:
     runs-on: botanix-actions-runner
@@ -59,11 +61,13 @@ jobs:
       - name: Tag Docker image
         run: |
           cat /etc/gcp/sa_credentials.json | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
-          docker tag botanix_testnet_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:latest
+          echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})"
+          docker tag botanix_testnet_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:$VERSION
 
       - name: Push Docker image to Google Container Registry
         run: |
-          docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:latest
+          echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})"
+          docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:$VERSION
   
   dispatch:
     runs-on: botanix-actions-runner
