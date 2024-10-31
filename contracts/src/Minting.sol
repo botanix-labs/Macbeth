@@ -76,9 +76,12 @@ contract Minting {
         // 3 gas for subtraction and 2000 to update the local variable
         amount -= txCost;
 
-        // 2300 gas for each transfer
-        payable(destination).transfer(amount);
-        payable(refundAddress).transfer(txCost);
+        // assuming 2300 gas for each call but could be more if interacting with a contract account
+        (bool succeesMint, ) = payable(destination).call{value: amount}("");
+        require(succeesMint, "Mint to destination failed");
+
+        (bool successRefund, ) = payable(refundAddress).call{value: txCost}("");
+        require(successRefund, "Refund to refundAddress failed");
 
         emit Mint(destination, amount, bitcoinBlockHeight, metadata);
     }
