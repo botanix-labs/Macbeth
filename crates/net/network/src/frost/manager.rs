@@ -52,7 +52,7 @@ pub struct PeerData {
     pub direction: Option<Direction>,
     /// the frost identifier of the peer
     pub frost_identifier: Option<frost::Identifier>,
-    /// Did we recieve a peer confirmation message from this peer?
+    /// Did we receive a peer confirmation message from this peer?
     pub peer_confirmed: bool,
 }
 

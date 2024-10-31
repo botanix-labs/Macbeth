@@ -153,7 +153,7 @@ pub struct FrostProtoConnection {
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
     protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
-    /// Channel to recieve messages from other peers on the wire
+    /// Channel to receive messages from other peers on the wire
     conn_rx: ProtocolConnection,
     /// Channel to receive commands from in the internal application to send to the other peers
     commands_rx: UnboundedReceiverStream<FrostPeerCommand>,
