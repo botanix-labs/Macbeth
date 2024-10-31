@@ -662,13 +662,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
         }
 
-        // TODO remove no longer needed bc we read blocks from comet
-        if !is_fed_node {
-            // block import is only needed for non-federation nodes
-            // federation nodes will receive blocks via their consensus layer
-            network_cfg_builder = network_cfg_builder.block_import(Box::new(block_import.clone()))
-        }
-
         let network_config = network_cfg_builder.build(provider_factory.clone());
 
         // Now we need to build the network components including frost p2p, txpool p2p, eth request
