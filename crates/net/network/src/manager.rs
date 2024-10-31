@@ -578,12 +578,12 @@ impl NetworkManager {
     /// Handles a polled [`ProtocolEvent`]
     fn on_handle_frost_protocol_event(&mut self, protocol_event: FrostProtocolEvent) {
         match protocol_event {
-            FrostProtocolEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
-                info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionEstablished {:?} {:?} {:?}", direction, peer_id, to_connection);
+            FrostProtocolEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
+                info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionEstablished {:?} {:?} {:?}", direction, peer_id, peer_commands_tx);
                 self.notify_frost_manager(NetworkFrostEvent::ConnectionEstablished {
                     direction,
                     peer_id,
-                    to_connection,
+                    peer_commands_tx,
                 });
             }
             FrostProtocolEvent::PeerMessage { peer_id, response } => {

@@ -162,8 +162,8 @@ impl FrostManager {
 
     fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
         match protocol_event {
-            NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
-                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, to_connection);
+            NetworkFrostEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
+                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, command_tx);
                 if !self.is_authority_peer(&peer_id) {
                     info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
                     return;
@@ -191,7 +191,7 @@ impl FrostManager {
                         peer_id,
                         peer_confirmed: true,
                         direction: Some(direction),
-                        peer_commands_tx: Some(to_connection),
+                        peer_commands_tx: Some(peer_commands_tx),
                         frost_identifier: index
                             .map(|i| authority_index_to_frost_identifier(i as u16)),
                     },
@@ -209,6 +209,7 @@ impl FrostManager {
                     }
                 }
             }
+            // TODO we could remove this event
             NetworkFrostEvent::PeerConfirmed(peer_id) => {
                 if !self.is_authority_peer(&peer_id) {
                     warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} is not an authority member", peer_id);

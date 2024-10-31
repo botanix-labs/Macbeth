@@ -250,7 +250,7 @@ pub enum FrostProtocolEvent {
         /// the other peer id
         peer_id: PeerId,
         /// the tx sender we send to the other peer to enable it to communicate with us
-        to_connection: mpsc::UnboundedSender<FrostPeerCommand>,
+        peer_commands_tx: mpsc::UnboundedSender<FrostPeerCommand>,
     },
     /// An emitted event once a peer sends a message to another peer
     PeerMessage {
@@ -273,12 +273,12 @@ pub enum NetworkFrostEvent {
     /// This indicates transactions that were broadcasted to us from the peer.
     ConnectionEstablished {
         #[allow(dead_code)]
-        /// the connection direction - we connected to them, or they to us
+        /// the connection direction - we dialed them, or they dialed us
         direction: Direction,
         /// the other peer id
         peer_id: PeerId,
         /// the tx sender we send to the other peer to enable it to communicate with us
-        to_connection: mpsc::UnboundedSender<FrostPeerCommand>,
+        peer_commands_tx: mpsc::UnboundedSender<FrostPeerCommand>,
     },
     /// An emitted event once a peer sends a message to another peer
     PeerMessage {
@@ -305,19 +305,4 @@ pub enum FrostPeerCommand {
     },
     /// An emitted event once a peer sends a message to another peer
     PeerMessage(PeerMessageResponse),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{DkgEventResponseType, PeerMessageResponse};
-
-    #[test]
-    fn message_format() {
-        let msg = PeerMessageResponse::Dkg(super::DkgResponse {
-            response_type: DkgEventResponseType::DkgRound1,
-            identifier: vec![2, 5, 6, 8],
-            data: vec![0, 1, 2, 3],
-        });
-        println!("Display: {:?}", msg.to_string());
-    }
 }
