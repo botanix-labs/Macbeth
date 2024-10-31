@@ -632,11 +632,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         };
 
         let default_peers_path = data_dir.known_peers();
-        let (protocol_events_tx, protocol_events_rx) = unbounded_channel();
-
-        let my_peer_id = pk2id(&secret_key.public_key(SECP256K1));
-
-        let protocol_handler = FrostProtoHandler { my_peer_id, protocol_events_tx };
 
         let mut network_cfg_builder = self
             .network
@@ -654,9 +649,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 // set discovery port based on instance number
                 self.network.port + self.instance - 1,
             ))
-            .frost_protocol_events_rx(UnboundedReceiverStream::new(protocol_events_rx))
-            .network_mode(reth_network::config::NetworkMode::Authority)
-            .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
+            .network_mode(reth_network::config::NetworkMode::Authority);
+
+        // Frost sub protocol is only supported by federation nodes
+        if is_fed_node {
+            let (protocol_events_tx, protocol_events_rx) = unbounded_channel();
+            let my_peer_id = pk2id(&secret_key.public_key(SECP256K1));
+            let protocol_handler = FrostProtoHandler { my_peer_id, protocol_events_tx };
+
+            network_cfg_builder = network_cfg_builder
+                .frost_protocol_events_rx(UnboundedReceiverStream::new(protocol_events_rx))
+                .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
+        }
 
         // TODO remove no longer needed bc we read blocks from comet
         if !is_fed_node {
