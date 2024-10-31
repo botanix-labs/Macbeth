@@ -21,7 +21,8 @@ use reth_node_ethereum::EthEngineTypes;
 use reth_blockchain_tree_api::{BlockValidationKind, BlockchainTreeEngine};
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, SealedBlock, TransactionSigned,
+    botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
+    SealedBlock, TransactionSigned,
 };
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
@@ -144,6 +145,7 @@ where
             self.network_handle.clone(),
             driver_rx,
             self.to_engine.clone(),
+            self.is_fed_node,
         );
 
         let server_builder = ServerBuilder::default();
@@ -517,10 +519,20 @@ where
         let storage = self.storage.inner.blocking_read();
         let agg_pk = storage.aggregate_public_key;
 
-        if self.is_fed_node && agg_pk.is_none() {
-            warn!("Aggregate public key is not set in process proposal");
-            return ResponseProcessProposal { status: VERIFY_REJECT };
+        if agg_pk.is_none() {
+            // Fed nodes must always have an aggregate public key
+            if self.is_fed_node {
+                warn!("Aggregate public key for fed node is not set in process proposal");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+
+            // Rpc nodes will have an aggregate public key above block height 1
+            if request.height > 1 {
+                warn!("Aggregate public key for rpc node is not set in process proposal");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
         }
+
         // Drop the lock
         drop(storage);
 
@@ -783,6 +795,7 @@ pub(crate) struct ABCIDriver<EF, BF, DB> {
     network_handle: NetworkHandle,
     driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
+    is_fed_node: bool,
 }
 
 impl<EF, BF, DB> ABCIDriver<EF, BF, DB>
@@ -804,6 +817,7 @@ where
         network_handle: NetworkHandle,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
+        is_fed_node: bool,
     ) -> Self {
         Self {
             storage,
@@ -813,6 +827,7 @@ where
             network_handle,
             driver_rx,
             to_engine,
+            is_fed_node,
         }
     }
 
@@ -837,6 +852,17 @@ where
                                 return Err(Box::new(e));
                             }
                         }
+
+                        // Rpc node needs to store aggregate public key from block height 1
+                        if !self.is_fed_node && sealed_block_with_senders.number == 1 {
+                            let edh = sealed_block_with_senders
+                                .deserialize_extra_data_header()
+                                .expect("edh to exist");
+
+                            let mut storage = self.storage.inner.write().await;
+                            storage.aggregate_public_key = Some(edh.aggregated_public_key);
+                        }
+
                         client.set_canonical_head(sealed_block_with_senders.header.clone());
                         client.set_safe(sealed_block_with_senders.header.clone());
                         client.set_finalized(sealed_block_with_senders.header.clone());
