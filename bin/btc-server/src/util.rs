@@ -425,9 +425,19 @@ mod util_tests {
 
     #[test]
     fn should_perform_general_sanity_checks() {
-        let db = db_setup();
-        let psbt = create_psbt(2, None);
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        let pegout_id = store_pending_pegout(&app.db);
+        let mut psbt = create_psbt(2, Some(get_change(&app.db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
         assert!(res.is_ok());
 
         // No inputs
@@ -449,8 +459,17 @@ mod util_tests {
 
     #[test]
     fn should_perform_sanity_negative_fee_check() {
-        let db = db_setup();
-        let mut psbt = create_psbt(2);
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        let pegout_id = store_pending_pegout(&app.db);
+        let mut psbt = create_psbt(2, Some(get_change(&app.db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
             total.checked_add(output.value.clone()).unwrap_or_default()
@@ -472,15 +491,24 @@ mod util_tests {
         for output in psbt.unsigned_tx.output.iter_mut() {
             output.value = output.value.checked_add(Amount::from_sat(diff)).unwrap_or_default();
         }
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "Fee cannot be negative");
     }
 
     #[test]
     fn should_perform_sanity_total_outputs_value() {
-        let db = db_setup();
-        let mut psbt = create_psbt(2);
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        let pegout_id = store_pending_pegout(&app.db);
+        let mut psbt = create_psbt(2, Some(get_change(&app.db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
             total.checked_add(output.value.clone()).unwrap_or_default()
@@ -507,7 +535,7 @@ mod util_tests {
         });
         assert!(total_outputs == Amount::ZERO);
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err().to_string(),

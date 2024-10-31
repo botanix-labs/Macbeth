@@ -320,6 +320,7 @@ where
             consensus.clone(),
             to_engine.clone(),
             cometbft_rpc_factory.clone(),
+            is_fed_node,
         ));
 
         (consensus, frost_task, sync_task, healthcheck_task, abci_client_builder)
