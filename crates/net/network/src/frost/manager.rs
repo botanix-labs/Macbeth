@@ -47,11 +47,11 @@ pub struct PeerData {
     /// peer id
     pub peer_id: PeerId,
     /// channel use for sending commands to the peer
-    pub peer_commands_tx: Option<UnboundedSender<FrostPeerCommand>>,
+    pub peer_commands_tx: UnboundedSender<FrostPeerCommand>,
     /// in or outgoing connection
-    pub direction: Option<Direction>,
+    pub direction: Direction,
     /// the frost identifier of the peer
-    pub frost_identifier: Option<frost::Identifier>,
+    pub frost_identifier: frost::Identifier,
     /// Did we receive a peer confirmation message from this peer?
     pub peer_confirmed: bool,
 }
@@ -110,7 +110,7 @@ impl FrostManager {
         info!(target: "network::frost::all_authority_peers_connected", "Peers connections len: {:?}", self.peers_connections.len());
         for (peer_id, peer_data) in self.peers_connections.iter() {
             info!(target: "network::frost::all_authority_peers_connected", "Peer {:?} is connected: {:?}", peer_id, Self::filter_connected_peer(peer_data));
-            info!(target: "network::frost::all_authority_peers_connected", "channel closed: {:?}", peer_data.peer_commands_tx.as_ref().is_some_and(|tx| tx.is_closed()));
+            info!(target: "network::frost::all_authority_peers_connected", "channel closed: {:?}", peer_data.peer_commands_tx.is_closed());
         }
 
         let mut all_peer_connection_peer_ids = self
@@ -139,22 +139,21 @@ impl FrostManager {
     }
 
     fn filter_connected_peer(data: &PeerData) -> bool {
-        data.peer_confirmed && data.peer_commands_tx.as_ref().is_some_and(|tx| !tx.is_closed())
+        data.peer_confirmed && !data.peer_commands_tx.is_closed()
     }
 
     fn send_healthcheck_to_peers(&self) {
         for (peer_id, peer_data) in self.peers_connections.iter() {
             let resp = HealthcheckResponse { sender: *self.network.peer_id(), receiver: *peer_id };
-            if let Some(peer_commands_tx) = peer_data.peer_commands_tx.as_ref() {
-                match peer_commands_tx
-                    .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healthcheck(resp)))
-                {
-                    Ok(_) => {
-                        debug!("Healthcheck sent to peer {:?}", peer_id,);
-                    }
-                    Err(e) => {
-                        error!("Failed to send healthcheck to peer {:?}, error: {:?}", peer_id, e);
-                    }
+            match peer_data
+                .peer_commands_tx
+                .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healthcheck(resp)))
+            {
+                Ok(_) => {
+                    debug!("Healthcheck sent to peer {:?}", peer_id,);
+                }
+                Err(e) => {
+                    error!("Failed to send healthcheck to peer {:?}, error: {:?}", peer_id, e);
                 }
             }
         }
@@ -162,8 +161,8 @@ impl FrostManager {
 
     fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
         match protocol_event {
-            NetworkFrostEvent::ConnectionEstablished { direction, peer_id, to_connection } => {
-                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, to_connection);
+            NetworkFrostEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
+                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, peer_commands_tx);
                 if !self.is_authority_peer(&peer_id) {
                     info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
                     return;
@@ -190,10 +189,11 @@ impl FrostManager {
                     PeerData {
                         peer_id,
                         peer_confirmed: true,
-                        direction: Some(direction),
-                        peer_commands_tx: Some(to_connection),
-                        frost_identifier: index
-                            .map(|i| authority_index_to_frost_identifier(i as u16)),
+                        direction,
+                        peer_commands_tx,
+                        frost_identifier: authority_index_to_frost_identifier(
+                            index.expect("index must exist, checked by is_authority_peer") as u16,
+                        ),
                     },
                 );
             }
@@ -209,6 +209,7 @@ impl FrostManager {
                     }
                 }
             }
+            // TODO we could remove this event
             NetworkFrostEvent::PeerConfirmed(peer_id) => {
                 if !self.is_authority_peer(&peer_id) {
                     warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} is not an authority member", peer_id);
@@ -239,16 +240,14 @@ impl FrostManager {
                 let random_peer_id = self.peers_connections.keys().nth(random_authority_index);
                 match random_peer_id.map(|peer_id| self.peers_connections.get(peer_id)).flatten() {
                     Some(peer_data) => {
-                        if let Some(peer_commands_tx) = peer_data.peer_commands_tx.as_ref() {
-                            match peer_commands_tx.send(FrostPeerCommand::PeerMessage(
-                                PeerMessageResponse::Utxo(UtxoSetResponse { data: vec![] }),
-                            )) {
-                                Ok(_) => {
-                                    debug!(target: "network::frost::on_command", "UtxoSet sent to peer {:?}", peer_data.peer_id);
-                                }
-                                Err(e) => {
-                                    error!(target: "network::frost::on_command", "Failed to send UtxoSet to peer {:?}, error: {:?}", peer_data.peer_id, e);
-                                }
+                        match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
+                            PeerMessageResponse::Utxo(UtxoSetResponse { data: vec![] }),
+                        )) {
+                            Ok(_) => {
+                                debug!(target: "network::frost::on_command", "UtxoSet sent to peer {:?}", peer_data.peer_id);
+                            }
+                            Err(e) => {
+                                error!(target: "network::frost::on_command", "Failed to send UtxoSet to peer {:?}, error: {:?}", peer_data.peer_id, e);
                             }
                         }
                     }

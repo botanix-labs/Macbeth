@@ -575,13 +575,11 @@ where
                 let current_inturn_authority_frost_identifier =
                     authority_index_to_frost_identifier(current_inturn_authority_index as u16);
                 let coord = all_connected_frost_peers.iter().find_map(|(_peer_id, peer_data)| {
-                    peer_data.frost_identifier.as_ref().and_then(|frost_id| {
-                        if *frost_id == current_inturn_authority_frost_identifier {
-                            Some(peer_data.clone())
-                        } else {
-                            None
-                        }
-                    })
+                    if peer_data.frost_identifier == current_inturn_authority_frost_identifier {
+                        Some(peer_data.clone())
+                    } else {
+                        None
+                    }
                 });
 
                 Ok(coord.zip(Some(current_inturn_authority_index)))
@@ -617,26 +615,20 @@ where
 
             // Broadcast signing round 2 package to all peers (excluding ourselves)
             for (_peer_id, connected_peer) in connected_peers.iter() {
-                if connected_peer
-                    .frost_identifier
-                    .as_ref()
-                    .map(|id| *id != self.personal_frost_identifier)
-                    .unwrap_or_default()
-                {
+                if connected_peer.frost_identifier != self.personal_frost_identifier {
                     let resp = PeerMessageResponse::Signing(SigningResponse {
                         response_type,
                         identifier: frost_identifier.clone(),
                         signing_session_id: signing_session_id.clone(),
                         psbt: psbt.clone(),
                     });
-                    if let Some(peer_commands_tx) = connected_peer.peer_commands_tx.as_ref() {
-                        peer_commands_tx
-                            .send(FrostPeerCommand::PeerMessage(resp))
-                            .map_err(|e| {
-                                error!(target: "consensus::authority::signing", "Failed to send PeerMessage {:?}", e.to_string());
-                                Error::Send(e)
-                            })?;
-                    }
+                    connected_peer
+                        .peer_commands_tx
+                        .send(FrostPeerCommand::PeerMessage(resp))
+                        .map_err(|e| {
+                            error!(target: "consensus::authority::signing", "Failed to send PeerMessage {:?}", e.to_string());
+                            Error::Send(e)
+                    })?;
                 }
             }
             Ok(())
@@ -741,9 +733,7 @@ where
         info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_id);
 
         // check coordinator is sending the request
-        let coordinator_frost_identifier = coordinator_peer_data
-            .frost_identifier
-            .expect("Coordinator should have a frost identifier");
+        let coordinator_frost_identifier = coordinator_peer_data.frost_identifier;
         if coordinator_frost_identifier.serialize().to_vec() != identifier {
             warn!(target: "consensus::authority::signing::signer_process_round1", "Round 1 signing request not from coordinator");
             return Ok(());
@@ -784,12 +774,7 @@ where
         self.update_signing_state(session_id, SigningState::Round2).await;
 
         // Broadcast signing round 1 to the coordinator
-        if coordinator_peer_data
-            .frost_identifier
-            .as_ref()
-            .map(|id| *id != self.personal_frost_identifier)
-            .unwrap_or_default()
-        {
+        if coordinator_frost_identifier != self.personal_frost_identifier {
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                 identifier: signing_package_round1.identifier.clone(),
@@ -802,11 +787,9 @@ where
                     let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
                     async move {
-                        if let Some(sender) = sender.as_ref() {
-                            return sender
-                                .send(FrostPeerCommand::PeerMessage(message))
-                                .map_err(Error::Send);
-                        }
+                        return sender
+                            .send(FrostPeerCommand::PeerMessage(message))
+                            .map_err(Error::Send);
                         Ok(())
                     }
                 },
@@ -924,9 +907,7 @@ where
         info!(target: "consensus::authority::signing::signer_process_round2", "coordinator index {:?}", coordinator_id);
 
         // check coordinator is sending the request
-        let coordinator_frost_identifier = coordinator_peer_data
-            .frost_identifier
-            .expect("Coordinator should have a frost identifier");
+        let coordinator_frost_identifier = coordinator_peer_data.frost_identifier;
         if coordinator_frost_identifier.serialize().to_vec() != identifier {
             warn!(target: "consensus::authority::signing::signer_process_round2", "Round 2 signing request not from coordinator");
             return Ok(());
@@ -961,12 +942,7 @@ where
         };
 
         // Broadcast signing round 2 to the coordinator
-        if coordinator_peer_data
-            .frost_identifier
-            .as_ref()
-            .map(|id| *id != self.personal_frost_identifier)
-            .unwrap_or_default()
-        {
+        if coordinator_frost_identifier != self.personal_frost_identifier {
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
                 identifier: signing_package_round2.identifier.clone(),
@@ -979,11 +955,9 @@ where
                     let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
                     async move {
-                        if let Some(sender) = sender.as_ref() {
-                            return sender
-                                .send(FrostPeerCommand::PeerMessage(message))
-                                .map_err(Error::Send);
-                        }
+                        return sender
+                            .send(FrostPeerCommand::PeerMessage(message))
+                            .map_err(Error::Send);
                         Ok(())
                     }
                 },

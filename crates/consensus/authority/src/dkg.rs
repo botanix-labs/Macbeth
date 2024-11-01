@@ -378,9 +378,8 @@ where
         // get all connected peers
         let connected_peers = self.get_all_peers_handle().await?;
         let coord_id = self.coordinator_identifier();
-        let coordinator_peer = connected_peers.iter().find(|(_, peer_data)| {
-            peer_data.frost_identifier.map(|id| id == coord_id).unwrap_or_default()
-        });
+        let coordinator_peer =
+            connected_peers.iter().find(|(_, peer_data)| peer_data.frost_identifier == coord_id);
 
         // Find the coord and send the message
         if let Some((_, coord_data)) = coordinator_peer {
@@ -389,9 +388,10 @@ where
                 identifier: dkg_payload.identifier.clone(),
                 data: dkg_payload.payload.clone(),
             });
-            if let Some(sender) = coord_data.peer_commands_tx.as_ref() {
-                sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
-            }
+            coord_data
+                .peer_commands_tx
+                .send(FrostPeerCommand::PeerMessage(resp))
+                .map_err(Error::Send)?;
         }
 
         Ok(())
@@ -410,15 +410,16 @@ where
 
         // Broadcast dkg round 1 package to all peers (excluding ourselves)
         for (_, peer_data) in connected_peers.iter() {
-            if peer_data.frost_identifier.as_ref().map(|id| *id != coord_id).unwrap_or_default() {
+            if peer_data.frost_identifier != coord_id {
                 let resp = PeerMessageResponse::Dkg(DkgResponse {
                     response_type: response_type.clone(),
                     identifier: dkg_payload.identifier.clone(),
                     data: dkg_payload.payload.clone(),
                 });
-                if let Some(sender) = peer_data.peer_commands_tx.as_ref() {
-                    sender.send(FrostPeerCommand::PeerMessage(resp)).map_err(Error::Send)?;
-                }
+                peer_data
+                    .peer_commands_tx
+                    .send(FrostPeerCommand::PeerMessage(resp))
+                    .map_err(Error::Send)?;
             }
         }
         Ok(())
@@ -443,7 +444,6 @@ where
             sender
                 .peer_commands_tx
                 .clone()
-                .expect("should have a peer commands tx for every peer")
                 .send(FrostPeerCommand::PeerMessage(resp))
                 .map_err(Error::Send)?;
         } else {

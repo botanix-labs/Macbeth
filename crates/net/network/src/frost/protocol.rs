@@ -120,7 +120,7 @@ impl ConnectionHandler for FrostConnectionHandler {
         let connection_established_event = FrostProtocolEvent::ConnectionEstablished {
             direction,
             peer_id,
-            to_connection: remote_peer_tx,
+            peer_commands_tx: remote_peer_tx,
         };
 
         if let Err(e) = self.protocol_events_tx.send(connection_established_event) {
@@ -321,6 +321,9 @@ impl Stream for FrostProtoConnection {
             };
 
             // react on message type sent to us by another peer
+            // The frost manager will handle this req (often by forwarding it to another task) and
+            // the a response will be send on command_rx for us to send back to another
+            // peer
             let protocol_events_tx = this.protocol_events_tx.clone();
             match msg.message {
                 FrostProtoMessageKind::Healthcheck(data) => {
