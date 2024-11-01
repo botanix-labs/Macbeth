@@ -111,7 +111,7 @@ impl FrostManager {
 
         // Filter out all peers that are not confirmed and have a closed channels
         info!(target: "network::frost::all_authority_peers_connected", "Peers connections len: {:?}", self.peers_connections.len());
-        for (peer_id, peer_data) in self.peers_connections.iter() {
+        for (_peer_id, peer_data) in self.peers_connections.iter() {
             for data in peer_data.iter() {
                 info!(target: "network::frost::all_authority_peers_connected", "channel closed: {:?}", data.peer_commands_tx.is_closed());
             }
