@@ -15,20 +15,6 @@ pub mod messages;
 /// Frost Protocol
 pub mod protocol;
 
-/// Protocol state containing peer protocol information.
-#[derive(Clone, Debug)]
-pub struct ProtocolState {
-    events: mpsc::UnboundedSender<FrostProtocolEvent>,
-    my_peer_id: PeerId,
-}
-
-impl ProtocolState {
-    /// Constructs a new Protocol State.
-    pub const fn new(events: mpsc::UnboundedSender<FrostProtocolEvent>, my_peer_id: PeerId) -> Self {
-        Self { events, my_peer_id }
-    }
-}
-
 /// Enum for peer message responses for dkg, signing and pbft
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum PeerMessageResponse {

@@ -45,6 +45,7 @@ frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "ad
 hex = "0.4.3"
 port-killer = "0.1.0"
 rand = "0.8.5"
+regex = "1.11.1"
 reth = { workspace = true }
 reth-authority-consensus = { workspace = true }
 reth-btc-wallet = { path = "../../crates/btc-wallet" }

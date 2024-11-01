@@ -788,10 +788,7 @@ where
                     let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
                     async move {
-                        return sender
-                            .send(FrostPeerCommand::PeerMessage(message))
-                            .map_err(Error::Send);
-                        Ok(())
+                        sender.send(FrostPeerCommand::PeerMessage(message)).map_err(Error::Send)
                     }
                 },
                 3,
@@ -952,10 +949,7 @@ where
                     let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
                     async move {
-                        return sender
-                            .send(FrostPeerCommand::PeerMessage(message))
-                            .map_err(Error::Send);
-                        Ok(())
+                        sender.send(FrostPeerCommand::PeerMessage(message)).map_err(Error::Send)
                     }
                 },
                 3,

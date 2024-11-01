@@ -488,7 +488,8 @@ impl NetworkConfigBuilder {
         self
     }
 
-    /// Convenience function for creating a [NetworkConfig] with a noop provider that does nothing.
+    /// Convenience function for creating a [`NetworkConfig`] with a noop provider that does
+    /// nothing.
     #[cfg(any(test, feature = "test-utils"))]
     /// Convenience function for creating a [`NetworkConfig`] with a noop provider that does
     /// nothing.

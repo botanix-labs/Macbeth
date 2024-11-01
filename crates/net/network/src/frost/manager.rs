@@ -108,7 +108,7 @@ impl FrostManager {
     fn all_authority_peers_connected(&self) -> bool {
         // Filter out all peers that are not confirmed and have a closed channels
         info!(target: "network::frost::all_authority_peers_connected", "Peers connections len: {:?}", self.peers_connections.len());
-        for (peer_id, peer_data) in self.peers_connections.iter() {
+        for (peer_id, peer_data) in &self.peers_connections {
             info!(target: "network::frost::all_authority_peers_connected", "Peer {:?} is connected: {:?}", peer_id, Self::filter_connected_peer(peer_data));
             info!(target: "network::frost::all_authority_peers_connected", "channel closed: {:?}", peer_data.peer_commands_tx.is_closed());
         }

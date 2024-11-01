@@ -55,7 +55,7 @@ use reth_consensus_common::utils;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
-    frost::{manager::FrostConfig, protocol::FrostProtoHandler, FrostProtocolEvent, ProtocolState},
+    frost::{manager::FrostConfig, protocol::FrostProtoHandler},
     import::ProofOfAuthorityBlockImport,
     protocol::IntoRlpxSubProtocol,
     BlockDownloaderProvider, NetworkEventListenerProvider, NetworkHandle, NetworkManager,
@@ -609,7 +609,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
-        let block_import = ProofOfAuthorityBlockImport::new(chain_arc.clone(), block_import_tx);
+        let _block_import = ProofOfAuthorityBlockImport::new(chain_arc.clone(), block_import_tx);
 
         // create frost config if in federation mode
         let frost_config = if is_fed_node {

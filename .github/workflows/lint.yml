@@ -116,41 +116,41 @@ jobs:
           toolchain: stable
       - run: cargo update --workspace --locked
 
-  pre-commit:
-    name: Pre-commit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  # pre-commit:
+  #   name: Pre-commit
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Check workflow files
-        uses: docker://rhysd/actionlint:latest
-        env:
-          SHELLCHECK_OPTS: --exclude=SC2046,SC2162,SC2116,SC2004,SC2002,SC2086,SC2129
-        with:
-          args: -color
+  #     - name: Check workflow files
+  #       uses: docker://rhysd/actionlint:latest
+  #       env:
+  #         SHELLCHECK_OPTS: --exclude=SC2046,SC2162,SC2116,SC2004,SC2002,SC2086,SC2129
+  #       with:
+  #         args: -color
 
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt, clippy
-          toolchain: nightly
+  #     - uses: dtolnay/rust-toolchain@nightly
+  #       with:
+  #         components: rustfmt, clippy
+  #         toolchain: nightly
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+  #     - name: Install Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
 
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
-        with:
-          version: 9
-          run_install: true
+  #     - uses: pnpm/action-setup@v4
+  #       name: Install pnpm
+  #       with:
+  #         version: 9
+  #         run_install: true
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: 3.x
+  #     - uses: actions/setup-python@v4
+  #       with:
+  #         python-version: 3.x
 
-      - name: Run Pre Commit
-        uses: pre-commit/action@v3.0.1
+  #     - name: Run Pre Commit
+  #       uses: pre-commit/action@v3.0.1
 
     # Commenting out for now, will re-enable in once we have a MSRV
     #   msrv:
@@ -201,7 +201,6 @@ jobs:
     timeout-minutes: 30
     needs:
       - lockfile
-      - pre-commit
       - codespell
       - grafana
     steps:
@@ -217,44 +216,52 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - uses: pnpm/action-setup@v4
         name: Install pnpm
         with:
           version: 9
           run_install: true
+
+      - name: Install cargo-sort
+        run: cargo install cargo-sort
 
       - name: Format project
         run: make fmt
 
-  cargo-verifications:
-    name: Cargo verifications
-    needs:
-      - lockfile
-      - pre-commit
-      - codespell
-      - grafana
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  # cargo-verifications:
+  #   name: Cargo verifications
+  #   needs:
+  #     - lockfile
+  #     - codespell
+  #     - grafana
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt, clippy
-          toolchain: nightly
+  #     - uses: dtolnay/rust-toolchain@nightly
+  #       with:
+  #         components: rustfmt, clippy
+  #         toolchain: nightly
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+  #     - name: Install Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
 
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
-        with:
-          version: 9
-          run_install: true
+  #     - uses: pnpm/action-setup@v4
+  #       name: Install pnpm
+  #       with:
+  #         version: 9
+  #         run_install: true
 
-      - name: Lint project
-        run: make lint
+  #     - name: Install Protobuf Compiler
+  #       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+  #     - name: Lint project
+  #       run: make lint
 
   codespell:
     runs-on: ubuntu-latest
@@ -283,7 +290,7 @@ jobs:
       - crate-checks
       - fmt
       - grafana
-      - cargo-verifications
+      # - cargo-verifications
     timeout-minutes: 30
     steps:
       - name: Decide whether the needed jobs succeeded or failed

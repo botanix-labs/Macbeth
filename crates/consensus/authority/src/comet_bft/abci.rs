@@ -95,6 +95,7 @@ where
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
         bitcoin_checkpoint: BitcoinCheckpoint,
@@ -215,6 +216,7 @@ where
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         storage: Storage<EF, BF, DB>,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
@@ -800,6 +802,7 @@ where
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         storage: Storage<EF, BF, DB>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,

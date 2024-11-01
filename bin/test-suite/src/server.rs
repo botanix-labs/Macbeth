@@ -26,7 +26,7 @@ impl TestServer {
         Self { context }
     }
 
-    pub async fn start(mut self, test_to_run: String) -> Result<(), Error> {
+    pub async fn start(self, test_to_run: String) -> Result<(), Error> {
         info!("Starting test instance...");
         let result = self.run(test_to_run).await;
         result

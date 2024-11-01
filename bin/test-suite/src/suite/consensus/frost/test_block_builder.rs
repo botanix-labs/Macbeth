@@ -4,7 +4,7 @@ use reth::{
     primitives::public_key_to_address,
 };
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::{header_ext::HeaderExt, U256};
+use reth_primitives::U256;
 
 use std::{collections::HashSet, str::FromStr, time::Duration};
 
@@ -100,7 +100,7 @@ pub async fn block_builder(
             .into_inner()
             .publickey;
 
-    let aggregate_public_key = secp256k1::PublicKey::from_str(&aggregate_public_key_str).unwrap();
+    let _aggregate_public_key = secp256k1::PublicKey::from_str(&aggregate_public_key_str).unwrap();
     // Oof this is nasty, lets just put authorities in a vec in local context
     let authority_signers = &suite
         .local_context

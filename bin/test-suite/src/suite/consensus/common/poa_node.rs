@@ -23,7 +23,6 @@ use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     public_key_to_address, Address,
 };
-use reth_provider::CanonStateNotification;
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
