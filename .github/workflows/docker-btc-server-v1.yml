@@ -17,11 +17,14 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
 
+      - name: Get short SHA
+        id: sha
+        run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Build Docker image
         run: |
-          echo "IMAGE_TAG=$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> $GITHUB_ENV && echo $IMAGE_TAG
           docker build --platform linux/amd64 -t botanix_testnet_btc_server_v1 -f Dockerfile.btc_server .
-          docker tag botanix_testnet_btc_server_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:$IMAGE_TAG
+          docker tag botanix_testnet_btc_server_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:${{ steps.sha.outputs.short_sha }}
         working-directory: ./
 
 
