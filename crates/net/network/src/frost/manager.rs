@@ -142,18 +142,45 @@ impl FrostManager {
         data.peer_confirmed && !data.peer_commands_tx.is_closed()
     }
 
-    fn send_healthcheck_to_peers(&self) {
-        for (peer_id, peer_data) in &self.peers_connections {
-            let resp = HealthcheckResponse { sender: *self.network.peer_id(), receiver: *peer_id };
-            match peer_data
-                .peer_commands_tx
-                .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healthcheck(resp)))
-            {
-                Ok(_) => {
-                    debug!("Healthcheck sent to peer {:?}", peer_id,);
-                }
-                Err(e) => {
-                    error!("Failed to send healthcheck to peer {:?}, error: {:?}", peer_id, e);
+    fn prune_closed_connections(&mut self) {
+        let mut pruned_peers_connections = self.peers_connections.clone();
+        for (peer_id, peer_data) in self.peers_connections.iter_mut() {
+            // Prune all connections that have a closed channels
+            peer_data.retain(|data| !data.peer_commands_tx.is_closed());
+
+            if peer_data.is_empty() {
+                warn!(target: "network::frost::prune_closed_connections", "Peer {:?} has no open channels, removing from peer connections", peer_id);
+                pruned_peers_connections.remove(peer_id);
+                // perhaps here we can try to reconnect to the peer?
+            }
+
+            if peer_data.len() > 1 {
+                // This should not happen, worth logging
+                warn!(target: "network::frost::prune_closed_connections", "Peer {:?} has multiple open channels, this should not happen", peer_id);
+            }
+        }
+
+        self.peers_connections = pruned_peers_connections;
+    }
+
+    fn send_healthcheck_to_peers(&mut self) {
+        // lets first prune all closed connections
+        // For each peer there should only be one valid connection
+        self.prune_closed_connections();
+        for (peer_id, peer_data) in self.peers_connections.iter() {
+            if let Some(peer_data) = peer_data.first() {
+                let resp =
+                    HealthcheckResponse { sender: *self.network.peer_id(), receiver: *peer_id };
+                match peer_data
+                    .peer_commands_tx
+                    .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healthcheck(resp)))
+                {
+                    Ok(_) => {
+                        debug!("Healthcheck sent to peer {:?}", peer_id,);
+                    }
+                    Err(e) => {
+                        error!("Failed to send healthcheck to peer {:?}, error: {:?}", peer_id, e);
+                    }
                 }
             }
         }
@@ -171,6 +198,11 @@ impl FrostManager {
                 // make sure we ignore our own connection
                 if *self.network.peer_id() == peer_id {
                     info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from our own peer {:?}", peer_id);
+                    return;
+                }
+
+                if peer_commands_tx.is_closed() {
+                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, but the connection channel is already closed", peer_id);
                     return;
                 }
 
