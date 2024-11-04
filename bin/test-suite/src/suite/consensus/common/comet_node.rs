@@ -303,6 +303,16 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
         }
     }
 
+    if let Some(consensus) = toml.get_mut("consensus") {
+        if let Some(timeout_propose) = consensus.get_mut("timeout_propose") {
+            *timeout_propose = toml::value::Value::String("8s".to_string());
+        }
+
+        if let Some(timeout_commit) = consensus.get_mut("timeout_commit") {
+            *timeout_commit = toml::value::Value::String("5s".to_string());
+        }
+    }
+
     // Serialize the modified object and write it back to the file
     let updated_content =
         toml::to_string_pretty(&toml).context("Failed to serialize updated config.toml content")?;

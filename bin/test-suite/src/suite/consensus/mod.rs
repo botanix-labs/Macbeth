@@ -304,6 +304,7 @@ pub struct CreateTestConfig {
 }
 
 impl CreateTestConfig {
+    #[allow(dead_code)]
     fn full_scope() -> Self {
         Self {
             create_bitcoind_node: true,
