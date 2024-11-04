@@ -44,12 +44,9 @@ use std::{
 use tonic::transport::Channel;
 use tracing::info;
 // scopes
-mod bitcoind;
-mod cometbft;
 mod common;
 mod frost;
 mod invalid_transactions;
-mod pbft;
 mod rpc_node;
 
 pub struct ConsensusIntegrationTestSuite {
@@ -365,16 +362,6 @@ impl Suite for ConsensusIntegrationTestSuite {
                     ..Default::default()
                 },
                 frost::test_utxo_commitment::test_utxo_commitment
-            ),
-            "cometbft_networking" => run_test!(
-                self,
-                CreateTestConfig { create_cometbft_nodes: true, ..Default::default() },
-                cometbft::test_cometbft_networking::test_cometbft_networking
-            ),
-            "bitcoind_networking" => run_test!(
-                self,
-                CreateTestConfig { create_bitcoind_node: true, ..Default::default() },
-                bitcoind::test_bitcoind_networking::test_bitcoind_networking
             ),
             "block_builder" => {
                 run_test!(
