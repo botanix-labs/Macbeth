@@ -10,6 +10,13 @@ We recommend using [`cargo nextest`](https://nexte.st/) to speed up testing. Wit
 
 ## Running integration tests
 
+The test suite is a collection of integration tests designed to setup the full e2e stack and test various scenarios.
+Take a look at the `src/suite/consensus/mod.rs` file to see the different tests that are available.
+
+### Dependencies
+
+Ensure you have bitcoind in your PATH. Additionally ensure you have cometbft in your PATH.
+You can either install these binaries or make them from scratch.
 To run the integration tests suite:
 
 ```sh
@@ -29,19 +36,3 @@ BITCOIND_USER=[USERNAME]
 BITCOIND_PWD=[PASSWORD]
 ```
 
-## Building and pushing the Botanix images (TODO)
-
-Pipelines do normally build and push the poA image the btc-server images to the google cloud cluster. Nevertheless, if necessary, all these images could be build and pushed manually as follows:
-
-Build the poA image
-`docker build -t botanix_testnet -f Dockerfile.testnet .`
-
-Tag the image
-`docker tag botanix_testnet:latest {region}-docker.pkg.dev/{project_id}/{repo_name}/botanix_testnet_node:latest`
-
-For example: `docker tag botanix_testnet:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest`
-
-Push the image
-
-`docker push {region}-docker.pkg.dev/{project_id}/{repo_name}/botanix_testnet:latest`
-For example: `docker push us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node/botanix_testnet:latest`
