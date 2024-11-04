@@ -133,6 +133,7 @@ pub enum OutputMeta {
 }
 
 impl OutputMeta {
+    #[allow(dead_code)]
     pub fn is_pegout(&self) -> bool {
         match self {
             Self::Pegout(_) => true,
@@ -140,6 +141,7 @@ impl OutputMeta {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_change(&self) -> bool {
         match self {
             Self::Pegout(_) => false,
@@ -147,6 +149,7 @@ impl OutputMeta {
         }
     }
 
+    #[allow(dead_code)]
     pub fn pegout_id(&self) -> Option<PegoutId> {
         match self {
             Self::Pegout(id) => Some(*id),
@@ -175,7 +178,7 @@ pub struct PegoutScheduler {
     /// The last [conf_window] blocks we have seen. This data structure
     /// includes txs and inputs that are relevant to the txs we are tracking.
     last_blocks: VecDeque<BlockInfo>,
-    /// The last block that was finalized.  
+    /// The last block that was finalized.
     last_finalized: BlockHash,
     /// Database handle
     db: database::Db,
@@ -311,7 +314,7 @@ impl PegoutScheduler {
             self.txs_by_input.remove(&input);
         }
         for (_utxo, txout) in tx.pegouts() {
-            self.txs_by_pegout.remove(&txout);
+            self.txs_by_pegout.remove(txout);
         }
         self.txs.remove(txid);
         // Need to remove from the database as well
@@ -359,7 +362,7 @@ impl PegoutScheduler {
                     eth_address: None,
                 });
             }
-            self.db.store_utxos(change_utxos.iter().map(|c| c).collect::<Vec<_>>().as_slice())?;
+            self.db.store_utxos(change_utxos.iter().collect::<Vec<_>>().as_slice())?;
             self.db.flush()?;
             all_inputs.extend(tx.tx.input.iter().map(|i| i.previous_output));
         }

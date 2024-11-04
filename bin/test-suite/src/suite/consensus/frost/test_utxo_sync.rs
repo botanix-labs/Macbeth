@@ -84,7 +84,7 @@ pub async fn utxo_sync(
 
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");
-    let last_tx_hash = botanix_eth_client
+    let _last_tx_hash = botanix_eth_client
         .send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT)
         .await
         .unwrap()
@@ -140,7 +140,7 @@ pub async fn utxo_sync(
         targeted_fed_member.botanix_eth_client.clone().expect("Botanix Client must be initialized");
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");
-    let last_tx_hash = botanix_eth_client
+    let _last_tx_hash = botanix_eth_client
         .send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT)
         .await
         .unwrap()
@@ -150,7 +150,7 @@ pub async fn utxo_sync(
     // wait for fed members to sync on the block
     tokio::time::sleep(Duration::from_secs(10)).await;
     let mut hash_set = HashSet::new();
-    for (index, client) in poa_eth_clients.iter().enumerate() {
+    for (_index, client) in poa_eth_clients.iter().enumerate() {
         let block_hash = client.get_latest_block_hash().await.unwrap();
         hash_set.insert(block_hash.clone());
     }

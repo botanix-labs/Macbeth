@@ -1,6 +1,6 @@
 # eth-wire
 
-The `eth-wire` crate provides abstractions over the [``RLPx``](https://github.com/ethereum/devp2p/blob/master/rlpx.md) and
+The `eth-wire` crate provides abstractions over the [`RLPx`](https://github.com/ethereum/devp2p/blob/master/rlpx.md) and
 [Eth wire](https://github.com/ethereum/devp2p/blob/master/caps/eth.md) protocols.
 
 This crate can be thought of as having 2 components:
@@ -9,10 +9,13 @@ This crate can be thought of as having 2 components:
 2. Abstractions over Tokio Streams that operate on these types.
 
 (Note that ECIES is implemented in a separate `reth-ecies` crate.)
+
 ## Types
+
 The most basic Eth-wire type is an `ProtocolMessage`. It describes all messages that reth can send/receive.
 
 [File: crates/net/eth-wire/src/types/message.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/types/message.rs)
+
 ```rust, ignore
 /// An `eth` protocol message, containing a message ID and payload.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,10 +50,12 @@ pub enum EthMessageID {
 }
 
 ```
+
 Messages can either be broadcast to the network, or can be a request/response message to a single peer. This 2nd type of message is
 described using a `RequestPair` struct, which is simply a concatenation of the underlying message with a request id.
 
 [File: crates/net/eth-wire/src/types/message.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/types/message.rs)
+
 ```rust, ignore
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestPair<T> {
@@ -59,10 +64,12 @@ pub struct RequestPair<T> {
 }
 
 ```
+
 Every `Ethmessage` has a corresponding rust struct that implements the `Encodable` and `Decodable` traits.
 These traits are defined as follows:
 
 [Crate: crates/rlp](https://github.com/paradigmxyz/reth/tree/1563506aea09049a85e5cc72c2894f3f7a371581/crates/rlp)
+
 ```rust, ignore
 pub trait Decodable: Sized {
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self>;
@@ -72,15 +79,18 @@ pub trait Encodable {
     fn length(&self) -> usize;
 }
 ```
+
 These traits describe how the `Ethmessage` should be serialized/deserialized into raw bytes using the RLP format.
 In reth all [RLP](https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/) encode/decode operations are handled by the `common/rlp` and `common/rlp-derive` crates.
 
 Note that the `ProtocolMessage` itself implements these traits, so any stream of bytes can be converted into it by calling `ProtocolMessage::decode()` and vice versa with `ProtocolMessage::encode()`. The message type is determined by the first byte of the byte stream.
 
 ### Example: The Transactions message
+
 Let's understand how an `EthMessage` is implemented by taking a look at the `Transactions` Message. The eth specification describes a Transaction message as a list of RLP encoded transactions:
 
 [File: ethereum/devp2p/caps/eth.md](https://github.com/ethereum/devp2p/blob/master/caps/eth.md#transactions-0x02)
+
 ```
 Transactions (0x02)
 [tx₁, tx₂, ...]
@@ -94,6 +104,7 @@ The items in the list are transactions in the format described in the main Ether
 In reth, this is represented as:
 
 [File: crates/net/eth-wire/src/types/broadcast.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/types/broadcast.rs)
+
 ```rust,ignore
 pub struct Transactions(
     /// New transactions for the peer to include in its mempool.
@@ -104,6 +115,7 @@ pub struct Transactions(
 And the corresponding trait implementations are present in the primitives crate.
 
 [File: crates/primitives/src/transaction/mod.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/primitives/src/transaction/mod.rs)
+
 ```rust, ignore
 #[reth_codec]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, AsRef, Deref, Default, Serialize, Deserialize)]
@@ -133,20 +145,23 @@ impl Decodable for TransactionSigned {
     }
 }
 ```
+
 Now that we know how the types work, let's take a look at how these are utilized in the network.
 
 ## P2PStream
+
 The lowest level stream to communicate with other peers is the P2P stream. It takes an underlying Tokio stream and does the following:
 
-- Tracks and Manages Ping and pong messages and sends them when needed.
-- Keeps track of the SharedCapabilities between the reth node and its peers.
-- Receives bytes from peers, decompresses and forwards them to its parent stream.
-- Receives bytes from its parent stream, compresses them and sends it to peers.
+-   Tracks and Manages Ping and pong messages and sends them when needed.
+-   Keeps track of the SharedCapabilities between the reth node and its peers.
+-   Receives bytes from peers, decompresses and forwards them to its parent stream.
+-   Receives bytes from its parent stream, compresses them and sends it to peers.
 
 Decompression/Compression of bytes is done with snappy algorithm ([EIP 706](https://eips.ethereum.org/EIPS/eip-706))
 using the external `snap` crate.
 
 [File: crates/net/eth-wire/src/p2pstream.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/p2pstream.rs)
+
 ```rust,ignore
 #[pin_project]
 pub struct P2PStream<S> {
@@ -160,11 +175,14 @@ pub struct P2PStream<S> {
     disconnecting: bool,
 }
 ```
+
 ### Pinger
+
 To manage pinging, an instance of the `Pinger` struct is used. This is a state machine which keeps track of how many pings
 we have sent/received and the timeouts associated with them.
 
 [File: crates/net/eth-wire/src/pinger.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/pinger.rs)
+
 ```rust,ignore
 #[derive(Debug)]
 pub(crate) struct Pinger {
@@ -191,6 +209,7 @@ pub(crate) enum PingState {
 State transitions are then implemented like a future, with the `poll_ping` function advancing the state of the pinger.
 
 [File: crates/net/eth-wire/src/pinger.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/pinger.rs)
+
 ```rust, ignore
 pub(crate) fn poll_ping(
     &mut self,
@@ -218,12 +237,14 @@ pub(crate) fn poll_ping(
 ```
 
 ### Sending and receiving data
+
 To send and receive data, the P2PStream itself is a future which implements the `Stream` and `Sink` traits from the `futures` crate.
 
 For the `Stream` trait, the `inner` stream is polled, decompressed and returned. Most of the code is just
 error handling and is omitted here for clarity.
 
 [File: crates/net/eth-wire/src/p2pstream.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/p2pstream.rs)
+
 ```rust,ignore
 
 impl<S> Stream for P2PStream<S> {
@@ -251,6 +272,7 @@ Similarly, for the `Sink` trait, we do the reverse, compressing and sending data
 The important functions in this trait are shown below.
 
 [File: crates/net/eth-wire/src/p2pstream.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/p2pstream.rs)
+
 ```rust, ignore
 impl<S> Sink<Bytes> for P2PStream<S> {
     fn start_send(self: Pin<&mut Self>, item: Bytes) -> Result<(), Self::Error> {
@@ -283,11 +305,12 @@ impl<S> Sink<Bytes> for P2PStream<S> {
 }
 ```
 
-
 ## EthStream
+
 The EthStream is very simple, it does not keep track of any state, it simply wraps the P2Pstream.
 
 [File: crates/net/eth-wire/src/ethstream.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/ethstream.rs)
+
 ```rust,ignore
 #[pin_project]
 pub struct EthStream<S> {
@@ -295,10 +318,12 @@ pub struct EthStream<S> {
     inner: S,
 }
 ```
+
 EthStream's only job is to perform the RLP decoding/encoding, using the `ProtocolMessage::decode()` and `ProtocolMessage::encode()`
 functions we looked at earlier.
 
 [File: crates/net/eth-wire/src/ethstream.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/ethstream.rs)
+
 ```rust,ignore
 impl<S, E> Stream for EthStream<S> {
     // ...
@@ -333,8 +358,10 @@ impl<S, E> Sink<EthMessage> for EthStream<S> {
     }
 }
 ```
+
 ## Unauthed streams
-For a session to be established, peers in the Ethereum network must first exchange a `Hello` message in the ``RLPx`` layer and then a
+
+For a session to be established, peers in the Ethereum network must first exchange a `Hello` message in the `RLPx` layer and then a
 `Status` message in the eth-wire layer.
 
 To perform these, reth has special `Unauthed` versions of streams described above.
@@ -342,6 +369,7 @@ To perform these, reth has special `Unauthed` versions of streams described abov
 The `UnauthedP2Pstream` does the `Hello` handshake and returns a `P2PStream`.
 
 [File: crates/net/eth-wire/src/p2pstream.rs](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/p2pstream.rs)
+
 ```rust, ignore
 #[pin_project]
 pub struct UnauthedP2PStream<S> {
@@ -367,4 +395,5 @@ impl<S> UnauthedP2PStream<S> {
 }
 
 ```
+
 Similarly, UnauthedEthStream does the `Status` handshake and returns an `EthStream`. The code is [here](https://github.com/paradigmxyz/reth/blob/1563506aea09049a85e5cc72c2894f3f7a371581/crates/net/eth-wire/src/ethstream.rs)

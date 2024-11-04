@@ -1,44 +1,44 @@
 [package]
 name = "reth-ecies"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 
 [lints]
 workspace = true
 
 [dependencies]
-reth-network-peers = { workspace = true, features = ["secp256k1"] }
+aes = "0.8.1"
 
 alloy-primitives = { workspace = true, features = ["rand", "rlp"] }
 alloy-rlp = { workspace = true, features = ["derive", "arrayvec"] }
-
-futures.workspace = true
-thiserror.workspace = true
-tokio = { workspace = true, features = ["time"] }
-tokio-stream.workspace = true
-tokio-util = { workspace = true, features = ["codec"] }
-pin-project.workspace = true
-
-tracing.workspace = true
-
-# HeaderBytes
-generic-array.workspace = true
-typenum = "1.15.0"
+block-padding = "0.3.2"
 byteorder = "1.4.3"
-
-# crypto
-rand.workspace = true
+cipher = { version = "0.4.3", features = ["block-padding"] }
+concat-kdf = "0.1.0"
 ctr = "0.9.2"
 digest = "0.10.5"
-secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
-concat-kdf = "0.1.0"
-sha2.workspace = true
-sha3 = "0.10.5"
-aes = "0.8.1"
+
+futures = { workspace = true }
+
+# HeaderBytes
+generic-array = { workspace = true }
 hmac = "0.12.1"
-block-padding = "0.3.2"
-cipher = { version = "0.4.3", features = ["block-padding"] }
+pin-project = { workspace = true }
+
+# crypto
+rand = { workspace = true }
+reth-network-peers = { workspace = true, features = ["secp256k1"] }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
+sha2 = { workspace = true }
+sha3 = "0.10.5"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true, features = ["codec"] }
+
+tracing = { workspace = true }
+typenum = "1.15.0"

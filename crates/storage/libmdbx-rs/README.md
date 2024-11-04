@@ -1,6 +1,5 @@
 # libmdbx-rs
 
-
 Rust bindings for [libmdbx](https://libmdbx.dqdkfa.ru).
 
 Forked from an earlier Apache licenced version of the `libmdbx-rs` crate, before it changed licence to GPL.

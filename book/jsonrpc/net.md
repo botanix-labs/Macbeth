@@ -7,7 +7,7 @@ The `net` API provides information about the networking component of the node.
 Returns a `bool` indicating whether or not the node is listening for network connections.
 
 | Client | Method invocation                           |
-|--------|---------------------------------------------|
+| ------ | ------------------------------------------- |
 | RPC    | `{"method": "net_listening", "params": []}` |
 
 ### Example
@@ -22,7 +22,7 @@ Returns a `bool` indicating whether or not the node is listening for network con
 Returns the number of peers connected to the node.
 
 | Client | Method invocation                           |
-|--------|---------------------------------------------|
+| ------ | ------------------------------------------- |
 | RPC    | `{"method": "net_peerCount", "params": []}` |
 
 ### Example
@@ -37,7 +37,7 @@ Returns the number of peers connected to the node.
 Returns the network ID (e.g. 1 for mainnet)
 
 | Client | Method invocation                         |
-|--------|-------------------------------------------|
+| ------ | ----------------------------------------- |
 | RPC    | `{"method": "net_version", "params": []}` |
 
 ### Example

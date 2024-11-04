@@ -102,8 +102,10 @@ pub(crate) enum SerializationType {
 }
 
 /// Prost Message Wrapper allowing serialization/deserialization
+#[allow(dead_code)]
 pub(crate) struct ProstMessageSerdelizer<T: prost::Message>(pub(crate) T);
 
+#[allow(dead_code)]
 impl<T> ProstMessageSerdelizer<T>
 where
     T: prost::Message + std::default::Default,
@@ -133,6 +135,7 @@ macro_rules! define_compression_methods {
                     Ok(encoder.into_inner())
                 }
 
+                #[allow(dead_code)]
                 pub(crate) async fn [<decompress_ $name:lower>](&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
                     let mut decoder = [<$name Decoder>]::new(Vec::new());
                     decoder.write_all(in_data).await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
@@ -146,12 +149,14 @@ macro_rules! define_compression_methods {
 
 /// Compressor implementation
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct Compressor {
     compression_type: CompressionType,
     compression_level: Level,
     serialization_type: SerializationType,
 }
 
+#[allow(dead_code)]
 impl Compressor {
     /// Constructor for a new compressor
     pub(crate) fn new() -> Self {

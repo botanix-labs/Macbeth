@@ -171,17 +171,17 @@ pub const BEACON_CONSENSUS_REORG_UNWIND_DEPTH: u64 = 3;
 pub const ALLOWED_FUTURE_BLOCK_TIME_SECONDS: u64 = 15;
 
 /// EIP-225: Clique Proof-of-Authority consensus protocol.
-
+///
 /// The number of blocks to reset pending votes.
 pub const EPOCH_LENGTH: u64 = 3;
 
 /// Minimum difference between two consecutive block’s timestamps.
 pub const BLOCK_PERIOD: u64 = 1000;
 
-/// Magic nonce number 0xffffffffffffffff to vote on adding a new signer. Used in PoA
+/// Magic nonce number 0xffffffffffffffff to vote on adding a new signer. Used in `PoA`
 pub const NONCE_AUTH: u64 = 0xffffffffffffffff;
 
-/// Magic nonce number 0x0000000000000000 to vote on removing a signer. Used in PoA
+/// Magic nonce number 0x0000000000000000 to vote on removing a signer. Used in `PoA`
 pub const NONCE_DROP: u64 = 0x0000000000000000;
 
 /// "nothing up my sleve" NUMS point for the secp256k1 curve.
@@ -195,11 +195,9 @@ pub fn nums_secp256k1_pk() -> secp256k1::PublicKey {
         121, 190, 102, 126, 249, 220, 187, 172, 85, 160, 98, 149, 206, 135, 11, 7, 2, 155, 252,
         219, 45, 206, 40, 217, 89, 242, 129, 91, 22, 248, 23, 152,
     ];
-    let pk = secp256k1::XOnlyPublicKey::from_slice(&nums_point)
+    secp256k1::XOnlyPublicKey::from_slice(&nums_point)
         .expect("valid nums point")
-        .public_key(secp256k1::Parity::Even);
-
-    pk
+        .public_key(secp256k1::Parity::Even)
 }
 
 #[cfg(test)]

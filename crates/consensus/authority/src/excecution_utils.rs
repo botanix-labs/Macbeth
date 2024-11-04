@@ -41,7 +41,7 @@ pub(crate) mod authority_execution_utils {
         bitcoin_network: bitcoin::Network,
         bitcoin_checkpoint_block_hash: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
-        authority_signers: &Vec<secp256k1::PublicKey>,
+        authority_signers: &[secp256k1::PublicKey],
         timestamp: Timestamp,
     ) -> Result<(BlockExecutionOutput<Receipt>, Block), BlockExecutionError>
     where
@@ -90,7 +90,7 @@ pub(crate) mod authority_execution_utils {
             sha256::Hash::all_zeros(),
             client,
             agg_pk,
-            &authority_signers,
+            authority_signers,
         )?;
 
         // Replace header with the one that is completed
@@ -221,7 +221,7 @@ pub(crate) mod authority_execution_utils {
             CHAIN_VERSION,
             *bitcoin_checkpoint,
             *agg_pk,
-            block_builder_address.clone(),
+            *block_builder_address,
         );
         let mut header = Header {
             parent_hash: best_hash,
@@ -291,12 +291,12 @@ pub(crate) mod authority_execution_utils {
         _utxo_commitment: sha256::Hash,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
         agg_pk: &secp256k1::PublicKey,
-        _authorities: &Vec<secp256k1::PublicKey>,
+        _authorities: &[secp256k1::PublicKey],
     ) -> Result<Header, BlockExecutionError> {
         let exec_outcome = ExecutionOutcome::new(
             block_exec_result.state.clone(),
             block_exec_result.receipts.clone().into(),
-            header.number.into(),
+            header.number,
             vec![Requests(block_exec_result.requests.clone())],
         );
         let receipts = exec_outcome.receipts_by_block(header.number);

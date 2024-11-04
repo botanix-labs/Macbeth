@@ -325,8 +325,45 @@ maxperf-op: ## Builds `op-reth` with the most aggressive optimisations.
 maxperf-no-asm: ## Builds `reth` with the most aggressive optimisations, minus the "asm-keccak" feature.
 	RUSTFLAGS="-C target-cpu=native" cargo build --profile maxperf --features jemalloc
 
-fmt:
-	cargo +nightly fmt
+# ------------------------------------------------------------
+# Formatting
+# ------------------------------------------------------------
+
+fmt: fmt-cargo fmt-rust fmt-prettier fmt-markdown
+
+fmt-cargo:
+	cargo sort -w
+
+fmt-rust:
+	cargo +nightly fmt --all -- --color always
+
+fmt-prettier:
+	pnpm prettier:fix
+
+fmt-markdown:
+	pnpm md:fix
+
+# ------------------------------------------------------------
+# Validate code
+# ------------------------------------------------------------
+
+check:
+	cargo check --workspace --all-features
+
+lint-cargo:
+	cargo sort -w --check
+
+lint-rust:
+	cargo +nightly fmt -- --check --color always
+
+lint-clippy:
+	cargo clippy --workspace --exclude test-suite -- -D warnings
+
+lint-prettier:
+	pnpm prettier:validate
+
+lint-markdown:
+	pnpm md:lint
 
 lint-reth:
 	cargo +nightly clippy \
@@ -367,6 +404,11 @@ ensure-codespell:
     fi
 
 lint:
+	make check && \
+	make lint-rust && \
+	make lint-clippy && \
+	make lint-prettier && \
+	make lint-markdown && \
 	make fmt && \
 	make lint-reth && \
 	make lint-op-reth && \
@@ -417,6 +459,11 @@ fix-lint:
 	make fix-lint-other-targets && \
 	make fmt
 
+
+# ------------------------------------------------------------
+# Documentation
+# ------------------------------------------------------------
+
 .PHONY: rustdocs
 rustdocs: ## Runs `cargo docs` to generate the Rust documents in the `target/doc` directory
 	RUSTDOCFLAGS="\
@@ -426,6 +473,10 @@ rustdocs: ## Runs `cargo docs` to generate the Rust documents in the `target/doc
 	--enable-index-page -Zunstable-options -D warnings" \
 	cargo +nightly docs \
 	--document-private-items
+
+# ------------------------------------------------------------
+# Tests
+# ------------------------------------------------------------
 
 test-reth:
 	cargo test \
@@ -467,6 +518,10 @@ pr:
 	make update-book-cli && \
 	make test
 
+# ------------------------------------------------------------
+# Audit
+# ------------------------------------------------------------
+
 audit:
 	cargo audit
 
@@ -476,11 +531,19 @@ audit-fix-test:
 audit-fix:
 	cargo audit fix
 
+# ------------------------------------------------------------
+# Coverage
+# ------------------------------------------------------------
+
 coverage:
 	RUSTFLAGS="-Z threads=8" cargo +nightly tarpaulin --config ./tarpaulin.toml
 
 clean-unused-deps:
 	cargo machete --fix
+
+# ------------------------------------------------------------
+# Botanix
+# ------------------------------------------------------------
 
 start-test-suite:
 	cd ./bin/test-suite && \
@@ -724,7 +787,7 @@ start-docker-local:
 
 build-docker-local:
 	cd ./docker-local && \
-	docker-compose --env-file .bitcoin.env -f docker-compose.yml up --build -d 
+	docker-compose --env-file .bitcoin.env -f docker-compose.yml up --build -d
 
 clean-docker-poa:
 	cd ./docker-local && \
@@ -750,4 +813,3 @@ stop-docker-local:
 	make clean-docker-poa && \
 	make clean-docker-btc && \
 	make clean-docker-comet
-	

@@ -9,7 +9,7 @@ fn main() {
         .build_transport(true)
         .file_descriptor_set_path("src/rpc/btc_server.bin")
         .out_dir("src/rpc")
-        .compile_with_config(prost_config_server, protos, &[] as &[&str])
+        .compile_protos_with_config(prost_config_server, protos, &[] as &[&str])
         .expect("failed to compile server protos");
 
     // client
@@ -20,6 +20,6 @@ fn main() {
         .build_transport(true)
         .file_descriptor_set_path("src/rpc/btc_server.bin")
         .out_dir("client/src/")
-        .compile_with_config(prost_config_client, protos, &[] as &[&str])
+        .compile_protos_with_config(prost_config_client, protos, &[] as &[&str])
         .expect("failed to compile client protos");
 }

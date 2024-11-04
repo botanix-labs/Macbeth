@@ -26,13 +26,13 @@ impl TestServer {
         Self { context }
     }
 
-    pub async fn start(mut self, test_to_run: String) -> Result<(), Error> {
+    pub async fn start(self, test_to_run: String) -> Result<(), Error> {
         info!("Starting test instance...");
         let result = self.run(test_to_run).await;
         result
     }
 
-    async fn run(&mut self, test_to_run: String) -> Result<(), Error> {
+    async fn run(&self, test_to_run: String) -> Result<(), Error> {
         let mut stop_handle = StopHandle::new();
         stop_handle.spawn_signal_listener();
         let mut test_suite = self.create_consensus_test_suite();

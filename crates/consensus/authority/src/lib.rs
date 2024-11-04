@@ -67,6 +67,13 @@ pub mod random_source_provider;
 /// Max EDH size; for specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 93;
 
+use ethabi as _;
+use reth_cli_runner as _;
+use reth_db as _;
+use reth_db_common as _;
+use reth_node_core as _;
+use tempfile as _;
+
 /// Ethereum authority consensus
 ///
 /// This consensus engine does basic checks as outlined in the execution specs.
@@ -196,7 +203,7 @@ impl Consensus for AuthorityConsensus {
     fn validate_header_with_total_difficulty(
         &self,
         header: &Header,
-        total_difficulty: U256,
+        _total_difficulty: U256,
     ) -> Result<(), ConsensusError> {
         if !header.is_zero_difficulty() {
             return Err(ConsensusError::TheMergeDifficultyIsNotZero);
@@ -329,6 +336,7 @@ impl Consensus for AuthorityConsensus {
 
 /// In memory storage
 /// All this struct does is provide a rwlock wrapper around the storage inner
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct Storage<EF, BF, DB> {
     pub(crate) client: DB,
@@ -355,8 +363,10 @@ pub(crate) struct Storage<EF, BF, DB> {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
+#[allow(dead_code)]
 impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
     /// Create a new instance of the storage
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         genesis_authorities: Vec<secp256k1::PublicKey>,
         signer_index: usize,

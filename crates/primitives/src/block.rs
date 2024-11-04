@@ -490,7 +490,7 @@ impl From<SealedBlock> for Block {
     }
 }
 
-/// Botanix protocol specific we need to convert sealed blocks in PoA consensus
+/// Botanix protocol specific we need to convert sealed blocks in `PoA` consensus
 /// to execution payload for the execution engine.
 impl From<SealedBlock> for ExecutionPayload {
     fn from(value: SealedBlock) -> Self {
@@ -503,7 +503,7 @@ impl From<SealedBlock> for ExecutionPayload {
                 encoded.into()
             })
             .collect();
-        ExecutionPayload::V1(ExecutionPayloadV1 {
+        Self::V1(ExecutionPayloadV1 {
             parent_hash: value.parent_hash,
             fee_recipient: value.beneficiary,
             state_root: value.state_root,

@@ -338,7 +338,7 @@ impl NetworkManager {
     }
 
     /// Create a [`NetworkBuilder`] to configure all components of the network
-    pub fn into_builder(self) -> NetworkBuilder<(), ()> {
+    pub const fn into_builder(self) -> NetworkBuilder<(), ()> {
         NetworkBuilder { network: self, transactions: (), request_handler: (), frost_manager: None }
     }
 
@@ -576,7 +576,7 @@ impl NetworkManager {
     }
 
     /// Handles a polled [`ProtocolEvent`]
-    fn on_handle_frost_protocol_event(&mut self, protocol_event: FrostProtocolEvent) {
+    fn on_handle_frost_protocol_event(&self, protocol_event: FrostProtocolEvent) {
         match protocol_event {
             FrostProtocolEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
                 info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionEstablished {:?} {:?} {:?}", direction, peer_id, peer_commands_tx);

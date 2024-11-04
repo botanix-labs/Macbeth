@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-RUSTDOCSDIR=${PWD}/rustdocs
+RUSTDOCSDIR=$(dirname "$PWD")/rustdocs
 mkdir -p ${RUSTDOCSDIR}
 
 cargo doc --target-dir ${RUSTDOCSDIR} --all --bins --document-private-items

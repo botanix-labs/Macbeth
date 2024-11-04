@@ -2263,7 +2263,7 @@ dependencies = [
 
 [[package]]
 name = "comet-bft-rpc"
-version = "0.1.0"
+version = "1.0.5"
 dependencies = [
  "tendermint-rpc",
 ]
@@ -7517,7 +7517,6 @@ dependencies = [
  "serde_json",
  "similar-asserts",
  "tempfile",
- "thiserror",
  "tikv-jemallocator",
  "tokio",
  "tokio-stream",
@@ -7847,7 +7846,6 @@ dependencies = [
  "reth-network-peers",
  "reth-primitives-traits",
  "reth-trie-common",
- "serde",
  "serde_json",
 ]
 
@@ -7866,6 +7864,8 @@ name = "reth-cli-commands"
 version = "1.0.5"
 dependencies = [
  "arbitrary",
+ "clap",
+ "eyre",
  "proptest",
  "proptest-arbitrary-interop",
  "reth-db",
@@ -7891,6 +7891,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -9700,7 +9701,6 @@ dependencies = [
  "jsonrpsee-types",
  "rand 0.8.5",
  "serde",
- "serde_json",
 ]
 
 [[package]]

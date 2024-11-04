@@ -36,9 +36,9 @@ impl TryFrom<B256> for GenesisContractEventType {
     type Error = &'static str;
     fn try_from(value: B256) -> Result<Self, Self::Error> {
         if value == *MINT_TOPIC {
-            return Ok(GenesisContractEventType::MintingEvent);
+            return Ok(Self::MintingEvent);
         } else if value == *BURN_TOPIC {
-            return Ok(GenesisContractEventType::BurnEvent);
+            return Ok(Self::BurnEvent);
         }
         Err("Invalid topic")
     }
@@ -74,13 +74,13 @@ pub enum ParseBurnEventError {
     InvalidPegoutData(#[from] PegoutDataError),
 }
 
-/// Combined type of [ParseMintEventError] and [ParseBurnEventError].
+/// Combined type of [`ParseMintEventError`] and [`ParseBurnEventError`].
 #[derive(Debug, Error)]
 pub enum MintContractError {
     /// Error parsing event log from Minting contract
     #[error("error parsing event log from Minting contract")]
     InvalidLog {
-        /// Event type  
+        /// Event type
         event: &'static str,
         /// Error message
         error: String,

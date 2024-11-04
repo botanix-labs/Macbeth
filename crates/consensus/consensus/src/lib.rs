@@ -170,7 +170,7 @@ pub enum ConsensusError {
         /// The gas limit in the block header.
         gas_limit: u64,
     },
-    /// PoA specific: missing quorum of authority signatures
+    /// `PoA` specific: missing quorum of authority signatures
     #[display("Missing quorum of authority signatures, expected: {expected}, got: {actual}")]
     MissingQuorumOfAuthoritySignatures {
         /// The expected quorum of authority signatures.
@@ -178,31 +178,31 @@ pub enum ConsensusError {
         /// The actual quorum of authority signatures.
         actual: u16,
     },
-    /// PoA specific: authority list is missing in the extra data header
+    /// `PoA` specific: authority list is missing in the extra data header
     #[display("Missing authority list")]
     MissingAuthorityList,
-    /// PoA specific: authority list does not match the genesis block authority list
+    /// `PoA` specific: authority list does not match the genesis block authority list
     #[display("Invalid authority list")]
     InvalidAuthorityList,
-    /// PoA specific: Invalid block signature
+    /// `PoA` specific: Invalid block signature
     #[display("Invalid authority signature")]
     InvalidAuthoritySignature,
-    /// PoA specific: extra data header does not follow consensus rules or is malformed
+    /// `PoA` specific: extra data header does not follow consensus rules or is malformed
     #[display("Invalid extra data")]
     ExtraDataInvalid,
-    /// PoA specific: failed to recover authority from block signature
+    /// `PoA` specific: failed to recover authority from block signature
     #[display("Failed to recover authority")]
     FailedToRecoverAuthority,
-    /// PoA specific: same signer as previous block
+    /// `PoA` specific: same signer as previous block
     #[display("Same signer as previous block")]
     SignerLimitExceeded,
-    /// PoA specific: authority signer not in turn
+    /// `PoA` specific: authority signer not in turn
     #[display("Authority signer not in turn")]
     AuthorityNotInTurn,
-    /// PoA specific: block beneficiary is not an authority
+    /// `PoA` specific: block beneficiary is not an authority
     #[display("block beneficiary is not an authority")]
     BlockBeneficiaryIsNotAuthority,
-    /// PoA specific: block beneficiary is not the burn address
+    /// `PoA` specific: block beneficiary is not the burn address
     #[display("block beneficiary is not the burn address")]
     BlockBeneficiaryIsNotBurnAddress,
 

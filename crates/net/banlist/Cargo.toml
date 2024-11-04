@@ -1,11 +1,11 @@
 [package]
 name = "reth-net-banlist"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "Banlist for peers and IPs"
 
 [lints]
@@ -13,4 +13,4 @@ workspace = true
 
 [dependencies]
 # ethereum
-alloy-primitives.workspace = true
+alloy-primitives = { workspace = true }

@@ -7,12 +7,12 @@ NODE1_DIR="$TEMP_DIR/node1"
 NODE2_DIR="$TEMP_DIR/node2"
 BITCOIN_NODE_DIR="$TEMP_DIR/bitcoin_node"
 COMET_NODE_DIR="$TEMP_DIR/comet"
-WALLET_NAME="my_wallet" 
+WALLET_NAME="my_wallet"
 
 init() {
-      DEFAULT_BINARY_PATH="{PROVIDE_BINARIES_PATH}"
-      BINARY_PATH=${1:-$DEFAULT_BINARY_PATH}
-     echo "Using binary path: $BINARY_PATH"
+    DEFAULT_BINARY_PATH="{PROVIDE_BINARIES_PATH}"
+    BINARY_PATH=${1:-$DEFAULT_BINARY_PATH}
+    echo "Using binary path: $BINARY_PATH"
     if [[ ! -d "$BINARY_PATH" ]]; then
         echo "Error: Binary path '$BINARY_PATH' does not exist."
         exit 1
@@ -56,7 +56,7 @@ init() {
         echo ".env file already exists."
     else
         echo "Creating .env file with Bitcoin regtest configuration and node directories..."
-        cat <<EOL > $ENV_FILE
+        cat << EOL > $ENV_FILE
 # Bitcoin Regtest Configuration
 BITCOIND_NETWORK=regtest
 BITCOIND_URL=http://localhost:$RPC_PORT
@@ -75,7 +75,7 @@ EOL
     # Create bitcoin.conf file in the bitcoin_node folder with updated configuration
     BITCOIN_CONF="$BITCOIN_NODE_DIR/bitcoin.conf"
     echo "Creating bitcoin.conf file with updated configuration..."
-    cat <<EOL > $BITCOIN_CONF
+    cat << EOL > $BITCOIN_CONF
 datadir=$BITCOIN_NODE_DIR
 regtest=1
 server=1
@@ -95,73 +95,72 @@ EOL
     echo "CometBFT testnet initialized in $COMET_NODE_DIR."
 }
 
-
 start() {
-DEFAULT_BINARY_PATH="{PROVIDE_BINARIES_PATH}"
-BINARY_PATH=${1:-$DEFAULT_BINARY_PATH}
+    DEFAULT_BINARY_PATH="{PROVIDE_BINARIES_PATH}"
+    BINARY_PATH=${1:-$DEFAULT_BINARY_PATH}
     echo "Starting bitcoind with configuration from $BITCOIN_NODE_DIR/bitcoin.conf..."
     "$BINARY_PATH"/bitcoind -datadir="$BITCOIN_NODE_DIR" -conf="bitcoin.conf" &
 
-  if [[ -f ".env" ]]; then
+    if [[ -f ".env" ]]; then
         echo "Loading environment variables from .env file..."
         source .env
     else
         echo "Error: .env file not found. Please run the init function first."
         exit 1
     fi
-sleep 5
+    sleep 5
 
-echo "Creating wallet '$WALLET_NAME' in $BITCOIN_NODE_DIR..."
+    echo "Creating wallet '$WALLET_NAME' in $BITCOIN_NODE_DIR..."
 
-curl --user "$BITCOIND_USER:$BITCOIND_PWD" \
-     --header "Content-Type: application/json" \
-     --data '{"method": "createwallet", "params": ["'"$WALLET_NAME"'"], "jsonrpc": "2.0", "id": "curltest"}' \
-     http://localhost:$BITCOIND_PORT/
+    curl --user "$BITCOIND_USER:$BITCOIND_PWD" \
+        --header "Content-Type: application/json" \
+        --data '{"method": "createwallet", "params": ["'"$WALLET_NAME"'"], "jsonrpc": "2.0", "id": "curltest"}' \
+        http://localhost:$BITCOIND_PORT/
 
-echo ""
+    echo ""
 
-echo "Loading wallet '$WALLET_NAME'..."
+    echo "Loading wallet '$WALLET_NAME'..."
 
-curl --user "$BITCOIND_USER:$BITCOIND_PWD" \
-     --header "Content-Type: application/json" \
-     --data '{"method": "createwallet", "params": ["'"$WALLET_NAME"'"], "jsonrpc": "2.0", "id": "curltest"}' \
-     http://localhost:$BITCOIND_PORT/
+    curl --user "$BITCOIND_USER:$BITCOIND_PWD" \
+        --header "Content-Type: application/json" \
+        --data '{"method": "createwallet", "params": ["'"$WALLET_NAME"'"], "jsonrpc": "2.0", "id": "curltest"}' \
+        http://localhost:$BITCOIND_PORT/
 
-echo ""
+    echo ""
 
-echo "Generating 200 blocks..."
+    echo "Generating 200 blocks..."
 
-ADDRESS=$(curl --user "$BITCOIND_USER:$BITCOIND_PWD" \
-               --header "Content-Type: application/json" \
-               --data '{"method": "getnewaddress", "params": [], "jsonrpc": "2.0", "id": "curltest"}' \
-               http://localhost:$BITCOIND_PORT/wallet/$WALLET_NAME | jq -r '.result')
+    ADDRESS=$(curl --user "$BITCOIND_USER:$BITCOIND_PWD" \
+        --header "Content-Type: application/json" \
+        --data '{"method": "getnewaddress", "params": [], "jsonrpc": "2.0", "id": "curltest"}' \
+        http://localhost:$BITCOIND_PORT/wallet/$WALLET_NAME | jq -r '.result')
 
-echo "New address: $ADDRESS"
+    echo "New address: $ADDRESS"
 
-curl --user "$BITCOIND_USER:$BITCOIND_PWD" \
-     --header "Content-Type: application/json" \
-     --data '{"method": "generatetoaddress", "params": [200, "'"$ADDRESS"'"], "jsonrpc": "2.0", "id": "curltest"}' \
-     http://localhost:$BITCOIND_PORT/
+    curl --user "$BITCOIND_USER:$BITCOIND_PWD" \
+        --header "Content-Type: application/json" \
+        --data '{"method": "generatetoaddress", "params": [200, "'"$ADDRESS"'"], "jsonrpc": "2.0", "id": "curltest"}' \
+        http://localhost:$BITCOIND_PORT/
 
-echo ""
+    echo ""
 
     sleep 5
     echo "Running 'make make start-btc-server_1'..."
-    make start-btc-server-1 &      
+    make start-btc-server-1 &
     sleep 10
     echo "Running 'make make start-btc-server_2'..."
-    make start-btc-server-2 &  
+    make start-btc-server-2 &
 
     sleep 10
     echo "Running 'make start-poa-server_1' ..."
-    make make start-poa-server-1  &
+    make make start-poa-server-1 &
     sleep 10
     echo "Running 'make start-poa-server_2' ..."
     make make start-poa-server-2 &
 
-     sleep 10
-     echo "Starting CometBFT node0..."
-     "$BINARY_PATH"/cometbft start --home "$COMET_NODE_DIR/node0" &
+    sleep 10
+    echo "Starting CometBFT node0..."
+    "$BINARY_PATH"/cometbft start --home "$COMET_NODE_DIR/node0" &
     sleep 5
     echo "Starting CometBFT node1..."
     "$BINARY_PATH"/cometbft start --home "$COMET_NODE_DIR/node1" &
@@ -174,7 +173,7 @@ stop() {
     pkill -9 -f btc-server
     pkill -9 -f cometbft
     pkill -9 -f reth
-    
+
 }
 
 clean() {

@@ -1,35 +1,36 @@
 [package]
 name = "reth-revm"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "reth specific revm utilities"
 
 [lints]
 workspace = true
 
 [dependencies]
+
+# alloy
+alloy-eips = { workspace = true }
 # reth
-reth-chainspec.workspace = true
-reth-primitives.workspace = true
-reth-storage-errors.workspace = true
-reth-execution-errors.workspace = true
-reth-consensus-common.workspace = true
-reth-prune-types.workspace = true
-reth-storage-api.workspace = true
+reth-chainspec = { workspace = true }
+reth-consensus-common = { workspace = true }
+reth-execution-errors = { workspace = true }
+reth-primitives = { workspace = true }
+reth-prune-types = { workspace = true }
+reth-storage-api = { workspace = true }
+reth-storage-errors = { workspace = true }
 reth-trie = { workspace = true, optional = true }
 
 # revm
-revm.workspace = true
-# alloy
-alloy-eips.workspace = true
+revm = { workspace = true }
 
 [dev-dependencies]
-reth-trie.workspace = true
-reth-ethereum-forks.workspace = true
+reth-ethereum-forks = { workspace = true }
+reth-trie = { workspace = true }
 
 [features]
 default = ["std", "c-kzg"]

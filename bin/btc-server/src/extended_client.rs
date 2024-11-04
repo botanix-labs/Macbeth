@@ -151,8 +151,7 @@ impl GrpcClientFactory {
     }
 
     pub async fn build_and_connect(&self) -> Result<BtcServerExtendedClient, GrpcClientError> {
-        let client =
-            BtcServerExtendedClient::new(self.grpc_url.clone(), self.jwt_secret.clone()).await?;
+        let client = BtcServerExtendedClient::new(self.grpc_url.clone(), self.jwt_secret).await?;
 
         Ok(client)
     }

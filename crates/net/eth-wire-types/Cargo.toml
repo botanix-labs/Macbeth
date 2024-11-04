@@ -1,44 +1,44 @@
 [package]
 name = "reth-eth-wire-types"
 description = "types for eth-wire"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 
 [lints]
 workspace = true
 
 [dependencies]
-# reth
-reth-chainspec.workspace = true
-reth-codecs-derive.workspace = true
-reth-primitives.workspace = true
 
 # ethereum
-alloy-chains = { workspace = true, features = ["rlp"] }
-alloy-rlp = { workspace = true, features = ["derive"] }
-alloy-genesis.workspace = true
-
-bytes.workspace = true
-derive_more.workspace = true
-thiserror.workspace = true
-serde = { workspace = true, optional = true }
+alloy-chains = { workspace = true }
+alloy-genesis = { workspace = true }
+alloy-rlp = { workspace = true }
 
 # arbitrary utils
-arbitrary = { workspace = true, features = ["derive"], optional = true }
+arbitrary = { workspace = true, optional = true }
+
+bytes = { workspace = true }
+derive_more = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-arbitrary-interop = { workspace = true, optional = true }
+# reth
+reth-chainspec = { workspace = true }
+reth-codecs-derive = { workspace = true }
+reth-primitives = { workspace = true }
+serde = { workspace = true, optional = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
-reth-primitives = { workspace = true, features = ["arbitrary"] }
 alloy-chains = { workspace = true, features = ["arbitrary"] }
-arbitrary = { workspace = true, features = ["derive"] }
-proptest.workspace = true
-proptest-arbitrary-interop.workspace = true
-rand.workspace = true
+arbitrary = { workspace = true }
+proptest = { workspace = true }
+proptest-arbitrary-interop = { workspace = true }
+rand = { workspace = true }
+reth-primitives = { workspace = true, features = ["arbitrary"] }
 
 [features]
 arbitrary = [

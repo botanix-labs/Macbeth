@@ -62,14 +62,9 @@ impl LightCBFTClientBuilder {
             },
             None,
         )
-        .trust_primary_at(
-            Height::try_from(trusted_block_height).expect("to convert height"),
-            block_hash,
-        )
+        .trust_primary_at(Height::from(trusted_block_height), block_hash)
         .expect("to trust primary");
 
-        let instance = light_client.build();
-
-        instance
+        light_client.build()
     }
 }

@@ -133,7 +133,7 @@ where
 
         let mut frost_id_map = HashMap::new();
         for (index, pk) in frost_config.authorities.iter().enumerate() {
-            frost_id_map.insert(authority_index_to_frost_identifier(index as u16), pk2id(&pk));
+            frost_id_map.insert(authority_index_to_frost_identifier(index as u16), pk2id(pk));
         }
 
         info!(target: "consensus::authority::dkg::new", "personal frost id: {:?}", personal_frost_identifier);
@@ -511,7 +511,7 @@ where
         .map_err(|_| Error::FailedToGetRound2Packages)?;
 
         for (identifier, round2_payload) in shares.iter() {
-            let peer_id = self.frost_id_map.get(&identifier).ok_or(Error::PeerIdNotFound)?;
+            let peer_id = self.frost_id_map.get(identifier).ok_or(Error::PeerIdNotFound)?;
             self.gossip_to_peer(
                 DkgPayload {
                     // From us
@@ -519,7 +519,7 @@ where
                     payload: serde_json::to_vec(&round2_payload).unwrap(),
                 },
                 DkgEventResponseType::DkgRound2,
-                peer_id.clone(),
+                *peer_id,
             )
             .await?;
         }

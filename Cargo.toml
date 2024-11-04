@@ -11,27 +11,28 @@ exclude = [".github/"]
 resolver = "2"
 
 members = [
+    "bin/btc-server",
+    "bin/federation-utils",
     "bin/reth-bench/",
     "bin/reth/",
-    "bin/btc-server",
     "bin/test-suite",
     "crates/blockchain-tree-api/",
+    "crates/botanix-cli",
+    "crates/btc-wallet",
     "crates/chain-state/",
     "crates/chainspec/",
     "crates/cli/cli/",
     "crates/cli/commands/",
-    "bin/federation-utils",
     "crates/cli/runner/",
     "crates/cli/util/",
+    "crates/comet-bft-rpc",
     "crates/config/",
-    "crates/btc-wallet",
-    "crates/consensus/auto-seal/",
     "crates/consensus/authority",
+    "crates/consensus/auto-seal/",
     "crates/consensus/beacon/",
     "crates/consensus/common/",
     "crates/consensus/consensus/",
     "crates/consensus/debug-client/",
-    "crates/comet-bft-rpc",
     "crates/e2e-test-utils/",
     "crates/engine/primitives/",
     "crates/engine/service",
@@ -53,7 +54,6 @@ members = [
     "crates/exex/test-utils/",
     "crates/exex/types/",
     "crates/metrics/",
-    "crates/botanix-cli",
     "crates/metrics/metrics-derive/",
     "crates/net/banlist/",
     "crates/net/discv4/",
@@ -124,17 +124,18 @@ members = [
     "testing/testing-utils",
 ]
 default-members = ["bin/reth"]
-
 # Explicitly set the resolver to version 2, which is the default for packages with edition >= 2021
 # https://doc.rust-lang.org/edition-guide/rust-2021/default-cargo-resolver.html
 
-[workspace.lints]
-rust.missing_debug_implementations = "warn"
-rust.missing_docs = "warn"
-rust.rust_2018_idioms = { level = "deny", priority = -1 }
-rust.unreachable_pub = "warn"
-rust.unused_must_use = "deny"
-rustdoc.all = "warn"
+[workspace.lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unreachable_pub = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.rustdoc]
+all = "warn"
 # rust.unnameable-types = "warn"
 
 [workspace.lints.clippy]
@@ -209,11 +210,17 @@ significant_drop_in_scrutinee = "allow"
 significant_drop_tightening = "allow"
 
 # Speed up tests.
-[profile.dev.package]
-proptest.opt-level = 3
-rand_chacha.opt-level = 3
-rand_xorshift.opt-level = 3
-unarray.opt-level = 3
+[profile.dev.package.proptest]
+opt-level = 3
+
+[profile.dev.package.rand_chacha]
+opt-level = 3
+
+[profile.dev.package.rand_xorshift]
+opt-level = 3
+
+[profile.dev.package.unarray]
+opt-level = 3
 
 # Meant for testing - all optimizations, but with debug assertions and overflow checks.
 [profile.hivetests]
@@ -250,7 +257,7 @@ codegen-units = 1
 reth = { path = "bin/reth" }
 reth-auto-seal-consensus = { path = "crates/consensus/auto-seal" }
 reth-basic-payload-builder = { path = "crates/payload/basic" }
-reth-authority-consensus = { path = "crates/consensus/authority"}
+reth-authority-consensus = { path = "crates/consensus/authority" }
 reth-beacon-consensus = { path = "crates/consensus/beacon" }
 reth-bench = { path = "bin/reth-bench" }
 reth-blockchain-tree = { path = "crates/blockchain-tree" }
@@ -271,7 +278,7 @@ reth-consensus-debug-client = { path = "crates/consensus/debug-client" }
 reth-db = { path = "crates/storage/db", default-features = false }
 reth-db-api = { path = "crates/storage/db-api" }
 reth-db-common = { path = "crates/storage/db-common" }
-reth-db-models = { path = "crates/storage/db-models"}
+reth-db-models = { path = "crates/storage/db-models" }
 reth-discv4 = { path = "crates/net/discv4" }
 reth-discv5 = { path = "crates/net/discv5" }
 reth-dns-discovery = { path = "crates/net/dns" }
@@ -359,15 +366,9 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 comet-bft-rpc = { path = "crates/comet-bft-rpc" }
 
 # revm
-revm = { version = "13.0.0", features = [
-    "std",
-    "secp256k1",
-    "blst",
-], default-features = false }
+revm = { version = "13.0.0", features = ["std", "secp256k1", "blst"], default-features = false }
 revm-inspectors = "0.5"
-revm-primitives = { version = "8.0.0", features = [
-    "std",
-], default-features = false }
+revm-primitives = { version = "8.0.0", features = ["std"], default-features = false }
 
 # eth
 ethers-core = { version = "2.0", default-features = false }
@@ -404,7 +405,9 @@ alloy-serde = { version = "0.2.1", default-features = false }
 alloy-signer = { version = "0.2.1", default-features = false }
 alloy-signer-local = { version = "0.2.1", default-features = false }
 alloy-transport = { version = "0.2.1" }
-alloy-transport-http = { version = "0.2.1", features = ["reqwest-rustls-tls"], default-features = false }
+alloy-transport-http = { version = "0.2.1", features = [
+    "reqwest-rustls-tls",
+], default-features = false }
 alloy-transport-ipc = { version = "0.2.1", default-features = false }
 alloy-transport-ws = { version = "0.2.1", default-features = false }
 
@@ -464,11 +467,11 @@ metrics-util = "0.17.0"
 proc-macro2 = "1.0"
 quote = "1.0"
 
-# Tendermint 
+# Tendermint
 tendermint-abci = "0.39.1"
 tendermint-rpc = { version = "0.39.1", features = ["http-client"] }
-tendermint-proto  = "0.39.1"
-tendermint-light-client = {version = "0.39.1", features = ["secp256k1", "rpc-client"] }
+tendermint-proto = "0.39.1"
+tendermint-light-client = { version = "0.39.1", features = ["secp256k1", "rpc-client"] }
 
 # tokio
 tokio = { version = "1.39", default-features = false }
@@ -512,7 +515,7 @@ secp256k1 = { version = "0.29", default-features = false, features = [
 
 # bitcoin libs
 miniscript = "11.0.0"
-bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
+bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }
 bitcoincore-rpc = "0.18.0"
 bitcoin_hashes = "0.13.0"
 

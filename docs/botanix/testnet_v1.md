@@ -6,8 +6,8 @@ The following document describes the technical details of the Federated Botanix 
 
 ##### What are we building?
 
-- Federation of a block producing and validating nodes
-- FROST-style multisig consisiting of federation members
+-   Federation of a block producing and validating nodes
+-   FROST-style multisig consisiting of federation members
 
 ## Non-Requirments
 
@@ -16,27 +16,27 @@ The following document describes the technical details of the Federated Botanix 
 This document outlines many different components and how they may be softforked in the future. However, we should clearly label what we are not delivering as part of v1.
 These components are
 
-- Staking
-- Slashing staking participants
-- Dynamic federation
-- Finality commitments
-- Safe Spend Path (SSP)
+-   Staking
+-   Slashing staking participants
+-   Dynamic federation
+-   Finality commitments
+-   Safe Spend Path (SSP)
 
 ## Participants
 
-### Dapp:
+### Dapp
 
 The responsibilities of the dapp have not changed from v0. Please refer to docs/testnet_v0.md.
 
-### Side Car Server:
+### Side Car Server
 
 The responsibilities of the sidecar service have not changed from v0. Please refer to docs/testnet_v0.md.
 
-### Federation:
+### Federation
 
 The ecosystem includes Botanix nodes, adhering to the standards set by the Botanix protocol -- namely verifying pegins, verifying pegouts and following the clique POA consensus for block production.
 
-### BTC Signer:
+### BTC Signer
 
 Within testnet v1, each federation member will run a solitary bitcoin signer accessible via gRPC, aptly named the BTC Signer. This entity administers a database of spendable Unspent Transaction Outputs (UTXOs), dynamically updating this inventory upon the introduction of new peg ins and outs. Furthermore, the BTC Signer exposes an endpoint facilitating the retrieval of its internal taproot key's public key. Lastly, the BTC Signer shoulders the responsibility of executing all pegouts. Specifically, upon the emission of a burn topic from the minting/genesis contract, the BTC Signer orchestrates the construction of a bitcoin transaction, drawing from the available pool of UTXOs.
 
@@ -92,12 +92,12 @@ If a node fails to provide a valid block while `IN_TURN` then the network suffer
 **Note:** Federation members are only block producers. A separate set of keys are responsible for spending and managing the multisig wallet.
 
 **Open Question:**
-* Do we need a threshold consensus on valid blocks before they are produced (liquid's 3 stage commitment). If so this could reduce block time.
-Notes: Longer term federation will be disbanded, so this is not really needed. 
-Notes: consensus does become massively easier to develop when there are no `OUTTURN` block producers.
 
-* Using system clock will mitigate the need for nodes to sync on more than one source of truth. Can we use system clock for round robin selection
+-   Do we need a threshold consensus on valid blocks before they are produced (liquid's 3 stage commitment). If so this could reduce block time.
+    Notes: Longer term federation will be disbanded, so this is not really needed.
+    Notes: consensus does become massively easier to develop when there are no `OUTTURN` block producers.
 
+-   Using system clock will mitigate the need for nodes to sync on more than one source of truth. Can we use system clock for round robin selection
 
 ##### Block Selection
 
@@ -112,8 +112,8 @@ While this consensus mechanism is straightforward to comprehend and implement, i
 
 Forks in the given consensus mechanism can occur under the following conditions:
 
-- If a block producer broadcasts a block while `IN_TURN` and a new Bitcoin block is discovered during gossip, that node is no longer `IN_TURN`, leading to network segmentation.
-- Implementing a Liquid-style 3-stage commitment might be a potential solution to this issue, possibly the only way to address it in the short term.
+-   If a block producer broadcasts a block while `IN_TURN` and a new Bitcoin block is discovered during gossip, that node is no longer `IN_TURN`, leading to network segmentation.
+-   Implementing a Liquid-style 3-stage commitment might be a potential solution to this issue, possibly the only way to address it in the short term.
 
 In addition, block-producing nodes are advised not to produce a forked block deeper than 1 block. This ensures that users have the privilege of knowing when their transaction is 1 block away from being finalized. For those seeking proof-of-work finality, waiting for an `EPOCH_LENGTH` amount of blocks is necessary (more details below).
 
@@ -124,23 +124,24 @@ Botanix will encounter numerous new consensus-critical components that require m
 As an alternative, this document proposes extending the header's extradata field to accommodate these emerging consensus properties. This approach aims to avoid compatibility challenges and streamline the integration of new components without introducing unnecessary refactoring complexities.
 
 The following data serlialization format outlines how the EDH will be formatted
-| Field | Description | Size |
-|------------------------|-------------------------------|-------|
-| Version | | 4 byte|
-| Federation members | List of Secp256k1 Public Keys | Variable size |
-| Federation to be voted on | optional field, not all blocks are going to include a vote | 33 bytes |
-| Bitcoin block hash | Current bitcoin Tip according to the block producer | 32 bytes |
-| Bitcoin base fee | Current competitive L1 fee | 4 bytes |
-| Root of UTXO merkel tree | | 32 bytes |
-| Federation Signature | secp256k1 recoverable signature. Signing over the entire eth header with the EDH concatenated at the end. Also optional, the data structure itself should encodable/decodable without the signature | 65 bytes |
+
+| Field                     | Description                                                                                                                                                                                         | Size          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| Version                   |                                                                                                                                                                                                     | 4 byte        |
+| Federation members        | List of Secp256k1 Public Keys                                                                                                                                                                       | Variable size |
+| Federation to be voted on | optional field, not all blocks are going to include a vote                                                                                                                                          | 33 bytes      |
+| Bitcoin block hash        | Current bitcoin Tip according to the block producer                                                                                                                                                 | 32 bytes      |
+| Bitcoin base fee          | Current competitive L1 fee                                                                                                                                                                          | 4 bytes       |
+| Root of UTXO merkel tree  |                                                                                                                                                                                                     | 32 bytes      |
+| Federation Signature      | secp256k1 recoverable signature. Signing over the entire eth header with the EDH concatenated at the end. Also optional, the data structure itself should encodable/decodable without the signature | 65 bytes      |
 
 **Note**: The list of federation members will not be changing during the epochs. Since nodes will only start sync at the start of an epoch, there is no need to store the federation in in its entirety every blocks.
 
-**Open Questions**: How / should we encode multisig participants in EDH? 
+**Open Questions**: How / should we encode multisig participants in EDH?
 
 ##### Relevant files
 
-- [extra_data_header.rs](https://github.com/botanix-labs/Macbeth/blob/main/crates/botanix-lib/src/extra_data_header.rs)
+-   [extra_data_header.rs](https://github.com/botanix-labs/Macbeth/blob/main/crates/botanix-lib/src/extra_data_header.rs)
 
 ##### V1 Version
 
@@ -173,9 +174,9 @@ A reminder that FROST signing sessions are both interactive and commit to a subs
 
 **Open Question:**
 
-- Should signing requests be persisted in EDH for easy access by the coordinator?
-- Should the round cordiantor contribute signatures as well?
-- Decide on a `EpochLength`?
+-   Should signing requests be persisted in EDH for easy access by the coordinator?
+-   Should the round cordiantor contribute signatures as well?
+-   Decide on a `EpochLength`?
 
 #### Multisig
 
@@ -251,11 +252,11 @@ Each transition between epochs, including the genesis block, serves as a statele
 
 For blocks occurring between epoch transitions:
 
-- Signers are allowed to cast one vote per block to suggest an alteration to the authorization list.
-- Only the most recent proposal for a specific target beneficiary is retained from a single signer.
-- Votes are dynamically tallied as the chain advances, allowing for concurrent proposals.
-- Proposals achieving a majority consensus, as defined by `SIGNER_LIMIT`, take immediate effect.
-- Invalid proposals are exempt from penalties to simplify client implementation.
+-   Signers are allowed to cast one vote per block to suggest an alteration to the authorization list.
+-   Only the most recent proposal for a specific target beneficiary is retained from a single signer.
+-   Votes are dynamically tallied as the chain advances, allowing for concurrent proposals.
+-   Proposals achieving a majority consensus, as defined by `SIGNER_LIMIT`, take immediate effect.
+-   Invalid proposals are exempt from penalties to simplify client implementation.
 
 #### Staking
 
@@ -269,8 +270,8 @@ Each federation member's secures the keys used to sign blocks, pegout txs and au
 
 **Key consideration**:
 
-- There are no softfork requirements around the HSM. Consensus should be agnostic to how the keys are managed.
-- Physical HSM's require hands-on management as well as a paper back up in the case the hardware fails. During the first iterations on the Botanix federation (while in Alpha and Beta state) it may be possible to secure the key on an encrypted drive for each cloud compute instance.
+-   There are no softfork requirements around the HSM. Consensus should be agnostic to how the keys are managed.
+-   Physical HSM's require hands-on management as well as a paper back up in the case the hardware fails. During the first iterations on the Botanix federation (while in Alpha and Beta state) it may be possible to secure the key on an encrypted drive for each cloud compute instance.
 
 #### Finality commitment
 
@@ -288,13 +289,13 @@ In the event of the destruction or unavailability of federation keys or the pote
 2. **Alternative Spending Path with Time Delay:**
    An alternative spending path, accessible only after a 28-day period, will be implemented as a tap leaf. The aggregate public key will serve as the primary internal taproot key, and the SSP script will take the following form:
 
-   ```script
-   NOTIF 4032 CSV <pk0> OP_CHECKSIG <pk1> OP_CHECKSIGADD <...> <pkn> OP_CHECKSIGADD <quorum> <OP_EQUALVERIFY>
-   ```
+    ```script
+    NOTIF 4032 CSV <pk0> OP_CHECKSIG <pk1> OP_CHECKSIGADD <...> <pkn> OP_CHECKSIGADD <quorum> <OP_EQUALVERIFY>
+    ```
 
-   Here, `4032 CSV` signifies that the script can be executed only after 4032 blocks, equivalent to 28 days.
+    Here, `4032 CSV` signifies that the script can be executed only after 4032 blocks, equivalent to 28 days.
 
-   The SSP keys should be stored offline by non-overlapping keys within the federation and distributed geographically. Additionally, the `btc_server` needs new endpoints to facilitate spending from the SSP. Since the UTXO set will undergo changes, spends through the SSP taproot path must be initiated via the genesis contract as a Burn event.
+    The SSP keys should be stored offline by non-overlapping keys within the federation and distributed geographically. Additionally, the `btc_server` needs new endpoints to facilitate spending from the SSP. Since the UTXO set will undergo changes, spends through the SSP taproot path must be initiated via the genesis contract as a Burn event.
 
 **Softfork Considerations:**
 Burn and Mint events in the genesis contract are versioned. In version 0, the use of the SSP is discouraged, and version 0 burn events assume that the SSP is not integrated into the gateway address. This feature can be enabled using a future version, allowing for greater flexibility and adaptation.

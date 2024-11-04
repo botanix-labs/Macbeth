@@ -6,9 +6,8 @@ The `web3` API provides utility functions for the web3 client.
 
 Get the web3 client version.
 
-
 | Client | Method invocation                  |
-|--------|------------------------------------|
+| ------ | ---------------------------------- |
 | RPC    | `{"method": "web3_clientVersion"}` |
 
 ### Example
@@ -23,7 +22,7 @@ Get the web3 client version.
 Get the Keccak-256 hash of the given data.
 
 | Client | Method invocation                            |
-|--------|----------------------------------------------|
+| ------ | -------------------------------------------- |
 | RPC    | `{"method": "web3_sha3", "params": [bytes]}` |
 
 ### Example

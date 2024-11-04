@@ -4,7 +4,7 @@ use bitcoin::hashes::Hash;
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::GrpcClientFactory;
 use clap::{value_parser, Parser};
-use client::{Empty, SyncTxIndexRequest};
+use client::Empty;
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
@@ -55,7 +55,7 @@ use reth_consensus_common::utils;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
-    frost::{manager::FrostConfig, protocol::FrostProtoHandler, FrostProtocolEvent, ProtocolState},
+    frost::{manager::FrostConfig, protocol::FrostProtoHandler},
     import::ProofOfAuthorityBlockImport,
     protocol::IntoRlpxSubProtocol,
     BlockDownloaderProvider, NetworkEventListenerProvider, NetworkHandle, NetworkManager,
@@ -148,10 +148,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// port numbers that conflict with each other.
     ///
     /// Changes to the following port numbers:
-    /// - DISCOVERY_PORT: default + `instance` - 1
-    /// - AUTH_PORT: default + `instance` * 100 - 100
-    /// - HTTP_RPC_PORT: default - `instance` + 1
-    /// - WS_RPC_PORT: default + `instance` * 2 - 2
+    /// - `DISCOVERY_PORT`: default + `instance` - 1
+    /// - `AUTH_PORT`: default + `instance` * 100 - 100
+    /// - `HTTP_RPC_PORT`: default - `instance` + 1
+    /// - `WS_RPC_PORT`: default + `instance` * 2 - 2
     #[arg(long, value_name = "INSTANCE", global = true, default_value_t = 1, value_parser = value_parser!(u16).range(..=200))]
     pub instance: u16,
 
@@ -198,12 +198,12 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(long, value_name = "ABCI_PORT", default_value_t = 26658)]
     pub abci_port: u16,
 
-    /// CometBFT RPC Port
+    /// `CometBFT` RPC Port
     #[arg(long, value_name = "COMETBFT_RPC_PORT", default_value_t = 26657)]
     pub cometbft_rpc_port: u16,
 
     // TODO parse to a better type
-    /// CometBFT RPC Host
+    /// `CometBFT` RPC Host
     #[arg(long, value_name = "COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
     pub cometbft_rpc_host: String,
 }
@@ -214,7 +214,7 @@ impl PoaNodeCommand {
         Self::parse()
     }
 
-    /// Parsers only the default [PoaNodeCommand] arguments from the given iterator
+    /// Parsers only the default [`PoaNodeCommand`] arguments from the given iterator
     pub fn try_parse_args_from<I, T>(itr: I) -> Result<Self, clap::error::Error>
     where
         I: IntoIterator<Item = T>,
@@ -353,7 +353,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.clone().map(Into::into),
+                btc_signing_server_jwt_secret.map(Into::into),
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };
@@ -403,7 +403,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         }
 
         let bitcoind_factory_clone = bitcoind_factory.clone();
-        let bitcoind_signing_server_factory_clone = btc_server_factory.clone();
+        let _bitcoind_signing_server_factory_clone = btc_server_factory.clone();
         let pegin_conf_depth = chain.parent_confirmation_depth;
         assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
         executor.spawn_critical(
@@ -566,7 +566,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .expect("Minting contract bytecode to exist");
         if let Err(e) = is_known_minting_contract(
             federation_config.minting_contract_bytecode,
-            &deployed_bytecode.bytecode(),
+            deployed_bytecode.bytecode(),
         ) {
             error!(target: "reth::cli", "{}", e);
             panic!("{}", e);
@@ -609,7 +609,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Set up block import structures
         let (block_import_tx, block_import_rx) = unbounded_channel();
-        let block_import = ProofOfAuthorityBlockImport::new(chain_arc.clone(), block_import_tx);
+        let _block_import = ProofOfAuthorityBlockImport::new(chain_arc.clone(), block_import_tx);
 
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
@@ -762,7 +762,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             authorities_socket_addresses,
             executor_factory.clone(),
             bitcoind_factory.clone(),
-            evm_config.clone(),
+            evm_config,
             cometbft_rpc_factory,
             RandomSourceProvider::new(),
             canon_state_notification_receiver,
@@ -886,7 +886,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let node_components = PoaNodeComponents::new(
             transaction_pool.clone(),
-            evm_config.clone(),
+            evm_config,
             executor_factory.clone(),
             network_handle.clone(),
             blockchain_db.clone(),
@@ -902,7 +902,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 .with_network(node_components.network.clone())
                 .with_events(node_components.provider.clone())
                 .with_executor(node_components.task_executor.clone())
-                .with_evm_config(node_components.evm_config.clone())
+                .with_evm_config(node_components.evm_config)
                 .with_botanix_provider(botanix_provider.clone())
                 .build(module_config, Box::new(EthApi::with_spawner));
 
@@ -992,8 +992,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     }
 
     /// Loads `MAINNET_KZG_TRUSTED_SETUP`.
-    /// TODO I dont think we need this for PoA
-    fn kzg_settings(&self) -> eyre::Result<EnvKzgSettings> {
+    /// TODO I dont think we need this for `PoA`
+    const fn kzg_settings(&self) -> eyre::Result<EnvKzgSettings> {
         Ok(EnvKzgSettings::Default)
     }
 
@@ -1040,7 +1040,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         config: &mut Config,
     ) {
         let self_peer_id = pk2id(&secret_key.public_key(SECP256K1));
-        for authority in authorities.iter() {
+        for authority in &authorities {
             // don't add self
             let peer_id = pk2id(&authority.0);
             if self_peer_id != peer_id {
@@ -1076,7 +1076,7 @@ impl<P> PoaNodeComponents<P>
 where
     P: TransactionPoolExt + 'static,
 {
-    pub(crate) fn new(
+    pub(crate) const fn new(
         pool: P,
         evm_config: EthEvmConfig,
         executor: EthExecutorProvider<BitcoindClientFactory>,
@@ -1089,7 +1089,7 @@ where
     }
 }
 
-/// Default PoA payload builder config
+/// Default `PoA` payload builder config
 struct DefaultPoAPayloadBuilderConfig {}
 impl PayloadBuilderConfig for DefaultPoAPayloadBuilderConfig {
     fn interval(&self) -> Duration {

@@ -99,7 +99,7 @@ impl RpcApiExt for Client {
             .call::<Res>("getblockchaininfo", &[])
             .map_err(BitcoindError::BlockchainInfoFailed)
         {
-            Ok(blockchain_info_result) => Ok(blockchain_info_result.initialblockdownload == false),
+            Ok(blockchain_info_result) => Ok(!blockchain_info_result.initialblockdownload),
             Err(err) => {
                 tracing::error!("error getting get_blockchain_info(): {:?}", err);
                 Ok(false)
@@ -181,7 +181,7 @@ impl BitcoindClient {
             .call::<Res>("getblockchaininfo", &[])
             .map_err(BitcoindError::BlockchainInfoFailed)
         {
-            Ok(blockchain_info_result) => Ok(blockchain_info_result.initialblockdownload == false),
+            Ok(blockchain_info_result) => Ok(!blockchain_info_result.initialblockdownload),
             Err(err) => {
                 // TODO (armins) use logger library
                 println!("error getting get_blockchain_info(): {:?}", err);

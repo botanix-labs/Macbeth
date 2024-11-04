@@ -4,9 +4,9 @@
 
 Our goal in building Reth, apart from improving client diversity, is to create a client that delivers maximally along each of the following dimensions:
 
-- Performance
-- Configurability
-- Open-source friendliness
+-   Performance
+-   Configurability
+-   Open-source friendliness
 
 ---
 
@@ -15,10 +15,11 @@ Our goal in building Reth, apart from improving client diversity, is to create a
 ### Why does performance matter?
 
 This is a win for everyone:
-- Average users & developers benefit from RPC performance, leading to more responsive applications and faster feedback.
-- Home node operators benefit from faster sync times.
-- Costs are lowered for all operators, whether in terms of storage costs, or being able to serve more requests from the same node.
-- Searchers are able to run more simulations.
+
+-   Average users & developers benefit from RPC performance, leading to more responsive applications and faster feedback.
+-   Home node operators benefit from faster sync times.
+-   Costs are lowered for all operators, whether in terms of storage costs, or being able to serve more requests from the same node.
+-   Searchers are able to run more simulations.
 
 ### What are the performance bottlenecks that need to be addressed?
 
@@ -66,9 +67,9 @@ We prioritize a modular design for Reth with reasonable (and zero-cost!) abstrac
 
 ### Why does open-source friendliness matter?
 
-Maintaining a client implementation is *hard*. Bringing in talent and sustaining momentum in workstreams is a known challenge. As such, we take an open-source first approach to ensure that the development of Reth can be carried forward by the community.
+Maintaining a client implementation is _hard_. Bringing in talent and sustaining momentum in workstreams is a known challenge. As such, we take an open-source first approach to ensure that the development of Reth can be carried forward by the community.
 
-We want to be as deliberate as possible in forming a feedback loop with the Ethereum community, and not only make it easy to contribute to Reth, but in fact actively *encourage* doing so.
+We want to be as deliberate as possible in forming a feedback loop with the Ethereum community, and not only make it easy to contribute to Reth, but in fact actively _encourage_ doing so.
 
 Our goal is that community members with no Rust experience, and no experience running a node, will still be able to meaningfully contribute to the project, and accrue expertise in doing so.
 

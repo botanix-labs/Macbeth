@@ -3,8 +3,9 @@
 In this chapter, we will learn how to create an ExEx that emits all notifications to an external process.
 
 We will use [Tonic](https://github.com/hyperium/tonic) to create a gRPC server and a client.
-- The server binary will have the Reth client, our ExEx and the gRPC server.
-- The client binary will have the gRPC client that connects to the server.
+
+-   The server binary will have the Reth client, our ExEx and the gRPC server.
+-   The client binary will have the gRPC client that connects to the server.
 
 ## Prerequisites
 
@@ -17,8 +18,8 @@ Let's create a new project. Don't forget to provide the `--lib` flag to `cargo n
 because we will have two custom binaries in this project that we will create manually.
 
 ```console
-$ cargo new --lib exex-remote
-$ cd exex-remote
+cargo new --lib exex-remote
+cd exex-remote
 ```
 
 We will also need a bunch of dependencies. Some of them you know from the [Hello World](./hello-world.md) chapter,
@@ -34,7 +35,7 @@ edition = "2021"
 # reth
 reth = { git = "https://github.com/paradigmxyz/reth.git" }
 reth-exex = { git = "https://github.com/paradigmxyz/reth.git", features = ["serde"] }
-reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git"}
+reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git" }
 reth-tracing = { git = "https://github.com/paradigmxyz/reth.git" }
 
 # async
@@ -67,8 +68,9 @@ Protobuf definitions at compile time. Read more about using Tonic in the
 [introductory tutorial](https://github.com/hyperium/tonic/blob/6a213e9485965db0628591e30577ed81cdaeaf2b/examples/helloworld-tutorial.md).
 
 Also, we now have two separate binaries:
-- `exex` is the server binary that will run the ExEx and the gRPC server.
-- `consumer` is the client binary that will connect to the server and receive notifications.
+
+-   `exex` is the server binary that will run the ExEx and the gRPC server.
+-   `consumer` is the client binary that will connect to the server and receive notifications.
 
 ### Create the Protobuf definitions
 
@@ -103,6 +105,7 @@ message ExExNotification {
 ```
 
 To instruct Tonic to generate the Rust code using this `.proto`, add the following lines to your `lib.rs` file:
+
 ```rust,norun,noplayground,ignore
 pub mod proto {
     tonic::include_proto!("exex");
@@ -346,12 +349,12 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 
 struct ExExService {
-    notifications: Arc<broadcast::Sender<ExExNotification>>,
+notifications: Arc<broadcast::Sender<ExExNotification>>,
 }
 
 #[tonic::async_trait]
 impl RemoteExEx for ExExService {
-    type SubscribeStream = ReceiverStream<Result<proto::ExExNotification, Status>>;
+type SubscribeStream = ReceiverStream<Result<proto::ExExNotification, Status>>;
 
     async fn subscribe(
         &self,
@@ -375,28 +378,30 @@ impl RemoteExEx for ExExService {
 
         Ok(Response::new(ReceiverStream::new(rx)))
     }
+
 }
 
 async fn remote_exex<Node: FullNodeComponents>(
-    mut ctx: ExExContext<Node>,
-    notifications: Arc<broadcast::Sender<ExExNotification>>,
+mut ctx: ExExContext<Node>,
+notifications: Arc<broadcast::Sender<ExExNotification>>,
 ) -> eyre::Result<()> {
-    while let Some(notification) = ctx.notifications.recv().await {
-        if let Some(committed_chain) = notification.committed_chain() {
-            ctx.events
-                .send(ExExEvent::FinishedHeight(committed_chain.tip().number))?;
-        }
+while let Some(notification) = ctx.notifications.recv().await {
+if let Some(committed_chain) = notification.committed_chain() {
+ctx.events
+.send(ExExEvent::FinishedHeight(committed_chain.tip().number))?;
+}
 
         info!(?notification, "Notification sent to the gRPC server");
         let _ = notifications.send(notification);
     }
 
     Ok(())
+
 }
 
 fn main() -> eyre::Result<()> {
-    reth::cli::Cli::parse_args().run(|builder, _| async move {
-        let notifications = Arc::new(broadcast::channel(1).0);
+reth::cli::Cli::parse*args().run(|builder, *| async move {
+let notifications = Arc::new(broadcast::channel(1).0);
 
         let server = Server::builder()
             .add_service(RemoteExExServer::new(ExExService {
@@ -421,8 +426,10 @@ fn main() -> eyre::Result<()> {
 
         handle.wait_for_node_exit().await
     })
+
 }
-```
+
+````
 </details>
 
 ## Consumer
@@ -470,7 +477,7 @@ async fn main() -> eyre::Result<()> {
 
     Ok(())
 }
-```
+````
 
 ## Running
 

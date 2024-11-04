@@ -488,7 +488,8 @@ impl NetworkConfigBuilder {
         self
     }
 
-    /// Convenience function for creating a [NetworkConfig] with a noop provider that does nothing.
+    /// Convenience function for creating a [`NetworkConfig`] with a noop provider that does
+    /// nothing.
     #[cfg(any(test, feature = "test-utils"))]
     /// Convenience function for creating a [`NetworkConfig`] with a noop provider that does
     /// nothing.
@@ -609,7 +610,7 @@ pub enum NetworkMode {
     /// Network is in proof-of-stake mode
     #[default]
     Stake,
-    /// Network is in PoA mode
+    /// Network is in `PoA` mode
     Authority,
 }
 

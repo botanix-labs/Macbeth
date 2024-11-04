@@ -6,8 +6,8 @@ The files in this directory may undergo a lot of changes while reth is unstable,
 
 ### Overview
 
-- [**Prometheus**](./prometheus/prometheus.yml): An example Prometheus configuration.
-- [**Grafana**](./grafana/): Example Grafana dashboards & data sources.
+-   [**Prometheus**](./prometheus/prometheus.yml): An example Prometheus configuration.
+-   [**Grafana**](./grafana/): Example Grafana dashboards & data sources.
 
 ### Docker Compose
 

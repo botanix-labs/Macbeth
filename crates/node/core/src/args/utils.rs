@@ -41,7 +41,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
     if is_testnet {
         // our own toml format
         let genesis_toml_config = FederationTomlConfig::from_str(raw)?;
-        let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
+        let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient;
         info!("Botanix fee recipient: {:?}", botanix_fee_recipient);
 
         let extra_data_header = ExtraDataHeader::new(
@@ -121,11 +121,11 @@ pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> 
     })
 }
 
-/// Clap value parser for [ChainSpec]s.
+/// Clap value parser for [`ChainSpec`]s.
 ///
 /// The value parser matches either a known chain, the path
 /// to a json file, or a json formatted string in-memory. The json can be either
-/// a serialized [ChainSpec] or Genesis struct.
+/// a serialized [`ChainSpec`] or Genesis struct.
 pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
     Ok(match s {
         "mainnet" => MAINNET.clone(),
@@ -150,7 +150,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
             // both serialized Genesis and ChainSpec structs supported
             // our own toml format
             let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
-            let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
+            let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient;
 
             let extra_data_header = ExtraDataHeader::new(
                 EXTRA_HEADER_VERSION,

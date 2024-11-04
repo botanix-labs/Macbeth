@@ -23,7 +23,6 @@ use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     public_key_to_address, Address,
 };
-use reth_provider::CanonStateNotification;
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
@@ -82,7 +81,7 @@ impl SpawnedPoaServerProcess {
         kill_process_at_port(self.ws_port);
     }
 
-    pub async fn destroy_all_sync(&mut self) {
+    pub async fn destroy_all_sync(&self) {
         // kill the process
         let pid = self.child_process.id().expect("Expected a process id");
         let _ = std::process::Command::new("kill")

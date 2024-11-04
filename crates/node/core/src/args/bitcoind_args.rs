@@ -48,7 +48,7 @@ pub struct BitcoindArgs {
 
 impl Default for BitcoindArgs {
     fn default() -> Self {
-        BitcoindArgs {
+        Self {
             url: Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"),
             username: DEFAULT_BITCOIND_USERNAME.into(),
             password: DEFAULT_BITCOIND_PASSWORD.into(),
@@ -58,6 +58,6 @@ impl Default for BitcoindArgs {
 
 impl From<BitcoindArgs> for BitcoindConfig {
     fn from(args: BitcoindArgs) -> Self {
-        BitcoindConfig::new(args.url.clone(), args.username.clone(), args.password)
+        Self::new(args.url.clone(), args.username.clone(), args.password)
     }
 }

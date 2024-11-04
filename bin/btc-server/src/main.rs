@@ -278,7 +278,7 @@ where
         if grpc_config.enable_reflection {
             let reflection_service = tonic_reflection::server::Builder::configure()
                 .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
-                .build()
+                .build_v1()
                 .map_err(Error::ReflectionServer)?;
 
             router = router.add_service(reflection_service);
@@ -333,7 +333,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // setup the grpc server
     let bitcoind_client = bitcoincore_rpc::Client::new(
-        &config.bitcoind_url.to_string(),
+        config.bitcoind_url.as_str(),
         Auth::UserPass(config.bitcoind_user.clone(), config.bitcoind_pass.clone()),
     )
     .expect("bitcoind client");

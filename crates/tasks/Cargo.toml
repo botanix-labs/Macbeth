@@ -1,11 +1,11 @@
 [package]
 name = "reth-tasks"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "Task management"
 
 [lints]
@@ -13,24 +13,24 @@ workspace = true
 
 [dependencies]
 
-# async
-tokio = { workspace = true, features = ["sync", "rt"] }
-tracing-futures = "0.2"
-futures-util.workspace = true
-
-# metrics
-reth-metrics.workspace = true
-metrics.workspace = true
-
 # misc
-auto_impl.workspace = true
-tracing.workspace = true
-thiserror.workspace = true
-dyn-clone.workspace = true 
+auto_impl = { workspace = true }
+dyn-clone = { workspace = true }
+futures-util = { workspace = true }
+metrics = { workspace = true }
+pin-project = { workspace = true, optional = true }
 
 # feature `rayon`
 rayon = { workspace = true, optional = true }
-pin-project = { workspace = true, optional = true }
+
+# metrics
+reth-metrics = { workspace = true }
+thiserror = { workspace = true }
+
+# async
+tokio = { workspace = true, features = ["sync", "rt"] }
+tracing = { workspace = true }
+tracing-futures = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "time", "macros"] }

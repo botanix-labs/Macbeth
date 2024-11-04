@@ -243,12 +243,12 @@ pub fn validate_psbt(
     };
 
     // validate outputs cover all pegout ids or are change
-    if let Err(e) = validate_outputs(&psbt, db) {
+    if let Err(e) = validate_outputs(psbt, db) {
         return Err(ValidatePSBTError::InvalidOutputs(e.to_string()));
     };
     let total_outputs_amount =
         psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
-            total.checked_add(output.value.clone()).unwrap_or_default()
+            total.checked_add(output.value).unwrap_or_default()
         });
 
     if fee > total_outputs_amount {
@@ -378,8 +378,8 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Sig
     }
 
     for pegout_id in pending_pegout_ids.iter() {
-        if !psbt_pegout_ids.contains(&pegout_id) {
-            return Err(SigningFinalizeError::MissingPendingPegout(pegout_id.clone()));
+        if !psbt_pegout_ids.contains(pegout_id) {
+            return Err(SigningFinalizeError::MissingPendingPegout(*pegout_id));
         }
     }
 

@@ -157,9 +157,9 @@ pub fn validate_4844_header_standalone(header: &Header) -> Result<(), ConsensusE
 pub fn validate_header_extradata(header: &Header) -> Result<(), ConsensusError> {
     let extradata_len = header.extra_data.len();
     if extradata_len > MAXIMUM_EXTRA_DATA_SIZE {
-        return Err(ConsensusError::ExtraDataExceedsMax { len: extradata_len });
+        Err(ConsensusError::ExtraDataExceedsMax { len: extradata_len })
     } else {
-        return Ok(());
+        Ok(())
     }
 }
 

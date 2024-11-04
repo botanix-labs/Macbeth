@@ -6,12 +6,12 @@ Consensus clients decide what blocks are part of the chain, while execution clie
 
 By running both an execution client like Reth and a consensus client, such as Lighthouse 🦀 (which we will assume for this guide), you can effectively contribute to the Ethereum network and participate in the consensus process, even if you don't intend to run validators.
 
-| Client      | Role                                             |
-|-------------|--------------------------------------------------|
-| Execution   | Validates transactions and blocks                |
-|             | (checks their validity and global state)         |
-| Consensus   | Determines which blocks are part of the chain    |
-|             | (makes consensus decisions)                      |
+| Client    | Role                                          |
+| --------- | --------------------------------------------- |
+| Execution | Validates transactions and blocks             |
+|           | (checks their validity and global state)      |
+| Consensus | Determines which blocks are part of the chain |
+|           | (makes consensus decisions)                   |
 
 ## Running the Reth Node
 
@@ -24,6 +24,7 @@ reth node
 ```
 
 And to start the full node, run:
+
 ```bash
 reth node --full
 ```
@@ -62,11 +63,11 @@ lighthouse bn \
 
 If you don't intend on running validators on your node you can add:
 
-``` bash
-  --disable-deposit-contract-sync
+```bash
+--disable-deposit-contract-sync
 ```
 
-The `--checkpoint-sync-url` argument value can be replaced with any checkpoint sync endpoint from a [community maintained list](https://eth-clients.github.io/checkpoint-sync-endpoints/#mainnet). 
+The `--checkpoint-sync-url` argument value can be replaced with any checkpoint sync endpoint from a [community maintained list](https://eth-clients.github.io/checkpoint-sync-endpoints/#mainnet).
 
 Your Reth node should start receiving "fork choice updated" messages, and begin syncing the chain.
 
@@ -78,8 +79,6 @@ In the meantime, consider setting up [observability](./observability.md) to moni
 <!-- TODO: Add more logs to help node operators debug any weird CL to EL messages! -->
 
 [installation]: ./../installation/installation.md
-[docs]: https://github.com/paradigmxyz/reth/tree/main/docs
-[metrics]: https://github.com/paradigmxyz/reth/blob/main/docs/design/metrics.md#current-metrics
 
 ## Running without a Consensus Layer
 

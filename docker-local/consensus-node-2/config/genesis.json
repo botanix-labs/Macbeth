@@ -1,53 +1,51 @@
 {
-  "genesis_time": "2024-09-18T18:49:09.164370585Z",
-  "chain_id": "3636",
-  "initial_height": "0",
-  "consensus_params": {
-    "block": {
-      "max_bytes": "4194304",
-      "max_gas": "-1"
+    "genesis_time": "2024-09-18T18:49:09.164370585Z",
+    "chain_id": "3636",
+    "initial_height": "0",
+    "consensus_params": {
+        "block": {
+            "max_bytes": "4194304",
+            "max_gas": "-1"
+        },
+        "evidence": {
+            "max_age_num_blocks": "100000",
+            "max_age_duration": "172800000000000",
+            "max_bytes": "1048576"
+        },
+        "validator": {
+            "pub_key_types": ["secp256k1"]
+        },
+        "version": {
+            "app": "0"
+        },
+        "synchrony": {
+            "precision": "500000000",
+            "message_delay": "2000000000"
+        },
+        "feature": {
+            "vote_extensions_enable_height": "1",
+            "pbts_enable_height": "0"
+        }
     },
-    "evidence": {
-      "max_age_num_blocks": "100000",
-      "max_age_duration": "172800000000000",
-      "max_bytes": "1048576"
-    },
-    "validator": {
-      "pub_key_types": [
-        "secp256k1"
-      ]
-    },
-    "version": {
-      "app": "0"
-    },
-    "synchrony": {
-      "precision": "500000000",
-      "message_delay": "2000000000"
-    },
-    "feature": {
-      "vote_extensions_enable_height": "1",
-      "pbts_enable_height": "0"
-    }
-  },
-  "validators": [
-    {
-      "address": "7A58E9295D0593F6FECA345FFCC3855B75B5FA8D",
-      "pub_key": {
-        "type": "tendermint/PubKeySecp256k1",
-        "value": "An95QAPC0caOmiUs2D1zkcu3wmgGmOS2IpGQUinTxcl6"
-      },
-      "power": "10",
-      "name": ""
-    },
-    {
-      "address": "4D03752E0CDF6463E6076F7570F5F89D96D9DE8D",
-      "pub_key": {
-        "type": "tendermint/PubKeySecp256k1",
-        "value": "AsDmE5uZBz0+0kc3y2Af8N+gsgBuymXmi/GHW/fwyaJD"
-      },
-      "power": "10",
-      "name": ""
-    }
-  ],
-  "app_hash": ""
+    "validators": [
+        {
+            "address": "7A58E9295D0593F6FECA345FFCC3855B75B5FA8D",
+            "pub_key": {
+                "type": "tendermint/PubKeySecp256k1",
+                "value": "An95QAPC0caOmiUs2D1zkcu3wmgGmOS2IpGQUinTxcl6"
+            },
+            "power": "10",
+            "name": ""
+        },
+        {
+            "address": "4D03752E0CDF6463E6076F7570F5F89D96D9DE8D",
+            "pub_key": {
+                "type": "tendermint/PubKeySecp256k1",
+                "value": "AsDmE5uZBz0+0kc3y2Af8N+gsgBuymXmi/GHW/fwyaJD"
+            },
+            "power": "10",
+            "name": ""
+        }
+    ],
+    "app_hash": ""
 }

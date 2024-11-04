@@ -13,26 +13,26 @@ exit_codes=()
 
 # Loop over each string
 for test in "${tests_to_run[@]}"; do
-  # Set the environment variable
-  export TEST_TO_RUN="$test"
+    # Set the environment variable
+    export TEST_TO_RUN="$test"
 
-  # kill all btc-servers that may be running from previous test runs
-  killall btc-server || true
+    # kill all btc-servers that may be running from previous test runs
+    killall btc-server || true
 
-  # Call make
-  make start-test-suite
-  exit_codes+=("$?")
+    # Call make
+    make start-test-suite
+    exit_codes+=("$?")
 done
 
 # Print the exit codes at the end
 echo "Exit codes for each test:"
 for i in "${!tests_to_run[@]}"; do
-  echo "${tests_to_run[$i]}: ${exit_codes[$i]}"
+    echo "${tests_to_run[$i]}: ${exit_codes[$i]}"
 done
 
 # Exit with 1 if any test failed
 if [[ " ${exit_codes[@]} " =~ " 1 " ]]; then
-  exit 1
+    exit 1
 fi
 
 exit 0

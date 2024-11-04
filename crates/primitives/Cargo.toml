@@ -1,101 +1,96 @@
 [package]
 name = "reth-primitives"
-version.workspace = true
-edition.workspace = true
-homepage.workspace = true
-license.workspace = true
-repository.workspace = true
-rust-version.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "Commonly used types in reth."
 
 [lints]
 workspace = true
 
 [dependencies]
-# reth
-reth-primitives-traits.workspace = true
-reth-ethereum-forks.workspace = true
-reth-static-file-types.workspace = true
-reth-trie-common.workspace = true
-revm-primitives = { workspace = true, features = ["serde"] }
-reth-chainspec = { workspace = true, optional = true }
-reth-codecs = { workspace = true, optional = true }
-alloy-rpc-types-engine.workspace = true
+alloy-eips = { workspace = true, features = ["serde"] }
+alloy-genesis = { workspace = true }
 
 # ethereum
 alloy-primitives = { workspace = true, features = ["rand", "rlp"] }
 alloy-rlp = { workspace = true, features = ["arrayvec"] }
 alloy-rpc-types = { workspace = true, optional = true }
-alloy-genesis.workspace = true
-alloy-eips = { workspace = true, features = ["serde"] }
-
-# crypto
-secp256k1 = { workspace = true, features = [
-    "global-context",
-    "recovery",
-    "rand",
-], optional = true }
-k256.workspace = true
-# for eip-4844
-c-kzg = { workspace = true, features = ["serde"], optional = true }
-
-# tracing
-tracing = { workspace = true, optional = true }
-
-# misc
-bytes.workspace = true
-derive_more.workspace = true
-modular-bitfield = { workspace = true, optional = true }
-rayon.workspace = true
-serde.workspace = true
-once_cell.workspace = true
-tempfile = { workspace = true, optional = true }
-thiserror = { workspace = true, optional = true }
-zstd = { workspace = true, features = ["experimental"], optional = true }
+alloy-rpc-types-engine = { workspace = true }
 
 # arbitrary utils
 arbitrary = { workspace = true, features = ["derive"], optional = true }
-proptest = { workspace = true, optional = true }
 
 # Bitcoin
 bitcoin = { workspace = true, optional = true }
 bitcoincore-rpc = { workspace = true, optional = true }
 
-# BTC wallet
-reth-btc-wallet = { workspace = true, optional = true }
-
 # BTC server
-btc-server = {path = "../../bin/btc-server", optional = true}
+btc-server = { path = "../../bin/btc-server", optional = true }
+
+# misc
+bytes = { workspace = true }
+# for eip-4844
+c-kzg = { workspace = true, features = ["serde"], optional = true }
+derive_more = { workspace = true }
+ethabi = { version = "18.0.0", optional = true }
+ethers = { version = "2.0.9", optional = true }
+
+frost-secp256k1-tr = { optional = true, git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
+    "serde",
+    "serialization",
+] }
+k256 = { workspace = true }
 
 lazy_static = { version = "1.4.0", optional = true }
-ethers  = { version = "2.0.9", optional = true }
-ethabi = { version = "18.0.0", optional = true }
+modular-bitfield = { workspace = true, optional = true }
+once_cell = { workspace = true }
+proptest = { workspace = true, optional = true }
+rayon = { workspace = true }
 
-frost-secp256k1-tr = { optional = true, git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }
+# BTC wallet
+reth-btc-wallet = { workspace = true, optional = true }
+reth-chainspec = { workspace = true, optional = true }
+reth-codecs = { workspace = true, optional = true }
+reth-ethereum-forks = { workspace = true }
+# reth
+reth-primitives-traits = { workspace = true }
+reth-static-file-types = { workspace = true }
+reth-trie-common = { workspace = true }
+revm-primitives = { workspace = true, features = ["serde"] }
+
+# crypto
+secp256k1 = { workspace = true, features = ["global-context", "recovery", "rand"], optional = true }
+serde = { workspace = true }
+tempfile = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+
+# tracing
+tracing = { workspace = true, optional = true }
+zstd = { workspace = true, features = ["experimental"], optional = true }
 
 [dev-dependencies]
+alloy-eips = { workspace = true, features = ["arbitrary"] }
+arbitrary = { workspace = true, features = ["derive"] }
+
+assert_matches = { workspace = true }
+
+criterion = { workspace = true }
+modular-bitfield = { workspace = true }
+pprof = { workspace = true, features = ["flamegraph", "frame-pointer", "criterion"] }
+proptest = { workspace = true }
+proptest-arbitrary-interop = { workspace = true }
+rand = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-codecs = { workspace = true }
 # eth
 reth-primitives-traits = { workspace = true, features = ["arbitrary"] }
 revm-primitives = { workspace = true, features = ["arbitrary"] }
-reth-chainspec.workspace = true
-reth-codecs.workspace = true
-alloy-eips = { workspace = true, features = ["arbitrary"] }
-
-assert_matches.workspace = true
-arbitrary = { workspace = true, features = ["derive"] }
-proptest.workspace = true
-proptest-arbitrary-interop.workspace = true
-rand.workspace = true
-serde_json.workspace = true
-test-fuzz.workspace = true
-modular-bitfield.workspace = true
-
-criterion.workspace = true
-pprof = { workspace = true, features = [
-    "flamegraph",
-    "frame-pointer",
-    "criterion",
-] }
+serde_json = { workspace = true }
+test-fuzz = { workspace = true }
 
 [features]
 default = ["c-kzg", "alloy-compat", "std", "reth-codec", "secp256k1"]
@@ -112,7 +107,18 @@ arbitrary = [
     "dep:proptest",
     "reth-codec",
 ]
-secp256k1 = ["dep:secp256k1", "dep:bitcoincore-rpc", "dep:ethers", "dep:ethabi", "dep:frost-secp256k1-tr", "dep:lazy_static", "dep:reth-btc-wallet", "dep:btc-server", "dep:bitcoin", "dep:tracing"]
+secp256k1 = [
+    "dep:secp256k1",
+    "dep:bitcoincore-rpc",
+    "dep:ethers",
+    "dep:ethabi",
+    "dep:frost-secp256k1-tr",
+    "dep:lazy_static",
+    "dep:reth-btc-wallet",
+    "dep:btc-server",
+    "dep:bitcoin",
+    "dep:tracing",
+]
 c-kzg = ["dep:c-kzg", "revm-primitives/c-kzg", "dep:tempfile", "alloy-eips/kzg"]
 alloy-compat = ["reth-primitives-traits/alloy-compat", "dep:alloy-rpc-types"]
 test-utils = ["reth-primitives-traits/test-utils"]
@@ -125,4 +131,3 @@ harness = false
 name = "validate_blob_tx"
 required-features = ["arbitrary", "c-kzg"]
 harness = false
-

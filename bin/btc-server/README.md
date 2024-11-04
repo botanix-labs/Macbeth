@@ -15,7 +15,7 @@ Bitcoin signer service that interacts with a database and performs transaction s
 
 ### Troubleshooting
 
-if you have having issues with the grpc reflection server, for example: 
+if you have having issues with the grpc reflection server, for example:
 `Grpc server: Join Error grpc reflection server error: error decoding FileDescriptorSet from buffer`
 
 This is likely because the file descriptor set is not being generated correctly. To re-generate delete src/rpc/btc_server.bin and make some arbitrary change to the source code and run `cd bin/btc-server && cargo build`.

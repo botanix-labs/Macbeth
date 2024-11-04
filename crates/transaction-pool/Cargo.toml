@@ -1,71 +1,71 @@
 [package]
 name = "reth-transaction-pool"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-homepage.workspace = true
-repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "Transaction pool implementation"
 
 [lints]
 workspace = true
 
 [dependencies]
-# reth
-reth-chain-state.workspace = true
-reth-chainspec.workspace = true
-reth-eth-wire-types.workspace = true
-reth-primitives = { workspace = true, features = ["c-kzg", "secp256k1"] }
-reth-execution-types.workspace = true
-reth-fs-util.workspace = true
-reth-storage-api.workspace = true
-reth-tasks.workspace = true
-revm.workspace = true
 
 # ethereum
-alloy-rlp.workspace = true
-
-# async/futures
-futures-util.workspace = true
-parking_lot.workspace = true
-tokio = { workspace = true, default-features = false, features = ["sync"] }
-tokio-stream.workspace = true
-
-# metrics
-reth-metrics.workspace = true
-metrics.workspace = true
+alloy-rlp = { workspace = true }
 
 # misc
-aquamarine.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
-rustc-hash.workspace = true
-schnellru.workspace = true
-serde = { workspace = true, features = ["derive", "rc"], optional = true }
-bitflags.workspace = true
-auto_impl.workspace = true
-smallvec.workspace = true
+aquamarine = { workspace = true }
+auto_impl = { workspace = true }
+bitflags = { workspace = true }
 
-# testing
-rand = { workspace = true, optional = true }
+# async/futures
+futures-util = { workspace = true }
+metrics = { workspace = true }
+parking_lot = { workspace = true }
 paste = { workspace = true, optional = true }
 proptest = { workspace = true, optional = true }
 proptest-arbitrary-interop = { workspace = true, optional = true }
 
+# testing
+rand = { workspace = true, optional = true }
+# reth
+reth-chain-state = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-eth-wire-types = { workspace = true }
+reth-execution-types = { workspace = true }
+reth-fs-util = { workspace = true }
+
+# metrics
+reth-metrics = { workspace = true }
+reth-primitives = { workspace = true, features = ["c-kzg", "secp256k1"] }
+reth-storage-api = { workspace = true }
+reth-tasks = { workspace = true }
+revm = { workspace = true }
+rustc-hash = { workspace = true }
+schnellru = { workspace = true }
+serde = { workspace = true, features = ["derive", "rc"], optional = true }
+smallvec = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["sync"] }
+tokio-stream = { workspace = true }
+tracing = { workspace = true }
+
 [dev-dependencies]
+assert_matches = { workspace = true }
+criterion = { workspace = true }
+paste = { workspace = true }
+pprof = { workspace = true, features = ["criterion", "flamegraph"] }
+proptest = { workspace = true }
+proptest-arbitrary-interop = { workspace = true }
+rand = { workspace = true }
 reth-primitives = { workspace = true, features = ["arbitrary"] }
 reth-provider = { workspace = true, features = ["test-utils"] }
-reth-tracing.workspace = true
-paste.workspace = true
-rand.workspace = true
-proptest.workspace = true
-proptest-arbitrary-interop.workspace = true
-criterion.workspace = true
-pprof = { workspace = true, features = ["criterion", "flamegraph"] }
-assert_matches.workspace = true
-tempfile.workspace = true
-serde_json.workspace = true
+reth-tracing = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 default = ["serde"]

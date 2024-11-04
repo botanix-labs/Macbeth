@@ -115,7 +115,7 @@ where
             self.frost_round1_dkg.lock().await.take();
         }
 
-        return Ok(());
+        Ok(())
     }
 
     pub(crate) async fn add_round1_dkg(

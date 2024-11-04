@@ -178,6 +178,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn frost_task_tx(&self) -> UnboundedSender<FrostNotificationMessage> {
         self.frost_task_tx.clone()
     }
@@ -686,7 +687,7 @@ where
         // As the cord we generate round 1 nonces and save them
         // then we send the psbt to other peers
         let signing_round1_package =
-            self.get_round1_signing_package(signing_session_id.clone(), psbt).await?;
+            self.get_round1_signing_package(signing_session_id, psbt).await?;
         self.new_round1_signing_package(
             self.personal_frost_identifier.serialize().to_vec(),
             signing_session_id,
@@ -787,10 +788,7 @@ where
                     let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
                     async move {
-                        return sender
-                            .send(FrostPeerCommand::PeerMessage(message))
-                            .map_err(Error::Send);
-                        Ok(())
+                        sender.send(FrostPeerCommand::PeerMessage(message)).map_err(Error::Send)
                     }
                 },
                 3,
@@ -835,22 +833,18 @@ where
         }
 
         // add the transmitted round 1 package data
-        if let Err(e) = self
-            .new_round1_signing_package(identifier.clone(), signing_session_id.clone(), psbt)
-            .await
+        if let Err(e) =
+            self.new_round1_signing_package(identifier.clone(), signing_session_id, psbt).await
         {
             error!(target: "consensus::authority::signing::coordinator_process_round1","Error adding round 1 signing package {:?}", e);
             return Ok(());
         }
 
         // try to generate signing package
-        if let Ok(to_sign_payload) = self.get_to_sign_package(signing_session_id.clone()).await {
+        if let Ok(to_sign_payload) = self.get_to_sign_package(signing_session_id).await {
             // we should add the cord partial sig
             let cord_round2 = self
-                .get_round2_signing_package(
-                    signing_session_id.clone(),
-                    to_sign_payload.psbt.clone(),
-                )
+                .get_round2_signing_package(signing_session_id, to_sign_payload.psbt.clone())
                 .await?;
             self.new_round2_signing_package(
                 self.personal_frost_identifier.serialize().to_vec(),
@@ -955,10 +949,7 @@ where
                     let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
                     async move {
-                        return sender
-                            .send(FrostPeerCommand::PeerMessage(message))
-                            .map_err(Error::Send);
-                        Ok(())
+                        sender.send(FrostPeerCommand::PeerMessage(message)).map_err(Error::Send)
                     }
                 },
                 3,
@@ -1008,9 +999,8 @@ where
         }
 
         // add the transmitted round 2 package data
-        if let Err(e) = self
-            .new_round2_signing_package(identifier.clone(), signing_session_id.clone(), psbt)
-            .await
+        if let Err(e) =
+            self.new_round2_signing_package(identifier.clone(), signing_session_id, psbt).await
         {
             error!(target: "consensus::authority::signing::coordinator_process_round2", "Error adding round 2 signing package {:?}", e);
             self.update_signing_state(session_id, SigningState::Failed).await;
@@ -1019,7 +1009,7 @@ where
         info!(target: "consensus::authority::signing::coordinator_process_round2", "round 2 added");
 
         // try to finalize the signing
-        if let Ok(sign_payload) = self.finalize_signing(signing_session_id.clone()).await {
+        if let Ok(sign_payload) = self.finalize_signing(signing_session_id).await {
             if let Err(e) = self.frost_task_tx.send(FrostNotificationMessage::FinalizedSignature(
                 FrostNotification { signing_session_id, psbt: sign_payload.psbt },
             )) {

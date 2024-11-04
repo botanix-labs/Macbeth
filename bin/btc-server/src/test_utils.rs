@@ -155,7 +155,6 @@ pub mod test_utils {
     }
 
     pub fn random_p2wpkh_script() -> ScriptBuf {
-        let mut rng = thread_rng();
         let sk = bitcoin::PrivateKey::generate(NETWORK);
         let pk = sk.public_key(SECP256K1);
         let spk = Address::p2wpkh(&pk, NETWORK).unwrap().script_pubkey();

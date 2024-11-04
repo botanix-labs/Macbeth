@@ -10,7 +10,7 @@ use revm_primitives::alloy_primitives::hex;
 use tracing::error;
 use url::Url;
 
-/// Settings for the [BotanixConfig]
+/// Settings for the [`BotanixConfig`]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct BotanixConfig {
     /// Bitcoin network
@@ -26,7 +26,7 @@ pub struct BotanixConfig {
 impl Default for BotanixConfig {
     // Creates a mocked config. Do not use in production
     fn default() -> Self {
-        BotanixConfig {
+        Self {
             bitcoin_network: bitcoin::Network::Regtest,
             btc_server_factory: None,
             // Use a public signet endpoint by default
@@ -40,13 +40,13 @@ impl Default for BotanixConfig {
 }
 
 impl BotanixConfig {
-    /// Creates a new [BotanixConfig]
-    pub fn new(
+    /// Creates a new [`BotanixConfig`]
+    pub const fn new(
         bitcoin_network: bitcoin::Network,
         btc_server_factory: Option<GrpcClientFactory>,
         bitcoind_factory: BitcoindClientFactory,
     ) -> Self {
-        BotanixConfig { bitcoin_network, btc_server_factory, bitcoind_factory }
+        Self { bitcoin_network, btc_server_factory, bitcoind_factory }
     }
 }
 
@@ -72,21 +72,21 @@ pub enum GatewayAddressRPCError {
 impl fmt::Display for GatewayAddressRPCError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GatewayAddressRPCError::FailedToDecodeAggregatePublicKey(e) => {
+            Self::FailedToDecodeAggregatePublicKey(e) => {
                 write!(f, "Failed to decode aggregate public key: {}", e)
             }
-            GatewayAddressRPCError::MissingBtcServerUrl => {
+            Self::MissingBtcServerUrl => {
                 write!(f, "Missing Btc Server Connection Url")
             }
-            GatewayAddressRPCError::FailedToGenerateGatewayAddress => {
+            Self::FailedToGenerateGatewayAddress => {
                 write!(f, "Failed to generate gateway address")
             }
-            GatewayAddressRPCError::FailedToConvertPublicKey(e) => {
+            Self::FailedToConvertPublicKey(e) => {
                 write!(f, "Failed to convert public key: {}", e)
             }
-            GatewayAddressRPCError::InvalidNetwork => write!(f, "Invalid network"),
-            GatewayAddressRPCError::Client(e) => write!(f, "Grpc client error: {}", e),
-            GatewayAddressRPCError::ResourceAccess => {
+            Self::InvalidNetwork => write!(f, "Invalid network"),
+            Self::Client(e) => write!(f, "Grpc client error: {}", e),
+            Self::ResourceAccess => {
                 write!(f, "Resource access denied for this node")
             }
         }
@@ -119,16 +119,16 @@ pub enum MerkleProofRPCError {
 impl fmt::Display for MerkleProofRPCError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MerkleProofRPCError::InvalidTxId => write!(f, "Invalid txid format"),
-            MerkleProofRPCError::FailedToGetTxIds => {
+            Self::InvalidTxId => write!(f, "Invalid txid format"),
+            Self::FailedToGetTxIds => {
                 write!(f, "Failed to get txids from blockhash")
             }
-            MerkleProofRPCError::TxIdNotInBlock => write!(f, "Txid not in block"),
-            MerkleProofRPCError::FailedToEncodePartialMerkleTree(e) => {
+            Self::TxIdNotInBlock => write!(f, "Txid not in block"),
+            Self::FailedToEncodePartialMerkleTree(e) => {
                 write!(f, "Failed to encode Partial Merkle Tree: {}", e)
             }
-            MerkleProofRPCError::MalformedBlockHash => write!(f, "Malformed block hash"),
-            MerkleProofRPCError::BitcoindClientInitialization => {
+            Self::MalformedBlockHash => write!(f, "Malformed block hash"),
+            Self::BitcoindClientInitialization => {
                 write!(f, "Bad bitcoind client initialization")
             }
         }
@@ -157,13 +157,13 @@ pub enum BtcFeeRateRPCError {
 impl fmt::Display for BtcFeeRateRPCError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e) => {
+            Self::FailedToGetEstimateSmartFee(e) => {
                 write!(f, "Failed to get estimate smart fee rate: {}", e)
             }
-            BtcFeeRateRPCError::BitcoindClientInitialization => {
+            Self::BitcoindClientInitialization => {
                 write!(f, "Failed to initialize bitcoind client")
             }
-            BtcFeeRateRPCError::FailedToEstimateSmartFee(e) => {
+            Self::FailedToEstimateSmartFee(e) => {
                 write!(f, "Failed to estimate smart fee rate: {}", e)
             }
         }
@@ -171,30 +171,24 @@ impl fmt::Display for BtcFeeRateRPCError {
 }
 
 /// Botanix config
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Botanix {
     /// Botanix config
     pub botanix_rpc_config: BotanixConfig,
 }
 
-impl Default for Botanix {
-    fn default() -> Self {
-        Self { botanix_rpc_config: Default::default() }
-    }
-}
-
 impl Botanix {
     /// Creates and returns instance of [Botanix]
-    pub fn new(config: BotanixConfig) -> Self {
+    pub const fn new(config: BotanixConfig) -> Self {
         Self { botanix_rpc_config: config }
     }
 
     /// Returns the configuration of botanix provider
-    pub fn config(&self) -> &BotanixConfig {
+    pub const fn config(&self) -> &BotanixConfig {
         &self.botanix_rpc_config
     }
 
-    /// Function calls btc_server to get "aggregated public key" and generated taproot gateway
+    /// Function calls `btc_server` to get "aggregated public key" and generated taproot gateway
     /// address
     pub async fn get_gateway_address(
         &self,
@@ -267,7 +261,7 @@ impl Botanix {
         Ok(bitcoin::consensus::serialize(&pmt))
     }
 
-    /// Function calls btc_server to get btc fee rate in BTC/kB for a pegout transaction.
+    /// Function calls `btc_server` to get btc fee rate in BTC/kB for a pegout transaction.
     ///
     /// Converts fee rate to sat/vB and returns it.
     pub async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
@@ -277,7 +271,7 @@ impl Botanix {
             .map_err(|_| BtcFeeRateRPCError::BitcoindClientInitialization)?;
         let fee_result = bitcoind_client
             .estimate_smart_fee(1, None)
-            .map_err(|e| BtcFeeRateRPCError::FailedToGetEstimateSmartFee(e))?;
+            .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
 
         if let Some(fee) = fee_result.fee_rate {
             let sats_kb = bitcoin::FeeRate::from_sat_per_kwu(fee.to_sat() / 4);

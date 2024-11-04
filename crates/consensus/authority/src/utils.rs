@@ -332,6 +332,7 @@ pub(crate) fn generate_signing_session_id(
 
 /// Repersents an error related to utxo operations
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub(crate) enum UtxoMerkelRootError {
     #[error("Unparsable tx id")]
     UnparsableTxId,
@@ -344,10 +345,11 @@ pub(crate) enum UtxoMerkelRootError {
 }
 
 /// Generates a utxo merkel root from a list of utxos
+#[allow(dead_code)]
 pub(crate) fn generate_utxo_merkel_root(
     peer_utxos: &[Utxo],
 ) -> Result<bitcoin::hashes::sha256::Hash, UtxoMerkelRootError> {
-    if peer_utxos.len() == 0 {
+    if peer_utxos.is_empty() {
         return Ok(bitcoin::hashes::sha256::Hash::all_zeros());
     }
 
@@ -358,7 +360,7 @@ pub(crate) fn generate_utxo_merkel_root(
             let ot = u.clone().outpoint.ok_or(UtxoMerkelRootError::MissingOutpoint)?;
             let tx_id = bitcoin::hash_types::Txid::from_slice(&ot.txid)
                 .ok()
-                .ok_or_else(|| UtxoMerkelRootError::UnparsableTxId)?;
+                .ok_or(UtxoMerkelRootError::UnparsableTxId)?;
             let btc_outpoint = bitcoin::transaction::OutPoint::new(tx_id, ot.vout);
             btc_outpoint
                 .consensus_encode(&mut engine)
@@ -372,7 +374,7 @@ pub(crate) fn generate_utxo_merkel_root(
 
     // compute the utxo set hash root
     let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter())
-        .ok_or_else(|| UtxoMerkelRootError::BadMerkleRoot)?;
+        .ok_or(UtxoMerkelRootError::BadMerkleRoot)?;
     Ok(root)
 }
 
@@ -424,21 +426,21 @@ pub fn validate_psbt_by_output(
             }) {
                 Some(_) => {
                     info!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Found matching output in psbt");
-                    return Ok(());
+                    Ok(())
                 }
                 None => {
                     error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
-                    return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+                    Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
                         "Failed to find matching output in psbt",
-                    )));
+                    )))
                 }
             }
         }
         Err(e) => {
             error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt {:?}", e);
-            return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
                 "Failed to extract transaction from psbt",
-            )));
+            )))
         }
     }
 }
@@ -482,7 +484,7 @@ pub async fn validate_psbt_by_ids(
             })?;
 
         // check if a corresponding output exists in the psbt
-        let _ = validate_psbt_by_output(psbt, &destination, amount)?;
+        validate_psbt_by_output(psbt, &destination, amount)?;
     }
 
     Ok(())

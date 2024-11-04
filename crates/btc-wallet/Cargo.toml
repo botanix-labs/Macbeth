@@ -10,27 +10,25 @@ exclude = [".github/"]
 
 [dependencies]
 anyhow = "1.0.71"
-bitcoin = { version = "0.31.0", features = [ "base64", "rand", "serde" ] }
-secp256k1 = { version = "0.28", features = [
-    "global-context",
-    "rand",
-    "rand-std",
-    "recovery",
-] }
-rand = { version = "0.6", features = ["std"] }
-miniscript = "11.0.0"
-hex = "0.4.3"
-lazy_static = "1.4.0"
-ethers = "2.0.10"
+bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }
 
 bitcoincore-rpc = "0.18.0"
+ethers = "2.0.10"
+
+# TODO update this to the zcash frost library when tr is merged in
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
+    "serde",
+    "serialization",
+] }
+hex = "0.4.3"
+lazy_static = "1.4.0"
+miniscript = "11.0.0"
+rand = { version = "0.6", features = ["std"] }
+secp256k1 = { version = "0.28", features = ["global-context", "rand", "rand-std", "recovery"] }
 serde = "1.0.171"
-tokio = { version = "1.37.0", features = ["full"] }
 thiserror = "1.0.43"
+tokio = { version = "1.37.0", features = ["full"] }
 tracing = "0.1.40"
 
 ## url
 url = { version = "2.2.2", features = ["serde"] }
-
-# TODO update this to the zcash frost library when tr is merged in
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks",  features = ["serde", "serialization"] }

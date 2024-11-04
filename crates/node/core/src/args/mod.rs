@@ -52,11 +52,11 @@ pub use dev::DevArgs;
 mod pruning;
 pub use pruning::PruningArgs;
 
-/// BitcoindArgs for configuration settings of the bitcoind instance
+/// `BitcoindArgs` for configuration settings of the bitcoind instance
 mod bitcoind_args;
 pub use bitcoind_args::BitcoindArgs;
 
-/// FrostArgs for configuration settings of the frost protocol
+/// `FrostArgs` for configuration settings of the frost protocol
 mod frost_args;
 pub use frost_args::FrostArgs;
 

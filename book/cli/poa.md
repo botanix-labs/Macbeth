@@ -1,6 +1,6 @@
 # `reth poa`
 
-Initialize the Botanix PoA node 
+Initialize the Botanix PoA node
 
 ```bash
 $ reth poa --help

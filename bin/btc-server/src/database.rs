@@ -413,7 +413,7 @@ impl Db {
     pub fn store_utxos(&self, utxos: &[&Utxo]) -> Result<bool, Error> {
         match utxos.len() {
             0 => Ok(false),
-            1 => self.store_utxo(utxos.get(0).unwrap()),
+            1 => self.store_utxo(utxos.first().unwrap()),
             _ => self.store_utxos_atomically(utxos),
         }
     }
@@ -523,7 +523,7 @@ impl Db {
     }
 
     pub fn remove_tracked_tx(&self, txid: &Txid) -> Result<(), Error> {
-        self.tracked_txs.remove(&txid)?;
+        self.tracked_txs.remove(txid)?;
         Ok(())
     }
 
@@ -570,7 +570,7 @@ impl Db {
     pub fn store_pending_pegout(&self, req: &pegout_scheduler::PegoutRequest) -> Result<(), Error> {
         let mut bytes = Vec::new();
         ciborium::into_writer(&req, &mut bytes).expect("writing to buffer");
-        self.pending_pegouts.insert(&req.id.as_bytes(), &bytes[..])?;
+        self.pending_pegouts.insert(req.id.as_bytes(), &bytes[..])?;
         self.update_pending_pegouts_merkle_root()?;
         Ok(())
     }
@@ -583,7 +583,7 @@ impl Db {
             .map(|req| {
                 let mut engine = sha256::Hash::engine();
                 let pegout_id = req.id.as_bytes();
-                engine.write(&pegout_id).expect("to write pegout id");
+                let _ = engine.write(&pegout_id).expect("to write pegout id");
                 Ok(sha256::Hash::from_engine(engine))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -628,7 +628,7 @@ impl Db {
     }
 
     /// Removes pending pegouts from the database.
-    pub fn remove_pending_pegout(&self, pegout_ids: &Vec<PegoutId>) -> Result<(), Error> {
+    pub fn remove_pending_pegout(&self, pegout_ids: &[PegoutId]) -> Result<(), Error> {
         for pegout_id in pegout_ids.iter() {
             self.pending_pegouts.remove(&pegout_id.as_bytes()[..])?;
         }

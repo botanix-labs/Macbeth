@@ -162,12 +162,12 @@ impl PeginMeta {
     }
 
     /// Deserialize a pegin meta
-    pub fn deserialize(mut bytes: &[u8]) -> Result<(PeginMeta, usize), PeginDataError> {
+    pub fn deserialize(mut bytes: &[u8]) -> Result<(Self, usize), PeginDataError> {
         // bytes is a list of proofs
         let proofs_size = bytes.len();
 
         Ok((
-            PeginMeta {
+            Self {
                 version: <u32>::consensus_decode(&mut bytes)?,
                 outpoint: Decodable::consensus_decode(&mut bytes)?,
                 address: {
@@ -249,7 +249,7 @@ pub struct PegoutData {
     pub network: bitcoin::Network,
 }
 
-/// Pegout with PegoutId data structure
+/// Pegout with `PegoutId` data structure
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PegoutWithId {
     /// Pegout data
@@ -279,7 +279,7 @@ impl PegoutData {
     }
 
     /// current version of the pegout data structure
-    pub fn version() -> u8 {
+    pub const fn version() -> u8 {
         0
     }
 }
