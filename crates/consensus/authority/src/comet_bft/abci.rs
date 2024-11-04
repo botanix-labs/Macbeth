@@ -12,7 +12,6 @@ use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::unix_timestamp;
-use reth_eth_wire::NewBlock;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::NetworkHandle;
@@ -878,10 +877,6 @@ where
                         // Annount to the network
                         let block_to_commit = sealed_block_with_senders.block.clone().unseal();
                         let block_height = block_to_commit.number;
-                        self.network_handle.announce_block(
-                            NewBlock { block: block_to_commit, td: Uint::ZERO },
-                            block_hash,
-                        );
 
                         let pegins = sealed_block_with_peg
                             .pegins()
