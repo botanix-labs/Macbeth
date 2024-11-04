@@ -614,7 +614,8 @@ where
             // get all connected peers
             let connected_peers = self.get_all_peers_handle().await?;
 
-            if connected_peers.len() < self.frost_config.min_signers as usize {
+            // check if we have enough connected peers to gossip to and include ourselves
+            if connected_peers.len() + 1 < self.frost_config.min_signers as usize {
                 error!(target: "consensus::authority::signing", "Not enough connected peers to gossip to");
                 return Err(Error::FailedToGetConnectedPeersHandles);
             }
