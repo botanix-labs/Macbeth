@@ -500,6 +500,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }
         };
         let federation_authorities = federation_config.get_federation_pks_from_path()?;
+
+        if let Some(max_signers) = rpc.max_signers {
+            if federation_authorities.len() != max_signers as usize {
+                return Err(eyre::eyre!(
+                    "Error: max_signers does not match the length of federation_authorities"
+                ));
+            }
+        }
         self.add_trusted_peers_from_authorities(
             secret_key,
             federation_authorities.clone(),
@@ -611,6 +619,13 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let (block_import_tx, block_import_rx) = unbounded_channel();
         let _block_import = ProofOfAuthorityBlockImport::new(chain_arc.clone(), block_import_tx);
 
+        if let (Some(min_signers), Some(max_signers)) = (rpc.min_signers, rpc.max_signers) {
+            if min_signers > max_signers {
+                return Err(eyre::eyre!(
+                    "Error: min_signers should be less than or equal to max_signers"
+                ));
+            }
+        }
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
             let authority_index = genesis_authorities
