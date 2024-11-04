@@ -614,6 +614,11 @@ where
             // get all connected peers
             let connected_peers = self.get_all_peers_handle().await?;
 
+            if connected_peers.len() < self.frost_config.min_signers as usize {
+                error!(target: "consensus::authority::signing", "Not enough connected peers to gossip to");
+                return Err(Error::FailedToGetConnectedPeersHandles);
+            }
+
             // Broadcast signing round 2 package to all peers (excluding ourselves)
             for (_peer_id, connected_peer) in connected_peers.iter() {
                 if connected_peer.frost_identifier != self.personal_frost_identifier {
@@ -723,13 +728,17 @@ where
 
         // return if we are a coordinator
         if self.is_coordinator() {
+            info!(target: "consensus::authority::signing::signer_process_round1", "we are the coordinator");
             return Ok(());
         }
 
         // get coordinator
         let (coordinator_peer_data, coordinator_id) = match self.get_coordinator().await? {
             Some(coord_data) => (coord_data.0, coord_data.1),
-            None => return Ok(()),
+            None => {
+                info!(target: "consensus::authority::signing::signer_process_round1", "No coordinator found");
+                return Ok(());
+            }
         };
         info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_id);
 
