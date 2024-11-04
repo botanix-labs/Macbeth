@@ -813,3 +813,7 @@ stop-docker-local:
 	make clean-docker-poa && \
 	make clean-docker-btc && \
 	make clean-docker-comet
+
+clean-test-suite:
+	cd bin/test-suite && \
+	rm *.txt
