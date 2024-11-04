@@ -868,7 +868,7 @@ where
             if let Err(e) = self
                 .gossip_to_peers(
                     to_sign_payload.clone(),
-                    identifier,
+                    self.personal_frost_identifier.serialize().to_vec(),
                     SigningEventResponseType::SignerRound2SigningPackage,
                 )
                 .await
