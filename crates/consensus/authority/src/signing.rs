@@ -593,15 +593,14 @@ where
             return Ok(());
         }
 
-        // abort any previous session
-        // coordinator should only send this request once and should always be in round 1
-        self.abort_signing().await?;
-
         // no already existing signing session found
         if !self.signing_session_exists(session_id).await {
             // insert a new signing session
             self.insert_new_signing_session(session_id, coordinator_id, None, SigningState::Round1)
                 .await;
+            // abort any previous session
+            // coordinator should only send this request once and should always be in round 1
+            self.abort_signing().await?;
         } else {
             // NOTE: if a session exists, the current coordinator should not be sending a request to
             // start a new session. The previous session should have been successful or
