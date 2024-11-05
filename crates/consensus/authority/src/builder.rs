@@ -4,7 +4,6 @@ use crate::{
     frost_task::{FrostNotificationMessage, FrostTask},
     healthcheck_task::HealthcheckTask,
     random_source_provider::RandomSource,
-    sync::SyncController,
     utxo_sync::UTXOSyncEngine,
     AuthorityConsensus, Storage,
 };
@@ -18,7 +17,7 @@ use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
     message::NewBlockMessageWithPeerId,
-    NetworkEventListenerProvider, NetworkHandle,
+    NetworkHandle,
 };
 use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
@@ -211,7 +210,6 @@ where
     ) -> (
         AuthorityConsensus,
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source>>,
-        SyncController,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
     ) {
@@ -268,12 +266,6 @@ where
             }
         };
 
-        let sync_task = SyncController::new(
-            network_handle.clone().event_listener(),
-            *network_handle.peer_id(),
-            to_engine.clone(),
-        );
-
         // Set up frost notification message queue
         // these are two mpsc channels that are used to communicate between the frost task and the
         // block production task
@@ -324,6 +316,6 @@ where
             is_fed_node,
         ));
 
-        (consensus, frost_task, sync_task, healthcheck_task, abci_client_builder)
+        (consensus, frost_task, healthcheck_task, abci_client_builder)
     }
 }

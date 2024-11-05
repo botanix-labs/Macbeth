@@ -754,7 +754,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let (
             _authority_consensus,
             frost_task,
-            mut sync_controller,
             _healthcheck_task,
             abci_client_builder,
         ) = AuthorityConsensusBuilder::try_new(
@@ -827,15 +826,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             //         healthcheck_task.expect("health check task exists").start_task().await;
             //     }),
             // );
-        }
-        // TODO can remove this
-        if !is_fed_node {
-            executor.spawn_critical(
-                "PoA Block Sync Controller Task",
-                Box::pin(async move {
-                    sync_controller.start_task().await;
-                }),
-            );
         }
 
         let initial_target = node_config.debug.tip;
