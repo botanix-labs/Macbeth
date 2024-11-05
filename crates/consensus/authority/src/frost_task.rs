@@ -396,11 +396,6 @@ where
                         // Nothing to do for healthcheck related messages.
                         continue;
                     }
-                    PeerMessageResponse::Pbft(_) => {
-                        // Nothing to do for pbft related messages. Those are handled by the pbft
-                        // task
-                        continue;
-                    }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {

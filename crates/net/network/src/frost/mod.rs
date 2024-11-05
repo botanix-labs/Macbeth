@@ -4,7 +4,6 @@ use core::fmt;
 
 use reth_network_api::Direction;
 use reth_network_peers::PeerId;
-use reth_primitives::SealedBlock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
@@ -22,8 +21,6 @@ pub enum PeerMessageResponse {
     Dkg(DkgResponse),
     /// Signing response
     Signing(SigningResponse),
-    /// PBFT related responses
-    Pbft(PbftResponse),
     /// UTXO related responses
     Utxo(UtxoSetResponse),
     /// Healtcheck response
@@ -35,7 +32,6 @@ impl fmt::Display for PeerMessageResponse {
         match self {
             Self::Dkg(response) => write!(f, "DKG Response: {}", response),
             Self::Signing(response) => write!(f, "Signing Response: {}", response),
-            Self::Pbft(response) => write!(f, "PBFT Response: {}", response),
             Self::Utxo(response) => write!(f, "Utxo Response: {}", response),
             Self::Healthcheck(response) => {
                 write!(f, "Health Response: {:?}", response)
@@ -92,44 +88,6 @@ pub struct HealthcheckResponse {
 impl fmt::Display for HealthcheckResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Sender: {}, Receiver: {}", self.sender, self.receiver,)
-    }
-}
-
-/// Response structure for PBFT internal communication
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum PbftEventResponseType {
-    /// in turn block producer proposes a block to sign
-    CoordinatorBlockProposal,
-    /// peer precommitment
-    PeerPreCommitment,
-    /// peer commitment
-    PeerCommitment,
-}
-
-impl fmt::Display for PbftEventResponseType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CoordinatorBlockProposal => {
-                write!(f, "coordinator block proposal")
-            }
-            Self::PeerPreCommitment => write!(f, "peer precommitment"),
-            Self::PeerCommitment => write!(f, "peer commitment"),
-        }
-    }
-}
-
-/// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PbftResponse {
-    /// The Response Type
-    pub response_type: PbftEventResponseType,
-    /// PBFT data
-    pub data: SealedBlock,
-}
-
-impl fmt::Display for PbftResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} - Data Size: {} bytes", self.response_type, self.data.size())
     }
 }
 

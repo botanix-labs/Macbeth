@@ -193,10 +193,6 @@ where
         // receive over a channel message from other peers
         while let Some((_peerid, msg)) = peer_messages_rx.recv().await {
             match msg {
-                PeerMessageResponse::Pbft(_) => {
-                    // Nothing to do for pbft related messages. Does are handled by the frost
-                    // task
-                }
                 PeerMessageResponse::Dkg(_) => {
                     // Nothing to do for dkg related messages. Does are handled by the frost
                     // task
