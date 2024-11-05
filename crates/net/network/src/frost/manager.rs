@@ -113,7 +113,6 @@ impl FrostManager {
         info!(target: "network::frost::all_authority_peers_connected", "Peers connections len: {:?}", self.peers_connections.len());
         for (peer_id, peer_data) in self.peers_connections.iter() {
             for data in peer_data.iter() {
-                info!(target: "network::frost::all_authority_peers_connected", "Peer {:?} is connected: {:?}", peer_id, Self::filter_connected_peer(data));
                 info!(target: "network::frost::all_authority_peers_connected", "channel closed: {:?}", data.peer_commands_tx.is_closed());
             }
         }
@@ -128,10 +127,6 @@ impl FrostManager {
 
     fn is_authority_peer(&self, peer_id: &PeerId) -> bool {
         self.authority_peerid.contains(peer_id)
-    }
-
-    fn filter_connected_peer(data: &PeerData) -> bool {
-        data.peer_confirmed && !data.peer_commands_tx.is_closed()
     }
 
     fn prune_closed_connections(&mut self) {
@@ -309,12 +304,6 @@ impl FrostManager {
                 let peer_connections = self
                     .peers_connections
                     .iter()
-                    .filter(|(_, peer_data)| {
-                        // TODO this check might be redundant now that we prune closed connections
-                        Self::filter_connected_peer(
-                            peer_data.first().expect("will always have one element"),
-                        )
-                    })
                     .map(|(peer_id, peer_data)| {
                         (*peer_id, peer_data.first().expect("will always have one element").clone())
                     })
