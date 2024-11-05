@@ -17,8 +17,8 @@ use tracing::{error, info, warn};
 
 use crate::{
     frost::{
-        messages::{DkgRequest, PbftRequest},
-        DkgEventResponseType, DkgResponse, SigningEventResponseType, SigningResponse,
+        messages::DkgRequest, DkgEventResponseType, DkgResponse, SigningEventResponseType,
+        SigningResponse,
     },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
 };
@@ -27,8 +27,8 @@ use super::{
     messages::{
         FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest, UtxoRequest,
     },
-    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PbftEventResponseType, PbftResponse,
-    PeerMessageResponse, UtxoSetResponse,
+    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PeerMessageResponse,
+    UtxoSetResponse,
 };
 
 /// Frost Protocol Handler
@@ -199,33 +199,6 @@ impl Stream for FrostProtoConnection {
 
                         Poll::Ready(Some(FrostProtoMessage::peer_health_message(req).encoded()))
                     }
-                    PeerMessageResponse::Pbft(pbft_response) => {
-                        let PbftResponse { response_type, data } = pbft_response;
-                        let req = PbftRequest::new(data);
-                        match response_type {
-                            PbftEventResponseType::CoordinatorBlockProposal => {
-                                info!(
-                                    target: "network::frost::protocol", "sending PBFT coordinator block proposal"
-                                );
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::coordinator_block_proposal_message(req)
-                                        .encoded(),
-                                ))
-                            }
-                            PbftEventResponseType::PeerPreCommitment => {
-                                info!(target: "network::frost::protocol", "sending PBFT peer pre-commitment");
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::peer_pre_commitment_message(req).encoded(),
-                                ))
-                            }
-                            PbftEventResponseType::PeerCommitment => {
-                                info!(target: "network::frost::protocol", "sending PBFT peer commitment");
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::peer_commit_message(req).encoded(),
-                                ))
-                            }
-                        }
-                    }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {
@@ -348,39 +321,6 @@ impl Stream for FrostProtoConnection {
 
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();
-                }
-            }
-            FrostProtoMessageKind::CoordinatorBlockProposal(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    peer_id: this.peer_id,
-                    response: PeerMessageResponse::Pbft(PbftResponse {
-                        response_type: PbftEventResponseType::CoordinatorBlockProposal,
-                        data: data.block,
-                    }),
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received CoordinatorBlockProposal message. Error = {:?}", e);
-                }
-            }
-            FrostProtoMessageKind::PeerPreCommitment(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    peer_id: this.peer_id,
-                    response: PeerMessageResponse::Pbft(PbftResponse {
-                        response_type: PbftEventResponseType::PeerPreCommitment,
-                        data: data.block,
-                    }),
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received PeerPreCommitment message. Error = {:?}", e);
-                }
-            }
-            FrostProtoMessageKind::PeerCommit(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    peer_id: this.peer_id,
-                    response: PeerMessageResponse::Pbft(PbftResponse {
-                        response_type: PbftEventResponseType::PeerCommitment,
-                        data: data.block,
-                    }),
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received PeerCommit message. Error = {:?}", e);
                 }
             }
             FrostProtoMessageKind::Round1Dkg(data) => {
