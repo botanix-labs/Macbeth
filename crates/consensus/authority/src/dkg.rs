@@ -1,4 +1,4 @@
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_network::frost::{
@@ -23,52 +23,22 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    #[error("Requested Key Package already exists")]
-    KeyPackageAlreadyExists,
-    #[error("Round 1 package is missing")]
-    MissingRound1Package,
-    #[error("Round 2 package is missing")]
-    MissingRound2Package,
-    #[error("Failed to get Round 1 packages")]
-    FailedToGetRound1Packages,
-    #[error("Failed to get Round 2 packages")]
-    FailedToGetRound2Packages,
-    #[error("Failed to generate Round 1 package")]
-    FailedToGenerateRound1Package,
-    #[error("Failed to generate Round 2 package")]
-    FailedToGenerateRound2Package,
-    #[error("Error when serializing round 1 packages")]
-    Round1PackageSerialize,
-    #[error("Failed to get public key package")]
-    FailedToGetPubKeyPackage,
-    #[error("Failed to generate public key package")]
-    FailedToGeneratePubKeyPackage,
-    #[error("Failed to store key package")]
-    FailedToStoreKeyPackage,
-    #[error("Failed to store public key package")]
-    FailedToStorePublicKeyPackage,
-    #[error("Failed to persist pk to db")]
-    FailedToPeristPkToDb,
-    #[error("Failed to add round 1 package")]
-    FailedToAddRound1Package,
-    #[error("Failed to add round 2 package")]
-    FailedToAddRound2Package,
-    #[error("Failed to parse public key package")]
-    PublicKeyParse(secp256k1::Error),
-    #[error("Unknown internal error")]
-    InternalGrpc,
-    #[error("Failed to get connected peers handles")]
-    FailedToGetConnectedPeersHandles,
-    #[error("Invalid frost peer id")]
-    InvalidFrostPeerId,
-    #[error("invalid signing session id")]
-    InvalidSigningSessionId,
-    #[error("missing key package")]
-    MissingKeyPackage,
+    #[error("Internal gRPC error, message:{0}, status: {1}")]
+    InternalGrpc(String, tonic::Status),
     #[error("Failed to send peer command {0}")]
     Send(SendError<FrostPeerCommand>),
     #[error("Peer id not found")]
     PeerIdNotFound,
+    #[error("Failed to get peers handle")]
+    GetPeersHandle,
+    #[error("Failed to deserialize round 2 package")]
+    DeserializeRound2Package(String),
+    #[error("Secp256k1 error: {0}")]
+    Secp256k1(#[from] secp256k1::Error),
+    #[error("Invalid frost peer id")]
+    InvalidFrostPeerId,
+    #[error("Invalid signing session id")]
+    InvalidSigningSessionId,
 }
 
 impl From<FrostParseError> for Error {
@@ -77,6 +47,12 @@ impl From<FrostParseError> for Error {
             FrostParseError::InvalidFrostPeerId => Error::InvalidFrostPeerId,
             FrostParseError::InvalidSigningSessionId => Error::InvalidSigningSessionId,
         }
+    }
+}
+
+impl From<GrpcClientError> for Error {
+    fn from(value: GrpcClientError) -> Self {
+        Error::InternalGrpc(value.to_string(), value.to_tonic_status())
     }
 }
 
@@ -174,30 +150,7 @@ where
 
         let round1_payload = match round1_payload {
             Ok(round1_payload) => round1_payload,
-            Err(e) => {
-                let e: tonic::Status = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::AlreadyExists
-                        if e.message().contains("already have key package") =>
-                    {
-                        return Err(Error::KeyPackageAlreadyExists)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to serialize round 1 dkg") =>
-                    {
-                        return Err(Error::Round1PackageSerialize)
-                    }
-                    tonic::Code::Internal if e.message().contains("Missing round1 dkg package") => {
-                        return Err(Error::MissingRound1Package)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to generate round 1 dkg") =>
-                    {
-                        return Err(Error::FailedToGenerateRound1Package)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(round1_payload)
     }
@@ -207,30 +160,7 @@ where
 
         let round2_payload = match round2_payload {
             Ok(round2_payload) => round2_payload,
-            Err(e) => {
-                let e: tonic::Status = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::AlreadyExists
-                        if e.message().contains("already have key package") =>
-                    {
-                        return Err(Error::KeyPackageAlreadyExists)
-                    }
-                    tonic::Code::Internal if e.message().contains("Missing round1 dkg package") => {
-                        return Err(Error::MissingRound1Package)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to get round2 dkg package") =>
-                    {
-                        return Err(Error::FailedToGetRound2Packages)
-                    }
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to generate round 2 dkg") =>
-                    {
-                        return Err(Error::FailedToGenerateRound2Package)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(round2_payload)
     }
@@ -239,53 +169,7 @@ where
         let round3_payload = self.btc_client.get_public_key(Empty {}).await;
         let round3_payload = match round3_payload {
             Ok(round3_payload) => round3_payload,
-            Err(e) => {
-                let e: tonic::Status = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to get public key package") =>
-                    {
-                        return Err(Error::FailedToGetPubKeyPackage)
-                    }
-                    tonic::Code::Internal if e.message().contains("missing key package") => {
-                        return Err(Error::MissingKeyPackage)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to get round1 dkg package") =>
-                    {
-                        return Err(Error::FailedToGetRound1Packages)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to get round2 dkg package") =>
-                    {
-                        return Err(Error::FailedToGetRound2Packages)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to generate public key package") =>
-                    {
-                        return Err(Error::FailedToGeneratePubKeyPackage)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to store key package") =>
-                    {
-                        return Err(Error::FailedToStoreKeyPackage)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to store public key package") =>
-                    {
-                        return Err(Error::FailedToStorePublicKeyPackage)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to persist pk to database") =>
-                    {
-                        return Err(Error::FailedToPeristPkToDb)
-                    }
-                    tonic::Code::Internal if e.message().contains("Missing round2 dkg package") => {
-                        return Err(Error::MissingRound2Package)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(round3_payload)
     }
@@ -298,22 +182,7 @@ where
         let req = client::DkgPayload { identifier, payload };
         match self.btc_client.new_round1_dkg_package(req).await {
             Ok(round2_payload) => round2_payload,
-            Err(e) => {
-                let e: tonic::Status = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::AlreadyExists
-                        if e.message().contains("already have key package") =>
-                    {
-                        return Err(Error::KeyPackageAlreadyExists)
-                    }
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to add round1 dkg") =>
-                    {
-                        return Err(Error::FailedToAddRound1Package)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(())
     }
@@ -326,22 +195,7 @@ where
         let req = client::DkgPayload { identifier, payload };
         match self.btc_client.new_round2_dkg_package(req).await {
             Ok(round2_payload) => round2_payload,
-            Err(e) => {
-                let e: tonic::Status = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::AlreadyExists
-                        if e.message().contains("already have key package") =>
-                    {
-                        return Err(Error::KeyPackageAlreadyExists)
-                    }
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to add round2 dkg") =>
-                    {
-                        return Err(Error::FailedToAddRound2Package)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(())
     }
@@ -365,7 +219,7 @@ where
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
                 error!("Failed to get frost peers connections {:?}", e);
-                Err(Error::FailedToGetConnectedPeersHandles)
+                Err(Error::GetPeersHandle)
             }
         }
     }
@@ -508,7 +362,7 @@ where
         let shares = serde_json::from_slice::<
             BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
         >(&round2_shares)
-        .map_err(|_| Error::FailedToGetRound2Packages)?;
+        .map_err(|e| Error::DeserializeRound2Package(e.to_string()))?;
 
         for (identifier, round2_payload) in shares.iter() {
             let peer_id = self.frost_id_map.get(identifier).ok_or(Error::PeerIdNotFound)?;
@@ -700,7 +554,7 @@ where
             Err(e) => {
                 error!(target: "consensus::authority::dkg::process_round3", "Error hex decoding public key {:?}", e);
                 self.state = DKGState::DkgFailed;
-                return Err(Error::PublicKeyParse(e));
+                return Err(Error::Secp256k1(e));
             }
         };
         let mut storage = self.storage.write().await;
