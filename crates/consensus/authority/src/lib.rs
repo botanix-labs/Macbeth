@@ -282,20 +282,6 @@ impl Consensus for AuthorityConsensus {
             ));
         }
 
-        // TODO this needs to be re-enabled to check for CBFT block signatures
-        // Validate a quorum of authority signatures except during pbft
-        // let valid_sigs = header.check_authority_sig_add(authority_signers).map_err(|e| {
-        //     error!("Failed to validate authority signature: {:?}", e);
-        //     ConsensusError::InvalidAuthoritySignature
-        // })?;
-
-        // if valid_sigs < PbftCommitmentCriteria::min_commitments(authority_signers.len() as u16) {
-        //     return Err(ConsensusError::MissingQuorumOfAuthoritySignatures(
-        //         authority_signers.len() as u16,
-        //         valid_sigs,
-        //     ));
-        // }
-
         Ok(())
     }
 
