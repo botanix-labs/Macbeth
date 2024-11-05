@@ -303,12 +303,22 @@ where
             psbt_in.set_partial_signature(self.identifier, &sigs);
         }
 
+        let tx = psbt.clone().extract_tx()?;
+
+        let pending_pegouts = self.db.get_pending_pegouts()?;
+        let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
+
+        self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await?;
+        self.db.remove_pending_pegout(&pending_pegout_ids)?;
+        self.db.flush()?;
+
         // Clear the signing nonces
         // This finalizes the signing session
         nonces_lock.take();
         Ok(())
     }
 
+    /// Currently not used
     pub(crate) async fn finalize_signer(
         &self,
         finalized_psbt: Psbt,
@@ -344,13 +354,6 @@ where
         validate_outputs(&finalized_psbt, &self.db)?;
 
         let tx = finalized_psbt.clone().extract_tx()?;
-        // We're finalizing it for the first time now.
-        let tx_timestamp = SystemTime::now();
-        let pending_pegouts = self.db.get_pending_pegouts()?;
-        let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
-        self.add_tracked_tx(tx.clone(), &pending_pegouts, tx_timestamp).await?;
-        self.db.remove_pending_pegout(&pending_pegout_ids)?;
-        self.db.flush()?;
 
         // Lets broadcast the tx
         let tx_id = match self.bitcoind_client.send_raw_transaction(&tx) {

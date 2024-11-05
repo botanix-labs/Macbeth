@@ -59,7 +59,6 @@ where
             (None, None) => {
                 // we are in test mode, user has deliberately switched off authentication and is
                 // making direct requests without jwt
-                debug!("Missing JWT in request metadata and no supplied jwt secret. This is a test mode!");
                 return Ok(());
             }
             (metadata_value, jwt_secret) => {
