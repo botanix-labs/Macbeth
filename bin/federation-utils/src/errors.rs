@@ -54,6 +54,6 @@ impl From<ProviderError> for WalletError {
 }
 impl From<&str> for WalletError {
     fn from(message: &str) -> WalletError {
-        WalletError::CustomError(message.to_string()) // Or whatever variant applies
+        WalletError::CustomError(message.to_string())
     }
 }

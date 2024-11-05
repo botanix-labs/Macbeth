@@ -32,7 +32,7 @@ pub(crate) enum Commands {
 
 #[derive(Parser, Debug)]
 pub(crate) struct GetBalance {
-    /// secret_key_path
+    ///`secret_key_path`
     #[arg(short, long)]
     pub secret_key_path: Option<String>,
 }

@@ -1,12 +1,12 @@
 use crate::errors::WalletError;
 use async_trait::async_trait;
 use ethers::{prelude::*, types::transaction::eip2718::TypedTransaction};
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 /// wallet trait
 #[async_trait]
 pub trait Wallet {
     /// getbalnce  for given address
-    async fn get_balance(&self, sceret_key: String) -> Result<U256, WalletError>;
+    async fn get_balance(&self, secret_key: String) -> Result<U256, WalletError>;
     /// transfer balance  for given account
     async fn sweep_balance(&self, sceret_key: String, to: Address) -> Result<TxHash, WalletError>;
     /// get transaction details  for given tx_hash

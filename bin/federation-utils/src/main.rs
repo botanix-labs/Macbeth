@@ -41,15 +41,16 @@ async fn inner_main() -> Result<(), WalletError> {
             let chain_id = cli.chain_id.unwrap_or(config.chain_id);
             let provider_url = cli.provider_url.as_deref().unwrap_or(&config.provider_url);
 
-            let secret_key_path =
-                get_balance.secret_key_path.clone().or(config.secret_path.clone()).ok_or_else(
-                    || {
-                        WalletError::CustomError(
-                            "Secret key path must be provided via CLI or config".to_string(),
-                        )
-                    },
-                )?;
-            let bal = handle_get_balance(&secret_key_path, &provider_url, chain_id)
+            let secret_key_path = get_balance
+                .secret_key_path
+                .clone()
+                .or_else(|| config.secret_path.clone())
+                .ok_or_else(|| {
+                    WalletError::CustomError(
+                        "Secret key path must be provided via CLI or config".to_string(),
+                    )
+                })?;
+            let bal = handle_get_balance(&secret_key_path, provider_url, chain_id)
                 .await
                 .map_err(WalletError::from)?;
             println!("Balance: {:?}", bal);
@@ -58,18 +59,19 @@ async fn inner_main() -> Result<(), WalletError> {
             println!("Sweeping balance...");
             let chain_id = cli.chain_id.unwrap_or(config.chain_id);
             let provider_url = cli.provider_url.as_deref().unwrap_or(&config.provider_url);
-            let secret_key_path =
-                sweep_balance.secret_key_path.clone().or(config.secret_path.clone()).ok_or_else(
-                    || {
-                        WalletError::CustomError(
-                            "Secret key path must be provided via CLI or config".to_string(),
-                        )
-                    },
-                )?;
+            let secret_key_path = sweep_balance
+                .secret_key_path
+                .clone()
+                .or_else(|| config.secret_path.clone())
+                .ok_or_else(|| {
+                    WalletError::CustomError(
+                        "Secret key path must be provided via CLI or config".to_string(),
+                    )
+                })?;
             let receiver_address = sweep_balance
                 .receiver_address
                 .clone()
-                .or(config.receiver_address.clone())
+                .or_else(|| config.receiver_address.clone())
                 .ok_or_else(|| {
                     WalletError::CustomError(
                         "Receiver address must be provided via CLI or config".to_string(),
@@ -79,7 +81,7 @@ async fn inner_main() -> Result<(), WalletError> {
             let sweep = handle_sweep_balance(
                 chain_id,
                 &secret_key_path.to_string(),
-                &provider_url,
+                provider_url,
                 &receiver_address.to_string(),
             )
             .await
@@ -95,7 +97,7 @@ async fn inner_main() -> Result<(), WalletError> {
             if tx_hash.is_empty() {
                 return Err(WalletError::CustomError("Tx hash cannot be an empty".to_string()));
             }
-            let tx_info = handle_get_transaction_info(&tx_hash, &provider_url, chain_id)
+            let tx_info = handle_get_transaction_info(&tx_hash, provider_url, chain_id)
                 .await
                 .map_err(WalletError::from)?;
 
