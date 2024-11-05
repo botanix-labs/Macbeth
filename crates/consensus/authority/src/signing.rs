@@ -6,7 +6,7 @@ use crate::{
         FrostParseError,
     },
 };
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
 
@@ -32,40 +32,20 @@ type SigningStatesMap = Arc<RwLock<HashMap<[u8; 32], SigningSession>>>;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    #[error("Unknown internal error")]
-    InternalGrpc,
-    #[error("Failed to get connected peers handles")]
-    FailedToGetConnectedPeersHandles,
+    #[error("Internal gRPC error: message: {0}, status: {1}")]
+    InternalGrpc(String, tonic::Status),
     #[error("Invalid frost peer id")]
     InvalidFrostPeerId,
-    #[error("Failed to parse signing session id")]
-    FailedToParseSigningSessionId,
-    #[error("Failed to deserialize psbt")]
-    FailedToDeserializePsbt,
-    #[error("Failed to get round 1 signing package")]
-    FailedToGetRound1SigningPackage,
-    #[error("Failed to get round 2 signing package")]
-    FailedToGetRound2SigningPackage,
-    #[error("Failed to add round 1 signing package")]
-    FailedToAddRound1SigningPackage,
-    #[error("Failed to add round 2 signing package")]
-    FailedToAddRound2SigningPackage,
-    #[error("Failed to serialize psbt")]
-    FailedToSerializePsbt,
-    #[error("Failed to finalize signing")]
-    FailedToFinalizeSigning,
-    #[error("Failed to parse frost peer id")]
-    FailedToParseFrostPeerId,
-    #[error("Failed to get to sign")]
-    FailedToGetToSign,
     #[error("Invalid signing session id")]
     InvalidSigningSessionId,
-    #[error("Failed to send peer command {0}")]
-    Send(SendError<FrostPeerCommand>),
-    #[error("Missing key package")]
-    MissingKeyPackage,
+    #[error("Failed to get peers handles")]
+    FailedToGetPeersHandles,
+    #[error("Not enough connected peers to gossip to")]
+    NotEnoughConnectedPeers,
     #[error("Coordinator re-triggered an existing signing session")]
     CoordinatorRetriggeredSession,
+    #[error("Send error: {0}")]
+    Send(#[from] SendError<FrostPeerCommand>),
 }
 
 impl From<FrostParseError> for Error {
@@ -74,6 +54,12 @@ impl From<FrostParseError> for Error {
             FrostParseError::InvalidFrostPeerId => Error::InvalidFrostPeerId,
             FrostParseError::InvalidSigningSessionId => Error::InvalidSigningSessionId,
         }
+    }
+}
+
+impl From<GrpcClientError> for Error {
+    fn from(value: GrpcClientError) -> Self {
+        Error::InternalGrpc(value.to_string(), value.to_tonic_status())
     }
 }
 
@@ -283,32 +269,7 @@ where
 
         let round1_payload = match round1_payload {
             Ok(round1_payload) => round1_payload,
-            Err(e) => {
-                let status = e.to_tonic_status();
-                match status.code() {
-                    tonic::Code::InvalidArgument
-                        if status.message().contains("Failed to parse signing session id") =>
-                    {
-                        return Err(Error::FailedToParseSigningSessionId)
-                    }
-                    tonic::Code::Internal
-                        if status.message().contains("Failed to deserialize psbt") =>
-                    {
-                        return Err(Error::FailedToDeserializePsbt)
-                    }
-                    tonic::Code::Internal
-                        if status.message().contains("Failed to get round1 signing package") =>
-                    {
-                        return Err(Error::FailedToGetRound1SigningPackage)
-                    }
-                    tonic::Code::Internal
-                        if status.message().contains("Failed to serialize psbt") =>
-                    {
-                        return Err(Error::FailedToSerializePsbt)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(round1_payload)
     }
@@ -328,28 +289,7 @@ where
 
         let round2_payload = match round2_payload {
             Ok(round2_payload) => round2_payload,
-            Err(e) => {
-                let e = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to parse signing session id") =>
-                    {
-                        return Err(Error::FailedToParseSigningSessionId)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to deserialize psbt") => {
-                        return Err(Error::FailedToDeserializePsbt)
-                    }
-                    tonic::Code::Internal
-                        if e.message().contains("Failed to get round2 signing package") =>
-                    {
-                        return Err(Error::FailedToGetRound2SigningPackage)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to serialize psbt") => {
-                        return Err(Error::FailedToSerializePsbt)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(round2_payload)
     }
@@ -371,30 +311,7 @@ where
 
         match new_round1_signing_package {
             Ok(_) => {}
-            Err(e) => {
-                let e = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to parse signing session id") =>
-                    {
-                        return Err(Error::FailedToParseSigningSessionId)
-                    }
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to parse frost peer id") =>
-                    {
-                        return Err(Error::FailedToParseFrostPeerId)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to deserialize psbt") => {
-                        return Err(Error::FailedToDeserializePsbt)
-                    }
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to add round1 signing") =>
-                    {
-                        return Err(Error::FailedToAddRound1SigningPackage)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(())
     }
@@ -416,30 +333,7 @@ where
 
         match new_round1_signing_package {
             Ok(_) => {}
-            Err(e) => {
-                let e = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to parse signing session id") =>
-                    {
-                        return Err(Error::FailedToParseSigningSessionId)
-                    }
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to parse frost peer id") =>
-                    {
-                        return Err(Error::FailedToParseFrostPeerId)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to deserialize psbt") => {
-                        return Err(Error::FailedToDeserializePsbt)
-                    }
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to add round1 signing") =>
-                    {
-                        return Err(Error::FailedToAddRound2SigningPackage)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(())
     }
@@ -456,23 +350,7 @@ where
             .await
         {
             Ok(sign_payload) => sign_payload,
-            Err(e) => {
-                let e = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to parse signing session id") =>
-                    {
-                        return Err(Error::FailedToParseSigningSessionId)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to get to sign") => {
-                        return Err(Error::FailedToGetToSign)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to serialize psbt") => {
-                        return Err(Error::FailedToSerializePsbt)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(package)
     }
@@ -489,23 +367,7 @@ where
             .await
         {
             Ok(finalized_signing) => finalized_signing,
-            Err(e) => {
-                let e = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::InvalidArgument
-                        if e.message().contains("Failed to parse signing session id") =>
-                    {
-                        return Err(Error::FailedToParseSigningSessionId)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to finalize signing") => {
-                        return Err(Error::FailedToFinalizeSigning)
-                    }
-                    tonic::Code::Internal if e.message().contains("Failed to serialize psbt") => {
-                        return Err(Error::FailedToSerializePsbt)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(finalized_signing)
     }
@@ -513,15 +375,7 @@ where
     async fn abort_signing(&mut self) -> Result<(), Error> {
         match self.btc_client.abort_signing(Empty {}).await {
             Ok(_) => {}
-            Err(e) => {
-                let e = e.to_tonic_status();
-                match e.code() {
-                    tonic::Code::Internal if e.message().contains("missing key package") => {
-                        return Err(Error::MissingKeyPackage)
-                    }
-                    _ => return Err(Error::InternalGrpc),
-                }
-            }
+            Err(e) => return Err(Error::from(e)),
         };
         Ok(())
     }
@@ -540,14 +394,14 @@ where
             Ok(connected_peers) => Ok(connected_peers),
             Err(e) => {
                 error!(target: "consensus::authority::signing", "Failed to get frost peers connections {:?}", e);
-                Err(Error::FailedToGetConnectedPeersHandles)
+                Err(Error::FailedToGetPeersHandles)
             }
         }
     }
 
     /// Gets the current federation coordinator. Returns None if it is us, otherwise Some if someone
     /// Uses a random 32 byte source to determine the current inturn authority
-    pub(crate) async fn get_coordinator(&self) -> Result<Option<(PeerData, u64)>, Error> {
+    pub(crate) async fn get_coordinator_peer_data(&self) -> Result<Option<(PeerData, u64)>, Error> {
         // check if we are in turn
         let leader_selection_window = self
             .chain_spec
@@ -605,7 +459,7 @@ where
     pub(crate) async fn gossip_to_peers(
         &mut self,
         signing_package: SigningPackage,
-        frost_identifier: Vec<u8>,
+        my_frost_identifier: Vec<u8>,
         response_type: SigningEventResponseType,
     ) -> Result<(), Error> {
         let SigningPackage { identifier: _, signing_session_id, psbt } = signing_package;
@@ -617,7 +471,7 @@ where
             // check if we have enough connected peers to gossip to and include ourselves
             if connected_peers.len() + 1 < self.frost_config.min_signers as usize {
                 error!(target: "consensus::authority::signing", "Not enough connected peers to gossip to");
-                return Err(Error::FailedToGetConnectedPeersHandles);
+                return Err(Error::NotEnoughConnectedPeers);
             }
 
             // Broadcast signing round 2 package to all peers (excluding ourselves)
@@ -625,7 +479,7 @@ where
                 if connected_peer.frost_identifier != self.personal_frost_identifier {
                     let resp = PeerMessageResponse::Signing(SigningResponse {
                         response_type,
-                        identifier: frost_identifier.clone(),
+                        identifier: my_frost_identifier.clone(),
                         signing_session_id: signing_session_id.clone(),
                         psbt: psbt.clone(),
                     });
@@ -654,7 +508,7 @@ where
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
         // the coordinator is always expected to be us in this case, i.e. None
-        let coordinator = self.get_coordinator().await?;
+        let coordinator = self.get_coordinator_peer_data().await?;
         if coordinator.is_some() {
             error!(target: "consensus::authority::signing::initate_signing_session", "A non-coordinator is trying to (re)initiate a signing process!");
             return Ok(());
@@ -734,7 +588,8 @@ where
         }
 
         // get coordinator
-        let (coordinator_peer_data, coordinator_id) = match self.get_coordinator().await? {
+        let (coordinator_peer_data, coordinator_id) = match self.get_coordinator_peer_data().await?
+        {
             Some(coord_data) => (coord_data.0, coord_data.1),
             None => {
                 info!(target: "consensus::authority::signing::signer_process_round1", "No coordinator found");
@@ -897,7 +752,8 @@ where
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
         // get coordinator
-        let (coordinator_peer_data, coordinator_id) = match self.get_coordinator().await? {
+        let (coordinator_peer_data, coordinator_id) = match self.get_coordinator_peer_data().await?
+        {
             Some(coord_data) => (coord_data.0, coord_data.1),
             None => {
                 // return if we are a coordinator
@@ -935,7 +791,7 @@ where
             };
 
         // get coordinator
-        let coordinator = self.get_coordinator().await?;
+        let coordinator = self.get_coordinator_peer_data().await?;
         // if none, we are coordinator, if some, someone else is
         let (coordinator_peer_data, _coordinator_authority_index) = match coordinator {
             Some(coord_data) => (coord_data.0, coord_data.1),
