@@ -164,11 +164,6 @@ where
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn frost_task_tx(&self) -> UnboundedSender<FrostNotificationMessage> {
-        self.frost_task_tx.clone()
-    }
-
     /// Inserts a signing state into the state machine
     pub(crate) async fn update_signing_state(
         &mut self,
@@ -581,22 +576,15 @@ where
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
-        // return if we are a coordinator
-        if self.is_coordinator() {
-            info!(target: "consensus::authority::signing::signer_process_round1", "we are the coordinator");
-            return Ok(());
-        }
-
-        // get coordinator
+        // get coordinator, and check if we are the coordinator
         let (coordinator_peer_data, coordinator_id) = match self.get_coordinator_peer_data().await?
         {
             Some(coord_data) => (coord_data.0, coord_data.1),
             None => {
-                info!(target: "consensus::authority::signing::signer_process_round1", "No coordinator found");
+                info!(target: "consensus::authority::signing::signer_process_round1", "we are the coordinator");
                 return Ok(());
             }
         };
-        info!(target: "consensus::authority::signing::signer_process_round1", "coordinator index {:?}", coordinator_id);
 
         // check coordinator is sending the request
         let coordinator_frost_identifier = coordinator_peer_data.frost_identifier;
@@ -718,9 +706,9 @@ where
             )
             .await?;
 
-            // if we can, we go to round 2
             self.update_signing_state(session_id, SigningState::Round2).await;
             // if ok, send to all peers
+            // TODO we really just need to send to all signers that responded to the round 1
             if let Err(e) = self
                 .gossip_to_peers(
                     to_sign_payload.clone(),
@@ -742,7 +730,6 @@ where
     // ====================================== 2 =========================================
 
     /// A signer processes round 2 signing request
-    /// Note that since this is a request identifier has no use
     pub(crate) async fn signer_process_round2(
         &mut self,
         identifier: Vec<u8>,
@@ -790,27 +777,16 @@ where
                 }
             };
 
-        // get coordinator
-        let coordinator = self.get_coordinator_peer_data().await?;
-        // if none, we are coordinator, if some, someone else is
-        let (coordinator_peer_data, _coordinator_authority_index) = match coordinator {
-            Some(coord_data) => (coord_data.0, coord_data.1),
-            None => {
-                warn!(target: "consensus::authority::signing::signer_process_round2", "No coordinator found");
-                return Ok(());
-            }
-        };
-
         // Broadcast signing round 2 to the coordinator
-        if coordinator_frost_identifier != self.personal_frost_identifier {
-            let resp = PeerMessageResponse::Signing(SigningResponse {
-                response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
-                identifier: signing_package_round2.identifier.clone(),
-                signing_session_id: signing_package_round2.signing_session_id.clone(),
-                psbt: signing_package_round2.psbt.clone(),
-            });
 
-            retry_future(
+        let resp = PeerMessageResponse::Signing(SigningResponse {
+            response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
+            identifier: signing_package_round2.identifier.clone(),
+            signing_session_id: signing_package_round2.signing_session_id.clone(),
+            psbt: signing_package_round2.psbt.clone(),
+        });
+
+        retry_future(
                 || {
                     let sender = coordinator_peer_data.peer_commands_tx.clone();
                     let message = resp.clone();
@@ -821,8 +797,7 @@ where
                 3,
                 Duration::from_secs(1),
             )
-            .await?
-        }
+            .await?;
 
         Ok(())
     }
@@ -846,7 +821,7 @@ where
         if !self.is_coordinator() {
             warn!(
                 target: "consensus::authority::signing::coordinator_process_round2",
-                " we are not the coordinator",
+                "we are not the coordinator",
             );
             return Ok(());
         }
@@ -860,7 +835,7 @@ where
 
         // return if the sending identifier is us
         if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
-            info!(target: "consensus::authority::signing::coordinator_process_round2", "identifier is us");
+            info!(target: "consensus::authority::signing::coordinator_process_round2", "identifier is us, this should not happen");
             return Ok(());
         }
 
