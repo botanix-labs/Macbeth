@@ -41,7 +41,7 @@ Options:
 ```
 * CLI Command
 ```bash
-  ../../target/debug/utils --chain-id 36363 --provider-url http://localhost:8545  get-balance -s <SECRET_KEY_PATH>
+  ../../target/debug/utils --chain-id 3636 --provider-url http://localhost:8545  get-balance -s <SECRET_KEY_PATH>
 ```
 
 ### SweepBalance :
@@ -53,14 +53,14 @@ Options:
 
 * CLI Command
 ```bash
-  ../target/debug/utils --chain-id 36363 --provider-url http://localhost:8545  sweep-balance --secret-key-path <SECRET_KEY_PATH> --receiver-address <RECEIVER_ADDRESS>
+  ../target/debug/utils --chain-id 3636 --provider-url http://localhost:8545  sweep-balance --secret-key-path <SECRET_KEY_PATH> --receiver-address <RECEIVER_ADDRESS>
 ```
 
 ### GetTransactionInfo :
 
 * CLI Command
 ```bash
-  ../target/debug/utils --chain-id 36363 --provider-url http://localhost:8545 get-transaction <tx-hash>
+  ../target/debug/utils --chain-id 3636 --provider-url http://localhost:8545 get-transaction <tx-hash>
 ```
 
 ### Config.toml  
