@@ -145,10 +145,6 @@ pub async fn block_builder(
                 assert_eq!(block_hash, latest_block_hash);
             }
 
-            // let header = canon_state_notification.block..tip().header();
-            // let edh = header.deserialize_extra_data_header().unwrap();
-            // assert_eq!(edh.aggregated_public_key, aggregate_public_key);
-
             let block_receipts = canon_state_notification.tx_receipts;
             it_info_print!("Block receipts ?", block_receipts);
             assert_eq!(block_receipts.len(), 1);
