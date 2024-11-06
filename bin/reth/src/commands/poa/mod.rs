@@ -504,7 +504,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         if let Some(max_signers) = rpc.max_signers {
             if federation_authorities.len() != max_signers as usize {
                 return Err(eyre::eyre!(
-                    "Error: max_signers does not match the length of federation_authorities"
+                    "max_signers does not match the length of federation_authorities"
                 ));
             }
         }
@@ -621,26 +621,34 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         if let (Some(min_signers), Some(max_signers)) = (rpc.min_signers, rpc.max_signers) {
             if min_signers > max_signers {
-                return Err(eyre::eyre!(
-                    "Error: min_signers should be less than or equal to max_signers"
-                ));
+                return Err(eyre::eyre!("min_signers should be less than or equal to max_signers"));
             }
         }
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
-            let authority_index = genesis_authorities
-                .iter()
-                .position(|a| a == &authority_pk)
-                .expect("Authority not found in genesis authorities");
+            let authority_index = match genesis_authorities.iter().position(|a| a == &authority_pk)
+            {
+                Some(index) => index,
+                None => {
+                    error!("Federation public keys not found ");
+                    Default::default()
+                }
+            };
             let config = FrostConfig::new(
                 authority_pk,
                 authority_index,
                 genesis_authorities.clone(),
-                node_config.rpc.min_signers.expect("min signers"),
-                node_config.rpc.max_signers.expect("max signers"),
+                node_config.rpc.min_signers.unwrap_or_else(|| {
+                    error!("min signers not specified");
+                    Default::default()
+                }),
+                node_config.rpc.max_signers.unwrap_or_else(|| {
+                    error!("max signers not specified");
+                    Default::default()
+                }),
             );
-            info!(target: "reth::cli", "Frost config initialized");
 
+            info!(target: "reth::cli", "Frost config initialized");
             Some(config)
         } else {
             None
@@ -751,35 +759,45 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_host(cometbft_rpc_host);
 
         // Build authority Consensus
-        let (_authority_consensus, frost_task, _healthcheck_task, abci_client_builder) =
-            AuthorityConsensusBuilder::try_new(
-                Arc::clone(&chain_arc.clone()),
-                blockchain_db.clone(),
-                consensus_engine_tx.clone(),
-                canon_state_notification_sender.clone(),
-                btc_server_factory.clone(),
-                bitcoin_block_header_clone.clone(),
-                secret_key,
-                network_handle.clone(),
-                network_client.clone(),
-                frost_handle,
-                block_import_rx,
-                executor.clone(),
-                frost_config,
-                payload_builder.clone(),
-                node_config.rpc.btc_network,
-                genesis_authorities.clone(),
-                authorities_socket_addresses,
-                executor_factory.clone(),
-                bitcoind_factory.clone(),
-                evm_config,
-                cometbft_rpc_factory,
-                RandomSourceProvider::new(),
-                canon_state_notification_receiver,
-            )
-            .expect("Failed to create authority consensus builder")
-            .build()
-            .await;
+        let (
+            _authority_consensus,
+            frost_task,
+            mut sync_controller,
+            _healthcheck_task,
+            abci_client_builder,
+        ) = match AuthorityConsensusBuilder::try_new(
+            Arc::clone(&chain_arc.clone()),
+            blockchain_db.clone(),
+            consensus_engine_tx.clone(),
+            canon_state_notification_sender.clone(),
+            btc_server_factory.clone(),
+            bitcoin_block_header_clone.clone(),
+            secret_key,
+            network_handle.clone(),
+            network_client.clone(),
+            frost_handle,
+            block_import_rx,
+            executor.clone(),
+            frost_config,
+            payload_builder.clone(),
+            node_config.rpc.btc_network,
+            genesis_authorities.clone(),
+            authorities_socket_addresses,
+            executor_factory.clone(),
+            bitcoind_factory.clone(),
+            evm_config,
+            cometbft_rpc_factory,
+            RandomSourceProvider::new(),
+            canon_state_notification_receiver,
+        ) {
+            Ok(consensus) => consensus.build().await,
+            Err(e) => {
+                return Err(eyre::eyre!(
+                    "authority consensus builder missing federation public keys : {:?}",
+                    e
+                ));
+            }
+        };
 
         // configure exxes manager
         let exex_manager = ExExManagerHandle::empty();
