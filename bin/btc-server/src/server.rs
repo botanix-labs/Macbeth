@@ -267,18 +267,25 @@ where
         req: tonic::Request<rpc::FinalizeSigningRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        info!("Received finalize signing request");
+
         let req = req.into_inner();
+        info!(
+            "Received finalize signing request with signing session id: {:?}",
+            hex::encode(req.signing_session_id.clone())
+        );
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
                 error!("Failed to parse signing session id: {}", e);
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
 
-        let psbt = self
-            .finalize_signing(&signing_session_id)
-            .await
-            .map_err(|e| internal!("Failed to finalize signing: {}", e))?;
+        let psbt = self.finalize_signing(&signing_session_id).await.map_err(|e| {
+            internal!(
+                "Failed to finalize signing: {}, signing session id: {:?}",
+                e,
+                hex::encode(signing_session_id)
+            )
+        })?;
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
@@ -292,11 +299,18 @@ where
         req: tonic::Request<rpc::MakeTxRequest>,
     ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
-        info!("Received make tx request: {:?}", req);
         let req = req.into_inner();
+        info!(
+            "Received make tx request for signing session id: {:?}",
+            hex::encode(req.signing_session_id.clone())
+        );
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-                error!("Failed to parse signing session id: {}", e);
+                error!(
+                    "Failed to parse signing session id: {}, signing session id: {:?}",
+                    e,
+                    hex::encode(req.signing_session_id)
+                );
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
         let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
@@ -355,10 +369,17 @@ where
     ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        info!("Received to sign package request, signing session id: {:?}", req.signing_session_id);
+        info!(
+            "Received to sign package request, signing session id: {:?}",
+            hex::encode(req.signing_session_id.clone())
+        );
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-                error!("Failed to parse signing session id: {}", e);
+                error!(
+                    "Failed to parse signing session id: {}, signing session id: {:?}",
+                    e,
+                    hex::encode(req.signing_session_id)
+                );
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
         let psbt = self
@@ -382,10 +403,17 @@ where
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        info!("Received round1 signing package");
+        info!(
+            "Received new round1 signing package for signing session id: {:?}",
+            hex::encode(req.signing_session_id.clone())
+        );
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-                error!("Failed to parse signing session id: {}", e);
+                error!(
+                    "Failed to parse signing session id: {}, signing session id: {:?}",
+                    e,
+                    hex::encode(req.signing_session_id)
+                );
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
         let frost_id = util::deserialize_frost_peer_id(req.identifier).map_err(|e| {
@@ -413,7 +441,11 @@ where
         info!("Received round2 signing package");
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-                error!("Failed to parse signing session id: {}", e);
+                error!(
+                    "Failed to parse signing session id: {}, signing session id: {:?}",
+                    e,
+                    hex::encode(req.signing_session_id)
+                );
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
         let frost_id = util::deserialize_frost_peer_id(req.identifier).map_err(|e| {
@@ -592,7 +624,10 @@ where
     ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        info!("Received round1 signing package request");
+        info!(
+            "Received round1 signing package request for signing session id: {:?}",
+            hex::encode(req.signing_session_id.clone())
+        );
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
                 error!("Failed to parse signing session id: {}", e);
@@ -627,7 +662,11 @@ where
         info!("Received round2 signing package request");
         let signing_session_id =
             util::parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-                error!("Failed to parse signing session id: {}", e);
+                error!(
+                    "Failed to parse signing session id: {}, signing session id: {:?}",
+                    e,
+                    hex::encode(req.signing_session_id)
+                );
                 badarg!("Failed to parse signing session id: {}", e)
             })?;
         let mut psbt = Psbt::deserialize(req.psbt.as_slice())
