@@ -378,38 +378,6 @@ where
             );
         }
 
-        // Finally we should remove the utxos from the db and add the change one
-        let tx = match miniscript::psbt::PsbtExt::extract(&psbt, bitcoin::secp256k1::SECP256K1) {
-            Ok(tx) => tx,
-            Err(e) => return Err(CoordinatorError::PbstFinalizationFailed(vec![e])),
-        };
-
-        let pegout_ids = psbt
-            .outputs
-            .iter()
-            .map(|o| o.pegout_id())
-            .filter(|o| o.is_some())
-            .map(|o| PegoutId::from_bytes(&o.expect("is some")).expect("valid pegout id"))
-            .collect::<Vec<_>>();
-        let tx_timestamp = SystemTime::now(); // We're signing it for the first time now.
-        let pegout_reqs = {
-            let mut pegout_reqs = Vec::new();
-            for pegout_id in pegout_ids.iter() {
-                pegout_reqs.push(
-                    self.db
-                        .get_pending_pegout(pegout_id)?
-                        .ok_or(CoordinatorError::CouldNotFindPsbt)?,
-                );
-            }
-            pegout_reqs
-        };
-        // TODO adding tracked and remove pending should be a atomic
-        // After signing these pegouts are no longer pending, instead they are tracked in the case
-        // of a reorg or mempool drop
-        self.add_tracked_tx(tx, &pegout_reqs, tx_timestamp).await?;
-        self.db.remove_pending_pegout(&pegout_ids)?;
-        self.db.flush()?;
-
         // Lets broadcast the tx
         let tx_id = match self.bitcoind_client.send_raw_transaction(&psbt.clone().extract_tx()?) {
             Ok(tx_id) => Ok(Some(tx_id)),
