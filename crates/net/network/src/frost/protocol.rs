@@ -300,25 +300,14 @@ impl Stream for FrostProtoConnection {
                 return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));
             }
             FrostProtoMessageKind::Pong => {}
-            FrostProtoMessageKind::PingMessage(peer_id) => {
-                info!(target: "network::frost::protocol", "Received ping message from peer with id = {:?} Replying with pong...", peer_id);
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerConfirmed(peer_id))
-                {
-                    error!(target: "network::frost::protocol", "Failed to forward received pong message from peer id {:?}. Error = {:?}", peer_id, e);
-                }
-
+            FrostProtoMessageKind::PingMessage(_peer_id) => {
                 // answer with pong and my peer id
                 return Poll::Ready(Some(
                     FrostProtoMessage::pong_message(this.my_peer_id).encoded(),
                 ));
             }
             // other peers answers with pong message with a peer id and authority index
-            FrostProtoMessageKind::PongMessage(peer_id) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerConfirmed(peer_id))
-                {
-                    error!(target: "network::frost::protocol", "Failed to forward received PongMessage from peer id {:?}. Error = {:?}", peer_id, e);
-                }
-
+            FrostProtoMessageKind::PongMessage(_peer_id) => {
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();
                 }

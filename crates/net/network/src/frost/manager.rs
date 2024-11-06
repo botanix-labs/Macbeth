@@ -233,13 +233,6 @@ impl FrostManager {
                     }
                 }
             }
-            // TODO we could remove this event
-            NetworkFrostEvent::PeerConfirmed(peer_id) => {
-                if !self.is_authority_peer(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerConfirmed event, but peer with id {} is not an authority member", peer_id);
-                    return;
-                }
-            }
         }
     }
 
