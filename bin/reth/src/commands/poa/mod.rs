@@ -626,26 +626,24 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         }
         // create frost config if in federation mode
         let frost_config = if is_fed_node {
-            let authority_index = match genesis_authorities.iter().position(|a| a == &authority_pk)
-            {
-                Some(index) => index,
-                None => {
-                    error!("Federation public keys not found ");
-                    Default::default()
-                }
-            };
+            let authority_index =
+                genesis_authorities.iter().position(|a| a == &authority_pk).ok_or_else(|| {
+                    error!("Federation public keys not found");
+                    eyre::eyre!("Federation public keys not found")
+                })?;
+
             let config = FrostConfig::new(
                 authority_pk,
                 authority_index,
                 genesis_authorities.clone(),
-                node_config.rpc.min_signers.unwrap_or_else(|| {
+                node_config.rpc.min_signers.ok_or_else(|| {
                     error!("min signers not specified");
-                    Default::default()
-                }),
-                node_config.rpc.max_signers.unwrap_or_else(|| {
+                    eyre::eyre!("min signers not specified")
+                })?,
+                node_config.rpc.max_signers.ok_or_else(|| {
                     error!("max signers not specified");
-                    Default::default()
-                }),
+                    eyre::eyre!("max signers not specified")
+                })?,
             );
 
             info!(target: "reth::cli", "Frost config initialized");
