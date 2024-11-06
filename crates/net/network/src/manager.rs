@@ -589,9 +589,6 @@ impl NetworkManager {
             FrostProtocolEvent::PeerMessage { peer_id, response } => {
                 self.notify_frost_manager(NetworkFrostEvent::PeerMessage { peer_id, response });
             }
-            FrostProtocolEvent::PeerConfirmed(peer_id) => {
-                self.notify_frost_manager(NetworkFrostEvent::PeerConfirmed(peer_id));
-            }
         }
     }
 

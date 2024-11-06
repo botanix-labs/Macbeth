@@ -203,8 +203,6 @@ pub enum FrostProtocolEvent {
         /// The message response
         response: PeerMessageResponse,
     },
-    /// Peer confirmation
-    PeerConfirmed(PeerId),
 }
 
 /// All events related to frost events emitted by the network.
@@ -231,8 +229,6 @@ pub enum NetworkFrostEvent {
         /// The message response
         response: PeerMessageResponse,
     },
-    /// Peer Confirmation
-    PeerConfirmed(PeerId),
 }
 
 /// Commands sent by us to a peer.
