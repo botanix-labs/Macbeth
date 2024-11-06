@@ -307,7 +307,7 @@ impl FederationMemberTestConfig {
             "reth",
             "--",
             "poa",
-            "-vvvv",
+            "-vvv",
             "--disable-discovery",
             "--is-testnet",
             "--ntp-server",
