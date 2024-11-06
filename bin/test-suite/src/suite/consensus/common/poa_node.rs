@@ -471,7 +471,6 @@ impl FederationMemberTestConfig {
                         .get_tx_receipts(BlockId::Number(BlockNumber::Number(block_number)))
                         .await
                         .expect("Failed to get block receipts");
-
                     // send a notification about a new block
                     match rx_sender.send(Notifications::CanonState(
                         CannonStateNofificationPayload {
