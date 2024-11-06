@@ -15,8 +15,6 @@ pub async fn test_mempool_gossip(
 ) -> anyhow::Result<(), super::error::Error> {
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
     let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
-    // get total authorities number
-    let total_authorities = test_fed_members.len();
 
     let selected_member_index = 0;
     it_info_print!("Selected member index", selected_member_index);
@@ -60,7 +58,7 @@ pub async fn test_mempool_gossip(
             if block_receipt_hashes.contains(&tx_receipt.transaction_hash) {
                 tx_hashes_set.insert(canon_state_notification.engine_index);
             }
-            if tx_hashes_set.len() == total_authorities {
+            if tx_hashes_set.len() == test_fed_members.len() {
                 return Ok(());
             }
         }

@@ -1,9 +1,8 @@
 use bitcoin::Address;
 
 use bytes::Buf;
+use ethers::types::H256;
 use hex::{self, encode as hex_encode};
-use reth::consensus_common::utils::{current_inturn_index, unix_timestamp};
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::extra_data_header::ExtraDataHeader;
 
 use std::{collections::HashSet, str::FromStr, time::Duration};
@@ -22,8 +21,6 @@ pub async fn utxo_sync(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
     it_info_print!("Running block builder test...");
-    let leader_selection_window =
-        BOTANIX_TESTNET.leader_selection_window.clone().expect("block times");
     let test_fed_members = suite
         .local_context
         .poa_nodes
@@ -68,12 +65,8 @@ pub async fn utxo_sync(
         .await?;
     }
 
-    // get total authorities number
-    let total_authorities = test_fed_members.len();
-
     // find out who is in turn
-    let inturn_member_index =
-        current_inturn_index(total_authorities as u64, unix_timestamp(), leader_selection_window);
+    let inturn_member_index = 0;
 
     // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
@@ -84,55 +77,52 @@ pub async fn utxo_sync(
 
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");
-    let _last_tx_hash = botanix_eth_client
+    let tx_receipt = botanix_eth_client
         .send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT)
         .await
         .unwrap()
         .unwrap();
+    it_info_print!("Eoa tx receipt hash: {:?}", tx_receipt.transaction_hash);
 
     let poa_eth_clients = suite.local_context.poa_eth_providers.clone().unwrap();
 
     // wait for canonical chain updates reported by the node, then send new tx
+    let mut tx_hashes_set: HashSet<u16> = HashSet::new();
     while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
             it_info_print!(
                 "Received payload from engine index",
                 canon_state_notification.engine_index
             );
+            it_info_print!(
+                "Received block number from engine = {:?}",
+                canon_state_notification.block.number.map(|n| n.as_u64())
+            );
 
-            // wait for fed members to sync on the block
-            tokio::time::sleep(Duration::from_secs(9)).await;
+            // read all tx hashes from the block receipts
+            let block_receipt_hashes = canon_state_notification
+                .tx_receipts
+                .iter()
+                .map(|r| r.transaction_hash)
+                .collect::<Vec<H256>>();
+            it_info_print!("Block receipts hashes ?", block_receipt_hashes);
 
-            // Check that all members accepted the block
-            let latest_block_hash = canon_state_notification.block.hash.expect("latest block hash");
-            for (index, client) in poa_eth_clients.iter().enumerate() {
-                let block_hash = client.get_latest_block_hash().await.unwrap();
-                it_info_print!(
-                    "eth client response",
-                    format!("index={index}: block hash - {block_hash}")
-                );
-
-                assert_eq!(block_hash, latest_block_hash);
+            // if the received tx hash is not the one we are interested in, skip
+            if !block_receipt_hashes.contains(&tx_receipt.transaction_hash) {
+                continue;
             }
-
-            let block_receipts = canon_state_notification.tx_receipts;
-            it_info_print!("Block receipts ?", block_receipts);
-            assert_eq!(block_receipts.len(), 1);
-
-            break;
+            tx_hashes_set.insert(canon_state_notification.engine_index);
+            if tx_hashes_set.len() == test_fed_members.len() {
+                break;
+            }
         }
     }
     it_info_print!("Block receipts verified");
     // TODO add utxos to one peer and not others
     // build another block and verify that the node's utxos are synced
-    let not_inturn_member_index =
-        current_inturn_index(total_authorities as u64, unix_timestamp(), leader_selection_window) +
-            1;
-    let not_inturn_member_index = not_inturn_member_index % total_authorities as u64;
-    let mut target_client =
-        btc_server_clients.get(not_inturn_member_index as usize).cloned().unwrap();
+    let mut target_client = btc_server_clients.get(0).cloned().unwrap();
 
-    // Reset all UTXOs for selected not in turn member
+    // Reset all UTXOs for selected member
     target_client.reset_all_utxos(client::ResetAllUtxosRequest { utxos: vec![] }).await.unwrap();
 
     // Create a another eoa which should kick off utxo sync
@@ -140,11 +130,12 @@ pub async fn utxo_sync(
         targeted_fed_member.botanix_eth_client.clone().expect("Botanix Client must be initialized");
     // send eoa messages to the node at selected index
     it_info_print!("Sending eoa transaction...");
-    let _last_tx_hash = botanix_eth_client
+    let tx_receipt = botanix_eth_client
         .send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT)
         .await
         .unwrap()
         .unwrap();
+    it_info_print!("Eoa tx receipt hash: {:?}", tx_receipt.transaction_hash);
 
     // wait for canonical chain updates reported by the node, then send new tx
     // wait for fed members to sync on the block

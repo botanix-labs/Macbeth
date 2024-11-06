@@ -177,8 +177,8 @@ pub async fn invalid_pegin(
     // pegin address balance before pegin
     let eth_pegin_address = eth_account.to_string();
     it_info_print!("Pegin address", eth_pegin_address);
-    let pegin_address_initial_balance =
-        botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
+    let addr = reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
+    let pegin_address_initial_balance = botanix_eth_client.get_botanix_balance(addr).await.unwrap();
     it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
 
     // nonce before pegin
@@ -205,8 +205,8 @@ pub async fn invalid_pegin(
     assert!(tx_receipt.status.unwrap().is_zero());
 
     // pegin address balance after pegin
-    let pegin_address_final_balance =
-        botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
+    let addr = reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
+    let pegin_address_final_balance = botanix_eth_client.get_botanix_balance(addr).await.unwrap();
     it_info_print!("Final pegin address balance", pegin_address_final_balance);
 
     assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
@@ -249,9 +249,9 @@ pub async fn invalid_pegin(
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
 
     // pegin address balance before pegin
-    let eth_pegin_address = eth_account.to_string();
+    let eth_pegin_address = reth_primitives::Address(eth_account.0.into());
     let pegin_address_initial_balance =
-        botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
+        botanix_eth_client.get_botanix_balance(eth_pegin_address).await.unwrap();
     it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
 
     // nonce before pegin
@@ -279,7 +279,7 @@ pub async fn invalid_pegin(
 
     // pegin address balance after pegin
     let pegin_address_final_balance =
-        botanix_eth_client.get_botanix_balance(eth_pegin_address.as_str()).await.unwrap();
+        botanix_eth_client.get_botanix_balance(eth_pegin_address).await.unwrap();
     it_info_print!("Final pegin address balance", pegin_address_final_balance);
 
     assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);

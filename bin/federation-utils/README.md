@@ -22,48 +22,56 @@ Options:
 
 ## Build
 
- ```
-  cd bin/federation-utils
-  cargo build
+```
+ cd bin/federation-utils
+ cargo build
 
- ```
- ## Usage 
-
- ```bash
- ./target/debug/utils   --config-path {path_config.toml} init
 ```
 
-### GetBlance :
+## Usage
 
-* Using  config toml
 ```bash
- ./target/debug/utils  --config-path {path_config.toml} get-balance 
+./target/debug/utils --config-path {path_config.toml} init
 ```
-* CLI Command
+
+### GetBlance
+
+-   Using config toml
+
+```bash
+./target/debug/utils --config-path {path_config.toml} get-balance
+```
+
+-   CLI Command
+
 ```bash
   ../../target/debug/utils --chain-id 3636 --provider-url http://localhost:8545  get-balance -s <SECRET_KEY_PATH>
 ```
 
-### SweepBalance :
+### SweepBalance
 
-* Using config toml
+-   Using config toml
+
 ```bash
- ./target/debug/utils --config-path {path_config.toml} sweep-balance
+./target/debug/utils --config-path {path_config.toml} sweep-balance
 ```
 
-* CLI Command
+-   CLI Command
+
 ```bash
   ../target/debug/utils --chain-id 3636 --provider-url http://localhost:8545  sweep-balance --secret-key-path <SECRET_KEY_PATH> --receiver-address <RECEIVER_ADDRESS>
 ```
 
-### GetTransactionInfo :
+### GetTransactionInfo
 
-* CLI Command
+-   CLI Command
+
 ```bash
   ../target/debug/utils --chain-id 3636 --provider-url http://localhost:8545 get-transaction <tx-hash>
 ```
 
-### Config.toml  
+### Config.toml
+
 ```
 chain_id = 3636
 provider_url = "http://localhost:8545"

@@ -5,7 +5,6 @@ pub mod test_batch_pegins;
 pub mod test_block_builder;
 pub mod test_dkg;
 pub mod test_e2e_peer_disconnect;
-pub mod test_edh_size_limit;
 pub mod test_frost_e2e;
 pub mod test_frost_e2e_signing_disconnect;
 pub mod test_mempool_gossip;

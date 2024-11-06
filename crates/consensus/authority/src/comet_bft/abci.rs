@@ -28,7 +28,6 @@ use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::TaskSpawner;
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
-use ruint::Uint;
 use schnellru::{ByLength, LruMap};
 
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;

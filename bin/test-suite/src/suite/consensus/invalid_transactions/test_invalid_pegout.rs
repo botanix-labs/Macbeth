@@ -1,6 +1,5 @@
 use bitcoin::Amount;
-use reth_btc_wallet::address::EthAddress;
-use reth_primitives::{botanix::utils::AmountExt, Address};
+use reth_primitives::botanix::utils::AmountExt;
 
 use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 
@@ -27,14 +26,18 @@ pub async fn invalid_pegout(
     );
 
     let sender_address = botanix_eth_client.get_sender_address();
-    let sender_address_string = Address::from_slice(sender_address.as_slice()).to_string();
     // sender address balance before pegout
-    let mut sender_address_initial_balance =
-        botanix_eth_client.get_botanix_balance(sender_address_string.as_str()).await.unwrap();
+    let mut sender_address_initial_balance = botanix_eth_client
+        .get_botanix_balance(reth_primitives::Address(
+            botanix_eth_client.get_sender_address().0.into(),
+        ))
+        .await
+        .unwrap();
     it_info_print!("Sender address initial balance: ", sender_address_initial_balance);
 
     // nonce before pegout
-    let nonce_before = botanix_eth_client.get_nonce(sender_address.clone()).await.unwrap();
+    let nonce_before =
+        botanix_eth_client.get_nonce(botanix_eth_client.get_sender_address()).await.unwrap();
     it_info_print!("Nonce before pegout: ", nonce_before);
 
     // use empty pegout data
@@ -51,8 +54,12 @@ pub async fn invalid_pegout(
     assert!(tx_receipt.status.unwrap().is_zero());
 
     // sender address balance after pegout
-    let sender_address_final_balance =
-        botanix_eth_client.get_botanix_balance(sender_address_string.as_str()).await.unwrap();
+    let sender_address_final_balance = botanix_eth_client
+        .get_botanix_balance(reth_primitives::Address(
+            botanix_eth_client.get_sender_address().0.into(),
+        ))
+        .await
+        .unwrap();
     it_info_print!("Sender address final balance: ", sender_address_final_balance);
 
     // subtract tx costs from initial balance
