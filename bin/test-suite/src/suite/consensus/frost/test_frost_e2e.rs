@@ -243,16 +243,8 @@ pub async fn frost_e2e_stable(
     // wait for the tx to be included in a botanix block
     await_botanix_event(&mut rx, *BURN_TOPIC).await;
 
-    // make sure we have enough time for the nonce to be updated
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    // need another tx to enter an epoch
-    let eoa_tx_receipt =
-        mint_contract.send_eoa(ethers::core::types::Address::random(), SEND_AMOUNT).await.unwrap();
-    it_info_print!("Eoa Tx Receipt: ", eoa_tx_receipt);
-
     // sleep for a few more seconds
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    tokio::time::sleep(Duration::from_secs(50)).await;
 
     // Reconnect to bitcoind. Occasionally the connection is lost after a long time or b/c of other
     // processes connecting
