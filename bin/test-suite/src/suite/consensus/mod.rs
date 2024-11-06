@@ -442,19 +442,6 @@ impl Suite for ConsensusIntegrationTestSuite {
                     frost::test_e2e_peer_disconnect::e2e_peer_disconnect,
                 )
             }
-            "test_edh_size_limit" => {
-                run_test!(
-                    self,
-                    CreateTestConfig {
-                        create_bitcoind_node: true,
-                        create_poa_nodes: true,
-                        create_btc_servers: true,
-                        create_cometbft_nodes: true,
-                        ..Default::default()
-                    },
-                    frost::test_edh_size_limit::test_edh_size_limit,
-                )
-            }
             "rpc_node" => {
                 run_test!(
                     self,

@@ -259,8 +259,7 @@ pub async fn batch_pegins(
     tokio::time::sleep(Duration::from_secs(5)).await;
     // Ensure each eth address has a non zero balance
     for (_, pegin) in pegins.iter().enumerate() {
-        let eth_address_balance =
-            provider.get_botanix_balance(pegin.account.to_string().as_str()).await;
+        let eth_address_balance = provider.get_botanix_balance(pegin.account).await;
         assert!(!eth_address_balance.expect("get balance").is_zero());
     }
 

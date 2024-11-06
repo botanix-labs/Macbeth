@@ -222,6 +222,10 @@ impl NonFederationMemberTestConfig {
         // prepare run arguments
         let command = "cargo";
         let args = vec![
+            "run",
+            "--bin",
+            "reth",
+            "--",
             "poa",
             "-vvvv",
             "--disable-discovery",
@@ -230,6 +234,7 @@ impl NonFederationMemberTestConfig {
             "time.cloudflare.com",
             "--federation-config-path",
             federation_config_path.as_str(),
+            "--ipcdisable",
             "--datadir",
             datadir,
             "--debug.terminate",

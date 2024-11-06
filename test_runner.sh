@@ -5,9 +5,9 @@ set -o pipefail
 
 # Define the list of strings
 # "e2e_peer_disconnect" is temporarily disabled as we are waiting for Reth's fix here: https://github.com/paradigmxyz/reth/issues/10016
-# "block_builder" "utxo_sync" "frost_e2e_failed_signing_disconnect" "invalid_pegin" "invalid_pegout" "rpc_node" "batch_pegins" "block_builder"
+# "rpc_node" "batch_pegins" "frost_e2e_failed_signing_disconnect" "frost_e2e_failed_signing
 # Add these back in as we fix the test suite
-tests_to_run=("dkg_flow" "utxo_commitment" "signing_flow" "test_mempool_gossip" "frost_e2e_stable")
+tests_to_run=("dkg_flow" "utxo_commitment" "signing_flow" "test_mempool_gossip" "utxo_sync" "frost_e2e_stable" "invalid_pegin" "invalid_pegout" "block_builder")
 
 exit_codes=()
 

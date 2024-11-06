@@ -16,7 +16,8 @@ use ethers::{
     utils,
 };
 use reth_chainspec::BOTANIX_TESTNET;
-use std::{str::FromStr, sync::Arc};
+use reth_primitives::Address;
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -194,8 +195,9 @@ impl BotanixEthClient {
 
     /// Get the balance of some address
     /// we leave it as string to allow for different types across ethers and reth primitives
-    pub async fn get_botanix_balance(&self, address: &str) -> Result<U256, Error> {
-        let sender_account = NameOrAddress::from_str(address).expect("address to be valid");
+    pub async fn get_botanix_balance(&self, address: Address) -> Result<U256, Error> {
+        let sender_account =
+            NameOrAddress::Address(ethers::types::Address::from_slice(address.as_slice()));
         let sender_cur_balance = self
             .http_client
             .get_balance(sender_account, None)
