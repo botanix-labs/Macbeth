@@ -47,7 +47,7 @@ use crate::{
     discovery::Discovery,
     error::{NetworkError, ServiceKind},
     eth_requests::IncomingEthRequest,
-    frost::{FrostProtocolEvent, NetworkFrostEvent},
+    frost::FrostProtocolEvent,
     import::{BlockImport, BlockImportOutcome, BlockValidation},
     listener::ConnectionListener,
     message::{NewBlockMessage, PeerMessage},
@@ -99,7 +99,7 @@ pub struct NetworkManager {
     /// [`TransactionsManager`](crate::transactions::TransactionsManager) task, if configured.
     to_transactions_manager: Option<UnboundedMeteredSender<NetworkTransactionEvent>>,
     /// Sender half to send events to the Frost manager
-    to_frost_manager: Option<UnboundedMeteredSender<NetworkFrostEvent>>,
+    to_frost_manager: Option<UnboundedMeteredSender<FrostProtocolEvent>>,
     /// Sender half to send events to the
     /// [`EthRequestHandler`](crate::eth_requests::EthRequestHandler) task, if configured.
     ///
@@ -135,7 +135,7 @@ impl NetworkManager {
     }
 
     /// sets the dedicated channel for sending any events received from the frost protocol
-    pub fn set_frost_manager(&mut self, tx: mpsc::UnboundedSender<NetworkFrostEvent>) {
+    pub fn set_frost_manager(&mut self, tx: mpsc::UnboundedSender<FrostProtocolEvent>) {
         self.to_frost_manager = Some(UnboundedMeteredSender::new(tx, NETWORK_FROST_SCOPE));
     }
 
@@ -433,7 +433,7 @@ impl NetworkManager {
 
     /// Sends an event to the [`TransactionsManager`](crate::transactions::TransactionsManager) if
     /// configured.
-    fn notify_frost_manager(&self, event: NetworkFrostEvent) {
+    fn notify_frost_manager(&self, event: FrostProtocolEvent) {
         if let Some(ref tx) = self.to_frost_manager {
             let _ = tx.send(event);
         }
@@ -580,14 +580,14 @@ impl NetworkManager {
         match protocol_event {
             FrostProtocolEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
                 info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionEstablished {:?} {:?} {:?}", direction, peer_id, peer_commands_tx);
-                self.notify_frost_manager(NetworkFrostEvent::ConnectionEstablished {
+                self.notify_frost_manager(FrostProtocolEvent::ConnectionEstablished {
                     direction,
                     peer_id,
                     peer_commands_tx,
                 });
             }
             FrostProtocolEvent::PeerMessage { peer_id, response } => {
-                self.notify_frost_manager(NetworkFrostEvent::PeerMessage { peer_id, response });
+                self.notify_frost_manager(FrostProtocolEvent::PeerMessage { peer_id, response });
             }
         }
     }

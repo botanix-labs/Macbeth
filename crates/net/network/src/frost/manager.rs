@@ -1,5 +1,5 @@
 use super::{
-    FrostPeerCommand, HealthcheckResponse, NetworkFrostEvent, PeerMessageResponse, UtxoSetResponse,
+    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PeerMessageResponse, UtxoSetResponse,
 };
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
@@ -64,7 +64,7 @@ pub struct FrostManager {
     /// Subscriptions to all network related events.
     ///
     /// From which we get all new incoming transaction related messages.
-    from_network: UnboundedReceiverStream<NetworkFrostEvent>,
+    from_network: UnboundedReceiverStream<FrostProtocolEvent>,
     /// Copy of the sender half, so new [`FrostManager`] can be created on demand.
     command_tx: mpsc::UnboundedSender<FrostCommand>,
     /// Receiver half of the command channel.
@@ -84,7 +84,7 @@ impl FrostManager {
     pub fn new(
         config: FrostConfig,
         network: NetworkHandle,
-        from_network: mpsc::UnboundedReceiver<NetworkFrostEvent>,
+        from_network: mpsc::UnboundedReceiver<FrostProtocolEvent>,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let authority_peerid = config
@@ -176,23 +176,23 @@ impl FrostManager {
         }
     }
 
-    fn on_network_event(&mut self, protocol_event: NetworkFrostEvent) {
+    fn on_network_event(&mut self, protocol_event: FrostProtocolEvent) {
         match protocol_event {
-            NetworkFrostEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
-                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, peer_commands_tx);
+            FrostProtocolEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
+                info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, peer_commands_tx);
                 if !self.is_authority_peer(&peer_id) {
-                    info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
+                    info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
                     return;
                 }
 
                 // make sure we ignore our own connection
                 if *self.network.peer_id() == peer_id {
-                    info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from our own peer {:?}", peer_id);
+                    info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from our own peer {:?}", peer_id);
                     return;
                 }
 
                 if peer_commands_tx.is_closed() {
-                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::ConnectionEstablished event from peer with id = {:?}, but the connection channel is already closed", peer_id);
+                    warn!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, but the connection channel is already closed", peer_id);
                     return;
                 }
 
@@ -221,15 +221,15 @@ impl FrostManager {
                 self.peers_connections.insert(peer_id, peer_data.clone());
                 self.prune_closed_connections();
             }
-            NetworkFrostEvent::PeerMessage { peer_id, response } => {
-                info!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage message from peer with id = {:?}, response = {:?}", peer_id, response);
+            FrostProtocolEvent::PeerMessage { peer_id, response } => {
+                info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, response = {:?}", peer_id, response);
                 if !self.is_authority_peer(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage message from non-authority peer {:?}", peer_id);
+                    warn!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage message from non-authority peer {:?}", peer_id);
                     return;
                 }
                 for task_forwarder in &self.task_forwarder_txs {
                     if let Err(send_res) = task_forwarder.send((peer_id, response.clone())) {
-                        error!(target: "network::frost::on_network_event", "Received NetworkFrostEvent::PeerMessage event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
+                        error!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
                     }
                 }
             }
