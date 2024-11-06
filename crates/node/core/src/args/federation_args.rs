@@ -45,7 +45,7 @@ pub struct FedMemberPubKey {
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct FederationTomlConfig {
     /// federation members public keys
-    pub federation_member_public_key: Vec<FedMemberPubKey>,
+    pub federation_member_public_key: Option<Vec<FedMemberPubKey>>,
     /// botanix fee recipient
     pub botanix_fee_recipient: String,
     /// The precompiled Minting contract bytecode
@@ -64,7 +64,11 @@ impl FederationTomlConfig {
         botanix_fee_recipient: String,
         minting_contract_bytecode: String,
     ) -> Self {
-        Self { federation_member_public_key, botanix_fee_recipient, minting_contract_bytecode }
+        Self {
+            federation_member_public_key: Some(federation_member_public_key),
+            botanix_fee_recipient,
+            minting_contract_bytecode,
+        }
     }
     /// Write the config to a file
     pub fn write_to_path(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
@@ -84,19 +88,22 @@ impl FederationTomlConfig {
     ) -> Result<Vec<(secp256k1::PublicKey, SocketAddr)>, Error> {
         let federation_members = self
             .federation_member_public_key
-            .iter()
-            .map(|key| {
-                let public_key = secp256k1::PublicKey::from_str(&key.key)
-                    .expect("Invalid hex string for PublicKey");
+            .as_ref() // Get a reference to the inner Vec if it exists
+            .map_or(Vec::new(), |members| {
+                members
+                    .iter()
+                    .map(|member| {
+                        let public_key = secp256k1::PublicKey::from_str(&member.key)
+                            .expect("Invalid hex string for PublicKey");
 
-                let soc_addr = key.socket_addr.parse::<SocketAddr>().unwrap();
-                (public_key, soc_addr)
-            })
-            .collect::<Vec<(secp256k1::PublicKey, SocketAddr)>>();
+                        let soc_addr = member.socket_addr.parse::<SocketAddr>().unwrap();
+                        (public_key, soc_addr)
+                    })
+                    .collect()
+            });
         Ok(federation_members)
     }
 }
-
 impl FromStr for FederationTomlConfig {
     type Err = Error;
 
