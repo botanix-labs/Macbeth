@@ -186,23 +186,24 @@ where
                 fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / SATS_PER_KWU_DIVISOR);
             }
         }
-        let diff = fee_rate.to_sat_per_kwu().abs_diff(psbt_fee_rate.to_sat_per_kwu()) as f64;
-        // convert config field to percentage
-        let acceptable_fee_rate_diff = ((self.config.fee_rate_diff_percentage as f64) / 100.0) *
-            fee_rate.to_sat_per_kwu() as f64;
+        // let diff = fee_rate.to_sat_per_kwu().abs_diff(psbt_fee_rate.to_sat_per_kwu()) as f64;
+        // // convert config field to percentage
+        // let acceptable_fee_rate_diff = ((self.config.fee_rate_diff_percentage as f64) / 100.0) *
+        //     fee_rate.to_sat_per_kwu() as f64;
 
-        if diff > acceptable_fee_rate_diff {
-            debug!("[signer] fee rate difference is too great");
-            debug!("[signer] acceptable fee rate difference: {:?}", acceptable_fee_rate_diff);
-            debug!("[signer] fee rate difference: {:?}", diff);
-            debug!("[signer] fee rate from bitcoind/fallback: {:?}", fee_rate);
-            debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
-            debug!(
-                "[signer] config fee rate diff percentage: {:?}",
-                self.config.fee_rate_diff_percentage
-            );
-            return Err(SigningRound1Error::FeeRateDifferenceTooGreat);
-        }
+        // TODO: re-enable this check
+        // if diff > acceptable_fee_rate_diff {
+        //     debug!("[signer] fee rate difference is too great");
+        //     debug!("[signer] acceptable fee rate difference: {:?}", acceptable_fee_rate_diff);
+        //     debug!("[signer] fee rate difference: {:?}", diff);
+        //     debug!("[signer] fee rate from bitcoind/fallback: {:?}", fee_rate);
+        //     debug!("[signer] fee rate from psbt: {:?}", psbt_fee_rate);
+        //     debug!(
+        //         "[signer] config fee rate diff percentage: {:?}",
+        //         self.config.fee_rate_diff_percentage
+        //     );
+        //     return Err(SigningRound1Error::FeeRateDifferenceTooGreat);
+        // }
 
         let tx = psbt.clone().extract_tx()?;
         // Validate the psbt
