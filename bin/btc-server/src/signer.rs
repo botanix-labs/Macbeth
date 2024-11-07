@@ -18,10 +18,11 @@ use crate::{
     coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
-    util::{validate_outputs, validate_psbt, ROUND1, ROUND1_TRANSITION},
+    util::{self, validate_outputs, validate_psbt, ROUND1, ROUND1_TRANSITION},
     App, Error,
 };
 
+#[allow(dead_code)]
 const SATS_PER_KWU_DIVISOR: u64 = 4;
 
 #[derive(Debug)]
@@ -174,18 +175,21 @@ where
         if nonces_lock.is_some() {
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
-        // check fee is within acceptable range
-        let psbt_fee_rate =
-            psbt.fee_rate().ok_or(SigningRound1Error::FailedToGetFeeRateFromPsbt)?;
-        // fetch fee rate from bitcoind
-        let fee_res = self.bitcoind_client.estimate_smart_fee(1, Some(EstimateMode::Conservative));
 
-        let mut fee_rate = self.fall_back_fee_rate;
-        if let Ok(fee) = fee_res {
-            if let Some(f) = fee.fee_rate {
-                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / SATS_PER_KWU_DIVISOR);
-            }
-        }
+        // TODO: re-enable this check
+        // check fee is within acceptable range
+        // let psbt_fee_rate =
+        //     psbt.fee_rate().ok_or(SigningRound1Error::FailedToGetFeeRateFromPsbt)?;
+        // // fetch fee rate from bitcoind
+        // let fee_res = self.bitcoind_client.estimate_smart_fee(1,
+        // Some(EstimateMode::Conservative));
+
+        // let mut fee_rate = self.fall_back_fee_rate;
+        // if let Ok(fee) = fee_res {
+        //     if let Some(f) = fee.fee_rate {
+        //         fee_rate = util::btc_per_kb_to_sat_per_vb(fee_rate)
+        //     }
+        // }
         // let diff = fee_rate.to_sat_per_kwu().abs_diff(psbt_fee_rate.to_sat_per_kwu()) as f64;
         // // convert config field to percentage
         // let acceptable_fee_rate_diff = ((self.config.fee_rate_diff_percentage as f64) / 100.0) *

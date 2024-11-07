@@ -320,7 +320,7 @@ where
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
             if let Some(f) = fee.fee_rate {
-                fee_rate = FeeRate::from_sat_per_kwu(f.to_sat() / 4);
+                fee_rate = util::btc_per_kb_to_sat_per_vb(f);
             }
         }
 
