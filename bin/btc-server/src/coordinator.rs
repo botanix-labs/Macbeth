@@ -14,7 +14,7 @@ use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
-    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt, PsbtOutputExt},
+    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
@@ -28,6 +28,9 @@ use crate::{
     },
     App, Error,
 };
+
+#[allow(dead_code)]
+const MIN_RELAY_FEE_RATE_SAT_VB: u64 = 1;
 
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
@@ -179,6 +182,15 @@ where
         // We take this lock so another call doesn't do this same
         // process while we're doing it.
         let _tx_lock = self.tx_lock.lock();
+
+        // TODO: re-enable this check
+        // Ensure we are above the minimum relay fee rate
+        // let mut fee_rate = fee_rate;
+        // let mut fee_rate = FeeRate::from_sat_per_vb_unchecked()
+        // let min_relay_fee_rate = FeeRate::from_sat_per_vb_unchecked(MIN_RELAY_FEE_RATE_SAT_VB);
+        // if fee_rate < min_relay_fee_rate {
+        //     fee_rate = min_relay_fee_rate;
+        // }
 
         // Sync the pegout scheduler and check we have the same UTXO view.
         self.sync_pegout_scheduler(checkpoint_block).await?;
@@ -391,6 +403,18 @@ where
                 }
             }
         }?;
+
+        // If the coordinator participated in signing they have already tracked the tx
+        // however, if the coordinator did not participate in signing they need to track the
+        // tx now
+        let tx = psbt.clone().extract_tx()?;
+
+        let pending_pegouts = self.db.get_pending_pegouts()?;
+        let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
+
+        self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await?;
+        self.db.remove_pending_pegout(&pending_pegout_ids)?;
+        self.db.flush()?;
 
         if let Some(tx_id) = tx_id {
             info!("Broadcasted tx: {:?}", tx_id);

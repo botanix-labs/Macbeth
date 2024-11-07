@@ -318,7 +318,7 @@ pub async fn test_many_inputs_signing(
         // Each pegin is 100_000 satoshis, spending 100_000 should spend at least 2 inputs
         send_pegout_notification(c, amount.to_sat(), 1, pegout_id, spk.clone()).await?;
     }
-    let final_tx = do_signing(&mut clients, &bitcoind, &[0u8; 32]).await?;
+    let final_tx = do_signing(&mut clients, &bitcoind, &[1u8; 32]).await?;
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
 
     // Lets make sure it was broadcasted
@@ -365,7 +365,7 @@ pub async fn test_many_inputs_signing(
         }
     }
 
-    let final_tx = do_signing(&mut clients, &bitcoind, &[1u8; 32]).await?;
+    let final_tx = do_signing(&mut clients, &bitcoind, &[2u8; 32]).await?;
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
     let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None).expect("valid tx");
 
@@ -456,7 +456,7 @@ pub async fn test_many_inputs_signing(
         send_pegout_notification(c, rand_amount, 1, pegout_id, spk.clone()).await?;
     }
 
-    let final_tx = do_signing(&mut clients, &bitcoind, &[2u8; 32]).await?;
+    let final_tx = do_signing(&mut clients, &bitcoind, &[3u8; 32]).await?;
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
     it_info_print!("final_tx: {:?}", final_tx);
 
