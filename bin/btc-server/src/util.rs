@@ -4,7 +4,7 @@ use bitcoin::{
     consensus::encode as btcencode,
     hashes::Hash,
     psbt::{ExtractTxError, Output, Psbt},
-    Amount, OutPoint,
+    Amount, FeeRate, OutPoint,
 };
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
@@ -28,6 +28,17 @@ pub const ROUND1: u8 = 1u8;
 pub const ROUND1_TRANSITION: u8 = 1u8 << 1 | ROUND1;
 pub const ROUND2: u8 = 1u8 << 2 | ROUND1_TRANSITION;
 pub const ROUND2_TRANSITION: u8 = 1u8 << 3 | ROUND1_TRANSITION;
+
+pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
+    let sats = btc_per_kb.to_sat();
+    info!("fee rate sats: {:?}", sats);
+
+    // Conversion formula
+    let sat_per_vb = btc_per_kb.to_float_in(bitcoin::Denomination::Bitcoin) * 100_000.0;
+    info!("fee rate sat_per_vb: {:?}", sat_per_vb);
+
+    FeeRate::from_sat_per_vb_unchecked(sat_per_vb.ceil() as u64)
+}
 
 pub fn get_pegin_confirmation_depth(network: bitcoin::Network) -> u32 {
     match network {
@@ -1122,5 +1133,14 @@ mod util_tests {
             result.unwrap_err().to_string(),
             ParsingError::EthAddress("Failed to decode hex").to_string()
         );
+    }
+
+    #[test]
+    fn test_btc_per_kb_to_sat_per_vb() {
+        let btc_per_kb =
+            bitcoin::Amount::from_float_in(0.0005, bitcoin::Denomination::Bitcoin).unwrap();
+        let sat_per_vb = btc_per_kb_to_sat_per_vb(btc_per_kb);
+
+        assert_eq!(sat_per_vb.to_sat_per_vb_ceil(), 50);
     }
 }
