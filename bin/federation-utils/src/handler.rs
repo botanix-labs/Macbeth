@@ -148,7 +148,7 @@ pub async fn handle_get_transaction_info(
 
     Ok(tx_info)
 }
-/// Deseialise Ed25519 or Secp256k1 private key and return stirng.
+/// Deseialise Ed25519 or Secp256k1 private key and return string.
 fn deserialize_secret_key(seceret_path: &str) -> Result<String, WalletError> {
     let json_data = fs::read_to_string(seceret_path)?;
     let parsed_key: TendermintKey = serde_json::from_str(&json_data)

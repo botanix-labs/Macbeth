@@ -16,8 +16,8 @@ impl StopHandle {
 }
 
 pub async fn stop_signal(grpc_stop_tx: Option<StopHandle>) {
-    let mut sigint = signal(SignalKind::interrupt()).expect("shutdown_listener");
-    let mut sigterm = signal(SignalKind::terminate()).expect("shutdown_listener");
+    let mut sigint = signal(SignalKind::interrupt()).expect("sigint shutdown_listener");
+    let mut sigterm = signal(SignalKind::terminate()).expect("sigterm shutdown_listener");
     tokio::select! {
         _ = sigint.recv() => {
             info!("Received SIGINT ...");

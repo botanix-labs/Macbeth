@@ -1,12 +1,11 @@
 use std::time::SystemTime;
 
-use bdk::{miniscript::psbt::Error as PsbtError, psbt::PsbtUtils};
+use bdk::miniscript::psbt::Error as PsbtError;
 use bitcoin::{
     psbt::{ExtractTxError, Psbt},
     taproot::SigFromSliceError,
-    FeeRate,
 };
-use bitcoincore_rpc::{json::EstimateMode, RpcApi};
+use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
 use rand::thread_rng;
 use reth_btc_wallet::{
@@ -18,7 +17,7 @@ use crate::{
     coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
-    util::{self, validate_outputs, validate_psbt, ROUND1, ROUND1_TRANSITION},
+    util::{validate_outputs, validate_psbt, ROUND1, ROUND1_TRANSITION},
     App, Error,
 };
 
@@ -70,6 +69,8 @@ pub enum SigningRound1Error {
     ExtractTxError(#[from] ExtractTxError),
     #[error("failed to get fee rate from psbt")]
     FailedToGetFeeRateFromPsbt,
+    #[error("missing signing package at index: {0}")]
+    MissingSigningPackageAtIndex(usize),
 }
 
 #[derive(Debug, Error)]
@@ -217,7 +218,11 @@ where
             }
 
             // Check if input exists in db
-            let ot = tx.input.get(index).expect("valid index").previous_output;
+            let ot = tx
+                .input
+                .get(index)
+                .ok_or(SigningRound1Error::MissingSigningPackageAtIndex(index))?
+                .previous_output;
             let db_utxo = self.db.get_utxo(ot)?;
             if db_utxo.is_none() {
                 return Err(SigningRound1Error::InvalidSigningPackage("UTXO not found in DB"));

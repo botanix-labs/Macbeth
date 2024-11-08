@@ -130,7 +130,9 @@ where
         if frost_id == self.identifier {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
-        if self.frost_round1_dkg.lock().await.as_ref().expect("valid dkg round1").1 == dkg_round1 {
+        if self.frost_round1_dkg.lock().await.as_ref().ok_or(DKGError::MissingRound1DkgPackage)?.1 ==
+            dkg_round1
+        {
             return Err(DKGError::CannotAddOwnDkgPackage);
         }
         // Should not add if we have max signers

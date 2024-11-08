@@ -78,6 +78,10 @@ pub enum CoordinatorError {
     UtxoMerkleRootMismatch { expected: sha256::Hash, actual: sha256::Hash },
     #[error("Failed to serialize signature")]
     FailedToSerializeSignature,
+    #[error("Missing final script")]
+    MissingFinalScript,
+    #[error("missing signing package at index: {0}")]
+    MissingSigningPackageAtIndex(usize),
 }
 
 impl<BitcoindClient> App<BitcoindClient>
@@ -338,7 +342,10 @@ where
             .map_err(CoordinatorError::PsbtToSigningPackageConversionError)?;
 
         for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
-            let signing_package = signing_packages.get(index).expect("valid index").clone();
+            let signing_package = signing_packages
+                .get(index)
+                .ok_or(CoordinatorError::MissingSigningPackageAtIndex(index))?
+                .clone();
             let partial_sig = psbt_input.all_partial_signatures();
             let agg_sig = frost::aggregate(&signing_package, &partial_sig, &pk_package)?;
 
@@ -386,7 +393,7 @@ where
                 psbt.inputs[index]
                     .final_script_witness
                     .clone()
-                    .expect("final script witness placed by finalize_mut"),
+                    .ok_or(CoordinatorError::MissingFinalScript)?,
             );
         }
 

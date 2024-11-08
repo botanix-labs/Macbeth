@@ -19,7 +19,7 @@ use tonic::{
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
 fn to_u64(time: SystemTime) -> u64 {
-    time.duration_since(UNIX_EPOCH).unwrap().as_secs()
+    time.duration_since(UNIX_EPOCH).expect("Duration since epoch cannot fail").as_secs()
 }
 
 /// grpc-related errors

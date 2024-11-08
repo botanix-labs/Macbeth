@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
-use bitcoin::{hashes::Hash, psbt::Psbt, Amount, BlockHash, FeeRate, ScriptBuf, TxOut};
+use bitcoin::{hashes::Hash, psbt::Psbt, Amount, BlockHash, ScriptBuf, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use tonic::{self, metadata::BinaryMetadataKey};
@@ -539,7 +539,8 @@ where
             .get_round2_dkg()
             .await
             .map_err(|e| internal!("Failed to get round2 dkg package: {}", e))?;
-        let json = serde_json::to_string(&round2_packages).unwrap();
+        let json = serde_json::to_string(&round2_packages)
+            .map_err(|e| internal!("Failed serialize to string round 2 dkg packages: {}", e))?;
         let res = rpc::DkgPayload {
             identifier: self.identifier.serialize().to_vec(),
             payload: json.as_bytes().to_vec(),
@@ -609,7 +610,8 @@ where
             .get_round1_dkg_packages()
             .map_err(|e| internal!("Failed to get round1 dkg packages: {}", e))?;
 
-        let json = serde_json::to_string(&round1_packages).unwrap();
+        let json = serde_json::to_string(&round1_packages)
+            .map_err(|e| internal!("Failed to serialize to string round1 dkg packages: {}", e))?;
         let res = rpc::DkgPayload {
             identifier: self.identifier.serialize().to_vec(),
             payload: json.as_bytes().to_vec(),

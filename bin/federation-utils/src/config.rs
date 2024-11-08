@@ -24,7 +24,7 @@ pub(crate) fn load_config(config_path: &Path) -> Config {
         Config::default()
     }
 }
-//create config file insdie the home direcotry.
+//create config file insdie the home directory.
 pub(crate) fn get_default_config_path() -> PathBuf {
     dirs::home_dir().expect("Failed to get home directory").join("fed-utils").join("config.toml")
 }
