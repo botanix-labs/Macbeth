@@ -1816,6 +1816,7 @@ name = "btc-server"
 version = "0.1.0"
 dependencies = [
  "alloy-rpc-types-engine",
+ "anyhow",
  "base64 0.22.1",
  "bdk",
  "bitcoin",

@@ -8,6 +8,7 @@ name = "btcserverlib"
 
 [dependencies]
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
+anyhow = "1.0.75"
 base64 = "0.22.0"
 bdk = "1.0.0-alpha.1"
 bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }

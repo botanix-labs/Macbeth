@@ -287,7 +287,7 @@ impl Db {
         }
         let mut bytes = Vec::new();
 
-        ciborium::into_writer(&dkg_round2_package, &mut bytes).expect("writing to buffer");
+        ciborium::into_writer(&dkg_round2_package, &mut bytes).map_err(Error::CiboriumWrite)?;
         self.round2_dkg_packages.insert(&peer_id_bytes[..], &bytes[..])?;
         Ok(true)
     }
@@ -317,7 +317,7 @@ impl Db {
             return Ok(false);
         }
         let mut bytes = Vec::new();
-        ciborium::into_writer(&dkg_round1, &mut bytes).expect("writing to buffer");
+        ciborium::into_writer(&dkg_round1, &mut bytes).map_err(Error::CiboriumWrite)?;
         self.round1_dkg_packages.insert(&peer_id_bytes[..], &bytes[..])?;
         Ok(true)
     }
@@ -422,7 +422,7 @@ impl Db {
         let op = utxo.outpoint;
         if !self.utxos.contains_key(op.to_bytes())? {
             let mut bytes = Vec::new();
-            ciborium::into_writer(&utxo, &mut bytes).expect("writing to buffer");
+            ciborium::into_writer(&utxo, &mut bytes).map_err(Error::CiboriumWrite)?;
             self.utxos.insert(op.to_bytes(), &bytes[..])?;
             Ok(true)
         } else {
@@ -437,7 +437,9 @@ impl Db {
                     let op = utxo.outpoint;
                     if database_tx.get(op.to_bytes())?.is_none() {
                         let mut bytes = Vec::new();
-                        ciborium::into_writer(&utxo, &mut bytes).expect("writing to buffer");
+                        ciborium::into_writer(&utxo, &mut bytes)
+                            .map_err(Error::CiboriumWrite)
+                            .expect("Ciborium error");
                         database_tx.insert(op.to_bytes().to_vec(), &bytes[..])?;
                     }
                 }
@@ -477,7 +479,7 @@ impl Db {
     /// Store list of txs that we are tracking for the pegout scheduler.
     pub fn store_tracked_tx(&self, tx: &pegout_scheduler::Tx) -> Result<(), Error> {
         let mut bytes = Vec::new();
-        ciborium::into_writer(tx, &mut bytes).expect("writing to buffer");
+        ciborium::into_writer(tx, &mut bytes).map_err(Error::CiboriumWrite)?;
         self.tracked_txs.insert(tx.txid, &bytes[..])?;
         self.update_tracked_tx_merkle_root()?;
         Ok(())
@@ -510,8 +512,8 @@ impl Db {
             return Ok(());
         }
 
-        let root =
-            bitcoin::merkle_tree::calculate_root(tracked_txs.into_iter()).expect("not empty");
+        let root = bitcoin::merkle_tree::calculate_root(tracked_txs.into_iter())
+            .ok_or(Error::EmptyMerkleRoot)?;
         self.db.insert(KEY_TRACKED_TX_MERKLE_ROOT, root.to_byte_array().to_vec())?;
         Ok(())
     }
@@ -554,7 +556,8 @@ impl Db {
             return Ok(());
         }
 
-        let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter()).expect("not empty");
+        let root = bitcoin::merkle_tree::calculate_root(utxos.into_iter())
+            .ok_or(Error::EmptyMerkleRoot)?;
         self.db.insert(KEY_UTXO_MERKLE_ROOT, root.to_byte_array().to_vec())?;
         Ok(())
     }
@@ -569,7 +572,7 @@ impl Db {
     /// Store a pending pegout
     pub fn store_pending_pegout(&self, req: &pegout_scheduler::PegoutRequest) -> Result<(), Error> {
         let mut bytes = Vec::new();
-        ciborium::into_writer(&req, &mut bytes).expect("writing to buffer");
+        ciborium::into_writer(&req, &mut bytes).map_err(Error::CiboriumWrite)?;
         self.pending_pegouts.insert(req.id.as_bytes(), &bytes[..])?;
         self.update_pending_pegouts_merkle_root()?;
         Ok(())
@@ -592,8 +595,8 @@ impl Db {
             return Ok(());
         }
 
-        let root =
-            bitcoin::merkle_tree::calculate_root(pending_pegouts.into_iter()).expect("not empty");
+        let root = bitcoin::merkle_tree::calculate_root(pending_pegouts.into_iter())
+            .ok_or(Error::EmptyMerkleRoot)?;
         self.db.insert(KEY_PENDING_PEGOUTS_MERKLE_ROOT, root.to_byte_array().to_vec())?;
         Ok(())
     }
@@ -606,6 +609,7 @@ impl Db {
     }
 
     /// Get a pending pegout by id
+    #[allow(dead_code)]
     pub fn get_pending_pegout(
         &self,
         id: &PegoutId,
@@ -654,6 +658,14 @@ pub enum Error {
     Transaction(String),
     #[error("Rpc to db data mapping error: {0}")]
     RpcToDbMap(String),
+    #[error("empty merkle root")]
+    EmptyMerkleRoot,
+    #[error("Ciborium write error {0}")]
+    CiboriumWrite(#[from] ciborium::ser::Error<std::io::Error>),
+    #[error("expected output at index but not found")]
+    OutputNotFound(usize),
+    #[error("hash engine error {0}")]
+    HashEngine(#[from] std::io::Error),
 }
 
 impl From<sled::transaction::TransactionError<sled::Error>> for Error {

@@ -37,6 +37,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use crate::config::Error as ConfigError;
 use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::{Auth, RpcApi};
@@ -84,6 +85,8 @@ pub enum Error {
     PegoutSchedulerSync(#[from] pegout_scheduler::SyncError),
     #[error("failed to sync to given checkpoint block: {0}")]
     FailedToReachCheckPoint(BlockHash),
+    #[error("config error: {0}")]
+    Config(#[from] ConfigError),
 }
 
 type SigningNoncesCommitmentsMap =
@@ -219,7 +222,7 @@ where
     pub async fn serve_async(self) -> Result<StopHandle, Error> {
         // init grpc config
         let grpc_config = if let Some(toml_config) = self.config.toml.as_ref() {
-            TomlConfig::new(toml_config).await.unwrap().grpc
+            TomlConfig::new(toml_config).await.map_err(Error::Config)?.grpc
         } else {
             GrpcConfig::default()
         };
@@ -322,7 +325,7 @@ where
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .filter_module("btc_server::", log::LevelFilter::Trace)
