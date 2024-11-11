@@ -426,10 +426,6 @@ where
                                     }
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 1 signing {:?}", e);
-                                        let _ = self
-                                            .signing_state_machine
-                                            .handle_errored_signing_process(signing_session_id)
-                                            .await;
                                     }
                                 }
                             }
@@ -443,10 +439,6 @@ where
                                 }
                                 Err(e) => {
                                     error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 1 signing package {:?}", e);
-                                    let _ = self
-                                        .signing_state_machine
-                                        .handle_errored_signing_process(signing_session_id)
-                                        .await;
                                 }
                             },
                             SigningEventResponseType::SignerRound2SigningPackage => {
@@ -460,10 +452,6 @@ where
                                     }
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 2 signing package {:?}", e);
-                                        let _ = self
-                                            .signing_state_machine
-                                            .handle_errored_signing_process(signing_session_id)
-                                            .await;
                                     }
                                 }
                             }
@@ -477,10 +465,6 @@ where
                                 }
                                 Err(e) => {
                                     error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 2 signing package {:?}", e);
-                                    let _ = self
-                                        .signing_state_machine
-                                        .handle_errored_signing_process(signing_session_id)
-                                        .await;
                                 }
                             },
                         }

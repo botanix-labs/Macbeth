@@ -848,24 +848,4 @@ where
 
         Ok(())
     }
-
-    /// Handles an errored singing process
-    pub(crate) async fn handle_errored_signing_process(
-        &mut self,
-        signing_session_id: FixedBytes<32>,
-    ) -> Result<(), Error> {
-        // parse the session id
-        let session_id = parse_signing_session_id(&signing_session_id)?;
-
-        // make sure we are in a failed state
-        if !self.is_failed_state(&session_id).await {
-            warn!(target: "consensus::authority::signing::handle_errored_signing_process",
-                "Session id {:?} has not failed",
-                &session_id
-            );
-            return Ok(());
-        }
-
-        Ok(())
-    }
 }
