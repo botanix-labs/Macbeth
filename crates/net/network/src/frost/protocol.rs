@@ -150,8 +150,8 @@ impl ConnectionHandler for FrostConnectionHandler {
 /// Frost Protocol Connection
 #[derive(Debug)]
 pub struct FrostProtoConnection {
-    /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
-    /// command
+    /// Channel to send protocol events to the manager (Conn established/confirmed, peer message),
+    /// peer message command
     protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
     /// Channel to receive messages from other peers on the wire
     conn_rx: ProtocolConnection,
@@ -167,6 +167,12 @@ pub struct FrostProtoConnection {
     #[allow(dead_code)]
     initial_ping: Option<FrostProtoMessage>,
     pending_pong: Option<oneshot::Sender<String>>,
+}
+
+impl Drop for FrostProtoConnection {
+    fn drop(&mut self) {
+        info!(target: "network::frost::protocol", "Dropping FrostProtoConnection for peer with id = {:?}", self.peer_id);
+    }
 }
 
 impl Stream for FrostProtoConnection {
