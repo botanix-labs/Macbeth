@@ -38,7 +38,7 @@ pub struct FrostProtoHandler {
     pub my_peer_id: PeerId,
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
-    pub protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
+    pub protocol_events_tx: mpsc::Sender<FrostProtocolEvent>,
 }
 
 impl ProtocolHandler for FrostProtoHandler {
@@ -80,7 +80,7 @@ pub struct FrostConnectionHandler {
     my_peer_id: PeerId,
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
-    protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
+    protocol_events_tx: mpsc::Sender<FrostProtocolEvent>,
 }
 
 impl ConnectionHandler for FrostConnectionHandler {
@@ -123,7 +123,7 @@ impl ConnectionHandler for FrostConnectionHandler {
             peer_commands_tx: remote_peer_tx,
         };
 
-        if let Err(e) = self.protocol_events_tx.send(connection_established_event) {
+        if let Err(e) = self.protocol_events_tx.blocking_send(connection_established_event) {
             error!(target: "network::frost::protocol::into_connection", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
         }
 
@@ -152,7 +152,7 @@ impl ConnectionHandler for FrostConnectionHandler {
 pub struct FrostProtoConnection {
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
-    protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
+    protocol_events_tx: mpsc::Sender<FrostProtocolEvent>,
     /// Channel to receive messages from other peers on the wire
     conn_rx: ProtocolConnection,
     /// Channel to receive commands from in the internal application to send to the other peers
@@ -285,7 +285,7 @@ impl Stream for FrostProtoConnection {
         let protocol_events_tx = this.protocol_events_tx.clone();
         match msg.message {
             FrostProtoMessageKind::Healthcheck(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = protocol_events_tx.blocking_send(FrostProtocolEvent::PeerMessage {
                     peer_id: this.peer_id,
                     response: PeerMessageResponse::Healthcheck(HealthcheckResponse {
                         receiver: data.receiver,
@@ -313,7 +313,7 @@ impl Stream for FrostProtoConnection {
                 }
             }
             FrostProtoMessageKind::Round1Dkg(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = protocol_events_tx.blocking_send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound1,
                         identifier: data.identifier,
@@ -325,7 +325,7 @@ impl Stream for FrostProtoConnection {
                 }
             }
             FrostProtoMessageKind::Round1DkgRequest(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = protocol_events_tx.blocking_send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound1Request,
                         identifier: data.identifier,
@@ -337,7 +337,7 @@ impl Stream for FrostProtoConnection {
                 }
             }
             FrostProtoMessageKind::Round2Dkg(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = protocol_events_tx.blocking_send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Dkg(DkgResponse {
                         response_type: DkgEventResponseType::DkgRound2,
                         identifier: data.identifier,
@@ -349,7 +349,7 @@ impl Stream for FrostProtoConnection {
                 }
             }
             FrostProtoMessageKind::SignerRound1SigningPackage(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = protocol_events_tx.blocking_send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound1SigningPackage,
                         identifier: data.identifier,
@@ -362,7 +362,7 @@ impl Stream for FrostProtoConnection {
                 }
             }
             FrostProtoMessageKind::CoordinatorRound1SigningPackage(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = protocol_events_tx.blocking_send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                         identifier: data.identifier,
@@ -375,7 +375,7 @@ impl Stream for FrostProtoConnection {
                 }
             }
             FrostProtoMessageKind::SignerRound2SigningPackage(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = protocol_events_tx.blocking_send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound2SigningPackage,
                         identifier: data.identifier,
@@ -388,7 +388,7 @@ impl Stream for FrostProtoConnection {
                 }
             }
             FrostProtoMessageKind::CoordinatorRound2SigningPackage(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                if let Err(e) = protocol_events_tx.blocking_send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
                         identifier: data.identifier,

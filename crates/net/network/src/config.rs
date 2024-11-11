@@ -13,7 +13,7 @@ use reth_primitives::{ForkFilter, Head};
 use reth_storage_api::{BlockNumReader, BlockReader, HeaderProvider};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
 use secp256k1::SECP256K1;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
     error::NetworkError,
@@ -86,7 +86,7 @@ pub struct NetworkConfig<C> {
     /// Frost configuration
     pub frost_config: Option<FrostConfig>,
     /// Receiver for frost protocol events
-    pub frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
+    pub frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
 }
 
 // === impl NetworkConfig ===
@@ -197,7 +197,7 @@ pub struct NetworkConfigBuilder {
     /// Frost Configuration
     frost_config: Option<FrostConfig>,
     /// Receiver for frost protocol events
-    frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
+    frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
 }
 
 // === impl NetworkConfigBuilder ===
@@ -482,7 +482,7 @@ impl NetworkConfigBuilder {
     /// Sets the frost protocol events rx.
     pub fn frost_protocol_events_rx(
         mut self,
-        frost_protocol_events: UnboundedReceiverStream<FrostProtocolEvent>,
+        frost_protocol_events: ReceiverStream<FrostProtocolEvent>,
     ) -> Self {
         self.frost_protocol_events_rx = Some(frost_protocol_events);
         self
