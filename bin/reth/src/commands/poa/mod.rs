@@ -757,45 +757,37 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_host(cometbft_rpc_host);
 
         // Build authority Consensus
-        let (
-            _authority_consensus,
-            frost_task,
-            mut sync_controller,
-            _healthcheck_task,
-            abci_client_builder,
-        ) = match AuthorityConsensusBuilder::try_new(
-            Arc::clone(&chain_arc.clone()),
-            blockchain_db.clone(),
-            consensus_engine_tx.clone(),
-            canon_state_notification_sender.clone(),
-            btc_server_factory.clone(),
-            bitcoin_block_header_clone.clone(),
-            secret_key,
-            network_handle.clone(),
-            network_client.clone(),
-            frost_handle,
-            block_import_rx,
-            executor.clone(),
-            frost_config,
-            payload_builder.clone(),
-            node_config.rpc.btc_network,
-            genesis_authorities.clone(),
-            authorities_socket_addresses,
-            executor_factory.clone(),
-            bitcoind_factory.clone(),
-            evm_config,
-            cometbft_rpc_factory,
-            RandomSourceProvider::new(),
-            canon_state_notification_receiver,
-        ) {
-            Ok(consensus) => consensus.build().await,
-            Err(e) => {
-                return Err(eyre::eyre!(
-                    "authority consensus builder missing federation public keys : {:?}",
-                    e
-                ));
-            }
-        };
+        let (_authority_consensus, frost_task, _healthcheck_task, abci_client_builder) =
+            match AuthorityConsensusBuilder::try_new(
+                Arc::clone(&chain_arc.clone()),
+                blockchain_db.clone(),
+                consensus_engine_tx.clone(),
+                canon_state_notification_sender.clone(),
+                btc_server_factory.clone(),
+                bitcoin_block_header_clone.clone(),
+                secret_key,
+                network_handle.clone(),
+                network_client.clone(),
+                frost_handle,
+                block_import_rx,
+                executor.clone(),
+                frost_config,
+                payload_builder.clone(),
+                node_config.rpc.btc_network,
+                genesis_authorities.clone(),
+                authorities_socket_addresses,
+                executor_factory.clone(),
+                bitcoind_factory.clone(),
+                evm_config,
+                cometbft_rpc_factory,
+                RandomSourceProvider::new(),
+                canon_state_notification_receiver,
+            ) {
+                Ok(consensus) => consensus.build().await,
+                Err(e) => {
+                    return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
+                }
+            };
 
         // configure exxes manager
         let exex_manager = ExExManagerHandle::empty();
