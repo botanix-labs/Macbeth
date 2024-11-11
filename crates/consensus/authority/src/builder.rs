@@ -1,11 +1,7 @@
 use crate::{
-    comet_bft::abci::ABCIClientBuilder,
-    compressor::Compressor,
-    frost_task::{FrostNotificationMessage, FrostTask},
-    healthcheck_task::HealthcheckTask,
-    random_source_provider::RandomSource,
-    utxo_sync::UTXOSyncEngine,
-    AuthorityConsensus, Storage,
+    comet_bft::abci::ABCIClientBuilder, compressor::Compressor, frost_task::FrostTask,
+    healthcheck_task::HealthcheckTask, random_source_provider::RandomSource,
+    utxo_sync::UTXOSyncEngine, AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::GrpcClientFactory;
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
@@ -266,13 +262,6 @@ where
             }
         };
 
-        // Set up frost notification message queue
-        // these are two mpsc channels that are used to communicate between the frost task and the
-        // block production task
-        let (_frost_task_notifications1_tx, frost_task_notifications1_rx) =
-            tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
-        let (frost_task_notifications2_tx, _frost_task_notifications2_rx) =
-            tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
         let mut frost_task = None;
@@ -293,9 +282,6 @@ where
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.clone().expect("frost config exists"),
                 storage.clone(),
-                frost_task_notifications1_rx,
-                frost_task_notifications2_tx,
-                task_executor.clone(),
                 compressor,
                 random_source_provider,
                 canon_state_notification_receiver,

@@ -1,5 +1,5 @@
 use crate::{
-    frost_task::{FrostNotification, FrostNotificationMessage},
+    frost_task::FrostNotification,
     random_source_provider::RandomSource,
     utils::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
@@ -20,12 +20,8 @@ use reth_network::frost::{
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::PeerId;
-use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{
-    mpsc::{error::SendError, UnboundedSender},
-    RwLock,
-};
+use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{error, info, warn};
 
 type SigningStatesMap = Arc<RwLock<HashMap<[u8; 32], SigningSession>>>;
@@ -128,7 +124,6 @@ pub(crate) struct SigningStateMachine<ToFrostMan, Source> {
     signing_states: Arc<RwLock<HashMap<[u8; 32], SigningSession>>>,
     personal_frost_identifier: frost::Identifier,
     frost_config: FrostConfig,
-    frost_task_tx: UnboundedSender<FrostNotificationMessage>,
     random_source_provider: Source,
 }
 
@@ -143,8 +138,6 @@ where
         btc_client: BtcServerExtendedClient,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
-        frost_task_tx: UnboundedSender<FrostNotificationMessage>,
-        _task_executor: TaskExecutor,
         random_source_provider: Source,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
@@ -159,7 +152,6 @@ where
             signing_states,
             personal_frost_identifier,
             frost_config,
-            frost_task_tx,
             random_source_provider,
         }
     }
@@ -849,12 +841,8 @@ where
         info!(target: "consensus::authority::signing::coordinator_process_round2", "round 2 added");
 
         // try to finalize the signing
-        if let Ok(sign_payload) = self.finalize_signing(signing_session_id).await {
-            if let Err(e) = self.frost_task_tx.send(FrostNotificationMessage::FinalizedSignature(
-                FrostNotification { signing_session_id, psbt: sign_payload.psbt },
-            )) {
-                error!(target: "consensus::authority::signing::coordinator_process_round2", "Error sending finalized signature {:?}", e);
-            }
+        if let Ok(_sign_payload) = self.finalize_signing(signing_session_id).await {
+            info!(target: "consensus::authority::signing::coordinator_process_round2", "signing finalized!");
             self.update_signing_state(session_id, SigningState::Finalized).await
         }
 
@@ -876,39 +864,6 @@ where
                 &session_id
             );
             return Ok(());
-        }
-
-        // only if we are coordinator AND we are in a failed state, then we can restart the signing
-        // process provided there is enough time left
-        if self.is_coordinator() {
-            // get the signing session, if not found abort and return
-            let signing_session = self.get_signing_session(session_id).await;
-            if signing_session.is_none() {
-                self.abort_signing().await?;
-                error!(target: "consensus::authority::signing::handle_errored_signing_process", "Could not find the the signing session for session id = {:?}", session_id);
-                return Ok(());
-            }
-
-            let signing_session_notifications = match signing_session {
-                Some(signing_session) => FrostNotification {
-                    signing_session_id,
-                    psbt: signing_session
-                        .original_psbt
-                        .expect("Original psbt to be valid and present"),
-                },
-                None => {
-                    warn!(target: "consensus::authority::signing::handle_errored_signing_process", "Signing session psbt is empty for session id {:?}", &session_id);
-                    return Ok(());
-                }
-            };
-
-            // if all good, re-initiate the signing rounds
-            if let Err(e) = self
-                .frost_task_tx
-                .send(FrostNotificationMessage::InitiateSigning(signing_session_notifications))
-            {
-                error!(target: "consensus::authority::signing::handle_errored_signing_process", "Error trying to re-initialize failed signing session with session id {:?}. Error = {:?}", &session_id, e);
-            }
         }
 
         Ok(())
