@@ -3,10 +3,14 @@
 use std::{fmt, str::FromStr};
 
 use bitcoincore_rpc::RpcApi;
-use btcserverlib::extended_client::{GrpcClientError, GrpcClientFactory};
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
-use reth_primitives::U256;
-use revm_primitives::alloy_primitives::hex;
+use frost_secp256k1_tr as frost;
+use reth_btc_wallet::{
+    bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory},
+    util::VerifyingKeyExt,
+};
+use reth_primitives::{header_ext::HeaderExt, U256};
+use reth_storage_api::BlockReaderIdExt;
+use thiserror::Error;
 use tracing::error;
 use url::Url;
 
@@ -15,9 +19,6 @@ use url::Url;
 pub struct BotanixConfig {
     /// Bitcoin network
     pub bitcoin_network: bitcoin::Network,
-
-    /// The gRPC url for the bitcoin signer
-    pub btc_server_factory: Option<GrpcClientFactory>,
 
     /// bitcoind configuration
     pub bitcoind_factory: BitcoindClientFactory,
@@ -28,7 +29,6 @@ impl Default for BotanixConfig {
     fn default() -> Self {
         Self {
             bitcoin_network: bitcoin::Network::Regtest,
-            btc_server_factory: None,
             // Use a public signet endpoint by default
             bitcoind_factory: BitcoindClientFactory::new(BitcoindConfig::new(
                 "http://localhost:18443".parse::<Url>().expect("must be valid url address"),
@@ -43,60 +43,27 @@ impl BotanixConfig {
     /// Creates a new [`BotanixConfig`]
     pub const fn new(
         bitcoin_network: bitcoin::Network,
-        btc_server_factory: Option<GrpcClientFactory>,
         bitcoind_factory: BitcoindClientFactory,
     ) -> Self {
-        Self { bitcoin_network, btc_server_factory, bitcoind_factory }
+        Self { bitcoin_network, bitcoind_factory }
     }
 }
 
 /// Errors from get gateway address RPC endpoint
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum GatewayAddressRPCError {
-    /// Failed to decode value received from `btc_server`
-    FailedToDecodeAggregatePublicKey(hex::FromHexError),
-    /// Invalid param received from client
-    Client(GrpcClientError),
-    /// Address generation failed
-    FailedToGenerateGatewayAddress,
-    /// Secp key conversion failed
-    FailedToConvertPublicKey(secp256k1::Error),
-    /// Address is generated for incorrect Network
-    InvalidNetwork,
-    /// Missing btc server connection information
-    MissingBtcServerUrl,
-    /// Rpc node does not have access to this resource
-    ResourceAccess,
-}
-
-impl fmt::Display for GatewayAddressRPCError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::FailedToDecodeAggregatePublicKey(e) => {
-                write!(f, "Failed to decode aggregate public key: {}", e)
-            }
-            Self::MissingBtcServerUrl => {
-                write!(f, "Missing Btc Server Connection Url")
-            }
-            Self::FailedToGenerateGatewayAddress => {
-                write!(f, "Failed to generate gateway address")
-            }
-            Self::FailedToConvertPublicKey(e) => {
-                write!(f, "Failed to convert public key: {}", e)
-            }
-            Self::InvalidNetwork => write!(f, "Invalid network"),
-            Self::Client(e) => write!(f, "Grpc client error: {}", e),
-            Self::ResourceAccess => {
-                write!(f, "Resource access denied for this node")
-            }
-        }
-    }
-}
-
-impl From<GatewayAddressRPCError> for String {
-    fn from(error: GatewayAddressRPCError) -> Self {
-        error.to_string()
-    }
+    /// Failed to get latest header
+    #[error("Failed to get latest header")]
+    FailedToGetLatestHeader,
+    /// Cannot calculate gateway address for genesis block
+    #[error("Cannot calculate gateway address for genesis block")]
+    GenesisBlock,
+    /// Failed to deserialize aggregated public key
+    #[error("Frost deserialization failed {0}")]
+    FailedToDeserializeAggregatedPublicKey(#[from] frost::Error),
+    /// Failed to convert to secp pk
+    #[error("Failed to convert to secp pk {0}")]
+    FailedToConvertToSecpPk(#[from] reth_btc_wallet::util::VerifyingKeyExtError),
 }
 
 /// Errors from get merkle proof RPC endpoint
@@ -193,40 +160,31 @@ impl Botanix {
     pub async fn get_gateway_address(
         &self,
         eth_address: reth_primitives::Address,
+        provider: &impl BlockReaderIdExt,
     ) -> std::result::Result<(bitcoin::Address, secp256k1::PublicKey), GatewayAddressRPCError> {
-        // Non-federation nodes will not have btc_server set
-        if self.botanix_rpc_config.btc_server_factory.is_none() {
-            return Err(GatewayAddressRPCError::ResourceAccess);
+        let eth_address_bytes = eth_address.0 .0;
+        let latest_header = provider
+            .latest_header()
+            .map_err(|_| GatewayAddressRPCError::FailedToGetLatestHeader)?
+            .ok_or(GatewayAddressRPCError::FailedToGetLatestHeader)?;
+
+        if latest_header.number == 0 {
+            return Err(GatewayAddressRPCError::GenesisBlock);
         }
+        // We need to tweak the aggregated public key with the eth address
+        let agg_pk = latest_header
+            .deserialize_extra_data_header()
+            .map_err(|_| GatewayAddressRPCError::FailedToGetLatestHeader)?
+            .aggregated_public_key;
 
-        let mut btc_server_client = self
-            .botanix_rpc_config
-            .btc_server_factory
-            .clone()
-            .expect("checked above")
-            .build_and_connect()
-            .await
-            .map_err(GatewayAddressRPCError::Client)?;
+        let vpk = frost::VerifyingKey::deserialize(agg_pk.serialize())?;
+        let tweaked_pk = vpk.get_tweaked(Some(&eth_address_bytes)).to_secp_pk()?;
+        let address = reth_btc_wallet::address::generate_taproot_address(
+            &tweaked_pk,
+            self.botanix_rpc_config.bitcoin_network,
+        );
 
-        let request = client::GetGatewayAddressRequest { eth_address: eth_address.to_string() };
-
-        let response = btc_server_client
-            .get_gateway_address(request)
-            .await
-            .map_err(GatewayAddressRPCError::Client)?;
-
-        let address = bitcoin::Address::from_str(response.gateway_address.as_str())
-            .map_err(|_e| GatewayAddressRPCError::FailedToGenerateGatewayAddress)?
-            .require_network(self.botanix_rpc_config.bitcoin_network)
-            .map_err(|_e| GatewayAddressRPCError::InvalidNetwork)?;
-
-        let pk = secp256k1::PublicKey::from_slice(
-            &hex::decode(response.publickey.as_str())
-                .map_err(GatewayAddressRPCError::FailedToDecodeAggregatePublicKey)?,
-        )
-        .map_err(GatewayAddressRPCError::FailedToConvertPublicKey)?;
-
-        Ok((address, pk))
+        Ok((address, agg_pk))
     }
 
     /// Function generates merkle proof for txid in a given block

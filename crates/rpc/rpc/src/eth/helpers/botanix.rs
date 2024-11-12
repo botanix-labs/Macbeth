@@ -1,26 +1,17 @@
 //! Contains RPC handler implementations specific to botanix.
 
 use crate::EthApi;
-use reth_chainspec::ChainSpec;
-use reth_provider::{BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderFactory};
+use reth_provider::BlockReaderIdExt;
 use reth_rpc_eth_api::helpers::{botanix::EthBotanixApi, LoadBlock};
 
 impl<Provider, Pool, Network, EvmConfig> EthBotanixApi
     for EthApi<Provider, Pool, Network, EvmConfig>
 where
     Self: LoadBlock,
-    Provider: BlockReaderIdExt
-        + EvmEnvProvider
-        + ChainSpecProvider<ChainSpec = ChainSpec>
-        + StateProviderFactory,
+    Provider: BlockReaderIdExt,
 {
     #[inline]
-    fn provider(
-        &self,
-    ) -> impl BlockReaderIdExt
-           + EvmEnvProvider
-           + ChainSpecProvider<ChainSpec = ChainSpec>
-           + StateProviderFactory {
+    fn provider(&self) -> impl BlockReaderIdExt {
         self.inner.provider()
     }
 

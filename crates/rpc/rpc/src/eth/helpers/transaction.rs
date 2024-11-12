@@ -7,7 +7,7 @@ use reth_rpc_eth_api::{
     helpers::{EthSigner, EthTransactions, LoadTransaction, SpawnBlocking},
     RawTransactionForwarder,
 };
-use reth_rpc_eth_types::{builder::botanix_config::Botanix, EthStateCache};
+use reth_rpc_eth_types::EthStateCache;
 use reth_transaction_pool::TransactionPool;
 
 use crate::EthApi;
@@ -22,11 +22,6 @@ where
     #[inline]
     fn provider(&self) -> impl BlockReaderIdExt {
         self.inner.provider()
-    }
-
-    #[inline]
-    fn botanix_provider(&self) -> &Botanix {
-        self.inner.botanix_provider()
     }
 
     #[inline]
@@ -73,7 +68,8 @@ mod tests {
     use reth_provider::test_utils::NoopProvider;
     use reth_rpc_eth_api::helpers::EthTransactions;
     use reth_rpc_eth_types::{
-        EthStateCache, FeeHistoryCache, FeeHistoryCacheConfig, GasPriceOracle,
+        builder::botanix_config::Botanix, EthStateCache, FeeHistoryCache, FeeHistoryCacheConfig,
+        GasPriceOracle,
     };
     use reth_rpc_server_types::constants::{DEFAULT_ETH_PROOF_WINDOW, DEFAULT_PROOF_PERMITS};
     use reth_tasks::pool::BlockingTaskPool;

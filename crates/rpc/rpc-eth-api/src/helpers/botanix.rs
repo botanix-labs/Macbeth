@@ -2,27 +2,19 @@
 //! RPC methods.
 
 use futures::Future;
-use reth_chainspec::ChainSpec;
 use reth_primitives::U256;
-use reth_provider::{BlockReaderIdExt, ChainSpecProvider, EvmEnvProvider, StateProviderFactory};
+use reth_provider::BlockReaderIdExt;
 use reth_rpc_eth_types::{builder::botanix_config::Botanix, EthApiError};
 use revm_primitives::Address;
 
 use crate::EthApiTypes;
 
-/// Loads a pending block from database.
-///
-/// Behaviour shared by several `eth_` RPC methods, not exclusive to `eth_` blocks RPC methods.
+/// Botanix Rpc endpoints
 pub trait EthBotanixApi: EthApiTypes {
     /// Returns a handle for reading data from disk.
     ///
     /// Data access in default (L1) trait method implementations.
-    fn provider(
-        &self,
-    ) -> impl BlockReaderIdExt
-           + EvmEnvProvider
-           + ChainSpecProvider<ChainSpec = ChainSpec>
-           + StateProviderFactory;
+    fn provider(&self) -> impl BlockReaderIdExt;
 
     /// Returns a handle to the botanix provider
     fn botanix_provider(&self) -> &Botanix;
@@ -31,12 +23,13 @@ pub trait EthBotanixApi: EthApiTypes {
     fn get_gateway_address(
         &self,
         eth_address: Address,
+        provider: &impl BlockReaderIdExt,
     ) -> impl Future<Output = Result<Option<(bitcoin::Address, secp256k1::PublicKey)>, Self::Error>> + Send
     {
         async move {
             let pegin_info = self
                 .botanix_provider()
-                .get_gateway_address(eth_address)
+                .get_gateway_address(eth_address, provider)
                 .await
                 .map_err(|_| EthApiError::GatewayAddress)?;
             Ok(Some(pegin_info))

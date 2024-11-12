@@ -262,7 +262,7 @@ where
         };
 
         // create botanix client
-        // Creating a noop btc server for now as this crate should not be used to create the poa
+        // Creating a noop db client for now as this crate should not be used to create the poa
         // client
         let botanix_config = BotanixConfig::default();
         let engine_api = EngineApi::new(
