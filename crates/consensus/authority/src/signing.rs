@@ -22,10 +22,7 @@ use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::PeerId;
 use reth_tasks::TaskExecutor;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{
-    mpsc::{error::SendError, UnboundedSender},
-    RwLock,
-};
+use tokio::sync::{broadcast::Sender as BroadcastSender, mpsc::error::SendError, RwLock};
 use tracing::{error, info, warn};
 
 type SigningStatesMap = Arc<RwLock<HashMap<[u8; 32], SigningSession>>>;
@@ -128,7 +125,7 @@ pub(crate) struct SigningStateMachine<ToFrostMan, Source> {
     signing_states: Arc<RwLock<HashMap<[u8; 32], SigningSession>>>,
     personal_frost_identifier: frost::Identifier,
     frost_config: FrostConfig,
-    frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+    frost_task_tx: BroadcastSender<FrostNotificationMessage>,
     random_source_provider: Source,
 }
 
@@ -143,7 +140,7 @@ where
         btc_client: BtcServerExtendedClient,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
-        frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+        frost_task_tx: BroadcastSender<FrostNotificationMessage>,
         _task_executor: TaskExecutor,
         random_source_provider: Source,
     ) -> Self {
@@ -850,10 +847,11 @@ where
 
         // try to finalize the signing
         if let Ok(sign_payload) = self.finalize_signing(signing_session_id).await {
+            error!(target: "consensus::authority::signing::coordinator_process_round2", "Receivers count {:?}", self.frost_task_tx.receiver_count());
             if let Err(e) = self.frost_task_tx.send(FrostNotificationMessage::FinalizedSignature(
                 FrostNotification { signing_session_id, psbt: sign_payload.psbt },
             )) {
-                error!(target: "consensus::authority::signing::coordinator_process_round2", "Error sending finalized signature {:?}", e);
+                error!(target: "consensus::authority::signing::coordinator_process_round2", "Error sending finalized signature {:?}", e.to_string());
             }
             self.update_signing_state(session_id, SigningState::Finalized).await
         }

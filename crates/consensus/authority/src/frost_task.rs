@@ -29,8 +29,7 @@ use reth_provider::{
 use reth_revm::primitives::FixedBytes;
 use reth_tasks::TaskExecutor;
 use tokio::sync::{
-    broadcast::Receiver,
-    mpsc::{UnboundedReceiver, UnboundedSender},
+    broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender},
     oneshot::error::RecvError,
 };
 use tracing::{debug, error, info, warn};
@@ -80,13 +79,13 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     pub(crate) storage: Storage<EF, BF, DB>,
     /// Channel to receive frost notifications (from the block production task)
     /// We only wait for init signing messages
-    frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
+    frost_task_rx: BroadcastReceiver<FrostNotificationMessage>,
     /// Pre-configured compressor
     compressor: Compressor,
     /// btc server client
     btc_server: BtcServerExtendedClient,
     /// Channel to receive canon state notifications
-    canon_state_notification_receiver: Receiver<CanonStateNotification>,
+    canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
 }
 
 impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
@@ -111,12 +110,12 @@ where
         frost_handle: ToFrostMan,
         config: FrostConfig,
         storage: Storage<EF, BF, DB>,
-        frost_task_rx: UnboundedReceiver<FrostNotificationMessage>,
-        frost_task_tx: UnboundedSender<FrostNotificationMessage>,
+        frost_task_rx: BroadcastReceiver<FrostNotificationMessage>,
+        frost_task_tx: BroadcastSender<FrostNotificationMessage>,
         task_executor: TaskExecutor,
         compressor: Compressor,
         random_source_provider: Source,
-        canon_state_notification_receiver: Receiver<CanonStateNotification>,
+        canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len() - 1);
 

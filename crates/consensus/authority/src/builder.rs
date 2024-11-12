@@ -31,7 +31,7 @@ use reth_provider::{
 use reth_tasks::TaskExecutor;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{
-    broadcast::Receiver,
+    broadcast::Receiver as BroadcastReceiver,
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
@@ -58,7 +58,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Sour
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
     random_source_provider: Source,
-    canon_state_notification_receiver: Receiver<CanonStateNotification>,
+    canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -112,7 +112,7 @@ where
         evm_config: EthEvmConfig,
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
         random_source_provider: Source,
-        canon_state_notification_receiver: Receiver<CanonStateNotification>,
+        canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -270,9 +270,9 @@ where
         // these are two mpsc channels that are used to communicate between the frost task and the
         // block production task
         let (_frost_task_notifications1_tx, frost_task_notifications1_rx) =
-            tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
+            tokio::sync::broadcast::channel::<FrostNotificationMessage>(10000);
         let (frost_task_notifications2_tx, _frost_task_notifications2_rx) =
-            tokio::sync::mpsc::unbounded_channel::<FrostNotificationMessage>();
+            tokio::sync::broadcast::channel::<FrostNotificationMessage>(10000);
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
         let mut frost_task = None;
