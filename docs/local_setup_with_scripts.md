@@ -6,7 +6,7 @@ To develop and run this project locally, ensure you have the following tools ins
 
 1. [Rust](https://www.rust-lang.org/).
 2. Binaries folder contains binary of `cometbft` & `bticoind`
-3. We can find `local_setupt.sh` inside the project root, which contains commands for init, start and stop the services and nodes.
+3. We can find `local_setup.sh` inside the project root, which contains commands for init, start and stop the services and nodes.
 
 ## Project Execution Steps
 

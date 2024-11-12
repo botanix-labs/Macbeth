@@ -7,7 +7,6 @@ To develop and run this project locally, ensure you have the following tools ins
 1. [Rust](https://www.rust-lang.org/).
 2. [Bitcoin](https://github.com/bitcoin/bitcoin).
 3. [CometBFT](https://github.com/cometbft/cometbft).
-4. [MacBeth](https://github.com/botanix-labs/Macbeth).
 
 ## Project Execution Steps
 
