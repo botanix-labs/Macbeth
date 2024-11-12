@@ -27,7 +27,7 @@ use reth_provider::{
 use reth_tasks::TaskExecutor;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{
-    broadcast::Receiver,
+    broadcast::Receiver as BroadcastReceiver,
     mpsc::{UnboundedReceiver, UnboundedSender},
     RwLock,
 };
@@ -54,7 +54,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Sour
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
     random_source_provider: Source,
-    canon_state_notification_receiver: Receiver<CanonStateNotification>,
+    canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -108,7 +108,7 @@ where
         evm_config: EthEvmConfig,
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
         random_source_provider: Source,
-        canon_state_notification_receiver: Receiver<CanonStateNotification>,
+        canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();

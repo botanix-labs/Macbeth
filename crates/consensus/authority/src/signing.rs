@@ -1,5 +1,4 @@
 use crate::{
-    frost_task::FrostNotification,
     random_source_provider::RandomSource,
     utils::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,

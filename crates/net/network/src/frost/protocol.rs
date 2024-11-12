@@ -11,7 +11,7 @@ use std::{
     pin::Pin,
     task::{ready, Context, Poll},
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{error, info, warn};
 
@@ -38,7 +38,7 @@ pub struct FrostProtoHandler {
     pub my_peer_id: PeerId,
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
-    pub protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
+    pub protocol_events_tx: broadcast::Sender<FrostProtocolEvent>,
 }
 
 impl ProtocolHandler for FrostProtoHandler {
@@ -80,7 +80,7 @@ pub struct FrostConnectionHandler {
     my_peer_id: PeerId,
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
-    protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
+    protocol_events_tx: broadcast::Sender<FrostProtocolEvent>,
 }
 
 impl ConnectionHandler for FrostConnectionHandler {
@@ -150,9 +150,9 @@ impl ConnectionHandler for FrostConnectionHandler {
 /// Frost Protocol Connection
 #[derive(Debug)]
 pub struct FrostProtoConnection {
-    /// Channel to send protocol events to the manager (Conn established/confirmed, peer message),
-    /// peer message command
-    protocol_events_tx: mpsc::UnboundedSender<FrostProtocolEvent>,
+    /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
+    /// command
+    protocol_events_tx: broadcast::Sender<FrostProtocolEvent>,
     /// Channel to receive messages from other peers on the wire
     conn_rx: ProtocolConnection,
     /// Channel to receive commands from in the internal application to send to the other peers
@@ -289,6 +289,7 @@ impl Stream for FrostProtoConnection {
         // the a response will be send on command_rx for us to send back to another
         // peer
         let protocol_events_tx = this.protocol_events_tx.clone();
+        info!(target: "network::frost::protocol", "Receivers count: {}", protocol_events_tx.receiver_count());
         match msg.message {
             FrostProtoMessageKind::Healthcheck(data) => {
                 if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {

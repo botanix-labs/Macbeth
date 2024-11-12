@@ -27,7 +27,7 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotification, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
-use tokio::sync::{broadcast::Receiver, oneshot::error::RecvError};
+use tokio::sync::{broadcast::Receiver as BroadcastReceiver, oneshot::error::RecvError};
 use tracing::{debug, error, info, warn};
 
 #[allow(dead_code)]
@@ -39,15 +39,6 @@ pub(crate) enum UtxoSetSyncSerializationError {
     Grpc(GrpcClientError),
     #[error("compressor error {0}")]
     Compressor(CompressorError),
-}
-
-/// Finalised frost signature message
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct FrostNotification {
-    /// The signing session id
-    pub(crate) signing_session_id: FixedBytes<32>,
-    /// The agglomerated psbts
-    pub(crate) psbt: Vec<u8>,
 }
 
 #[allow(dead_code)]
@@ -69,7 +60,7 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// btc server client
     btc_server: BtcServerExtendedClient,
     /// Channel to receive canon state notifications
-    canon_state_notification_receiver: Receiver<CanonStateNotification>,
+    canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
 }
 
 impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
@@ -96,7 +87,7 @@ where
         storage: Storage<EF, BF, DB>,
         compressor: Compressor,
         random_source_provider: Source,
-        canon_state_notification_receiver: Receiver<CanonStateNotification>,
+        canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len() - 1);
 

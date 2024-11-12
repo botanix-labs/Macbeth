@@ -38,7 +38,7 @@ use reth_tasks::shutdown::GracefulShutdown;
 use reth_tokio_util::EventSender;
 use secp256k1::SecretKey;
 use tokio::sync::mpsc::{self, error::TrySendError};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::{BroadcastStream, UnboundedReceiverStream};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
@@ -89,7 +89,7 @@ pub struct NetworkManager {
     /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
     /// This is the receiver half used to receive events related to the protocol, such as
     /// connection established, messages received, etc.
-    frost_protocol_events_rx: Option<UnboundedReceiverStream<FrostProtocolEvent>>,
+    frost_protocol_events_rx: Option<BroadcastStream<FrostProtocolEvent>>,
 
     /// Handles block imports according to the `eth` protocol.
     block_import: Box<dyn BlockImport>,
@@ -1042,7 +1042,11 @@ impl Future for NetworkManager {
 
                         return Poll::Ready(());
                     }
-                    Poll::Ready(Some(event)) => frost_protocol_events.push(event),
+                    Poll::Ready(Some(event)) => {
+                        if let Ok(event) = event {
+                            frost_protocol_events.push(event);
+                        }
+                    }
                 };
             }
         }
