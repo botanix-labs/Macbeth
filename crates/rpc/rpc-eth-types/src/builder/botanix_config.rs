@@ -274,9 +274,10 @@ impl Botanix {
             .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
 
         if let Some(fee) = fee_result.fee_rate {
-            let sats_kb = bitcoin::FeeRate::from_sat_per_kwu(fee.to_sat() / 4);
+            // Conversion formula
+            let sat_per_vb = fee.to_float_in(bitcoin::Denomination::Bitcoin) * 100_000.0;
             // this really doesn't need to be a U256 can be U64
-            Ok(U256::from(sats_kb.to_sat_per_vb_ceil()))
+            Ok(U256::from(sat_per_vb.ceil() as u64))
         } else {
             // Use errors if available
             if let Some(errors) = fee_result.errors {
