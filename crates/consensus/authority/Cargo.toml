@@ -68,7 +68,6 @@ reth-consensus-common = { path = "../common" }
 
 reth-db = { workspace = true }
 reth-db-common = { workspace = true }
-reth-eth-wire = { path = "../../net/eth-wire" }
 reth-ethereum-consensus = { workspace = true }
 reth-ethereum-payload-builder = { workspace = true }
 reth-evm = { workspace = true }
@@ -87,10 +86,7 @@ reth-provider = { workspace = true, features = ["test-utils"] }
 reth-revm = { workspace = true }
 reth-rpc-types = { workspace = true }
 reth-tasks = { workspace = true }
-reth-tokio-util = { workspace = true }
 reth-transaction-pool = { workspace = true, features = ["test-utils"] }
-
-ruint = { version = "1.9.0", features = ["primitive-types", "rlp"] }
 
 # LRU Cache
 schnellru = { workspace = true }
