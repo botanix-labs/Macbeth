@@ -45,7 +45,7 @@ use tendermint_proto::{
 };
 
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     builder::BitcoinCheckpoint,
@@ -378,7 +378,8 @@ where
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
     fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
-        info!("prepare_proposal request: {:?}", request);
+        info!("prepare_proposal request for height: {:?}", request.height);
+        debug!("prepare_proposal request: {:?}", request);
         let _txs_bytes = request.txs;
 
         // insert non-deterministic data tx at index 0 so historical sync will pass verification
@@ -509,7 +510,8 @@ where
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
-        info!("process_proposal request: {:?}", request);
+        info!("process_proposal request for height: {:?}", request.height);
+        debug!("process_proposal request: {:?}", request);
         let storage = self.storage.inner.blocking_read();
         let agg_pk = storage.aggregate_public_key;
 
@@ -632,7 +634,12 @@ where
 
     ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
-        info!("finalize_block request: {:?}", request);
+        info!(
+            "finalize_block request for height: {:?}, number of txs: {:?}",
+            request.height,
+            request.txs.len()
+        );
+        debug!("finalize_block request: {:?}", request);
         let cbft_block_hash = FixedBytes::<32>::from_slice(request.hash.to_vec().as_slice());
         let mut block_cache_write = self.block_cache.write().expect("should get write lock");
         let sealed_block_with_peg = match block_cache_write.get(&cbft_block_hash) {
@@ -1062,7 +1069,7 @@ mod tests {
 
         assert_eq!(response.consensus_params, expected_consensus_params);
         assert_eq!(response.validators, expected_validators);
-        let response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
+        let _response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
         assert_eq!(
             response.app_hash.to_vec(),
             BOTANIX_TESTNET.genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
@@ -1080,7 +1087,7 @@ mod tests {
         assert_eq!(response.version, "TODO".to_string());
         assert_eq!(response.app_version, 1);
         assert_eq!(response.last_block_height, 0);
-        let response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
+        let _response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
         assert_eq!(
             response.last_block_app_hash.to_vec(),
             BOTANIX_TESTNET.genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
