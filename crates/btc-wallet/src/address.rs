@@ -184,12 +184,6 @@ pub fn generate_taproot_change_scriptpubkey(public_key: &PublicKey) -> ScriptBuf
     )
 }
 
-/// Note: pk provided to this address is the frost public key already tweaked
-/// with the eth address and the taptree merkel root.
-pub fn gateway_address(pk: &PublicKey, network: Network) -> anyhow::Result<Address> {
-    Ok(generate_taproot_address(pk, network))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,22 +193,6 @@ mod tests {
         let keypair = Keypair::from_secret_key(secp256k1::SECP256K1, &secret_key);
 
         keypair
-    }
-
-    #[test]
-    fn correct_eth_address() {
-        let network: Network = Network::Testnet;
-        let key_pair = Keypair::from_seckey_str(
-            secp256k1::SECP256K1,
-            "fe66aac784520af747e36ef4cd99320f2d5003ba05aafd05feea115ae79c9b65",
-        )
-        .unwrap();
-
-        let gateway = gateway_address(&key_pair.public_key(), network).unwrap();
-        assert_eq!(
-            gateway.to_string(),
-            "tb1ptn6uxgn7euat3hkqdxx2x0h9ynhvzkjkwnee2smlzx6fvnyn2ejqjyman0"
-        );
     }
 
     #[test]
