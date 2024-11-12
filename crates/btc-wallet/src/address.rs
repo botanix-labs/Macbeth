@@ -1,12 +1,8 @@
 use std::io::Write;
 
 use bitcoin::{
-    absolute::LockTime,
     hashes::{sha256, Hash},
     key::TweakedPublicKey,
-    opcodes,
-    script::Builder,
-    taproot::{TaprootBuilder, TaprootError, TaprootSpendInfo},
     Address, Network, ScriptBuf,
 };
 use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey, Verification};
@@ -25,97 +21,6 @@ impl EthAddress for Vec<u8> {
     fn as_slice(&self) -> &[u8] {
         self
     }
-}
-
-// Unused, spend safe path only requires a single signer for now
-// Keep commented out till we use a multisig
-// const SAFE_SPEND_PATH_QUORUM: i64 = 3;
-const SAFE_SPEND_TIMELOCK_SECOND: u32 = 1653195600;
-
-lazy_static::lazy_static! {
-    /// Compressed 33 byte public key of the recovery signer
-    /// After SAFE_SPEND_TIMELOCK_SECOND blocks this recovery signer can recover funds for the user
-    /// Keep in mind this is temporary solution for the POC testnet.alloc
-    /// Note this key is not derived from proper entropy nor is it derived from a BIP-32 path
-    /// Mainnet funds should not be spendable via this path
-    static ref RECOVERY_PK: PublicKey = PublicKey::from_slice(
-        hex::decode("02e2af4a49570e224fdddc6443863281ff9d96e6311547943a7628ed925e767a7a")
-            .expect("decode hex")
-            .as_slice(),
-    ).expect("Public key conversion");
-}
-
-#[derive(Debug)]
-enum SafeSpendPathError {
-    #[allow(dead_code)]
-    InvalidLengthOfPublicKeys,
-    #[allow(dead_code)]
-    QuorumCannotBeLessThanPublicKeys,
-}
-
-/// TODO function desc
-/// Timelocks are relative
-fn _build_safe_spend_path_script_check_sig_add(
-    lock_time: LockTime,
-    public_keys: &[PublicKey],
-    quorum: i64,
-) -> Result<ScriptBuf, SafeSpendPathError> {
-    if public_keys.len() < 2 {
-        return Err(SafeSpendPathError::InvalidLengthOfPublicKeys);
-    }
-
-    if public_keys.len() > usize::try_from(quorum).expect("Quorum should always be a valid usize") {
-        return Err(SafeSpendPathError::QuorumCannotBeLessThanPublicKeys);
-    }
-
-    let mut script = Builder::new()
-        .push_lock_time(lock_time)
-        .push_key(&bitcoin::PublicKey::new(
-            *public_keys.first().expect("There is always a 0th public key"),
-        ))
-        .push_opcode(opcodes::all::OP_CHECKSIG);
-
-    for i in 1..public_keys.len() {
-        script = script
-            .push_key(&bitcoin::PublicKey::new(
-                *(public_keys.get(i).unwrap_or_else(|| panic!("should find pubkey at {}", i))),
-            ))
-            .push_opcode(opcodes::all::OP_CHECKSIGADD);
-    }
-
-    script = script.push_int(quorum);
-    script = script.push_opcode(opcodes::all::OP_EQUALVERIFY);
-    Ok(script.into_script())
-}
-
-fn build_safe_spend_path_script_check_sig_verify(
-    lock_time: LockTime,
-    public_key: PublicKey,
-) -> Result<ScriptBuf, SafeSpendPathError> {
-    let script = Builder::new()
-        .push_lock_time(lock_time)
-        .push_key(&bitcoin::PublicKey::new(public_key))
-        .push_opcode(opcodes::all::OP_CHECKSIGVERIFY);
-
-    Ok(script.into_script())
-}
-
-pub fn generate_taproot_spend_info(
-    secp: &Secp256k1<impl Verification>,
-    tweaked_public_key: &PublicKey,
-) -> Result<TaprootSpendInfo, TaprootError> {
-    let lock_time = LockTime::from_time(SAFE_SPEND_TIMELOCK_SECOND).expect("valid time");
-    let builder = TaprootBuilder::new()
-        .add_leaf(
-            0u8,
-            build_safe_spend_path_script_check_sig_verify(lock_time, *RECOVERY_PK).unwrap(),
-        )
-        .expect("Couldn't add timelock leaf");
-
-    let finalized_taproot =
-        builder.finalize(secp, tweaked_public_key.x_only_public_key().0).unwrap();
-
-    Ok(finalized_taproot)
 }
 
 /// Generate a taproot address from a given tweaked public key
