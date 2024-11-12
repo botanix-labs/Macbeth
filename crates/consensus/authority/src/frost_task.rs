@@ -27,21 +27,8 @@ use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateNotification, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
-use reth_tasks::TaskExecutor;
-use tokio::sync::{
-    broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender},
-    oneshot::error::RecvError,
-};
+use tokio::sync::{broadcast::Receiver as BroadcastReceiver, oneshot::error::RecvError};
 use tracing::{debug, error, info, warn};
-
-/// Enum defining possible frost message notifications
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum FrostNotificationMessage {
-    /// Finalized frost signing signature
-    FinalizedSignature(FrostNotification),
-    /// Initiate signing session
-    InitiateSigning(FrostNotification),
-}
 
 #[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
@@ -52,15 +39,6 @@ pub(crate) enum UtxoSetSyncSerializationError {
     Grpc(GrpcClientError),
     #[error("compressor error {0}")]
     Compressor(CompressorError),
-}
-
-/// Finalised frost signature message
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct FrostNotification {
-    /// The signing session id
-    pub(crate) signing_session_id: FixedBytes<32>,
-    /// The agglomerated psbts
-    pub(crate) psbt: Vec<u8>,
 }
 
 #[allow(dead_code)]
@@ -77,9 +55,6 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<EF, BF, DB>,
-    /// Channel to receive frost notifications (from the block production task)
-    /// We only wait for init signing messages
-    frost_task_rx: BroadcastReceiver<FrostNotificationMessage>,
     /// Pre-configured compressor
     compressor: Compressor,
     /// btc server client
@@ -110,9 +85,6 @@ where
         frost_handle: ToFrostMan,
         config: FrostConfig,
         storage: Storage<EF, BF, DB>,
-        frost_task_rx: BroadcastReceiver<FrostNotificationMessage>,
-        frost_task_tx: BroadcastSender<FrostNotificationMessage>,
-        task_executor: TaskExecutor,
         compressor: Compressor,
         random_source_provider: Source,
         canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
@@ -131,8 +103,6 @@ where
             btc_server.clone(),
             frost_handle.clone(),
             config.clone(),
-            frost_task_tx,
-            task_executor,
             random_source_provider,
         );
 
@@ -143,7 +113,6 @@ where
             dkg_state_machine,
             signing_state_machine,
             storage,
-            frost_task_rx,
             btc_server,
             compressor,
             canon_state_notification_receiver,
@@ -448,10 +417,6 @@ where
                                     }
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 1 signing {:?}", e);
-                                        let _ = self
-                                            .signing_state_machine
-                                            .handle_errored_signing_process(signing_session_id)
-                                            .await;
                                     }
                                 }
                             }
@@ -465,10 +430,6 @@ where
                                 }
                                 Err(e) => {
                                     error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 1 signing package {:?}", e);
-                                    let _ = self
-                                        .signing_state_machine
-                                        .handle_errored_signing_process(signing_session_id)
-                                        .await;
                                 }
                             },
                             SigningEventResponseType::SignerRound2SigningPackage => {
@@ -482,10 +443,6 @@ where
                                     }
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 2 signing package {:?}", e);
-                                        let _ = self
-                                            .signing_state_machine
-                                            .handle_errored_signing_process(signing_session_id)
-                                            .await;
                                     }
                                 }
                             }
@@ -499,10 +456,6 @@ where
                                 }
                                 Err(e) => {
                                     error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 2 signing package {:?}", e);
-                                    let _ = self
-                                        .signing_state_machine
-                                        .handle_errored_signing_process(signing_session_id)
-                                        .await;
                                 }
                             },
                         }

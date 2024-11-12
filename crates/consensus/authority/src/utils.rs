@@ -28,7 +28,7 @@ use reth_provider::{BlockReaderIdExt, ReceiptProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
 use std::{fmt::Debug, time::Duration};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 /// Checks if the network is undergoing an active sync or not
@@ -417,6 +417,7 @@ pub fn validate_psbt_by_output(
     destination: &Address,
     amount: Amount,
 ) -> Result<(), PsbtValidationError> {
+    debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Validating {} outputs in psbt", psbt.outputs.len());
     match psbt.clone().extract_tx() {
         Ok(transaction) => {
             match transaction.output.iter().find(|output| {
@@ -425,7 +426,7 @@ pub fn validate_psbt_by_output(
                             output.value == amount
             }) {
                 Some(_) => {
-                    info!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Found matching output in psbt");
+                    debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Found matching output in psbt");
                     Ok(())
                 }
                 None => {

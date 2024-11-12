@@ -169,6 +169,12 @@ pub struct FrostProtoConnection {
     pending_pong: Option<oneshot::Sender<String>>,
 }
 
+impl Drop for FrostProtoConnection {
+    fn drop(&mut self) {
+        info!(target: "network::frost::protocol", "Dropping FrostProtoConnection for peer with id = {:?}", self.peer_id);
+    }
+}
+
 impl Stream for FrostProtoConnection {
     type Item = BytesMut;
 
