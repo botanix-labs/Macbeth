@@ -628,22 +628,23 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let frost_config = if is_fed_node {
             let authority_index =
                 genesis_authorities.iter().position(|a| a == &authority_pk).ok_or_else(|| {
-                    error!("Federation public keys not found");
-                    eyre::eyre!("Federation public keys not found")
+                    eyre::eyre!(
+                        "Your public key could not be found in the list of federation public keys"
+                    )
                 })?;
 
             let config = FrostConfig::new(
                 authority_pk,
                 authority_index,
                 genesis_authorities.clone(),
-                node_config.rpc.min_signers.ok_or_else(|| {
-                    error!("min signers not specified");
-                    eyre::eyre!("min signers not specified")
-                })?,
-                node_config.rpc.max_signers.ok_or_else(|| {
-                    error!("max signers not specified");
-                    eyre::eyre!("max signers not specified")
-                })?,
+                node_config
+                    .rpc
+                    .min_signers
+                    .ok_or_else(|| eyre::eyre!("min signers not specified"))?,
+                node_config
+                    .rpc
+                    .max_signers
+                    .ok_or_else(|| eyre::eyre!("max signers not specified"))?,
             );
 
             info!(target: "reth::cli", "Frost config initialized");
