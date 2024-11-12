@@ -10,8 +10,6 @@ use reth_rpc_server_types::constants::{
     DEFAULT_MAX_LOGS_PER_RESPONSE, DEFAULT_PROOF_PERMITS,
 };
 
-use super::botanix_config::BotanixConfig;
-
 /// Default value for stale filter ttl
 pub const DEFAULT_STALE_FILTER_TTL: Duration = Duration::from_secs(5 * 60);
 
@@ -41,9 +39,6 @@ pub struct EthConfig {
     pub fee_history_cache: FeeHistoryCacheConfig,
     /// The maximum number of getproof calls that can be executed concurrently.
     pub proof_permits: usize,
-
-    /// Botanix related configs
-    pub botanix_config: BotanixConfig,
 }
 
 impl EthConfig {
@@ -69,7 +64,6 @@ impl Default for EthConfig {
             stale_filter_ttl: DEFAULT_STALE_FILTER_TTL,
             fee_history_cache: FeeHistoryCacheConfig::default(),
             proof_permits: DEFAULT_PROOF_PERMITS,
-            botanix_config: BotanixConfig::default(),
         }
     }
 }
@@ -120,12 +114,6 @@ impl EthConfig {
     /// Configures the number of getproof requests
     pub const fn proof_permits(mut self, permits: usize) -> Self {
         self.proof_permits = permits;
-        self
-    }
-
-    /// Configures the botanix RPC configurables
-    pub fn botanix_config(mut self, botanix_config: BotanixConfig) -> Self {
-        self.botanix_config = botanix_config;
         self
     }
 }

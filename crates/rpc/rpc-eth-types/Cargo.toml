@@ -19,11 +19,14 @@ alloy-sol-types = { workspace = true }
 ## Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
-btc-server = { path = "../../../bin/btc-server" }
 
-# Botanix Btc server gRPC client
-client = { path = "../../../bin/btc-server/client" }
 derive_more = { workspace = true }
+
+# FROST dependencies
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
+    "serde",
+    "serialization",
+] }
 
 # async
 futures = { workspace = true }
@@ -64,9 +67,8 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
-## url
+# url
 url = "2.2"
-
 [dev-dependencies]
 serde_json = { workspace = true }
 

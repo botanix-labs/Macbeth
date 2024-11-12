@@ -875,11 +875,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         };
 
         // create botanix client
-        let botanix_config = BotanixConfig::new(
-            node_config.rpc.btc_network,
-            btc_server_factory.clone(),
-            bitcoind_factory.clone(),
-        );
+        let botanix_config =
+            BotanixConfig::new(node_config.rpc.btc_network, bitcoind_factory.clone());
 
         // Start RPC servers
         let botanix_provider = Botanix::new(botanix_config);
