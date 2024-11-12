@@ -16,6 +16,7 @@ use frost_secp256k1_tr as frost;
 use reth_btc_wallet::{
     psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
+    util::{VerifyingKeyExt, VerifyingKeyExtError},
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
 
@@ -23,8 +24,7 @@ use crate::{
     database::{Error as DbError, Utxo},
     pegout_id::PegoutId,
     util::{
-        validate_psbt, OutPointExt, ValidatePSBTError, VerifyingKeyExt, VerifyingKeyExtError,
-        NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
+        validate_psbt, OutPointExt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
     },
     App, Error,
 };

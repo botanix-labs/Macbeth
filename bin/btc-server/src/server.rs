@@ -2,8 +2,9 @@ use base64::{engine::general_purpose, Engine as _};
 use bitcoin::{hashes::Hash, psbt::Psbt, Amount, BlockHash, ScriptBuf, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
+use reth_btc_wallet::util::VerifyingKeyExt;
 use tonic::{self, metadata::BinaryMetadataKey};
-use util::{parse_eth_address, VerifyingKeyExt};
+use util::parse_eth_address;
 
 use crate::{
     database::Utxo, merkle::get_wallet_state_commitment, pegout_id::PegoutId,
