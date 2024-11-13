@@ -616,6 +616,7 @@ start-poa-server-1:
 	--federation-config-path "${NODE_1_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_1_DIR} \
+	--metrics "127.0.0.1:9001" \
 	--http \
 	--http.corsdomain "*" \
 	--http.port 8545 \
@@ -647,6 +648,7 @@ start-poa-server-2:
 	--federation-config-path "${NODE_2_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_2_DIR} \
+	--metrics "127.0.0.1:9002" \
 	--http \
 	--http.corsdomain "*" \
 	--http.port 8546 \
@@ -678,6 +680,7 @@ start-poa-server-3:
 	--federation-config-path "${NODE_3_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_3_DIR} \
+	--metrics "127.0.0.1:9003" \
 	--http \
 	--http.corsdomain "*" \
 	--http.port 8547 \
