@@ -323,13 +323,15 @@ where
             // receive over a channel message from other peers and update our state machine
             while let Ok((peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {
-                    PeerMessageResponse::Utxo(mut response) => {
+                    PeerMessageResponse::WalletState(mut response) => {
                         let all_peers_handle = self
                             .dkg_state_machine
                             .get_all_peers_handle()
                             .await
                             .expect("remove this later");
                         let peer_handle = all_peers_handle.get(&peerid).expect("remove this later");
+
+                        // TODO refactor to update all wallet state
 
                         // Note its important we do not respond to this message if we are syncing
                         // ourselves This should be checked above
@@ -351,9 +353,11 @@ where
 
                         response.data = serialized_compressed_utxo_set;
 
-                        if let Err(e) = peer_handle.peer_commands_tx.send(
-                            FrostPeerCommand::PeerMessage(PeerMessageResponse::Utxo(response)),
-                        ) {
+                        if let Err(e) =
+                            peer_handle.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
+                                PeerMessageResponse::WalletState(response),
+                            ))
+                        {
                             error!(target: "consensus::authority::utxo_syncer::start_task", "Error sending utxo set message to a peer: {:?}", e);
                             continue;
                         }

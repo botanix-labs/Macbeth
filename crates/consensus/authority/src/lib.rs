@@ -59,7 +59,7 @@ mod frost_task;
 mod healthcheck_task;
 mod signing;
 pub mod utils;
-mod utxo_sync;
+mod wallet_state_sync;
 pub use builder::AuthorityConsensusBuilder;
 pub mod random_source_provider;
 

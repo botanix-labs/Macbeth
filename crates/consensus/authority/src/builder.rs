@@ -1,7 +1,7 @@
 use crate::{
     comet_bft::abci::ABCIClientBuilder, compressor::Compressor, frost_task::FrostTask,
     healthcheck_task::HealthcheckTask, random_source_provider::RandomSource,
-    utxo_sync::UTXOSyncEngine, AuthorityConsensus, Storage,
+    wallet_state_sync::WalletStateSyncEngine, AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::GrpcClientFactory;
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
@@ -248,19 +248,20 @@ where
         }
         .await;
 
-        let _utxo_sync = {
-            if let Some(btc_server) = &btc_server_client {
-                let utxo_set_sync_engine = UTXOSyncEngine::new(
-                    storage.clone(),
-                    btc_server.clone(),
-                    frost_handle.clone().expect("Requires frost handle"),
-                    compressor.clone(),
-                );
-                Some(utxo_set_sync_engine)
-            } else {
-                None
-            }
-        };
+        // TODO: implement wallet state sync
+        // let _utxo_sync = {
+        //     if let Some(btc_server) = &btc_server_client {
+        //         let utxo_set_sync_engine = UTXOSyncEngine::new(
+        //             storage.clone(),
+        //             btc_server.clone(),
+        //             frost_handle.clone().expect("Requires frost handle"),
+        //             compressor.clone(),
+        //         );
+        //         Some(utxo_set_sync_engine)
+        //     } else {
+        //         None
+        //     }
+        // };
 
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server

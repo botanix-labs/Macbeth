@@ -17,8 +17,9 @@ use tracing::{error, info, warn};
 
 use crate::{
     frost::{
-        messages::DkgRequest, DkgEventResponseType, DkgResponse, SigningEventResponseType,
-        SigningResponse,
+        messages::{DkgRequest, WalletStateRequest},
+        DkgEventResponseType, DkgResponse, SigningEventResponseType, SigningResponse,
+        WalletStateResponse,
     },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
 };
@@ -28,7 +29,6 @@ use super::{
         FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest, UtxoRequest,
     },
     FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PeerMessageResponse,
-    UtxoSetResponse,
 };
 
 /// Frost Protocol Handler
@@ -264,10 +264,10 @@ impl Stream for FrostProtoConnection {
                             }
                         }
                     }
-                    PeerMessageResponse::Utxo(utxo_response) => {
-                        let UtxoSetResponse { data } = utxo_response;
-                        let req = UtxoRequest::new(data);
-                        Poll::Ready(Some(FrostProtoMessage::utxo_message(req).encoded()))
+                    PeerMessageResponse::WalletState(wallet_state_response) => {
+                        let WalletStateResponse { data } = wallet_state_response;
+                        let req = WalletStateRequest::new(data);
+                        Poll::Ready(Some(FrostProtoMessage::wallet_state_message(req).encoded()))
                     }
                 },
             };
@@ -286,7 +286,7 @@ impl Stream for FrostProtoConnection {
 
         // react on message type sent to us by another peer
         // The frost manager will handle this req (often by forwarding it to another task) and
-        // the a response will be send on command_rx for us to send back to another
+        // the response will be sent on command_rx for us to send back to another
         // peer
         let protocol_events_tx = this.protocol_events_tx.clone();
         info!(target: "network::frost::protocol", "Receivers count: {}", protocol_events_tx.receiver_count());
@@ -407,12 +407,16 @@ impl Stream for FrostProtoConnection {
                     error!(target: "network::frost::protocol", "Failed to forward received CoordinatorRound2SigningPackage message. Error = {:?}", e);
                 }
             }
-            FrostProtoMessageKind::Utxo(data) => {
+            FrostProtoMessageKind::WalletState(data) => {
                 let _ = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    response: PeerMessageResponse::Utxo(UtxoSetResponse { data: data.data }),
+                    response: PeerMessageResponse::WalletState(WalletStateResponse {
+                        data: data.data,
+                    }),
                     peer_id: this.peer_id,
                 });
             }
+            // deprecated: TODO remove
+            FrostProtoMessageKind::Utxo(_data) => {}
         }
 
         Poll::Pending

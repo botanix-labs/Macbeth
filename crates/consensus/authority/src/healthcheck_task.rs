@@ -206,9 +206,8 @@ where
                     peers_healthcheck_tracker.insert(healthcheck_response.sender, Instant::now());
                     drop(peers_healthcheck_tracker);
                 }
-                PeerMessageResponse::Utxo(_) => {
-                    // Nothing to do for utxo sync messages. Does are handled by the frost
-                    // task
+                PeerMessageResponse::WalletState(_) => {
+                    // TODO: implement
                 }
             }
         }

@@ -21,8 +21,8 @@ pub enum PeerMessageResponse {
     Dkg(DkgResponse),
     /// Signing response
     Signing(SigningResponse),
-    /// UTXO related responses
-    Utxo(UtxoSetResponse),
+    /// Wallet state related response
+    WalletState(WalletStateResponse),
     /// Healtcheck response
     Healthcheck(HealthcheckResponse),
 }
@@ -32,7 +32,7 @@ impl fmt::Display for PeerMessageResponse {
         match self {
             Self::Dkg(response) => write!(f, "DKG Response: {}", response),
             Self::Signing(response) => write!(f, "Signing Response: {}", response),
-            Self::Utxo(response) => write!(f, "Utxo Response: {}", response),
+            Self::WalletState(response) => write!(f, "Wallet state Response: {}", response),
             Self::Healthcheck(response) => {
                 write!(f, "Health Response: {:?}", response)
             }
@@ -73,6 +73,19 @@ pub struct UtxoSetResponse {
 impl fmt::Display for UtxoSetResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Utxo data Size: {} bytes", self.data.len())
+    }
+}
+
+/// Response structure for internal communication
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WalletStateResponse {
+    /// Wallet State Data (Compressed and Serialized)
+    pub data: Vec<u8>,
+}
+
+impl fmt::Display for WalletStateResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Wallet State Data Size: {} bytes", self.data.len())
     }
 }
 

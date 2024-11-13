@@ -25,7 +25,7 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
-pub(crate) enum UtxoSyncError {
+pub(crate) enum WalletStateSyncError {
     #[error("db provider error: {0}")]
     LatestBlockError(#[from] ProviderError),
     #[error("deserilaize extra data header : {0}")]
@@ -49,20 +49,20 @@ pub(crate) enum UtxoSyncError {
 }
 
 #[allow(dead_code)]
-pub(crate) trait UTXOSync {
-    async fn sync_utxo_set(&self) -> Result<(), UtxoSyncError>;
+pub(crate) trait WalletStateSync {
+    async fn sync_wallet_state(&self) -> Result<(), WalletStateSyncError>;
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub(crate) struct UTXOSyncEngine<EF, BF, DB, ToFrostMan> {
+pub(crate) struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan> {
     storage: Storage<EF, BF, DB>,
     btc_server: BtcServerExtendedClient,
     to_frost_manager: ToFrostMan,
     compressor: Compressor,
 }
 
-impl<EF, BF, DB, ToFrostMan> UTXOSyncEngine<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan> WalletStateSyncEngine<EF, BF, DB, ToFrostMan>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
@@ -79,7 +79,7 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan> UTXOSync for UTXOSyncEngine<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan> WalletStateSync for WalletStateSyncEngine<EF, BF, DB, ToFrostMan>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
@@ -87,50 +87,39 @@ where
     DB: BlockReaderIdExt + Clone + 'static,
 {
     // Note: this function should not be called unless we are fully synced
-    async fn sync_utxo_set(&self) -> Result<(), UtxoSyncError> {
+    async fn sync_wallet_state(&self) -> Result<(), WalletStateSyncError> {
         trace!(target: "consensus::authority::UTXOSync::sync_utxo_set", "syncing utxo set");
         let client = self.storage.client.clone();
         let mut btc_server = self.btc_server.clone();
 
         let latest_header = client.latest_header()?.expect("should get latest block");
-        // let latest_merkle_root = latest_header.get_utxo_set_merkle_root()?;
-
         if latest_header.number == 0 {
             debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "genesis block, no utxo set to sync");
             return Ok(());
         }
 
-        // get utxo set from btc server
-        let latest_wallet_state = btc_server.get_wallet_state(Empty {}).await?;
-        let latest_utxo_commitment =
-            Sha256Hash::from_slice(latest_wallet_state.utxo_root.as_slice())?;
-        // if latest_merkel_root == latest_utxo_commitment {
-        //     debug!(target: "consensus::authority::UTXOSync::sync_utxo_set", "utxo set is in
-        // sync");     // All done! We are in sync
-        //     return Ok(());
-        // }
-
         // Since we are not in sync, we need to get the utxo set from a peer
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
         self.to_frost_manager
             .send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))?;
-        // TODO remove unwrap()
-        let mut peer_messages_rx = peer_messages_rx.await.unwrap();
+        let mut peer_messages_rx = peer_messages_rx.await.expect("peer messages rx to be open");
 
-        // Request the utxo set from a peer
+        // Request the wallet state from a peer
         // TODO should sample many wallet states from N peers
-        self.to_frost_manager.send_command(FrostCommand::GetUtxoSetFromPeer)?;
-        // try getting the utxo set from the random peer we pinged
+        self.to_frost_manager.send_command(FrostCommand::GetWalletStateFromPeer)?;
+        // try getting the wallet state from the random peer we pinged
         match tokio::time::timeout(Duration::from_secs(60), peer_messages_rx.recv()).await {
             Ok(peer_message) => {
                 if let Some((_peer_id, peer_message)) = peer_message {
-                    if let PeerMessageResponse::Utxo(utxo_set) = peer_message {
+                    if let PeerMessageResponse::WalletState(wallet_state) = peer_message {
+                        // TODO: refactor to update all wallet state
+
                         // process the utxo set
-                        debug!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Got utxo set from peer {:?}", utxo_set);
-                        let data = utxo_set.data;
+                        debug!(target: "consensus::authority::block_fetcher::sync_wallet_state", "Got utxo set from peer {:?}", wallet_state);
+                        let data = wallet_state.data;
                         let decompressed = self.compressor.decompress(&data).await.map_err(|e| {
-                            error!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Failed to decompress utxo set data {:?}", e);
-                            UtxoSyncError::CompressorError(e)
+                            error!(target: "consensus::authority::block_fetcher::sync_wallet_state", "Failed to decompress utxo set data {:?}", e);
+                            WalletStateSyncError::CompressorError(e)
                         })?;
 
                         let utxo_set = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
@@ -138,13 +127,13 @@ where
                         )?;
                         // TODO peers will also need to communicate their tracked txs and pending
                         // pegouts
-                        let merkel_root = generate_utxo_merkel_root(&utxo_set.utxos)?;
-                        if merkel_root != latest_utxo_commitment {
-                            return Err(UtxoSyncError::UtxoSetNotInSync(
-                                merkel_root,
-                                latest_utxo_commitment,
-                            ));
-                        }
+                        // let merkel_root = generate_utxo_merkel_root(&utxo_set.utxos)?;
+                        // if merkel_root != latest_utxo_commitment {
+                        //     return Err(WalletStateSyncError::UtxoSetNotInSync(
+                        //         merkel_root,
+                        //         latest_utxo_commitment,
+                        //     ));
+                        // }
 
                         // Report to btc server to sync utxo set
                         btc_server
@@ -153,12 +142,12 @@ where
                     }
                 } else {
                     // TODO better error variant
-                    return Err(UtxoSyncError::PeerUtxoSetTimeout);
+                    return Err(WalletStateSyncError::PeerUtxoSetTimeout);
                 }
             }
             Err(e) => {
                 warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", ?e, "Failed to get get utxo set rom a peer within 60 secs");
-                return Err(UtxoSyncError::PeerUtxoSetTimeout);
+                return Err(WalletStateSyncError::PeerUtxoSetTimeout);
             }
         }
 
