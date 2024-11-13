@@ -59,6 +59,12 @@ Metrics:
 
           The metrics will be served at the given interface and port.
 
+Abci client/app:
+      --abci-host
+          [default: 0.0.0.0]
+      --abci-port
+          [default: 26658]
+
 Networking:
   -d, --disable-discovery
           Disable the discovery service
@@ -557,5 +563,7 @@ Display:
 
   -q, --quiet
           Silence all log output
+
+
 
 ```
