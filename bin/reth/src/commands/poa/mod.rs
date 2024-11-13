@@ -23,9 +23,17 @@ use reth_network_peers::pk2id;
 use reth_node_core::{
     args::DatadirArgs,
     cli::config::BtcServerConfig,
-    version::{CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_GIT_SHA},
+    version::{
+        BUILD_PROFILE_NAME, CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_BUILD_TIMESTAMP,
+        VERGEN_CARGO_FEATURES, VERGEN_CARGO_TARGET_TRIPLE, VERGEN_GIT_SHA,
+    },
 };
-use reth_node_metrics::recorder::install_prometheus_recorder;
+use reth_node_metrics::{
+    hooks::Hooks,
+    recorder::install_prometheus_recorder,
+    server::{MetricServer, MetricServerConfig},
+    version::VersionInfo,
+};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::botanix::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_prune::PruneModes;
@@ -465,7 +473,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
             database.clone(),
             node_config.chain.clone(),
-            static_file_provider,
+            static_file_provider.clone(),
         );
 
         let genesis_hash = init_genesis(provider_factory.clone())?;
@@ -903,6 +911,26 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             payload_builder.clone(),
             executor.clone(),
         );
+
+        // add metrics if necessary
+        if let Some(metrics_listener_address) = metrics {
+            // start the metrics server
+            info!(target: "reth::cli", "Starting metrics endpoint at {}", metrics_listener_address.to_string());
+            let config = MetricServerConfig::new(
+                *metrics_listener_address,
+                VersionInfo {
+                    version: CARGO_PKG_VERSION,
+                    build_timestamp: VERGEN_BUILD_TIMESTAMP,
+                    cargo_features: VERGEN_CARGO_FEATURES,
+                    git_sha: VERGEN_GIT_SHA,
+                    target_triple: VERGEN_CARGO_TARGET_TRIPLE,
+                    build_profile: BUILD_PROFILE_NAME,
+                },
+                executor.clone(),
+                Hooks::new(database.clone(), static_file_provider),
+            );
+            MetricServer::new(config).serve().await?;
+        }
 
         let _rpc_handle = {
             let module_config = self.rpc.transport_rpc_module_config();
