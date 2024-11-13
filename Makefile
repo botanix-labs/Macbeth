@@ -820,3 +820,64 @@ stop-docker-local:
 clean-test-suite:
 	cd bin/test-suite && \
 	rm *.txt
+
+# ------------------------------------------------------------
+# Btc Server Profiling
+# ------------------------------------------------------------
+
+PROFILE_BTC_SERVER_ARGS := \
+	--identifier ${PROFILER_FROST_ID} \
+	--address 0.0.0.0:${PROFILER_BTC_SERVER_PORT} \
+	--db ${PROFILER_DB_DIR} \
+	--min-signers ${PROFILER_FROST_MIN_SIGNERS} \
+	--max-signers ${PROFILER_FROST_MAX_SIGNERS} \
+	--toml ./config.toml \
+	--fee-rate-diff-percentage 30 \
+	--btc-network ${BITCOIND_NETWORK} \
+	--bitcoind-url ${BITCOIND_URL} \
+	--bitcoind-user ${BITCOIND_USER} \
+	--bitcoind-pass ${BITCOIND_PWD} \
+	--btc-signing-server-jwt-secret ${PROFILER_NODE_DIR}/bjwt.hex \
+	--fall-back-fee-rate-sat-per-vbyte 5
+
+profile-btc:
+	cargo build --profile profiling --package btc-server && \
+	samply record ./target/profiling/btc-server $(PROFILE_BTC_SERVER_ARGS)
+
+# ------------------------------------------------------------
+# Poa Server Profiling
+# ------------------------------------------------------------
+
+PROFILER_POA_SEVER_ARGS := \
+	poa \
+	--is-testnet \
+	--ntp-server ${NTP_SERVER_URL} \
+	--federation-config-path ${PROFILER_NODE_DIR}/federation.toml \
+	--federation-mode \
+	--datadir ${PROFILER_NODE_DIR} \
+	--http \
+	--http.corsdomain "*" \
+	--http.port ${PROFILER_POA_HTTP_PORT} \
+	--http.addr 127.0.0.1 \
+	--http.api eth,net,trace,txpool,web3,rpc,admin \
+	--ws \
+	--ws.origins "*" \
+	--ws.port ${PROFILER_POA_WS_PORT} \
+	--ws.addr 127.0.0.1 \
+	--ws.api eth,net,trace,txpool,web3,rpc,admin \
+	-vvv \
+	--btc-server localhost:${PROFILER_BTC_SERVER_PORT} \
+	--btc-network ${BITCOIND_NETWORK} \
+	--btc-signing-server-jwt-secret ${PROFILER_NODE_DIR}/bjwt.hex \
+	--bitcoind.url ${BITCOIND_URL} \
+	--bitcoind.username ${BITCOIND_USER} \
+	--bitcoind.password ${BITCOIND_PWD} \
+	--frost.min_signers ${PROFILER_FROST_MIN_SIGNERS} \
+	--frost.max_signers ${PROFILER_FROST_MAX_SIGNERS} \
+	--p2p-secret-key ${PROFILER_NODE_DIR}/discovery-secret \
+	--port ${PROFILER_POA_RPC_PORT} \
+	--abci-port=${PROFILER_COMMET_ABCI_PORT}
+
+profile-poa:
+	cargo build --profile profiling --bin reth && \
+	samply record ./target/profiling/reth $(PROFILER_POA_SEVER_ARGS)
