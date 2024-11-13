@@ -87,3 +87,6 @@ tmp
 
 # npm modules
 node_modules/
+
+# profiling files
+profile.json

@@ -7,6 +7,7 @@ pre-commit install
 rustup toolchain install nightly -c rustfmt
 
 # Install cargo global crates
+cargo install --locked samply
 cargo install cargo-binstall
 cargo install cargo-tarpaulin
 cargo install cargo-audit --locked --features=fix
