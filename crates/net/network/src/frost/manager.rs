@@ -1,5 +1,6 @@
 use super::{
-    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PeerMessageResponse, UtxoSetResponse,
+    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PeerMessageResponse,
+    WalletStateResponse,
 };
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
@@ -242,7 +243,7 @@ impl FrostManager {
         self.prune_closed_connections();
 
         match cmd {
-            FrostCommand::GetUtxoSetFromPeer => {
+            FrostCommand::GetWalletStateFromPeer => {
                 // choose a random peer
                 let random_authority_index =
                     rand::thread_rng().gen_range(0..self.peers_connections.len() - 1);
@@ -251,7 +252,8 @@ impl FrostManager {
                     Some(peer_data) => {
                         let peer_data = peer_data.first().expect("will always have one element");
                         match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
-                            PeerMessageResponse::Utxo(UtxoSetResponse { data: vec![] }),
+                            // send request to frost task
+                            PeerMessageResponse::WalletState(WalletStateResponse { data: vec![] }),
                         )) {
                             Ok(_) => {
                                 debug!(target: "network::frost::on_command", "UtxoSet sent to peer {:?}", peer_data.peer_id);
@@ -375,8 +377,8 @@ pub enum FrostCommand {
     GetAllConnectedPeers(oneshot::Sender<HashMap<PeerId, PeerData>>),
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<(PeerId, PeerMessageResponse)>>),
-    /// Get UTXO set from peer
-    GetUtxoSetFromPeer,
+    /// Get wallet sate from peer
+    GetWalletStateFromPeer,
 }
 
 /// Config type for initiating a [`FrostManager`] instance.

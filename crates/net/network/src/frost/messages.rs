@@ -8,6 +8,7 @@ use reth_primitives::{Buf, BufMut, BytesMut};
 
 const MESSAGE_VERSION: usize = 0;
 const UTXO_SET_MESSAGE_VERSION: usize = 0;
+const WALLET_STATE_MESSAGE_VERSION: usize = 0;
 
 /// A structured healthcheck message
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +94,28 @@ impl UtxoRequest {
     }
 }
 
+/// A structured wallet state message
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WalletStateRequest {
+    /// The version of the request message
+    pub version: u16,
+    /// wallet state data
+    pub data: Vec<u8>,
+}
+
+impl fmt::Display for WalletStateRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Wallet state data size: {} bytes", self.data.len())
+    }
+}
+
+impl WalletStateRequest {
+    /// Constructs a new wallet state request using a data payload.
+    pub const fn new(data: Vec<u8>) -> Self {
+        Self { version: WALLET_STATE_MESSAGE_VERSION as u16, data }
+    }
+}
+
 /// Enum defining the frost message type as u8
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -123,6 +146,8 @@ pub enum FrostProtoMessageId {
     Healthcheck = 0x0B,
     /// Round 1 Dkg request message
     Round1DkgRequest = 0x0C,
+    /// WalletState
+    WalletState = 0x0D,
 }
 
 /// Enum defining the frost message kind
@@ -154,6 +179,8 @@ pub enum FrostProtoMessageKind {
     Utxo(UtxoRequest),
     /// Health
     Healthcheck(HealthcheckRequest),
+    /// Wallet state message
+    WalletState(WalletStateRequest),
 }
 
 /// An protocol message, containing a message ID and payload.
@@ -265,6 +292,14 @@ impl FrostProtoMessage {
         }
     }
 
+    /// Creates a wallet state message
+    pub const fn wallet_state_message(resource: WalletStateRequest) -> Self {
+        Self {
+            message_type: FrostProtoMessageId::WalletState,
+            message: FrostProtoMessageKind::WalletState(resource),
+        }
+    }
+
     /// Peer healthcheck
     pub const fn peer_health_message(resource: HealthcheckRequest) -> Self {
         Self {
@@ -336,6 +371,11 @@ impl FrostProtoMessage {
                 buf.put_u16_le(receiver_bytes.len() as u16); // Length of the receiver
                 buf.put_slice(receiver_bytes); // Receiver bytes
             }
+            FrostProtoMessageKind::WalletState(resource) => {
+                // serialize the data
+                buf.put_u64_le(resource.data.len() as u64); // Use u64 to support larger data sizes
+                buf.put_slice(&resource.data);
+            }
         }
         buf
     }
@@ -361,6 +401,7 @@ impl FrostProtoMessage {
             0x0A => FrostProtoMessageId::Utxo,
             0x0B => FrostProtoMessageId::Healthcheck,
             0x0C => FrostProtoMessageId::Round1DkgRequest,
+            0x0D => FrostProtoMessageId::WalletState,
             _ => return None,
         };
         let message = match message_type {
@@ -550,6 +591,15 @@ impl FrostProtoMessage {
                 buf.advance(receiver_len);
 
                 FrostProtoMessageKind::Healthcheck(HealthcheckRequest { sender, receiver })
+            }
+            FrostProtoMessageId::WalletState => {
+                // wallet state
+                let wallet_state_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
+                buf.advance(8);
+                let wallet_state = buf[..wallet_state_len].to_vec();
+                buf.advance(wallet_state_len);
+
+                FrostProtoMessageKind::WalletState(WalletStateRequest::new(wallet_state))
             }
         };
         Some(Self { message_type, message })
