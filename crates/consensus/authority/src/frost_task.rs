@@ -407,57 +407,125 @@ where
                         let signing_session_id = FixedBytes::from_slice(&signing_session_id);
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
-                                match self
+                                let psbt_res = match bitcoin::Psbt::deserialize(&psbt.as_slice()) {
+                                    Ok(psbt) => psbt,
+                                    Err(e) => {
+                                        error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Error deserializing psbt {:?}", e);
+                                        continue;
+                                    }
+                                };
+
+                                if let Err(e) = validate_psbt_by_ids(
+                                    self.storage.client.clone(),
+                                    self.storage.btc_network,
+                                    &psbt_res,
+                                )
+                                .await
+                                {
+                                    error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Error validating psbt {:?}", e);
+                                    continue;
+                                }
+
+                                if let Err(e) = self
                                     .signing_state_machine
                                     .signer_process_round1(identifier, signing_session_id, psbt)
                                     .await
                                 {
-                                    Ok(_) => {
-                                        info!(target: "consensus::authority::frost_task::start_task", "Peer Processed Round 1 signing successfully")
-                                    }
-                                    Err(e) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 1 signing {:?}", e);
-                                    }
+                                    error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Peer Error processing round 1 signing {:?}", e);
                                 }
                             }
-                            SigningEventResponseType::CoordinatorRound1SigningPackage => match self
-                                .signing_state_machine
-                                .coordinator_process_round1(identifier, signing_session_id, psbt)
+                            SigningEventResponseType::CoordinatorRound1SigningPackage => {
+                                let psbt_res = match bitcoin::Psbt::deserialize(&psbt.as_slice()) {
+                                    Ok(psbt) => psbt,
+                                    Err(e) => {
+                                        error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error deserializing psbt {:?}", e);
+                                        continue;
+                                    }
+                                };
+
+                                if let Err(e) = validate_psbt_by_ids(
+                                    self.storage.client.clone(),
+                                    self.storage.btc_network,
+                                    &psbt_res,
+                                )
                                 .await
-                            {
-                                Ok(_) => {
-                                    info!(target: "consensus::authority::frost_task::start_task", "Coordinator Processed Round 1 signing package successfully")
+                                {
+                                    error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error validating psbt {:?}", e);
+                                    continue;
                                 }
-                                Err(e) => {
-                                    error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 1 signing package {:?}", e);
+
+                                if let Err(e) = self
+                                    .signing_state_machine
+                                    .coordinator_process_round1(
+                                        identifier,
+                                        signing_session_id,
+                                        psbt,
+                                    )
+                                    .await
+                                {
+                                    error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Coordinator Error processing round 1 signing package {:?}", e);
                                 }
-                            },
+                            }
                             SigningEventResponseType::SignerRound2SigningPackage => {
-                                match self
+                                let psbt_res = match bitcoin::Psbt::deserialize(&psbt.as_slice()) {
+                                    Ok(psbt) => psbt,
+                                    Err(e) => {
+                                        error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Error deserializing psbt {:?}", e);
+                                        continue;
+                                    }
+                                };
+
+                                if let Err(e) = validate_psbt_by_ids(
+                                    self.storage.client.clone(),
+                                    self.storage.btc_network,
+                                    &psbt_res,
+                                )
+                                .await
+                                {
+                                    error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Error validating psbt {:?}", e);
+                                    continue;
+                                }
+
+                                if let Err(e) = self
                                     .signing_state_machine
                                     .signer_process_round2(identifier, signing_session_id, psbt)
                                     .await
                                 {
-                                    Ok(_) => {
-                                        info!(target: "consensus::authority::frost_task::start_task", "Peer Processed Round 2 signing package successfully")
-                                    }
-                                    Err(e) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Peer Error processing round 2 signing package {:?}", e);
-                                    }
+                                    error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Peer Error processing round 2 signing package {:?}", e);
                                 }
                             }
-                            SigningEventResponseType::CoordinatorRound2SigningPackage => match self
-                                .signing_state_machine
-                                .coordinator_process_round2(identifier, signing_session_id, psbt)
+                            SigningEventResponseType::CoordinatorRound2SigningPackage => {
+                                let psbt_res = match bitcoin::Psbt::deserialize(&psbt.as_slice()) {
+                                    Ok(psbt) => psbt,
+                                    Err(e) => {
+                                        error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error deserializing psbt {:?}", e);
+                                        continue;
+                                    }
+                                };
+
+                                if let Err(e) = validate_psbt_by_ids(
+                                    self.storage.client.clone(),
+                                    self.storage.btc_network,
+                                    &psbt_res,
+                                )
                                 .await
-                            {
-                                Ok(_) => {
-                                    info!(target: "consensus::authority::frost_task::start_task", "Coordinator Processed Round 2 signing package successfully")
+                                {
+                                    error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error validating psbt {:?}", e);
+                                    continue;
                                 }
-                                Err(e) => {
-                                    error!(target: "consensus::authority::frost_task::start_task", "Coordinator Error processing round 2 signing package {:?}", e);
+
+                                if let Err(e) = self
+                                    .signing_state_machine
+                                    .coordinator_process_round2(
+                                        identifier,
+                                        signing_session_id,
+                                        psbt,
+                                    )
+                                    .await
+                                {
+                                    error!(target: "consensus::authority::frost_task::CoordinatorRound2SigningPackage", "Coordinator Error processing round 2 signing package {:?}", e);
                                 }
-                            },
+                            }
                         }
                     }
                 }

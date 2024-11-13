@@ -89,6 +89,7 @@ jobs:
             reth
             tests-suite
             fed-utils
+            frost
 
   crate-checks:
     runs-on: ubuntu-latest
