@@ -98,7 +98,6 @@ where
             return Ok(());
         }
 
-        // Since we are not in sync, we need to get the utxo set from a peer
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
         self.to_frost_manager
             .send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))?;
