@@ -12,7 +12,7 @@ The Botanix Federation represents the initial version of our sidechain framework
 
 This documentation is intended for developers interested in running their own RPC node. RPC nodes are non-block-producing entities within a federation. While they have access to the canonical blockchain, they do not produce blocks.
 
-In addition, this documentation contains more information about the federation and some details that you need to run your own federation. 
+In addition, this documentation contains more information about the federation and some details that you need to run your own federation.
 
 <div class="warning">
 

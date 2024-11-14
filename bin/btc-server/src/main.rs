@@ -13,6 +13,7 @@ mod pegout_scheduler;
 mod server;
 mod shutdown;
 mod signer;
+mod telemetry;
 mod util;
 
 #[macro_use]
@@ -31,7 +32,7 @@ mod rpc {
 }
 
 use std::{
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -41,6 +42,10 @@ use crate::config::Error as ConfigError;
 use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::{Auth, RpcApi};
+use btcserverlib::{
+    http::{create_web_server, state::ServerState},
+    telemetry::Telemetry,
+};
 use config::Config;
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
@@ -118,6 +123,8 @@ struct App<BitcoinRpcApi> {
     bitcoind_client: BitcoinRpcApi,
     /// Fall back fee rate
     fall_back_fee_rate: bitcoin::FeeRate,
+    /// telemetry
+    telemetry: Option<Arc<Telemetry>>,
 }
 
 impl<BitcoindClient> App<BitcoindClient>
@@ -147,7 +154,11 @@ where
         }
     }
 
-    pub fn new(config: Config, bitcoind_client: BitcoindClient) -> Result<Self, Error> {
+    pub fn new(
+        config: Config,
+        bitcoind_client: BitcoindClient,
+        telemetry: Arc<Telemetry>,
+    ) -> Result<Self, Error> {
         let config = config.clone();
         let db = database::Db::open(&config.db).expect("failed to open db");
 
@@ -216,6 +227,7 @@ where
             max_signers,
             bitcoind_client,
             fall_back_fee_rate,
+            telemetry: Some(telemetry),
         })
     }
 
@@ -332,6 +344,9 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         .filter_module("bitcoincore_rpc::", log::LevelFilter::Trace)
         .init();
 
+    let telemetry = Telemetry::new().await?;
+    telemetry.start().await?;
+
     let config = config::load_config()?;
 
     // setup the grpc server
@@ -340,7 +355,8 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         Auth::UserPass(config.bitcoind_user.clone(), config.bitcoind_pass.clone()),
     )
     .expect("bitcoind client");
-    let btc_server: App<bitcoincore_rpc::Client> = App::new(config.clone(), bitcoind_client)?;
+    let btc_server: App<bitcoincore_rpc::Client> =
+        App::new(config.clone(), bitcoind_client, telemetry.clone())?;
 
     // run grpc server in the background
     let grpc_stop_tx = match btc_server.serve_async().await {
@@ -358,8 +374,31 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
     // spawn terminate handlers routine
     let grpc_join_handle = tokio::spawn(stop_signal(grpc_stop_tx));
 
-    // block and wait for a shutdown signal to terminate
+    // create and spin up the http server
+    let state = ServerState::new(telemetry.clone()).await;
+    // create the actix webserver
+    let grpc_server_addr =
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), config.metrics_port);
+    let grpc_server = create_web_server(state, grpc_server_addr)?;
+    // get server handle
+    let server_handle = grpc_server.handle();
+    // spawn the server in the background
+    tokio::spawn(async move {
+        if let Err(err) = grpc_server.await {
+            error!("Actix Web server error: {:?}", err);
+        }
+    });
+    info!("Grpc server started.");
+
+    // // block and wait for a shutdown signal to terminate
     let _ = tokio::join!(grpc_join_handle);
+
+    info!("Grpc server stopped");
+
+    // Await the Actix server shutdown
+    info!("Stopping actix server ...");
+    server_handle.stop(true).await;
+    info!("Actix server stopped. Goodbye!");
 
     Ok(())
 }

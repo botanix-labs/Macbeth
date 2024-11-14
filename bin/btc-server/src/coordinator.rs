@@ -1,5 +1,3 @@
-use std::{collections::HashMap, time::SystemTime};
-
 use bdk::{
     miniscript::psbt::Error as PsbtError,
     wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
@@ -18,6 +16,10 @@ use reth_btc_wallet::{
     transaction::CalculateSighashError,
     util::{VerifyingKeyExt, VerifyingKeyExtError},
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+};
+use std::{
+    collections::HashMap,
+    time::{Instant, SystemTime},
 };
 
 use crate::{
@@ -101,6 +103,7 @@ where
         frost_id: frost::Identifier,
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
+        let start = Instant::now();
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
         validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
 
@@ -120,9 +123,19 @@ where
         // Note: There doesn't need to be a check for a quorum of round1 signing packages
         // The more the better in the case one is unresponsive
         // the frost lib will check if we have enough when we create the signing package
-        self.db.update_psbt(signing_session_id, psbt)?;
+        let written_data = self.db.update_psbt(signing_session_id, psbt)?;
         self.db.flush()?;
         debug!("Stored round1 signing from peer: {:?}", frost_id);
+
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_round1_signing_metrics(
+                self.btc_network,
+                self.config.identifier,
+                signing_session_id,
+                written_data,
+                start.elapsed().as_millis(),
+            )
+        }
 
         Ok(())
     }
@@ -133,13 +146,24 @@ where
         frost_id: frost::Identifier,
         psbt: &Psbt,
     ) -> Result<(), CoordinatorError> {
+        let start = Instant::now();
         self.db.get_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
         // validate PSBT
         validate_psbt(psbt, ROUND2, self.min_signers, &self.db)?;
 
-        self.db.update_psbt(signing_session_id, psbt)?;
+        let written_data = self.db.update_psbt(signing_session_id, psbt)?;
         self.db.flush()?;
         debug!("Stored round2 signing from peer: {:?}", frost_id);
+
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_round2_signing_metrics(
+                self.btc_network,
+                self.config.identifier,
+                signing_session_id,
+                written_data,
+                start.elapsed().as_millis(),
+            )
+        }
 
         Ok(())
     }
