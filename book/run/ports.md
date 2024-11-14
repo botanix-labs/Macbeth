@@ -24,21 +24,21 @@ This section provides essential information about the ports used by the system, 
 -   **Exposure Recommendation:** As with the HTTP RPC port, the WS RPC port should not be exposed to the public by default.
 
 ## ABCI Port
- 
+
 -   **Port:** 26658
 -   **Protocol:** TCP
 -   **Purpose:** Enables communication between the consensus engine and the application layer
 -   **Exposure Recommendation:** As with the HTTP RPC port, the ABCI port should not be exposed to the public by default.
 
 ## CometBFT RPC server Port
- 
+
 -   **Port:** 26657
 -   **Protocol:** TCP
 -   **Purpose:** Enables RPC requests for CometBFT node
 -   **Exposure Recommendation:** As with the HTTP RPC port, the CometBFT RPC server Port should not be exposed to the public by default.
 
 ## CometBFT incoming connections Port
- 
+
 -   **Port:** 26656
 -   **Protocol:** TCP
 -   **Purpose:** Listens for incoming connections of peers
@@ -50,8 +50,6 @@ This section provides essential information about the ports used by the system, 
 -   **Protocol:** TCP
 -   **Purpose:** This port is designated for serving metrics related to the system's performance and operation. It allows internal monitoring and data collection for analysis.
 -   **Exposure Recommendation:** By default, this port should not be exposed to the public. It is intended for internal monitoring and analysis purposes.
-
-
 
 <!-- Not used in botanix PoA -->
 <!-- ## Engine API Port

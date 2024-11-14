@@ -164,6 +164,10 @@ where
         nonces_lock.take();
         assert!(nonces_lock.is_none());
 
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.record_aborted_signing_sessions(self.btc_network, self.config.identifier);
+        }
+
         Ok(())
     }
 

@@ -713,6 +713,11 @@ where
         let res = tonic::Response::new(rpc::FinalizeSigningResponse {
             psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),
         });
+
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier)
+        }
+
         Ok(res)
     }
 

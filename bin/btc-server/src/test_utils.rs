@@ -183,6 +183,7 @@ pub mod test_utils {
             btc_signing_server_jwt_secret: None,
             bitcoind_client: mock_bitcoind,
             fall_back_fee_rate: bitcoin::FeeRate::from_sat_per_vb(30).expect("valid fee rate"),
+            telemetry: None,
             // This config doesn't matter since we are setting app up manually
             // Normally this would be read from a config file
             config: Config {
@@ -200,6 +201,7 @@ pub mod test_utils {
                 bitcoind_pass: "bar".to_string(),
                 fee_rate_diff_percentage: 100,
                 fall_back_fee_rate_sat_per_vbyte: 30,
+                metrics_port: 7000,
             },
         };
 

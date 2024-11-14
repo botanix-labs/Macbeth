@@ -11,6 +11,8 @@ use tokio::process::Child;
 use super::{kill_process_at_port, spawn_child_process, Scope};
 
 pub const BTC_SERVER_START_PORT: u16 = 8000;
+pub const BTC_SERVER_HTTP_PORT: u16 = 7000;
+
 #[derive(Debug)]
 pub struct SpawnedBtcServerProcess {
     pub port: u16,
@@ -65,6 +67,7 @@ fn spawn_btc_server_process(
     let frost_max_signers = global_context.max_signers.to_string();
     let frost_min_signers = global_context.min_signers.to_string();
     let address = format!("0.0.0.0:{}", port);
+    let http_port = (BTC_SERVER_HTTP_PORT + id).to_string();
 
     let command = "cargo";
     let args = vec![
@@ -94,6 +97,8 @@ fn spawn_btc_server_process(
         "50",
         "--fall-back-fee-rate-sat-per-vbyte",
         "5",
+        "--metrics-port",
+        http_port.as_str(),
     ];
 
     Ok(SpawnedBtcServerProcess {

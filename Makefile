@@ -572,7 +572,8 @@ start-btc-server-1:
 	--bitcoind-user "${BITCOIND_USER}" \
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
-	--fall-back-fee-rate-sat-per-vbyte 5
+	--fall-back-fee-rate-sat-per-vbyte 5 \
+	--metrics-port 7000
 
 start-btc-server-2:
 	cd ./bin/btc-server && \
@@ -589,7 +590,8 @@ start-btc-server-2:
 	--bitcoind-user "${BITCOIND_USER}" \
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
-	--fall-back-fee-rate-sat-per-vbyte 5
+	--fall-back-fee-rate-sat-per-vbyte 5 \
+	--metrics-port 7001
 
 start-btc-server-3:
 	cd ./bin/btc-server && \
@@ -606,7 +608,8 @@ start-btc-server-3:
 	--bitcoind-user "${BITCOIND_USER}" \
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--btc-signing-server-jwt-secret "${NODE_3_DIR}/bjwt.hex" \
-	--fall-back-fee-rate-sat-per-vbyte 5
+	--fall-back-fee-rate-sat-per-vbyte 5 \
+	--metrics-port 7002
 
 start-poa-server-1:
 	cd ./bin/reth && \

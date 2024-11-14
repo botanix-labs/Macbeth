@@ -131,7 +131,7 @@ impl Db {
     }
 
     /// Adds a PSBT to the database.
-    pub fn update_psbt(&self, signing_session_id: &[u8; 32], psbt: &Psbt) -> Result<(), Error> {
+    pub fn update_psbt(&self, signing_session_id: &[u8; 32], psbt: &Psbt) -> Result<usize, Error> {
         let mut bytes = Vec::new();
         if let Some(b) = self.psbt.get(&signing_session_id[..])? {
             // if there is an existing psbt then we merge the new psbt with the existing one
@@ -142,7 +142,7 @@ impl Db {
             ciborium::into_writer(psbt, &mut bytes).expect("writing to buffer");
         }
         self.psbt.insert(&signing_session_id[..], &bytes[..])?;
-        Ok(())
+        Ok(bytes.len())
     }
 
     /// Get PSBT from the database.
@@ -272,24 +272,24 @@ impl Db {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(true)` if the round 2 DKG package is successfully added for the peer.
-    /// Returns `Ok(false)` if a round 2 DKG package for the specified peer already exists.
+    /// Returns `Ok(val > 0)` if the round 2 DKG package is successfully added for the peer.
+    /// Returns `Ok(0)` if a round 2 DKG package for the specified peer already exists.
     /// Returns `Err` in case of serialization or other errors.
     pub fn add_round2_dkg(
         &self,
         peer_id: frost::Identifier,
         dkg_round2_package: frost::keys::dkg::round2::Package,
-    ) -> Result<bool, Error> {
+    ) -> Result<usize, Error> {
         let peer_id_bytes = peer_id.serialize();
 
         if self.round2_dkg_packages.contains_key(&peer_id_bytes[..])? {
-            return Ok(false);
+            return Ok(0);
         }
         let mut bytes = Vec::new();
 
         ciborium::into_writer(&dkg_round2_package, &mut bytes).map_err(Error::CiboriumWrite)?;
         self.round2_dkg_packages.insert(&peer_id_bytes[..], &bytes[..])?;
-        Ok(true)
+        Ok(bytes.len())
     }
 
     /// Adds a round 1 DKG package for a specific peer.
@@ -303,23 +303,23 @@ impl Db {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(true)` if the round 1 DKG package is successfully added for the peer.
-    /// Returns `Ok(false)` if a round 1 DKG package for the specified peer already exists.
+    /// Returns `Ok(val > 0)` if the round 1 DKG package is successfully added for the peer.
+    /// Returns `Ok(0)` if a round 1 DKG package for the specified peer already exists.
     /// Returns `Err` in case of serialization or other errors.
     pub fn add_round1_dkg(
         &self,
         peer_id: frost::Identifier,
         dkg_round1: frost::keys::dkg::round1::Package,
-    ) -> Result<bool, Error> {
+    ) -> Result<usize, Error> {
         let peer_id_bytes = peer_id.serialize();
 
         if self.round1_dkg_packages.contains_key(&peer_id_bytes[..])? {
-            return Ok(false);
+            return Ok(0);
         }
         let mut bytes = Vec::new();
         ciborium::into_writer(&dkg_round1, &mut bytes).map_err(Error::CiboriumWrite)?;
         self.round1_dkg_packages.insert(&peer_id_bytes[..], &bytes[..])?;
-        Ok(true)
+        Ok(bytes.len())
     }
 
     /// Retrieves the round 2 DKG (Distributed Key Generation) packages stored in the database.

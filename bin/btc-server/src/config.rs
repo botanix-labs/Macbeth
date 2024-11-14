@@ -186,6 +186,9 @@ pub(crate) struct CliConfig {
     /// Fall back fee rate expressed in sat per vbyte
     #[arg(long)]
     fall_back_fee_rate_sat_per_vbyte: Option<u64>,
+    /// http port
+    #[arg(long)]
+    metrics_port: Option<u16>,
 }
 
 #[derive(Clone, Debug)]
@@ -213,6 +216,8 @@ pub(crate) struct Config {
     pub(crate) bitcoind_user: String,
     /// bitcoind RPC pass
     pub(crate) bitcoind_pass: String,
+    /// metrics port
+    pub(crate) metrics_port: u16,
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     /// signing will refuse to sign if the fee rate is more than this percentage off from the
     pub fee_rate_diff_percentage: u32,
@@ -271,6 +276,10 @@ pub fn load_config() -> Result<Config, Error> {
             .bitcoind_pass
             .or(file_config.bitcoind_pass)
             .ok_or(Error::MissingConfigElement("bitcoind_pass is required"))?,
+        metrics_port: cli_config
+            .metrics_port
+            .or(file_config.metrics_port)
+            .ok_or(Error::MissingConfigElement("metrics_port is required"))?,
         fee_rate_diff_percentage: cli_config
             .fee_rate_diff_percentage
             .or(file_config.fee_rate_diff_percentage)

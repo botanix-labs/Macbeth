@@ -1,5 +1,5 @@
 use crate::{database, App, Error};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
 use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr as frost;
@@ -75,6 +75,7 @@ where
         // Peer's round 2 package
         package: frost::keys::dkg::round2::Package,
     ) -> Result<(), DKGError> {
+        let start = Instant::now();
         if self.db.get_key_package()?.is_some() {
             return Err(DKGError::AlreadyHaveKeyPackage);
         }
@@ -83,7 +84,8 @@ where
             return Err(DKGError::InvalidFrostPeerId);
         }
 
-        if self.db.add_round2_dkg(frost_id, package.clone())? {
+        let data_written = self.db.add_round2_dkg(frost_id, package.clone())?;
+        if data_written > 0 {
             self.db.flush()?;
             debug!("Stored round2 dkg from peer: {:?}", frost_id);
         } else {
@@ -115,6 +117,15 @@ where
             self.frost_round1_dkg.lock().await.take();
         }
 
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_round2_dkg_metrics(
+                self.btc_network,
+                self.config.identifier,
+                data_written,
+                start.elapsed().as_millis(),
+            )
+        }
+
         Ok(())
     }
 
@@ -122,7 +133,8 @@ where
         &self,
         frost_id: frost::Identifier,
         dkg_round1: frost::keys::dkg::round1::Package,
-    ) -> Result<(), DKGError> {
+    ) -> Result<bool, DKGError> {
+        let start = Instant::now();
         if self.db.get_key_package()?.is_some() {
             return Err(DKGError::AlreadyHaveKeyPackage);
         }
@@ -139,13 +151,23 @@ where
         if self.db.get_round1_dkg_packages()?.len() as u16 == self.max_signers - 1 {
             return Err(DKGError::DkgMaxSignersReached);
         }
-        if self.db.add_round1_dkg(frost_id, dkg_round1)? {
+        let data_written = self.db.add_round1_dkg(frost_id, dkg_round1)?;
+        if data_written > 0 {
             self.db.flush()?;
             debug!("Stored round1 dkg from peer: {:?}", frost_id);
         } else {
             warn!("Duplicate round1 dkg from peer: {:?}", frost_id);
         }
 
-        Ok(())
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_round1_dkg_metrics(
+                self.btc_network,
+                self.config.identifier,
+                data_written,
+                start.elapsed().as_millis(),
+            )
+        }
+
+        Ok(true)
     }
 }

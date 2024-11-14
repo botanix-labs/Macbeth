@@ -6,4 +6,3 @@ In this chapter you will find the necessary information on how to set up your ow
 1. [RPC via Docker Compose](./rpc-server-docker.md)
 1. [Important ports](./ports.md)
 1. [Parameters](../cli/poa.md)
-
