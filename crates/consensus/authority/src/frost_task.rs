@@ -41,6 +41,20 @@ pub(crate) enum UtxoSetSyncSerializationError {
     Compressor(CompressorError),
 }
 
+pub(crate) enum TrackedTxSyncSerializationError {
+    #[error("Received a grpc client error {0}")]
+    Grpc(GrpcClientError),
+    #[error("compressor error {0}")]
+    Compressor(CompressorError),
+}
+
+pub(crate) enum PendingPegoutsSyncSerializationError {
+    #[error("Received a grpc client error {0}")]
+    Grpc(GrpcClientError),
+    #[error("compressor error {0}")]
+    Compressor(CompressorError),
+}
+
 #[allow(dead_code)]
 pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// Network Handler
@@ -161,6 +175,52 @@ where
         let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
             error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got compressor error {:?}", e);
             UtxoSetSyncSerializationError::Compressor(e)
+        })?;
+        Ok(prost_serialized_compressed)
+    }
+
+    async fn get_serialized_compressed_tracked_txs(
+        &mut self,
+    ) -> Result<Vec<u8>, TrackedTxSyncSerializationError> {
+        let prost_tracked_txs = self.btc_server.get_tracked_txs(client::Empty {}).await.map_err(|e| {
+            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got grpc error {:?}", e);
+            TrackedTxSyncSerializationError::Grpc(e)
+        })?;
+
+        // serialize the prost message
+        let prost_message_wrapper = ProstMessageSerdelizer(prost_tracked_txs);
+        let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
+            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got compressor error {:?}", e);
+            TrackedTxSyncSerializationError::Compressor(e)
+        })?;
+
+        // now compress the prost message
+        let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
+            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got compressor error {:?}", e);
+            TrackedTxSyncSerializationError::Compressor(e)
+        })?;
+        Ok(prost_serialized_compressed)
+    }
+
+    async fn get_serialized_compressed_pending_pegouts(
+        &mut self,
+    ) -> Result<Vec<u8>, PendingPegoutsSyncSerializationError> {
+        let prost_pending_pegouts = self.btc_server.get_pending_pegouts(client::Empty {}).await.map_err(|e| {
+            error!(target: "consensus::authority::pending_pegouts_syncer::get_pending_pegouts", "Got grpc error {:?}", e);
+            PendingPegoutsSyncSerializationError::Grpc(e)
+        })?;
+
+        // serialize the prost message
+        let prost_message_wrapper = ProstMessageSerdelizer(prost_pending_pegouts);
+        let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
+            error!(target: "consensus::authority::pending_pegouts_syncer::get_pending_pegouts", "Got compressor error {:?}", e);
+            PendingPegoutsSyncSerializationError::Compressor(e)
+        })?;
+
+        // now compress the prost message
+        let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
+            error!(target: "consensus::authority::pending_pegouts_syncer::get_pending_pegouts", "Got compressor error {:?}", e);
+            PendingPegoutsSyncSerializationError::Compressor(e)
         })?;
         Ok(prost_serialized_compressed)
     }
@@ -331,8 +391,6 @@ where
                             .expect("remove this later");
                         let peer_handle = all_peers_handle.get(&peerid).expect("remove this later");
 
-                        // TODO refactor to update all wallet state
-
                         // Note its important we do not respond to this message if we are syncing
                         // ourselves This should be checked above
                         let serialized_compressed_utxo_set = match self
@@ -350,6 +408,34 @@ where
                             warn!(target: "consensus::authority::utxo_syncer::start_task", "Received empty utxo set from database");
                             continue;
                         }
+
+                        let serialized_compressed_tracked_txs = match self
+                            .get_serialized_compressed_tracked_txs()
+                            .await
+                        {
+                            Ok(serialized_compressed_tracked_txs) => {
+                                serialized_compressed_tracked_txs
+                            }
+                            Err(e) => {
+                                error!(target: "consensus::authority::tracked_tx_syncer::start_task", "Error getting serialized compressed tracked txs: {:?}", e);
+                                continue;
+                            }
+                        };
+
+                        let serialized_compressed_pending_pegouts = match self
+                            .get_serialized_compressed_pending_pegouts()
+                            .await
+                        {
+                            Ok(serialized_compressed_pending_pegouts) => {
+                                serialized_compressed_pending_pegouts
+                            }
+                            Err(e) => {
+                                error!(target: "consensus::authority::pending_pegouts_syncer::start_task", "Error getting serialized compressed pending pegouts: {:?}", e);
+                                continue;
+                            }
+                        };
+
+                        // TODO: update WalletState to include tracked txs and pending pegouts
 
                         response.data = serialized_compressed_utxo_set;
 

@@ -21,7 +21,7 @@ pub enum PeerMessageResponse {
     Dkg(DkgResponse),
     /// Signing response
     Signing(SigningResponse),
-    /// Wallet state related response
+    /// Wallet state response
     WalletState(WalletStateResponse),
     /// Healtcheck response
     Healthcheck(HealthcheckResponse),
@@ -77,6 +77,7 @@ impl fmt::Display for UtxoSetResponse {
 }
 
 /// Response structure for internal communication
+// TODO: add more fields to represent full wallet state
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WalletStateResponse {
     /// Wallet State Data (Compressed and Serialized)

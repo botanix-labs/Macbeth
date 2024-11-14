@@ -248,21 +248,6 @@ where
         }
         .await;
 
-        // TODO: implement wallet state sync
-        // let _utxo_sync = {
-        //     if let Some(btc_server) = &btc_server_client {
-        //         let utxo_set_sync_engine = UTXOSyncEngine::new(
-        //             storage.clone(),
-        //             btc_server.clone(),
-        //             frost_handle.clone().expect("Requires frost handle"),
-        //             compressor.clone(),
-        //         );
-        //         Some(utxo_set_sync_engine)
-        //     } else {
-        //         None
-        //     }
-        // };
-
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
         let mut frost_task = None;

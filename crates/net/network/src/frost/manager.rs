@@ -377,7 +377,7 @@ pub enum FrostCommand {
     GetAllConnectedPeers(oneshot::Sender<HashMap<PeerId, PeerData>>),
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<(PeerId, PeerMessageResponse)>>),
-    /// Get wallet sate from peer
+    /// Get wallet state from peer
     GetWalletStateFromPeer,
 }
 
