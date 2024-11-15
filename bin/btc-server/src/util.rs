@@ -365,19 +365,21 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Sig
 
     // check extra outputs are change outputs:
     // psbt should only have one change output
-    if change_outputs.len() != 1 {
-        return Err(SigningFinalizeError::InvalidChangeOutput);
+    if change_outputs.len() > 1 {
+        return Err(SigningFinalizeError::ExpectingOnlyOneChangeOutput);
     }
 
-    // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
-    let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
-    let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
-    let tx = psbt.clone().extract_tx()?;
-    let has_change = tx.output.iter().any(|o| o.script_pubkey == expected_script_pubkey);
-    if !has_change {
-        return Err(SigningFinalizeError::InvalidChangeOutput);
+    if !change_outputs.is_empty() {
+        // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
+        let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
+        let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
+        let tx = psbt.clone().extract_tx()?;
+        let has_correct_change =
+            tx.output.iter().any(|o| o.script_pubkey == expected_script_pubkey);
+        if !has_correct_change {
+            return Err(SigningFinalizeError::InvalidChangeOutput);
+        }
     }
-
     Ok(())
 }
 

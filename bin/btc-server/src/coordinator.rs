@@ -288,6 +288,8 @@ where
             change,
         );
 
+        info!("make_tx psbt = {}", psbt);
+
         // Sanity check that we created a valid PSBT
         // This should not fail
         validate_psbt(&psbt, NO_FLAGS, self.min_signers, &self.db)?;
