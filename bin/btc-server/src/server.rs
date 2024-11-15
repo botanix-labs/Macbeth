@@ -7,8 +7,12 @@ use tonic::{self, metadata::BinaryMetadataKey};
 use util::parse_eth_address;
 
 use crate::{
-    database::Utxo, merkle::get_wallet_state_commitment, pegout_id::PegoutId,
-    pegout_scheduler::PegoutRequest, rpc, util, App,
+    database::Utxo,
+    merkle::get_wallet_state_commitment,
+    pegout_id::PegoutId,
+    pegout_scheduler::PegoutRequest,
+    rpc::{self, PendingPegout},
+    util, App,
 };
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
@@ -239,6 +243,30 @@ where
                 .collect(),
         });
         Ok(res)
+    }
+
+    async fn reset_all_pending_pegouts(
+        &self,
+        req: tonic::Request<rpc::ResetAllPendingPegoutsRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received reset pending pegouts request");
+        let pending_pegouts = req
+            .pending_pegouts
+            .into_iter()
+            .map(|pegout| PegoutRequest {
+                id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
+                spk: ScriptBuf::from_bytes(pegout.spk),
+                value: Amount::from_sat(pegout.amount),
+                botanix_height: pegout.height,
+            })
+            .collect::<Vec<_>>();
+        let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
+        self.db
+            .reset_pending_pegouts(&pending_pegouts_refs)
+            .map_err(|e| internal!("Failed to reset pending pegouts: {}", e))?;
+        Ok(tonic::Response::new(rpc::Empty {}))
     }
 
     /// Resets all utxos in the database

@@ -27,6 +27,11 @@ pub struct GetPendingPegoutsResponse {
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResetAllPendingPegoutsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncTxIndexRequest {
     /// The checkpoint of the best finalized Bitcoin block hash.
     #[prost(bytes = "vec", tag = "1")]
@@ -971,6 +976,29 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetTrackedTxs"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn reset_all_pending_pegouts(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ResetAllPendingPegoutsRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/ResetAllPendingPegouts",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "ResetAllPendingPegouts"),
+                );
             self.inner.unary(req, path, codec).await
         }
     }

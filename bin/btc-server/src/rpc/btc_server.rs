@@ -27,6 +27,11 @@ pub struct GetPendingPegoutsResponse {
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResetAllPendingPegoutsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncTxIndexRequest {
     /// The checkpoint of the best finalized Bitcoin block hash.
     #[prost(bytes = "vec", tag = "1")]
@@ -428,6 +433,10 @@ pub mod btc_server_server {
             tonic::Response<super::GetTrackedTxsResponse>,
             tonic::Status,
         >;
+        async fn reset_all_pending_pegouts(
+            &self,
+            request: tonic::Request<super::ResetAllPendingPegoutsRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct BtcServerServer<T> {
@@ -1695,6 +1704,52 @@ pub mod btc_server_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetTrackedTxsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/ResetAllPendingPegouts" => {
+                    #[allow(non_camel_case_types)]
+                    struct ResetAllPendingPegoutsSvc<T: BtcServer>(pub Arc<T>);
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::ResetAllPendingPegoutsRequest>
+                    for ResetAllPendingPegoutsSvc<T> {
+                        type Response = super::Empty;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ResetAllPendingPegoutsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as BtcServer>::reset_all_pending_pegouts(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ResetAllPendingPegoutsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
