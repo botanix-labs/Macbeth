@@ -623,7 +623,7 @@ mod test {
         app1.add_round1_dkg(frost_id!(3), round1_dkgs[2].clone().1)
             .await
             .expect("valid round1 dkg");
-        let _p1_dkg2 = app1.get_round2_dkg().await.expect("valid round 2 transition");
+        let p1_dkg2 = app1.get_round2_dkg().await.expect("valid round 2 transition");
 
         // Round 2 DKG for p2
         app2.identifier = frost_id!(2);
