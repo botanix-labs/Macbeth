@@ -17,7 +17,7 @@ use crate::{
     coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
-    util::{validate_outputs, validate_psbt, ROUND1, ROUND1_TRANSITION},
+    util::{validate_outputs, validate_psbt, ValidateOutputsError, ROUND1, ROUND1_TRANSITION},
     App, Error,
 };
 
@@ -142,6 +142,8 @@ pub enum SigningFinalizeError {
     ),
     #[error("FROST error: {0}")]
     FrostError(#[from] frost::Error),
+    #[error("failed to validate outputs: {0}")]
+    ValidateOutputsError(#[from] ValidateOutputsError),
 }
 
 #[derive(Debug, Error)]
