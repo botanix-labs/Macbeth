@@ -757,4 +757,87 @@ where
         };
         Ok(tonic::Response::new(res))
     }
+
+    // Get the tracked txs
+    async fn get_tracked_txs(
+        &self,
+        request: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetTrackedTxsResponse>, tonic::Status> {
+        self.validate_jwt(&request)?;
+        let db_tracked_txs = self.db.get_tracked_txs().map_err(|e| {
+            error!("Failed to get tracked txs: {}", e);
+            internal!("Failed to get tracked txs: {}", e)
+        })?;
+        let tracked_txs = db_tracked_txs
+            .into_iter()
+            .map(|tx| {
+                // create internal tx
+                let tx_ins = tx
+                    .tx
+                    .input
+                    .into_iter()
+                    .map(|tx_in| rpc::TxIn {
+                        previous_outpoint: Some(rpc::OutPoint {
+                            txid: tx_in.previous_output.txid.to_byte_array().to_vec(),
+                            vout: tx_in.previous_output.vout,
+                        }),
+                        script_sig: Some(rpc::ScriptBuf {
+                            script: tx_in.script_sig.to_bytes().to_vec(),
+                        }),
+                        sequence: tx_in.sequence.0,
+                        witness: tx_in.witness.to_vec(),
+                    })
+                    .collect::<Vec<_>>();
+                let tx_outs = tx
+                    .tx
+                    .output
+                    .into_iter()
+                    .map(|tx_out| rpc::TxOut {
+                        value: tx_out.value.to_sat(),
+                        script_pubkey: Some(rpc::ScriptBuf {
+                            script: tx_out.script_pubkey.to_bytes().to_vec(),
+                        }),
+                    })
+                    .collect::<Vec<_>>();
+                let internal_tx = rpc::Transaction {
+                    version: tx.tx.version.0,
+                    lock_time: tx.tx.lock_time.to_consensus_u32(),
+                    input: tx_ins,
+                    output: tx_outs,
+                };
+
+                // create pegout requests
+                let pegout_requests = tx
+                    .pegout_requests
+                    .into_iter()
+                    .map(|pegout| rpc::PendingPegout {
+                        pegout_id: pegout.id.as_bytes().to_vec(),
+                        spk: pegout.spk.into_bytes().to_vec(),
+                        amount: pegout.value.to_sat(),
+                        height: pegout.botanix_height,
+                    })
+                    .collect::<Vec<_>>();
+
+                // create duration since epoch
+                let duration =
+                    tx.created.duration_since(std::time::UNIX_EPOCH).expect("valid duration");
+
+                // create tracked tx
+                rpc::TrackedTx {
+                    txid: tx.txid.to_byte_array().to_vec(),
+                    tx: Some(internal_tx),
+                    pegout_idxs: tx.pegout_idxs.into_iter().map(|idx| idx as u32).collect(),
+                    pegout_requests,
+                    change_idxs: tx.change_idxs.into_iter().map(|idx| idx as u32).collect(),
+                    created: Some(prost_types::Timestamp {
+                        seconds: duration.as_secs() as i64,
+                        nanos: duration.subsec_nanos() as i32,
+                    }),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let res = rpc::GetTrackedTxsResponse { tracked_txs };
+        Ok(tonic::Response::new(res))
+    }
 }

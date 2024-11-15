@@ -3,6 +3,8 @@ syntax = "proto3";
 
 package btc_server;
 
+import "google/protobuf/timestamp.proto";
+
 service BtcServer {
 
     rpc HealthCheck(Empty) returns (Empty) {}
@@ -64,6 +66,8 @@ service BtcServer {
     rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
 
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
+
+    rpc GetTrackedTxs(Empty) returns (GetTrackedTxsResponse) {}
 }
 
 message NotifyPegoutRequest {
@@ -154,6 +158,40 @@ message GetGatewayAddressResponse {
     string publickey = 1;
     string tweaked_public_key = 2;
     string gateway_address = 3;
+}
+
+// TODO: remove
+// message Witness {
+//     repeated bytes content = 1;
+//     uint32 witness_elements = 2;
+//     uint32 indices_start = 3;
+// }
+
+message TxIn {
+    OutPoint previous_outpoint = 1;
+    ScriptBuf script_sig = 3;
+    uint32 sequence = 4;
+    repeated bytes witness = 5;
+}
+
+message Transaction {
+    int32 version = 1;
+    uint32 lock_time = 2;
+    repeated TxIn input = 3;
+    repeated TxOut output = 4;
+}
+
+message TrackedTx {
+    bytes txid = 1;
+    Transaction tx = 2;
+    repeated uint32 pegout_idxs = 3;
+    repeated PendingPegout pegout_requests = 4;
+    repeated uint32 change_idxs = 5;
+    google.protobuf.Timestamp created = 6;
+}
+
+message GetTrackedTxsResponse {
+    repeated TrackedTx tracked_txs = 1;
 }
 
 message Empty {}

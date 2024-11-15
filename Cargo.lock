@@ -2085,6 +2085,7 @@ dependencies = [
  "prometheus",
  "prost 0.13.3",
  "prost-build",
+ "prost-types",
  "rand 0.8.5",
  "reth-btc-wallet",
  "rust_decimal",
@@ -2414,6 +2415,7 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "prost 0.13.3",
+ "prost-types",
  "tonic 0.12.3",
  "tonic-build",
 ]
