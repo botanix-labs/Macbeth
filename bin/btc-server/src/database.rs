@@ -638,6 +638,23 @@ impl Db {
         }
         Ok(())
     }
+
+    /// Resets all pending pegouts, and re-adding the functions arguments back in
+    pub fn reset_pending_pegouts(
+        &self,
+        pegout_requests: &[&pegout_scheduler::PegoutRequest],
+    ) -> Result<(), Error> {
+        self.clear_pending_pegouts()?;
+        for pegout_request in pegout_requests.iter() {
+            self.store_pending_pegout(pegout_request)?;
+        }
+        Ok(())
+    }
+
+    /// Clears all pending pegouts from the database.
+    pub fn clear_pending_pegouts(&self) -> Result<(), Error> {
+        Ok(self.pending_pegouts.clear()?)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -1184,5 +1201,55 @@ mod tests {
 
         let merkle_root3 = db.get_pending_pegouts_merkle_root().unwrap().unwrap();
         assert_ne!(merkle_root, merkle_root3);
+    }
+
+    #[test]
+    fn clear_pending_pegouts_should_clear_db() {
+        let (db, _temp_dir) = setup_db();
+        let tx = create_n_outputs_tx(5, 2);
+
+        let pegout_req = PegoutRequest {
+            botanix_height: 0,
+            id: create_random_pegout_id(),
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+        };
+        db.store_pending_pegout(&pegout_req).unwrap();
+        db.flush().unwrap();
+
+        db.clear_pending_pegouts().unwrap();
+        db.flush().unwrap();
+
+        let pending_pegouts = db.get_pending_pegouts().unwrap();
+        assert!(pending_pegouts.is_empty());
+    }
+
+    #[test]
+    fn reset_pending_pegouts_should_clear_db_and_readd() {
+        let (db, _temp_dir) = setup_db();
+        let tx = create_n_outputs_tx(5, 2);
+
+        let pegout_req = PegoutRequest {
+            botanix_height: 0,
+            id: create_random_pegout_id(),
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+        };
+        db.store_pending_pegout(&pegout_req).unwrap();
+        db.flush().unwrap();
+
+        let tx2 = create_n_outputs_tx(5, 2);
+        let pegout_req2 = PegoutRequest {
+            botanix_height: 0,
+            id: create_random_pegout_id(),
+            spk: tx2.output[0].script_pubkey.clone(),
+            value: tx2.output[0].value,
+        };
+        db.reset_pending_pegouts(&[&pegout_req2]).unwrap();
+        db.flush().unwrap();
+
+        let pending_pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pending_pegouts.len(), 1);
+        assert_eq!(pending_pegouts[0], pegout_req2);
     }
 }

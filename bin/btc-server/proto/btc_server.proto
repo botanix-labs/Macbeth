@@ -68,6 +68,8 @@ service BtcServer {
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
 
     rpc GetTrackedTxs(Empty) returns (GetTrackedTxsResponse) {}
+
+    rpc ResetAllPendingPegouts(ResetAllPendingPegoutsRequest) returns (Empty) {}
 }
 
 message NotifyPegoutRequest {
@@ -85,6 +87,10 @@ message PendingPegout {
 }
     
 message GetPendingPegoutsResponse {
+    repeated PendingPegout pending_pegouts = 1;
+}
+
+message ResetAllPendingPegoutsRequest {
     repeated PendingPegout pending_pegouts = 1;
 }
 
