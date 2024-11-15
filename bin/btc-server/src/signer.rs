@@ -134,6 +134,8 @@ pub enum SigningFinalizeError {
     MissingPsbtPegout,
     #[error("psbt includes invalid change output")]
     InvalidChangeOutput,
+    #[error("expecting only one change output")]
+    ExpectingOnlyOneChangeOutput,
     #[error("psbt to signing package conversion error: {0}")]
     PsbtToSigningPackageConversionError(
         #[from] reth_btc_wallet::psbt::PsbtToSigningPackageConversionError,

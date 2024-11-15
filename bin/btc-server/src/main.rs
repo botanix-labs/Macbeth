@@ -380,8 +380,11 @@ mod test {
     use test_utils::test_utils::{get_change, store_pending_pegout};
     use tonic::{Code, Request};
 
-    use reth_btc_wallet::psbt::{PsbtInputExt, PsbtOutputExt};
-    use util::{validate_outputs, VerifyingKeyExt};
+    use reth_btc_wallet::{
+        psbt::{PsbtInputExt, PsbtOutputExt},
+        util::VerifyingKeyExt,
+    };
+    use util::validate_outputs;
 
     use crate::{
         database::Utxo,

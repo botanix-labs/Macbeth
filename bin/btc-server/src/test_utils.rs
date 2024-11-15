@@ -15,13 +15,13 @@ pub mod test_utils {
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use frost_secp256k1_tr as frost;
     use rand::{thread_rng, RngCore};
+    use reth_btc_wallet::util::VerifyingKeyExt;
     use tempfile::TempDir;
     use tokio::sync::Mutex;
     use url::Url;
 
     use crate::{
-        config::Config, database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest,
-        util::VerifyingKeyExt, App,
+        config::Config, database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest, App,
     };
 
     #[macro_export]
