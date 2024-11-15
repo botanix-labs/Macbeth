@@ -221,7 +221,6 @@ where
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
-    /// Admin util endpoing to get all pending pegouts
     async fn get_pending_pegouts(
         &self,
         req: tonic::Request<rpc::Empty>,
