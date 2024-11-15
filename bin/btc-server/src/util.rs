@@ -150,6 +150,8 @@ pub fn parse_signing_session_id(session_id: &[u8]) -> Result<[u8; 32], ParsingEr
 
 #[derive(Debug, Error)]
 pub enum ValidatePSBTError {
+    #[error("Db error {0}")]
+    DbError(#[from] database::Error),
     #[error("inputs cannot be 0")]
     NoInputs,
     #[error("outputs cannot be 0")]
@@ -226,6 +228,21 @@ pub fn validate_psbt(
     if let Err(e) = validate_outputs(psbt, db) {
         return Err(ValidatePSBTError::InvalidOutputs(e.to_string()));
     };
+
+    let _tx = psbt.clone().extract_tx()?;
+    for (_index, _input) in psbt.inputs.iter().enumerate() {
+        // TODO lets re-enable this one we can check for conflicting inputs
+        // Right now singers can get into a state where they are tracking txs that the
+        // coordinator is not. This will not be an issue if the signers just check for one
+        // conflicting input until then signers can just trust the coordinator
+        // Check if input exists in db
+        // let ot = tx.input.get(index).expect("valid input").previous_output;
+        // let db_utxo = db.get_utxo(ot)?;
+        // if db_utxo.is_none() {
+        //     return Err(ValidatePSBTError::UtxoNotFound);
+        // }
+    }
+
     let total_outputs_amount =
         psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
             total.checked_add(output.value).unwrap_or_default()

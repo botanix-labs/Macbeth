@@ -108,8 +108,8 @@ where
 
         for input in &psbt.inputs {
             let sc = input.signing_commitments(frost_id);
+            info!("Adding signing commitment for frost id: {:?}", frost_id);
             info!("sc.keys() = {:?}", sc);
-            info!("frost id: {:?}", frost_id);
 
             if sc.is_none() {
                 return Err(CoordinatorError::CouldNotFindParticipantInformation());
