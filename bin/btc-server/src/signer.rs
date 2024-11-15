@@ -214,24 +214,6 @@ where
         //     return Err(SigningRound1Error::FeeRateDifferenceTooGreat);
         // }
 
-        let tx = psbt.clone().extract_tx()?;
-        // Validate the psbt
-        for (index, input) in psbt.inputs.iter().enumerate() {
-            if input.witness_utxo.is_none() {
-                return Err(SigningRound1Error::InvalidSigningPackage("witness_utxo is missing"));
-            }
-
-            // Check if input exists in db
-            let ot = tx
-                .input
-                .get(index)
-                .ok_or(SigningRound1Error::MissingSigningPackageAtIndex(index))?
-                .previous_output;
-            let db_utxo = self.db.get_utxo(ot)?;
-            if db_utxo.is_none() {
-                return Err(SigningRound1Error::InvalidSigningPackage("UTXO not found in DB"));
-            }
-        }
         // Validate PSBT
         validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
         let num_inputs = psbt.inputs.len();
