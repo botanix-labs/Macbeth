@@ -123,6 +123,48 @@ pub struct GetGatewayAddressResponse {
     #[prost(string, tag = "3")]
     pub gateway_address: ::prost::alloc::string::String,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TxIn {
+    #[prost(message, optional, tag = "1")]
+    pub previous_outpoint: ::core::option::Option<OutPoint>,
+    #[prost(message, optional, tag = "3")]
+    pub script_sig: ::core::option::Option<ScriptBuf>,
+    #[prost(uint32, tag = "4")]
+    pub sequence: u32,
+    #[prost(bytes = "vec", repeated, tag = "5")]
+    pub witness: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Transaction {
+    #[prost(int32, tag = "1")]
+    pub version: i32,
+    #[prost(uint32, tag = "2")]
+    pub lock_time: u32,
+    #[prost(message, repeated, tag = "3")]
+    pub input: ::prost::alloc::vec::Vec<TxIn>,
+    #[prost(message, repeated, tag = "4")]
+    pub output: ::prost::alloc::vec::Vec<TxOut>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TrackedTx {
+    #[prost(bytes = "vec", tag = "1")]
+    pub txid: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub tx: ::core::option::Option<Transaction>,
+    #[prost(uint32, repeated, tag = "3")]
+    pub pegout_idxs: ::prost::alloc::vec::Vec<u32>,
+    #[prost(message, repeated, tag = "4")]
+    pub pegout_requests: ::prost::alloc::vec::Vec<PendingPegout>,
+    #[prost(uint32, repeated, tag = "5")]
+    pub change_idxs: ::prost::alloc::vec::Vec<u32>,
+    #[prost(message, optional, tag = "6")]
+    pub created: ::core::option::Option<::prost_types::Timestamp>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetTrackedTxsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
+}
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct Empty {}
 /// Frost things
@@ -377,6 +419,13 @@ pub mod btc_server_server {
             request: tonic::Request<super::GetSessionIdsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetSessionIdsResponse>,
+            tonic::Status,
+        >;
+        async fn get_tracked_txs(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetTrackedTxsResponse>,
             tonic::Status,
         >;
     }
@@ -1603,6 +1652,49 @@ pub mod btc_server_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetSessionIdsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/GetTrackedTxs" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetTrackedTxsSvc<T: BtcServer>(pub Arc<T>);
+                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    for GetTrackedTxsSvc<T> {
+                        type Response = super::GetTrackedTxsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as BtcServer>::get_tracked_txs(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetTrackedTxsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
