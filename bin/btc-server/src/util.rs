@@ -224,10 +224,13 @@ pub fn validate_psbt(
         },
     };
 
+    // TODO(armins): re-enable this once we have conflicting inputs checks
+    // Its possible for a singer to have already considered a pegout to no longer be pending while
+    // the coord still thinks it is. however if there is a conflicting input we can still sign.
     // validate outputs cover all pegout ids or are change
-    if let Err(e) = validate_outputs(psbt, db) {
-        return Err(ValidatePSBTError::InvalidOutputs(e.to_string()));
-    };
+    // if let Err(e) = validate_outputs(psbt, db) {
+    //     return Err(ValidatePSBTError::InvalidOutputs(e.to_string()));
+    // };
 
     let _tx = psbt.clone().extract_tx()?;
     for (_index, _input) in psbt.inputs.iter().enumerate() {
