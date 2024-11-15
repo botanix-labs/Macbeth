@@ -12,7 +12,7 @@ use reth_btc_wallet::{
     util::VerifyingKeyExt,
 };
 
-use crate::{database, pegout_id::PegoutId, signer::SigningFinalizeError, Error};
+use crate::{database, pegout_id::PegoutId, Error};
 
 lazy_static! {
     static ref MAX_BTC_AMOUNT: bitcoin::Amount =
@@ -330,17 +330,30 @@ pub fn validate_psbt(
     Ok(())
 }
 
+#[derive(Debug, Error)]
+pub enum ValidateOutputsError {
+    #[error("missing key package {0}")]
+    DbError(#[from] database::Error),
+    #[error("missing key package")]
+    MissingKeyPackage,
+    #[error("invalid pegout id")]
+    InvalidPegoutId,
+    #[error("missing psbt pegout")]
+    MissingPsbtPegout(PegoutId),
+    #[error("expecting only one change output")]
+    ExpectingOnlyOneChangeOutput,
+    #[error("invalid change output")]
+    InvalidChangeOutput,
+    #[error("extract tx error {0}")]
+    ExtractTxError(#[from] ExtractTxError),
+}
+
 // Check all pending pegouts are being settled in this tx
 // and additional outputs are change outputs
-pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), SigningFinalizeError> {
+pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
     // check aggregated public key exists
-    let public_key_package = match db.get_public_key_package() {
-        Ok(res) => match res {
-            Some(pk) => pk,
-            None => return Err(SigningFinalizeError::MissingKeyPackage),
-        },
-        Err(_e) => return Err(SigningFinalizeError::MissingKeyPackage),
-    };
+    let public_key_package =
+        db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
 
     let pending_pegouts = db.get_pending_pegouts()?;
     let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
@@ -349,24 +362,23 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Sig
     let mut change_outputs: Vec<Output> = vec![];
     for output in psbt.outputs.iter() {
         match output.pegout_id() {
-            Some(id) => match PegoutId::from_bytes(&id) {
-                Ok(id) => psbt_pegout_ids.push(id),
-                Err(_) => return Err(SigningFinalizeError::MissingPsbtPegout),
-            },
+            Some(id) => psbt_pegout_ids.push(
+                PegoutId::from_bytes(&id).map_err(|_e| ValidateOutputsError::InvalidPegoutId)?,
+            ),
             None => change_outputs.push(output.clone()),
         };
     }
 
     for pegout_id in pending_pegout_ids.iter() {
         if !psbt_pegout_ids.contains(pegout_id) {
-            return Err(SigningFinalizeError::MissingPendingPegout(*pegout_id));
+            return Err(ValidateOutputsError::MissingPsbtPegout(*pegout_id));
         }
     }
 
     // check extra outputs are change outputs:
     // psbt should only have one change output
     if change_outputs.len() > 1 {
-        return Err(SigningFinalizeError::ExpectingOnlyOneChangeOutput);
+        return Err(ValidateOutputsError::ExpectingOnlyOneChangeOutput);
     }
 
     if !change_outputs.is_empty() {
@@ -377,7 +389,7 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Sig
         let has_correct_change =
             tx.output.iter().any(|o| o.script_pubkey == expected_script_pubkey);
         if !has_correct_change {
-            return Err(SigningFinalizeError::InvalidChangeOutput);
+            return Err(ValidateOutputsError::InvalidChangeOutput);
         }
     }
     Ok(())

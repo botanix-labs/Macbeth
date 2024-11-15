@@ -1257,9 +1257,6 @@ mod test {
 
         let response = validate_outputs(&psbt, &app.db);
 
-        assert_eq!(
-            response.err().expect("error exists").to_string(),
-            "psbt includes invalid change output",
-        );
+        assert_eq!(response.err().expect("error exists").to_string(), "invalid change output",);
     }
 }
