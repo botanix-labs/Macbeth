@@ -3,10 +3,11 @@ use alloy_rpc_types_engine::{Claims, JwtSecret};
 use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
-    GetGatewayAddressResponse, GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse,
-    GetSigningStatusRequest, GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest,
-    NotifyPeginsRequest, NotifyPegoutRequest, ResetAllUtxosRequest, SigningPackage,
-    SigningPackageRequest, SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
+    GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
+    GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
+    GetTrackedTxsResponse, MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest,
+    ResetAllUtxosRequest, SigningPackage, SigningPackageRequest, SyncTxIndexRequest, ToSignRequest,
+    WalletStateResponse,
 };
 use displaydoc::Display as DisplayDoc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -138,6 +139,7 @@ impl BtcServerExtendedClient {
     generate_method!(reset_all_utxos, ResetAllUtxosRequest, Empty);
     generate_method!(get_all_utxos, Empty, GetAllUtxosResponse);
     generate_method!(get_tracked_txs, Empty, GetTrackedTxsResponse);
+    generate_method!(get_pending_pegouts, Empty, GetPendingPegoutsResponse);
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
