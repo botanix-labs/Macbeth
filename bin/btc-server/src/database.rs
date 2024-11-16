@@ -655,6 +655,20 @@ impl Db {
     pub fn clear_pending_pegouts(&self) -> Result<(), Error> {
         Ok(self.pending_pegouts.clear()?)
     }
+
+    /// Resets all tracked txs, and re-adding the functions arguments back in
+    pub fn reset_tracked_txs(&self, tracked_txs: &[&pegout_scheduler::Tx]) -> Result<(), Error> {
+        self.clear_tracked_txs()?;
+        for tracked_tx in tracked_txs.iter() {
+            self.store_tracked_tx(tracked_tx)?;
+        }
+        Ok(())
+    }
+
+    /// Clears all tracked txs from the database.
+    pub fn clear_tracked_txs(&self) -> Result<(), Error> {
+        Ok(self.tracked_txs.clear()?)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -1251,5 +1265,77 @@ mod tests {
         let pending_pegouts = db.get_pending_pegouts().unwrap();
         assert_eq!(pending_pegouts.len(), 1);
         assert_eq!(pending_pegouts[0], pegout_req2);
+    }
+
+    #[test]
+    fn clear_tracked_txs_should_clear_db() {
+        let (db, _temp_dir) = setup_db();
+        let tx = create_n_outputs_tx(5, 2);
+        let pegout_requests = vec![PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: create_random_pegout_id(),
+            botanix_height: 0,
+        }];
+        let tracked_tx = Tx {
+            txid: tx.txid(),
+            tx: tx.clone(),
+            change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests,
+            created: SystemTime::now(),
+        };
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        db.flush().unwrap();
+
+        db.clear_tracked_txs().unwrap();
+        db.flush().unwrap();
+
+        let tracked_txs = db.get_tracked_txs().unwrap();
+        assert!(tracked_txs.is_empty());
+    }
+
+    #[test]
+    fn reset_tracked_txs_should_clear_db_and_readd() {
+        let (db, _temp_dir) = setup_db();
+        let tx = create_n_outputs_tx(5, 2);
+        let pegout_requests = vec![PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: create_random_pegout_id(),
+            botanix_height: 0,
+        }];
+        let tracked_tx = Tx {
+            txid: tx.txid(),
+            tx: tx.clone(),
+            change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests,
+            created: SystemTime::now(),
+        };
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        db.flush().unwrap();
+
+        let tx2 = create_n_outputs_tx(5, 2);
+        let pegout_requests2 = vec![PegoutRequest {
+            spk: tx2.output[0].script_pubkey.clone(),
+            value: tx2.output[0].value,
+            id: create_random_pegout_id(),
+            botanix_height: 0,
+        }];
+        let tracked_tx2 = Tx {
+            txid: tx2.txid(),
+            tx: tx2.clone(),
+            change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests: pegout_requests2,
+            created: SystemTime::now(),
+        };
+        db.reset_tracked_txs(&[&tracked_tx2]).unwrap();
+        db.flush().unwrap();
+
+        let tracked_txs = db.get_tracked_txs().unwrap();
+        assert_eq!(tracked_txs.len(), 1);
+        assert_eq!(tracked_txs[0], tracked_tx2);
     }
 }

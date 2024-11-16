@@ -1,5 +1,10 @@
+use std::time::{Duration, SystemTime};
+
 use base64::{engine::general_purpose, Engine as _};
-use bitcoin::{hashes::Hash, psbt::Psbt, Amount, BlockHash, ScriptBuf, TxOut};
+use bitcoin::{
+    absolute::LockTime, hashes::Hash, psbt::Psbt, transaction::Version, Amount, BlockHash,
+    OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::util::VerifyingKeyExt;
@@ -10,8 +15,8 @@ use crate::{
     database::Utxo,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
-    pegout_scheduler::PegoutRequest,
-    rpc::{self, PendingPegout},
+    pegout_scheduler::{PegoutRequest, Tx},
+    rpc::{self},
     util, App,
 };
 
@@ -866,5 +871,86 @@ where
 
         let res = rpc::GetTrackedTxsResponse { tracked_txs };
         Ok(tonic::Response::new(res))
+    }
+
+    async fn reset_all_tracked_txs(
+        &self,
+        req: tonic::Request<rpc::ResetAllTrackedTxsRequest>,
+    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received reset all tracked txs request");
+        let tracked_txs = req
+            .tracked_txs
+            .into_iter()
+            .map(|tx| {
+                let tx_prost = tx.tx.expect("valid tx");
+                let tx_ins = tx_prost
+                    .input
+                    .into_iter()
+                    .map(|tx_in| {
+                        let previous_outpoint =
+                            tx_in.previous_outpoint.expect("valid previous outpoint");
+
+                        TxIn {
+                            previous_output: OutPoint {
+                                txid: Txid::from_slice(&previous_outpoint.txid)
+                                    .expect("valid txid"),
+                                vout: previous_outpoint.vout,
+                            },
+                            script_sig: ScriptBuf::from_bytes(
+                                tx_in.script_sig.expect("valid script sig").script,
+                            ),
+                            sequence: Sequence::from_consensus(tx_in.sequence),
+                            witness: Witness::from_slice(&tx_in.witness),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let tx_outs = tx_prost
+                    .output
+                    .into_iter()
+                    .map(|tx_out| TxOut {
+                        value: Amount::from_sat(tx_out.value),
+                        script_pubkey: ScriptBuf::from_bytes(
+                            tx_out.script_pubkey.expect("valid script pubkey").script,
+                        ),
+                    })
+                    .collect::<Vec<_>>();
+                let internal_tx = Transaction {
+                    version: Version(tx_prost.version),
+                    lock_time: LockTime::from_consensus(tx_prost.lock_time),
+                    input: tx_ins,
+                    output: tx_outs,
+                };
+
+                let pegout_requests = tx
+                    .pegout_requests
+                    .into_iter()
+                    .map(|pegout| PegoutRequest {
+                        id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
+                        spk: ScriptBuf::from_bytes(pegout.spk),
+                        value: Amount::from_sat(pegout.amount),
+                        botanix_height: pegout.height,
+                    })
+                    .collect::<Vec<_>>();
+                Tx {
+                    txid: Txid::from_slice(&tx.txid).expect("valid txid"),
+                    tx: internal_tx,
+                    pegout_idxs: tx.pegout_idxs.into_iter().map(|idx| idx as usize).collect(),
+                    pegout_requests,
+                    change_idxs: tx.change_idxs.into_iter().map(|idx| idx as usize).collect(),
+                    created: SystemTime::UNIX_EPOCH +
+                        Duration::new(
+                            tx.created.expect("timestamp to exist").seconds as u64,
+                            tx.created.expect("timestamp to exist").nanos as u32,
+                        ),
+                }
+            })
+            .collect::<Vec<_>>();
+        let tracked_txs_refs: Vec<&Tx> = tracked_txs.iter().collect();
+        self.db
+            .reset_tracked_txs(&tracked_txs_refs)
+            .map_err(|e| internal!("Failed to reset tracked txs: {}", e))?;
+        Ok(tonic::Response::new(rpc::Empty {}))
     }
 }

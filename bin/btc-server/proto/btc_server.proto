@@ -70,6 +70,8 @@ service BtcServer {
     rpc GetTrackedTxs(Empty) returns (GetTrackedTxsResponse) {}
 
     rpc ResetAllPendingPegouts(ResetAllPendingPegoutsRequest) returns (Empty) {}
+
+    rpc ResetAllTrackedTxs(ResetAllTrackedTxsRequest) returns (Empty) {}
 }
 
 message NotifyPegoutRequest {
@@ -166,18 +168,11 @@ message GetGatewayAddressResponse {
     string gateway_address = 3;
 }
 
-// TODO: remove
-// message Witness {
-//     repeated bytes content = 1;
-//     uint32 witness_elements = 2;
-//     uint32 indices_start = 3;
-// }
-
 message TxIn {
     OutPoint previous_outpoint = 1;
-    ScriptBuf script_sig = 3;
-    uint32 sequence = 4;
-    repeated bytes witness = 5;
+    ScriptBuf script_sig = 2;
+    uint32 sequence = 3;
+    repeated bytes witness = 4;
 }
 
 message Transaction {
@@ -197,6 +192,10 @@ message TrackedTx {
 }
 
 message GetTrackedTxsResponse {
+    repeated TrackedTx tracked_txs = 1;
+}
+
+message ResetAllTrackedTxsRequest {
     repeated TrackedTx tracked_txs = 1;
 }
 
