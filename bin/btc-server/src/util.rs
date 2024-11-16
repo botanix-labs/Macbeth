@@ -229,18 +229,14 @@ pub fn validate_psbt(
         return Err(ValidatePSBTError::InvalidOutputs(e.to_string()));
     };
 
-    let _tx = psbt.clone().extract_tx()?;
-    for (_index, _input) in psbt.inputs.iter().enumerate() {
-        // TODO lets re-enable this one we can check for conflicting inputs
-        // Right now singers can get into a state where they are tracking txs that the
-        // coordinator is not. This will not be an issue if the signers just check for one
-        // conflicting input until then signers can just trust the coordinator
+    let tx = psbt.clone().extract_tx()?;
+    for input in tx.input.iter() {
         // Check if input exists in db
-        // let ot = tx.input.get(index).expect("valid input").previous_output;
-        // let db_utxo = db.get_utxo(ot)?;
-        // if db_utxo.is_none() {
-        //     return Err(ValidatePSBTError::UtxoNotFound);
-        // }
+        println!("input: {:?}", input);
+        let db_utxo = db.get_utxo(input.previous_output)?;
+        if db_utxo.is_none() {
+            return Err(ValidatePSBTError::UtxoNotFound);
+        }
     }
 
     let total_outputs_amount =
@@ -355,7 +351,7 @@ pub enum ValidateOutputsError {
     MissingKeyPackage,
     #[error("invalid pegout id")]
     InvalidPegoutId,
-    #[error("missing psbt pegout")]
+    #[error("missing psbt pegout {0}")]
     MissingPsbtPegout(PegoutId),
     #[error("expecting only one change output")]
     ExpectingOnlyOneChangeOutput,
@@ -377,6 +373,7 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
 
     let mut psbt_pegout_ids: Vec<PegoutId> = vec![];
     let mut change_outputs: Vec<Output> = vec![];
+    // TODO should get iter() for output pegout ids and impl this ext trait
     for output in psbt.outputs.iter() {
         match output.pegout_id() {
             Some(id) => psbt_pegout_ids.push(
@@ -446,9 +443,20 @@ mod util_tests {
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&app.db);
-        let mut psbt = create_psbt(2, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        let utxo = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+
+        app.db.store_utxos(&[&utxo]).unwrap();
+        app.db.flush().unwrap();
+
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
+        println!("res: {:?}", res);
         assert!(res.is_ok());
 
         // No inputs
@@ -481,6 +489,21 @@ mod util_tests {
         let pegout_id = store_pending_pegout(&app.db);
         let mut psbt = create_psbt(2, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        let utxo1 = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+
+        let utxo2 = database::Utxo {
+            outpoint: tx.input[1].previous_output,
+            output: psbt.inputs[1].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+        app.db.store_utxos(&[&utxo1, &utxo2]).unwrap();
+        app.db.flush().unwrap();
 
         let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
             total.checked_add(output.value.clone()).unwrap_or_default()
@@ -520,6 +543,20 @@ mod util_tests {
         let pegout_id = store_pending_pegout(&app.db);
         let mut psbt = create_psbt(2, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        let utxo1 = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+
+        let utxo2 = database::Utxo {
+            outpoint: tx.input[1].previous_output,
+            output: psbt.inputs[1].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+        app.db.store_utxos(&[&utxo1, &utxo2]).unwrap();
+        app.db.flush().unwrap();
 
         let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
             total.checked_add(output.value.clone()).unwrap_or_default()
@@ -814,6 +851,10 @@ mod util_tests {
 
         let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
         psbt.inputs[0].set_partial_signature(frost_id2, &sig_share2);
+        // restore the utxos
+        app.db.store_utxos(&[&utxo]).unwrap();
+        app.db.flush().unwrap();
+
         let res = validate_psbt(&psbt, ROUND2, 1, &app.db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
@@ -825,6 +866,8 @@ mod util_tests {
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
         let _pegout_id = store_pending_pegout(&app.db);
+        app.db.store_utxos(&[&utxo]).unwrap();
+        app.db.flush().unwrap();
 
         let res = validate_psbt(&psbt, ROUND2_TRANSITION, 1, &app.db);
         assert!(res.is_err());
