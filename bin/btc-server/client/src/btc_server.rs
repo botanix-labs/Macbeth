@@ -132,11 +132,11 @@ pub struct GetGatewayAddressResponse {
 pub struct TxIn {
     #[prost(message, optional, tag = "1")]
     pub previous_outpoint: ::core::option::Option<OutPoint>,
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "2")]
     pub script_sig: ::core::option::Option<ScriptBuf>,
-    #[prost(uint32, tag = "4")]
+    #[prost(uint32, tag = "3")]
     pub sequence: u32,
-    #[prost(bytes = "vec", repeated, tag = "5")]
+    #[prost(bytes = "vec", repeated, tag = "4")]
     pub witness: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -167,6 +167,11 @@ pub struct TrackedTx {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTrackedTxsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResetAllTrackedTxsRequest {
     #[prost(message, repeated, tag = "1")]
     pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
 }
@@ -999,6 +1004,27 @@ pub mod btc_server_client {
                 .insert(
                     GrpcMethod::new("btc_server.BtcServer", "ResetAllPendingPegouts"),
                 );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn reset_all_tracked_txs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ResetAllTrackedTxsRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/ResetAllTrackedTxs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "ResetAllTrackedTxs"));
             self.inner.unary(req, path, codec).await
         }
     }

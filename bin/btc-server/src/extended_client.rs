@@ -6,8 +6,8 @@ use client::{
     GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
     GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
     GetTrackedTxsResponse, MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest,
-    ResetAllPendingPegoutsRequest, ResetAllUtxosRequest, SigningPackage, SigningPackageRequest,
-    SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
+    ResetAllPendingPegoutsRequest, ResetAllTrackedTxsRequest, ResetAllUtxosRequest, SigningPackage,
+    SigningPackageRequest, SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
 };
 use displaydoc::Display as DisplayDoc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -141,6 +141,7 @@ impl BtcServerExtendedClient {
     generate_method!(get_tracked_txs, Empty, GetTrackedTxsResponse);
     generate_method!(get_pending_pegouts, Empty, GetPendingPegoutsResponse);
     generate_method!(reset_all_pending_pegouts, ResetAllPendingPegoutsRequest, Empty);
+    generate_method!(reset_all_tracked_txs, ResetAllTrackedTxsRequest, Empty);
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
