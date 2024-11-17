@@ -215,7 +215,11 @@ where
         // }
 
         // Validate PSBT
-        validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
+        // TODO lets re-enable this one we can check for conflicting inputs
+        // Right now singers can get into a state where they are tracking txs that the
+        // coordinator is not. This will not be an issue if the signers just check for one
+        // conflicting input until then signers can just trust the coordinator
+        // validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
         let num_inputs = psbt.inputs.len();
 
         let key_package =
@@ -253,7 +257,11 @@ where
             self.db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
 
         // Validate PSBT
-        validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
+        // TODO lets re-enable this one we can check for conflicting inputs
+        // Right now singers can get into a state where they are tracking txs that the
+        // coordinator is not. This will not be an issue if the signers just check for one
+        // conflicting input until then signers can just trust the coordinator
+        // validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
 
         let tx = psbt.clone().extract_tx()?;
         let num_inputs = tx.input.len();
@@ -304,9 +312,10 @@ where
         let pending_pegouts = self.db.get_pending_pegouts()?;
         let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
-        self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await?;
-        self.db.remove_pending_pegout(&pending_pegout_ids)?;
-        self.db.flush()?;
+        // TODO(armins) we will need to re-enable this once we have conflicting inputs check
+        // self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await?;
+        // self.db.remove_pending_pegout(&pending_pegout_ids)?;
+        // self.db.flush()?;
 
         // Clear the signing nonces
         // This finalizes the signing session
