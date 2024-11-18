@@ -189,6 +189,11 @@ pub trait PsbtOutputExt: BorrowMut<Output> {
 impl PsbtOutputExt for Output {}
 
 pub trait PsbtExt: BorrowMut<Psbt> {
+    /// Get all pegouts ids from this PSBT
+    fn pegout_ids(&self) -> Vec<PegoutId> {
+        self.borrow().outputs.iter().filter_map(|o| o.pegout_id()).collect()
+    }
+
     /// Converts this PSBT into a vector of Frost signing packages.
     ///
     /// This function takes a PSBT as input and processes each input to generate the necessary
