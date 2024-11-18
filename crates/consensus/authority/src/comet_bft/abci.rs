@@ -741,6 +741,7 @@ where
         }
     }
 
+    /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#commit
     fn commit(&self) -> ResponseCommit {
         info!("commit request received");
         let candidate_blocks = match self.block_cache.write() {
