@@ -5,7 +5,10 @@ use bitcoin::{
     secp256k1::hashes::Hash,
 };
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
-use client::{Empty, GetAllUtxosResponse, ResetAllUtxosRequest};
+use client::{
+    Empty, GetAllUtxosResponse, GetPendingPegoutsResponse, GetTrackedTxsResponse,
+    ResetAllPendingPegoutsRequest, ResetAllTrackedTxsRequest, ResetAllUtxosRequest,
+};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{
@@ -34,8 +37,8 @@ pub(crate) enum WalletStateSyncError {
     BtcServerClientError(#[from] GrpcClientError),
     #[error("frost manager send error: {0}")]
     FrostManagerSendError(#[from] SendError<FrostCommand>),
-    #[error("peer never responded with utxo set, timer elapsed")]
-    PeerUtxoSetTimeout,
+    #[error("peer never responded with wallet state, timer elapsed")]
+    PeerWalletStateTimeout,
     #[error("Failed to receive a frost message from a peer {0}")]
     FrostRecv(tokio::sync::oneshot::error::RecvError),
     #[error("Failed to decompress utxo set data {0}")]
@@ -111,42 +114,62 @@ where
             Ok(peer_message) => {
                 if let Some((_peer_id, peer_message)) = peer_message {
                     if let PeerMessageResponse::WalletState(wallet_state) = peer_message {
-                        // TODO: refactor to update all wallet state
-
-                        // process the utxo set
-                        debug!(target: "consensus::authority::block_fetcher::sync_wallet_state", "Got utxo set from peer {:?}", wallet_state);
-                        let data = wallet_state.data;
-                        let decompressed = self.compressor.decompress(&data).await.map_err(|e| {
-                            error!(target: "consensus::authority::block_fetcher::sync_wallet_state", "Failed to decompress utxo set data {:?}", e);
+                        // process the utxos
+                        debug!(target: "consensus::authority::sync_wallet_state", "Received wallet state from peer {:?}", wallet_state);
+                        let utxos_compressed = wallet_state.utxos;
+                        let utxos_decompressed = self.compressor.decompress(&utxos_compressed).await.map_err(|e| {
+                            error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress utxos {:?}", e);
                             WalletStateSyncError::CompressorError(e)
                         })?;
+                        let utxos = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
+                            utxos_decompressed,
+                        )?
+                        .utxos;
 
-                        let utxo_set = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
-                            decompressed,
-                        )?;
-                        // TODO peers will also need to communicate their tracked txs and pending
-                        // pegouts
-                        // let merkel_root = generate_utxo_merkel_root(&utxo_set.utxos)?;
-                        // if merkel_root != latest_utxo_commitment {
-                        //     return Err(WalletStateSyncError::UtxoSetNotInSync(
-                        //         merkel_root,
-                        //         latest_utxo_commitment,
-                        //     ));
-                        // }
+                        // process the tracked txs
+                        let tracked_txs_compressed = wallet_state.tracked_txs;
+                        let tracked_txs_decompressed = self.compressor.decompress(&tracked_txs_compressed).await.map_err(|e| {
+                            error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress tracked txs {:?}", e);
+                            WalletStateSyncError::CompressorError(e)
+                        })?;
+                        let tracked_txs =
+                            ProstMessageSerdelizer::<GetTrackedTxsResponse>::deserialize(
+                                tracked_txs_decompressed,
+                            )?
+                            .tracked_txs;
 
-                        // Report to btc server to sync utxo set
+                        // process the pending pegouts
+                        let pending_pegouts_compressed = wallet_state.pending_pegouts;
+                        let pending_pegouts_decompressed = self.compressor.decompress(&pending_pegouts_compressed).await.map_err(|e| {
+                            error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress pending pegouts {:?}", e);
+                            WalletStateSyncError::CompressorError(e)
+                        })?;
+                        let pending_pegouts =
+                            ProstMessageSerdelizer::<GetPendingPegoutsResponse>::deserialize(
+                                pending_pegouts_decompressed,
+                            )?
+                            .pending_pegouts;
+
+                        // Report to btc server to sync utxos
+                        btc_server.reset_all_utxos(ResetAllUtxosRequest { utxos }).await?;
+                        // Report to btc server to sync tracked txs
                         btc_server
-                            .reset_all_utxos(ResetAllUtxosRequest { utxos: utxo_set.utxos })
+                            .reset_all_tracked_txs(ResetAllTrackedTxsRequest { tracked_txs })
+                            .await?;
+                        // Report to btc server to sync pending pegouts
+                        btc_server
+                            .reset_all_pending_pegouts(ResetAllPendingPegoutsRequest {
+                                pending_pegouts,
+                            })
                             .await?;
                     }
                 } else {
-                    // TODO better error variant
-                    return Err(WalletStateSyncError::PeerUtxoSetTimeout);
+                    return Err(WalletStateSyncError::PeerWalletStateTimeout);
                 }
             }
             Err(e) => {
-                warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", ?e, "Failed to get get utxo set rom a peer within 60 secs");
-                return Err(WalletStateSyncError::PeerUtxoSetTimeout);
+                warn!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to get get wallet state from a peer within 60 secs");
+                return Err(WalletStateSyncError::PeerWalletStateTimeout);
             }
         }
 

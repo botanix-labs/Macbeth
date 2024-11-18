@@ -41,6 +41,7 @@ pub(crate) enum UtxoSetSyncSerializationError {
     Compressor(CompressorError),
 }
 
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum TrackedTxSyncSerializationError {
     #[error("Received a grpc client error {0}")]
     Grpc(GrpcClientError),
@@ -48,6 +49,7 @@ pub(crate) enum TrackedTxSyncSerializationError {
     Compressor(CompressorError),
 }
 
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum PendingPegoutsSyncSerializationError {
     #[error("Received a grpc client error {0}")]
     Grpc(GrpcClientError),
@@ -435,16 +437,17 @@ where
                             }
                         };
 
-                        // TODO: update WalletState to include tracked txs and pending pegouts
-
-                        response.data = serialized_compressed_utxo_set;
+                        // update response with data
+                        response.utxos = serialized_compressed_utxo_set;
+                        response.tracked_txs = serialized_compressed_tracked_txs;
+                        response.pending_pegouts = serialized_compressed_pending_pegouts;
 
                         if let Err(e) =
                             peer_handle.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
                                 PeerMessageResponse::WalletState(response),
                             ))
                         {
-                            error!(target: "consensus::authority::utxo_syncer::start_task", "Error sending utxo set message to a peer: {:?}", e);
+                            error!(target: "consensus::authority::wallet_syncer::start_task", "Error sending wallet state message to a peer: {:?}", e);
                             continue;
                         }
 
