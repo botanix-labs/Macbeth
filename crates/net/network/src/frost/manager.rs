@@ -252,8 +252,11 @@ impl FrostManager {
                     Some(peer_data) => {
                         let peer_data = peer_data.first().expect("will always have one element");
                         match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
-                            // send request to frost task
-                            PeerMessageResponse::WalletState(WalletStateResponse { data: vec![] }),
+                            PeerMessageResponse::WalletState(WalletStateResponse {
+                                utxos: vec![],
+                                tracked_txs: vec![],
+                                pending_pegouts: vec![],
+                            }),
                         )) {
                             Ok(_) => {
                                 debug!(target: "network::frost::on_command", "UtxoSet sent to peer {:?}", peer_data.peer_id);

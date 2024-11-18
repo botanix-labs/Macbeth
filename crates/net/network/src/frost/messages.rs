@@ -99,20 +99,33 @@ impl UtxoRequest {
 pub struct WalletStateRequest {
     /// The version of the request message
     pub version: u16,
-    /// wallet state data
-    pub data: Vec<u8>,
+    /// utxos
+    pub utxos: Vec<u8>,
+    /// tracked transactions
+    pub tracked_txs: Vec<u8>,
+    /// pending pegouts
+    pub pending_pegouts: Vec<u8>,
 }
 
 impl fmt::Display for WalletStateRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Wallet state data size: {} bytes", self.data.len())
+        write!(
+            f,
+            "WalletStateRequest:\n\
+            - UTXOs: {} bytes\n\
+            - Tracked Transactions: {} bytes\n\
+            - Pending Pegouts: {} bytes",
+            self.utxos.len(),
+            self.tracked_txs.len(),
+            self.pending_pegouts.len()
+        )
     }
 }
 
 impl WalletStateRequest {
     /// Constructs a new wallet state request using a data payload.
-    pub const fn new(data: Vec<u8>) -> Self {
-        Self { version: WALLET_STATE_MESSAGE_VERSION as u16, data }
+    pub const fn new(utxos: Vec<u8>, tracked_txs: Vec<u8>, pending_pegouts: Vec<u8>) -> Self {
+        Self { version: WALLET_STATE_MESSAGE_VERSION as u16, utxos, tracked_txs, pending_pegouts }
     }
 }
 
@@ -372,9 +385,17 @@ impl FrostProtoMessage {
                 buf.put_slice(receiver_bytes); // Receiver bytes
             }
             FrostProtoMessageKind::WalletState(resource) => {
-                // serialize the data
-                buf.put_u64_le(resource.data.len() as u64); // Use u64 to support larger data sizes
-                buf.put_slice(&resource.data);
+                // serialize the utxos
+                buf.put_u64_le(resource.utxos.len() as u64); // Use u64 to support larger utxos sizes
+                buf.put_slice(&resource.utxos);
+
+                // serialize the tracked txs
+                buf.put_u64_le(resource.tracked_txs.len() as u64); // Use u64 to support larger tracked txs sizes
+                buf.put_slice(&resource.tracked_txs);
+
+                // serialize the pending pegouts
+                buf.put_u64_le(resource.pending_pegouts.len() as u64); // Use u64 to support larger pending pegouts sizes
+                buf.put_slice(&resource.pending_pegouts);
             }
         }
         buf
@@ -593,13 +614,27 @@ impl FrostProtoMessage {
                 FrostProtoMessageKind::Healthcheck(HealthcheckRequest { sender, receiver })
             }
             FrostProtoMessageId::WalletState => {
-                // wallet state
-                let wallet_state_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
+                // utxos
+                let utxos_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
                 buf.advance(8);
-                let wallet_state = buf[..wallet_state_len].to_vec();
-                buf.advance(wallet_state_len);
+                let utxos = buf[..utxos_len].to_vec();
+                buf.advance(utxos_len);
 
-                FrostProtoMessageKind::WalletState(WalletStateRequest::new(wallet_state))
+                // tracked txs
+                let tracked_txs_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
+                buf.advance(8);
+                let tracked_txs = buf[..tracked_txs_len].to_vec();
+
+                // pending pegouts
+                let pending_pegouts_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
+                buf.advance(8);
+                let pending_pegouts = buf[..pending_pegouts_len].to_vec();
+
+                FrostProtoMessageKind::WalletState(WalletStateRequest::new(
+                    utxos,
+                    tracked_txs,
+                    pending_pegouts,
+                ))
             }
         };
         Some(Self { message_type, message })

@@ -77,16 +77,28 @@ impl fmt::Display for UtxoSetResponse {
 }
 
 /// Response structure for internal communication
-// TODO: add more fields to represent full wallet state
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WalletStateResponse {
-    /// Wallet State Data (Compressed and Serialized)
-    pub data: Vec<u8>,
+    /// Serialized utxos
+    pub utxos: Vec<u8>,
+    /// Serialized tracked transactions
+    pub tracked_txs: Vec<u8>,
+    /// Serialized pending pegouts  
+    pub pending_pegouts: Vec<u8>,
 }
 
 impl fmt::Display for WalletStateResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Wallet State Data Size: {} bytes", self.data.len())
+        write!(
+            f,
+            "WalletStateResponse:\n\
+            - UTXOs: {} bytes\n\
+            - Tracked Transactions: {} bytes\n\
+            - Pending Pegouts: {} bytes",
+            self.utxos.len(),
+            self.tracked_txs.len(),
+            self.pending_pegouts.len()
+        )
     }
 }
 
