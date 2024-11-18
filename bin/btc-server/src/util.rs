@@ -232,7 +232,6 @@ pub fn validate_psbt(
     let tx = psbt.clone().extract_tx()?;
     for input in tx.input.iter() {
         // Check if input exists in db
-        println!("input: {:?}", input);
         let db_utxo = db.get_utxo(input.previous_output)?;
         if db_utxo.is_none() {
             return Err(ValidatePSBTError::UtxoNotFound);
