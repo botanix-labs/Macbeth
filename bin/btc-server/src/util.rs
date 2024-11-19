@@ -442,7 +442,7 @@ mod util_tests {
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&app.db);
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
@@ -460,7 +460,7 @@ mod util_tests {
 
         // No inputs
         let db = db_setup();
-        let mut psbt = create_psbt(2, None);
+        let mut psbt = create_psbt(2, 1, None);
         psbt.inputs.clear();
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert!(res.is_err());
@@ -468,7 +468,7 @@ mod util_tests {
 
         // No outputs
         let db = db_setup();
-        let mut psbt = create_psbt(2, None);
+        let mut psbt = create_psbt(2, 1, None);
         psbt.outputs.clear();
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert!(res.is_err());
@@ -486,7 +486,7 @@ mod util_tests {
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&app.db);
-        let mut psbt = create_psbt(2, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(2, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -540,7 +540,7 @@ mod util_tests {
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&app.db);
-        let mut psbt = create_psbt(2, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(2, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo1 = database::Utxo {
@@ -602,7 +602,7 @@ mod util_tests {
 
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let res = validate_psbt(&psbt, ROUND1, 2, &app.db);
@@ -640,7 +640,7 @@ mod util_tests {
 
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -684,7 +684,7 @@ mod util_tests {
 
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -721,7 +721,7 @@ mod util_tests {
 
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
@@ -799,7 +799,7 @@ mod util_tests {
 
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -947,7 +947,7 @@ mod util_tests {
         let (_, signing_commits2_0) = frost::round1::commit(key_package2.signing_share(), rng);
         let (_, signing_commits2_1) = frost::round1::commit(key_package2.signing_share(), rng);
 
-        let tx = create_tx(num_inputs, None);
+        let tx = create_tx(num_inputs, 1, None);
 
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments to the psbt for each input
@@ -984,7 +984,7 @@ mod util_tests {
         let sig_share2_1 =
             frost::round2::SignatureShare::deserialize([4u8; 32]).expect("valid sig share");
 
-        let tx = create_tx(num_inputs, None);
+        let tx = create_tx(num_inputs, 1, None);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments to the psbt for each input
         psbt.inputs[0].set_partial_signature(frost_id1, &sig_share1_0);
@@ -1006,7 +1006,7 @@ mod util_tests {
 
     #[test]
     fn signing_package_conversion_should_fail_when_missing_signing_commitments() {
-        let tx = create_tx(1, None);
+        let tx = create_tx(1, 1, None);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         psbt.inputs[0].witness_utxo =
             Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
@@ -1043,7 +1043,7 @@ mod util_tests {
         let (_, signing_commits2_1) = frost::round1::commit(key_package2.signing_share(), rng);
 
         // Set up the psbt
-        let tx = create_tx(num_inputs, None);
+        let tx = create_tx(num_inputs, 1, None);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments and TxOut to the psbt for each input
         psbt.inputs[0].witness_utxo =

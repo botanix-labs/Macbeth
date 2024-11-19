@@ -1,5 +1,3 @@
-use std::time::SystemTime;
-
 use bdk::miniscript::psbt::Error as PsbtError;
 use bitcoin::{
     psbt::{ExtractTxError, Psbt},
@@ -17,7 +15,7 @@ use crate::{
     coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
-    util::{validate_outputs, validate_psbt, ValidateOutputsError, ROUND1, ROUND1_TRANSITION},
+    util::{validate_outputs, ValidateOutputsError},
     App, Error,
 };
 
@@ -307,10 +305,10 @@ where
             psbt_in.set_partial_signature(self.identifier, &sigs);
         }
 
-        let tx = psbt.clone().extract_tx()?;
+        let _tx = psbt.clone().extract_tx()?;
 
         let pending_pegouts = self.db.get_pending_pegouts()?;
-        let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
+        let _pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
         // TODO(armins) we will need to re-enable this once we have conflicting inputs check
         // self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await?;

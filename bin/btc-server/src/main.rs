@@ -816,7 +816,7 @@ mod test {
     async fn should_fail_to_get_to_sign_package_without_dkg() {
         let app = setup();
         let signing_session_id = [0u8; 32];
-        let mut psbt = create_psbt(1, None);
+        let mut psbt = create_psbt(1, 1, None);
         let tx = psbt.clone().unsigned_tx;
         // Add the utxo
         let utxo = Utxo::new(tx.input[0].previous_output, tx.output[0].clone(), None);
@@ -863,7 +863,7 @@ mod test {
 
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -891,7 +891,7 @@ mod test {
 
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -931,7 +931,7 @@ mod test {
 
         let pegout_id = store_pending_pegout(&app_coordinator.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app_coordinator.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app_coordinator.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -1008,7 +1008,7 @@ mod test {
 
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         // Add pegin utxo
@@ -1172,7 +1172,7 @@ mod test {
         // store pending pegout
         let pegout_id = store_pending_pegout(&app.db);
 
-        let mut psbt = create_psbt(1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let response = validate_outputs(&psbt, &app.db);
@@ -1217,7 +1217,7 @@ mod test {
             reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
         let change = TxOut { value: Amount::from_sat(500), script_pubkey: change_script };
 
-        let mut psbt = create_psbt(1, Some(change));
+        let mut psbt = create_psbt(1, 1, Some(change));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let response = validate_outputs(&psbt, &app.db);
@@ -1252,7 +1252,7 @@ mod test {
 
         let change = TxOut { value: Amount::from_sat(500), script_pubkey: ScriptBuf::default() };
 
-        let mut psbt = create_psbt(1, Some(change));
+        let mut psbt = create_psbt(1, 1, Some(change));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let response = validate_outputs(&psbt, &app.db);

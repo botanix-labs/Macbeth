@@ -10,8 +10,12 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use bitcoin::{Amount, Block, BlockHash, OutPoint, Transaction, TxOut, Txid};
+use bitcoin::{Amount, Block, BlockHash, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use bitcoincore_rpc::RpcApi;
+use reth_btc_wallet::{
+    address::generate_taproot_change_scriptpubkey,
+    util::{VerifyingKeyExt, VerifyingKeyExtError},
+};
 use thiserror::Error;
 
 use crate::{database, pegout_id::PegoutId};
@@ -158,6 +162,14 @@ impl OutputMeta {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum ChangeOutputError {
+    #[error("key conversion error {0}")]
+    KeyConversion(#[from] VerifyingKeyExtError),
+    #[error("db error {0}")]
+    Db(#[from] database::Error),
+}
+
 pub struct PegoutScheduler {
     /// The number of blocks to track txs for.
     conf_window: u32,
@@ -213,6 +225,18 @@ impl PegoutScheduler {
         }
 
         ret
+    }
+
+    /// internal util to get change spk from db
+    fn get_change_spk(&self) -> Result<ScriptBuf, ChangeOutputError> {
+        let agg_pk = self
+            .db
+            .get_public_key_package()?
+            .expect("pk key package should exist")
+            .verifying_key()
+            .to_secp_pk()?;
+        let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
+        Ok(change_spk)
     }
 
     /// Get the last finalized block hash.
@@ -348,6 +372,7 @@ impl PegoutScheduler {
     /// Finalize a block by adding the UTXOs that are deeply confirmed back to the database.
     /// This is also where we remove tracked transactions
     fn finalize_block(&mut self, block: &BlockInfo) -> Result<(), database::Error> {
+        let change_spk = self.get_change_spk().expect("dkg should have been performed");
         // To make sure we only update the index when the db is also synced,
         // first try store the new finalized UTXOs to the db, then update the index.
         let mut all_inputs = block.relevant_inputs.iter().copied().collect::<HashSet<_>>();
@@ -356,6 +381,10 @@ impl PegoutScheduler {
             // Add back the change to the utxo set
             let mut change_utxos = vec![];
             for (outpoint, output) in tx.change() {
+                if output.script_pubkey != change_spk {
+                    warn!("Change output being tracked is not a p2tr: {:?}", output);
+                    continue;
+                }
                 change_utxos.push(database::Utxo {
                     outpoint,
                     output: output.clone(),
@@ -585,16 +614,24 @@ pub enum BlockError {
 #[cfg(test)]
 mod tests {
     use bitcoin::hashes::Hash;
+    use frost_secp256k1_tr as frost;
 
-    use crate::test_utils::test_utils::{
-        create_block, create_n_outputs_tx, create_random_pegout_id, pegout_requests_from_tx,
-        setup_db,
+    use crate::{
+        frost_id,
+        test_utils::test_utils::{
+            create_block, create_random_pegout_id, create_tx, pegout_requests_from_tx,
+            random_p2wpkh_script, setup_db, trusted_dealer_setup,
+        },
     };
 
     use super::*;
+
+    const MIN_SIGNERS: u16 = 2;
+    const MAX_SIGNERS: u16 = 3;
+
     #[test]
     fn tracked_tx_utils() {
-        let tx = create_n_outputs_tx(0, 0);
+        let tx = create_tx(0, 0, None);
         let tx = Tx {
             txid: tx.txid(),
             tx,
@@ -609,7 +646,7 @@ mod tests {
         assert_eq!(tx.change().count(), 0);
 
         // 5 inputs, 2 outputs
-        let dummy_tx = create_n_outputs_tx(5, 2);
+        let dummy_tx = create_tx(5, 2, None);
         assert_eq!(dummy_tx.input.len(), 5);
         assert_eq!(dummy_tx.output.len(), 2);
 
@@ -633,8 +670,14 @@ mod tests {
     #[test]
     fn test_track_tx() {
         let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
 
-        let tx = create_n_outputs_tx(3, 3);
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
+        let tx = create_tx(3, 3, None);
         let pegout_idxs = vec![0, 1];
         let change_idxs = vec![2];
 
@@ -693,10 +736,17 @@ mod tests {
     #[test]
     fn test_add_block() {
         let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
-        let tx1 = create_n_outputs_tx(3, 3);
-        let tx2 = create_n_outputs_tx(3, 3);
+        let tx1 = create_tx(3, 3, None);
+        let tx2 = create_tx(3, 3, None);
         let txs = vec![tx1.clone(), tx2.clone()];
         let pegouts1 = pegout_requests_from_tx(&tx1, &[0, 1]);
         let pegouts2 = pegout_requests_from_tx(&tx2, &[0, 1]);
@@ -723,13 +773,25 @@ mod tests {
     #[test]
     fn test_finalize_block() {
         let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
+        let agg_pk =
+            db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
+        let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
+        let change_output = TxOut { value: Amount::from_sat(1000), script_pubkey: change_spk };
+
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
-        let tx1 = create_n_outputs_tx(3, 3);
-        let tx2 = create_n_outputs_tx(3, 3);
+        let tx1 = create_tx(3, 3, Some(change_output.clone()));
+        let tx2 = create_tx(3, 3, Some(change_output));
         let txs = vec![tx1.clone(), tx2.clone()];
-        let pegouts1 = pegout_requests_from_tx(&tx1, &[0, 1]);
-        let pegouts2 = pegout_requests_from_tx(&tx2, &[0, 1]);
+        let pegouts1 = pegout_requests_from_tx(&tx1, &[0, 1, 2]);
+        let pegouts2 = pegout_requests_from_tx(&tx2, &[0, 1, 2]);
 
         pegout_scheduler.add_tx(tx1.clone(), &pegouts1, SystemTime::now());
         pegout_scheduler.add_tx(tx2.clone(), &pegouts2, SystemTime::now());
@@ -756,18 +818,110 @@ mod tests {
     }
 
     #[test]
-    fn finalizing_non_change_pegout() {
+    fn finalizing_one_change_output() {
         let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
+        let agg_pk =
+            db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
+        let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
+        let change_output = TxOut { value: Amount::from_sat(1000), script_pubkey: change_spk };
+
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
-        let tx = create_n_outputs_tx(3, 1);
+        let tx = create_tx(3, 1, Some(change_output));
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
 
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
         assert_eq!(last_tx_txid, tx.txid());
         assert_eq!(last_tx.pegout_idxs, vec![0]);
-        assert!(last_tx.change_idxs.is_empty());
+        assert_eq!(last_tx.change_idxs, vec![1]);
+
+        let block = create_block(vec![tx], bitcoin::BlockHash::all_zeros());
+        pegout_scheduler.add_block(&block);
+
+        let last_blocks = pegout_scheduler.last_blocks.clone();
+        let last_block = last_blocks.back().unwrap();
+
+        pegout_scheduler.finalize_block(last_block).expect("finalize block");
+
+        let utxos = db.get_all_utxos().unwrap();
+        // there is now one change so there is one UTXO to add back to UTXO set
+        assert_eq!(utxos.len(), 1);
+    }
+
+    #[test]
+    fn finalizing_incorrect_tracked_output() {
+        // here we are tracking tx where all outputs are pegouts but one is mistaken as change
+        // The result should be that the incorrect change is NOT added back to UTXO set
+        let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
+        let mut pegout_scheduler =
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+        let tx = create_tx(3, 2, None);
+        // Here we should be tracking indices 0 and 1.
+        // But we are tracking 0 as a pegout, therefore output 1 is going to be mistaken as change
+        let pegouts = pegout_requests_from_tx(&tx, &[0]);
+        pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
+
+        let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
+        assert_eq!(last_tx_txid, tx.txid());
+        assert_eq!(last_tx.pegout_idxs, vec![0]);
+        assert_eq!(last_tx.change_idxs, vec![1]);
+
+        let block = create_block(vec![tx], bitcoin::BlockHash::all_zeros());
+        pegout_scheduler.add_block(&block);
+
+        let last_blocks = pegout_scheduler.last_blocks.clone();
+        let last_block = last_blocks.back().unwrap();
+
+        pegout_scheduler.finalize_block(last_block).expect("finalize block");
+
+        let utxos = db.get_all_utxos().unwrap();
+        // No change so there is no UTXO to add back to UTXO set
+        assert_eq!(utxos.len(), 0);
+    }
+
+    #[test]
+    fn finalizing_incorrect_change_output() {
+        // Here we are tracking tx where the incorrect change is registered
+        // The result should be that the incorrect change is NOT added back to UTXO set
+        let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+        let mut pegout_scheduler =
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+
+        let incorrect_change_spk = random_p2wpkh_script();
+        let tx = create_tx(
+            3,
+            2,
+            Some(TxOut { value: Amount::from_sat(1000), script_pubkey: incorrect_change_spk }),
+        );
+
+        let pegouts = pegout_requests_from_tx(&tx, &[0, 1]);
+        pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
+
+        let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
+        assert_eq!(last_tx_txid, tx.txid());
+        assert_eq!(last_tx.pegout_idxs, vec![0, 1]);
+        assert_eq!(last_tx.change_idxs, vec![2]);
 
         let block = create_block(vec![tx], bitcoin::BlockHash::all_zeros());
         pegout_scheduler.add_block(&block);
@@ -785,7 +939,7 @@ mod tests {
     #[test]
     fn start_with_existing_tracked_txs() {
         let db = setup_db().0;
-        let tx = create_n_outputs_tx(1, 2);
+        let tx = create_tx(1, 2, None);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
             txid: tx.txid(),
@@ -807,12 +961,23 @@ mod tests {
     #[test]
     fn test_finalize_many_blocks() {
         let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+        let agg_pk =
+            db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
+        let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
+        let change_output = TxOut { value: Amount::from_sat(1000), script_pubkey: change_spk };
+
         let mut pegout_scheduler =
             PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
         let mut last_block_hash = bitcoin::BlockHash::all_zeros();
 
         for _ in 0..100 {
-            let tx = create_n_outputs_tx(1, 2);
+            let tx = create_tx(1, 2, Some(change_output.clone()));
             let pegouts = pegout_requests_from_tx(&tx, &[0]);
             pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
             let block = create_block(vec![tx], last_block_hash);
@@ -823,6 +988,7 @@ mod tests {
             last_block_hash = last_block.hash;
             pegout_scheduler.finalize_block(last_block).expect("finalize block");
         }
+        // 100 change outputs are added back to UTXO set
         let utxos = db.get_all_utxos().unwrap();
         assert_eq!(utxos.len(), 100);
     }
@@ -830,7 +996,7 @@ mod tests {
     #[test]
     fn test_un_track_tx() {
         let db = setup_db().0;
-        let tx = create_n_outputs_tx(1, 2);
+        let tx = create_tx(1, 2, None);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
             txid: tx.txid(),
@@ -864,7 +1030,7 @@ mod tests {
         let db = setup_db().0;
         let mut pegout_scheduler =
             PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
-        let tx = create_n_outputs_tx(1, 2);
+        let tx = create_tx(1, 2, None);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
 
         let tracked_tx = pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
