@@ -185,6 +185,8 @@ where
         let utxos = utxos?;
         let utxo_refs: Vec<&Utxo> = utxos.iter().collect();
 
+        // let prev_output = self.bitcoind_client.get_raw_transaction(utxos[0].txid, None).unwrap();
+
         self.add_pegins(&utxo_refs).map_err(|e| internal!("Failed to add pegins: {}", e))?;
         info!("processed pegins.len(): {:?}", utxos.len());
 

@@ -751,7 +751,7 @@ mod tests {
     use crate::{
         pegout_scheduler::{PegoutRequest, Tx},
         test_utils::test_utils::{
-            create_n_outputs_tx, create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db,
+            create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db,
         },
     };
 
@@ -813,7 +813,7 @@ mod tests {
 
     #[test]
     fn from_db_utxo_to_rpc_utxo() {
-        let tx = create_tx(1, None);
+        let tx = create_tx(1, 1, None);
         let utxo = Utxo::new(
             OutPoint::new(tx.txid(), 0),
             tx.output.get(0).expect("one output").clone(),
@@ -838,7 +838,7 @@ mod tests {
     fn test_storing_single_utxo() {
         let (db, _temp_dir) = setup_db();
 
-        let tx = create_tx(2, None);
+        let tx = create_tx(2, 1, None);
         let utxo = Utxo::new(
             OutPoint::new(tx.txid(), 0),
             tx.output.get(0).expect("one output").clone(),
@@ -857,7 +857,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(2, None);
+            let tx = create_tx(2, 1, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -890,7 +890,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(1, None);
+            let tx = create_tx(1, 1, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -915,7 +915,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(1, None);
+            let tx = create_tx(1, 1, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -947,7 +947,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(2, None);
+            let tx = create_tx(2, 1, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -980,7 +980,7 @@ mod tests {
         let num_txs = 5;
         let mut utxos = vec![];
         for _ in 0..num_txs {
-            let tx = create_tx(2, None);
+            let tx = create_tx(2, 1, None);
             let utxo = Utxo::new(
                 OutPoint::new(tx.txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
@@ -1001,7 +1001,7 @@ mod tests {
         assert_eq!(merkle_root, merkle_root2);
 
         // Adding an additional utxo should change the merkle root
-        let tx = create_tx(2, None);
+        let tx = create_tx(2, 1, None);
         let utxo = Utxo::new(
             OutPoint::new(tx.txid(), 1),
             tx.output.get(0).expect("one output").clone(),
@@ -1018,7 +1018,7 @@ mod tests {
     fn test_reading_session_ids() {
         let (db, _temp_dir) = setup_db();
 
-        let tx = create_tx(2, None);
+        let tx = create_tx(2, 1, None);
         let psbt = Psbt::from_unsigned_tx(tx).unwrap();
         let signing_session_id: [u8; 32] = [0; 32];
         db.update_psbt(&signing_session_id, &psbt).unwrap();
@@ -1032,7 +1032,7 @@ mod tests {
     fn test_getting_session_id_status() {
         let (db, _temp_dir) = setup_db();
 
-        let tx = create_tx(2, None);
+        let tx = create_tx(2, 1, None);
         let psbt = Psbt::from_unsigned_tx(tx).unwrap();
         let signing_session_id: [u8; 32] = [0; 32];
         db.update_psbt(&signing_session_id, &psbt).unwrap();
@@ -1058,7 +1058,7 @@ mod tests {
     #[test]
     fn test_tracked_txs_e2e() {
         let (db, _temp_dir) = setup_db();
-        let tx = create_n_outputs_tx(5, 2);
+        let tx = create_tx(5, 2, None);
         let pegout_reqs = vec![PegoutRequest {
             spk: tx.output[0].script_pubkey.clone(),
             value: tx.output[0].value,
@@ -1095,7 +1095,7 @@ mod tests {
     #[test]
     fn test_update_tracked_tx_merkle_root() {
         let (db, _temp_dir) = setup_db();
-        let tx = create_n_outputs_tx(5, 2);
+        let tx = create_tx(5, 2, None);
         let pegout_reqs = vec![PegoutRequest {
             spk: tx.output[0].script_pubkey.clone(),
             value: tx.output[0].value,
@@ -1121,9 +1121,9 @@ mod tests {
         let merkle_root2 = db.get_tracked_tx_merkle_root().unwrap().unwrap();
         assert_eq!(merkle_root, merkle_root2);
 
-        let tx2 = create_n_outputs_tx(5, 2);
+        let tx2 = create_tx(5, 2, None);
         let pegout_reqs = vec![PegoutRequest {
-            spk: tx.output[0].script_pubkey.clone(),
+            spk: tx2.output[0].script_pubkey.clone(),
             value: tx.output[0].value,
             id: create_random_pegout_id(),
             botanix_height: 0,
@@ -1153,7 +1153,7 @@ mod tests {
 
         assert!(merkle_root.is_none());
 
-        let tx = create_n_outputs_tx(5, 2);
+        let tx = create_tx(5, 2, None);
 
         let pegout_req = PegoutRequest {
             botanix_height: 0,

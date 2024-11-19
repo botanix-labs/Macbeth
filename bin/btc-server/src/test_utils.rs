@@ -222,7 +222,7 @@ pub mod test_utils {
     }
 
     // Util function to create a btc tx with random inputs and outputs as defined by fn params
-    pub fn create_tx(num_inputs: usize, change: Option<TxOut>) -> Transaction {
+    pub fn create_tx(num_inputs: usize, num_outputs: usize, change: Option<TxOut>) -> Transaction {
         let txid = random_txid();
 
         let mut inputs = vec![];
@@ -236,14 +236,13 @@ pub mod test_utils {
             });
         }
 
-        // Hardcoded one output
-        let mut outputs = vec![TxOut {
-            value: Amount::from_sat(1000),
-            script_pubkey: Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
-                .expect("valid address")
-                .assume_checked()
-                .script_pubkey(),
-        }];
+        let mut outputs = vec![];
+        for _ in 0..num_outputs {
+            outputs.push(TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: random_p2wpkh_script(),
+            });
+        }
 
         if let Some(change) = change {
             outputs.push(change);
@@ -291,20 +290,8 @@ pub mod test_utils {
         block
     }
 
-    pub fn create_n_outputs_tx(num_inputs: usize, num_outputs: usize) -> Transaction {
-        let mut tx = create_tx(num_inputs, None);
-        let mut outputs = vec![];
-        for _ in 0..num_outputs {
-            outputs.push(TxOut {
-                value: Amount::from_sat(1000),
-                script_pubkey: random_p2wpkh_script(),
-            });
-        }
-        tx.output = outputs;
-        tx
-    }
-    pub fn create_psbt(num_inputs: usize, change: Option<TxOut>) -> Psbt {
-        let tx = create_tx(num_inputs, change);
+    pub fn create_psbt(num_inputs: usize, num_outputs: usize, change: Option<TxOut>) -> Psbt {
+        let tx = create_tx(num_inputs, num_outputs, change);
 
         let weight = tx.weight();
         let fee = FEERATE * weight;
