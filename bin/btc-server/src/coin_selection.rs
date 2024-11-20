@@ -6,7 +6,7 @@ use bdk::{
 };
 use bitcoin::{
     psbt::{Error as PsbtError, ExtractTxError, Psbt},
-    Amount, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut,
+    Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
 };
 use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
@@ -20,6 +20,16 @@ pub enum CoinSelectionError {
     PsbtError(#[from] PsbtError),
     #[error("Extract tx error: {0}")]
     ExtractTxError(#[from] ExtractTxError),
+    #[error("Outputs cannot be empty")]
+    OutputsCannotBeEmpty,
+    #[error("Available utxos cannot be empty")]
+    AvailableUtxosCannotBeEmpty,
+}
+
+impl PartialEq for CoinSelectionError {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
 }
 
 /// Coin selection
@@ -29,6 +39,14 @@ pub(crate) fn coin_selection(
     fee_rate: FeeRate,
     change_script: ScriptBuf,
 ) -> Result<Psbt, CoinSelectionError> {
+    // Perform some sanity checks
+    if outputs.is_empty() {
+        return Err(CoinSelectionError::OutputsCannotBeEmpty);
+    }
+    if available_utxos.is_empty() {
+        return Err(CoinSelectionError::AvailableUtxosCannotBeEmpty);
+    }
+
     let to_bdk = |u: &Utxo| {
         bdk::WeightedUtxo {
             satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT.to_wu() as usize,
@@ -139,6 +157,7 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
+        coin_selection::CoinSelectionError,
         database::Utxo,
         test_utils::test_utils::{
             create_random_pegout_id, create_tx, random_p2tr_keyspend_script, random_p2wpkh_script,
@@ -153,6 +172,27 @@ mod tests {
     // The ideal test case here would iterate over many outputs with varying values
     // checking each time that the fee per output is met and that the change is correct
     // And would also covert the case where change is not needed
+    #[test]
+    fn coin_selection_sanity_checks() {
+        let change_script = random_p2tr_keyspend_script();
+        let res = coin_selection(
+            HashMap::new(),
+            vec![],
+            FeeRate::from_sat_per_vb(3).unwrap(),
+            change_script.clone(),
+        );
+        assert_eq!(res.err(), Some(CoinSelectionError::OutputsCannotBeEmpty));
+
+        let output_script = random_p2wpkh_script();
+        let res = coin_selection(
+            HashMap::new(),
+            vec![(TxOut { script_pubkey: output_script, value: Amount::from_sat(1000) }, None)],
+            FeeRate::from_sat_per_vb(3).unwrap(),
+            change_script.clone(),
+        );
+        assert_eq!(res.err(), Some(CoinSelectionError::AvailableUtxosCannotBeEmpty));
+    }
+
     #[test]
     fn idk_yet() {
         let app = setup();
