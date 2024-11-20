@@ -7,15 +7,18 @@ use std::{
 
 use crate::{
     pegout_id::PegoutId,
-    pegout_scheduler,
-    rpc::{OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut, Utxo as RpcUtxo},
+    pegout_scheduler::{self},
+    rpc::{
+        self, OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut,
+        Utxo as RpcUtxo,
+    },
     util::{parse_eth_address, OutPointExt},
 };
 use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
+    Amount, BlockHash, OutPoint, ScriptBuf, TxIn, TxOut, Txid,
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
