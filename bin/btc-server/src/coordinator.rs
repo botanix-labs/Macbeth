@@ -204,7 +204,7 @@ where
 
     pub(crate) async fn make_tx(
         &self,
-        outputs: Vec<(TxOut, Option<PegoutId>)>,
+        outputs: Vec<(TxOut, PegoutId)>,
         fee_rate: FeeRate,
         change_script: ScriptBuf,
         checkpoint_block: BlockHash,

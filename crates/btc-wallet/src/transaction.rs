@@ -17,7 +17,7 @@ pub struct Input {
 /// Create psbt with proprietary tweak fields
 pub fn create_psbt(
     inputs: Vec<Input>,
-    outputs: Vec<(TxOut, Option<PegoutId>)>,
+    outputs: Vec<(TxOut, PegoutId)>,
     change: Option<TxOut>,
 ) -> Psbt {
     let mut output: Vec<TxOut> = outputs.iter().map(|(out, _)| out).cloned().collect();
@@ -51,11 +51,9 @@ pub fn create_psbt(
 
     // add output meta
     for (psbt_output, (_out, pegout_id)) in psbt.outputs.iter_mut().zip(outputs.iter()) {
-        if let Some(id) = pegout_id {
-            // Pegout ids are stored in the proprietary field to be checked and validated
-            // by peers
-            psbt_output.set_pegout_id(*id);
-        }
+        // Pegout ids are stored in the proprietary field to be checked and validated
+        // by peers
+        psbt_output.set_pegout_id(*pegout_id);
     }
 
     psbt
