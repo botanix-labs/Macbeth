@@ -7,6 +7,7 @@ use bitcoin::{
 use crate::psbt::{PegoutId, PsbtInputExt, PsbtOutputExt};
 
 /// Utxo DTO struct
+#[derive(Debug, Clone)]
 pub struct Input {
     pub outpoint: OutPoint,
     pub output: TxOut,

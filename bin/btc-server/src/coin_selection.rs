@@ -1,34 +1,25 @@
 use std::collections::HashMap;
 
-use bdk::wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError};
-use bitcoin::{psbt::Psbt, Amount, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut};
-use reth_btc_wallet::{psbt::PsbtInputExt, TAPROOT_KEYSPEND_SATISFACTION_WEIGHT};
+use bdk::{
+    psbt::PsbtUtils,
+    wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
+};
+use bitcoin::{
+    psbt::{Error as PsbtError, ExtractTxError, Psbt},
+    Amount, FeeRate, OutPoint, ScriptBuf, Transaction, TxOut,
+};
+use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
 use crate::{database::Utxo, pegout_id::PegoutId, util::OutPointExt, Error};
-
-pub trait TransactionExt {
-    fn calculate_absolute_fee(&self, fee_rate: &FeeRate) -> Amount;
-    fn calculate_fee_per_output(&self, fee_rate: &FeeRate) -> Amount;
-}
-
-impl TransactionExt for Transaction {
-    fn calculate_absolute_fee(&self, fee_rate: &FeeRate) -> Amount {
-        let vsize = self.vsize();
-        let fee = fee_rate.to_sat_per_vb_ceil() * vsize as u64;
-        Amount::from_sat(fee)
-    }
-
-    fn calculate_fee_per_output(&self, fee_rate: &FeeRate) -> Amount {
-        let absolute_fee = self.calculate_absolute_fee(fee_rate);
-        let fee_per_output = absolute_fee / self.output.len() as u64;
-        fee_per_output
-    }
-}
 
 #[derive(Debug, Error)]
 pub enum CoinSelectionError {
     #[error("Coin selection error: {0}")]
     CoinSelectionBdk(#[from] BdkCoinselectionError),
+    #[error("PSBT error: {0}")]
+    PsbtError(#[from] PsbtError),
+    #[error("Extract tx error: {0}")]
+    ExtractTxError(#[from] ExtractTxError),
 }
 
 /// Coin selection
@@ -55,11 +46,11 @@ pub(crate) fn coin_selection(
             }),
         }
     };
+    let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
 
     // Now we're going to hijack BDK coin selection real quick..
     let bdk_utxos = available_utxos.values().map(to_bdk).collect::<Vec<_>>();
 
-    let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
     let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
 
     // Try once with finalized, then add pending and try again.
@@ -67,8 +58,7 @@ pub(crate) fn coin_selection(
         .coin_select(
             vec![],
             bdk_utxos.clone(),
-            // we dont want to pay any fee out of the change output
-            FeeRate::ZERO,
+            fee_rate,
             target_amount.to_sat(),
             &change_script, // drain_script
         )
@@ -88,7 +78,7 @@ pub(crate) fn coin_selection(
         bdk::wallet::coin_selection::Excess::NoChange { .. } => None,
     };
 
-    let pegouts = outputs
+    let mut pegouts = outputs
         .into_iter()
         .map(|(txout, pegout_id)| {
             if let Some(pegout_id) = pegout_id {
@@ -98,84 +88,71 @@ pub(crate) fn coin_selection(
             }
         })
         .collect::<Vec<_>>();
+    let selected_inputs: Vec<reth_btc_wallet::transaction::Input> = selected
+        .iter()
+        .map(|s| reth_btc_wallet::transaction::Input {
+            outpoint: s.outpoint,
+            output: s.output.clone(),
+            eth_address: s.eth_address,
+        })
+        .collect();
 
     let original_psbt = reth_btc_wallet::transaction::create_psbt(
-        selected
-            .iter()
-            .map(|s| reth_btc_wallet::transaction::Input {
-                outpoint: s.outpoint,
-                output: s.output.clone(),
-                eth_address: s.eth_address,
-            })
-            .collect(),
+        selected_inputs.clone(),
         pegouts.clone(),
-        Some(TxOut {
-            script_pubkey: change_script.clone(),
-            // TODO remove placeholder value
-            value: Amount::from_sat(550),
-        }),
+        change.clone(),
     );
 
-    let vsize = original_psbt.clone().extract_tx_unchecked_fee_rate().vsize();
-    println!("vsize = {:?}", vsize);
-
-    let fee_per_output =
-        Amount::from_sat((fee_rate.to_sat_per_vb_ceil() * vsize as u64) / pegouts.len() as u64);
+    let absolute_fee = Amount::from_sat(original_psbt.fee_amount().expect("no missing any txouts"));
+    println!("absolute_fee = {:?}", absolute_fee);
+    let fee_per_output = absolute_fee / pegouts.len() as u64;
     println!("fee_per_output = {:?}", fee_per_output);
-    println!("target_amount = {:?}", target_amount);
-    let mut tx = original_psbt.clone().extract_tx_unchecked_fee_rate();
-    // substract fee from non-change outputs
-    for output in tx.output.iter_mut() {
-        if output.script_pubkey != change_script {
-            output.value -= fee_per_output;
-        }
+
+    for (output, _pegout_id) in pegouts.iter_mut() {
+        output.value -= fee_per_output;
     }
 
-    let amount_left_over = tx.output.iter().map(|o| o.value).sum::<Amount>() - target_amount;
-    println!("amount_left_over = {:?}", amount_left_over);
+    let updated_changed = {
+        if let Some(mut ch) = change.clone() {
+            ch.value += absolute_fee;
+            Some(ch)
+        } else {
+            None
+        }
+    };
 
-    let fees = Psbt::from_unsigned_tx(tx).unwrap().fee().unwrap();
-    println!("fees = {:?}", fees);
+    let updated_psbt =
+        reth_btc_wallet::transaction::create_psbt(selected_inputs, pegouts, updated_changed);
+
+    // Lets extract the tx, doing so will do some fee sanity checks
+    // Better to catch them here than later in signing
+    let _tx = updated_psbt.clone().extract_tx()?;
 
     // TODO should check that min relay fee rate is met
     // TODO should check that none of the outputs are now dust
 
-    Ok(original_psbt)
+    Ok(updated_psbt)
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
-    use bitcoin::{secp256k1::SECP256K1, Amount, FeeRate, OutPoint, TxOut};
-
-    use rand::rngs::OsRng;
-    use reth_btc_wallet::address::generate_taproot_change_scriptpubkey;
-
     use crate::{
-        coin_selection::TransactionExt,
         database::Utxo,
-        test_utils::test_utils::{create_random_pegout_id, create_tx, setup},
+        test_utils::test_utils::{
+            create_random_pegout_id, create_tx, random_p2tr_keyspend_script, random_p2wpkh_script,
+            setup,
+        },
     };
+    use bdk::psbt::PsbtUtils;
+    use bitcoin::{Amount, FeeRate, OutPoint, TxOut};
 
     use super::coin_selection;
 
-    #[test]
-    fn test_calculate_abolute_fee() {
-        let tx = create_tx(1, 1, None);
-        let fee_rate = FeeRate::from_sat_per_vb(3).unwrap();
-        let fee = tx.calculate_absolute_fee(&fee_rate);
-        // TODO assertions
-    }
-
-    #[test]
-    fn test_calculate_fee_per_output() {
-        let tx = create_tx(1, 1, None);
-        let fee_rate = FeeRate::from_sat_per_vb(3).unwrap();
-        let fee = (&tx).calculate_fee_per_output(&fee_rate);
-        println!("fee = {:?}", fee);
-    }
-
+    // The ideal test case here would iterate over many outputs with varying values
+    // checking each time that the fee per output is met and that the change is correct
+    // And would also covert the case where change is not needed
     #[test]
     fn idk_yet() {
         let app = setup();
@@ -195,30 +172,23 @@ mod tests {
         let x = utxos.iter().map(|u| u).collect::<Vec<_>>();
         app.add_pegins(&x).expect("add pegins");
 
-        let key_pair = bitcoin::secp256k1::generate_keypair(&mut OsRng);
-        let change_script = generate_taproot_change_scriptpubkey(&key_pair.1);
-
-        let pk = bitcoin::PublicKey::from_private_key(
-            SECP256K1,
-            &bitcoin::PrivateKey::generate(bitcoin::Network::Regtest),
-        );
-        let output_script =
-            bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+        let change_script = random_p2tr_keyspend_script();
+        let output_script = random_p2wpkh_script();
 
         let mut available_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
         for utxo in app.db.get_all_utxos().unwrap() {
             available_utxos.insert(utxo.outpoint, utxo);
         }
 
-        let pbst = coin_selection(
+        let psbt = coin_selection(
             available_utxos,
             vec![
                 (
-                    TxOut { script_pubkey: output_script.clone(), value: Amount::from_sat(1_000) },
+                    TxOut { script_pubkey: output_script.clone(), value: Amount::from_sat(1000) },
                     Some(create_random_pegout_id()),
                 ),
                 (
-                    TxOut { script_pubkey: output_script, value: Amount::from_sat(1_000) },
+                    TxOut { script_pubkey: output_script, value: Amount::from_sat(1000) },
                     Some(create_random_pegout_id()),
                 ),
             ],
@@ -226,7 +196,9 @@ mod tests {
             change_script,
         )
         .unwrap();
-        let tx = pbst.extract_tx().unwrap();
+        let tx = psbt.clone().extract_tx().unwrap();
+        let fee_rate = psbt.fee_rate();
+        println!("fee_rate = {:?}", fee_rate);
 
         // print inputs
         for input in tx.input {
