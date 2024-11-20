@@ -804,70 +804,9 @@ where
         let tracked_txs = req
             .tracked_txs
             .into_iter()
-            .map(|tx| {
-                let tx_prost = tx.tx.expect("valid tx");
-                let tx_ins = tx_prost
-                    .input
-                    .into_iter()
-                    .map(|tx_in| {
-                        let previous_outpoint =
-                            tx_in.previous_outpoint.expect("valid previous outpoint");
-
-                        TxIn {
-                            previous_output: OutPoint {
-                                txid: Txid::from_slice(&previous_outpoint.txid)
-                                    .expect("valid txid"),
-                                vout: previous_outpoint.vout,
-                            },
-                            script_sig: ScriptBuf::from_bytes(
-                                tx_in.script_sig.expect("valid script sig").script,
-                            ),
-                            sequence: Sequence::from_consensus(tx_in.sequence),
-                            witness: Witness::from_slice(&tx_in.witness),
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let tx_outs = tx_prost
-                    .output
-                    .into_iter()
-                    .map(|tx_out| TxOut {
-                        value: Amount::from_sat(tx_out.value),
-                        script_pubkey: ScriptBuf::from_bytes(
-                            tx_out.script_pubkey.expect("valid script pubkey").script,
-                        ),
-                    })
-                    .collect::<Vec<_>>();
-                let internal_tx = Transaction {
-                    version: Version(tx_prost.version),
-                    lock_time: LockTime::from_consensus(tx_prost.lock_time),
-                    input: tx_ins,
-                    output: tx_outs,
-                };
-
-                let pegout_requests = tx
-                    .pegout_requests
-                    .into_iter()
-                    .map(|pegout| PegoutRequest {
-                        id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
-                        spk: ScriptBuf::from_bytes(pegout.spk),
-                        value: Amount::from_sat(pegout.amount),
-                        botanix_height: pegout.height,
-                    })
-                    .collect::<Vec<_>>();
-                Tx {
-                    txid: Txid::from_slice(&tx.txid).expect("valid txid"),
-                    tx: internal_tx,
-                    pegout_idxs: tx.pegout_idxs.into_iter().map(|idx| idx as usize).collect(),
-                    pegout_requests,
-                    change_idxs: tx.change_idxs.into_iter().map(|idx| idx as usize).collect(),
-                    created: SystemTime::UNIX_EPOCH +
-                        Duration::new(
-                            tx.created.expect("timestamp to exist").seconds as u64,
-                            tx.created.expect("timestamp to exist").nanos as u32,
-                        ),
-                }
-            })
-            .collect::<Vec<_>>();
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<Tx>, _>>()
+            .map_err(|e| internal!("Failed to convert tracked tx: {}", e))?;
         let tracked_txs_refs: Vec<&Tx> = tracked_txs.iter().collect();
         self.db
             .reset_tracked_txs(&tracked_txs_refs)
@@ -877,13 +816,9 @@ where
         let pending_pegouts = req
             .pending_pegouts
             .into_iter()
-            .map(|pegout| PegoutRequest {
-                id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
-                spk: ScriptBuf::from_bytes(pegout.spk),
-                value: Amount::from_sat(pegout.amount),
-                botanix_height: pegout.height,
-            })
-            .collect::<Vec<_>>();
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<PegoutRequest>, _>>()
+            .map_err(|e| internal!("Failed to convert pending pegout: {}", e))?;
         let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
         self.db
             .reset_pending_pegouts(&pending_pegouts_refs)
