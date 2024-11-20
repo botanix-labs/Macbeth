@@ -35,7 +35,7 @@ impl PartialEq for CoinSelectionError {
 /// Coin selection
 pub(crate) fn coin_selection(
     available_utxos: HashMap<OutPoint, Utxo>,
-    outputs: Vec<(TxOut, Option<PegoutId>)>,
+    outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
     change_script: ScriptBuf,
 ) -> Result<Psbt, CoinSelectionError> {
@@ -98,14 +98,9 @@ pub(crate) fn coin_selection(
 
     let mut pegouts = outputs
         .into_iter()
-        .map(|(txout, pegout_id)| {
-            if let Some(pegout_id) = pegout_id {
-                (txout, Some(pegout_id.as_bytes()))
-            } else {
-                (txout, None)
-            }
-        })
+        .map(|(txout, pegout_id)| (txout, pegout_id.as_bytes()))
         .collect::<Vec<_>>();
+
     let selected_inputs: Vec<reth_btc_wallet::transaction::Input> = selected
         .iter()
         .map(|s| reth_btc_wallet::transaction::Input {
@@ -186,7 +181,10 @@ mod tests {
         let output_script = random_p2wpkh_script();
         let res = coin_selection(
             HashMap::new(),
-            vec![(TxOut { script_pubkey: output_script, value: Amount::from_sat(1000) }, None)],
+            vec![(
+                TxOut { script_pubkey: output_script, value: Amount::from_sat(1000) },
+                create_random_pegout_id(),
+            )],
             FeeRate::from_sat_per_vb(3).unwrap(),
             change_script.clone(),
         );
@@ -225,11 +223,11 @@ mod tests {
             vec![
                 (
                     TxOut { script_pubkey: output_script.clone(), value: Amount::from_sat(1000) },
-                    Some(create_random_pegout_id()),
+                    create_random_pegout_id(),
                 ),
                 (
                     TxOut { script_pubkey: output_script, value: Amount::from_sat(1000) },
-                    Some(create_random_pegout_id()),
+                    create_random_pegout_id(),
                 ),
             ],
             FeeRate::from_sat_per_vb(3).unwrap(),

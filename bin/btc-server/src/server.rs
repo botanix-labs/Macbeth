@@ -353,8 +353,8 @@ where
         }
         let outputs = pending_pegouts
             .iter()
-            .map(|p| (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id)))
-            .collect::<Vec<(TxOut, Option<PegoutId>)>>();
+            .map(|p| (TxOut { value: p.value, script_pubkey: p.spk.clone() }, p.id))
+            .collect::<Vec<(TxOut, PegoutId)>>();
 
         let pk_package = self
             .db
