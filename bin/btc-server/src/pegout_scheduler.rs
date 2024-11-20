@@ -10,7 +10,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use bitcoin::{Amount, Block, BlockHash, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
+use bitcoin::{
+    hashes::Hash, Amount, Block, BlockHash, OutPoint, ScriptBuf, Transaction, TxOut, Txid,
+};
 use bitcoincore_rpc::RpcApi;
 use reth_btc_wallet::{
     address::generate_taproot_change_scriptpubkey,
@@ -18,7 +20,7 @@ use reth_btc_wallet::{
 };
 use thiserror::Error;
 
-use crate::{database, pegout_id::PegoutId};
+use crate::{database, pegout_id::PegoutId, rpc};
 
 macro_rules! print_safe {
     ($e:expr) => {
