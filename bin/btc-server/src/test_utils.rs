@@ -13,8 +13,8 @@ pub mod test_utils {
     };
     use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult};
     use frost_secp256k1_tr as frost;
-    use rand::{thread_rng, RngCore};
-    use reth_btc_wallet::util::VerifyingKeyExt;
+    use rand::{rngs::OsRng, thread_rng, RngCore};
+    use reth_btc_wallet::{address::generate_taproot_change_scriptpubkey, util::VerifyingKeyExt};
     use tempfile::TempDir;
     use tokio::sync::Mutex;
     use url::Url;
@@ -151,6 +151,12 @@ pub mod test_utils {
         let mut eth_addr = [0u8; 20];
         eth_addr.copy_from_slice(&eth);
         eth_addr
+    }
+
+    pub fn random_p2tr_keyspend_script() -> ScriptBuf {
+        let key_pair = bitcoin::secp256k1::generate_keypair(&mut OsRng);
+        let change_script = generate_taproot_change_scriptpubkey(&key_pair.1);
+        change_script
     }
 
     pub fn random_p2wpkh_script() -> ScriptBuf {
