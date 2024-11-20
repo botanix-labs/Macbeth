@@ -25,7 +25,7 @@ pub fn create_psbt(
         output.push(change);
     }
     let tx = bitcoin::Transaction {
-        version: bitcoin::transaction::Version(2i32),
+        version: bitcoin::transaction::Version::TWO,
         lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
         input: inputs
             .iter()
