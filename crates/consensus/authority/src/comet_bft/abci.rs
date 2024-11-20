@@ -744,6 +744,21 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#commit
     fn commit(&self) -> ResponseCommit {
         info!("commit request received");
+        let latest_block_height = match self.storage.client.last_block_number() {
+            Ok(height) => height as i64,
+            Err(e) => {
+                error!("Failed to fetch the latest block number, defaulting to 0: {:?}", e);
+                0
+            }
+        };
+
+        let candidate_blocks = match self.block_cache.write() {
+            Ok(guard) => guard,
+            Err(err) => {
+                error!("Failed to write to block cache: {:?}", err);
+                return ResponseCommit { retain_height: latest_block_height };
+            }
+        };
         let candidate_blocks = match self.block_cache.write() {
             Ok(guard) => guard,
             Err(err) => {
