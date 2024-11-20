@@ -27,11 +27,6 @@ pub struct GetPendingPegoutsResponse {
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ResetAllPendingPegoutsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncTxIndexRequest {
     /// The checkpoint of the best finalized Bitcoin block hash.
     #[prost(bytes = "vec", tag = "1")]
@@ -53,10 +48,20 @@ pub struct WalletStateResponse {
     #[prost(bytes = "vec", tag = "4")]
     pub wallet_state_commitment: ::prost::alloc::vec::Vec<u8>,
 }
+/// TODO: remove if we deprecate reset_all_utxos rpc call
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetAllUtxosRequest {
     #[prost(message, repeated, tag = "1")]
     pub utxos: ::prost::alloc::vec::Vec<Utxo>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResetWalletStateRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
+    #[prost(message, repeated, tag = "2")]
+    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
+    #[prost(message, repeated, tag = "3")]
+    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScriptBuf {
@@ -167,11 +172,6 @@ pub struct TrackedTx {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTrackedTxsResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ResetAllTrackedTxsRequest {
     #[prost(message, repeated, tag = "1")]
     pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
 }
@@ -438,13 +438,9 @@ pub mod btc_server_server {
             tonic::Response<super::GetTrackedTxsResponse>,
             tonic::Status,
         >;
-        async fn reset_all_pending_pegouts(
+        async fn reset_wallet_state(
             &self,
-            request: tonic::Request<super::ResetAllPendingPegoutsRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn reset_all_tracked_txs(
-            &self,
-            request: tonic::Request<super::ResetAllTrackedTxsRequest>,
+            request: tonic::Request<super::ResetWalletStateRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -1728,13 +1724,13 @@ pub mod btc_server_server {
                     };
                     Box::pin(fut)
                 }
-                "/btc_server.BtcServer/ResetAllPendingPegouts" => {
+                "/btc_server.BtcServer/ResetWalletState" => {
                     #[allow(non_camel_case_types)]
-                    struct ResetAllPendingPegoutsSvc<T: BtcServer>(pub Arc<T>);
+                    struct ResetWalletStateSvc<T: BtcServer>(pub Arc<T>);
                     impl<
                         T: BtcServer,
-                    > tonic::server::UnaryService<super::ResetAllPendingPegoutsRequest>
-                    for ResetAllPendingPegoutsSvc<T> {
+                    > tonic::server::UnaryService<super::ResetWalletStateRequest>
+                    for ResetWalletStateSvc<T> {
                         type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -1742,12 +1738,11 @@ pub mod btc_server_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ResetAllPendingPegoutsRequest>,
+                            request: tonic::Request<super::ResetWalletStateRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as BtcServer>::reset_all_pending_pegouts(&inner, request)
-                                    .await
+                                <T as BtcServer>::reset_wallet_state(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1758,53 +1753,7 @@ pub mod btc_server_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = ResetAllPendingPegoutsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/btc_server.BtcServer/ResetAllTrackedTxs" => {
-                    #[allow(non_camel_case_types)]
-                    struct ResetAllTrackedTxsSvc<T: BtcServer>(pub Arc<T>);
-                    impl<
-                        T: BtcServer,
-                    > tonic::server::UnaryService<super::ResetAllTrackedTxsRequest>
-                    for ResetAllTrackedTxsSvc<T> {
-                        type Response = super::Empty;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ResetAllTrackedTxsRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as BtcServer>::reset_all_tracked_txs(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = ResetAllTrackedTxsSvc(inner);
+                        let method = ResetWalletStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

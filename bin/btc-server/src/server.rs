@@ -250,30 +250,6 @@ where
         Ok(res)
     }
 
-    async fn reset_all_pending_pegouts(
-        &self,
-        req: tonic::Request<rpc::ResetAllPendingPegoutsRequest>,
-    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.validate_jwt(&req)?;
-        let req = req.into_inner();
-        info!("Received reset pending pegouts request");
-        let pending_pegouts = req
-            .pending_pegouts
-            .into_iter()
-            .map(|pegout| PegoutRequest {
-                id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
-                spk: ScriptBuf::from_bytes(pegout.spk),
-                value: Amount::from_sat(pegout.amount),
-                botanix_height: pegout.height,
-            })
-            .collect::<Vec<_>>();
-        let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
-        self.db
-            .reset_pending_pegouts(&pending_pegouts_refs)
-            .map_err(|e| internal!("Failed to reset pending pegouts: {}", e))?;
-        Ok(tonic::Response::new(rpc::Empty {}))
-    }
-
     /// Resets all utxos in the database
     async fn reset_all_utxos(
         &self,
@@ -873,13 +849,21 @@ where
         Ok(tonic::Response::new(res))
     }
 
-    async fn reset_all_tracked_txs(
+    async fn reset_wallet_state(
         &self,
-        req: tonic::Request<rpc::ResetAllTrackedTxsRequest>,
+        req: tonic::Request<rpc::ResetWalletStateRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        info!("Received reset all tracked txs request");
+        info!("Received reset wallet state request");
+
+        // handle utxos
+        let utxos: Result<Vec<Utxo>, _> = req.utxos.into_iter().map(TryFrom::try_from).collect();
+        let utxos = utxos?;
+        let utxo_refs: Vec<&Utxo> = utxos.iter().collect();
+        self.db.reset_utxos(&utxo_refs).map_err(|e| internal!("Failed to reset utxos: {}", e))?;
+
+        // handle tracked txs
         let tracked_txs = req
             .tracked_txs
             .into_iter()
@@ -951,6 +935,23 @@ where
         self.db
             .reset_tracked_txs(&tracked_txs_refs)
             .map_err(|e| internal!("Failed to reset tracked txs: {}", e))?;
+
+        // handle pending pegouts
+        let pending_pegouts = req
+            .pending_pegouts
+            .into_iter()
+            .map(|pegout| PegoutRequest {
+                id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
+                spk: ScriptBuf::from_bytes(pegout.spk),
+                value: Amount::from_sat(pegout.amount),
+                botanix_height: pegout.height,
+            })
+            .collect::<Vec<_>>();
+        let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
+        self.db
+            .reset_pending_pegouts(&pending_pegouts_refs)
+            .map_err(|e| internal!("Failed to reset pending pegouts: {}", e))?;
+
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 }

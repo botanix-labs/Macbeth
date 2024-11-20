@@ -27,11 +27,6 @@ pub struct GetPendingPegoutsResponse {
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ResetAllPendingPegoutsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncTxIndexRequest {
     /// The checkpoint of the best finalized Bitcoin block hash.
     #[prost(bytes = "vec", tag = "1")]
@@ -53,10 +48,20 @@ pub struct WalletStateResponse {
     #[prost(bytes = "vec", tag = "4")]
     pub wallet_state_commitment: ::prost::alloc::vec::Vec<u8>,
 }
+/// TODO: remove if we deprecate reset_all_utxos rpc call
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetAllUtxosRequest {
     #[prost(message, repeated, tag = "1")]
     pub utxos: ::prost::alloc::vec::Vec<Utxo>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResetWalletStateRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
+    #[prost(message, repeated, tag = "2")]
+    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
+    #[prost(message, repeated, tag = "3")]
+    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScriptBuf {
@@ -167,11 +172,6 @@ pub struct TrackedTx {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetTrackedTxsResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ResetAllTrackedTxsRequest {
     #[prost(message, repeated, tag = "1")]
     pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
 }
@@ -983,9 +983,9 @@ pub mod btc_server_client {
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetTrackedTxs"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn reset_all_pending_pegouts(
+        pub async fn reset_wallet_state(
             &mut self,
-            request: impl tonic::IntoRequest<super::ResetAllPendingPegoutsRequest>,
+            request: impl tonic::IntoRequest<super::ResetWalletStateRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
             self.inner
                 .ready()
@@ -997,34 +997,11 @@ pub mod btc_server_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/ResetAllPendingPegouts",
+                "/btc_server.BtcServer/ResetWalletState",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("btc_server.BtcServer", "ResetAllPendingPegouts"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn reset_all_tracked_txs(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ResetAllTrackedTxsRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/ResetAllTrackedTxs",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "ResetAllTrackedTxs"));
+                .insert(GrpcMethod::new("btc_server.BtcServer", "ResetWalletState"));
             self.inner.unary(req, path, codec).await
         }
     }

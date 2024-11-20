@@ -69,9 +69,7 @@ service BtcServer {
 
     rpc GetTrackedTxs(Empty) returns (GetTrackedTxsResponse) {}
 
-    rpc ResetAllPendingPegouts(ResetAllPendingPegoutsRequest) returns (Empty) {}
-
-    rpc ResetAllTrackedTxs(ResetAllTrackedTxsRequest) returns (Empty) {}
+    rpc ResetWalletState(ResetWalletStateRequest) returns (Empty) {}
 }
 
 message NotifyPegoutRequest {
@@ -92,10 +90,6 @@ message GetPendingPegoutsResponse {
     repeated PendingPegout pending_pegouts = 1;
 }
 
-message ResetAllPendingPegoutsRequest {
-    repeated PendingPegout pending_pegouts = 1;
-}
-
 message SyncTxIndexRequest {
     // The checkpoint of the best finalized Bitcoin block hash.
     bytes checkpoint_block_hash = 1;
@@ -112,8 +106,15 @@ message WalletStateResponse {
     bytes wallet_state_commitment = 4;
 }
 
+// TODO: remove if we deprecate reset_all_utxos rpc call
 message ResetAllUtxosRequest {
     repeated Utxo utxos = 1;
+}
+
+message ResetWalletStateRequest {
+    repeated Utxo utxos = 1;
+    repeated TrackedTx tracked_txs = 2;
+    repeated PendingPegout pending_pegouts = 3;
 }
 
 message ScriptBuf {
@@ -192,10 +193,6 @@ message TrackedTx {
 }
 
 message GetTrackedTxsResponse {
-    repeated TrackedTx tracked_txs = 1;
-}
-
-message ResetAllTrackedTxsRequest {
     repeated TrackedTx tracked_txs = 1;
 }
 
