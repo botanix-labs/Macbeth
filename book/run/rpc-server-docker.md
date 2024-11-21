@@ -7,134 +7,30 @@ In the future we will provide federation member support, also via Docker Compose
 >
 > Reth requires Docker Engine version 20.10.10 or higher due to [missing support](https://docs.docker.com/engine/release-notes/20.10/#201010) for the `clone3` syscall in previous versions.
 
-## Prerequisites
-To use the instructions below, you’ll need to run mutinynet signet node. Ensure that this node is fully synced to the tip before proceeding with the Docker Compose instructions provided afterward. You can find instructions for running your own node at the following links:
- - [https://github.com/benthecarman/bitcoin/releases](https://github.com/benthecarman/bitcoin/releases)
- - [https://github.com/MutinyWallet/mutiny-net](https://github.com/MutinyWallet/mutiny-net)
-
- > **Note**
- >
- > Mutinynet is a fork of bitcoin core that is configured for 30 second blocks. This allows our team to test more rapidly. There is a whole suite of tools available for MutinyNet, including [coin faucet](https://faucet.mutinynet.com) and [block explorer](https://mutinynet.com).
- 
-
 ## GitHub
 
-Botanix Docker images are released on Docker Hub.
-
-You can obtain the latest image with:
-
+Start by cloning the following Github repository: [https://github.com/botanix-labs/botanix-testnet-v1-internal/tree/main](https://github.com/botanix-labs/botanix-testnet-v1-internal/tree/main)
 ```bash
-docker pull us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node
+git clone https://github.com/botanix-labs/botanix-testnet-v1-internal/tree/main
 ```
 
-Or a specific version (e.g. v0.0.1) with:
+Next, you will find the full instructions on how to run your own RPC node in the ```README.md``` file. 
 
-```bash
-docker pull us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:v.0.0.1
-```
+There are basically three steps in the process:
+ 1. Make sure all dependencies are installed
+ 1. Start the mutiny bitcoind instance and allow it to fully sync
+ 1. (Optional) Download the latest snapshot with data from the chain using CAAS.
+ 1. Start the testnet RPC node services
 
-### Using Docker Compose
-
-This setup provides a environment for running a Bitcoin Core node, a Botanix RPC node, and monitoring tools using Grafana Alloy. The services are configured to work together, with appropriate dependencies and ports exposed for interaction.
-
-```docker
-version: '3.7'
-services:
-  poa-node-rpc:
-    env_file:
-      - .bitcoin.env
-    container_name: poa-node-rpc
-    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node
-    command:
-      - poa
-      - --federation-config-path=/reth/botanix_testnet/chain.toml
-      - --datadir=/reth/botanix_testnet
-      - --http
-      - --http.addr=0.0.0.0
-      - --http.port=8545
-      - --http.api=debug,eth,net,trace,txpool,web3,rpc
-      - --http.corsdomain=*
-      - --ws
-      - --ws.addr=0.0.0.0
-      - --ws.port=8546
-      - -vvv
-      - --bitcoind.url=${BITCOIND_HOST}
-      - --bitcoind.username=${BITCOIND_USER}
-      - --bitcoind.password=${BITCOIND_PASS}
-      - --p2p-secret-key=/reth/botanix_testnet/discovery-secret
-      - --port=30303
-      - --btc-network=signet
-      - --metrics=0.0.0.0:9001
-      - --ipcdisable
-      - --abci-port=26658
-      - --abci-host=0.0.0.0
-      - --cometbft-rpc-port=8888
-      - --cometbft-rpc-host=consensus-node
-    ports:
-      - 8545:8545
-      - 8546:8546
-      - 9001:9001
-      - 30303:30303
-      - 26658:26658
-      - 8888:8888
-    volumes:
-      - ./poa-rpc:/reth/botanix_testnet:rw
-    restart: on-failure
-
-  consensus-node:
-    container_name: consensus-node
-    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-cometbft/botanix-testnet-cometft:v4
-    ports:
-        - 26656:26656
-        - 26657:26657
-        - 26660:26660
-    volumes:
-        - ./consensus-node:/cometbft:rw
-    restart: on-failure
-    environment:
-        - ALLOW_DUPLICATE_IP=TRUE
-        - LOG_LEVEL=DEBUG
-        - NODE_NAME=poa-node-rpc
-        - MONIKER=botanix-consensus-node
-        - PERSISTENT_PEERS=2561602572b54dbdcf44b02157ab62717c09d895@34.35.52.165:26656, dbd6bec8f89ec52232280d92f5b67069c5344095@35.201.136.224:26656, 45aabbb31b04257a86172e7002d25b2e923b896c@34.79.189.111:26656
-```
-
-### Docker Compose File Documentation
-
-This Docker Compose file defines a multi-service setup that includes a Bitcoin Core node, a Botanix RPC node, and a Grafana Alloy instance. Below is a detailed explanation of each service.
-
-#### 1. `bitcoin-core`
-
-This service runs a Bitcoin Core node using the latest version of the `ruimarinho/bitcoin-core` Docker image. It operates on the Signet network for testnet.
-
--   **Environment Variables**: The service loads environment variables from the `.bitcoin.env` file, where `BITCOIND_USER` and `BITCOIND_PASS` are defined.
--   **Command**: The command options specify the following:
-    -   `-printtoconsole`: Logs output to the console.
-    -   `-signet=1`: Enables Signet mode.
-    -   `-txindex=1`: Maintains a full transaction index.
-    -   `-server=1`: Runs the node as a server.
-    -   `-rpcport=38332`: Sets the RPC port.
-    -   `-rpcuser` and `-rpcpassword`: Set the RPC authentication using environment variables.
-    -   `-rpcbind=0.0.0.0` and `-rpcallowip=0.0.0.0/0`: Allow RPC connections from any IP address.
-    -   `-blockfilterindex=1`: Enables block filtering.
-
-#### 2. `poa-node-rpc`
-
-This service runs a Botanix PoA node, which connects to the Bitcoin Core node and provides RPC (Remote Procedure Call) access.
-
--   **Environment Variables**: It uses the same `.bitcoin.env` file as the Bitcoin Core service.
--   **Container Name**: The container is named `botanix-poa-node-rpc`.
--   **Image**: It uses a custom Botanix image (`botanix-testnet-node-v1`).
--   **Command**: The command options are listed and explained in the [CLI documentation](../cli/poa.md)
--   **Dependencies**: This service depends on the `bitcoin-core` service to ensure it starts only after Bitcoin Core is running.
--   **Restart Policy**: The service is configured to restart on failure. The RPC node will exit if Bitcoin Core is not fully sync'd
-
-**Note** To re-sync your node please remove both the database and the static file directory.
-
-
-For more information please visit [rpc-compose-file](https://github.com/botanix-labs/botanix-testnet-v1-internal/tree/main)
-
-### Connecting to federated testnet
+  > **Note - Password & Username**
+  >
+  > The password and username are set to a standard value in ```.bitcoin.env``` . If you wish to change these standard values, you can change: ```BITCOIN_USER```, ```BITCOIND_PASS```, ```RPCUSER``` and ```RPCPASSWORD```. Make sure that the usernames and passwords match.
+ 
+ > **Note - Mutinynet**
+ >
+ > Mutinynet is a fork of bitcoin core that is configured for 30 second blocks. This allows our team to test more rapidly. There is a whole suite of tools available for MutinyNet, including [faucet](https://faucet.mutinynet.com) and [block explorer](https://mutinynet.com).
+ 
+## Connecting to federated testnet
 
 Botanix will be hosting a testnet federation. To connect your RPC set up with the federation please use the following chain.toml.
 Warning: this config may change in the future as we add and remove federation members.
