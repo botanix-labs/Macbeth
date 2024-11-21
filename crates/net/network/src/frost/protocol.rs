@@ -25,9 +25,7 @@ use crate::{
 };
 
 use super::{
-    messages::{
-        FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest, UtxoRequest,
-    },
+    messages::{FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest},
     FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PeerMessageResponse,
 };
 

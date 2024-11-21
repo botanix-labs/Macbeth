@@ -208,6 +208,7 @@ where
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source>>,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
+        Option<WalletStateSyncEngine<EF, BF, DB, ToFrostMan>>,
     ) {
         let Self {
             btc_server_factory,
@@ -247,6 +248,20 @@ where
             }
         }
         .await;
+
+        let wallet_sync = {
+            if let Some(btc_server) = &btc_server_client {
+                let wallet_state_sync_engine = WalletStateSyncEngine::new(
+                    storage.clone(),
+                    btc_server.clone(),
+                    frost_handle.clone().expect("Requires frost handle"),
+                    compressor.clone(),
+                );
+                Some(wallet_state_sync_engine)
+            } else {
+                None
+            }
+        };
 
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
@@ -288,6 +303,6 @@ where
             is_fed_node,
         ));
 
-        (consensus, frost_task, healthcheck_task, abci_client_builder)
+        (consensus, frost_task, healthcheck_task, abci_client_builder, wallet_sync)
     }
 }

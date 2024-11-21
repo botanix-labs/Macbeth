@@ -333,7 +333,7 @@ pub(crate) fn generate_signing_session_id(
 /// Repersents an error related to utxo operations
 #[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
-pub(crate) enum UtxoMerkelRootError {
+pub enum UtxoMerkelRootError {
     #[error("Unparsable tx id")]
     UnparsableTxId,
     #[error("Outpoint encoding")]

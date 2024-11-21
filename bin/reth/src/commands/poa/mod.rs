@@ -13,6 +13,7 @@ use futures::{stream_select, StreamExt, TryFutureExt};
 use reth_authority_consensus::{
     random_source_provider::RandomSourceProvider,
     utils::{is_known_minting_contract, retry_exec},
+    wallet_state_sync::WalletStateSync,
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_cli_util::{get_secret_key, parse_socket_address};
@@ -45,6 +46,7 @@ use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
+use tokio::time;
 use tokio_stream::wrappers::{BroadcastStream, UnboundedReceiverStream};
 
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
@@ -766,7 +768,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_host(cometbft_rpc_host);
 
         // Build authority Consensus
-        let (_authority_consensus, frost_task, _healthcheck_task, abci_client_builder) =
+        let (_authority_consensus, frost_task, _healthcheck_task, abci_client_builder, wallet_sync) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
                 blockchain_db.clone(),
@@ -837,6 +839,26 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             //     "Healthcheck Task",
             //     Box::pin(async move {
             //         healthcheck_task.expect("health check task exists").start_task().await;
+            //     }),
+            // );
+
+            // just for local testing purposes
+            // TODO: create WalletStateSync::start_task to handle this logic
+            // executor.spawn_critical(
+            //     "Wallet Sync Task",
+            //     Box::pin(async move {
+            //         loop {
+            //             tokio::time::sleep(Duration::from_secs(20)).await;
+
+            //             if let Err(err) = wallet_sync
+            //                 .as_ref()
+            //                 .expect("wallet sync task exists")
+            //                 .sync_wallet_state()
+            //                 .await
+            //             {
+            //                 error!("Error syncing wallet state: {:?}", err);
+            //             }
+            //         }
             //     }),
             // );
         }

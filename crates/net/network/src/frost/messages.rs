@@ -624,11 +624,13 @@ impl FrostProtoMessage {
                 let tracked_txs_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
                 buf.advance(8);
                 let tracked_txs = buf[..tracked_txs_len].to_vec();
+                buf.advance(tracked_txs_len);
 
                 // pending pegouts
                 let pending_pegouts_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
                 buf.advance(8);
                 let pending_pegouts = buf[..pending_pegouts_len].to_vec();
+                buf.advance(pending_pegouts_len);
 
                 FrostProtoMessageKind::WalletState(WalletStateRequest::new(
                     utxos,
