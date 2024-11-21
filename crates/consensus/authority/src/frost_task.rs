@@ -166,6 +166,11 @@ where
             UtxoSetSyncSerializationError::Grpc(e)
         })?;
 
+        if prost_utxos.utxos.is_empty() {
+            warn!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Received empty utxos from btc server");
+            return Ok(vec![])
+        }
+
         // serialize the prost message
         let prost_message_wrapper = ProstMessageSerdelizer(prost_utxos);
         let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
@@ -189,6 +194,11 @@ where
             TrackedTxSyncSerializationError::Grpc(e)
         })?;
 
+        if prost_tracked_txs.tracked_txs.is_empty() {
+            warn!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Received empty tracked txs from btc server");
+            return Ok(vec![])
+        }
+
         // serialize the prost message
         let prost_message_wrapper = ProstMessageSerdelizer(prost_tracked_txs);
         let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
@@ -211,6 +221,11 @@ where
             error!(target: "consensus::authority::pending_pegouts_syncer::get_pending_pegouts", "Got grpc error {:?}", e);
             PendingPegoutsSyncSerializationError::Grpc(e)
         })?;
+
+        if prost_pending_pegouts.pending_pegouts.is_empty() {
+            warn!(target: "consensus::authority::pending_pegouts_syncer::get_pending_pegouts", "Received empty pending pegouts from btc server");
+            return Ok(vec![])
+        }
 
         // serialize the prost message
         let prost_message_wrapper = ProstMessageSerdelizer(prost_pending_pegouts);
@@ -386,12 +401,28 @@ where
             while let Ok((peerid, msg)) = peer_messages_rx.try_recv() {
                 match msg {
                     PeerMessageResponse::WalletState(mut response) => {
+                        // Only handle response if it has no state: responses with state are also
+                        // sent to WalletStateSyncEngine::sync_wallet_state
+                        // which updates the wallet state. This code block
+                        // handles sending our wallet state to a peer
+                        //
+                        // TODO: create separate messages for asking for wallet state and sending
+                        // wallet state
+                        if !response.utxos.is_empty() ||
+                            !response.tracked_txs.is_empty() ||
+                            !response.pending_pegouts.is_empty()
+                        {
+                            info!(target: "consensus::authority::wallet_syncer::start_task", "Received wallet state in frost task from peer {:?}", peerid);
+                            continue;
+                        }
+
                         let all_peers_handle = self
                             .dkg_state_machine
                             .get_all_peers_handle()
                             .await
-                            .expect("remove this later");
-                        let peer_handle = all_peers_handle.get(&peerid).expect("remove this later");
+                            .expect("expect all peers handle to exist");
+                        let peer_handle =
+                            all_peers_handle.get(&peerid).expect("peer handle to exist");
 
                         // Note its important we do not respond to this message if we are syncing
                         // ourselves This should be checked above
@@ -405,7 +436,6 @@ where
                                 continue;
                             }
                         };
-
                         if serialized_compressed_utxo_set.is_empty() {
                             warn!(target: "consensus::authority::utxo_syncer::start_task", "Received empty utxo set from database");
                             continue;
@@ -423,6 +453,10 @@ where
                                 continue;
                             }
                         };
+                        if serialized_compressed_tracked_txs.is_empty() {
+                            warn!(target: "consensus::authority::tracked_tx_syncer::start_task", "Received empty tracked txs from database");
+                            continue;
+                        }
 
                         let serialized_compressed_pending_pegouts = match self
                             .get_serialized_compressed_pending_pegouts()
@@ -436,12 +470,17 @@ where
                                 continue;
                             }
                         };
+                        if serialized_compressed_pending_pegouts.is_empty() {
+                            warn!(target: "consensus::authority::pending_pegouts_syncer::start_task", "Received empty pending pegouts from database");
+                            continue;
+                        }
 
                         // update response with data
                         response.utxos = serialized_compressed_utxo_set;
                         response.tracked_txs = serialized_compressed_tracked_txs;
                         response.pending_pegouts = serialized_compressed_pending_pegouts;
 
+                        info!(target: "consensus::authority::wallet_syncer::start_task", "Sending wallet state to peer {:?}", peerid);
                         if let Err(e) =
                             peer_handle.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
                                 PeerMessageResponse::WalletState(response),
