@@ -831,7 +831,7 @@ PROFILE_BTC_SERVER_ARGS := \
 	--db ${PROFILER_DB_DIR} \
 	--min-signers ${PROFILER_FROST_MIN_SIGNERS} \
 	--max-signers ${PROFILER_FROST_MAX_SIGNERS} \
-	--toml ./config.toml \
+	--toml ./bin/btc-server/config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network ${BITCOIND_NETWORK} \
 	--bitcoind-url ${BITCOIND_URL} \
