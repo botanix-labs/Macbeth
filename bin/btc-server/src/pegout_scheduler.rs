@@ -109,11 +109,17 @@ impl TryFrom<rpc::TrackedTx> for Tx {
             return Err(tonic::Status::invalid_argument(e));
         }
 
-        let tx_prost = tx.tx.expect("valid tx");
+        let tx_prost = tx.tx.ok_or_else(|| {
+            error!("Missing tx in tracked tx");
+            tonic::Status::invalid_argument("missing tx in tracked tx")
+        })?;
+
         let tx_ins = tx_prost
             .input
             .into_iter()
             .map(|tx_in| {
+                // validate tx_in optional fields contain valid values
+                // so the expect calls below are safe
                 if let Err(e) = tx_in.validate() {
                     error!("Invalid tx input: {}", e);
                     tonic::Status::invalid_argument(e);
@@ -137,6 +143,8 @@ impl TryFrom<rpc::TrackedTx> for Tx {
             .output
             .into_iter()
             .map(|tx_out| {
+                // validate tx_out has a script_pubkey
+                // so the expect call below is safe
                 if let Err(e) = tx_out.validate() {
                     error!("Invalid tx output: {}", e);
                     tonic::Status::invalid_argument(e);
@@ -159,19 +167,38 @@ impl TryFrom<rpc::TrackedTx> for Tx {
         let pegout_requests = tx
             .pegout_requests
             .into_iter()
-            .map(|pegout| PegoutRequest {
-                id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
-                spk: ScriptBuf::from_bytes(pegout.spk),
-                value: Amount::from_sat(pegout.amount),
-                botanix_height: pegout.height,
+            .map(|pegout| {
+                if let Err(_e) = PegoutId::from_bytes(&pegout.pegout_id) {
+                    error!("Could not deserialize pegout id");
+                    tonic::Status::invalid_argument("invalid pegout id");
+                }
+
+                PegoutRequest {
+                    id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
+                    spk: ScriptBuf::from_bytes(pegout.spk),
+                    value: Amount::from_sat(pegout.amount),
+                    botanix_height: pegout.height,
+                }
             })
             .collect::<Vec<_>>();
 
+        // validate Tx so expect calls are safe
+        if let Err(e) = Txid::from_slice(&tx.txid) {
+            error!("Invalid txid: {}", e);
+            tonic::Status::invalid_argument("invalid txid");
+        }
+        if tx.created.is_none() {
+            error!("Missing created timestamp");
+            tonic::Status::invalid_argument("missing created timestamp");
+        }
+
         Ok(Tx {
             txid: Txid::from_slice(&tx.txid).expect("valid txid"),
+            // TODO: remove tx and pull it from bitcoind to reduce payload
             tx: internal_tx,
             pegout_idxs: tx.pegout_idxs.into_iter().map(|idx| idx as usize).collect(),
             pegout_requests,
+            // TODO: remove change_idx and pull it from bitcoind to reduce payload
             change_idxs: tx.change_idxs.into_iter().map(|idx| idx as usize).collect(),
             created: SystemTime::UNIX_EPOCH +
                 Duration::new(
