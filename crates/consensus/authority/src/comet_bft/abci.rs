@@ -744,14 +744,8 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#commit
     fn commit(&self) -> ResponseCommit {
         info!("commit request received");
-        let candidate_blocks = match self.block_cache.write() {
-            Ok(guard) => guard,
-            Err(err) => {
-                error!("Failed to write to block cache: {:?}", err);
-                return ResponseCommit { retain_height: 0 };
-            }
-        };
-
+        let candidate_blocks = self.block_cache.write().expect("to get write lock");
+        // We want to explicitly panic since we cannot get the lock and send the finalize message
         let (cbft_block_hash, sealed_block_with_peg) =
             candidate_blocks.peek_newest().expect("to have block");
 
