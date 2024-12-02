@@ -1223,7 +1223,7 @@ mod tests {
     #[test]
     fn clear_pending_pegouts_should_clear_db() {
         let (db, _temp_dir) = setup_db();
-        let tx = create_n_outputs_tx(5, 2);
+        let tx = create_tx(5, 2, None);
 
         let pegout_req = PegoutRequest {
             botanix_height: 0,
@@ -1244,7 +1244,7 @@ mod tests {
     #[test]
     fn reset_pending_pegouts_should_clear_db_and_readd() {
         let (db, _temp_dir) = setup_db();
-        let tx = create_n_outputs_tx(5, 2);
+        let tx = create_tx(5, 2, None);
 
         let pegout_req = PegoutRequest {
             botanix_height: 0,
@@ -1255,7 +1255,7 @@ mod tests {
         db.store_pending_pegout(&pegout_req).unwrap();
         db.flush().unwrap();
 
-        let tx2 = create_n_outputs_tx(5, 2);
+        let tx2 = create_tx(5, 2, None);
         let pegout_req2 = PegoutRequest {
             botanix_height: 0,
             id: create_random_pegout_id(),
@@ -1273,7 +1273,7 @@ mod tests {
     #[test]
     fn clear_tracked_txs_should_clear_db() {
         let (db, _temp_dir) = setup_db();
-        let tx = create_n_outputs_tx(5, 2);
+        let tx = create_tx(5, 2, None);
         let pegout_requests = vec![PegoutRequest {
             spk: tx.output[0].script_pubkey.clone(),
             value: tx.output[0].value,
@@ -1301,7 +1301,7 @@ mod tests {
     #[test]
     fn reset_tracked_txs_should_clear_db_and_readd() {
         let (db, _temp_dir) = setup_db();
-        let tx = create_n_outputs_tx(5, 2);
+        let tx = create_tx(5, 2, None);
         let pegout_requests = vec![PegoutRequest {
             spk: tx.output[0].script_pubkey.clone(),
             value: tx.output[0].value,
@@ -1319,7 +1319,7 @@ mod tests {
         db.store_tracked_tx(&tracked_tx).unwrap();
         db.flush().unwrap();
 
-        let tx2 = create_n_outputs_tx(5, 2);
+        let tx2 = create_tx(5, 2, None);
         let pegout_requests2 = vec![PegoutRequest {
             spk: tx2.output[0].script_pubkey.clone(),
             value: tx2.output[0].value,

@@ -2,7 +2,7 @@ use crate::{
     pegout_scheduler::{PegoutRequest, Tx},
     rpc::{OutPoint, PendingPegout, ScriptBuf, TrackedTx, Transaction, TxIn, TxOut},
 };
-use bitcoin::{hashes::Hash, TxIn as BtcTxIn, TxOut as BtcTxOut};
+use bitcoin::{hashes::Hash, TxIn as BtcTxIn, TxOut as BtcTxOut, Txid};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -12,11 +12,19 @@ pub enum TryFromError {
 }
 
 impl TxIn {
-    // only validates that optional fields contain values
+    // validates that optional fields contain valid values
     pub fn validate(&self) -> Result<(), String> {
+        // validate previous_outpoint
         if self.previous_outpoint.is_none() {
             return Err("previous_outpoint field is required".to_string());
+        } else {
+            let txid = self.previous_outpoint.clone().expect("outpoint to exist").txid;
+            if let Err(e) = Txid::from_slice(&txid) {
+                return Err(format!("invalid txid: {}", e));
+            }
         }
+
+        // validate script_sig
         if self.script_sig.is_none() {
             return Err("script_sig field is required".to_string());
         }
