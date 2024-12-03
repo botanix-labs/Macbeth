@@ -22,6 +22,7 @@ use crate::{
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
+#[macro_export]
 macro_rules! badarg {
     ($($arg:tt)*) => {{
         tonic::Status::invalid_argument(format!($($arg)*))
