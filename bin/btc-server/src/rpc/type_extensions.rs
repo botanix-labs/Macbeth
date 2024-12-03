@@ -150,7 +150,10 @@ impl TryFrom<Tx> for TrackedTx {
 #[cfg(test)]
 mod tests {
     use crate::rpc::{self, TrackedTx};
+    use bitcoin::Txid;
+    use bitcoin_hashes::Hash;
     use prost_types::Timestamp;
+    use rand::{thread_rng, Rng};
 
     #[test]
     fn test_tracked_tx_validate() {
@@ -200,8 +203,11 @@ mod tests {
 
     #[test]
     fn test_tx_in_validate() {
+        let mut rng = thread_rng();
+        let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().as_byte_array().to_vec();
+
         let tx_in = rpc::TxIn {
-            previous_outpoint: Some(rpc::OutPoint { txid: vec![], vout: 0 }),
+            previous_outpoint: Some(rpc::OutPoint { txid, vout: 0 }),
             script_sig: Some(rpc::ScriptBuf { script: vec![] }),
             sequence: 0,
             witness: vec![],
@@ -225,8 +231,10 @@ mod tests {
 
     #[test]
     fn test_tx_in_validate_missing_script_sig() {
+        let mut rng = thread_rng();
+        let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap().as_byte_array().to_vec();
         let tx_in = rpc::TxIn {
-            previous_outpoint: Some(rpc::OutPoint { txid: vec![], vout: 0 }),
+            previous_outpoint: Some(rpc::OutPoint { txid, vout: 0 }),
             script_sig: None,
             sequence: 0,
             witness: vec![],
