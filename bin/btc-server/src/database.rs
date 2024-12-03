@@ -455,9 +455,7 @@ impl Db {
     /// Resetting all utxos, and re-adding the functions arguments back in
     pub fn reset_utxos(&self, utxos: &[&Utxo]) -> Result<(), Error> {
         self.clear_utxos()?;
-        for utxo in utxos.iter() {
-            self.store_utxo(utxo)?;
-        }
+        self.store_utxos(utxos)?;
         Ok(())
     }
 
@@ -479,7 +477,36 @@ impl Db {
         Ok(utxos)
     }
 
-    /// Store list of txs that we are tracking for the pegout scheduler.
+    /// Store a list of txs that we are tracking for the pegout scheduler.
+    pub fn store_tracked_txs(&self, txs: &[&pegout_scheduler::Tx]) -> Result<(), Error> {
+        match txs.len() {
+            0 => Ok(()),
+            1 => self.store_tracked_tx(txs.first().expect("to have tx")),
+            _ => self.store_tracked_txs_atomically(txs),
+        }
+    }
+
+    /// Store a list of txs that we are tracking for the pegout scheduler atomically.
+    pub fn store_tracked_txs_atomically(&self, txs: &[&pegout_scheduler::Tx]) -> Result<(), Error> {
+        self.tracked_txs
+            .transaction(|database_tx| {
+                for tx in txs.iter() {
+                    let txid = tx.txid;
+                    if database_tx.get(txid)?.is_none() {
+                        let mut bytes = Vec::new();
+                        ciborium::into_writer(tx, &mut bytes)
+                            .map_err(Error::CiboriumWrite)
+                            .expect("Ciborium error");
+                        database_tx.insert(txid.to_byte_array().to_vec(), &bytes[..])?;
+                    }
+                }
+                Ok::<(), ConflictableTransactionError>(())
+            })
+            .map_err(|e: TransactionError<_>| Error::Transaction(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Store a tx that we are tracking for the pegout scheduler.
     pub fn store_tracked_tx(&self, tx: &pegout_scheduler::Tx) -> Result<(), Error> {
         let mut bytes = Vec::new();
         ciborium::into_writer(tx, &mut bytes).map_err(Error::CiboriumWrite)?;
@@ -572,11 +599,46 @@ impl Db {
         }))
     }
 
+    /// Store a list of pending pegouts
+    pub fn store_pending_pegouts(
+        &self,
+        pegout_requests: &[&pegout_scheduler::PegoutRequest],
+    ) -> Result<(), Error> {
+        match pegout_requests.len() {
+            0 => Ok(()),
+            1 => self.store_pending_pegout(pegout_requests.first().expect("to have tx")),
+            _ => self.store_pending_pegouts_atomically(pegout_requests),
+        }
+    }
+
     /// Store a pending pegout
     pub fn store_pending_pegout(&self, req: &pegout_scheduler::PegoutRequest) -> Result<(), Error> {
         let mut bytes = Vec::new();
         ciborium::into_writer(&req, &mut bytes).map_err(Error::CiboriumWrite)?;
         self.pending_pegouts.insert(req.id.as_bytes(), &bytes[..])?;
+        self.update_pending_pegouts_merkle_root()?;
+        Ok(())
+    }
+
+    /// Store a list of pending pegouts atomically
+    pub fn store_pending_pegouts_atomically(
+        &self,
+        pegout_requests: &[&pegout_scheduler::PegoutRequest],
+    ) -> Result<(), Error> {
+        self.pending_pegouts
+            .transaction(|database_tx| {
+                for req in pegout_requests.iter() {
+                    if database_tx.get(req.id.as_bytes())?.is_none() {
+                        let mut bytes = Vec::new();
+                        ciborium::into_writer(req, &mut bytes)
+                            .map_err(Error::CiboriumWrite)
+                            .expect("Ciborium error");
+                        database_tx.insert(req.id.as_bytes().to_vec(), &bytes[..])?;
+                    }
+                }
+                Ok::<(), ConflictableTransactionError>(())
+            })
+            .map_err(|e: TransactionError<_>| Error::Transaction(e.to_string()))?;
         self.update_pending_pegouts_merkle_root()?;
         Ok(())
     }
@@ -648,9 +710,7 @@ impl Db {
         pegout_requests: &[&pegout_scheduler::PegoutRequest],
     ) -> Result<(), Error> {
         self.clear_pending_pegouts()?;
-        for pegout_request in pegout_requests.iter() {
-            self.store_pending_pegout(pegout_request)?;
-        }
+        self.store_pending_pegouts(pegout_requests)?;
         Ok(())
     }
 
@@ -662,9 +722,7 @@ impl Db {
     /// Resets all tracked txs, and re-adding the functions arguments back in
     pub fn reset_tracked_txs(&self, tracked_txs: &[&pegout_scheduler::Tx]) -> Result<(), Error> {
         self.clear_tracked_txs()?;
-        for tracked_tx in tracked_txs.iter() {
-            self.store_tracked_tx(tracked_tx)?;
-        }
+        self.store_tracked_txs(tracked_txs)?;
         Ok(())
     }
 
@@ -818,6 +876,63 @@ mod tests {
         assert_eq!(pegout_req.spk, req.spk);
         assert_eq!(pegout_req.value, req.value);
         assert_eq!(pegout_req.botanix_height, req.botanix_height);
+    }
+
+    #[test]
+    fn should_store_many_pegouts() {
+        let (db, _temp_dir) = setup_db();
+        let num_pegouts = 5;
+        let mut pegouts = vec![];
+        for _ in 0..num_pegouts {
+            let pegout_id = create_random_pegout_id();
+            let req = pegout_scheduler::PegoutRequest {
+                id: pegout_id,
+                spk: random_p2wpkh_script(),
+                value: Amount::from_sat(100_000),
+                botanix_height: 1,
+            };
+            pegouts.push(req);
+        }
+        let pegout_slice = pegouts.iter().collect::<Vec<&PegoutRequest>>();
+        db.store_pending_pegouts(&pegout_slice).unwrap();
+        db.flush().unwrap();
+
+        // Get all pegouts
+        let pegouts_retrieved = db.get_pending_pegouts().unwrap();
+        assert_eq!(pegouts.len(), num_pegouts);
+        // All pegouts should be present
+        for pegout in pegouts.iter() {
+            assert!(pegouts_retrieved.contains(pegout));
+        }
+    }
+
+    // Should have the same outcome as should_store_many_pegouts
+    #[test]
+    fn should_store_many_pegouts_atomically() {
+        let (db, _temp_dir) = setup_db();
+        let num_pegouts = 5;
+        let mut pegouts = vec![];
+        for _ in 0..num_pegouts {
+            let pegout_id = create_random_pegout_id();
+            let req = pegout_scheduler::PegoutRequest {
+                id: pegout_id,
+                spk: random_p2wpkh_script(),
+                value: Amount::from_sat(100_000),
+                botanix_height: 1,
+            };
+            pegouts.push(req);
+        }
+        let pegout_slice = pegouts.iter().collect::<Vec<&PegoutRequest>>();
+        db.store_pending_pegouts_atomically(&pegout_slice).unwrap();
+        db.flush().unwrap();
+
+        // Get all pegouts
+        let pegouts_retrieved = db.get_pending_pegouts().unwrap();
+        assert_eq!(pegouts.len(), num_pegouts);
+        // All pegouts should be present
+        for pegout in pegouts.iter() {
+            assert!(pegouts_retrieved.contains(pegout));
+        }
     }
 
     #[test]
@@ -1124,6 +1239,79 @@ mod tests {
         db.flush().unwrap();
         let tx_retrieved = db.get_tracked_txs().unwrap();
         assert_eq!(tx_retrieved.len(), 0);
+    }
+
+    #[test]
+    fn should_store_many_tracked_txs() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut txs = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(5, 2, None);
+            let pegout_reqs = vec![PegoutRequest {
+                spk: tx.output[0].script_pubkey.clone(),
+                value: tx.output[0].value,
+                id: create_random_pegout_id(),
+                botanix_height: 0,
+            }];
+            let tracked_tx = Tx {
+                txid: tx.txid(),
+                tx: tx.clone(),
+                change_idxs: vec![1],
+                pegout_idxs: vec![0],
+                pegout_requests: pegout_reqs,
+                created: SystemTime::now(),
+            };
+            txs.push(tracked_tx);
+        }
+        let tx_slice = txs.iter().collect::<Vec<&Tx>>();
+        db.store_tracked_txs(&tx_slice).unwrap();
+        db.flush().unwrap();
+
+        // Get all tracked txs
+        let txs_retrieved = db.get_tracked_txs().unwrap();
+        assert_eq!(txs_retrieved.len(), num_txs);
+        // All txs should be present
+        for tx in txs.iter() {
+            assert!(txs_retrieved.contains(tx));
+        }
+    }
+
+    // Should have the same outcome as test_should_store_many_tracked_txs
+    #[test]
+    fn should_store_many_tracked_txs_atomically() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut txs = vec![];
+        for _ in 0..num_txs {
+            let tx = create_tx(5, 2, None);
+            let pegout_reqs = vec![PegoutRequest {
+                spk: tx.output[0].script_pubkey.clone(),
+                value: tx.output[0].value,
+                id: create_random_pegout_id(),
+                botanix_height: 0,
+            }];
+            let tracked_tx = Tx {
+                txid: tx.txid(),
+                tx: tx.clone(),
+                change_idxs: vec![1],
+                pegout_idxs: vec![0],
+                pegout_requests: pegout_reqs,
+                created: SystemTime::now(),
+            };
+            txs.push(tracked_tx);
+        }
+        let tx_slice = txs.iter().collect::<Vec<&Tx>>();
+        db.store_tracked_txs_atomically(&tx_slice).unwrap();
+        db.flush().unwrap();
+
+        // Get all tracked txs
+        let txs_retrieved = db.get_tracked_txs().unwrap();
+        assert_eq!(txs_retrieved.len(), num_txs);
+        // All txs should be present
+        for tx in txs.iter() {
+            assert!(txs_retrieved.contains(tx));
+        }
     }
 
     #[test]
