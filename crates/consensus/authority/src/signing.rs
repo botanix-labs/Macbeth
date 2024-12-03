@@ -1,4 +1,5 @@
 use crate::{
+    metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
     utils::{
         deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
@@ -124,6 +125,7 @@ pub(crate) struct SigningStateMachine<ToFrostMan, Source> {
     personal_frost_identifier: frost::Identifier,
     frost_config: FrostConfig,
     random_source_provider: Source,
+    metrics: Arc<AuthorityMetrics>,
 }
 
 impl<ToFrostMan, Source> SigningStateMachine<ToFrostMan, Source>
@@ -138,6 +140,7 @@ where
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
         random_source_provider: Source,
+        metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             authority_index_to_frost_identifier(frost_config.authority_index as u16);
@@ -152,6 +155,7 @@ where
             personal_frost_identifier,
             frost_config,
             random_source_provider,
+            metrics,
         }
     }
 
@@ -308,7 +312,7 @@ where
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
-        let new_round1_signing_package = self
+        let new_round2_signing_package = self
             .btc_client
             .new_round2_signing_package(SigningPackage {
                 identifier,
@@ -317,7 +321,7 @@ where
             })
             .await;
 
-        match new_round1_signing_package {
+        match new_round2_signing_package {
             Ok(_) => {}
             Err(e) => return Err(Error::from(e)),
         };
@@ -510,6 +514,7 @@ where
                     // this could happen if previous session failed but wasn't removed
                     self.abort_signing().await?;
                     self.remove_signing_session(session_id).await;
+                    self.metrics.signing_sessions.decrement(1);
 
                     error!(target: "consensus::authority::signing::initate_signing_session", "A coordinator re-triggered an existing signing session!");
                     return Err(Error::CoordinatorRetriggeredSession);
@@ -525,6 +530,7 @@ where
                     SigningState::Initial,
                 )
                 .await;
+                self.metrics.signing_sessions.increment(1);
             }
         }
 
@@ -540,6 +546,7 @@ where
             signing_round1_package.clone().psbt,
         )
         .await?;
+        self.metrics.received_round1_signing_packages.increment(1);
 
         // send to all other peers
         self.update_signing_state(session_id, SigningState::Round1).await;
@@ -589,6 +596,7 @@ where
             // insert a new signing session
             self.insert_new_signing_session(session_id, coordinator_id, None, SigningState::Round1)
                 .await;
+            self.metrics.signing_sessions.increment(1);
             // abort any previous session
             // coordinator should only send this request once and should always be in round 1
             self.abort_signing().await?;
@@ -598,6 +606,7 @@ where
             // failed both leading to the session being removed
             error!(target: "consensus::authority::signing::signer_process_round1", "Coordinator re-triggered an existing signing session!");
             self.remove_signing_session(session_id).await;
+            self.metrics.signing_sessions.decrement(1);
             return Err(Error::CoordinatorRetriggeredSession);
         }
 
@@ -682,6 +691,7 @@ where
             error!(target: "consensus::authority::signing::coordinator_process_round1","Error adding round 1 signing package {:?}", e);
             return Ok(());
         }
+        self.metrics.received_round1_signing_packages.increment(1);
 
         // try to generate signing package
         if let Ok(to_sign_payload) = self.get_to_sign_package(signing_session_id).await {
@@ -695,6 +705,7 @@ where
                 cord_round2.psbt,
             )
             .await?;
+            self.metrics.received_round2_signing_packages.increment(1);
 
             self.update_signing_state(session_id, SigningState::Round2).await;
             // if ok, send to all peers
@@ -838,11 +849,13 @@ where
             return Err(e);
         }
         info!(target: "consensus::authority::signing::coordinator_process_round2", "round 2 added");
+        self.metrics.received_round2_signing_packages.increment(1);
 
         // try to finalize the signing
         if let Ok(_sign_payload) = self.finalize_signing(signing_session_id).await {
             info!(target: "consensus::authority::signing::coordinator_process_round2", "signing finalized!");
-            self.update_signing_state(session_id, SigningState::Finalized).await
+            self.metrics.finalized_signings.increment(1);
+            self.update_signing_state(session_id, SigningState::Finalized).await;
         }
 
         Ok(())

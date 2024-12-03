@@ -1,7 +1,7 @@
 //! Wallet state sync module
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
+use bitcoin::hashes::FromSliceError;
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
 use client::{
     GetAllUtxosResponse, GetPendingPegoutsResponse, GetTrackedTxsResponse, ResetWalletStateRequest,
@@ -19,6 +19,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
+    metrics::AuthorityMetrics,
     utils::UtxoMerkelRootError,
     Storage,
 };
@@ -41,18 +42,12 @@ pub enum WalletStateSyncError {
     #[error("peer never responded with wallet state, timer elapsed")]
     /// Peer wallet state timeout
     PeerWalletStateTimeout,
-    #[error("Failed to receive a frost message from a peer {0}")]
-    /// Frost recv error
-    FrostRecv(tokio::sync::oneshot::error::RecvError),
     #[error("Failed to decompress utxo set data {0}")]
     /// Compressor error
     CompressorError(#[from] CompressorError),
     #[error("Failed to generate utxo merkel root {0}")]
     /// Utxo merkel root error
     UtxoMerkelRootError(#[from] UtxoMerkelRootError),
-    #[error("UTXO set from peer is not in sync with the latest block, current utxo set merkel root: {0}, latest utxo set merkel root: {1}")]
-    /// Utxo set not in sync
-    UtxoSetNotInSync(Sha256Hash, Sha256Hash),
     #[error("Failed to convert slide to sha256 hash {0}")]
     /// Sha256 hash error
     Sha256HashError(#[from] FromSliceError),
@@ -72,6 +67,7 @@ pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan> {
     btc_server: BtcServerExtendedClient,
     to_frost_manager: ToFrostMan,
     compressor: Compressor,
+    metrics: Arc<AuthorityMetrics>,
 }
 
 impl<EF, BF, DB, ToFrostMan> WalletStateSyncEngine<EF, BF, DB, ToFrostMan>
@@ -86,8 +82,9 @@ where
         btc_server: BtcServerExtendedClient,
         to_frost_manager: ToFrostMan,
         compressor: Compressor,
+        metrics: Arc<AuthorityMetrics>,
     ) -> Self {
-        Self { storage, btc_server, to_frost_manager, compressor }
+        Self { storage, btc_server, to_frost_manager, compressor, metrics }
     }
 }
 
@@ -191,6 +188,7 @@ where
                                 pending_pegouts: pending_pegouts.clone(),
                             })
                             .await?;
+                        self.metrics.reset_wallet_states.increment(1);
                     }
                 } else {
                     return Err(WalletStateSyncError::PeerWalletStateTimeout);

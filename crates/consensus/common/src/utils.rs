@@ -54,14 +54,14 @@ pub fn is_inturn(
 ) -> bool {
     // convert types to U256 since random_source is 32 bytes and do arithmetic
     let authorities_len_u256 = U256::from(authorities_len);
-    let signer_index_u256 = U256::from(signer_index);
+    let _signer_index_u256 = U256::from(signer_index);
     let time_range_u256 = U256::from(time_range);
     let random_source_u256 = fixed_bytes_32_to_u256(random_source);
 
     let cycle_length = authorities_len_u256 * time_range_u256; // Full cycle length in seconds
 
     // Calculate the position in the current cycle
-    let position_in_cycle = random_source_u256 % cycle_length;
+    let _position_in_cycle = random_source_u256 % cycle_length;
 
     // Determine the current signer index based on the position in the cycle
     // Each signer's turn lasts for `block_time` seconds
@@ -81,7 +81,7 @@ pub const fn current_inturn_index(
     let cycle_length = authorities_len * block_time;
 
     // Calculate the position in the current cycle
-    let position_in_cycle = reference_timestamp % cycle_length;
+    let _position_in_cycle = reference_timestamp % cycle_length;
 
     // Determine the current signer index based on the position in the cycle
     // (position_in_cycle / block_time) % authorities_len

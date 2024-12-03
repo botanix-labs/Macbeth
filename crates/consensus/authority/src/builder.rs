@@ -1,7 +1,8 @@
 use crate::{
     comet_bft::abci::ABCIClientBuilder, compressor::Compressor, frost_task::FrostTask,
-    healthcheck_task::HealthcheckTask, random_source_provider::RandomSource,
-    wallet_state_sync::WalletStateSyncEngine, AuthorityConsensus, Storage,
+    healthcheck_task::HealthcheckTask, metrics::AuthorityMetrics,
+    random_source_provider::RandomSource, wallet_state_sync::WalletStateSyncEngine,
+    AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::GrpcClientFactory;
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
@@ -55,6 +56,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Sour
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
     random_source_provider: Source,
     canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
+    metrics: Arc<AuthorityMetrics>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -195,6 +197,7 @@ where
             cometbft_rpc_factory,
             random_source_provider,
             canon_state_notification_receiver,
+            metrics: Arc::new(AuthorityMetrics::default()),
         })
     }
 
@@ -228,6 +231,7 @@ where
             cometbft_rpc_factory,
             random_source_provider,
             canon_state_notification_receiver,
+            metrics,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let _executor_factory = storage.executor_factory.clone();
@@ -256,6 +260,7 @@ where
                     btc_server.clone(),
                     frost_handle.clone().expect("Requires frost handle"),
                     compressor.clone(),
+                    Arc::clone(&metrics),
                 );
                 Some(wallet_state_sync_engine)
             } else {
@@ -273,6 +278,7 @@ where
                 frost_handle.clone().expect("Requires frost handle"),
                 storage.clone(),
                 task_executor.clone(),
+                Arc::clone(&metrics),
             );
             healthcheck_task = Some(task);
             // frost task
@@ -286,6 +292,7 @@ where
                 compressor,
                 random_source_provider,
                 canon_state_notification_receiver,
+                Arc::clone(&metrics),
             );
 
             frost_task = Some(task);
@@ -301,6 +308,7 @@ where
             to_engine.clone(),
             cometbft_rpc_factory.clone(),
             is_fed_node,
+            Arc::clone(&metrics),
         ));
 
         (consensus, frost_task, healthcheck_task, abci_client_builder, wallet_sync)

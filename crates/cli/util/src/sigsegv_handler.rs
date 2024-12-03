@@ -53,7 +53,7 @@ extern "C" fn print_stack_trace(_: libc::c_int) {
         if depth == 0 {
             return
         }
-        &STACK_TRACE.as_slice()[0..(depth as _)]
+        &STACK_TRACE[..depth as usize]
     };
 
     // Just a stack trace is cryptic. Explain what we're doing.

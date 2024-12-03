@@ -50,7 +50,7 @@ pub(crate) enum SerdeError {
 
 /// Password hashing error types.
 #[derive(Debug, DisplayDoc, Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// compression error: {0}
     Compression(#[from] CompressionError),
     /// serde error: {0}

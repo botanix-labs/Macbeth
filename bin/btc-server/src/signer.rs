@@ -174,12 +174,20 @@ where
     pub(crate) async fn get_round1_signing_package(
         &self,
         psbt: &mut Psbt,
-        _signing_session_id: &[u8; 32],
+        signing_session_id: &[u8; 32],
     ) -> Result<(), SigningRound1Error> {
         self.db.get_key_package()?.ok_or(SigningRound1Error::MissingKeyPackage)?;
         // Check if have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
         if nonces_lock.is_some() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    Some(signing_session_id.clone()),
+                    &SigningRound1Error::AlreadyInSigningSession.to_string(),
+                );
+            }
             return Err(SigningRound1Error::AlreadyInSigningSession);
         }
 
@@ -251,6 +259,7 @@ where
     pub(crate) async fn get_round2_signing_package(
         &self,
         psbt: &mut Psbt,
+        signing_session_id: &[u8; 32],
     ) -> Result<(), SigningRound2Error> {
         // Important note here is that we never reuse the same nonce pairs for a different signing
         // request Should always generate new ones or if we are in a signing session refuse
@@ -275,9 +284,19 @@ where
             nonces_lock.clone().ok_or(SigningRound2Error::MissingRound1SigningNonce)?;
 
         if signing_nonces.len() != num_inputs {
-            return Err(SigningRound2Error::InvalidSigningPackage(
+            let err = SigningRound2Error::InvalidSigningPackage(
                 "Number of signing nonces does not match number of inputs",
-            ));
+            );
+
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    Some(signing_session_id.clone()),
+                    &err.to_string(),
+                );
+            }
+            return Err(err);
         }
         for (index, signing_package) in signing_packages.iter().enumerate() {
             // Check if this signer is in the signing set
@@ -291,9 +310,17 @@ where
             let our_sc = signing_commitments.get(&self.identifier).expect("valid index");
             let our_nonce = signing_nonces.get(index).expect("valid index");
             if our_sc != &our_nonce.1 {
-                return Err(SigningRound2Error::InvalidSigningPackage(
-                    "Invalid nonce pair for this signer",
-                ));
+                let err =
+                    SigningRound2Error::InvalidSigningPackage("Invalid nonce pair for this signer");
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        Some(signing_session_id.clone()),
+                        &err.to_string(),
+                    );
+                }
+                return Err(err);
             }
         }
 
@@ -312,6 +339,9 @@ where
         let _tx = psbt.clone().extract_tx()?;
 
         let pending_pegouts = self.db.get_pending_pegouts()?;
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
+        }
         let _pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
         // TODO(armins) we will need to re-enable this once we have conflicting inputs check
@@ -370,8 +400,17 @@ where
                 if err_msg.contains("already in chain") {
                     Ok(None)
                 } else {
+                    let err = CoordinatorError::FailedToBroadcastTx(err);
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_signing_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            None,
+                            &err.to_string(),
+                        );
+                    }
                     error!("Failed to broadcast tx: {}", err);
-                    Err(CoordinatorError::FailedToBroadcastTx(err))
+                    Err(err)
                 }
             }
         }?;

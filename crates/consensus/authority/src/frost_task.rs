@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::{
     compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
     dkg::DKGStateMachine,
+    metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
     signing::SigningStateMachine,
     utils::validate_psbt_by_ids,
@@ -77,6 +78,8 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     btc_server: BtcServerExtendedClient,
     /// Channel to receive canon state notifications
     canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
+    /// Authority Metrics
+    metrics: Arc<AuthorityMetrics>,
 }
 
 impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
@@ -104,6 +107,7 @@ where
         compressor: Compressor,
         random_source_provider: Source,
         canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
+        metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len() - 1);
 
@@ -112,6 +116,7 @@ where
             storage.clone(),
             frost_handle.clone(),
             config.clone(),
+            metrics.clone(),
         );
 
         let signing_state_machine = SigningStateMachine::new(
@@ -120,6 +125,7 @@ where
             frost_handle.clone(),
             config.clone(),
             random_source_provider,
+            metrics.clone(),
         );
 
         Self {
@@ -132,6 +138,7 @@ where
             btc_server,
             compressor,
             canon_state_notification_receiver,
+            metrics,
         }
     }
 

@@ -46,6 +46,7 @@ futures-util = { workspace = true }
 
 # hex
 hex = "0.4.3"
+metrics = { workspace = true }
 
 # paste
 paste = "1.0.15"
@@ -73,6 +74,7 @@ reth-ethereum-payload-builder = { workspace = true }
 reth-evm = { workspace = true }
 reth-evm-ethereum = { workspace = true }
 reth-execution-errors = { workspace = true }
+reth-metrics = { workspace = true, features = ["common"] }
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-network-api = { workspace = true }
 reth-network-p2p = { workspace = true }

@@ -335,12 +335,16 @@ pub(crate) fn generate_signing_session_id(
 #[allow(dead_code)]
 pub enum UtxoMerkelRootError {
     #[error("Unparsable tx id")]
+    /// Unparsable tx id
     UnparsableTxId,
     #[error("Outpoint encoding")]
+    /// Output encoding
     OutpointEncoding,
     #[error("Error calculating merkle root")]
+    /// Bad merkle root
     BadMerkleRoot,
     #[error("Missing UTXO outpoint")]
+    /// Missing outpoint
     MissingOutpoint,
 }
 
