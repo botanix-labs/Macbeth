@@ -21,7 +21,7 @@ use reth_btc_wallet::{
 };
 use thiserror::Error;
 
-use crate::{database, pegout_id::PegoutId, rpc};
+use crate::{badarg, database, pegout_id::PegoutId, rpc};
 
 macro_rules! print_safe {
     ($e:expr) => {
@@ -106,12 +106,12 @@ impl TryFrom<rpc::TrackedTx> for Tx {
     fn try_from(tx: rpc::TrackedTx) -> Result<Self, Self::Error> {
         if let Err(e) = tx.validate() {
             error!("Invalid tracked tx: {}", e);
-            return Err(tonic::Status::invalid_argument(e));
+            badarg!("invalid tracked tx: {}", e);
         }
 
         let tx_prost = tx.tx.ok_or_else(|| {
             error!("Missing tx in tracked tx");
-            tonic::Status::invalid_argument("missing tx in tracked tx")
+            badarg!("missing tx in tracked tx")
         })?;
 
         let tx_ins = tx_prost
@@ -122,7 +122,7 @@ impl TryFrom<rpc::TrackedTx> for Tx {
                 // so the expect calls below are safe
                 if let Err(e) = tx_in.validate() {
                     error!("Invalid tx input: {}", e);
-                    tonic::Status::invalid_argument(e);
+                    badarg!("invalid tx input: {}", e);
                 }
                 let previous_outpoint = tx_in.previous_outpoint.expect("valid previous outpoint");
 
@@ -147,7 +147,7 @@ impl TryFrom<rpc::TrackedTx> for Tx {
                 // so the expect call below is safe
                 if let Err(e) = tx_out.validate() {
                     error!("Invalid tx output: {}", e);
-                    tonic::Status::invalid_argument(e);
+                    badarg!("invalid tx output: {}", e);
                 }
 
                 TxOut {
@@ -170,7 +170,7 @@ impl TryFrom<rpc::TrackedTx> for Tx {
             .map(|pegout| {
                 if let Err(_e) = PegoutId::from_bytes(&pegout.pegout_id) {
                     error!("Could not deserialize pegout id");
-                    tonic::Status::invalid_argument("invalid pegout id");
+                    badarg!("invalid pegout id");
                 }
 
                 PegoutRequest {
@@ -185,11 +185,11 @@ impl TryFrom<rpc::TrackedTx> for Tx {
         // validate Tx so expect calls are safe
         if let Err(e) = Txid::from_slice(&tx.txid) {
             error!("Invalid txid: {}", e);
-            tonic::Status::invalid_argument("invalid txid");
+            badarg!("invalid txid: {}", e);
         }
         if tx.created.is_none() {
             error!("Missing created timestamp");
-            tonic::Status::invalid_argument("missing created timestamp");
+            badarg!("missing created timestamp");
         }
 
         Ok(Tx {
