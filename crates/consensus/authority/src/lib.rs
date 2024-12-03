@@ -52,6 +52,7 @@ mod excecution_utils;
 mod frost_task;
 mod healthcheck_task;
 mod signing;
+mod snapshot_manager;
 pub mod utils;
 pub mod wallet_state_sync;
 pub use builder::AuthorityConsensusBuilder;

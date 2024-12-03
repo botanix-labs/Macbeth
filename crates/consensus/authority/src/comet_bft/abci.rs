@@ -46,9 +46,17 @@ use tendermint_proto::{
         ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponseCommit,
         ResponsePrepareProposal, ResponseProcessProposal,
     },
-    v0_38::abci::{
-        RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain, ResponseCheckTx,
-        ResponseFinalizeBlock, ResponseInfo, ResponseInitChain,
+    v0_38::{
+        abci::{
+            RequestApplySnapshotChunk, RequestCheckTx, RequestFinalizeBlock, RequestInfo,
+            RequestInitChain, RequestListSnapshots, RequestLoadSnapshotChunk, RequestOfferSnapshot,
+            ResponseApplySnapshotChunk, ResponseCheckTx, ResponseFinalizeBlock, ResponseInfo,
+            ResponseInitChain, ResponseListSnapshots, ResponseLoadSnapshotChunk,
+            ResponseOfferSnapshot, Snapshot,
+        },
+        statesync::{
+            message::Sum, ChunkRequest, ChunkResponse, Message, SnapshotsRequest, SnapshotsResponse,
+        },
     },
 };
 
@@ -397,6 +405,33 @@ where
             last_block_height: latest_header.number as i64,
             last_block_app_hash: self.application_hash(&client),
         }
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#listsnapshots
+    fn list_snapshots(&self) -> ResponseListSnapshots {
+        info!("list_snapshots request");
+        ResponseListSnapshots::default()
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#loadsnapshotchunk
+    fn load_snapshot_chunk(&self, _request: RequestLoadSnapshotChunk) -> ResponseLoadSnapshotChunk {
+        info!("load_snapshot_chunk request");
+        ResponseLoadSnapshotChunk::default()
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#applysnapshotchunk
+    fn apply_snapshot_chunk(
+        &self,
+        _request: RequestApplySnapshotChunk,
+    ) -> ResponseApplySnapshotChunk {
+        info!("apply_snapshot_chunk request");
+        ResponseApplySnapshotChunk::default()
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#offersnapshot
+    fn offer_snapshot(&self, _request: RequestOfferSnapshot) -> ResponseOfferSnapshot {
+        info!("offer_snapshot request");
+        ResponseOfferSnapshot::default()
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
