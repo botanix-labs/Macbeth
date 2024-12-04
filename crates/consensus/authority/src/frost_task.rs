@@ -18,7 +18,7 @@ use reth_network::{
     frost::{
         manager::{authority_index_to_frost_identifier, FrostCommand, FrostConfig, ToFrostManager},
         DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
-        SigningEventResponseType, SigningResponse,
+        SigningEventResponseType, SigningResponse, WalletStateResponse,
     },
     NetworkHandle,
 };
@@ -242,6 +242,12 @@ where
         Ok(prost_serialized_compressed)
     }
 
+    fn has_wallet_state(response: &WalletStateResponse) -> bool {
+        !response.utxos.is_empty() ||
+            !response.tracked_txs.is_empty() ||
+            !response.pending_pegouts.is_empty()
+    }
+
     pub async fn start_task(&mut self) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
@@ -408,10 +414,7 @@ where
                         //
                         // TODO: create separate messages for asking for wallet state and sending
                         // wallet state
-                        if !response.utxos.is_empty() ||
-                            !response.tracked_txs.is_empty() ||
-                            !response.pending_pegouts.is_empty()
-                        {
+                        if Self::has_wallet_state(&response) {
                             info!(target: "consensus::authority::wallet_syncer::start_task", "Received wallet state in frost task from peer {:?}", peerid);
                             continue;
                         }

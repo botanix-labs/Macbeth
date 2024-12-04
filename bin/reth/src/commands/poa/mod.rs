@@ -841,26 +841,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             //         healthcheck_task.expect("health check task exists").start_task().await;
             //     }),
             // );
-
-            // just for local testing purposes
-            // TODO: create WalletStateSync::start_task to handle this logic
-            // executor.spawn_critical(
-            //     "Wallet Sync Task",
-            //     Box::pin(async move {
-            //         loop {
-            //             tokio::time::sleep(Duration::from_secs(20)).await;
-
-            //             if let Err(err) = wallet_sync
-            //                 .as_ref()
-            //                 .expect("wallet sync task exists")
-            //                 .sync_wallet_state()
-            //                 .await
-            //             {
-            //                 error!("Error syncing wallet state: {:?}", err);
-            //             }
-            //         }
-            //     }),
-            // );
         }
 
         let initial_target = node_config.debug.tip;
