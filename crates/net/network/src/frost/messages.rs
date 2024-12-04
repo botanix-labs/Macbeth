@@ -649,7 +649,7 @@ mod tests {
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest,
     };
-    use super::{HealthcheckRequest, UtxoRequest};
+    use super::{HealthcheckRequest, UtxoRequest, WalletStateRequest};
     use itertools::Itertools;
     #[allow(unused_imports)]
     use reth_primitives::SealedBlock;
@@ -807,6 +807,48 @@ mod tests {
             );
         } else {
             panic!("Decoded message is not a Healthcheck Message");
+        }
+    }
+
+    #[test]
+    fn test_wallet_state_encode_decode() {
+        let utxos = "utxos".to_owned();
+        let tracked_txs = "tracked_txs".to_owned();
+        let pending_pegouts = "pending_pegouts".to_owned();
+
+        let utxos_bytes = utxos.bytes().collect_vec();
+        let tracked_txs_bytes = tracked_txs.bytes().collect_vec();
+        let pending_pegouts_bytes = pending_pegouts.bytes().collect_vec();
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::WalletState,
+            message: FrostProtoMessageKind::WalletState(WalletStateRequest::new(
+                utxos_bytes,
+                tracked_txs_bytes,
+                pending_pegouts_bytes,
+            )),
+        };
+
+        // Encode the message
+        let encoded_bytes = message.encoded();
+
+        // Simulate receiving the encoded bytes and decoding them
+        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode WalletStateMessage");
+
+        // Verify that the decoded message matches the original message
+        if let FrostProtoMessageKind::WalletState(wallet_state_request) = decoded_message.message {
+            let decoded_utxos = String::from_utf8(wallet_state_request.utxos).unwrap();
+            let decoded_tracked_txs = String::from_utf8(wallet_state_request.tracked_txs).unwrap();
+            let decoded_pending_pegouts =
+                String::from_utf8(wallet_state_request.pending_pegouts).unwrap();
+
+            assert_eq!(decoded_utxos, utxos, "utxos does not match");
+            assert_eq!(decoded_tracked_txs, tracked_txs, "tracked_txs does not match");
+            assert_eq!(decoded_pending_pegouts, pending_pegouts, "pending_pegouts does not match");
+        } else {
+            panic!("Decoded message is not a WalletState Message");
         }
     }
 }
