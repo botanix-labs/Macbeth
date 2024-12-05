@@ -423,7 +423,7 @@ where
                             .iter()
                             .map(|tx| prost::bytes::Bytes::copy_from_slice(tx))
                             .collect::<_>();
-                        info!("prepare_proposal response: {:?}", txs);
+                        info!("prepare_proposal number of txs: {:?}", txs.len());
 
                         // insert non-deterministic data tx at index 0 so historical sync will pass
                         // verification
