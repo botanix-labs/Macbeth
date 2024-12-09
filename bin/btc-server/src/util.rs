@@ -1,4 +1,3 @@
-use crate::{database, database::Utxo, pegout_id::PegoutId, Error};
 use bitcoin::{
     consensus::encode as btcencode,
     hashes::Hash,
@@ -9,10 +8,13 @@ use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
 use reth_btc_wallet::{
     address::generate_taproot_change_scriptpubkey,
-    psbt::{PsbtInputExt, PsbtOutputExt},
+    psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
     util::VerifyingKeyExt,
 };
 use std::collections::{HashMap, HashSet};
+use tokio::sync::Mutex;
+
+use crate::{database, pegout_id::PegoutId, pegout_scheduler::PegoutScheduler, Error};
 
 lazy_static! {
     static ref MAX_BTC_AMOUNT: bitcoin::Amount =
@@ -212,6 +214,9 @@ pub fn validate_psbt(
     // Sanity check for # of inputs and outputs
     if psbt.inputs.is_empty() {
         return Err(ValidatePSBTError::NoInputs);
+    } else {
+        // Validate psbt contains conflicting input if retrying a pegout
+        db.has_conflicting_input(psbt)?;
     }
     if psbt.outputs.is_empty() {
         return Err(ValidatePSBTError::NoOutputs);
@@ -446,7 +451,7 @@ mod util_tests {
     use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt};
 
     use crate::{
-        database,
+        database::{self},
         test_utils::test_utils::{
             create_psbt, create_tx, eth_vector_to_fixed_bytes, get_change, setup,
             store_pending_pegout, trusted_dealer_setup,
@@ -461,8 +466,8 @@ mod util_tests {
         database::Db::open(dbdir).unwrap()
     }
 
-    #[test]
-    fn should_perform_general_sanity_checks() {
+    #[tokio::test]
+    async fn should_perform_general_sanity_checks() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
@@ -505,8 +510,8 @@ mod util_tests {
         assert_eq!(res.unwrap_err().to_string(), "outputs cannot be 0");
     }
 
-    #[test]
-    fn should_perform_sanity_negative_fee_check() {
+    #[tokio::test]
+    async fn should_perform_sanity_negative_fee_check() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
@@ -558,8 +563,8 @@ mod util_tests {
         assert_eq!(res.unwrap_err(), ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"));
     }
 
-    #[test]
-    fn should_perform_sanity_total_outputs_value() {
+    #[tokio::test]
+    async fn should_perform_sanity_total_outputs_value() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
