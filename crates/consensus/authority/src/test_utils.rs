@@ -8,14 +8,19 @@ use client::{
     MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest, ResetAllUtxosRequest, SigningPackage,
     SigningPackageRequest, SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
 };
-use reth_network::frost::manager::{FrostCommand, ToFrostManager, PeerData};
+use frost_secp256k1_tr::Identifier;
+use reth_network::frost::{manager::{FrostCommand, PeerData, ToFrostManager}, FrostPeerCommand};
 use tokio::sync::mpsc::{self, error::SendError};
+use reth_network_api::Direction;
 use std::collections::HashMap;
 use reth_network_peers::PeerId;
 use crate::Storage;
 use reth_chainspec::ChainSpec;
 use reth_node_ethereum::EthEvmConfig;
 use std::net::SocketAddr;
+use crate::dkg::{DKGStateMachine, DKGState};
+use reth_network::frost::manager::FrostConfig;
+use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MockBtcServerClient {
@@ -291,4 +296,121 @@ pub(crate) fn create_test_authority_keys(num_authorities: usize) -> Vec<secp256k
 pub(crate) fn create_test_authority(index: usize) -> secp256k1::PublicKey {
     let secret_key = secp256k1::SecretKey::from_slice(&[index as u8 + 1; 32]).unwrap();
     secret_key.public_key(secp256k1::SECP256K1)
+}
+
+
+/// Test setup structure to hold all components needed for DKG testing
+pub(crate) struct TestSetup<DB> {
+    pub storage: Storage<(), (), DB>,
+    pub btc_client: MockBtcServerClient,
+    pub frost_handle: MockFrostHandle,
+    pub dkg_state_machine: DKGStateMachine<(), (), DB, MockFrostHandle, MockBtcServerClient>,
+    pub authority_keys: Vec<secp256k1::PublicKey>,
+}
+
+impl<DB: Clone> TestSetup<DB> {
+    /// Create a new test setup with the given number of authorities
+    pub async fn new(
+        num_authorities: usize,
+        authority_index: usize,
+        db: DB,
+    ) -> Self {
+        // Create authority keys and addresses
+        let authority_keys = create_test_authority_keys(num_authorities);
+        let authority_addresses = create_test_authority_addresses(num_authorities);
+        
+        // Create mock components
+        let btc_client = MockBtcServerClient::new();
+        let frost_handle = MockFrostHandle::new();
+
+        // Create storage
+        let storage = create_test_storage(
+            authority_keys.clone(),
+            authority_index,
+            create_test_authority(authority_index),
+            None,
+            authority_addresses,
+            db,
+            (),
+            (),
+        );
+
+        // Create frost config
+        let frost_config = FrostConfig::new(
+            authority_keys[authority_index],
+            authority_index,
+            authority_keys.clone(),
+            (num_authorities as u16 / 2 + 1) as u16,
+            num_authorities as u16,
+        );
+
+        // Create DKG state machine
+        let dkg_state_machine = DKGStateMachine::new(
+            btc_client.clone(),
+            storage.clone(),
+            frost_handle.clone(),
+            frost_config,
+        );
+
+        Self {
+            storage,
+            btc_client,
+            frost_handle,
+            dkg_state_machine,
+            authority_keys,
+        }
+    }
+
+    /// Create a mock peer data entry
+    pub fn create_mock_peer_data(
+        peer_id: PeerId,
+        frost_identifier: Identifier,
+        peer_commands_tx: UnboundedSender<FrostPeerCommand>,
+    ) -> PeerData {
+        PeerData {
+            peer_id,
+            peer_commands_tx,
+            direction: Direction::Outgoing(peer_id),
+            frost_identifier,
+            peer_confirmed: true,
+        }
+    }
+
+    /// Helper to setup connected peers in the mock frost handle
+    pub fn setup_connected_peers(&mut self, peers: HashMap<PeerId, PeerData>) {
+        self.frost_handle = self.frost_handle.clone().with_connected_peers(peers);
+    }
+
+    /// Helper to set connection status in mock frost handle  
+    pub fn set_all_peers_connected(&mut self, connected: bool) {
+        self.frost_handle = self.frost_handle.clone().with_check_connected_to_all(connected);
+    }
+
+    /// Helper to add DKG round1 package to mock btc client
+    pub fn set_round1_package(&mut self, package: DkgPayload) {
+        self.btc_client = self.btc_client.clone().with_round1_package(package);
+    }
+
+    /// Helper to add DKG round2 package to mock btc client
+    pub fn set_round2_package(&mut self, package: DkgPayload) {
+        self.btc_client = self.btc_client.clone().with_round2_package(package);
+    }
+
+    /// Helper to add public key to mock btc client
+    pub fn set_public_key(&mut self, public_key: GetPublicKeyResponse) {
+        self.btc_client = self.btc_client.clone().with_public_key(public_key);
+    }
+
+    /// Get current DKG state
+    pub fn get_dkg_state(&self) -> DKGState {
+        self.dkg_state_machine.get_dkg_state()
+    }
+}
+
+/// Helper to create channel pairs for testing peer communication
+pub(crate) fn create_peer_channels() -> (
+    UnboundedSender<FrostPeerCommand>,
+    mpsc::UnboundedReceiver<FrostPeerCommand>,
+) {
+    mpsc::unbounded_channel()
 }
