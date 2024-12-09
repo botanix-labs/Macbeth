@@ -4,7 +4,7 @@ use bitcoin::{
     hashes::{sha256::Hash as Sha256Hash, FromSliceError},
     secp256k1::hashes::Hash,
 };
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use btcserverlib::extended_client::{BtcServerExtendedClient, BtcServerExtendedClientImpl, GrpcClientError};
 use client::{Empty, GetAllUtxosResponse, ResetAllUtxosRequest};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_evm::execute::BlockExecutorProvider;
@@ -57,7 +57,7 @@ pub(crate) trait UTXOSync {
 #[derive(Debug, Clone)]
 pub(crate) struct UTXOSyncEngine<EF, BF, DB, ToFrostMan> {
     storage: Storage<EF, BF, DB>,
-    btc_server: BtcServerExtendedClient,
+    btc_server: BtcServerExtendedClientImpl,
     to_frost_manager: ToFrostMan,
     compressor: Compressor,
 }
@@ -71,7 +71,7 @@ where
 {
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
-        btc_server: BtcServerExtendedClient,
+        btc_server: BtcServerExtendedClientImpl,
         to_frost_manager: ToFrostMan,
         compressor: Compressor,
     ) -> Self {

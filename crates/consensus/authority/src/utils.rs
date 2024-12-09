@@ -7,7 +7,7 @@ use bitcoin::{
     Address, Amount, BlockHash,
 };
 use btcserverlib::{
-    extended_client::{BtcServerExtendedClient, GrpcClientError},
+    extended_client::{BtcServerExtendedClient, BtcServerExtendedClientImpl, GrpcClientError},
     pegout_id::PegoutId,
 };
 use client::{
@@ -105,7 +105,7 @@ pub(crate) enum FrostParseError {
 
 /// receive a psbt containing all pending pegouts awaiting signing
 pub(crate) async fn get_psbt(
-    btc_server: &mut BtcServerExtendedClient,
+    btc_server: &mut BtcServerExtendedClientImpl,
     signing_session_id: &SigningSessionId,
     bitcoin_checkpoint: BlockHash,
 ) -> Result<SigningPackage, GrpcClientError> {
@@ -118,7 +118,7 @@ pub(crate) async fn get_psbt(
 }
 
 pub(crate) async fn call_notify_pegin(
-    btc_server: &mut BtcServerExtendedClient,
+    btc_server: &mut BtcServerExtendedClientImpl,
     pegins: &[PeginMeta],
 ) -> Result<(), GrpcClientError> {
     if pegins.is_empty() {
@@ -132,7 +132,7 @@ pub(crate) async fn call_notify_pegin(
 }
 
 pub(crate) async fn call_notify_pegout(
-    btc_server: &mut BtcServerExtendedClient,
+    btc_server: &mut BtcServerExtendedClientImpl,
     pegouts: &[PegoutWithId],
     height: u64,
 ) -> Result<(), GrpcClientError> {

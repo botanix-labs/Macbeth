@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use btcserverlib::extended_client::BtcServerExtendedClientImpl;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -75,7 +75,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     bitcoin_checkpoint: BitcoinCheckpoint,
     network_handle: NetworkHandle,
-    btc_server: Option<BtcServerExtendedClient>,
+    btc_server: Option<BtcServerExtendedClientImpl>,
     authority_consensus: AuthorityConsensus,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -98,7 +98,7 @@ where
         storage: Storage<EF, BF, DB>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         network_handle: NetworkHandle,
-        btc_server: Option<BtcServerExtendedClient>,
+        btc_server: Option<BtcServerExtendedClientImpl>,
         authority_consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -790,7 +790,7 @@ pub(crate) struct ABCIDriver<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
-    btc_server: Option<BtcServerExtendedClient>,
+    btc_server: Option<BtcServerExtendedClientImpl>,
     network_handle: NetworkHandle,
     driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
@@ -813,7 +813,7 @@ where
         storage: Storage<EF, BF, DB>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         authority_consensus: AuthorityConsensus,
-        btc_server: Option<BtcServerExtendedClient>,
+        btc_server: Option<BtcServerExtendedClientImpl>,
         network_handle: NetworkHandle,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,

@@ -49,7 +49,7 @@ impl GrpcClientError {
 macro_rules! generate_method {
     ($method_name:ident, $req_ty:ty, $resp_ty:ty) => {
         /// A general template for a grpc method receiving a request and returning a response
-        pub async fn $method_name(
+        async fn $method_name(
             &mut self,
             request: $req_ty,
         ) -> Result<$resp_ty, GrpcClientError> {
@@ -73,14 +73,46 @@ macro_rules! generate_method {
 
 pub trait BtcServerGrpcClient {}
 
-/// Bitcoin Server Client with extended authentication credentials
+#[allow(async_fn_in_trait)]
+pub trait BtcServerExtendedClient{
+    fn update_jwt_secret(&mut self, jwt_secret: JwtSecret);
+    fn generate_jwt_token(&mut self) -> Option<String>;
+    
+    async fn notify_pegins(&mut self, request: NotifyPeginsRequest) -> Result<Empty, GrpcClientError>;
+    async fn notify_pegout(&mut self, request: NotifyPegoutRequest) -> Result<Empty, GrpcClientError>;
+    async fn get_gateway_address(&mut self, request: GetGatewayAddressRequest) -> Result<GetGatewayAddressResponse, GrpcClientError>;
+    async fn get_public_key(&mut self, request: Empty) -> Result<GetPublicKeyResponse, GrpcClientError>;
+    async fn get_round1_dkg_package(&mut self, request: Empty) -> Result<DkgPayload, GrpcClientError>;
+    async fn get_round1_dkg_packages(&mut self, request: Empty) -> Result<DkgPayload, GrpcClientError>;
+    async fn new_round1_dkg_package(&mut self, request: DkgPayload) -> Result<Empty, GrpcClientError>;
+    async fn get_round2_dkg_package(&mut self, request: Empty) -> Result<DkgPayload, GrpcClientError>;
+    async fn new_round2_dkg_package(&mut self, request: DkgPayload) -> Result<Empty, GrpcClientError>;
+    async fn get_round1_signing_package(&mut self, request: SigningPackageRequest) -> Result<SigningPackage, GrpcClientError>;
+    async fn get_round2_signing_package(&mut self, request: SigningPackageRequest) -> Result<SigningPackage, GrpcClientError>;
+    async fn new_round1_signing_package(&mut self, request: SigningPackage) -> Result<Empty, GrpcClientError>;
+    async fn get_psbt(&mut self, request: MakeTxRequest) -> Result<SigningPackage, GrpcClientError>;
+    async fn get_to_sign_package(&mut self, request: ToSignRequest) -> Result<SigningPackage, GrpcClientError>;
+    async fn new_round2_signing_package(&mut self, request: SigningPackage) -> Result<Empty, GrpcClientError>;
+    async fn finalize_signing(&mut self, request: FinalizeSigningRequest) -> Result<FinalizeSigningResponse, GrpcClientError>;
+    async fn signer_finalize(&mut self, request: FinalizeSignerRequest) -> Result<FinalizeSigningResponse, GrpcClientError>;
+    async fn get_wallet_state(&mut self, request: Empty) -> Result<WalletStateResponse, GrpcClientError>;
+    async fn abort_signing(&mut self, request: Empty) -> Result<Empty, GrpcClientError>;
+    async fn get_signing_status(&mut self, request: GetSigningStatusRequest) -> Result<GetSigningStatusResponse, GrpcClientError>;
+    async fn get_session_ids(&mut self, request: GetSessionIdsRequest) -> Result<GetSessionIdsResponse, GrpcClientError>;
+    async fn health_check(&mut self, request: Empty) -> Result<Empty, GrpcClientError>;
+    async fn tx_index_new_checkpoint(&mut self, request: SyncTxIndexRequest) -> Result<Empty, GrpcClientError>;
+    async fn reset_all_utxos(&mut self, request: ResetAllUtxosRequest) -> Result<Empty, GrpcClientError>;
+    async fn get_all_utxos(&mut self, request: Empty) -> Result<GetAllUtxosResponse, GrpcClientError>;
+}
+
+/// Bitcoin Server Client implementation with extended authentication credentials
 #[derive(Clone, Debug)]
-pub struct BtcServerExtendedClient {
+pub struct BtcServerExtendedClientImpl {
     client: BtcServerClient<tonic::transport::channel::Channel>,
     jwt_secret: Option<JwtSecret>,
 }
 
-impl BtcServerExtendedClient {
+impl BtcServerExtendedClientImpl {
     /// Create a new Bitcoin Server Client with extended authentication credentials
     pub async fn new(url: String, jwt_secret: Option<JwtSecret>) -> Result<Self, GrpcClientError> {
         let uri = url.parse::<Uri>().map_err(|e| GrpcClientError::InvalidUri(e.to_string()))?;
@@ -95,15 +127,14 @@ impl BtcServerExtendedClient {
 
         Ok(Self { client, jwt_secret })
     }
+}
 
-    /// Updates the jwt secret
-    pub fn update_jwt_secret(&mut self, jwt_secret: JwtSecret) {
+impl BtcServerExtendedClient for BtcServerExtendedClientImpl {
+    fn update_jwt_secret(&mut self, jwt_secret: JwtSecret) {
         self.jwt_secret = Some(jwt_secret);
     }
 
-    /// Generate a new jwt token from secret and claims
-    /// TODO: fix unwraps
-    pub fn generate_jwt_token(&mut self) -> Option<String> {
+    fn generate_jwt_token(&mut self) -> Option<String> {
         self.jwt_secret.as_ref().map(|jwt_secret| {
             let claims = Claims { iat: to_u64(SystemTime::now()), exp: Some(10000000000) };
             let jwt_token = jwt_secret.encode(&claims).unwrap();
@@ -150,8 +181,8 @@ impl GrpcClientFactory {
         Self { grpc_url, jwt_secret }
     }
 
-    pub async fn build_and_connect(&self) -> Result<BtcServerExtendedClient, GrpcClientError> {
-        let client = BtcServerExtendedClient::new(self.grpc_url.clone(), self.jwt_secret).await?;
+    pub async fn build_and_connect(&self) -> Result<BtcServerExtendedClientImpl, GrpcClientError> {
+        let client = BtcServerExtendedClientImpl::new(self.grpc_url.clone(), self.jwt_secret).await?;
 
         Ok(client)
     }

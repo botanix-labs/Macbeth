@@ -10,7 +10,7 @@ use crate::{
 };
 
 use bitcoin_hashes::Hash;
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use btcserverlib::extended_client::{BtcServerExtendedClient, BtcServerExtendedClientImpl, GrpcClientError};
 use client::SyncTxIndexRequest;
 use reth_blockchain_tree::BlockchainTreeEngine;
 use reth_chainspec::ChainSpec;
@@ -50,7 +50,7 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// Frost configuration
     pub(crate) frost_config: FrostConfig,
     /// dkg state machine
-    pub(crate) dkg_state_machine: DKGStateMachine<EF, BF, DB, ToFrostMan>,
+    pub(crate) dkg_state_machine: DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerExtendedClientImpl>,
     /// signing state machine
     pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source>,
     /// Shared storage to insert aggregate public key
@@ -58,12 +58,12 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// Pre-configured compressor
     compressor: Compressor,
     /// btc server client
-    btc_server: BtcServerExtendedClient,
+    btc_server: BtcServerExtendedClientImpl,
     /// Channel to receive canon state notifications
     canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
 }
 
-impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
+impl<EF, BF, DB, ToFrostMan, Source, > FrostTask<EF, BF, DB, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone,
     BF: Clone,
@@ -80,7 +80,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
-        btc_server: BtcServerExtendedClient,
+        btc_server: BtcServerExtendedClientImpl,
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
         config: FrostConfig,

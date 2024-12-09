@@ -10,7 +10,7 @@ use crate::{
 use anyhow::Context;
 use askama::Template;
 use bitcoin::hashes::Hash;
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use btcserverlib::extended_client::{BtcServerExtendedClient, BtcServerExtendedClientImpl};
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::{
     providers::{Middleware, PeerInfo, StreamExt},
@@ -422,7 +422,7 @@ impl FederationMemberTestConfig {
 
             // create a btc client
             let mut btc_server_client =
-                BtcServerExtendedClient::new(format!("http://{}", bitcoin_server_url), None)
+                BtcServerExtendedClientImpl::new(format!("http://{}", bitcoin_server_url), None)
                     .await
                     .unwrap();
 
@@ -600,7 +600,7 @@ impl FederationMemberTestConfig {
         tokio::spawn(Box::pin(async move {
             // create a btc client
             let mut btc_server_client =
-                BtcServerExtendedClient::new(format!("http://{}", bitcoin_server_url), None)
+                BtcServerExtendedClientImpl::new(format!("http://{}", bitcoin_server_url), None)
                     .await
                     .unwrap();
             loop {

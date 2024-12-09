@@ -10,6 +10,7 @@ exclude = { workspace = true }
 description = "A PoA consensus engine"
 
 [dependencies]
+alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 
 # compression
 async-compression = { version = "0.4.11", features = ["all"] }

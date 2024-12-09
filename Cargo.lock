@@ -7534,6 +7534,7 @@ dependencies = [
 name = "reth-authority-consensus"
 version = "1.0.5"
 dependencies = [
+ "alloy-rpc-types-engine",
  "async-compression",
  "bincode",
  "bitcoin",

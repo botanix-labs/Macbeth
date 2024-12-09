@@ -5,7 +5,7 @@ use crate::{
         FrostParseError,
     },
 };
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use btcserverlib::extended_client::{BtcServerExtendedClient, BtcServerExtendedClientImpl, GrpcClientError};
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
 
@@ -118,7 +118,7 @@ pub(crate) struct SigningSession {
 #[derive(Debug)]
 pub(crate) struct SigningStateMachine<ToFrostMan, Source> {
     chain_spec: Arc<ChainSpec>,
-    btc_client: BtcServerExtendedClient,
+    btc_client: BtcServerExtendedClientImpl,
     frost_handle: ToFrostMan,
     signing_states: Arc<RwLock<HashMap<[u8; 32], SigningSession>>>,
     personal_frost_identifier: frost::Identifier,
@@ -134,7 +134,7 @@ where
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
-        btc_client: BtcServerExtendedClient,
+        btc_client: BtcServerExtendedClientImpl,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
         random_source_provider: Source,
