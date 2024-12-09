@@ -413,11 +413,11 @@ mod test {
     use bitcoin::{
         blockdata::{script::Script, transaction::TxOut},
         hashes::Hash,
-        Amount, OutPoint, ScriptBuf, Txid,
+        Amount, OutPoint, Psbt, ScriptBuf, Txid,
     };
     use frost_secp256k1_tr as frost;
     use rand::{thread_rng, Rng};
-    use test_utils::test_utils::{get_change, store_pending_pegout};
+    use test_utils::test_utils::{create_random_pegout_id, get_change, store_pending_pegout};
     use tonic::{Code, Request};
 
     use reth_btc_wallet::{
@@ -985,8 +985,9 @@ mod test {
         app_coordinator.add_pegins(&[&utxo]).expect("valid pegin utxo");
 
         // Should fail if there are no signing commits in the psbt
-        let res =
-            app_coordinator.add_round1_signing(&signing_session_id, app_signer.identifier, &psbt);
+        let res = app_coordinator
+            .add_round1_signing(&signing_session_id, app_signer.identifier, &psbt)
+            .await;
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "Could not find participant information");
 
@@ -998,6 +999,7 @@ mod test {
 
         app_coordinator
             .add_round1_signing(&signing_session_id, app_signer.identifier, &psbt)
+            .await
             .expect("should add signing round 1");
     }
 
@@ -1359,5 +1361,160 @@ mod test {
         let response = validate_outputs(&psbt, &app.db);
 
         assert_eq!(response.err().expect("error exists").to_string(), "invalid change output",);
+    }
+
+    #[tokio::test]
+    async fn test_conflicting_input() {
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // generate 36 random bytes
+        let mut rng = thread_rng();
+        let mut tx_id = [0u8; 32];
+        rng.fill(&mut tx_id);
+        let tx_idx = rng.gen_range(0..u32::MAX);
+        let pegout_id = PegoutId::new(tx_id, tx_idx);
+
+        let spk = random_p2wpkh_script().as_bytes().to_vec();
+
+        // create pegout
+        let request = Request::new(rpc::NotifyPegoutRequest {
+            pegout_id: pegout_id.as_bytes().to_vec(),
+            spk: spk.clone(),
+            amount: 1_000, // sats
+            height: 1,
+        });
+
+        app.notify_pegout(request).await.expect("valid pegout request");
+
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        let tx_out = pending_pegouts[0].txout();
+
+        // create psbt for pending pegout
+        let mut psbt = create_psbt(1, 1, None);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        // set the tx output to the pegout
+        let mut tracked_tx = psbt.clone().extract_tx().expect("valid tx");
+        tracked_tx.output = vec![tx_out];
+
+        // Add the utxo
+        let utxo = Utxo::new(
+            tracked_tx.input[0].previous_output,
+            psbt.inputs[0].witness_utxo.clone().expect("some"),
+            None,
+        );
+        app.add_pegins(&[&utxo]).expect("valid pegin utxo");
+
+        // track the tx
+        app.add_tracked_tx(tracked_tx.clone(), &pending_pegouts, SystemTime::now())
+            .await
+            .expect("tx to be tracked");
+
+        // add additional utxo that is not part of a tracked tx
+        let psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        // Add the utxo
+        let utxo = Utxo::new(
+            tx.input[0].previous_output,
+            psbt.inputs[0].witness_utxo.clone().expect("some"),
+            None,
+        );
+        app.add_pegins(&[&utxo]).expect("valid pegin utxo");
+
+        // get the tracked input
+        let tracked_inputs = app.pegout_scheduler.lock().await.tracked_inputs();
+        assert!(tracked_inputs.len() == 1);
+        let txid =
+            tracked_tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>()[0].txid;
+        let outpoint = OutPoint { txid, vout: 0 };
+        let tracked_input = tracked_inputs.get(&outpoint).expect("tracked input exists");
+
+        // make sure there are 2 utxos (tracked and untracked)
+        let request = Request::new(rpc::Empty {});
+        let response = app.get_all_utxos(request).await;
+        let utxos = response.expect("utxos to exist").into_inner().utxos;
+        assert!(utxos.len() == 2);
+
+        // request a psbt which should include a conflicting input (the tracked input)
+        let request = Request::new(rpc::MakeTxRequest {
+            signing_session_id: [0u8; 32].to_vec(),
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+        });
+        let response = app.get_psbt(request).await;
+
+        // deserialize the psbt from bytes
+        let psbt_bytes = response.expect("valid psbt").into_inner().psbt;
+        let psbt = Psbt::deserialize(psbt_bytes.as_slice()).expect("valid psbt");
+
+        // assert that the psbt contains the tracked(conflicting) input
+        psbt.unsigned_tx.input.iter().find(|input| input.previous_output == *tracked_input);
+    }
+
+    #[tokio::test]
+    async fn test_has_conflicting_input() {
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // create pegout
+        let pegout_id = create_random_pegout_id();
+        let spk = random_p2wpkh_script().as_bytes().to_vec();
+        let request = Request::new(rpc::NotifyPegoutRequest {
+            pegout_id: pegout_id.as_bytes().to_vec(),
+            spk: spk.clone(),
+            amount: 1_000, // sats
+            height: 1,
+        });
+        app.notify_pegout(request).await.expect("valid pegout request");
+
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        let tx_out = pending_pegouts[0].txout();
+
+        // create psbt for pending pegout
+        // extract the tx and track so psbt has conflicting input
+        let mut psbt_with_conflicting_input = create_psbt(1, 1, None);
+        psbt_with_conflicting_input.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        // set the tx output to the pegout
+        let mut tracked_tx = psbt_with_conflicting_input.clone().extract_tx().expect("valid tx");
+        tracked_tx.output = vec![tx_out];
+
+        // Add the utxo
+        let utxo = Utxo::new(
+            tracked_tx.input[0].previous_output,
+            psbt_with_conflicting_input.inputs[0].witness_utxo.clone().expect("some"),
+            None,
+        );
+        app.add_pegins(&[&utxo]).expect("valid pegin utxo");
+
+        // track the tx
+        app.add_tracked_tx(tracked_tx.clone(), &pending_pegouts, SystemTime::now())
+            .await
+            .expect("tx to be tracked");
+
+        // create psbt with no conflicting input
+        // the pegout is honoring the pegout request but its input is not in the tracked tx
+        let mut psbt_no_conflicting_input = create_psbt(1, 1, None);
+        psbt_no_conflicting_input.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        // validate the psbt with no conflicting input
+        let result = app.db.has_conflicting_input(&psbt_no_conflicting_input);
+        assert_eq!(result.unwrap_err().to_string(), "no conflicting input");
+
+        // validate the psbt with conflicting input
+        let result = app.db.has_conflicting_input(&psbt_with_conflicting_input);
+        assert!(result.is_ok());
     }
 }

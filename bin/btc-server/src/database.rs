@@ -1,6 +1,6 @@
 use std::{
     array::TryFromSliceError,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     io::{self, Write},
     path::Path,
 };
@@ -15,11 +15,12 @@ use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::{self, Psbt},
-    Amount, BlockHash, OutPoint, ScriptBuf, TxIn, TxOut, Txid,
+    Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
+use reth_btc_wallet::psbt::PsbtExt as WalletPsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
 use thiserror::Error;
@@ -556,6 +557,37 @@ impl Db {
         Ok(())
     }
 
+    /// Checks a PSBT has a conflicting input if it contains a tracked PegoutId.
+    pub fn has_conflicting_input(&self, psbt: &Psbt) -> Result<(), Error> {
+        let pegout_ids = psbt
+            .pegout_ids()
+            .iter()
+            .map(|id| PegoutId::from_bytes(id).expect("valid pegout id"))
+            .collect::<HashSet<_>>();
+        for res in self.tracked_txs.iter() {
+            let (_k, v) = res?;
+            let tx: pegout_scheduler::Tx =
+                ciborium::de::from_reader(v.as_ref()).expect("corrupt db: tracked tx");
+            let inputs = tx.inputs().collect::<HashSet<_>>();
+            for request in tx.pegout_requests.iter() {
+                if pegout_ids.contains(&request.id) {
+                    if psbt
+                        .unsigned_tx
+                        .input
+                        .iter()
+                        .any(|tx_in| inputs.contains(&tx_in.previous_output))
+                    {
+                        return Ok(());
+                    } else {
+                        return Err(Error::NoConflictingInput);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn store_pegout_mgr_finalized_block(&self, block_hash: BlockHash) -> Result<(), Error> {
         self.db.insert(KEY_PEGOUTMGR_TIP, &block_hash.to_byte_array())?;
         Ok(())
@@ -755,6 +787,8 @@ pub enum Error {
     OutputNotFound(usize),
     #[error("hash engine error {0}")]
     HashEngine(#[from] std::io::Error),
+    #[error("no conflicting input")]
+    NoConflictingInput,
 }
 
 impl PartialEq for Error {
@@ -843,10 +877,12 @@ impl TryFrom<Utxo> for RpcUtxo {
 mod tests {
     use std::time::SystemTime;
 
+    use reth_btc_wallet::psbt::PsbtOutputExt;
+
     use crate::{
         pegout_scheduler::{PegoutRequest, Tx},
         test_utils::test_utils::{
-            create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db,
+            create_psbt, create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db,
         },
     };
 
@@ -1531,5 +1567,39 @@ mod tests {
         let tracked_txs = db.get_tracked_txs().unwrap();
         assert_eq!(tracked_txs.len(), 1);
         assert_eq!(tracked_txs[0], tracked_tx2);
+    }
+
+    #[test]
+    // success case is tested in `test_has_conflicting_input` in main.rs
+    fn has_conflicting_input_should_error_when_no_conflicting_input() {
+        let (db, _temp_dir) = setup_db();
+
+        // create a tracked tx with a pegout request
+        let tx = create_tx(5, 2, None);
+        let pegout_id = create_random_pegout_id();
+        let pegout_requests = vec![PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: pegout_id,
+            botanix_height: 0,
+        }];
+        let tracked_tx = Tx {
+            txid: tx.txid(),
+            tx: tx.clone(),
+            change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests,
+            created: SystemTime::now(),
+        };
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        db.flush().unwrap();
+
+        // create a psbt with the pegout request from the tracked tx
+        let mut psbt = create_psbt(1, 1, None);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let res = db.has_conflicting_input(&psbt);
+        // should be an error since the psbt does not have a conflicting input
+        assert_eq!(res.unwrap_err().to_string(), "no conflicting input");
     }
 }

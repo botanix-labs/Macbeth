@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use bdk::miniscript::psbt::Error as PsbtError;
 use bitcoin::{
     psbt::{ExtractTxError, Psbt},
@@ -15,7 +17,7 @@ use crate::{
     coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
-    util::{validate_outputs, ValidateOutputsError},
+    util::{validate_outputs, validate_psbt, ValidateOutputsError, ROUND1, ROUND1_TRANSITION},
     App, Error,
 };
 
@@ -225,11 +227,7 @@ where
         // }
 
         // Validate PSBT
-        // TODO lets re-enable this one we can check for conflicting inputs
-        // Right now singers can get into a state where they are tracking txs that the
-        // coordinator is not. This will not be an issue if the signers just check for one
-        // conflicting input until then signers can just trust the coordinator
-        // validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
+        validate_psbt(psbt, ROUND1, self.min_signers, &self.db)?;
         let num_inputs = psbt.inputs.len();
 
         let key_package =
@@ -268,11 +266,7 @@ where
             self.db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
 
         // Validate PSBT
-        // TODO lets re-enable this one we can check for conflicting inputs
-        // Right now singers can get into a state where they are tracking txs that the
-        // coordinator is not. This will not be an issue if the signers just check for one
-        // conflicting input until then signers can just trust the coordinator
-        // validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
+        validate_psbt(psbt, ROUND1_TRANSITION, self.min_signers, &self.db)?;
 
         let tx = psbt.clone().extract_tx()?;
         let num_inputs = tx.input.len();
@@ -344,18 +338,15 @@ where
             psbt_in.set_partial_signature(self.identifier, &sig);
         }
 
-        let _tx = psbt.clone().extract_tx()?;
-
         let pending_pegouts = self.db.get_pending_pegouts()?;
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
         }
-        let _pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
+        let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
-        // TODO(armins) we will need to re-enable this once we have conflicting inputs check
-        // self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await?;
-        // self.db.remove_pending_pegout(&pending_pegout_ids)?;
-        // self.db.flush()?;
+        self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await?;
+        self.db.remove_pending_pegout(&pending_pegout_ids)?;
+        self.db.flush()?;
 
         // Clear the signing nonces
         // This finalizes the signing session

@@ -425,6 +425,7 @@ where
             })?;
         let psbt = self
             .get_to_sign(&signing_session_id)
+            .await
             .map_err(|e| internal!("Failed to get to sign: {}", e))?;
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
@@ -465,7 +466,7 @@ where
         let psbt = Psbt::deserialize(req.psbt.as_slice())
             .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
 
-        self.add_round1_signing(&signing_session_id, frost_id, &psbt).map_err(|e| {
+        self.add_round1_signing(&signing_session_id, frost_id, &psbt).await.map_err(|e| {
             error!("Failed to add round1 signing: {}", e);
             badarg!("Failed to add round1 signing")
         })?;
@@ -497,7 +498,7 @@ where
         let psbt = Psbt::deserialize(req.psbt.as_slice())
             .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
 
-        self.add_round2_signing(&signing_session_id, frost_id, &psbt).map_err(|e| {
+        self.add_round2_signing(&signing_session_id, frost_id, &psbt).await.map_err(|e| {
             error!("Failed to add round2 signing: {}", e);
             badarg!("Failed to add round2 signing: {}", e)
         })?;

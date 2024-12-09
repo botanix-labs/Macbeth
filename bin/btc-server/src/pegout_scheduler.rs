@@ -1,8 +1,8 @@
 /// This module is responsible for tracking pegout transactions and detecting when they are
 /// confirmed or when they need to be retried.
 /// Some vocab used in this file
-/// - tracked tx: a transaction that is confirmed but not sufficiently deep.
 /// - pending pegout: a pegout that is pending to be signed and broadcasted.
+/// - tracked tx: a transaction that is confirmed but not sufficiently deep.
 /// - confirmed tx: a transaction that has > 1 confirmation.
 /// - finalized tx: a transaction that is deeply confirmed.
 use std::{
@@ -302,7 +302,7 @@ pub struct PegoutScheduler {
     conf_window: u32,
     /// The set of txs we are tracking.
     /// The purpose of tracking the txs is to detect when they have
-    /// sufficientlydeep confirmations on L1. Once they do change outputs may
+    /// sufficiently deep confirmations on L1. Once they do change outputs may
     /// be added to the UTXO set as a spendable output
     /// If a tracked tx is reorged or dropped from the mempool the application must
     /// Add the non-change outputs back to the pending pegouts set.
@@ -426,6 +426,16 @@ impl PegoutScheduler {
             pegout_requests: pegouts.to_vec(),
         });
         self.txs.get(&txid).expect("just put it in")
+    }
+
+    /// Get all tracked tx pegout request ids.
+    /// This is used by the coordinator to determine if it is retrying pegouts
+    /// so it can add a conflicting input to the tx it is creating.
+    pub fn tracked_pegout_request_ids(&self) -> Vec<PegoutId> {
+        self.txs
+            .values()
+            .flat_map(|tx| tx.pegout_requests.clone().into_iter().map(|p| p.id))
+            .collect::<Vec<_>>()
     }
 
     /// Get all input utxos that are spent by tracked txs.
@@ -1182,5 +1192,26 @@ mod tests {
 
         let pending_pegouts = db.get_pending_pegouts().unwrap();
         assert_eq!(pending_pegouts[0], pegouts[0]);
+    }
+
+    #[test]
+    fn tracked_pegout_request_ids_should_return_ids() {
+        let db = setup_db().0;
+        let tx = create_tx(1, 2, None);
+        let pegouts = pegout_requests_from_tx(&tx, &[0]);
+        let tracked_tx = Tx {
+            txid: tx.txid(),
+            tx: tx.clone(),
+            pegout_idxs: vec![0],
+            change_idxs: vec![1],
+            created: SystemTime::now(),
+            pegout_requests: pegouts.clone(),
+        };
+
+        let pegout_scheduler =
+            PegoutScheduler::new(1, vec![tracked_tx], bitcoin::BlockHash::all_zeros(), db);
+        let pegout_request_ids = pegout_scheduler.tracked_pegout_request_ids();
+        assert_eq!(pegout_request_ids.len(), 1);
+        assert_eq!(pegout_request_ids[0], pegouts[0].id);
     }
 }
