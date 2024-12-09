@@ -135,7 +135,7 @@ mod listener;
 mod manager;
 mod metrics;
 mod network;
-mod session;
+pub mod session;
 mod state;
 mod swarm;
 
