@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+use crate::{database, database::Utxo, pegout_id::PegoutId, Error};
 use bitcoin::{
     consensus::encode as btcencode,
     hashes::Hash,
@@ -13,8 +12,7 @@ use reth_btc_wallet::{
     psbt::{PsbtInputExt, PsbtOutputExt},
     util::VerifyingKeyExt,
 };
-
-use crate::{database, pegout_id::PegoutId, Error};
+use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref MAX_BTC_AMOUNT: bitcoin::Amount =
@@ -235,7 +233,6 @@ pub fn validate_psbt(
         },
     };
 
-
     let tx = psbt.clone().extract_tx()?;
     for input in tx.input.iter() {
         // Check if input exists in db
@@ -422,6 +419,24 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         }
     }
     Ok(())
+}
+
+pub(crate) async fn get_available_utxos(
+    db: &database::Db,
+) -> Result<(HashMap<OutPoint, Utxo>, HashSet<OutPoint>), database::Error> {
+    let utxos: HashMap<OutPoint, Utxo> =
+        db.iter_utxos().try_fold(HashMap::new(), |mut map, r| {
+            let utxo = r?;
+            map.insert(utxo.outpoint, utxo);
+            Ok::<HashMap<bitcoin::OutPoint, Utxo>, database::Error>(map)
+        })?;
+    // Filter the ones that are still pending and conflict with pending txs.
+    let tracked_inputs =
+        HashSet::from_iter(db.get_tracked_txs()?.iter().map(|tx| tx.inputs()).flatten());
+    let available_utxos =
+        utxos.into_iter().filter(|(p, _u)| !tracked_inputs.contains(p)).collect::<HashMap<_, _>>();
+
+    Ok((available_utxos, tracked_inputs))
 }
 
 #[cfg(test)]

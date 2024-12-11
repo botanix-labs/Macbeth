@@ -17,16 +17,14 @@ use reth_btc_wallet::{
     util::{VerifyingKeyExt, VerifyingKeyExtError},
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
 };
-use std::{
-    collections::HashMap,
-    time::{Instant, SystemTime},
-};
+use std::time::{Instant, SystemTime};
 
 use crate::{
     database::{Error as DbError, Utxo},
     pegout_id::PegoutId,
     util::{
-        validate_psbt, OutPointExt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2,
+        get_available_utxos, validate_psbt, OutPointExt, ValidatePSBTError, NO_FLAGS, ROUND1,
+        ROUND1_TRANSITION, ROUND2,
     },
     App, Error,
 };
@@ -223,19 +221,8 @@ where
         // Sync the pegout scheduler and check we have the same UTXO view.
         self.sync_pegout_scheduler(checkpoint_block).await?;
 
-        // collect all database utxos in a hashmap
-        let utxos: HashMap<OutPoint, Utxo> =
-            self.db.iter_utxos().try_fold(HashMap::new(), |mut map, r| {
-                let utxo = r?; // Directly propagate the error with `?`
-                map.insert(utxo.outpoint, utxo);
-                Ok::<HashMap<bitcoin::OutPoint, Utxo>, DbError>(map)
-            })?;
-        // Filter the ones that are still pending and conflict with pending txs.
-        let tracked_inputs = self.pegout_scheduler.lock().await.tracked_inputs();
-        let available_utxos = utxos
-            .into_iter()
-            .filter(|(p, _u)| !tracked_inputs.contains(p))
-            .collect::<HashMap<_, _>>();
+        let (available_utxos, _tracked_inputs) =
+            get_available_utxos(&self.db).await.map_err(CoordinatorError::Db)?;
 
         let to_bdk = |u: &Utxo| {
             bdk::WeightedUtxo {

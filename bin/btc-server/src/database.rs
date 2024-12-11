@@ -8,10 +8,7 @@ use std::{
 use crate::{
     pegout_id::PegoutId,
     pegout_scheduler::{self},
-    rpc::{
-        self, OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut,
-        Utxo as RpcUtxo,
-    },
+    rpc::{OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut, Utxo as RpcUtxo},
     util::{parse_eth_address, OutPointExt},
 };
 use bitcoin::{
