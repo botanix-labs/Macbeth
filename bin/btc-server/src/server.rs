@@ -1,10 +1,5 @@
-use std::time::{Duration, SystemTime};
-
 use base64::{engine::general_purpose, Engine as _};
-use bitcoin::{
-    absolute::LockTime, hashes::Hash, psbt::Psbt, transaction::Version, Amount, BlockHash,
-    OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-};
+use bitcoin::{hashes::Hash, psbt::Psbt, Amount, BlockHash, ScriptBuf, TxOut};
 use bitcoincore_rpc::{json::EstimateMode, RpcApi};
 use frost_secp256k1_tr as frost;
 use reth_btc_wallet::util::VerifyingKeyExt;
@@ -17,7 +12,8 @@ use crate::{
     pegout_id::PegoutId,
     pegout_scheduler::{PegoutRequest, Tx},
     rpc::{self},
-    util, App,
+    util::{self, get_available_utxos},
+    App,
 };
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
@@ -224,6 +220,17 @@ where
             value: Amount::from_sat(req.amount),
             botanix_height: req.height,
         };
+
+        // do not accept any pending pegouts when there are not available UTXOs and tracked inputs
+        let (available_utxos, tracked_inputs) =
+            get_available_utxos(&self.db).await.map_err(|e| {
+                error!("Failed to get all available utxos. error: {}", e);
+                internal!("Failed to get all available utxos. error: {}", e)
+            })?;
+        if available_utxos.is_empty() && tracked_inputs.is_empty() {
+            error!("Received a pegout request when there are no utxos or pending transactions");
+            return Ok(tonic::Response::new(rpc::Empty {}));
+        }
 
         self.db.store_pending_pegout(&pegout_req)?;
         self.db.flush()?;

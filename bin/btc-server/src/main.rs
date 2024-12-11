@@ -1139,33 +1139,20 @@ mod test {
 
         let spk = random_p2wpkh_script().as_bytes().to_vec();
 
-        let request_1 = Request::new(rpc::NotifyPegoutRequest {
+        // notify about a new pegout
+        let request_1 = rpc::NotifyPegoutRequest {
             pegout_id: pegout_id.as_bytes().to_vec(),
             spk: spk.clone(),
             amount: 100_000, // sats
             height: 1,
-        });
+        };
 
-        app.notify_pegout(request_1).await.expect("valid pegout request");
-
+        // since the db is empty and there are no available utxos or tracked inputs, the pegout
+        // should not be added
+        let response = app.notify_pegout(Request::new(request_1.clone())).await;
+        assert!(response.is_ok());
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
-        assert_eq!(pending_pegouts.len(), 1);
-        let pegout = pending_pegouts[0].clone();
-        assert_eq!(pegout.value, Amount::from_sat(100_000));
-        assert_eq!(pegout.spk.as_bytes().to_vec().clone(), spk);
-        assert_eq!(pegout.id, pegout_id);
-
-        let request_2 = Request::new(rpc::NotifyPegoutRequest {
-            pegout_id: pegout_id.as_bytes().to_vec(),
-            spk: spk.clone(),
-            amount: 100_000, // sats
-            height: 1,
-        });
-
-        // Notifying with the same pegout id shouldn't make a difference
-        app.notify_pegout(request_2).await.expect("valid pegout request");
-        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
-        assert_eq!(pending_pegouts.len(), 1);
+        assert_eq!(pending_pegouts.len(), 0);
 
         // getting psbt should return error as there is no UTXOs to spend
         let request = Request::new(rpc::MakeTxRequest {
@@ -1178,8 +1165,56 @@ mod test {
         assert_eq!(error_response.code(), Code::Internal);
         assert_eq!(
             error_response.message(),
-            "internal error: Failed to make tx: Coin Selection error: Insufficient funds: 0 sat available of 100000 sat needed"
+            "internal error: Failed to make tx: Failed to validate psbt: inputs cannot be 0"
         );
+
+        // now generate some random utxos and save them
+        for _ in 0..3 {
+            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
+            let vout = rng.gen_range(0..u32::MAX);
+            let value = rng.gen_range(1..1_000_000);
+            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+            let script = Script::from_bytes(script_bytes.as_slice());
+
+            let utxo = Utxo::new(
+                OutPoint::new(txid, vout),
+                TxOut { value: Amount::from_sat(value), script_pubkey: script.into() },
+                None,
+            );
+            app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
+        }
+
+        // retry the pegout
+        app.notify_pegout(Request::new(request_1)).await.expect("valid pegout request");
+
+        // assert the pending pegouts
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert_eq!(pending_pegouts.len(), 1);
+        let pegout = pending_pegouts[0].clone();
+        assert_eq!(pegout.value, Amount::from_sat(100_000));
+        assert_eq!(pegout.spk.as_bytes().to_vec().clone(), spk);
+        assert_eq!(pegout.id, pegout_id);
+
+        // prepare another request
+        let request_2 = Request::new(rpc::NotifyPegoutRequest {
+            pegout_id: pegout_id.as_bytes().to_vec(),
+            spk: spk.clone(),
+            amount: 100_000, // sats
+            height: 1,
+        });
+
+        // Notifying with the same pegout id shouldn't make a difference
+        app.notify_pegout(request_2).await.expect("valid pegout request");
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert_eq!(pending_pegouts.len(), 1);
+
+        // getting psbt should return pass as there are now UTXOs to spend
+        let request = Request::new(rpc::MakeTxRequest {
+            signing_session_id: [0u8; 32].to_vec(),
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+        });
+        let response = app.get_psbt(request).await;
+        assert!(response.is_ok());
 
         // Same pegout with different id should add a new pegout
         let mut tx_id = [0u8; 32];
