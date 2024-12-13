@@ -237,6 +237,9 @@ where
     ) -> Result<tonic::Response<rpc::GetPendingPegoutsResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
         let pending_pegouts = self.db.get_pending_pegouts()?;
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
+        }
         let res = tonic::Response::new(rpc::GetPendingPegoutsResponse {
             pending_pegouts: pending_pegouts
                 .into_iter()
@@ -338,6 +341,9 @@ where
 
         debug!("Cord Fee rate: {:?}", fee_rate);
         let pending_pegouts = self.db.get_pending_pegouts()?;
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
+        }
         let outputs = pending_pegouts
             .iter()
             .map(|p| (TxOut { value: p.value, script_pubkey: p.spk.clone() }, Some(p.id)))
@@ -686,7 +692,7 @@ where
         let mut psbt = Psbt::deserialize(req.psbt.as_slice())
             .map_err(|e| internal!("Failed to deserialize psbt: {}", e))?;
         let _partial_signature = self
-            .get_round2_signing_package(&mut psbt)
+            .get_round2_signing_package(&mut psbt, &signing_session_id)
             .await
             .map_err(|e| internal!("Failed to get round2 signing package: {}", e))?;
         let psbt_bytes = hex::decode(psbt.serialize_hex())

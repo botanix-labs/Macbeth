@@ -314,8 +314,7 @@ where
         checkpoint: BlockHash,
     ) -> Result<(), pegout_scheduler::SyncError> {
         let mut lock = self.pegout_scheduler.lock().await;
-
-        lock.sync_until(&self.bitcoind_client, checkpoint)?;
+        lock.sync_until(&self.bitcoind_client, checkpoint, self.telemetry.clone())?;
         self.db.store_pegout_mgr_finalized_block(lock.last_finalized())?;
         self.db.update_utxo_merkle_root()?;
         self.db.flush()?;

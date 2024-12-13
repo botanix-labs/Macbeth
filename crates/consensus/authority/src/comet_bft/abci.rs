@@ -57,6 +57,7 @@ use crate::{
         SendForkChoiceUpdateError::{EngineError, InvalidPayload, RecvError},
     },
     excecution_utils::authority_execution_utils::build_and_execute,
+    metrics::AuthorityMetrics,
     utils::{call_notify_pegin, call_notify_pegout},
     AuthorityConsensus, Storage,
 };
@@ -80,6 +81,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
     is_fed_node: bool,
+    metrics: Arc<AuthorityMetrics>,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -103,6 +105,7 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
         is_fed_node: bool,
+        metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         Self {
             storage,
@@ -113,6 +116,7 @@ where
             to_engine,
             cbft_rpc_client_factory,
             is_fed_node,
+            metrics,
         }
     }
 
@@ -135,6 +139,7 @@ where
             self.cbft_rpc_client_factory.clone(),
             self.authority_consensus.clone(),
             self.is_fed_node,
+            self.metrics.clone(),
         );
         let mut abci_driver = ABCIDriver::new(
             self.storage.clone(),
@@ -200,6 +205,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
     is_fed_node: bool,
+    metrics: Arc<AuthorityMetrics>,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -224,6 +230,7 @@ where
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         authority_consensus: AuthorityConsensus,
         is_fed_node: bool,
+        metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         Self {
             storage,
@@ -236,6 +243,7 @@ where
             cbft_rpc_provider,
             authority_consensus,
             is_fed_node,
+            metrics,
         }
     }
 
@@ -428,7 +436,7 @@ where
                         // insert non-deterministic data tx at index 0 so historical sync will pass
                         // verification
                         txs.insert(0, non_deterministic_data_bytes);
-
+                        self.metrics.commet_prepared_proposals.increment(1);
                         ResponsePrepareProposal { txs }
                     }
                 }
@@ -500,6 +508,7 @@ where
             }
         }
 
+        self.metrics.commet_checked_txs.increment(1);
         ResponseCheckTx {
             code: error.0,
             log: error.1.to_string(),
@@ -628,7 +637,7 @@ where
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         }
-
+        self.metrics.commet_processed_proposals.increment(1);
         ResponseProcessProposal { status: VERIFY_ACCEPTED }
     }
 
@@ -732,6 +741,7 @@ where
         }
 
         let block_hash = sealed_block_with_peg.block().hash();
+        self.metrics.commet_finalzied_blocks.increment(1);
         ResponseFinalizeBlock {
             events: vec![],
             tx_results: exec_results,
@@ -761,6 +771,7 @@ where
 
         rx.blocking_recv().expect("to receive");
         info!("Block finalized: {:?}", cbft_block_hash);
+        self.metrics.commet_committed_blocks.increment(1);
 
         ResponseCommit::default()
     }
@@ -1048,6 +1059,7 @@ mod tests {
             cometbft_rpc_factory,
             AuthorityConsensus::new(spec),
             false,
+            Arc::new(AuthorityMetrics::default()),
         );
 
         abci_client

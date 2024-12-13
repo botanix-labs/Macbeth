@@ -7,6 +7,7 @@
 /// - finalized tx: a transaction that is deeply confirmed.
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -15,6 +16,7 @@ use bitcoin::{
     ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
 };
 use bitcoincore_rpc::RpcApi;
+use btcserverlib::{telemetry::Telemetry, update_telemetry_error};
 use reth_btc_wallet::{
     address::generate_taproot_change_scriptpubkey,
     util::{VerifyingKeyExt, VerifyingKeyExtError},
@@ -588,6 +590,7 @@ impl PegoutScheduler {
         &mut self,
         bitcoind: &impl RpcApi,
         checkpoint: BlockHash,
+        telemetry: Option<Arc<Telemetry>>,
     ) -> Result<(), SyncError> {
         info!(
             "Syncing pegout scheduler: last={}:{}, cp={}:{}",
@@ -601,6 +604,7 @@ impl PegoutScheduler {
         // some of the blocks we already saw might not be in the node's chain.
         // To avoid errors related to this, we'll just ask called to wait.
         if is_syncing(bitcoind)? {
+            update_telemetry_error!(telemetry, SyncError::NodeNotSynced);
             return Err(SyncError::NodeNotSynced);
         }
 
@@ -620,6 +624,7 @@ impl PegoutScheduler {
                     if self.last_blocks.len() == 1 {
                         // We rolled back all the blocks we had, so a reorg longer than
                         // our conf_window has taken place. We can't do anything at this point.
+                        update_telemetry_error!(telemetry, SyncError::DeepReorg);
                         return Err(SyncError::DeepReorg);
                     }
                     // Our tip got reorged out, eliminate it.
@@ -688,6 +693,7 @@ impl PegoutScheduler {
                     last, cp, tip
                 );
             }
+            update_telemetry_error!(telemetry, SyncError::CheckPointNotReached);
             Err(SyncError::CheckPointNotReached)
         }
     }

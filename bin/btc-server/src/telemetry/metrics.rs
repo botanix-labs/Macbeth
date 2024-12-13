@@ -2,8 +2,15 @@ use prometheus::{
     register_histogram_vec, register_int_counter_vec, register_int_gauge_vec, HistogramVec,
     IntCounterVec, IntGaugeVec, Registry,
 };
-use std::sync::Arc;
 
+#[macro_export]
+macro_rules! update_telemetry_error {
+    ($telemetry:expr, $error:expr) => {
+        if let Some(telemetry) = $telemetry {
+            telemetry.update_pegout_scheduler_error_metrics(&$error.to_string());
+        }
+    };
+}
 #[derive(Clone, Debug)]
 pub struct BtcServerMetrics {
     pub registry: Registry,
@@ -20,7 +27,7 @@ pub struct BtcServerMetrics {
     pub round2_signing_latency_histogram: HistogramVec,
     pub round1_signing_package_size_histogram: HistogramVec,
     pub round2_signing_package_size_histogram: HistogramVec,
-    pub error_rates: IntCounterVec,
+    pub signing_error_rates: IntCounterVec,
     //dkg
     pub total_received_round1_dkg_packages: IntCounterVec,
     pub total_received_round2_dkg_packages: IntCounterVec,
@@ -30,6 +37,10 @@ pub struct BtcServerMetrics {
     pub round2_dkg_latency_histogram: HistogramVec,
     pub round1_dkg_package_size_histogram: HistogramVec,
     pub round2_dkg_package_size_histogram: HistogramVec,
+    pub dkg_error_rates: IntCounterVec,
+    // pegout scheduler
+    pub pegout_scheduler_error_rates: IntCounterVec,
+    pub pending_pegouts: IntGaugeVec,
 }
 
 impl Default for BtcServerMetrics {
@@ -134,9 +145,9 @@ impl BtcServerMetrics {
         )
         .expect("metric must be created");
 
-        let error_rates = register_int_counter_vec!(
-            format!("{}error_rates", metric_prefix),
-            "A metric counting errors or failures during message processing",
+        let signing_error_rates = register_int_counter_vec!(
+            format!("{}signing_error_rates", metric_prefix),
+            "A metric counting errors or failures during signing message processing",
             &["btc_chain", "self_id", "signing_session_id", "error_type"],
         )
         .expect("metric must be created");
@@ -205,6 +216,27 @@ impl BtcServerMetrics {
         )
         .expect("metric must be created");
 
+        let dkg_error_rates = register_int_counter_vec!(
+            format!("{}dkg_error_rates", metric_prefix),
+            "A metric counting errors or failures during dkg message processing",
+            &["btc_chain", "self_id", "error_type"],
+        )
+        .expect("metric must be created");
+
+        let pegout_scheduler_error_rates = register_int_counter_vec!(
+            format!("{}pegout_scheduler_error_rates", metric_prefix),
+            "A metric counting errors or failures during the pegout scheduler processing",
+            &[],
+        )
+        .expect("metric must be created");
+
+        let pending_pegouts = register_int_gauge_vec!(
+            format!("{}pending_pegouts", metric_prefix),
+            "A metric counting the number of pending pegouts",
+            &[],
+        )
+        .expect("metric must be created");
+
         // ====================================================================
         let registry = Registry::new_custom(prefix, None).expect("registry to be created");
         // signing
@@ -220,7 +252,7 @@ impl BtcServerMetrics {
         registry.register(Box::new(round2_signing_latency_histogram.clone()))?;
         registry.register(Box::new(round1_signing_package_size_histogram.clone()))?;
         registry.register(Box::new(round2_signing_package_size_histogram.clone()))?;
-        registry.register(Box::new(error_rates.clone()))?;
+        registry.register(Box::new(signing_error_rates.clone()))?;
 
         // dkg
         registry.register(Box::new(total_received_round1_dkg_packages.clone()))?;
@@ -231,6 +263,11 @@ impl BtcServerMetrics {
         registry.register(Box::new(round2_dkg_latency_histogram.clone()))?;
         registry.register(Box::new(round1_dkg_package_size_histogram.clone()))?;
         registry.register(Box::new(round2_dkg_package_size_histogram.clone()))?;
+        registry.register(Box::new(dkg_error_rates.clone()))?;
+
+        // pegouts
+        registry.register(Box::new(pegout_scheduler_error_rates.clone()))?;
+        registry.register(Box::new(pending_pegouts.clone()))?;
 
         Ok(Self {
             registry,
@@ -246,7 +283,7 @@ impl BtcServerMetrics {
             round2_signing_latency_histogram,
             round1_signing_package_size_histogram,
             round2_signing_package_size_histogram,
-            error_rates,
+            signing_error_rates,
 
             total_received_round1_dkg_packages,
             total_received_round2_dkg_packages,
@@ -256,6 +293,10 @@ impl BtcServerMetrics {
             round2_dkg_latency_histogram,
             round1_dkg_package_size_histogram,
             round2_dkg_package_size_histogram,
+            dkg_error_rates,
+
+            pegout_scheduler_error_rates,
+            pending_pegouts,
         })
     }
 }
@@ -404,7 +445,10 @@ mod tests {
     fn test_error_rates_metric() {
         let metrics = BtcServerMetrics::random();
 
-        metrics.error_rates.with_label_values(&["regtest", "4", "xyz", "write_error"]).inc_by(1);
+        metrics
+            .signing_error_rates
+            .with_label_values(&["regtest", "4", "xyz", "write_error"])
+            .inc_by(1);
 
         let metric_families = gather();
         let mut buffer = Vec::new();
@@ -413,7 +457,7 @@ mod tests {
 
         let output = String::from_utf8(buffer.clone()).unwrap();
 
-        assert!(output.contains("error_rates"));
+        assert!(output.contains("signing_error_rates"));
         assert!(output.contains("regtest"));
         assert!(output.contains("4"));
         assert!(output.contains("xyz"));

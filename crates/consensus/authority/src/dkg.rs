@@ -12,11 +12,13 @@ use reth_rpc_types::PeerId;
 use std::{
     collections::{BTreeMap, HashMap},
     str::FromStr,
+    sync::Arc,
 };
 use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, info, warn};
 
 use crate::{
+    metrics::AuthorityMetrics,
     utils::{deserialize_frost_peer_id, FrostParseError},
     Storage,
 };
@@ -90,6 +92,7 @@ pub(crate) struct DKGStateMachine<EF, BF, DB, ToFrostMan> {
     // coordiantor only fields
     // Key frost id, values are round 1
     round1_packages: BTreeMap<Vec<u8>, Vec<u8>>,
+    metrics: Arc<AuthorityMetrics>,
 }
 
 impl<EF, BF, DB, ToFrostMan> DKGStateMachine<EF, BF, DB, ToFrostMan>
@@ -103,6 +106,7 @@ where
         storage: Storage<EF, BF, DB>,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
+        metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         let personal_frost_identifier: frost::Identifier =
             authority_index_to_frost_identifier(frost_config.authority_index as u16);
@@ -125,6 +129,7 @@ where
             frost_config,
             round1_packages: BTreeMap::new(),
             frost_id_map,
+            metrics,
         }
     }
 
@@ -483,6 +488,7 @@ where
         if let Err(e) = self.add_round1_dkg_package(identifier, payload).await {
             error!(target: "consensus::authority::dkg::process_round1", "Error adding round 1 dkg package {:?}", e);
         }
+        self.metrics.received_round1_dkg_packages.increment(1);
         info!(target: "consensus::authority::dkg::process_round1","package added successfully");
         // Check if we are ready to progress to round 2
         let dkg2_package = match self.get_round2_dkg_package().await {
@@ -523,6 +529,7 @@ where
             // We dont want to fail the whole dkg process if we can't add another's round2
             return Ok(());
         }
+        self.metrics.received_round2_dkg_packages.increment(1);
         info!(target: "consensus::authority::dkg::process_round2", "packages added successfully");
         // By adding this round2 dkg package we could be ready to progress to round 3
         // Check first before gossiping and then gossip regardless
@@ -560,6 +567,7 @@ where
         let mut storage = self.storage.write().await;
         storage.aggregate_public_key = self.public_key_package;
         drop(storage);
+        self.metrics.created_agg_pub_keys.increment(1);
         info!(target: "consensus::authority::dkg::process_round3", "Round 3 finished successfully");
         Ok(())
     }

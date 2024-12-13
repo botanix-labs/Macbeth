@@ -5,7 +5,7 @@ use std::{
     time::Instant,
 };
 
-use crate::Storage;
+use crate::{metrics::AuthorityMetrics, Storage};
 use reth_network::{
     frost::{
         manager::{FrostCommand, ToFrostManager},
@@ -33,6 +33,8 @@ pub struct HealthcheckTask<EF, BF, DB, ToFrostMan> {
     pub(crate) task_executor: TaskExecutor,
     /// Tracker list for peers healthcheck
     pub(crate) peers_healthcheck_tracker: Arc<RwLock<HashMap<PeerId, Instant>>>,
+    /// Metrics
+    pub(crate) metrics: Arc<AuthorityMetrics>,
 }
 
 impl<EF, BF, DB, ToFrostMan> HealthcheckTask<EF, BF, DB, ToFrostMan>
@@ -47,6 +49,7 @@ where
         frost_handle: ToFrostMan,
         storage: Storage<EF, BF, DB>,
         task_executor: TaskExecutor,
+        metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         Self {
             network_handle,
@@ -54,6 +57,7 @@ where
             storage,
             task_executor,
             peers_healthcheck_tracker: Default::default(),
+            metrics,
         }
     }
 

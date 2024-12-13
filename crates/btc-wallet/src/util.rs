@@ -32,7 +32,7 @@ pub trait VerifyingKeyExt: Into<frost::VerifyingKey> {
     fn to_secp_pk(self) -> Result<bitcoin::secp256k1::PublicKey, VerifyingKeyExtError> {
         let vk: frost::VerifyingKey = self.into();
         let pk = bitcoin::secp256k1::PublicKey::from_slice(vk.serialize().as_slice())
-            .map_err(|e| VerifyingKeyExtError::FailedToConvertToSecpPk(e))?;
+            .map_err(VerifyingKeyExtError::FailedToConvertToSecpPk)?;
 
         Ok(pk)
     }

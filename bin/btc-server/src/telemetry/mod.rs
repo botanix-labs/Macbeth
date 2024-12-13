@@ -1,7 +1,7 @@
 mod metrics;
 mod system;
 
-use log::{error, info};
+use log::error;
 use metrics::BtcServerMetrics;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -176,25 +176,40 @@ impl Telemetry {
         });
     }
 
-    // pub fn update_error_metrics(
-    //     &self,
-    //     subject: &str,
-    //     chain_id: &ChainId,
-    //     block_producer: &Address,
-    //     error: &str,
-    // ) {
-    //     self.maybe_use_metrics(|metrics| {
-    //         metrics
-    //             .error_rates
-    //             .with_label_values(&[
-    //                 &chain_id.to_string(),
-    //                 &block_producer.to_string(),
-    //                 subject,
-    //                 error,
-    //             ])
-    //             .inc();
-    //     });
-    // }
+    pub fn update_dkg_error_metrics(&self, btc_chain: bitcoin::Network, self_id: u16, error: &str) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .dkg_error_rates
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), error])
+                .inc();
+        });
+    }
+
+    pub fn update_signing_error_metrics(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        session_id: Option<[u8; 32]>,
+        error: &str,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .signing_error_rates
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &session_id.map(|s| hex::encode(s)).unwrap_or_default(),
+                    error,
+                ])
+                .inc();
+        });
+    }
+
+    pub fn update_pegout_scheduler_error_metrics(&self, error: &str) {
+        self.maybe_use_metrics(|metrics| {
+            metrics.pegout_scheduler_error_rates.with_label_values(&[error]).inc();
+        });
+    }
 
     pub fn record_aborted_signing_sessions(&self, btc_chain: bitcoin::Network, self_id: u16) {
         self.maybe_use_metrics(|metrics| {
@@ -211,6 +226,12 @@ impl Telemetry {
                 .total_finalized_signing_sessions
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
                 .inc();
+        });
+    }
+
+    pub fn update_pending_pegouts(&self, pegouts: i64) {
+        self.maybe_use_metrics(|metrics| {
+            metrics.pending_pegouts.with_label_values(&[]).set(pegouts);
         });
     }
 
