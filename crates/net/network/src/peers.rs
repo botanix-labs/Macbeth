@@ -719,7 +719,7 @@ impl PeersManager {
             // was disconnected, this prevents the case where the session is scheduled for
             // disconnect but the node is immediately rediscovered, See also
             // [`Self::on_disconnected()`]
-            peer.remove_after_disconnect = true;
+            peer.remove_after_disconnect = !self.trusted_peer_ids.contains(&peer_id);
             peer.state.disconnect();
             self.peers.insert(peer_id, peer);
             self.queued_actions.push_back(PeerAction::Disconnect {
@@ -2220,6 +2220,23 @@ mod tests {
 
         peers.on_active_session_gracefully_closed(peer_id);
         assert!(!peers.peers.contains_key(&peer_id))
+    }
+
+    #[tokio::test]
+    async fn test_remove_incoming_after_disconnect_trusted_peer() {
+        let peer_id = PeerId::random();
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 1, 2)), 8009);
+        let mut peers = PeersManager::default();
+
+        peers.add_trusted_peer(peer_id, PeerAddr::from_tcp(addr));
+        peers.on_incoming_pending_session(addr.ip()).unwrap();
+        peers.on_incoming_session_established(peer_id, addr);
+        let peer = peers.peers.get(&peer_id).unwrap();
+        assert_eq!(peer.state, PeerConnectionState::In);
+        assert!(!peer.remove_after_disconnect);
+
+        peers.on_active_session_gracefully_closed(peer_id);
+        assert!(peers.peers.contains_key(&peer_id))
     }
 
     #[tokio::test]
