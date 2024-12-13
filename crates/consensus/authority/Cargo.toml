@@ -10,6 +10,7 @@ exclude = { workspace = true }
 description = "A PoA consensus engine"
 
 [dependencies]
+anyhow = "1.0.94"
 
 # ethereum
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
