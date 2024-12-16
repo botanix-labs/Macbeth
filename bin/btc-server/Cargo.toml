@@ -27,7 +27,7 @@ derive_more = { version = "1.0", features = ["full"] }
 displaydoc = "0.2"
 dotenvy = { version = "0.15.7" }
 env_logger = "0.11.3"
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", rev = "111ec33b5f2a3f7f4ec8f3fb9848f7bc74c77abd", features = [
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", rev = "fe6dad1d46c0515169e117012759ae18b4aaf16a", features = [
     "serde",
     "serialization",
 ] }

@@ -498,7 +498,10 @@ where
             debug!("Unable to get public key: {}", e);
             tonic::Status::internal(format!("internal error: {}", e))
         })?;
-        let pk = hex::encode(pk.serialize());
+        let pk = hex::encode(pk.serialize().map_err(|e| {
+            error!("Failed to serialize public key: {}", e);
+            badarg!("Failed to serialize public key: {}", e)
+        })?);
 
         return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: pk }));
     }

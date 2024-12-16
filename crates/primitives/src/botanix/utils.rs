@@ -1,6 +1,7 @@
 use bitcoin::{key::TweakedPublicKey, ScriptBuf};
 use ethabi::ethereum_types::U256;
-use frost_secp256k1_tr as frost;
+use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
+use reth_btc_wallet::psbt::EthAddress;
 
 /// One satoshi expressed in wei.
 ///
@@ -50,31 +51,32 @@ pub trait AmountExt: Copy + From<bitcoin::Amount> + Into<bitcoin::Amount> {
 impl AmountExt for bitcoin::Amount {}
 
 /// Error type for key operations.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum KeyError {
     /// The key is out of range.
+    #[error("The key is out of range")]
     OutOfRange,
     /// The key is invalid.
-    SecpError,
-}
-
-impl From<secp256k1::Error> for KeyError {
-    fn from(_err: secp256k1::Error) -> Self {
-        Self::SecpError
-    }
+    #[error("The key is invalid: {0}")]
+    SecpError(#[from] secp256k1::Error),
+    /// Frost error
+    #[error("Frost error: {0}")]
+    FrostError(#[from] frost::Error),
 }
 
 // TODO write tests for this
 /// Generate a tweaked public key from a given public key and tweak.
 pub fn tweak_frost_verifying_key(
     pk: &secp256k1::PublicKey,
-    tweak: &[u8; 20],
+    tweak: &EthAddress,
 ) -> Result<secp256k1::PublicKey, KeyError> {
+    let signing_parameters =
+        SigningParameters { tapscript_merkle_root: None, additional_tweak: Some(tweak.to_vec()) };
     let pk_slice: [u8; 33] = pk.serialize();
-    // TODO remove unwraps
-    let vk = frost::VerifyingKey::deserialize(pk_slice).unwrap().get_tweaked(Some(tweak));
+    let vk = frost::VerifyingKey::deserialize(&pk_slice).map_err(KeyError::from)?;
+    let tweaked_vk = vk.tweak(&signing_parameters);
+    let tweaked_pk = secp256k1::PublicKey::from_slice(&tweaked_vk.serialize()?)?;
 
-    let tweaked_pk = secp256k1::PublicKey::from_slice(&vk.serialize()).unwrap();
     Ok(tweaked_pk)
 }
 

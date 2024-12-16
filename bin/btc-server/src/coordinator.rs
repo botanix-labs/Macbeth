@@ -10,9 +10,9 @@ use bitcoin::{
 };
 use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
-use frost_secp256k1_tr as frost;
+use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use reth_btc_wallet::{
-    psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
+    psbt::{EthAddress, PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     util::{VerifyingKeyExt, VerifyingKeyExtError},
     TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
@@ -168,8 +168,13 @@ where
 
     pub(crate) fn get_gateway_address(
         &self,
-        eth_tweak: &[u8; 20],
+        eth_tweak: &EthAddress,
     ) -> Result<(PublicKey, PublicKey, Address), CoordinatorError> {
+        // TODO(armins) tapscript merkle root will need to be updated when we add tapleaves
+        let signing_parameters = SigningParameters {
+            tapscript_merkle_root: None,
+            additional_tweak: Some(eth_tweak.to_vec()),
+        };
         // try to get pk package from db in case we already did dkg round 3
         if let Some(pk_package) = self.db.get_public_key_package()? {
             let agg_key = pk_package
@@ -177,8 +182,8 @@ where
                 .to_secp_pk()
                 .map_err(CoordinatorError::FailedToConvertVerifyingKeyToSecpPk)?;
             let tweaked_key = pk_package
+                .tweak(&signing_parameters)
                 .verifying_key()
-                .get_tweaked(Some(eth_tweak.as_slice()))
                 .to_secp_pk()
                 .map_err(CoordinatorError::FailedToConvertVerifyingKeyToSecpPk)?;
             let gateway_address =
@@ -357,28 +362,27 @@ where
         for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
             let signing_package = signing_packages
                 .get(index)
-                .ok_or(CoordinatorError::MissingSigningPackageAtIndex(index))?
-                .clone();
+                .ok_or(CoordinatorError::MissingSigningPackageAtIndex(index))?;
             let partial_sig = psbt_input.all_partial_signatures();
-            let agg_sig = frost::aggregate(&signing_package, &partial_sig, &pk_package)?;
+            let eth_address_tweak = psbt_input.eth_address();
+            let signing_parameters = SigningParameters {
+                tapscript_merkle_root: None,
+                additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
+            };
+            let agg_sig = frost::aggregate_with_tweak(
+                &signing_package,
+                &partial_sig,
+                &pk_package,
+                &signing_parameters,
+            )?;
 
-            // Skipping first byte which is encoding the parity of the y cord of R
-            // We only use x-only elements. So we can skip this byte. FROST library only produces
-            // x-only keys / points
-            let secp_sig =
-                bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()[1..])
-                    .map_err(|_| CoordinatorError::FailedToSerializeSignature)?;
-
+            let effective_key = pk_package.clone().tweak(&signing_parameters);
             // Verify signature -- redundant check finalize psbt already checks this
-            if let Some(e) = psbt_input.eth_address() {
-                pk_package.verifying_key().verify(
-                    signing_package.message(),
-                    &agg_sig,
-                    Some(e.clone().as_slice()),
-                )?;
-            } else {
-                pk_package.verifying_key().verify(signing_package.message(), &agg_sig, None)?;
-            }
+            effective_key.verifying_key().verify(signing_package.message(), &agg_sig)?;
+
+            let secp_sig =
+                bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()?)?;
+
             // Note: we don't need to add the internal key here for a key spend path
             // as the output key is derived from the scriptpubkey
             let hash_ty = bitcoin::sighash::TapSighashType::All;
