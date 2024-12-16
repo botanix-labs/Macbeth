@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use btcserverlib::extended_client::BtcServerExtendedApi;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -75,11 +75,11 @@ const VERIFY_REJECT: i32 = 2;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone, Debug)]
-pub struct ABCIClientBuilder<EF, BF, DB> {
+pub struct ABCIClientBuilder<EF, BF, DB, BtcServerClient> {
     storage: Storage<EF, BF, DB>,
     bitcoin_checkpoint: BitcoinCheckpoint,
     network_handle: NetworkHandle,
-    btc_server: Option<BtcServerExtendedClient>,
+    btc_server: Option<BtcServerClient>,
     authority_consensus: AuthorityConsensus,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -87,7 +87,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
+impl<EF, BF, DB, BtcServerClient> ABCIClientBuilder<EF, BF, DB, BtcServerClient>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -97,13 +97,14 @@ where
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
+    BtcServerClient: BtcServerExtendedApi + Clone + Sync + Send + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         network_handle: NetworkHandle,
-        btc_server: Option<BtcServerExtendedClient>,
+        btc_server: Option<BtcServerClient>,
         authority_consensus: AuthorityConsensus,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -795,18 +796,18 @@ enum ABCIDriverMessage {
 // * Sending pegins / pegouts to the btc server
 // * Updating the [ExtraDataHeader] with the block witnesses
 #[allow(dead_code)]
-pub(crate) struct ABCIDriver<EF, BF, DB> {
+pub(crate) struct ABCIDriver<EF, BF, DB, BtcServerClient> {
     storage: Storage<EF, BF, DB>,
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
-    btc_server: Option<BtcServerExtendedClient>,
+    btc_server: Option<BtcServerClient>,
     network_handle: NetworkHandle,
     driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     is_fed_node: bool,
 }
 
-impl<EF, BF, DB> ABCIDriver<EF, BF, DB>
+impl<EF, BF, DB, BtcServerClient> ABCIDriver<EF, BF, DB, BtcServerClient>
 where
     DB: BlockReaderIdExt
         + StateProviderFactory
@@ -816,13 +817,14 @@ where
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
+    BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     fn new(
         storage: Storage<EF, BF, DB>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         authority_consensus: AuthorityConsensus,
-        btc_server: Option<BtcServerExtendedClient>,
+        btc_server: Option<BtcServerClient>,
         network_handle: NetworkHandle,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,

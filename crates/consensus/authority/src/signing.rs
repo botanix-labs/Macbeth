@@ -6,7 +6,7 @@ use crate::{
         FrostParseError,
     },
 };
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
 use frost_secp256k1_tr as frost;
 
@@ -117,9 +117,9 @@ pub(crate) struct SigningSession {
 
 /// A state machine for transitioning between different signing states
 #[derive(Debug)]
-pub(crate) struct SigningStateMachine<ToFrostMan, Source> {
+pub(crate) struct SigningStateMachine<ToFrostMan, Source, BtcServerClient> {
     chain_spec: Arc<ChainSpec>,
-    btc_client: BtcServerExtendedClient,
+    btc_client: BtcServerClient,
     frost_handle: ToFrostMan,
     signing_states: Arc<RwLock<HashMap<[u8; 32], SigningSession>>>,
     personal_frost_identifier: frost::Identifier,
@@ -128,15 +128,16 @@ pub(crate) struct SigningStateMachine<ToFrostMan, Source> {
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<ToFrostMan, Source> SigningStateMachine<ToFrostMan, Source>
+impl<ToFrostMan, Source, BtcServerClient> SigningStateMachine<ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     Source: RandomSource,
+    BtcServerClient: BtcServerExtendedApi + Clone,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
-        btc_client: BtcServerExtendedClient,
+        btc_client: BtcServerClient,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
         random_source_provider: Source,
@@ -239,10 +240,11 @@ where
     }
 }
 
-impl<ToFrostMan, Source> SigningStateMachine<ToFrostMan, Source>
+impl<ToFrostMan, Source, BtcServerClient> SigningStateMachine<ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     Source: RandomSource,
+    BtcServerClient: BtcServerExtendedApi + Clone,
 {
     async fn get_round1_signing_package(
         &mut self,

@@ -2,7 +2,7 @@
 
 use bitcoin::hashes::Hash;
 use bitcoincore_rpc::RpcApi;
-use btcserverlib::extended_client::GrpcClientFactory;
+use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory};
 use clap::{value_parser, Parser};
 use client::Empty;
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
@@ -797,7 +797,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             RandomSourceProvider::new(),
             canon_state_notification_receiver,
         ) {
-            Ok(consensus) => consensus.build().await,
+            Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
             Err(e) => {
                 return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
             }

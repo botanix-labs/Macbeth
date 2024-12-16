@@ -1,10 +1,7 @@
 use crate::{
-    comet_bft::abci::ABCIClientBuilder, compressor::Compressor, frost_task::FrostTask,
-    healthcheck_task::HealthcheckTask, metrics::AuthorityMetrics,
-    random_source_provider::RandomSource, wallet_state_sync::WalletStateSyncEngine,
-    AuthorityConsensus, Storage,
+    comet_bft::abci::ABCIClientBuilder, compressor::Compressor, frost_task::FrostTask, healthcheck_task::HealthcheckTask, metrics::AuthorityMetrics, random_source_provider::RandomSource, wallet_state_sync::WalletStateSyncEngine, AuthorityConsensus, Storage
 };
-use btcserverlib::extended_client::GrpcClientFactory;
+use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory};
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
@@ -204,15 +201,19 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub async fn build(
+    pub async fn build<BtcServerClient>(
         self,
     ) -> (
         AuthorityConsensus,
-        Option<FrostTask<EF, BF, DB, ToFrostMan, Source>>,
+        Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
         Option<HealthcheckTask<EF, BF, DB, ToFrostMan>>,
-        Option<ABCIClientBuilder<EF, BF, DB>>,
-        Option<WalletStateSyncEngine<EF, BF, DB, ToFrostMan>>,
-    ) {
+        Option<ABCIClientBuilder<EF, BF, DB, BtcServerClient>>,
+        Option<WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>>,
+    )
+    where
+        BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
+        BtcServerExtendedClient: Into<BtcServerClient>,
+    {
         let Self {
             btc_server_factory,
             consensus,
@@ -238,14 +239,15 @@ where
         let chain_spec = storage.chain_spec.clone();
         let compressor = Compressor::new();
 
-        let btc_server_client = async {
+        let btc_server_client: Option<BtcServerClient> = async {
             if is_fed_node {
                 Some(
                     btc_server_factory
                         .expect("btc_server_factory is available")
                         .build_and_connect()
                         .await
-                        .expect("Failed to build and connect to btc server"),
+                        .expect("Failed to build and connect to btc server")
+                        .into()
                 )
             } else {
                 None
