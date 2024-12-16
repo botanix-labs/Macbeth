@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: 
       - main
-    types: [opened, closed]
+    types: [opened]
 
 jobs:
   build_poa_node:
