@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    compressor::{ProstError, ProstMessageSerdelizer},
     dkg::DKGStateMachine,
     metrics::AuthorityMetrics,
+    prost_parser::{ProstError, ProstMessageSerdelizer},
     random_source_provider::RandomSource,
     signing::SigningStateMachine,
     utils::{deserialize_frost_peer_id, validate_psbt_by_ids},

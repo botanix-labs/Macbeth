@@ -89,7 +89,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::compressor::ProstMessageSerdelizer;
+    use crate::prost_parser::ProstMessageSerdelizer;
     use bitcoin::{hashes::Hash, Txid};
     use client::{GetAllUtxosResponse, TxOut, Utxo};
     use rand::{thread_rng, Rng};

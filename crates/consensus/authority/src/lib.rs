@@ -46,11 +46,11 @@ mod builder;
 pub mod comet_bft;
 
 pub use comet_bft::light_client::LightCBFTClientBuilder;
-mod compressor;
 mod dkg;
 mod excecution_utils;
 mod frost_task;
 mod healthcheck_task;
+mod prost_parser;
 mod signing;
 pub mod snapshot_manager;
 mod snapshots;

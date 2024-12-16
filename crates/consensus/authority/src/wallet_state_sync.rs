@@ -19,7 +19,7 @@ use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-    compressor::{ProstError, ProstMessageSerdelizer},
+    prost_parser::{ProstError, ProstMessageSerdelizer},
     utils::UtxoMerkelRootError,
     Storage,
 };

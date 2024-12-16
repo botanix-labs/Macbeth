@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod accounts;
 pub mod blocks;
+pub mod chunks;
 pub mod client_version;
 pub mod integer_list;
 pub mod sharded_key;
@@ -20,6 +21,7 @@ pub mod storage_sharded_key;
 
 pub use accounts::*;
 pub use blocks::*;
+pub use chunks::*;
 pub use client_version::ClientVersion;
 pub use reth_db_models::{AccountBeforeTx, StoredBlockBodyIndices};
 pub use sharded_key::ShardedKey;
@@ -205,6 +207,7 @@ impl_compression_for_compact!(
     SealedHeader,
     Header,
     Account,
+    Snapshot,
     Log,
     Receipt,
     TxType,

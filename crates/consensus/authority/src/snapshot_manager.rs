@@ -102,14 +102,18 @@ where
                 ABCIDriverMessage::CommitBlock((sealed_block_with_peg, cbft_hash, tx)) => {
                     tx.send(()).expect("to send");
 
-                    let x = sealed_block_with_peg.block();
+                    let sealed_block = sealed_block_with_peg.block();
 
-                    // let tracked_txs_decompressed =
-                    // self.compressor.serialize_and_compress(&tracked_txs_compressed).await.
-                    // map_err(|e| {     error!(target:
-                    // "consensus::authority::sync_wallet_state", "Failed to decompress tracked txs
-                    // {:?}", e);     SnapshotManagerError::CompressorError(e)
-                    // })?;
+                    let serialized_compressed_sealed_block = self
+                        .compressor
+                        .encode(sealed_block)
+                        .await
+                        .map_err(|e| {
+                            error!(target:"consensus::authority::snapshot_manager", "Failed to serialize and compress sealed block {:?}", e);
+                            SnapshotManagerError::DataParser(e)
+                        })?;
+
+                    // TODO: save into db
                 }
                 ABCIDriverMessage::Exit => {
                     debug!(target: "consensus::authority::snapshot_manager::run", "exiting");

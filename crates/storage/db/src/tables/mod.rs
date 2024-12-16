@@ -23,6 +23,7 @@ use reth_db_api::{
     models::{
         accounts::BlockNumberAddress,
         blocks::{HeaderHash, StoredBlockOmmers},
+        chunks::{ChunkId, Snapshot, SnapshotChunk, SnapshotChunkIndex, SnapshotId},
         client_version::ClientVersion,
         storage_sharded_key::StorageShardedKey,
         AccountBeforeTx, CompactU256, ShardedKey, StoredBlockBodyIndices, StoredBlockWithdrawals,
@@ -306,6 +307,15 @@ tables! {
 
     /// Canonical only Stores transaction receipts.
     table Receipts<Key = TxNumber, Value = Receipt>;
+
+    /// Store snapshot id to snapshot data.
+    table Snapshots<Key = SnapshotId, Value = Snapshot>;
+
+    /// Stores the uncles/ommers of the block.
+    table BlockSnapshots<Key = BlockNumber, Value = SnapshotId>;
+
+    /// Stores the chunk to Block ids
+    table ChunkBlocks<Key = ChunkId, Value = BlockNumber>;
 
     /// Stores all smart contract bytecodes.
     /// There will be multiple accounts that have same bytecode
