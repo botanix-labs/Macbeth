@@ -830,9 +830,9 @@ mod util_tests {
 
         // Lets add two signatures and use min_signers = 1
         let sig_share1 =
-            frost::round2::SignatureShare::deserialize([1u8; 32]).expect("valid sig share");
+            frost::round2::SignatureShare::deserialize(&[1u8; 32]).expect("valid sig share");
         let sig_share2 =
-            frost::round2::SignatureShare::deserialize([2u8; 32]).expect("valid sig share");
+            frost::round2::SignatureShare::deserialize(&[2u8; 32]).expect("valid sig share");
 
         psbt.inputs[0].set_partial_signature(frost_id1, &sig_share1);
 
@@ -907,7 +907,7 @@ mod util_tests {
 
         let (_, signing_commits3) = frost::round1::commit(key_package3.signing_share(), rng);
         psbt.inputs[0].set_signing_commitment(frost_id3, &signing_commits3);
-        let sig = frost::round2::SignatureShare::deserialize([3u8; 32]).expect("valid sig share");
+        let sig = frost::round2::SignatureShare::deserialize(&[3u8; 32]).expect("valid sig share");
         psbt.inputs[0].set_partial_signature(frost_id3, &sig);
 
         let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &app.db);
@@ -975,14 +975,14 @@ mod util_tests {
         let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
 
         let sig_share1_0 =
-            frost::round2::SignatureShare::deserialize([1u8; 32]).expect("valid sig share");
+            frost::round2::SignatureShare::deserialize(&[1u8; 32]).expect("valid sig share");
         let sig_share1_1 =
-            frost::round2::SignatureShare::deserialize([2u8; 32]).expect("valid sig share");
+            frost::round2::SignatureShare::deserialize(&[2u8; 32]).expect("valid sig share");
 
         let sig_share2_0 =
-            frost::round2::SignatureShare::deserialize([3u8; 32]).expect("valid sig share");
+            frost::round2::SignatureShare::deserialize(&[3u8; 32]).expect("valid sig share");
         let sig_share2_1 =
-            frost::round2::SignatureShare::deserialize([4u8; 32]).expect("valid sig share");
+            frost::round2::SignatureShare::deserialize(&[4u8; 32]).expect("valid sig share");
 
         let tx = create_tx(num_inputs, 1, None);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
@@ -1080,7 +1080,6 @@ mod util_tests {
                 .clone(),
             vec![frost_id1, frost_id2]
         );
-        assert!(signing_packages[0].additional_tweak().as_ref().unwrap() == &eth_tweak.to_vec());
 
         assert_eq!(
             signing_packages[1]
@@ -1101,7 +1100,6 @@ mod util_tests {
                 .clone(),
             vec![frost_id1, frost_id2]
         );
-        assert!(signing_packages[1].additional_tweak().is_none());
     }
 
     #[test]

@@ -14,6 +14,9 @@ const PARTIAL_SIGNATURE_KEY_TYPE: u8 = 3;
 // output keys
 const PEGOUT_ID_KEY_TYPE: u8 = 4;
 
+/// eth address tweak
+pub type EthAddress = [u8; 20];
+
 lazy_static::lazy_static! {
     static ref PROP_KEY_PREFIX: &'static [u8] = b"btx";
 
@@ -43,12 +46,12 @@ trait ProprietaryKeyExt: BorrowMut<ProprietaryKey> {
 impl ProprietaryKeyExt for ProprietaryKey {}
 
 pub trait PsbtInputExt: BorrowMut<Input> {
-    fn set_eth_address(&mut self, eth_address: [u8; 20]) {
+    fn set_eth_address(&mut self, eth_address: EthAddress) {
         // Key stores no keydata, only the type value
         self.borrow_mut().proprietary.insert(ETH_ADDRESS_KEY.clone(), eth_address.to_vec());
     }
 
-    fn eth_address(&self) -> Option<[u8; 20]> {
+    fn eth_address(&self) -> Option<EthAddress> {
         self.borrow().proprietary.get(&ETH_ADDRESS_KEY).and_then(|b| {
             if b.len() == 20 {
                 let mut ret = [0u8; 20];
@@ -219,12 +222,8 @@ pub trait PsbtExt: BorrowMut<Psbt> {
                 return Err(PsbtToSigningPackageConversionError::MissingSigningCommitments);
             }
 
-            let mut signing_package =
+            let signing_package =
                 frost::SigningPackage::new(sc, sighash.to_raw_hash().to_byte_array().as_slice());
-            if let Some(e) = input.eth_address() {
-                signing_package.set_addtional_tweak(e.to_vec());
-            };
-
             ret.push(signing_package);
         }
         Ok(ret)
@@ -233,7 +232,7 @@ pub trait PsbtExt: BorrowMut<Psbt> {
 impl PsbtExt for Psbt {}
 
 /// Errors that can occur during the conversion from a PSBT to
-/// a vector of signing packages for Frost signature generation.
+/// a vector of signing packages for Frost signature generation and aggregation.
 #[derive(Debug, Error)]
 pub enum PsbtToSigningPackageConversionError {
     #[error("Failed to calculate sighash: {0}")]
@@ -247,7 +246,7 @@ pub enum PsbtToSigningPackageConversionError {
 }
 
 pub fn frost_id_from_bytes(b: &[u8]) -> Option<frost::Identifier> {
-    frost::Identifier::deserialize(&b.try_into().ok()?).ok()
+    frost::Identifier::deserialize(&b).ok()
 }
 
 pub fn signature_share_from_bytes(b: &[u8]) -> Option<frost::round2::SignatureShare> {

@@ -4,7 +4,7 @@ use bitcoin::{
     taproot::SigFromSliceError,
 };
 use bitcoincore_rpc::RpcApi;
-use frost_secp256k1_tr as frost;
+use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use rand::thread_rng;
 use reth_btc_wallet::{
     psbt::{PsbtExt, PsbtInputExt},
@@ -328,12 +328,20 @@ where
         for (index, (signing_package, psbt_in)) in
             signing_packages.iter_mut().zip(psbt.inputs.iter_mut()).enumerate()
         {
-            let sigs = frost::round2::sign(
+            let eth_address_tweak = psbt_in.eth_address();
+            // TODO this will need to be revisited when we add tapleaves as all signatures will need
+            // to tweak with the merkel root
+            let signing_parameters = SigningParameters {
+                tapscript_merkle_root: None,
+                additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
+            };
+            let sig = frost::round2::sign_with_tweak(
                 signing_package,
                 &signing_nonces.get(index).expect("valid index").0,
                 &key_package,
+                &signing_parameters,
             )?;
-            psbt_in.set_partial_signature(self.identifier, &sigs);
+            psbt_in.set_partial_signature(self.identifier, &sig);
         }
 
         let _tx = psbt.clone().extract_tx()?;
@@ -378,13 +386,15 @@ where
 
             // Verify signature
             if let Some(e) = psbt_input.eth_address() {
-                pk_package.verifying_key().verify(
-                    signing_package.message(),
-                    &agg_sig,
-                    Some(e.clone().as_slice()),
-                )?;
+                // TODO(armins) tapscript merkle root will need to be updated when we add tapleaves
+                let signing_parameters = SigningParameters {
+                    tapscript_merkle_root: None,
+                    additional_tweak: Some(e.clone().to_vec()),
+                };
+                let effective_key = pk_package.clone().tweak(&signing_parameters);
+                effective_key.verifying_key().verify(signing_package.message(), &agg_sig)?;
             } else {
-                pk_package.verifying_key().verify(signing_package.message(), &agg_sig, None)?;
+                pk_package.verifying_key().verify(signing_package.message(), &agg_sig)?;
             }
         }
 
