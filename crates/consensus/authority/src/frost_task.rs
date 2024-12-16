@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
+    compressor::{ProstError, ProstMessageSerdelizer},
     dkg::DKGStateMachine,
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
@@ -14,6 +14,7 @@ use bitcoin::consensus::Encodable;
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::SyncTxIndexRequest;
 use reth_chainspec::ChainSpec;
+use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_network::{
     frost::{
         manager::{authority_index_to_frost_identifier, FrostCommand, FrostConfig, ToFrostManager},
@@ -35,24 +36,30 @@ pub(crate) enum UtxoSetSyncSerializationError {
     FrostRecv(RecvError),
     #[error("Received a grpc client error {0}")]
     Grpc(GrpcClientError),
-    #[error("compressor error {0}")]
-    Compressor(CompressorError),
+    #[error("prost error {0}")]
+    Prost(ProstError),
+    #[error("data parser error {0}")]
+    DataParser(DataParserError),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum TrackedTxSyncSerializationError {
     #[error("Received a grpc client error {0}")]
     Grpc(GrpcClientError),
-    #[error("compressor error {0}")]
-    Compressor(CompressorError),
+    #[error("prost error {0}")]
+    Prost(ProstError),
+    #[error("data parser error {0}")]
+    DataParser(DataParserError),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum PendingPegoutsSyncSerializationError {
     #[error("Received a grpc client error {0}")]
     Grpc(GrpcClientError),
-    #[error("compressor error {0}")]
-    Compressor(CompressorError),
+    #[error("prost error {0}")]
+    Prost(ProstError),
+    #[error("data parser error {0}")]
+    DataParser(DataParserError),
 }
 
 #[allow(dead_code)]
@@ -69,8 +76,8 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<EF, BF, DB>,
-    /// Pre-configured compressor
-    compressor: Compressor,
+    /// Pre-configured data-parser
+    compressor: DataParser,
     /// btc server client
     btc_server: BtcServerClient,
     /// Channel to receive canon state notifications
@@ -98,7 +105,7 @@ where
         frost_handle: ToFrostMan,
         config: FrostConfig,
         storage: Storage<EF, BF, DB>,
-        compressor: Compressor,
+        compressor: DataParser,
         random_source_provider: Source,
         canon_state_notification_receiver: tokio::sync::broadcast::Receiver<CanonStateNotification>,
         metrics: Arc<AuthorityMetrics>,
@@ -175,14 +182,14 @@ where
         // serialize the prost message
         let prost_message_wrapper = ProstMessageSerdelizer(prost_utxos);
         let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
-            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got compressor error {:?}", e);
-            UtxoSetSyncSerializationError::Compressor(e)
+            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got prost error {:?}", e);
+            UtxoSetSyncSerializationError::Prost(e)
         })?;
 
         // now compress the prost message
         let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
-            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got compressor error {:?}", e);
-            UtxoSetSyncSerializationError::Compressor(e)
+            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got prost error {:?}", e);
+            UtxoSetSyncSerializationError::DataParser(e)
         })?;
         Ok(prost_serialized_compressed)
     }
@@ -203,14 +210,14 @@ where
         // serialize the prost message
         let prost_message_wrapper = ProstMessageSerdelizer(prost_tracked_txs);
         let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
-            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got compressor error {:?}", e);
-            TrackedTxSyncSerializationError::Compressor(e)
+            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got prost error {:?}", e);
+            TrackedTxSyncSerializationError::Prost(e)
         })?;
 
         // now compress the prost message
         let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
-            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got compressor error {:?}", e);
-            TrackedTxSyncSerializationError::Compressor(e)
+            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got prost error {:?}", e);
+            TrackedTxSyncSerializationError::DataParser(e)
         })?;
         Ok(prost_serialized_compressed)
     }
@@ -232,13 +239,13 @@ where
         let prost_message_wrapper = ProstMessageSerdelizer(prost_pending_pegouts);
         let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
             error!(target: "consensus::authority::pending_pegouts_syncer::get_pending_pegouts", "Got compressor error {:?}", e);
-            PendingPegoutsSyncSerializationError::Compressor(e)
+            PendingPegoutsSyncSerializationError::Prost(e)
         })?;
 
         // now compress the prost message
         let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
             error!(target: "consensus::authority::pending_pegouts_syncer::get_pending_pegouts", "Got compressor error {:?}", e);
-            PendingPegoutsSyncSerializationError::Compressor(e)
+            PendingPegoutsSyncSerializationError::DataParser(e)
         })?;
         Ok(prost_serialized_compressed)
     }

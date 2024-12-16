@@ -1,20 +1,17 @@
-use crate::{
-    comet_bft::abci::ABCIDriverMessage,
-    compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
-    Storage,
-};
+use crate::{comet_bft::abci::ABCIDriverMessage, Storage};
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use btcserverlib::extended_client::GrpcClientError;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_evm::execute::BlockExecutorProvider;
-use reth_network::frost::{
-    manager::{FrostCommand, ToFrostManager},
-    PeerMessageResponse,
-};
+use reth_network::frost::manager::FrostCommand;
 use reth_primitives::extra_data_header::ExtraDataHeaderDeserializeError;
 use reth_provider::{BlockReaderIdExt, ProviderError};
 use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, trace, warn};
+
+pub const DEFAULT_SNAPSHOT_INTERVAL: u64 = 1000;
+pub const DEFAULT_SNAPSHOT_KEEP_RECENT: u64 = 2;
 
 #[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
@@ -31,8 +28,8 @@ pub enum SnapshotManagerError {
     PeerUtxoSetTimeout,
     #[error("Failed to receive a frost message from a peer {0}")]
     FrostRecv(tokio::sync::oneshot::error::RecvError),
-    #[error("Failed to decompress utxo set data {0}")]
-    CompressorError(#[from] CompressorError),
+    #[error("Data parser error: {0}")]
+    DataParser(#[from] DataParserError),
     #[error("UTXO set from peer is not in sync with the latest block, current utxo set merkel root: {0}, latest utxo set merkel root: {1}")]
     UtxoSetNotInSync(Sha256Hash, Sha256Hash),
     #[error("Failed to convert slide to sha256 hash {0}")]
@@ -42,16 +39,18 @@ pub enum SnapshotManagerError {
 /// Snapshot manager monitoring trait
 #[allow(dead_code)]
 pub trait SnapshotCoordinator {
-    async fn run(&mut self) -> Result<(), SnapshotManagerError>;
+    fn run(&mut self)
+        -> impl std::future::Future<Output = Result<(), SnapshotManagerError>> + Send;
 }
 
 /// Snapshot manager is responsible for persisting snapshot chunks to disk
 #[allow(dead_code)]
-#[derive(Debug)]
 pub struct SnapshotManager<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
-    compressor: Compressor,
+    compressor: DataParser,
     snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
+    snapshot_interval: u64,
+    snapshot_keep_recent: u64,
 }
 
 impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
@@ -62,10 +61,16 @@ where
 {
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
-        compressor: Compressor,
+        compressor: DataParser,
         snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     ) -> Self {
-        Self { storage, compressor, snapshot_manager_tx }
+        Self {
+            storage,
+            compressor,
+            snapshot_manager_tx,
+            snapshot_interval: DEFAULT_SNAPSHOT_INTERVAL,
+            snapshot_keep_recent: DEFAULT_SNAPSHOT_KEEP_RECENT,
+        }
     }
 }
 
@@ -80,6 +85,8 @@ where
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
         let client = self.storage.client.clone();
 
+        //client.block_body_indices(num)
+
         let latest_header = client.latest_header()?.expect("should get latest block");
         // let latest_merkle_root = latest_header.get_utxo_set_merkle_root()?;
 
@@ -92,8 +99,17 @@ where
             debug!(target: "consensus::authority::snapshot_manager::run", "received abci driver message {:?}", abci_driver_message);
 
             match abci_driver_message {
-                ABCIDriverMessage::CommitBlock((_sealed_block_with_peg, _cbft_hash, tx)) => {
+                ABCIDriverMessage::CommitBlock((sealed_block_with_peg, cbft_hash, tx)) => {
                     tx.send(()).expect("to send");
+
+                    let x = sealed_block_with_peg.block();
+
+                    // let tracked_txs_decompressed =
+                    // self.compressor.serialize_and_compress(&tracked_txs_compressed).await.
+                    // map_err(|e| {     error!(target:
+                    // "consensus::authority::sync_wallet_state", "Failed to decompress tracked txs
+                    // {:?}", e);     SnapshotManagerError::CompressorError(e)
+                    // })?;
                 }
                 ABCIDriverMessage::Exit => {
                     debug!(target: "consensus::authority::snapshot_manager::run", "exiting");

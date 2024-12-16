@@ -1,47 +1,10 @@
-/// The api provides utilities for serializing and deserializing, as well as compression and
-/// decompression of messages. It is being used by the utxo set syncing mechanism as well as
-/// inside the blockcfetcher.
-use async_compression::{
-    tokio::write::{
-        BrotliDecoder, BrotliEncoder, BzDecoder, BzEncoder, DeflateDecoder, DeflateEncoder,
-        GzipDecoder, GzipEncoder, LzmaDecoder, LzmaEncoder, ZlibDecoder, ZlibEncoder, ZstdDecoder,
-        ZstdEncoder,
-    },
-    Level,
-};
 use bytes::Bytes;
 use displaydoc::Display as DisplayDoc;
-use serde::Deserialize;
-use strum::{AsRefStr, EnumIter, EnumString};
 use thiserror::Error;
-use tokio::io::AsyncWriteExt as _; // for `write_all` and `shutdown`
 
 /// Password hashing error types.
 #[derive(Debug, DisplayDoc, Error)]
-pub(crate) enum CompressionError {
-    /// Compression/Decompression zlib error
-    Zlib(std::io::Error),
-    /// Compression/Decompression gzip error
-    Gzip(std::io::Error),
-    /// Compression/Decompression brotli error
-    Brotli(std::io::Error),
-    /// Compression/Decompression bz error
-    Bz(std::io::Error),
-    /// Compression/Decompression lzma error
-    Lzma(std::io::Error),
-    /// Compression/Decompression deflate error
-    Deflate(std::io::Error),
-    /// Compression/Decompression zstd error
-    Zstd(std::io::Error),
-}
-
-/// Password hashing error types.
-#[derive(Debug, DisplayDoc, Error)]
-pub(crate) enum SerdeError {
-    /// serde bincode error
-    Bincode(#[from] bincode::ErrorKind),
-    /// serde postcard error
-    Postcard(#[from] postcard::Error),
+pub(crate) enum ProstError {
     /// serde prost encode error
     ProstEncode(#[from] prost::EncodeError),
     /// serde prost decode error
@@ -111,160 +74,26 @@ where
     T: prost::Message + std::default::Default,
 {
     /// Method to serialize
-    pub(crate) fn serialize(&self) -> Result<Vec<u8>, Error> {
+    pub(crate) fn serialize(&self) -> Result<Vec<u8>, ProstError> {
         let mut buf = Vec::new();
-        self.0.encode(&mut buf).map_err(|e| Error::Serde(SerdeError::ProstEncode(e)))?;
+        self.0.encode(&mut buf).map_err(|e| ProstError::ProstEncode(e))?;
         Ok(buf)
     }
 
     /// Method to deserialize
-    pub(crate) fn deserialize(buf: Vec<u8>) -> Result<T, Error> {
+    pub(crate) fn deserialize(buf: Vec<u8>) -> Result<T, ProstError> {
         //let x = Bytes::from(buf);
-        T::decode(Bytes::from(buf)).map_err(|e| Error::Serde(SerdeError::ProstDecode(e)))
-    }
-}
-
-macro_rules! define_compression_methods {
-    ($($name:ident),+) => {
-        paste::item! {
-            $(
-                pub(crate) async fn [<compress_ $name:lower>](&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
-                    let mut encoder = [<$name Encoder>]::with_quality(Vec::new(), self.compression_level);
-                    encoder.write_all(in_data).await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
-                    encoder.shutdown().await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
-                    Ok(encoder.into_inner())
-                }
-
-                #[allow(dead_code)]
-                pub(crate) async fn [<decompress_ $name:lower>](&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
-                    let mut decoder = [<$name Decoder>]::new(Vec::new());
-                    decoder.write_all(in_data).await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
-                    decoder.shutdown().await.map_err(|e| Error::Compression(CompressionError::[<$name>](e)))?;
-                    Ok(decoder.into_inner())
-                }
-            )*
-        }
-    };
-}
-
-/// Compressor implementation
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub(crate) struct Compressor {
-    compression_type: CompressionType,
-    compression_level: Level,
-    serialization_type: SerializationType,
-}
-
-#[allow(dead_code)]
-impl Compressor {
-    /// Constructor for a new compressor
-    pub(crate) fn new() -> Self {
-        Self {
-            compression_type: CompressionType::Zlib,
-            compression_level: Level::Best,
-            serialization_type: SerializationType::Bincode,
-        }
-    }
-
-    // Macro invocation to generate methods
-    define_compression_methods!(Zlib, Gzip, Brotli, Bz, Lzma, Deflate, Zstd);
-
-    /// Sets the compression type
-    pub(crate) fn set_compression_type(&mut self, compression_type: CompressionType) {
-        self.compression_type = compression_type;
-    }
-
-    /// Sets the compression level
-    pub(crate) fn set_compression_level(&mut self, compression_level: Level) {
-        self.compression_level = compression_level;
-    }
-
-    /// Sets the serialization type
-    pub(crate) fn set_serialization_type(&mut self, serialization_type: SerializationType) {
-        self.serialization_type = serialization_type;
-    }
-
-    /// Serializes and compresses the data
-    pub(crate) async fn serialize_and_compress(
-        &self,
-        in_data: &[u8],
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let serialized_data = self.serialize(in_data).await?;
-        let compressed_data = self.compress(&serialized_data[..]).await?;
-        Ok(compressed_data)
-    }
-
-    /// Decompresses and deserializes the data
-    pub(crate) async fn decompress_and_deserialize(
-        &self,
-        in_data: &[u8],
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let decompressed_data = self.decompress(in_data).await?;
-        let deserialized_data = self.deserialize(&decompressed_data[..]).await?;
-        Ok(deserialized_data)
-    }
-
-    /// Serializes the data
-    pub(crate) async fn serialize(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
-        match self.serialization_type {
-            SerializationType::Bincode => {
-                bincode::serialize(in_data).map_err(|e| Error::Serde(SerdeError::Bincode(*e)))
-            }
-            SerializationType::Postcard => {
-                postcard::to_allocvec(in_data).map_err(|e| Error::Serde(SerdeError::Postcard(e)))
-            }
-        }
-    }
-
-    /// Deserializes the data
-    pub(crate) async fn deserialize(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
-        match self.serialization_type {
-            SerializationType::Bincode => {
-                bincode::deserialize(in_data).map_err(|e| Error::Serde(SerdeError::Bincode(*e)))
-            }
-            SerializationType::Postcard => {
-                postcard::from_bytes(in_data).map_err(|e| Error::Serde(SerdeError::Postcard(e)))
-            }
-        }
-    }
-
-    /// Compresses the data
-    pub(crate) async fn compress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
-        match self.compression_type {
-            CompressionType::None => Ok(in_data.to_vec()),
-            CompressionType::Zlib => self.compress_zlib(in_data).await,
-            CompressionType::Gzip => self.compress_gzip(in_data).await,
-            CompressionType::Brotli => self.compress_brotli(in_data).await,
-            CompressionType::Bz => self.compress_bz(in_data).await,
-            CompressionType::Lzma => self.compress_lzma(in_data).await,
-            CompressionType::Deflate => self.compress_deflate(in_data).await,
-            CompressionType::Zstd => self.compress_zstd(in_data).await,
-        }
-    }
-
-    /// Decompresses the data
-    pub(crate) async fn decompress(&self, in_data: &[u8]) -> Result<Vec<u8>, Error> {
-        match self.compression_type {
-            CompressionType::None => Ok(in_data.to_vec()),
-            CompressionType::Zlib => self.decompress_zlib(in_data).await,
-            CompressionType::Gzip => self.decompress_gzip(in_data).await,
-            CompressionType::Brotli => self.decompress_brotli(in_data).await,
-            CompressionType::Bz => self.decompress_bz(in_data).await,
-            CompressionType::Lzma => self.decompress_lzma(in_data).await,
-            CompressionType::Deflate => self.decompress_deflate(in_data).await,
-            CompressionType::Zstd => self.decompress_zstd(in_data).await,
-        }
+        T::decode(Bytes::from(buf)).map_err(|e| ProstError::ProstDecode(e))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::compressor::{Compressor, ProstMessageSerdelizer};
+    use crate::compressor::ProstMessageSerdelizer;
     use bitcoin::{hashes::Hash, Txid};
     use client::{GetAllUtxosResponse, TxOut, Utxo};
     use rand::{thread_rng, Rng};
-    use serde_json::Value;
+    use reth_data_parser::{DataParser, SerializationType, DEFAULT_COMPRESSION_STRATEGY};
 
     #[tokio::test]
     async fn test_compress_decompress_json() {
@@ -275,19 +104,11 @@ mod test {
             "male": "male"
         });
 
-        // compress the data
-        let compressor = Compressor::new();
-        let bytes = serde_json::to_vec(&data).unwrap();
-        let compressed_data = compressor.compress(bytes.as_slice()).await.unwrap();
-        println!("Compressed data {:?}", compressed_data);
-
-        // decompress the data
-        let decompressed_data = compressor.decompress(compressed_data.as_slice()).await.unwrap();
-        println!("Decompressed data {:?}", decompressed_data);
-
-        // check and compare
-        let original_data: Value = serde_json::from_slice(decompressed_data.as_slice()).unwrap();
-        assert_eq!(data, original_data);
+        let parser = DataParser::default().with_compression_strategy(&DEFAULT_COMPRESSION_STRATEGY);
+        let compressed_serialized_data = parser.encode(&data).await.unwrap();
+        let decompressed_deserialized_data =
+            parser.decode::<serde_json::Value>(&compressed_serialized_data).await.unwrap();
+        assert_eq!(data, decompressed_deserialized_data);
     }
 
     #[tokio::test]
@@ -299,19 +120,14 @@ mod test {
             "male": "male"
         });
 
-        // serialize the data
-        let compressor = Compressor::new();
-        let bytes = serde_json::to_vec(&data).unwrap();
-        let serialized_data = compressor.serialize(bytes.as_slice()).await.unwrap();
-        println!("Serialized data {:?}", serialized_data);
+        // serialize and compress the data
+        let parser = DataParser::default().with_serialization_type(SerializationType::Json);
+        let serialized_compressed_data = parser.encode(&data).await.unwrap();
 
-        // deserialize the data
-        let deserialized_data = compressor.deserialize(serialized_data.as_slice()).await.unwrap();
-        println!("Deserialized data {:?}", deserialized_data);
-
-        // check and compare
-        let original_data: Value = serde_json::from_slice(deserialized_data.as_slice()).unwrap();
-        assert_eq!(data, original_data);
+        // deserialize and decompress the data
+        let deserialized_decompressed_data =
+            parser.decode::<serde_json::Value>(&serialized_compressed_data).await.unwrap();
+        assert_eq!(data, deserialized_decompressed_data);
     }
 
     #[tokio::test]
@@ -379,8 +195,8 @@ mod test {
         let prost_serialized = prost_message_wrapper.serialize().unwrap();
 
         // now compress the prost message
-        let compressor = Compressor::new();
-        let prost_serialized_compressed = compressor.compress(&prost_serialized).await.unwrap();
+        let parser = DataParser::default().with_serialization_type(SerializationType::Json);
+        let prost_serialized_compressed = parser.compress(&prost_serialized).await.unwrap();
         println!(
             "Compressed to bytes: serialized: {:?} bytes, ser+compressed {:?} bytes",
             prost_serialized.len(),
@@ -394,7 +210,7 @@ mod test {
 
         // now decompress the prost message
         let prost_serialized_decompressed =
-            compressor.decompress(&prost_serialized_compressed).await.unwrap();
+            parser.decompress(&prost_serialized_compressed).await.unwrap();
         let prost_serialized_decompressed_clone = prost_serialized_decompressed.clone();
         let prost_deserialized = ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
             prost_serialized_decompressed,

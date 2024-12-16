@@ -62,6 +62,7 @@ reth-chainspec = { workspace = true }
 reth-cli-runner = { workspace = true }
 reth-consensus = { workspace = true }
 reth-consensus-common = { path = "../common" }
+reth-data-parser = { workspace = true }
 
 reth-db = { workspace = true }
 reth-db-common = { workspace = true }

@@ -8100,6 +8100,7 @@ dependencies = [
  "reth-cli-runner",
  "reth-consensus",
  "reth-consensus-common",
+ "reth-data-parser",
  "reth-db",
  "reth-db-common",
  "reth-ethereum-consensus",
@@ -8552,6 +8553,25 @@ dependencies = [
  "reth-tracing",
  "ringbuffer",
  "serde",
+ "tokio",
+]
+
+[[package]]
+name = "reth-data-parser"
+version = "1.0.5"
+dependencies = [
+ "async-compression",
+ "async-trait",
+ "bincode",
+ "displaydoc",
+ "lazy_static",
+ "paste",
+ "postcard",
+ "serde",
+ "serde_json",
+ "strum 0.26.3",
+ "strum_macros 0.26.4",
+ "thiserror 1.0.63",
  "tokio",
 ]
 

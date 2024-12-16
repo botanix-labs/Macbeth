@@ -1,19 +1,19 @@
 use crate::{
     comet_bft::abci::{ABCIClientBuilder, ABCIDriverMessage},
-    compressor::Compressor,
     frost_task::FrostTask,
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
+    snapshot_manager::SnapshotManager,
+    wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::{
-    random_source_provider::RandomSource, snapshot_manager::SnapshotManager,
-    wallet_state_sync::WalletStateSyncEngine, AuthorityConsensus, BtcServerExtendedApi,
-    BtcServerExtendedClient, GrpcClientFactory, Storage,
+    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::ChainSpec;
+use reth_data_parser::{DataParser, SerializationType};
 use reth_db::DatabaseEnv;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
@@ -222,7 +222,7 @@ where
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let chain_spec = storage.chain_spec.clone();
-        let compressor = Compressor::new();
+        let parser = DataParser::default().with_serialization_type(SerializationType::Json);
 
         let btc_server_client: Option<BtcServerClient> = async {
             if is_fed_node {
@@ -247,8 +247,7 @@ where
                     storage.clone(),
                     btc_server.clone(),
                     frost_handle.clone().expect("Requires frost handle"),
-                    compressor.clone(),
-                    Arc::clone(&metrics),
+                    parser.clone(),
                 );
                 Some(wallet_state_sync_engine)
             } else {
@@ -268,7 +267,7 @@ where
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.clone().expect("frost config exists"),
                 storage.clone(),
-                compressor.clone(),
+                parser.clone(),
                 random_source_provider,
                 canon_notification_reciever,
                 Arc::clone(&metrics),
@@ -290,12 +289,12 @@ where
             Arc::clone(&metrics),
             task_executor.clone(),
             abci_driver_tx,
-            abci_driver_tx,
             provider_factory,
+            snapshot_manager_tx,
         ));
 
         let snapshot_manager =
-            Some(SnapshotManager::new(storage.clone(), compressor.clone(), snapshot_manager_rx));
+            Some(SnapshotManager::new(storage.clone(), parser.clone(), snapshot_manager_rx));
 
         (frost_task, abci_client_builder, snapshot_manager)
     }

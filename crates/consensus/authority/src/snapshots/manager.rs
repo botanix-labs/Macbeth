@@ -12,8 +12,6 @@
 //     store: Arc<SnapshotStore>,
 //     opts: SnapshotOptions,
 //     multistore: Arc<dyn Snapshotter>,
-//     logger: Logger,
-
 //     mtx: Mutex<OperationState>,
 // }
 
@@ -23,14 +21,12 @@
 //         opts: SnapshotOptions,
 //         multistore: Arc<dyn Snapshotter>,
 //         extensions: HashMap<String, Box<dyn ExtensionSnapshotter>>,
-//         logger: Logger,
 //     ) -> Self {
 //         Self {
 //             store,
 //             opts,
 //             multistore,
 //             extensions,
-//             logger,
 //             mtx: Mutex::new(OperationState {
 //                 operation: None,
 //                 restore_snapshot: None,
@@ -66,31 +62,9 @@
 //     pub fn get_keep_recent(&self) -> u32 {
 //         self.opts.keep_recent
 //     }
-// }
 
-// impl Manager {
-//     pub async fn create_snapshot(&self, height: u64) -> anyhow::Result<Snapshot> {
-//         self.begin(Operation::Snapshot)?;
-
-//         let latest = self.store.get_latest_snapshot().await?;
-//         if let Some(latest) = latest {
-//             if latest.height >= height {
-//                 anyhow::bail!("A more recent snapshot already exists at height {}",
-// latest.height);             }
-//         }
-
-//         let mut stream_writer = StreamWriter::new();
-//         self.multistore.snapshot(height).await?;
-//         for (name, extension) in &self.extensions {
-//             let metadata = SnapshotMetadata {
-//                 chunk_hashes: vec![], // Fill with actual chunk hashes
-//             };
-//             stream_writer.write_metadata(name, metadata).await?;
-//         }
-
-//         let snapshot = self.store.save_snapshot(height, stream_writer).await?;
-//         self.end();
-//         Ok(snapshot)
+//     pub fn get_snapshot_block_retention_heights(&self) -> u64 {
+//         self.opts.interval * self.opts.keep_recent
 //     }
 // }
 
@@ -118,4 +92,5 @@
 //         self.end();
 //         Ok(snapshot)
 //     }
+
 // }
