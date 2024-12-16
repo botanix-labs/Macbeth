@@ -71,6 +71,9 @@ const _VERIFY_UNKNOWN: i32 = 0;
 const VERIFY_ACCEPTED: i32 = 1;
 const VERIFY_REJECT: i32 = 2;
 
+// Version
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Clone, Debug)]
 pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
@@ -377,7 +380,7 @@ where
 
         ResponseInfo {
             data: String::default(),
-            version: "TODO".to_string(),
+            version: VERSION.to_string(),
             app_version: 1,
             last_block_height: latest_header.number as i64,
             last_block_app_hash: self.application_hash(&client),
