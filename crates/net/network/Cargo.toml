@@ -27,11 +27,7 @@ discv5 = { workspace = true }
 enr = { workspace = true, features = ["serde", "rust-secp256k1"] }
 
 # frost
-# TODO update this to the zcash frost library when tr is merged in
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
-    "serde",
-    "serialization",
-] }
+frost-secp256k1-tr = { workspace = true }
 
 # async/futures
 futures = { workspace = true }

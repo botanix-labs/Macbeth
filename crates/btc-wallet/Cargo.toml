@@ -15,11 +15,7 @@ bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }
 bitcoincore-rpc = "0.18.0"
 ethers = "2.0.10"
 
-# TODO update this to the zcash frost library when tr is merged in
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
-    "serde",
-    "serialization",
-] }
+frost-secp256k1-tr = { workspace = true }
 hex = "0.4.3"
 lazy_static = "1.4.0"
 miniscript = "11.0.0"

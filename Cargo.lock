@@ -2594,10 +2594,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "const-crc32"
-version = "1.3.0"
+name = "const-crc32-nostd"
+version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68d13f542d70e5b339bf46f6f74704ac052cfd526c58cd87996bd1ef4615b9a0"
+checksum = "808ac43170e95b11dd23d78aa9eaac5bea45776a602955552c4e833f3f0f823d"
 
 [[package]]
 name = "const-hex"
@@ -3125,13 +3125,13 @@ dependencies = [
 
 [[package]]
 name = "derive-getters"
-version = "0.3.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a2c35ab6e03642397cdda1dd58abbc05d418aef8e36297f336d5aba060fe8df"
+checksum = "74ef43543e701c01ad77d3a5922755c6a1d71b22d942cb8042be4994b380caff"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.87",
 ]
 
 [[package]]
@@ -4073,40 +4073,42 @@ checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
 
 [[package]]
 name = "frost-core"
-version = "1.0.0-rc.0"
-source = "git+https://github.com/0xBEEFCAF3/frost?branch=additional-tweaks#a5817fff7d6787f7f2eb612ea9ce325b23fa72e3"
+version = "2.0.0"
+source = "git+https://github.com/0xBEEFCAF3/frost?branch=feature/final-additional-tweak#5c903c48c6ea97638a7765294dbf3a927a4e6f9b"
 dependencies = [
  "byteorder",
- "const-crc32",
+ "const-crc32-nostd",
  "debugless-unwrap",
  "derive-getters",
  "document-features",
  "hex",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "postcard",
  "rand_core 0.6.4",
  "serde",
  "serdect",
- "thiserror 1.0.63",
+ "thiserror 2.0.3",
+ "thiserror-nostd-notrait",
  "visibility",
  "zeroize",
 ]
 
 [[package]]
 name = "frost-rerandomized"
-version = "1.0.0-rc.0"
-source = "git+https://github.com/0xBEEFCAF3/frost?branch=additional-tweaks#a5817fff7d6787f7f2eb612ea9ce325b23fa72e3"
+version = "2.0.0"
+source = "git+https://github.com/0xBEEFCAF3/frost?branch=feature/final-additional-tweak#5c903c48c6ea97638a7765294dbf3a927a4e6f9b"
 dependencies = [
  "derive-getters",
  "document-features",
  "frost-core",
+ "hex",
  "rand_core 0.6.4",
 ]
 
 [[package]]
 name = "frost-secp256k1-tr"
-version = "1.0.0-rc.0"
-source = "git+https://github.com/0xBEEFCAF3/frost?branch=additional-tweaks#a5817fff7d6787f7f2eb612ea9ce325b23fa72e3"
+version = "2.0.0"
+source = "git+https://github.com/0xBEEFCAF3/frost?branch=feature/final-additional-tweak#5c903c48c6ea97638a7765294dbf3a927a4e6f9b"
 dependencies = [
  "document-features",
  "frost-core",
@@ -12394,6 +12396,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3ad459d94dd517257cc96add8a43190ee620011bb6e6cdc82dafd97dfafafea"
 dependencies = [
  "thiserror-impl-no-std",
+]
+
+[[package]]
+name = "thiserror-nostd-notrait"
+version = "1.0.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8444e638022c44d2a9337031dee8acb732bcc7fbf52ac654edc236b26408b61"
+dependencies = [
+ "thiserror-nostd-notrait-impl",
+]
+
+[[package]]
+name = "thiserror-nostd-notrait-impl"
+version = "1.0.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "585e5ef40a784ce60b49c67d762110688d211d395d39e096be204535cf64590e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
 ]
 
 [[package]]
