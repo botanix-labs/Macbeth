@@ -23,10 +23,7 @@ bitcoincore-rpc = { workspace = true }
 derive_more = { workspace = true }
 
 # FROST dependencies
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
-    "serde",
-    "serialization",
-] }
+frost-secp256k1-tr = { workspace = true }
 
 # async
 futures = { workspace = true }

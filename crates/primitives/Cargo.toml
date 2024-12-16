@@ -39,7 +39,7 @@ derive_more = { workspace = true }
 ethabi = { version = "18.0.0", optional = true }
 ethers = { version = "2.0.9", optional = true }
 
-frost-secp256k1-tr = { optional = true, git = "https://github.com/0xBEEFCAF3/frost", branch = "additional-tweaks", features = [
+frost-secp256k1-tr = { optional = true, git = "https://github.com/0xBEEFCAF3/frost", branch = "feature/final-additional-tweak", features = [
     "serde",
     "serialization",
 ] }
