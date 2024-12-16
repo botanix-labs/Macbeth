@@ -13,8 +13,9 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
-    comet_bft::abci::ABCIDriver,
+    comet_bft::abci::{ABCIDriver, ABCIDriverMessage},
     random_source_provider::RandomSourceProvider,
+    snapshot_manager::{SnapshotCoordinator, SnapshotManager},
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
@@ -731,6 +732,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let (
             frost_task,
             abci_client_builder,
+            snapshot_manager,
         ) = match AuthorityConsensusBuilder::try_new(
             Arc::clone(&chain_arc.clone()),
             blockchain_db.clone(),
@@ -759,6 +761,16 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
             }
         };
+
+        executor.spawn_critical(
+            "Snapshot Manager",
+            Box::pin(async move {
+                if let Err(e) = snapshot_manager.expect("snapshot manager task exists").run().await
+                {
+                    error!(target: "reth::cli", "Snapshot Manager Error: {:?}", e);
+                }
+            }),
+        );
 
         // configure exxes manager
         let exex_manager = ExExManagerHandle::empty();

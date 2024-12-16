@@ -107,6 +107,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     task_executor: TaskExecutor,
     abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -126,6 +127,7 @@ where
         task_executor: TaskExecutor,
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+        snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     ) -> Self {
         Self {
             storage,
@@ -137,10 +139,11 @@ where
             task_executor,
             abci_driver_tx,
             provider_factory,
+            snapshot_manager_tx,
         }
     }
 
-    /// Start the ABCI server
+    /// Starts the abci client server
     pub async fn start_server<Pool: TransactionPool + Clone + 'static>(
         &self,
         task_executor: &impl TaskSpawner,
@@ -917,7 +920,7 @@ where
 #[derive(Clone)]
 pub enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    CommitBlock(BlockWithContext),
+    CommitBlock((BlockWithContext, FixedBytes<32>, tokio::sync::oneshot::Sender<()>)),
     /// Exit the driver
     Exit,
 }
@@ -947,6 +950,7 @@ where
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
         blockchain_provider_2: BlockchainProvider2<DatabaseRW>,
+        snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     ) -> Self {
         let (canon_state_notification_sender, _) = tokio::sync::broadcast::channel(100);
         Self {
@@ -963,7 +967,7 @@ where
         loop {
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
-                    ABCIDriverMessage::CommitBlock(sealed_block_with_context) => {
+                    ABCIDriverMessage::CommitBlock((sealed_block_with_context, cbft_hash, tx)) => {
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
@@ -1044,6 +1048,21 @@ where
                                 error!("Error notifying pegouts: {:?}", e);
                             }
                         }
+                        tx.send(()).expect("to send");
+
+                        // Send message to snapshot manager
+                        let (snapshot_manager_announced_tx, snapshot_manager_announced_rx) =
+                            tokio::sync::oneshot::channel::<()>();
+                        self.snapshot_manager_tx
+                            .blocking_send(ABCIDriverMessage::CommitBlock((
+                                sealed_block_with_peg.clone(),
+                                cbft_hash,
+                                snapshot_manager_announced_tx,
+                            )))
+                            .expect("to send to snapshot manager");
+                        snapshot_manager_announced_rx
+                            .blocking_recv()
+                            .expect("to receive confirmation from snapshot manager");
                     }
                     ABCIDriverMessage::Exit => {
                         break;
@@ -1051,6 +1070,7 @@ where
                 }
             }
         }
+
         Ok(())
     }
 }

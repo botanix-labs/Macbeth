@@ -4,11 +4,12 @@ use crate::{
     frost_task::FrostTask,
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
-    wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::{
-    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
+    random_source_provider::RandomSource, snapshot_manager::SnapshotManager,
+    wallet_state_sync::WalletStateSyncEngine, AuthorityConsensus, BtcServerExtendedApi,
+    BtcServerExtendedClient, GrpcClientFactory, Storage,
 };
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -196,6 +197,7 @@ where
     ) -> (
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
+        Option<SnapshotManager<EF, BF, DB>>,
     )
     where
         BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
@@ -266,7 +268,7 @@ where
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.clone().expect("frost config exists"),
                 storage.clone(),
-                compressor,
+                compressor.clone(),
                 random_source_provider,
                 canon_notification_reciever,
                 Arc::clone(&metrics),
@@ -274,6 +276,9 @@ where
 
             frost_task = Some(task);
         }
+
+        let (snapshot_manager_tx, snapshot_manager_rx) =
+            tokio::sync::mpsc::channel::<ABCIDriverMessage>(100);
 
         // all nodes will have an abci client builder
         let abci_client_builder = Some(ABCIClientBuilder::new(
@@ -285,9 +290,13 @@ where
             Arc::clone(&metrics),
             task_executor.clone(),
             abci_driver_tx,
+            abci_driver_tx,
             provider_factory,
         ));
 
-        (frost_task, abci_client_builder)
+        let snapshot_manager =
+            Some(SnapshotManager::new(storage.clone(), compressor.clone(), snapshot_manager_rx));
+
+        (frost_task, abci_client_builder, snapshot_manager)
     }
 }

@@ -1,11 +1,10 @@
-use std::time::Duration;
-
-use bitcoin::{
-    hashes::{sha256::Hash as Sha256Hash, FromSliceError},
-    secp256k1::hashes::Hash,
+use crate::{
+    comet_bft::abci::ABCIDriverMessage,
+    compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
+    Storage,
 };
+use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
 use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
-use client::{Empty, GetAllUtxosResponse, ResetAllUtxosRequest};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{
@@ -17,15 +16,9 @@ use reth_provider::{BlockReaderIdExt, ProviderError};
 use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, trace, warn};
 
-use crate::{
-    compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
-    utils::{generate_utxo_merkel_root, UtxoMerkelRootError},
-    Storage,
-};
-
 #[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
-pub(crate) enum StateSyncError {
+pub enum SnapshotManagerError {
     #[error("db provider error: {0}")]
     LatestBlockError(#[from] ProviderError),
     #[error("deserilaize extra data header : {0}")]
@@ -40,25 +33,25 @@ pub(crate) enum StateSyncError {
     FrostRecv(tokio::sync::oneshot::error::RecvError),
     #[error("Failed to decompress utxo set data {0}")]
     CompressorError(#[from] CompressorError),
-    #[error("Failed to generate utxo merkel root {0}")]
-    UtxoMerkelRootError(#[from] UtxoMerkelRootError),
     #[error("UTXO set from peer is not in sync with the latest block, current utxo set merkel root: {0}, latest utxo set merkel root: {1}")]
     UtxoSetNotInSync(Sha256Hash, Sha256Hash),
     #[error("Failed to convert slide to sha256 hash {0}")]
     Sha256HashError(#[from] FromSliceError),
 }
 
+/// Snapshot manager monitoring trait
 #[allow(dead_code)]
-pub(crate) trait StateSync {
-    async fn sync_utxo_set(&self) -> Result<(), StateSyncError>;
+pub trait SnapshotCoordinator {
+    async fn run(&mut self) -> Result<(), SnapshotManagerError>;
 }
 
+/// Snapshot manager is responsible for persisting snapshot chunks to disk
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub(crate) struct SnapshotManager<EF, BF, DB> {
+#[derive(Debug)]
+pub struct SnapshotManager<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
-    btc_server: BtcServerExtendedClient,
     compressor: Compressor,
+    snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
 }
 
 impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
@@ -69,84 +62,45 @@ where
 {
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
-        btc_server: BtcServerExtendedClient,
         compressor: Compressor,
+        snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     ) -> Self {
-        Self { storage, btc_server, compressor }
+        Self { storage, compressor, snapshot_manager_tx }
     }
 }
 
-impl<EF, BF, DB> StateSync for SnapshotManager<EF, BF, DB>
+impl<EF, BF, DB> SnapshotCoordinator for SnapshotManager<EF, BF, DB>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     DB: BlockReaderIdExt + Clone + 'static,
 {
     // Note: this function should not be called unless we are fully synced
-    async fn sync_utxo_set(&self) -> Result<(), StateSyncError> {
-        trace!(target: "consensus::authority::StateSync::sync_utxo_set", "syncing utxo set");
+    async fn run(&mut self) -> Result<(), SnapshotManagerError> {
+        trace!(target: "consensus::authority::snapshot_manager::run", "started");
         let client = self.storage.client.clone();
-        let mut btc_server = self.btc_server.clone();
 
         let latest_header = client.latest_header()?.expect("should get latest block");
         // let latest_merkle_root = latest_header.get_utxo_set_merkle_root()?;
 
         if latest_header.number == 0 {
-            debug!(target: "consensus::authority::StateSync::sync_utxo_set", "genesis block, no utxo set to sync");
+            debug!(target: "consensus::authority::StateSync::sync_utxo_set", "genesis block");
             return Ok(());
         }
 
-        // get utxo set from btc server
-        let latest_wallet_state = btc_server.get_wallet_state(Empty {}).await?;
-        let latest_utxo_commitment =
-            Sha256Hash::from_slice(latest_wallet_state.utxo_root.as_slice())?;
-        // if latest_merkel_root == latest_utxo_commitment {
-        //     debug!(target: "consensus::authority::StateSync::sync_utxo_set", "utxo set is in
-        // sync");     // All done! We are in sync
-        //     return Ok(());
-        // }
+        while let Some(abci_driver_message) = self.snapshot_manager_tx.recv().await {
+            debug!(target: "consensus::authority::snapshot_manager::run", "received abci driver message {:?}", abci_driver_message);
 
-        // // try getting the utxo set from the random peer we pinged
-        // match tokio::time::timeout(Duration::from_secs(60), peer_messages_rx.recv()).await {
-        //     Ok(peer_message) => {
-        //         if let Some((_peer_id, peer_message)) = peer_message {
-        //             if let PeerMessageResponse::Utxo(utxo_set) = peer_message {
-        //                 // process the utxo set
-        //                 debug!(target: "consensus::authority::block_fetcher::sync_utxo_set", "Got
-        // utxo set from peer {:?}", utxo_set);                 let data = utxo_set.data;
-        //                 let decompressed = self.compressor.decompress(&data).await.map_err(|e| {
-        //                     error!(target: "consensus::authority::block_fetcher::sync_utxo_set",
-        // "Failed to decompress utxo set data {:?}", e);
-        // StateSyncError::CompressorError(e)                 })?;
-
-        //                 let utxo_set =
-        // ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
-        // decompressed,                 )?;
-        //                 // TODO peers will also need to communicate their tracked txs and pending
-        //                 // pegouts
-        //                 let merkel_root = generate_utxo_merkel_root(&utxo_set.utxos)?;
-        //                 if merkel_root != latest_utxo_commitment {
-        //                     return Err(StateSyncError::UtxoSetNotInSync(
-        //                         merkel_root,
-        //                         latest_utxo_commitment,
-        //                     ));
-        //                 }
-
-        //                 // Report to btc server to sync utxo set
-        //                 btc_server
-        //                     .reset_all_utxos(ResetAllUtxosRequest { utxos: utxo_set.utxos })
-        //                     .await?;
-        //             }
-        //         } else {
-        //             // TODO better error variant
-        //             return Err(StateSyncError::PeerUtxoSetTimeout);
-        //         }
-        //     }
-        //     Err(e) => {
-        //         warn!(target: "consensus::authority::block_fetcher::sync_utxo_set", ?e, "Failed
-        // to get get utxo set rom a peer within 60 secs");         return
-        // Err(StateSyncError::PeerUtxoSetTimeout);     }
-        // }
+            match abci_driver_message {
+                ABCIDriverMessage::CommitBlock((_sealed_block_with_peg, _cbft_hash, tx)) => {
+                    tx.send(()).expect("to send");
+                }
+                ABCIDriverMessage::Exit => {
+                    debug!(target: "consensus::authority::snapshot_manager::run", "exiting");
+                    return Ok(());
+                }
+            }
+        }
 
         Ok(())
     }
