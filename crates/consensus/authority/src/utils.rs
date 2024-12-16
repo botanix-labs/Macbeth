@@ -7,7 +7,7 @@ use bitcoin::{
     Address, Amount, BlockHash,
 };
 use btcserverlib::{
-    extended_client::{BtcServerExtendedClient, GrpcClientError},
+    extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
 };
 use client::{
@@ -104,8 +104,8 @@ pub(crate) enum FrostParseError {
 }
 
 /// receive a psbt containing all pending pegouts awaiting signing
-pub(crate) async fn get_psbt(
-    btc_server: &mut BtcServerExtendedClient,
+pub(crate) async fn get_psbt<BtcServerClient: BtcServerExtendedApi + Clone>(
+    btc_server: &mut BtcServerClient,
     signing_session_id: &SigningSessionId,
     bitcoin_checkpoint: BlockHash,
 ) -> Result<SigningPackage, GrpcClientError> {
@@ -117,10 +117,12 @@ pub(crate) async fn get_psbt(
     btc_server.get_psbt(req).await
 }
 
-pub(crate) async fn call_notify_pegin(
-    btc_server: &mut BtcServerExtendedClient,
+pub(crate) async fn call_notify_pegin<BtcServerClient>(
+    btc_server: &mut BtcServerClient,
     pegins: &[PeginMeta],
-) -> Result<(), GrpcClientError> {
+) -> Result<(), GrpcClientError> 
+where 
+    BtcServerClient: BtcServerExtendedApi + Clone {
     if pegins.is_empty() {
         return Ok(());
     }
@@ -131,11 +133,13 @@ pub(crate) async fn call_notify_pegin(
     Ok(())
 }
 
-pub(crate) async fn call_notify_pegout(
-    btc_server: &mut BtcServerExtendedClient,
+pub(crate) async fn call_notify_pegout<BtcServerClient>(
+    btc_server: &mut BtcServerClient,
     pegouts: &[PegoutWithId],
     height: u64,
-) -> Result<(), GrpcClientError> {
+) -> Result<(), GrpcClientError> 
+where 
+    BtcServerClient: BtcServerExtendedApi + Clone {
     if pegouts.is_empty() {
         return Ok(());
     }

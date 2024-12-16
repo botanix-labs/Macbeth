@@ -3,11 +3,11 @@ use alloy_rpc_types_engine::{Claims, JwtSecret};
 use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
-    GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
-    GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
-    GetTrackedTxsResponse, MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest,
-    ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage, SigningPackageRequest,
-    SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
+    GetGatewayAddressResponse, GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse,
+    GetSigningStatusRequest, GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, 
+    NotifyPeginsRequest, NotifyPegoutRequest, ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage, 
+    SigningPackageRequest, SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
+    GetPendingPegoutsResponse,
 };
 use displaydoc::Display as DisplayDoc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -16,6 +16,7 @@ use tonic::{
     metadata::{BinaryMetadataKey, MetadataValue},
     transport::Uri,
 };
+use futures_util::future::BoxFuture;
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -46,35 +47,63 @@ impl GrpcClientError {
     }
 }
 
-/// Macro for generating grpc methods
+pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
+    fn update_jwt_secret(&mut self, jwt_secret: JwtSecret);
+    fn generate_jwt_token(&mut self) -> Option<String>;
+    
+    fn notify_pegins<'a>(&'a mut self, request: NotifyPeginsRequest) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn notify_pegout<'a>(&'a mut self, request: NotifyPegoutRequest) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn get_gateway_address<'a>(&'a mut self, request: GetGatewayAddressRequest) -> BoxFuture<'a, Result<GetGatewayAddressResponse, GrpcClientError>>;
+    fn get_public_key<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<GetPublicKeyResponse, GrpcClientError>>;
+    fn get_round1_dkg_package<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<DkgPayload, GrpcClientError>>;
+    fn get_round1_dkg_packages<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<DkgPayload, GrpcClientError>>;
+    fn new_round1_dkg_package<'a>(&'a mut self, request: DkgPayload) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn get_round2_dkg_package<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<DkgPayload, GrpcClientError>>;
+    fn new_round2_dkg_package<'a>(&'a mut self, request: DkgPayload) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn get_round1_signing_package<'a>(&'a mut self, request: SigningPackageRequest) -> BoxFuture<'a, Result<SigningPackage, GrpcClientError>>;
+    fn get_round2_signing_package<'a>(&'a mut self, request: SigningPackageRequest) -> BoxFuture<'a, Result<SigningPackage, GrpcClientError>>;
+    fn new_round1_signing_package<'a>(&'a mut self, request: SigningPackage) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn get_psbt<'a>(&'a mut self, request: MakeTxRequest) -> BoxFuture<'a, Result<SigningPackage, GrpcClientError>>;
+    fn get_to_sign_package<'a>(&'a mut self, request: ToSignRequest) -> BoxFuture<'a, Result<SigningPackage, GrpcClientError>>;
+    fn new_round2_signing_package<'a>(&'a mut self, request: SigningPackage) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn finalize_signing<'a>(&'a mut self, request: FinalizeSigningRequest) -> BoxFuture<'a, Result<FinalizeSigningResponse, GrpcClientError>>;
+    fn signer_finalize<'a>(&'a mut self, request: FinalizeSignerRequest) -> BoxFuture<'a, Result<FinalizeSigningResponse, GrpcClientError>>;
+    fn get_wallet_state<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<WalletStateResponse, GrpcClientError>>;
+    fn abort_signing<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn get_signing_status<'a>(&'a mut self, request: GetSigningStatusRequest) -> BoxFuture<'a, Result<GetSigningStatusResponse, GrpcClientError>>;
+    fn get_session_ids<'a>(&'a mut self, request: GetSessionIdsRequest) -> BoxFuture<'a, Result<GetSessionIdsResponse, GrpcClientError>>;
+    fn health_check<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn tx_index_new_checkpoint<'a>(&'a mut self, request: SyncTxIndexRequest) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn reset_all_utxos<'a>(&'a mut self, request: ResetAllUtxosRequest) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn get_all_utxos<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<GetAllUtxosResponse, GrpcClientError>>;
+    fn get_tracked_txs<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<GetTrackedTxsResponse, GrpcClientError>>;
+    fn get_pending_pegouts<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<GetPendingPegoutsResponse, GrpcClientError>>;
+    fn reset_wallet_state<'a>(&'a mut self, request: ResetWalletStateRequest) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+}
+
+/// Macro for generating grpc methods implementation
 macro_rules! generate_method {
     ($method_name:ident, $req_ty:ty, $resp_ty:ty) => {
-        /// A general template for a grpc method receiving a request and returning a response
-        pub async fn $method_name(
-            &mut self,
-            request: $req_ty,
-        ) -> Result<$resp_ty, GrpcClientError> {
-            let mut req = tonic::Request::new(request);
+        fn $method_name<'a>(&'a mut self, request: $req_ty) -> BoxFuture<'a, Result<$resp_ty, GrpcClientError>> {
+            Box::pin(async move {
+                let mut req = tonic::Request::new(request);
 
-            // Insert JWT auth token if available
-            if let Some(jwt_auth_token) = self.generate_jwt_token() {
-                let jwt_auth_token = MetadataValue::from_bytes(jwt_auth_token.as_bytes());
-                let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
-                req.metadata_mut().insert_bin(key, jwt_auth_token);
-            }
+                if let Some(jwt_auth_token) = self.generate_jwt_token() {
+                    let jwt_auth_token = MetadataValue::from_bytes(jwt_auth_token.as_bytes());
+                    let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+                    req.metadata_mut().insert_bin(key, jwt_auth_token);
+                }
 
-            // Perform the gRPC call and handle the response
-            match self.client.$method_name(req).await {
-                Ok(response) => Ok(response.into_inner()),
-                Err(status) => Err(GrpcClientError::Call(status)),
-            }
+                match self.client.$method_name(req).await {
+                    Ok(response) => Ok(response.into_inner()),
+                    Err(status) => Err(GrpcClientError::Call(status)),
+                }
+            })
         }
     };
 }
 
-pub trait BtcServerGrpcClient {}
-
-/// Bitcoin Server Client with extended authentication credentials
+/// Bitcoin Server Client implementation with extended authentication credentials
 #[derive(Clone, Debug)]
 pub struct BtcServerExtendedClient {
     client: BtcServerClient<tonic::transport::channel::Channel>,
@@ -96,15 +125,16 @@ impl BtcServerExtendedClient {
 
         Ok(Self { client, jwt_secret })
     }
+}
 
-    /// Updates the jwt secret
-    pub fn update_jwt_secret(&mut self, jwt_secret: JwtSecret) {
+impl BtcServerExtendedApi for BtcServerExtendedClient {
+    fn update_jwt_secret(&mut self, jwt_secret: JwtSecret) {
         self.jwt_secret = Some(jwt_secret);
     }
 
     /// Generate a new jwt token from secret and claims
     /// TODO: fix unwraps
-    pub fn generate_jwt_token(&mut self) -> Option<String> {
+    fn generate_jwt_token(&mut self) -> Option<String> {
         self.jwt_secret.as_ref().map(|jwt_secret| {
             let claims = Claims { iat: to_u64(SystemTime::now()), exp: Some(10000000000) };
             let jwt_token = jwt_secret.encode(&claims).unwrap();

@@ -10,7 +10,7 @@ use crate::{
 use anyhow::Context;
 use askama::Template;
 use bitcoin::hashes::Hash;
-use btcserverlib::extended_client::BtcServerExtendedClient;
+use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient};
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::{
     providers::{Middleware, PeerInfo, StreamExt},

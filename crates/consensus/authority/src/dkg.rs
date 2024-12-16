@@ -1,4 +1,4 @@
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::{DkgPayload, Empty, GetPublicKeyResponse};
 use frost_secp256k1_tr as frost;
 use reth_network::frost::{
@@ -78,8 +78,8 @@ impl DKGState {
 
 /// A state machine for transitioning between different DKG states
 #[derive(Debug, Clone)]
-pub(crate) struct DKGStateMachine<EF, BF, DB, ToFrostMan> {
-    btc_client: BtcServerExtendedClient,
+pub(crate) struct DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient> {
+    btc_client: BtcServerClient,
     storage: Storage<EF, BF, DB>,
     frost_handle: ToFrostMan,
     state: DKGState,
@@ -95,14 +95,15 @@ pub(crate) struct DKGStateMachine<EF, BF, DB, ToFrostMan> {
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<EF, BF, DB, ToFrostMan> DKGStateMachine<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan, BtcServerClient> DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     DB: Clone,
+    BtcServerClient: BtcServerExtendedApi + Clone,
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
-        btc_client: BtcServerExtendedClient,
+        btc_client: BtcServerClient,
         storage: Storage<EF, BF, DB>,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,
@@ -145,10 +146,11 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan> DKGStateMachine<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan, BtcServerClient> DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     DB: Clone,
+    BtcServerClient: BtcServerExtendedApi + Clone,
 {
     async fn get_round1_dkg_package(&mut self) -> Result<DkgPayload, Error> {
         let round1_payload = self.btc_client.get_round1_dkg_package(client::Empty {}).await;

@@ -113,8 +113,12 @@ tracing = { workspace = true }
 
 # uuid
 uuid = { version = "1.8.0", features = ["v4"] }
+anyhow = "1.0.75"
+
+# ethereum
+alloy-rpc-types-engine = { version = "0.2.1",  default-features = false}
+rand = "0.8.5"
 
 [dev-dependencies]
 
-rand = "0.8.5"
 reth-evm = { workspace = true, features = ["test-utils"] }

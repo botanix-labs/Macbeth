@@ -2,7 +2,7 @@
 use std::{sync::Arc, time::Duration};
 
 use bitcoin::hashes::FromSliceError;
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::{
     GetAllUtxosResponse, GetPendingPegoutsResponse, GetTrackedTxsResponse, ResetWalletStateRequest,
 };
@@ -62,24 +62,25 @@ pub trait WalletStateSync {
 
 #[derive(Debug, Clone)]
 /// Engine for synchronizing wallet state
-pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan> {
+pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
     storage: Storage<EF, BF, DB>,
-    btc_server: BtcServerExtendedClient,
+    btc_server: BtcServerClient,
     to_frost_manager: ToFrostMan,
     compressor: Compressor,
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<EF, BF, DB, ToFrostMan> WalletStateSyncEngine<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan, BtcServerClient> WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     DB: BlockReaderIdExt + Clone + 'static,
+    BtcServerClient: BtcServerExtendedApi + Clone + 'static,
 {
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
-        btc_server: BtcServerExtendedClient,
+        btc_server: BtcServerClient,
         to_frost_manager: ToFrostMan,
         compressor: Compressor,
         metrics: Arc<AuthorityMetrics>,
@@ -88,12 +89,13 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan> WalletStateSync for WalletStateSyncEngine<EF, BF, DB, ToFrostMan>
+impl<EF, BF, DB, ToFrostMan, BtcServerClient> WalletStateSync for WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + 'static,
     DB: BlockReaderIdExt + Clone + 'static,
+    BtcServerClient: BtcServerExtendedApi + Clone + 'static,
 {
     // Note: this function should not be called unless we are fully synced
     async fn sync_wallet_state(&self) -> Result<(), WalletStateSyncError> {

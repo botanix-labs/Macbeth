@@ -11,7 +11,7 @@ use crate::{
 };
 
 use bitcoin_hashes::Hash;
-use btcserverlib::extended_client::{BtcServerExtendedClient, GrpcClientError};
+use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::SyncTxIndexRequest;
 use reth_blockchain_tree::BlockchainTreeEngine;
 use reth_chainspec::ChainSpec;
@@ -59,7 +59,7 @@ pub(crate) enum PendingPegoutsSyncSerializationError {
 }
 
 #[allow(dead_code)]
-pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
+pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
@@ -67,22 +67,22 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source> {
     /// Frost configuration
     pub(crate) frost_config: FrostConfig,
     /// dkg state machine
-    pub(crate) dkg_state_machine: DKGStateMachine<EF, BF, DB, ToFrostMan>,
+    pub(crate) dkg_state_machine: DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient>,
     /// signing state machine
-    pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source>,
+    pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<EF, BF, DB>,
     /// Pre-configured compressor
     compressor: Compressor,
     /// btc server client
-    btc_server: BtcServerExtendedClient,
+    btc_server: BtcServerClient,
     /// Channel to receive canon state notifications
     canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
     /// Authority Metrics
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<EF, BF, DB, ToFrostMan, Source> FrostTask<EF, BF, DB, ToFrostMan, Source>
+impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient> FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     BF: Clone,
@@ -94,12 +94,13 @@ where
         + 'static,
     EF: Clone,
     Source: RandomSource,
+    BtcServerClient: BtcServerExtendedApi + Clone,
 {
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         chain_spec: Arc<ChainSpec>,
-        btc_server: BtcServerExtendedClient,
+        btc_server: BtcServerClient,
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
         config: FrostConfig,
@@ -679,10 +680,11 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan, Source> std::fmt::Debug for FrostTask<EF, BF, DB, ToFrostMan, Source>
+impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient> std::fmt::Debug for FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     Source: RandomSource,
+    BtcServerClient: BtcServerExtendedApi + Clone,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FrostTask").finish_non_exhaustive()
