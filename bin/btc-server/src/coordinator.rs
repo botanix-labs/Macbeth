@@ -76,8 +76,8 @@ pub enum CoordinatorError {
     PegoutMgrSync(#[from] crate::pegout_scheduler::SyncError),
     #[error("utxo merkle root mismatch: expected {expected}, actual {actual:?}")]
     UtxoMerkleRootMismatch { expected: sha256::Hash, actual: sha256::Hash },
-    #[error("Failed to serialize signature")]
-    FailedToSerializeSignature,
+    #[error("Secp256k1 error: {0}")]
+    Secp256k1Error(#[from] bitcoin::secp256k1::Error),
     #[error("Missing final script")]
     MissingFinalScript,
     #[error("missing signing package at index: {0}")]
