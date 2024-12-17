@@ -76,3 +76,8 @@ tonic-build = "0.12.3"
 
 [dev-dependencies]
 test-log = "0.2.12"
+
+[features]
+default = []
+wallet_state_sync = []
+conflicting_input = ["wallet_state_sync"]

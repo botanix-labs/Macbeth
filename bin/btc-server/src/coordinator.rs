@@ -6,7 +6,10 @@ use std::{
 
 use crate::coin_selection::CoinSelectionError;
 use bitcoin::{
-    hashes::sha256, psbt::{ExtractTxError, Psbt}, secp256k1::PublicKey, Address, BlockHash, FeeRate, OutPoint, ScriptBuf, TxOut
+    hashes::sha256,
+    psbt::{ExtractTxError, Psbt},
+    secp256k1::PublicKey,
+    Address, BlockHash, FeeRate, OutPoint, ScriptBuf, TxOut,
 };
 use bitcoincore_rpc::RpcApi;
 use client::SigningStatus;
@@ -96,7 +99,7 @@ where
         Ok(())
     }
 
-    pub(crate) async fn add_round1_signing(
+    pub(crate) fn add_round1_signing(
         &self,
         signing_session_id: &[u8; 32],
         frost_id: frost::Identifier,
@@ -139,7 +142,7 @@ where
         Ok(())
     }
 
-    pub(crate) async fn add_round2_signing(
+    pub(crate) fn add_round2_signing(
         &self,
         signing_session_id: &[u8; 32],
         frost_id: frost::Identifier,
@@ -231,6 +234,7 @@ where
 
         let pegout_scheduler_lock = self.pegout_scheduler.lock().await;
         let tracked_inputs = pegout_scheduler_lock.tracked_inputs();
+        drop(pegout_scheduler_lock);
         // Filter the ones that are still pending and conflict with pending txs.
         let mut available_utxos = utxos
             .clone()
@@ -240,19 +244,20 @@ where
 
         // if we are retrying a pegout, we need to add a conflicting input
         let tracked_pegout_request_ids = pegout_scheduler_lock.tracked_pegout_request_ids();
-        drop(pegout_scheduler_lock);
-        // check if we are retrying a pegout
         let mut required_utxos = HashMap::new();
-        if outputs.iter().any(|(_, pegout_id)| {
-            tracked_pegout_request_ids.contains(pegout_id)
-        }) {
-            // track the first conflicting input to use during coin selection and add to
-            // available_utxos
-            if let Some((input_id, utxo)) = utxos.iter().find(|(p, _)| tracked_inputs.contains(p)) {
-                required_utxos.insert(input_id.clone(), utxo.clone());
-                available_utxos.insert(input_id.clone(), utxo.clone());
-            } else {
-                return Err(CoordinatorError::NoConflictingInputs);
+        if cfg!(feature = "conflicting_input") {
+            // check if we are retrying a pegout
+            if outputs.iter().any(|(_, pegout_id)| tracked_pegout_request_ids.contains(pegout_id)) {
+                // track the first conflicting input to use during coin selection and add to
+                // available_utxos
+                if let Some((input_id, utxo)) =
+                    utxos.iter().find(|(p, _)| tracked_inputs.contains(p))
+                {
+                    required_utxos.insert(input_id.clone(), utxo.clone());
+                    available_utxos.insert(input_id.clone(), utxo.clone());
+                } else {
+                    return Err(CoordinatorError::NoConflictingInputs);
+                }
             }
         }
         let psbt = coin_selection::coin_selection(
@@ -262,6 +267,8 @@ where
             fee_rate,
             change_script,
         )?;
+
+        drop(pegout_scheduler_lock);
         // Sanity check that we created a valid PSBT
         // This should not fail
         validate_psbt(&psbt, NO_FLAGS, self.min_signers, &self.db)?;
@@ -272,7 +279,7 @@ where
     /// If no Err is return the original psbt served to this function is good to go out to the
     /// signers nothing needs to be added to it as the signers all provided their signing
     /// commitments already and the coordinator just need to verify them
-    pub(crate) async fn get_to_sign(
+    pub(crate) fn get_to_sign(
         &self,
         signing_session_id: &[u8; 32],
     ) -> Result<Psbt, CoordinatorError> {
