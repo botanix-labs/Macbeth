@@ -495,6 +495,15 @@ impl Suite for ConsensusIntegrationTestSuite {
                     frost::test_mempool_gossip::test_mempool_gossip
                 )
             }
+            "test_conflicting_input" => run_test!(
+                self,
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
+                frost::test_conflicting_input::test_conflicting_input
+            ),
             _ => {
                 panic!("Test not found");
             }

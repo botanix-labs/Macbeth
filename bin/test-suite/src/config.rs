@@ -77,6 +77,9 @@ pub struct CliArgs {
     /// rpc nodes
     #[argh(option, default = "1")]
     pub rpc_nodes: u16,
+    /// features to enable as a space delimited string
+    #[argh(option, default = "String::from(\"conflicting_input\")")]
+    pub features: String,
 }
 
 pub fn parse_suite(value: &str) -> Result<RunSuite, String> {

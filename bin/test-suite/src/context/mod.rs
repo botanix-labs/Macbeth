@@ -26,6 +26,7 @@ pub struct GlobalContext {
     pub bitcoind_user: String,
     pub bitcoind_pass: String,
     pub botanix_fee_recipient: String,
+    pub features: String, // space delimited String
 }
 
 impl GlobalContext {
@@ -55,6 +56,7 @@ impl GlobalContext {
             bitcoind_user: BITCOIND_USER.to_string(),
             bitcoind_pass: BITCOIND_PASS.to_string(),
             botanix_fee_recipient: BOTANIX_FEE_RECEIPIENT.to_string(),
+            features: args.features,
         })
     }
 
