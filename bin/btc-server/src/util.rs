@@ -216,7 +216,9 @@ pub fn validate_psbt(
         return Err(ValidatePSBTError::NoInputs);
     } else {
         // Validate psbt contains conflicting input if retrying a pegout
-        db.has_conflicting_input(psbt)?;
+        if cfg!(feature = "conflicting_input") {
+            db.has_conflicting_input(psbt)?;
+        }
     }
     if psbt.outputs.is_empty() {
         return Err(ValidatePSBTError::NoOutputs);
@@ -466,8 +468,8 @@ mod util_tests {
         database::Db::open(dbdir).unwrap()
     }
 
-    #[tokio::test]
-    async fn should_perform_general_sanity_checks() {
+    #[test]
+    fn should_perform_general_sanity_checks() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
@@ -510,8 +512,8 @@ mod util_tests {
         assert_eq!(res.unwrap_err().to_string(), "outputs cannot be 0");
     }
 
-    #[tokio::test]
-    async fn should_perform_sanity_negative_fee_check() {
+    #[test]
+    fn should_perform_sanity_negative_fee_check() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
@@ -563,8 +565,8 @@ mod util_tests {
         assert_eq!(res.unwrap_err(), ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"));
     }
 
-    #[tokio::test]
-    async fn should_perform_sanity_total_outputs_value() {
+    #[test]
+    fn should_perform_sanity_total_outputs_value() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())

@@ -985,9 +985,8 @@ mod test {
         app_coordinator.add_pegins(&[&utxo]).expect("valid pegin utxo");
 
         // Should fail if there are no signing commits in the psbt
-        let res = app_coordinator
-            .add_round1_signing(&signing_session_id, app_signer.identifier, &psbt)
-            .await;
+        let res =
+            app_coordinator.add_round1_signing(&signing_session_id, app_signer.identifier, &psbt);
         assert!(res.is_err());
         assert_eq!(res.err().unwrap().to_string(), "Could not find participant information");
 
@@ -999,7 +998,6 @@ mod test {
 
         app_coordinator
             .add_round1_signing(&signing_session_id, app_signer.identifier, &psbt)
-            .await
             .expect("should add signing round 1");
     }
 
