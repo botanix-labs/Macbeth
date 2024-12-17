@@ -14,7 +14,11 @@ use reth_btc_wallet::{
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 
-use crate::{database, pegout_id::PegoutId, pegout_scheduler::PegoutScheduler, Error};
+use crate::{
+    database::{self, Db, Utxo},
+    pegout_id::PegoutId,
+    Error,
+};
 
 lazy_static! {
     static ref MAX_BTC_AMOUNT: bitcoin::Amount =
@@ -182,6 +186,8 @@ pub enum ValidatePSBTError {
     ExtractTxError(#[from] ExtractTxError),
     #[error("error validating outputs: {0}")]
     InvalidOutputs(#[from] ValidateOutputsError),
+    #[error("error validating conflicting input: {0}")]
+    ConflictingInputError(#[from] ConflictingInputError),
 }
 
 impl PartialEq for ValidatePSBTError {
@@ -214,12 +220,13 @@ pub fn validate_psbt(
     // Sanity check for # of inputs and outputs
     if psbt.inputs.is_empty() {
         return Err(ValidatePSBTError::NoInputs);
-    } else {
-        // Validate psbt contains conflicting input if retrying a pegout
-        if cfg!(feature = "conflicting_input") {
-            db.has_conflicting_input(psbt)?;
-        }
     }
+
+    // Validate psbt contains conflicting input if retrying a pegout
+    if cfg!(feature = "conflicting_input") {
+        has_conflicting_input(db, psbt)?;
+    }
+
     if psbt.outputs.is_empty() {
         return Err(ValidatePSBTError::NoOutputs);
     }
@@ -446,17 +453,57 @@ pub(crate) async fn get_available_utxos(
     Ok((available_utxos, tracked_inputs))
 }
 
+#[derive(Debug, Error)]
+pub enum ConflictingInputError {
+    #[error("failed to deserialize pegout id")]
+    FailedToDeserializePegoutId,
+    #[error("failed to get tracked txs")]
+    FailedToGetTrackedTxs(#[from] database::Error),
+    #[error("no conflicting input")]
+    NoConflictingInput,
+}
+
+/// Checks a PSBT has a conflicting input if it contains a tracked PegoutId.
+pub fn has_conflicting_input(db: &Db, psbt: &Psbt) -> Result<(), ConflictingInputError> {
+    let psbt_inputs: HashSet<_> =
+        psbt.unsigned_tx.input.iter().map(|input| input.previous_output).collect();
+
+    let mut pegout_ids = HashSet::new();
+    for id in psbt.pegout_ids().iter() {
+        pegout_ids.insert(
+            PegoutId::from_bytes(id)
+                .map_err(|_| ConflictingInputError::FailedToDeserializePegoutId)?,
+        );
+    }
+
+    for tx in db.get_tracked_txs()?.iter() {
+        let has_matching_pegout =
+            tx.pegout_requests.iter().any(|request| pegout_ids.contains(&request.id));
+        if has_matching_pegout {
+            tx.inputs()
+                .any(|input| psbt_inputs.contains(&input))
+                .then(|| ()) // convert bool into an Option
+                .ok_or(ConflictingInputError::NoConflictingInput)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod util_tests {
+
+    use std::time::SystemTime;
 
     use bitcoin::{psbt::Psbt, ScriptBuf, TxOut};
     use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt};
 
     use crate::{
         database::{self},
+        pegout_scheduler::{PegoutRequest, Tx},
         test_utils::test_utils::{
-            create_psbt, create_tx, eth_vector_to_fixed_bytes, get_change, setup,
-            store_pending_pegout, trusted_dealer_setup,
+            create_psbt, create_random_pegout_id, create_tx, eth_vector_to_fixed_bytes, get_change,
+            setup, setup_db, store_pending_pegout, trusted_dealer_setup,
         },
         util::*,
     };
@@ -1261,5 +1308,62 @@ mod util_tests {
         let sat_per_vb = btc_per_kb_to_sat_per_vb(btc_per_kb);
 
         assert_eq!(sat_per_vb.to_sat_per_vb_ceil(), 50);
+    }
+
+    #[test]
+    // success case is tested in `test_has_conflicting_input` in main.rs
+    fn has_conflicting_input_should_error_when_no_conflicting_input() {
+        let (db, _temp_dir) = setup_db();
+
+        // create a tracked tx with a pegout request
+        let tx = create_tx(5, 2, None);
+        let pegout_id = create_random_pegout_id();
+        let pegout_requests = vec![PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: pegout_id,
+            botanix_height: 0,
+        }];
+        let tracked_tx = Tx {
+            txid: tx.txid(),
+            tx: tx.clone(),
+            change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests,
+            created: SystemTime::now(),
+        };
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        db.flush().unwrap();
+
+        // create a psbt with the pegout request from the tracked tx
+        let mut psbt = create_psbt(1, 1, None);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let res = has_conflicting_input(&db, &psbt);
+        // should be an error since the psbt does not have a conflicting input
+        assert_eq!(res.unwrap_err().to_string(), "no conflicting input");
+    }
+
+    #[test]
+    fn has_conflicting_input_should_ok_when_no_conflicting_input_needed() {
+        let (db, _temp_dir) = setup_db();
+
+        // create a tracked tx with a pegout request
+        let tx = create_tx(5, 2, None);
+        let pegout_id = create_random_pegout_id();
+        let pegout_request = PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: pegout_id,
+            botanix_height: 0,
+        };
+        db.store_pending_pegout(&pegout_request).unwrap();
+        db.flush().unwrap();
+
+        let psbt = create_psbt(1, 1, None);
+
+        let res = has_conflicting_input(&db, &psbt);
+        // should be ok since the psbt is not retrying a pegout
+        assert!(res.is_ok());
     }
 }

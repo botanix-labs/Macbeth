@@ -69,6 +69,9 @@ fn spawn_btc_server_process(
 
     let command = "./target/debug/btc-server";
     let args = vec![
+        "--features",
+        global_context.features.as_str(),
+        "--",
         "--btc-network",
         "regtest",
         "--db",

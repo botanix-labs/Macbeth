@@ -79,5 +79,4 @@ test-log = "0.2.12"
 
 [features]
 default = []
-wallet_state_sync = []
-conflicting_input = ["wallet_state_sync"]
+conflicting_input = []

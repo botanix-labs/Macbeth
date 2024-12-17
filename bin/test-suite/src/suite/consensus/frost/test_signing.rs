@@ -26,7 +26,7 @@ use crate::{
 
 const NUM_PEGINS: usize = 5;
 
-struct Pegin {
+pub struct Pegin {
     pub eth_address: ethers::core::types::Address,
     pub btc_address: bitcoin::Address,
     pub outpoint: bitcoin::OutPoint,

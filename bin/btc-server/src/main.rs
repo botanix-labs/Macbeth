@@ -406,7 +406,7 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
+    use std::{collections::HashSet, str::FromStr};
 
     use super::*;
 
@@ -424,7 +424,7 @@ mod test {
         psbt::{PsbtInputExt, PsbtOutputExt},
         util::VerifyingKeyExt,
     };
-    use util::validate_outputs;
+    use util::{has_conflicting_input, validate_outputs};
 
     use crate::{
         database::Utxo,
@@ -901,10 +901,10 @@ mod test {
         app.db.set_pubkey_package(pk_package).expect("set public key package");
         app.db.set_key_package(key_package).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id_1 = store_pending_pegout(&app.db);
 
         let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id(pegout_id_1.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // Add the utxo
@@ -932,8 +932,9 @@ mod test {
         let pegout_id = store_pending_pegout(&app.db);
 
         let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        // include all pending pegouts in psbt to pass validation
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
-
+        psbt.outputs[1].set_pegout_id(pegout_id_1.as_bytes());
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = Utxo::new(
             tx.input[0].previous_output,
@@ -1362,6 +1363,8 @@ mod test {
     }
 
     #[tokio::test]
+    // this test ensures a conflicting input is included in the psbt when retrying the same
+    // pegout(s)
     async fn test_conflicting_input() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
@@ -1372,16 +1375,9 @@ mod test {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
-        // generate 36 random bytes
-        let mut rng = thread_rng();
-        let mut tx_id = [0u8; 32];
-        rng.fill(&mut tx_id);
-        let tx_idx = rng.gen_range(0..u32::MAX);
-        let pegout_id = PegoutId::new(tx_id, tx_idx);
-
-        let spk = random_p2wpkh_script().as_bytes().to_vec();
-
         // create pegout
+        let pegout_id = create_random_pegout_id();
+        let spk = random_p2wpkh_script().as_bytes().to_vec();
         let request = Request::new(rpc::NotifyPegoutRequest {
             pegout_id: pegout_id.as_bytes().to_vec(),
             spk: spk.clone(),
@@ -1452,10 +1448,129 @@ mod test {
         let psbt = Psbt::deserialize(psbt_bytes.as_slice()).expect("valid psbt");
 
         // assert that the psbt contains the tracked(conflicting) input
-        psbt.unsigned_tx.input.iter().find(|input| input.previous_output == *tracked_input);
+        let result =
+            psbt.unsigned_tx.input.iter().find(|input| input.previous_output == *tracked_input);
+        assert!(result.is_some());
     }
 
     #[tokio::test]
+    // this test ensures conflicting inputs for all pegouts being retried are included in the psbt
+    // pegout A and pegout B are both being retried so the psbt should contain inputs from both
+    // previous txs
+    async fn test_multiple_conflicting_inputs_for_multiple_pegouts() {
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // create 2 pegouts
+        let mut tracked_inputs = HashSet::new();
+        let mut pegouts: Vec<PegoutRequest> = vec![];
+        for _ in 0..2 {
+            // create pegout
+            let pegout_id = create_random_pegout_id();
+            let spk = random_p2wpkh_script().as_bytes().to_vec();
+            let request = Request::new(rpc::NotifyPegoutRequest {
+                pegout_id: pegout_id.as_bytes().to_vec(),
+                spk: spk.clone(),
+                amount: 1_000, // sats
+                height: 1,
+            });
+
+            app.notify_pegout(request).await.expect("valid pegout request");
+
+            let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+            // store pegout id so we can add back to the db
+            pegouts.push(pending_pegouts[0].clone());
+            let tx_out = pending_pegouts[0].txout();
+            // clear pending pegouts since we are simulating broadcasting a psbt with that pegout
+            // and having a tracked tx for it
+            app.db.clear_pending_pegouts().expect("pending pegouts are cleared");
+
+            // create psbt for pending pegout
+            let mut psbt = create_psbt(1, 1, None);
+            psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+            // set the tx output to the pegout
+            let mut tracked_tx = psbt.clone().extract_tx().expect("valid tx");
+            tracked_tx.output = vec![tx_out];
+
+            // Add the utxo
+            let utxo = Utxo::new(
+                tracked_tx.input[0].previous_output,
+                psbt.inputs[0].witness_utxo.clone().expect("some"),
+                None,
+            );
+            app.add_pegins(&[&utxo]).expect("valid pegin utxo");
+
+            // track the tx
+            app.add_tracked_tx(tracked_tx.clone(), &pending_pegouts, SystemTime::now())
+                .await
+                .expect("tx to be tracked");
+
+            // get the tracked input
+            let txid =
+                tracked_tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>()[0]
+                    .txid;
+            let outpoint = OutPoint { txid, vout: 0 };
+            let inputs = app.pegout_scheduler.lock().await.tracked_inputs();
+            tracked_inputs.insert(inputs.get(&outpoint).expect("tracked input exists").clone());
+        }
+        assert!(tracked_inputs.len() == 2);
+
+        // add the pegout requests back to the db
+        app.db
+            .store_pending_pegouts_atomically(pegouts.iter().collect::<Vec<_>>().as_ref())
+            .expect("valid pegout requests");
+
+        // add additional utxos that are not part of a tracked tx
+        for _ in 0..5 {
+            let psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+            let tx = psbt.clone().extract_tx().expect("valid tx");
+            // Add the utxo
+            let utxo = Utxo::new(
+                tx.input[0].previous_output,
+                psbt.inputs[0].witness_utxo.clone().expect("some"),
+                None,
+            );
+            app.add_pegins(&[&utxo]).expect("valid pegin utxo");
+        }
+
+        // make sure there are 7 utxos (2 tracked and 5 untracked)
+        let request = Request::new(rpc::Empty {});
+        let response = app.get_all_utxos(request).await;
+        let utxos = response.expect("utxos to exist").into_inner().utxos;
+        assert!(utxos.len() == 7);
+
+        // request a psbt which should include two conflicting inputs
+        let request = Request::new(rpc::MakeTxRequest {
+            signing_session_id: [0u8; 32].to_vec(),
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+        });
+        let response = app.get_psbt(request).await;
+
+        // deserialize the psbt from bytes
+        let psbt_bytes = response.expect("valid psbt").into_inner().psbt;
+        let psbt = Psbt::deserialize(psbt_bytes.as_slice()).expect("valid psbt");
+
+        // assert that the psbt contains the tracked(conflicting) inputs
+        let psbt_inputs = psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect::<HashSet<_>>();
+
+        // psbt should contain all tracked inputs
+        assert!(psbt_inputs.is_superset(&tracked_inputs));
+    }
+
+    #[tokio::test]
+    // tests db can determine if a conflicting input is present in a psbt
     async fn test_has_conflicting_input() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
@@ -1508,11 +1623,11 @@ mod test {
         psbt_no_conflicting_input.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         // validate the psbt with no conflicting input
-        let result = app.db.has_conflicting_input(&psbt_no_conflicting_input);
+        let result = has_conflicting_input(&app.db, &psbt_no_conflicting_input);
         assert_eq!(result.unwrap_err().to_string(), "no conflicting input");
 
         // validate the psbt with conflicting input
-        let result = app.db.has_conflicting_input(&psbt_with_conflicting_input);
+        let result = has_conflicting_input(&app.db, &psbt_with_conflicting_input);
         assert!(result.is_ok());
     }
 }

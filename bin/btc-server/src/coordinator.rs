@@ -1,8 +1,4 @@
 use bdk::miniscript::psbt::Error as PsbtError;
-use std::{
-    collections::HashMap,
-    time::{Instant, SystemTime},
-};
 
 use crate::coin_selection::CoinSelectionError;
 use bitcoin::{
@@ -18,6 +14,10 @@ use reth_btc_wallet::{
     psbt::{EthAddress, PsbtExt as BtcPsbtExt, PsbtInputExt},
     transaction::CalculateSighashError,
     util::{VerifyingKeyExt, VerifyingKeyExtError},
+};
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Instant, SystemTime},
 };
 
 use crate::{
@@ -86,6 +86,8 @@ pub enum CoordinatorError {
     CoinSelectionErr(#[from] CoinSelectionError),
     #[error("No conflicting inputs exist")]
     NoConflictingInputs,
+    #[error("Missing utxo for conflicting input")]
+    MissingUtxoForConflictingInput,
 }
 
 impl<BitcoindClient> App<BitcoindClient>
@@ -234,8 +236,8 @@ where
 
         let pegout_scheduler_lock = self.pegout_scheduler.lock().await;
         let tracked_inputs = pegout_scheduler_lock.tracked_inputs();
-        drop(pegout_scheduler_lock);
-        // Filter the ones that are still pending and conflict with pending txs.
+        // Filter utxos that are still pending and conflict with pending txs.
+        let tracked_txs = self.db.get_tracked_txs()?;
         let mut available_utxos = utxos
             .clone()
             .into_iter()
@@ -244,25 +246,56 @@ where
 
         // if we are retrying a pegout, we need to add a conflicting input
         let tracked_pegout_request_ids = pegout_scheduler_lock.tracked_pegout_request_ids();
-        let mut required_utxos = HashMap::new();
+        // if we are retrying pegouts, we need to add a conflicting input for each tracked tx
+        // that honors each pegout
+        let mut conflicting_inputs: Result<Vec<Utxo>, CoordinatorError> = Ok(vec![]);
+        let mut conflicting_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
         if cfg!(feature = "conflicting_input") {
-            // check if we are retrying a pegout
-            if outputs.iter().any(|(_, pegout_id)| tracked_pegout_request_ids.contains(pegout_id)) {
-                // track the first conflicting input to use during coin selection and add to
-                // available_utxos
-                if let Some((input_id, utxo)) =
-                    utxos.iter().find(|(p, _)| tracked_inputs.contains(p))
-                {
-                    required_utxos.insert(input_id.clone(), utxo.clone());
-                    available_utxos.insert(input_id.clone(), utxo.clone());
-                } else {
-                    return Err(CoordinatorError::NoConflictingInputs);
-                }
-            }
+            let tracked_pegout_request_ids = tracked_txs
+                .iter()
+                .flat_map(|tx| tx.pegout_requests.clone().into_iter().map(|p| p.id))
+                .collect::<HashSet<_>>();
+
+            // Collect all pegout ids being retried.
+            let matching_pegouts: Vec<&PegoutId> = outputs
+                .iter()
+                .filter_map(|(_, pegout_id)| {
+                    pegout_id.as_ref().filter(|id| tracked_pegout_request_ids.contains(id))
+                })
+                .collect();
+
+            // get a tracked input for each matching pegout
+            let matching_tracked_inputs: Result<Vec<OutPoint>, CoordinatorError> = tracked_txs
+                .iter()
+                .filter(|tx| tx.pegout_requests.iter().any(|p| matching_pegouts.contains(&&p.id)))
+                .map(|tx| tx.inputs().next().ok_or_else(|| CoordinatorError::NoConflictingInputs))
+                .collect();
+            let matching_tracked_inputs = matching_tracked_inputs?;
+
+            // get the utxo for each matching tracked input
+            conflicting_inputs = matching_tracked_inputs
+                .iter()
+                .map(|op| {
+                    utxos
+                        .get(&op)
+                        .ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput)
+                        .and_then(|u: &Utxo| {
+                            // Conflicting utxos will be added to available utxos before finishing
+                            // coin selection
+                            conflicting_utxos.insert(op.clone(), u.clone());
+                            Ok(u.clone())
+                        })
+                })
+                .collect();
         }
+         // include conflicting utxos when selecting from available utxos
+        // this is done after the coin selection result above to prevent duplicate utxos
+        conflicting_utxos.into_iter().for_each(|(op, u)| {
+            available_utxos.insert(op, u);
+        });
         let psbt = coin_selection::coin_selection(
             available_utxos,
-            required_utxos,
+            conflicting_utxos,
             outputs,
             fee_rate,
             change_script,
