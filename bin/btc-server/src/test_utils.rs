@@ -328,10 +328,7 @@ pub mod test_utils {
         let pegout_request = PegoutRequest {
             id: pegout_id,
             value: Amount::from_sat(1000),
-            spk: bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
-                .expect("valid address")
-                .assume_checked()
-                .script_pubkey(),
+            spk: random_p2wpkh_script(),
             botanix_height: 0,
         };
         let _ = db.store_pending_pegout(&pegout_request);
