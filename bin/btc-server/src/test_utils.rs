@@ -2,7 +2,6 @@
 pub mod test_utils {
     use std::{
         collections::{BTreeMap, HashMap},
-        str::FromStr,
         sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
     };
@@ -324,7 +323,7 @@ pub mod test_utils {
     }
 
     pub fn store_pending_pegout(db: &database::Db) -> PegoutId {
-        let pegout_id = PegoutId::new([1u8; 32], 0);
+        let pegout_id = create_random_pegout_id();
         let pegout_request = PegoutRequest {
             id: pegout_id,
             value: Amount::from_sat(1000),
