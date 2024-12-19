@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use bitcoin::{
     consensus::encode as btcencode,
     hashes::Hash,
@@ -156,8 +158,8 @@ pub enum ValidatePSBTError {
     NoInputs,
     #[error("outputs cannot be 0")]
     NoOutputs,
-    #[error("cannot calculate fee")]
-    FeeCalculationError(bitcoin::psbt::Error),
+    #[error("psbt error {0}")]
+    PsbtError(#[from] bitcoin::psbt::Error),
     #[error("cannot calculate fee rate")]
     FeeRateCalculationError(),
     #[error("{0}")]
@@ -179,7 +181,13 @@ pub enum ValidatePSBTError {
     #[error("extract tx error: {0}")]
     ExtractTxError(#[from] ExtractTxError),
     #[error("error validating outputs: {0}")]
-    InvalidOutputs(String),
+    InvalidOutputs(#[from] ValidateOutputsError),
+}
+
+impl PartialEq for ValidatePSBTError {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
 }
 
 /// Validates PSBT structure and content at a given state in the signing session
@@ -210,6 +218,9 @@ pub fn validate_psbt(
     if psbt.outputs.is_empty() {
         return Err(ValidatePSBTError::NoOutputs);
     }
+
+    validate_outputs(psbt, db)?;
+
     // Sanity fee checks
     let fee = match psbt.fee() {
         Ok(fee) => fee,
@@ -220,14 +231,10 @@ pub fn validate_psbt(
             bitcoin::psbt::Error::FeeOverflow => {
                 return Err(ValidatePSBTError::FeeSanityCheck("Fee overflow"))
             }
-            _ => return Err(ValidatePSBTError::FeeCalculationError(e)),
+            _ => return Err(ValidatePSBTError::PsbtError(e)),
         },
     };
 
-    // validate outputs cover all pegout ids or are change
-    if let Err(e) = validate_outputs(psbt, db) {
-        return Err(ValidatePSBTError::InvalidOutputs(e.to_string()));
-    };
 
     let tx = psbt.clone().extract_tx()?;
     for input in tx.input.iter() {
@@ -342,7 +349,7 @@ pub fn validate_psbt(
     Ok(())
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 pub enum ValidateOutputsError {
     #[error("missing key package {0}")]
     DbError(#[from] database::Error),
@@ -358,6 +365,8 @@ pub enum ValidateOutputsError {
     InvalidChangeOutput,
     #[error("extract tx error {0}")]
     ExtractTxError(#[from] ExtractTxError),
+    #[error("duplicate outputs")]
+    DuplicateOutputs,
 }
 
 // Check all pending pegouts are being settled in this tx
@@ -382,6 +391,12 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         };
     }
 
+    // check for duplicate outputs by pegout ids
+    let unique_pegout_ids: HashSet<PegoutId> = psbt_pegout_ids.iter().cloned().collect();
+    if unique_pegout_ids.len() != psbt_pegout_ids.len() {
+        return Err(ValidateOutputsError::DuplicateOutputs);
+    }
+
     for pegout_id in pending_pegout_ids.iter() {
         if !psbt_pegout_ids.contains(pegout_id) {
             return Err(ValidateOutputsError::MissingPsbtPegout(*pegout_id));
@@ -398,7 +413,8 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
         let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
         let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
-        let tx = psbt.clone().extract_tx()?;
+        // TODO remove the clone here
+        let tx = psbt.clone().extract_tx_unchecked_fee_rate();
         let has_correct_change =
             tx.output.iter().any(|o| o.script_pubkey == expected_script_pubkey);
         if !has_correct_change {
@@ -455,7 +471,6 @@ mod util_tests {
 
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
-        println!("res: {:?}", res);
         assert!(res.is_ok());
 
         // No inputs
@@ -518,15 +533,14 @@ mod util_tests {
 
         let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
             psbt.unsigned_tx.output.len() as u64 +
-            1;
+            100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
             output.value = output.value.checked_add(Amount::from_sat(diff)).unwrap_or_default();
         }
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
-        assert!(res.is_err());
-        assert_eq!(res.unwrap_err().to_string(), "Fee cannot be negative");
+        assert_eq!(res.unwrap_err(), ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"));
     }
 
     #[test]
@@ -609,12 +623,6 @@ mod util_tests {
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "cannot find UTXO in db");
 
-        let app = setup();
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
-
-        let _pegout_id = store_pending_pegout(&app.db);
-
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
@@ -655,17 +663,7 @@ mod util_tests {
         app.db.flush().unwrap();
 
         let res = validate_psbt(&psbt, ROUND1, 2, &app.db);
-        assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "eth tweak mismatch");
-
-        let app = setup();
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
-
-        let _pegout_id = store_pending_pegout(&app.db);
-
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
 
         psbt.inputs[0].set_eth_address(eth);
         let res = validate_psbt(&psbt, ROUND1, 2, &app.db);
@@ -744,8 +742,8 @@ mod util_tests {
         app.db.store_utxos(&[&utxo]).unwrap();
         app.db.flush().unwrap();
 
-        let _pegout_id = store_pending_pegout(&app.db);
-
+        let pegout_id = store_pending_pegout(&app.db);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");
         let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
 
@@ -781,7 +779,8 @@ mod util_tests {
         app.db.store_utxos(&[&utxo]).unwrap();
         app.db.flush().unwrap();
 
-        let _pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&app.db);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let res = validate_psbt(&psbt, ROUND2, 2, &app.db);
         assert!(res.is_ok());
@@ -846,7 +845,8 @@ mod util_tests {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
-        let _pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&app.db);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
         psbt.inputs[0].set_partial_signature(frost_id2, &sig_share2);
@@ -864,7 +864,8 @@ mod util_tests {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
-        let _pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&app.db);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         app.db.store_utxos(&[&utxo]).unwrap();
         app.db.flush().unwrap();
 
@@ -878,7 +879,8 @@ mod util_tests {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
-        let _pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&app.db);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         app.db.store_utxos(&[&utxo]).unwrap();
         app.db.flush().unwrap();
@@ -894,7 +896,8 @@ mod util_tests {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
-        let _pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&app.db);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         app.db.store_utxos(&[&utxo]).unwrap();
         app.db.flush().unwrap();
@@ -911,7 +914,61 @@ mod util_tests {
         psbt.inputs[0].set_partial_signature(frost_id3, &sig);
 
         let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &app.db);
+        assert_eq!(res.unwrap_err(), ValidatePSBTError::InvalidNumberOfPartialSignatures);
+    }
+
+    #[test]
+    fn test_duplicate_output() {
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        let pegout_id = store_pending_pegout(&app.db);
+
+        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        let utxo = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+        app.db.store_utxos(&[&utxo]).unwrap();
+        app.db.flush().unwrap();
+
+        validate_psbt(&psbt, NO_FLAGS, app.min_signers, &app.db).expect("valid psbt");
+
+        let mut dup_psbt = create_psbt(1, 2, Some(get_change(&app.db)));
+
+        let tx = dup_psbt.clone().extract_tx().expect("valid tx");
+        let utxo = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: dup_psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+        };
+        app.db.store_utxos(&[&utxo]).unwrap();
+        app.db.flush().unwrap();
+        dup_psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        dup_psbt.outputs[1].set_pegout_id(pegout_id.as_bytes());
+
+        let res = validate_psbt(&dup_psbt, NO_FLAGS, app.min_signers, &app.db);
         assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            ValidatePSBTError::InvalidOutputs(ValidateOutputsError::DuplicateOutputs)
+        );
+
+        // Its fine for the same exact output to the present multiple times, as a user can have
+        // multiple pegouts but they should have different pegout ids
+        let pegout_id2 = store_pending_pegout(&app.db);
+        dup_psbt.outputs[1].set_pegout_id(pegout_id2.as_bytes());
+        let res = validate_psbt(&dup_psbt, NO_FLAGS, app.min_signers, &app.db);
+        assert!(res.is_ok());
     }
 
     #[test]

@@ -760,6 +760,12 @@ pub enum Error {
     HashEngine(#[from] std::io::Error),
 }
 
+impl PartialEq for Error {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
 impl From<sled::transaction::TransactionError<sled::Error>> for Error {
     fn from(e: sled::transaction::TransactionError<sled::Error>) -> Error {
         match e {
