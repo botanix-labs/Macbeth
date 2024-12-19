@@ -370,8 +370,8 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     let pending_pegouts = db.get_pending_pegouts()?;
     let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
-    let mut psbt_pegout_ids: Vec<PegoutId> = vec![];
-    let mut change_outputs: Vec<Output> = vec![];
+    let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
+    let mut change_outputs: Vec<Output> = Vec::with_capacity(psbt.outputs.len());
     // TODO should get iter() for output pegout ids and impl this ext trait
     for output in psbt.outputs.iter() {
         match output.pegout_id() {
