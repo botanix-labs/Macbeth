@@ -208,6 +208,9 @@ impl_compression_for_compact!(
     Header,
     Account,
     Snapshot,
+    SnapshotChunk,
+    SnapshotSync,
+    BlockChunksRegister,
     Log,
     Receipt,
     TxType,
@@ -300,18 +303,3 @@ macro_rules! add_wrapper_struct {
 add_wrapper_struct!((U256, CompactU256));
 add_wrapper_struct!((u64, CompactU64));
 add_wrapper_struct!((ClientVersion, CompactClientVersion));
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use reth_primitives::{
-        Account, Header, Receipt, ReceiptWithBloom, SealedHeader, TxEip1559, TxEip2930, TxEip4844,
-        TxLegacy, Withdrawals,
-    };
-    use reth_prune_types::{PruneCheckpoint, PruneMode, PruneSegment};
-    use reth_stages_types::{
-        AccountHashingCheckpoint, CheckpointBlockRange, EntitiesCheckpoint, ExecutionCheckpoint,
-        HeadersCheckpoint, IndexHistoryCheckpoint, StageCheckpoint, StageUnitCheckpoint,
-        StorageHashingCheckpoint,
-    };
-}

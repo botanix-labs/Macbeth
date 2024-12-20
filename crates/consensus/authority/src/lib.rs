@@ -53,7 +53,6 @@ mod healthcheck_task;
 mod prost_parser;
 mod signing;
 pub mod snapshot_manager;
-mod snapshots;
 pub mod utils;
 pub mod wallet_state_sync;
 pub use builder::AuthorityConsensusBuilder;

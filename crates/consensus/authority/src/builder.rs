@@ -25,8 +25,8 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderFactory,
-    StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotification, CanonStateNotificationSender,
+    CanonStateSubscriptions, ProviderFactory, SnapshotReader, SnapshotWriter, StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
@@ -71,7 +71,7 @@ impl<EF, BF, DB, ToFrostMan, NetworkClient, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + Clone + SnapshotReader + SnapshotWriter + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
@@ -222,7 +222,7 @@ where
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let chain_spec = storage.chain_spec.clone();
-        let parser = DataParser::default().with_serialization_type(SerializationType::Json);
+        let parser = DataParser::default().with_serialization_type(SerializationType::Postcard);
 
         let btc_server_client: Option<BtcServerClient> = async {
             if is_fed_node {
@@ -291,6 +291,8 @@ where
             abci_driver_tx,
             provider_factory,
             snapshot_manager_tx,
+            parser.clone(),
+            task_executor.clone(),
         ));
 
         let snapshot_manager =

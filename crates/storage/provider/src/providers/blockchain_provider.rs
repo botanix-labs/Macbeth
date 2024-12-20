@@ -4,8 +4,9 @@ use crate::{
     CanonStateSubscriptions, ChainSpecProvider, ChangeSetReader, DatabaseProviderFactory,
     DatabaseProviderRO, EvmEnvProvider, FinalizedBlockReader, HeaderProvider, ProviderError,
     ProviderFactory, PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt,
-    RequestsProvider, StageCheckpointReader, StateProviderBox, StateProviderFactory,
-    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WithdrawalsProvider,
+    RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader, StateProviderBox,
+    StateProviderFactory, StaticFileProviderFactory, TransactionVariant, TransactionsProvider,
+    WithdrawalsProvider,
 };
 use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::{
@@ -13,6 +14,7 @@ use reth_chain_state::{
     MemoryOverlayStateProvider,
 };
 use reth_chainspec::{ChainInfo, ChainSpec};
+use reth_db::models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId};
 use reth_db_api::{
     database::Database,
     models::{AccountBeforeTx, StoredBlockBodyIndices},
@@ -1484,6 +1486,154 @@ where
         // use latest state provider
         let state_provider = self.latest()?;
         state_provider.basic_account(address)
+    }
+}
+
+impl<DB> SnapshotWriter for BlockchainProvider2<DB>
+where
+    DB: Database + Sync + Send,
+{
+    fn create_new_snapshot_sync(
+        &self,
+        block_id: BlockNumber,
+        snapshot_hash: B256,
+        total_chunks: u64,
+        format: u64,
+    ) -> ProviderResult<SnapshotId> {
+        self.database.create_new_snapshot_sync(block_id, snapshot_hash, total_chunks, format)
+    }
+
+    fn create_new_snapshot(
+        &self,
+        block_id: BlockNumber,
+        block_hash: B256,
+    ) -> ProviderResult<SnapshotId> {
+        self.database.create_new_snapshot(block_id, block_hash)
+    }
+
+    fn create_new_chunk(
+        &self,
+        snapshot_id: SnapshotId,
+        block_id: BlockNumber,
+        chunk_data: Vec<u8>,
+    ) -> ProviderResult<SnapshotId> {
+        self.database.create_new_chunk(snapshot_id, block_id, chunk_data)
+    }
+
+    fn create_block_chunks_register(
+        &self,
+        block_id: BlockNumber,
+        chunk_ids: Vec<ChunkId>,
+    ) -> ProviderResult<()> {
+        self.database.create_block_chunks_register(block_id, chunk_ids)
+    }
+
+    fn update_snapshot(
+        &self,
+        snapshot_id: SnapshotId,
+        block_id: BlockNumber,
+        chunk_id: ChunkId,
+    ) -> ProviderResult<()> {
+        self.database.update_snapshot(snapshot_id, block_id, chunk_id)
+    }
+
+    fn update_snapshot_sync(
+        &self,
+        snapshot_sync_id: SnapshotSyncId,
+        updated_snapshot: SnapshotSync,
+    ) -> ProviderResult<()> {
+        self.database.update_snapshot_sync(snapshot_sync_id, updated_snapshot)
+    }
+
+    fn insert_block_snapshot_id_mapping(
+        &self,
+        block_id: BlockNumber,
+        snapshot_id: SnapshotId,
+    ) -> ProviderResult<()> {
+        self.database.insert_block_snapshot_id_mapping(block_id, snapshot_id)
+    }
+
+    fn remove_snapshots(&self, range: RangeInclusive<SnapshotId>) -> ProviderResult<()> {
+        self.database.remove_snapshots(range)
+    }
+
+    fn remove_oldest_snapshot(&self) -> ProviderResult<()> {
+        self.database.remove_oldest_snapshot()
+    }
+
+    fn remove_chunks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        self.database.remove_chunks(range)
+    }
+
+    fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        self.database.delete_chunks_in_blocks(range)
+    }
+}
+
+impl<DB> SnapshotReader for BlockchainProvider2<DB>
+where
+    DB: Database + Sync + Send,
+{
+    fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>> {
+        self.database.get_snapshots()
+    }
+
+    fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>> {
+        self.database.get_snapshot_by_id(snapshot_id)
+    }
+
+    fn get_last_snapshot_sync_id(&self) -> ProviderResult<Option<SnapshotSyncId>> {
+        self.database.get_last_snapshot_sync_id()
+    }
+
+    fn get_snapshot_sync_by_height(&self, height: u64) -> ProviderResult<Option<SnapshotSync>> {
+        self.database.get_snapshot_sync_by_height(height)
+    }
+
+    fn get_snapshot_sync_by_id(&self, id: u64) -> ProviderResult<Option<SnapshotSync>> {
+        self.database.get_snapshot_sync_by_id(id)
+    }
+
+    fn get_chunk_by_id(
+        &self,
+        chunk_id: reth_db::models::ChunkId,
+    ) -> ProviderResult<Option<SnapshotChunk>> {
+        self.database.get_chunk_by_id(chunk_id)
+    }
+
+    fn get_snapshot_id_by_block_id(
+        &self,
+        block_id: BlockNumber,
+    ) -> ProviderResult<Option<SnapshotId>> {
+        self.database.get_snapshot_id_by_block_id(block_id)
+    }
+
+    fn get_chunk_block_number(&self, chunk_id: ChunkId) -> ProviderResult<Option<BlockNumber>> {
+        self.database.get_chunk_block_number(chunk_id)
+    }
+
+    fn get_last_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        self.database.get_last_snapshot_height()
+    }
+
+    fn get_first_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        self.database.get_first_snapshot_height()
+    }
+
+    fn get_snapshot_size(&self, snapshot_id: SnapshotId) -> ProviderResult<usize> {
+        self.database.get_snapshot_size(snapshot_id)
+    }
+
+    fn get_snapshots_count(&self) -> ProviderResult<usize> {
+        self.database.get_snapshots_count()
+    }
+
+    fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        self.database.get_last_chunk_id()
+    }
+
+    fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        self.database.get_first_chunk_id()
     }
 }
 

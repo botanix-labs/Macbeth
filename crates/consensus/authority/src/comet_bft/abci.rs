@@ -1,11 +1,12 @@
+//! The purpose of this module is to provide a bridge between the CometBFT and the EVM application
+//! state
+
 use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::ExecutedBlock;
 use reth_chainspec::ChainSpec;
 use reth_db::{Database, DatabaseEnv};
-use reth_provider::{BlockWriter, CanonChainTracker};
 use reth_trie::updates::TrieUpdates;
-/// The purpose of this module is to provide a bridge between the CometBFT and the EVM
-/// application state
+
 use std::{
     error::Error,
     io::{self},
@@ -17,19 +18,21 @@ use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::utils::unix_timestamp;
+use reth_data_parser::DataParser;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    SealedBlock, TransactionSigned,
+    SealedBlock, SealedBlockWithSenders, TransactionSigned, B256,
 };
 use reth_provider::{
     providers::{BlockchainProvider2, ConsistentDbView},
-    BlockReaderIdExt, CanonStateNotification, CanonStateNotificationSender,
-    CanonStateNotifications, CanonStateSubscriptions, Chain, ExecutionOutcome, ProviderError,
-    ProviderFactory, StateProviderFactory,
+    BlockReaderIdExt, BlockWriter, CanonChainTracker, CanonStateNotification,
+    CanonStateNotificationSender, CanonStateNotifications, CanonStateSubscriptions, Chain,
+    ExecutionOutcome, ProviderError, ProviderFactory, SnapshotReader, SnapshotWriter,
+    StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
@@ -46,22 +49,48 @@ use tendermint_proto::{
         ExecTxResult, RequestPrepareProposal, RequestProcessProposal, ResponseCommit,
         ResponsePrepareProposal, ResponseProcessProposal,
     },
-    v0_38::{
-        abci::{
-            RequestApplySnapshotChunk, RequestCheckTx, RequestFinalizeBlock, RequestInfo,
-            RequestInitChain, RequestListSnapshots, RequestLoadSnapshotChunk, RequestOfferSnapshot,
-            ResponseApplySnapshotChunk, ResponseCheckTx, ResponseFinalizeBlock, ResponseInfo,
-            ResponseInitChain, ResponseListSnapshots, ResponseLoadSnapshotChunk,
-            ResponseOfferSnapshot, Snapshot,
-        },
-        statesync::{
-            message::Sum, ChunkRequest, ChunkResponse, Message, SnapshotsRequest, SnapshotsResponse,
-        },
+    v0_38::abci::{
+        RequestApplySnapshotChunk, RequestCheckTx, RequestFinalizeBlock, RequestInfo,
+        RequestInitChain, RequestLoadSnapshotChunk, RequestOfferSnapshot,
+        ResponseApplySnapshotChunk, ResponseCheckTx, ResponseFinalizeBlock, ResponseInfo,
+        ResponseInitChain, ResponseListSnapshots, ResponseLoadSnapshotChunk, ResponseOfferSnapshot,
+        Snapshot,
     },
 };
 
 use thiserror::Error;
 use tokio::sync::Mutex;
+
+/// Offer Snapshot Result
+enum SnapshotOfferResult {
+    UNKNOWN = 0,       // Unknown result, abort all snapshot restoration
+    ACCEPT = 1,        // Snapshot is accepted, start applying chunks.
+    ABORT = 2,         // Abort snapshot restoration, and don't try any other snapshots.
+    REJECT = 3,        // Reject this specific snapshot, try others.
+    REJECT_FORMAT = 4, // Reject all snapshots with this `format`, try others.
+    REJECT_SENDER = 5, // Reject all snapshots from all senders of this snapshot, try others.
+}
+
+/// Apply Snapshot Results
+pub enum ApplySnapshotResult {
+    /// Unknown result, abort all snapshot restoration
+    Unknown = 0,
+    /// Chunk successfully accepted
+    Accept = 1,
+    /// Abort all snapshot restoration
+    Abort = 2,
+    /// Retry chunk (combine with refetch and reject)
+    Retry = 3,
+    /// Retry snapshot (combine with refetch and reject)
+    RetrySnapshot = 4,
+    /// Reject this snapshot, try others
+    RejectSnapshot = 5,
+}
+
+/// Snapshot message format - undefined for now
+pub const SNAPSHOT_MESSAGE_FORMAT: u32 = 1;
+
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -104,15 +133,16 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
     is_fed_node: bool,
     metrics: Arc<AuthorityMetrics>,
+    snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+    compressor: DataParser,
     task_executor: TaskExecutor,
     abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
-    snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
 where
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + Clone + SnapshotReader + SnapshotWriter + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
 {
@@ -123,11 +153,12 @@ where
         authority_consensus: AuthorityConsensus,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
         is_fed_node: bool,
-        metrics: Arc<AuthorityMetrics>,
+        snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+        compressor: DataParser,
         task_executor: TaskExecutor,
+        metrics: Arc<AuthorityMetrics>,
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
-        snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     ) -> Self {
         Self {
             storage,
@@ -140,6 +171,7 @@ where
             abci_driver_tx,
             provider_factory,
             snapshot_manager_tx,
+            compressor,
         }
     }
 
@@ -162,8 +194,16 @@ where
             self.authority_consensus.clone(),
             self.is_fed_node,
             self.metrics.clone(),
+            self.compressor.clone(),
             self.task_executor.clone(),
             self.provider_factory.clone(),
+        );
+        let mut abci_driver = ABCIDriver::new(
+            self.btc_server.clone(),
+            self.abci_driver_tx,
+            self.provider_factory.clone(),
+            self.authority_consensus.clone(),
+            self.snapshot_manager_tx.clone(),
         );
 
         let server_builder = ServerBuilder::default();
@@ -226,11 +266,12 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     metrics: Arc<AuthorityMetrics>,
     task_executor: TaskExecutor,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    compressor: DataParser,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
 where
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + Clone + SnapshotReader + SnapshotWriter + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -246,6 +287,7 @@ where
         authority_consensus: AuthorityConsensus,
         is_fed_node: bool,
         metrics: Arc<AuthorityMetrics>,
+        compressor: DataParser,
         task_executor: TaskExecutor,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Self {
@@ -261,6 +303,7 @@ where
             authority_consensus,
             is_fed_node,
             metrics,
+            compressor,
             task_executor,
             provider_factory,
         }
@@ -382,7 +425,7 @@ where
 
 impl<EF, BF, DB, Pool> Application for ABCIClient<EF, BF, DB, Pool>
 where
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + Clone + SnapshotReader + SnapshotWriter + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -413,28 +456,282 @@ where
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#listsnapshots
     fn list_snapshots(&self) -> ResponseListSnapshots {
         info!("list_snapshots request");
-        ResponseListSnapshots::default()
+        let client = self.storage.client.clone();
+        match client.get_snapshots() {
+            Ok(snapshots) => snapshots.into_iter().fold(
+                ResponseListSnapshots { snapshots: vec![] },
+                |mut acc, snapshot| {
+                    acc.snapshots.push(Snapshot {
+                        height: snapshot.height(),
+                        format: SNAPSHOT_MESSAGE_FORMAT,
+                        chunks: snapshot.chunk_ids().len() as u32,
+                        hash: prost::bytes::Bytes::copy_from_slice(&snapshot.block_hash().0),
+                        metadata: prost::bytes::Bytes::new(),
+                    });
+                    acc
+                },
+            ),
+            Err(e) => {
+                error!("Error getting snapshots from db: {:?}", e);
+                return ResponseListSnapshots { snapshots: vec![] };
+            }
+        }
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#offersnapshot
+    fn offer_snapshot(&self, request: RequestOfferSnapshot) -> ResponseOfferSnapshot {
+        info!("offer_snapshot request");
+        // some other node is offering us a snapshot - we need to validate here if we want to accept
+        // it
+        let client = self.storage.client.clone();
+
+        if request.app_hash.is_empty() {
+            return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+        }
+
+        if self.application_hash(&client) == request.app_hash {
+            return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+        }
+
+        if let Some(snapshot) = request.snapshot {
+            if snapshot.format != SNAPSHOT_MESSAGE_FORMAT {
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT_FORMAT as i32 };
+            }
+
+            if snapshot.chunks == 0 {
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+            }
+
+            if snapshot.hash == prost::bytes::Bytes::default() {
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+            }
+
+            // check that we should not have the block at height already
+            if let Some(_) = client.block_by_id(BlockId::number(snapshot.height)).ok().flatten() {
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+            }
+
+            // get the latest header
+            let latest_header =
+                client.latest_header().expect("should have latest").expect("should have header");
+
+            // check that the latest header is less than the snapshot height
+            if latest_header.header().number > snapshot.height {
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+            }
+
+            if let Err(e) = client.create_new_snapshot_sync(
+                snapshot.height,
+                B256::new(snapshot.hash.as_ref().try_into().expect("slice with incorrect length")),
+                snapshot.chunks as u64,
+                SNAPSHOT_MESSAGE_FORMAT as u64,
+            ) {
+                error!("error persisting new snapshot sync: {:?}", e);
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::UNKNOWN as i32 }
+            }
+        }
+
+        ResponseOfferSnapshot { result: SnapshotOfferResult::ACCEPT as i32 }
     }
 
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#loadsnapshotchunk
-    fn load_snapshot_chunk(&self, _request: RequestLoadSnapshotChunk) -> ResponseLoadSnapshotChunk {
+    fn load_snapshot_chunk(&self, request: RequestLoadSnapshotChunk) -> ResponseLoadSnapshotChunk {
         info!("load_snapshot_chunk request");
-        ResponseLoadSnapshotChunk::default()
+        let client = self.storage.client.clone();
+
+        match client.get_snapshot_id_by_block_id(request.height) {
+            Ok(Some(snapshot_id)) => {
+                // now take the entire snapshot data
+                match client.get_snapshot_by_id(snapshot_id) {
+                    Ok(Some(snapshot)) => {
+                        // check if the chunk id is found in the snapshot
+                        if !snapshot
+                            .chunk_ids()
+                            .iter()
+                            .any(|chunk_id| request.chunk as u64 == *chunk_id)
+                        {
+                            error!(
+                                "Chunk id {:?} in snapshot with id {:?} not found",
+                                request.chunk, snapshot_id
+                            );
+                            return ResponseLoadSnapshotChunk::default();
+                        }
+                        // then retrieve the actual chunk data
+                        match client.get_chunk_by_id(request.chunk as u64) {
+                            Ok(Some(chunk)) => ResponseLoadSnapshotChunk {
+                                chunk: prost::bytes::Bytes::copy_from_slice(chunk.chunk_data()),
+                            },
+                            Ok(None) => {
+                                error!("Chunk with id {:?} not found", request.chunk);
+                                ResponseLoadSnapshotChunk::default()
+                            }
+                            Err(e) => {
+                                error!(
+                                    "DB error getting chunk with id: {:?}. Error = {:?}",
+                                    request.chunk, e
+                                );
+                                ResponseLoadSnapshotChunk::default()
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        error!("Snapshot with id {:?} not found", snapshot_id);
+                        ResponseLoadSnapshotChunk::default()
+                    }
+                    Err(e) => {
+                        error!(
+                            "DB error getting snapshot with id: {:?}. Error = {:?}",
+                            snapshot_id, e
+                        );
+                        ResponseLoadSnapshotChunk::default()
+                    }
+                }
+            }
+            Ok(None) => {
+                error!("Snapshot at height {:?} not found", request.height);
+                ResponseLoadSnapshotChunk::default()
+            }
+            Err(e) => {
+                error!(
+                    "DB error getting snapshot at height: {:?}. Error = {:?}",
+                    request.height, e
+                );
+                ResponseLoadSnapshotChunk::default()
+            }
+        }
     }
 
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#applysnapshotchunk
     fn apply_snapshot_chunk(
         &self,
-        _request: RequestApplySnapshotChunk,
+        request: RequestApplySnapshotChunk,
     ) -> ResponseApplySnapshotChunk {
         info!("apply_snapshot_chunk request");
-        ResponseApplySnapshotChunk::default()
-    }
+        let client = self.storage.client.clone();
 
-    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#offersnapshot
-    fn offer_snapshot(&self, _request: RequestOfferSnapshot) -> ResponseOfferSnapshot {
-        info!("offer_snapshot request");
-        ResponseOfferSnapshot::default()
+        // get the last snapshot sync id - there should always be one provided the offer_snapshot
+        // has already run
+        let last_snapshot_sync_id = match client.get_last_snapshot_sync_id() {
+            Ok(Some(snapshot_sync_id)) => snapshot_sync_id,
+            Ok(None) => {
+                error!("No last snapshot sync found");
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+            Err(e) => {
+                error!("Error getting last snapshot sync: {:?}", e);
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+        };
+
+        // fetch the actual snapshot sync
+        let mut snapshot = match client.get_snapshot_sync_by_id(last_snapshot_sync_id) {
+            Ok(Some(snapshot)) => snapshot,
+            Ok(None) => {
+                error!("No snapshot sync found by id");
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+            Err(e) => {
+                error!("Error getting snapshot sync by id: {:?}", e);
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+        };
+
+        // check the snapshot sync is done in sequential manner
+        if snapshot.last_applied_chunk_index() + 1 != request.index as u64 {
+            error!("Last applied chunk index is not sequential with the incoming chunk index");
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        }
+
+        // set the last applied chunk index
+        snapshot.set_last_applied_chunk_index(request.index as u64);
+
+        // append the chunk data
+        snapshot.append_chunk_data(request.chunk.as_ref().to_vec());
+
+        // update the db
+        client
+            .update_snapshot_sync(last_snapshot_sync_id, snapshot.clone())
+            .expect("to update snapshot sync");
+
+        // check if the snapshot is finally assembled and has all chunks in it
+        if snapshot.is_assembled() {
+            let compressor = self.compressor.clone();
+            let (compressor_task_tx, compressor_task_rx) =
+                tokio::sync::oneshot::channel::<SealedBlockWithSenders>();
+            self.task_executor.spawn_blocking(Box::pin(async move {
+                let sealed_block_with_senders: SealedBlockWithSenders = compressor
+                    .decode(snapshot.data())
+                    .await
+                    .expect("Failed to deserialize and decompress sealed block");
+                let _ = compressor_task_tx.send(sealed_block_with_senders);
+            }));
+
+            // await the repsonse from the compressor task
+            let sealed_block_with_senders = compressor_task_rx
+                .blocking_recv()
+                .expect("to receive confirmation from snapshot manager");
+
+            let sealed_header = sealed_block_with_senders.header.clone();
+            let block_hash = sealed_header.hash();
+
+            // Update canonical chain
+            match client
+                .insert_block(sealed_block_with_senders.clone(), BlockValidationKind::Exhaustive)
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(target: "consensus::authority::abci", ?e, "Failed to insert block");
+                }
+            }
+
+            // set canonical head
+            client.set_canonical_head(sealed_block_with_senders.header.clone());
+            client.set_safe(sealed_block_with_senders.header.clone());
+            client.set_finalized(sealed_block_with_senders.header.clone());
+
+            let (fork_choice_update_task_tx, fork_choice_update_task_rx) =
+                tokio::sync::oneshot::channel::<()>();
+            let to_engine = self.to_engine.clone();
+            self.task_executor.spawn_blocking(Box::pin(async move {
+                if let Err(e) =
+                    engine_util::send_fork_choice_update_payload(block_hash, to_engine).await
+                {
+                    error!("Error sending fork choice update to engine {:?}", e);
+                }
+                let _ = fork_choice_update_task_tx.send(());
+            }));
+
+            // await the response from the fork choice update task
+            fork_choice_update_task_rx
+                .blocking_recv()
+                .expect("to receive confirmation from fork choice updater");
+        }
+
+        return ResponseApplySnapshotChunk {
+            result: ApplySnapshotResult::Accept as i32,
+            refetch_chunks: vec![],
+            reject_senders: vec![],
+        };
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
@@ -941,7 +1238,7 @@ pub struct ABCIDriver<BtcServerClient, DatabaseRW> {
 
 impl<BtcServerClient, DatabaseRW> ABCIDriver<BtcServerClient, DatabaseRW>
 where
-    DatabaseRW: Database + Clone + Send + Sync + 'static,
+    DatabaseRW: Database + Clone + Send + Sync + SnapshotReader + 'static,
     BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
 {
     /// Create a new ABCI drivers
@@ -1055,7 +1352,7 @@ where
                             tokio::sync::oneshot::channel::<()>();
                         self.snapshot_manager_tx
                             .blocking_send(ABCIDriverMessage::CommitBlock((
-                                sealed_block_with_peg.clone(),
+                                sealed_block_with_context,
                                 cbft_hash,
                                 snapshot_manager_announced_tx,
                             )))
@@ -1212,6 +1509,7 @@ mod tests {
             AuthorityConsensus::new(spec),
             false,
             Arc::new(AuthorityMetrics::default()),
+            DataParser::default(),
             task_executor,
             factory,
         );
