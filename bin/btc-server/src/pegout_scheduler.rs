@@ -599,6 +599,62 @@ impl PegoutScheduler {
         self.last_blocks.push_back(BlockInfo { hash, relevant_txs, relevant_inputs });
     }
 
+    /// Check if tx has been dropped from the mempool or reorged
+    ///
+    /// Steps:
+    /// 1) Determine the timestamp of the checkpoint block
+    /// 2) Get txs older than timestamp
+    /// 3) Check if tx still exists
+    /// 4) If not, untrack the tx
+    /// 5) and add the pegout back to the pending pegout set
+    pub fn track_mempool(
+        &mut self,
+        bitcoind: &impl RpcApi,
+        checkpoint: bitcoincore_rpc::json::GetBlockHeaderResult,
+    ) -> Result<(), SyncError> {
+        // 1) Determine the timestamp of the checkpoint block
+        let cp_time = checkpoint.block_time();
+        // 2) Get txs older than timestamp
+        let maybe_dropped_txs = self
+            .txs
+            .values()
+            .filter(|tx| tx.created < cp_time)
+            .map(|tx| tx.txid)
+            .collect::<Vec<_>>();
+        // 3) Check if tx still exists
+        for txid in maybe_dropped_txs {
+            // TODO(scott): first check if tx is in the `finalized outputs` if we implement this
+            // see Updates section in `https://github.com/botanix-labs/botanix/issues/701`
+
+            // a tx that is in a deeply confirmed block should have been handled already
+            // so check if still in mempool
+            let tx = self.txs.get(&txid).expect("tx should exist").clone();
+            match bitcoind.get_mempool_entry(&txid) {
+                Ok(_) => {
+                    warn!("Tx {} still in the mempool", txid);
+
+                    // add the tx back to pending pegouts so it can be retried
+                    // validate_psbt() will enforce the retry tx will have a conflicting input
+                    // so multiple outputs for the pegout are not created
+                    self.add_tx_back_to_pending(&tx)?;
+
+                    continue;
+                }
+                Err(e) => {
+                    // we've already checked if the tx is in the finalized outputs list
+                    // so it has been dropped or there was a reorg
+                    warn!("Tx {} not in the mempool or finalized outputs list: {}", txid, e);
+                    // 4) untrack the tx
+                    self.un_track_tx(&txid)?;
+                    // 5) add the pegout back to the pending pegout set
+                    self.add_tx_back_to_pending(&tx)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Sync with new blocks and stop when the [checkpoint] block gets finalized.
     ///
     /// We take the database closure to reduce coupling with database module.
@@ -693,25 +749,21 @@ impl PegoutScheduler {
             }
         }
 
-        // Here we can additionally check for txs are tracked for a long periods of time
-        // And no longer are in the mempool
-        // TODO
-
-        if self.last_finalized == checkpoint {
-            info!("Checkpoint reached: {}", checkpoint);
-            Ok(())
-        } else {
-            let last_info = bitcoind.get_block_header_info(&self.last_finalized);
-            let cp_info = bitcoind.get_block_header_info(&checkpoint);
-            if let (Ok(last), Ok(cp)) = (last_info, cp_info) {
-                debug!(
-                    "Checkpoint not reached: last={:?}, checkpoint={:?}, tip={:?}",
-                    last, cp, tip
-                );
+        let last_info = bitcoind.get_block_header_info(&self.last_finalized);
+        let cp_info = bitcoind.get_block_header_info(&checkpoint);
+        if let (Ok(last), Ok(cp)) = (last_info, cp_info) {
+            if self.last_finalized == checkpoint {
+                info!("Checkpoint reached: {}", checkpoint);
+                return Ok(());
             }
-            update_telemetry_error!(telemetry, SyncError::CheckPointNotReached);
-            Err(SyncError::CheckPointNotReached)
+
+            debug!("Checkpoint not reached: last={:?}, checkpoint={:?}, tip={:?}", last, cp, tip);
+
+            // handle txs that are still in the mempool, have been dropped or there was a reorg
+            self.track_mempool(bitcoind, cp)?;
         }
+        update_telemetry_error!(telemetry, SyncError::CheckPointNotReached);
+        Err(SyncError::CheckPointNotReached)
     }
 }
 
