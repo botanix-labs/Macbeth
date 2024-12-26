@@ -504,6 +504,15 @@ impl Suite for ConsensusIntegrationTestSuite {
                 },
                 frost::test_conflicting_input::test_conflicting_input
             ),
+            "test_round1_then_new_signing_session" => run_test!(
+                self,
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
+                frost::test_round1_then_new_signing_session::test_round1_then_new_signing_session
+            ),
             _ => {
                 panic!("Test not found");
             }
