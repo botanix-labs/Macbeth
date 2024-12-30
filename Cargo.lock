@@ -2074,7 +2074,7 @@ dependencies = [
  "displaydoc",
  "dotenvy",
  "env_logger",
- "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
+ "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
  "futures-util",
  "hex",
  "lazy_static",
@@ -4096,7 +4096,7 @@ dependencies = [
 [[package]]
 name = "frost-core"
 version = "2.0.0"
-source = "git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a#fe6dad1d46c0515169e117012759ae18b4aaf16a"
+source = "git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e#be21f863dd782ae8ad030876964f7615ab392f0e"
 dependencies = [
  "byteorder",
  "const-crc32-nostd",
@@ -4130,11 +4130,11 @@ dependencies = [
 [[package]]
 name = "frost-rerandomized"
 version = "2.0.0"
-source = "git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a#fe6dad1d46c0515169e117012759ae18b4aaf16a"
+source = "git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e#be21f863dd782ae8ad030876964f7615ab392f0e"
 dependencies = [
  "derive-getters",
  "document-features",
- "frost-core 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
+ "frost-core 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
  "hex",
  "rand_core 0.6.4",
 ]
@@ -4155,11 +4155,11 @@ dependencies = [
 [[package]]
 name = "frost-secp256k1-tr"
 version = "2.0.0"
-source = "git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a#fe6dad1d46c0515169e117012759ae18b4aaf16a"
+source = "git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e#be21f863dd782ae8ad030876964f7615ab392f0e"
 dependencies = [
  "document-features",
- "frost-core 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
- "frost-rerandomized 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
+ "frost-core 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
+ "frost-rerandomized 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
  "k256",
  "rand_core 0.6.4",
  "sha2 0.10.8",
@@ -8021,7 +8021,7 @@ dependencies = [
  "comet-bft-rpc",
  "displaydoc",
  "ethabi",
- "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
+ "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
  "futures-util",
  "hex",
  "metrics",
@@ -8272,7 +8272,7 @@ dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
  "ethers",
- "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
+ "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
  "hex",
  "lazy_static",
  "miniscript",
@@ -9304,7 +9304,7 @@ dependencies = [
  "derive_more 1.0.0",
  "discv5",
  "enr 0.12.1",
- "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
+ "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
  "futures",
  "itertools 0.13.0",
  "metrics",
@@ -10099,7 +10099,7 @@ dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
  "derive_more 1.0.0",
- "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
+ "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
  "futures",
  "jsonrpsee-core",
  "jsonrpsee-types",
@@ -12344,7 +12344,7 @@ dependencies = [
  "dotenv",
  "ethers",
  "eyre",
- "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=fe6dad1d46c0515169e117012759ae18b4aaf16a)",
+ "frost-secp256k1-tr 2.0.0 (git+https://github.com/0xBEEFCAF3/frost?rev=be21f863dd782ae8ad030876964f7615ab392f0e)",
  "hex",
  "port-killer",
  "pretty_assertions",
