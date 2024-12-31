@@ -98,6 +98,7 @@ use crate::{
     comet_bft::{
         non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
     },
+    engine_util::{self},
     excecution_utils::authority_execution_utils::build_and_execute,
     metrics::AuthorityMetrics,
     utils::{call_notify_pegin, call_notify_pegout},
@@ -486,28 +487,34 @@ where
         let client = self.storage.client.clone();
 
         if request.app_hash.is_empty() {
+            warn!("Received empty app hash in offer_snapshot request, rejecting snapshot");
             return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
         }
 
         if self.application_hash(&client) == request.app_hash {
+            info!("Application hash matches, snapshot must have already been applied, rejecting snapshot");
             return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
         }
 
         if let Some(snapshot) = request.snapshot {
             if snapshot.format != SNAPSHOT_MESSAGE_FORMAT {
+                warn!("Received snapshot format is not supported, rejecting snapshot");
                 return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT_FORMAT as i32 };
             }
 
             if snapshot.chunks == 0 {
+                warn!("Received snapshot has no chunks, rejecting snapshot");
                 return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
             }
 
             if snapshot.hash == prost::bytes::Bytes::default() {
+                warn!("Received snapshot has no hash (empty bytes), rejecting snapshot");
                 return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
             }
 
             // check that we should not have the block at height already
             if let Some(_) = client.block_by_id(BlockId::number(snapshot.height)).ok().flatten() {
+                info!("Block at height {:?} already exists, rejecting snapshot", snapshot.height);
                 return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
             }
 
@@ -517,6 +524,10 @@ where
 
             // check that the latest header is less than the snapshot height
             if latest_header.header().number > snapshot.height {
+                info!(
+                    "Latest header height {:?} is greater than snapshot height {:?}, rejecting snapshot",
+                    latest_header.header().number, snapshot.height
+                );
                 return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
             }
 
@@ -1499,6 +1510,8 @@ mod tests {
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
         let (driver_tx, _driver_rx) = tokio::sync::mpsc::channel(100);
+        let (tx, _rx) =
+            tokio::sync::mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
         let abci_client = ABCIClient::new(
             storage,
             validator.validator,

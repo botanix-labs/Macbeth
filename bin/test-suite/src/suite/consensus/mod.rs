@@ -48,6 +48,7 @@ mod common;
 mod frost;
 mod invalid_transactions;
 mod rpc_node;
+mod sync;
 
 pub struct ConsensusIntegrationTestSuite {
     pub timeout: Duration,
