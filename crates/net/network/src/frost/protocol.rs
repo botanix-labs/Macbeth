@@ -178,7 +178,6 @@ impl Stream for FrostProtoConnection {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        info!(target: "network::frost::protocol", "Polling next message from peer with id = {:?}", this.peer_id);
 
         // in case of outgoing (I am dialing this a peer), send him a pure PING message
         // TODO there is no reason to have this initial ping and pong maybe we can just remove it
