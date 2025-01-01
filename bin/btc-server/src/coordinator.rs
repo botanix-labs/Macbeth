@@ -25,7 +25,7 @@ use crate::{
     database::{Error as DbError, Utxo},
     pegout_id::PegoutId,
     util::{
-        get_available_utxos, validate_psbt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION,
+        validate_psbt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION,
         ROUND2,
     },
     App, Error,

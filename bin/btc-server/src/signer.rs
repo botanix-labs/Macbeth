@@ -17,7 +17,7 @@ use crate::{
     coordinator::CoordinatorError,
     database,
     pegout_id::PegoutId,
-    util::{validate_outputs, validate_psbt, ValidateOutputsError, ROUND1, ROUND1_TRANSITION},
+    util::{validate_outputs, validate_psbt, ValidateOutputsError, ROUND1},
     App, Error,
 };
 

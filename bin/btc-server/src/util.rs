@@ -12,7 +12,6 @@ use reth_btc_wallet::{
     util::VerifyingKeyExt,
 };
 use std::collections::{HashMap, HashSet};
-use tokio::sync::Mutex;
 
 use crate::{
     database::{self, Db, Utxo},
