@@ -1166,7 +1166,7 @@ mod test {
         assert_eq!(error_response.code(), Code::Internal);
         assert_eq!(
             error_response.message(),
-            "internal error: Failed to make tx: Failed to validate psbt: inputs cannot be 0"
+            "internal error: Failed to make tx: coin selection error: Outputs cannot be empty"
         );
 
         // now generate some random utxos and save them

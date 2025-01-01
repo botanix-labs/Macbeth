@@ -1,5 +1,8 @@
 use bdk::miniscript::psbt::Error as PsbtError;
-use std::time::{Instant, SystemTime};
+use std::{
+    collections::HashMap,
+    time::{Instant, SystemTime},
+};
 
 use crate::coin_selection::CoinSelectionError;
 use bitcoin::{
@@ -228,8 +231,13 @@ where
         let (available_utxos, _tracked_inputs) =
             get_available_utxos(&self.db).await.map_err(CoordinatorError::Db)?;
 
-        let psbt =
-            coin_selection::coin_selection(available_utxos, outputs, fee_rate, change_script)?;
+        let psbt = coin_selection::coin_selection(
+            available_utxos,
+            HashMap::new(),
+            outputs,
+            fee_rate,
+            change_script,
+        )?;
         // Sanity check that we created a valid PSBT
         // This should not fail
         validate_psbt(&psbt, NO_FLAGS, self.min_signers, &self.db)?;

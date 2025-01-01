@@ -35,6 +35,8 @@ impl PartialEq for CoinSelectionError {
 /// Coin selection
 pub(crate) fn coin_selection(
     available_utxos: HashMap<OutPoint, Utxo>,
+    // Currently unused, will be used for conflicting inputs
+    #[allow(unused)] required_utxos: HashMap<OutPoint, Utxo>,
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
     change_script: ScriptBuf,
@@ -117,9 +119,7 @@ pub(crate) fn coin_selection(
     );
 
     let absolute_fee = Amount::from_sat(original_psbt.fee_amount().expect("no missing any txouts"));
-    println!("absolute_fee = {:?}", absolute_fee);
     let fee_per_output = absolute_fee / pegouts.len() as u64;
-    println!("fee_per_output = {:?}", fee_per_output);
 
     for (output, _pegout_id) in pegouts.iter_mut() {
         output.value -= fee_per_output;
@@ -172,6 +172,7 @@ mod tests {
         let change_script = random_p2tr_keyspend_script();
         let res = coin_selection(
             HashMap::new(),
+            HashMap::new(),
             vec![],
             FeeRate::from_sat_per_vb(3).unwrap(),
             change_script.clone(),
@@ -180,6 +181,7 @@ mod tests {
 
         let output_script = random_p2wpkh_script();
         let res = coin_selection(
+            HashMap::new(),
             HashMap::new(),
             vec![(
                 TxOut { script_pubkey: output_script, value: Amount::from_sat(1000) },
@@ -192,59 +194,88 @@ mod tests {
     }
 
     #[test]
-    fn idk_yet() {
+    fn should_take_fee_out_of_outputs() {
         let app = setup();
         // Add 15 utxos
         let tx = create_tx(15, 1, None);
-
+        let change_script = random_p2tr_keyspend_script();
+        let output_script = random_p2wpkh_script();
         let mut utxos = vec![];
         for i in 0..5 {
             let utxo = crate::database::Utxo::new(
                 OutPoint::new(tx.input[i].previous_output.txid, i as u32),
+                // Each prevout has a value of 1000 sats
                 tx.output[0].clone(),
                 None,
             );
             utxos.push(utxo.clone());
         }
 
-        let x = utxos.iter().map(|u| u).collect::<Vec<_>>();
-        app.add_pegins(&x).expect("add pegins");
-
-        let change_script = random_p2tr_keyspend_script();
-        let output_script = random_p2wpkh_script();
+        let available_utxos = utxos.iter().map(|u| u).collect::<Vec<_>>();
+        app.add_pegins(&available_utxos).expect("add pegins");
 
         let mut available_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
         for utxo in app.db.get_all_utxos().unwrap() {
             available_utxos.insert(utxo.outpoint, utxo);
         }
 
+        let required_utxos = HashMap::new();
+        let desired_fee_rate = FeeRate::from_sat_per_vb(3).unwrap();
+        let desired_amount_per_output = Amount::from_sat(1000);
         let psbt = coin_selection(
             available_utxos,
+            required_utxos,
             vec![
                 (
-                    TxOut { script_pubkey: output_script.clone(), value: Amount::from_sat(1000) },
+                    TxOut {
+                        script_pubkey: output_script.clone(),
+                        value: desired_amount_per_output,
+                    },
                     create_random_pegout_id(),
                 ),
                 (
-                    TxOut { script_pubkey: output_script, value: Amount::from_sat(1000) },
+                    TxOut { script_pubkey: output_script, value: desired_amount_per_output },
                     create_random_pegout_id(),
                 ),
             ],
-            FeeRate::from_sat_per_vb(3).unwrap(),
-            change_script,
+            desired_fee_rate,
+            change_script.clone(),
         )
         .unwrap();
         let tx = psbt.clone().extract_tx().unwrap();
-        let fee_rate = psbt.fee_rate();
+        let fee_rate = psbt.fee_rate().unwrap();
         println!("fee_rate = {:?}", fee_rate);
+        println!("desired_fee_rate = {:?}", desired_fee_rate);
+        // make_tx is hardcoded to have 1000 sats per output
+        let total_amount_being_spent = Amount::from_sat((tx.input.len() * 1000) as u64);
+        let pegout_outputs =
+            tx.output.iter().filter(|o| o.script_pubkey != change_script).collect::<Vec<_>>();
+        let change_output = tx.output.iter().find(|o| o.script_pubkey == change_script).unwrap();
+        let change_output_value = change_output.value;
+        let pegout_outputs_value = pegout_outputs.iter().map(|o| o.value).sum::<Amount>();
+        let total_output_value = pegout_outputs_value + change_output_value;
 
-        // print inputs
-        for input in tx.input {
-            println!("input = {:?}", input);
+        // First some sanity checks
+        // if we are requesting 2000 sats we need to spend > 2000 sats to cover the fee
+        assert_eq!(tx.input.len(), 3);
+        // Ensure we have 2 outputs
+        assert_eq!(pegout_outputs.len(), 2);
+
+        // Check that the total output value is less than the total amount being spent
+        // i.e some fees are being taken out
+        assert!(total_output_value < total_amount_being_spent);
+
+        // Check that the fee per output is correct
+        let fee_per_output =
+            (total_amount_being_spent - total_output_value) / pegout_outputs.len() as u64;
+        for pegout_output in pegout_outputs.iter() {
+            assert_eq!(pegout_output.value, desired_amount_per_output - fee_per_output);
         }
-        // print outsputs
-        for output in tx.output {
-            println!("output = {:?}", output);
-        }
+
+        // Check that the change output is correct
+        assert_eq!(
+            change_output.value,
+            total_amount_being_spent - desired_amount_per_output * pegout_outputs.len() as u64
+        );
     }
 }
