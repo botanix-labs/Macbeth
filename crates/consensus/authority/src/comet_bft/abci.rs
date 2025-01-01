@@ -90,7 +90,6 @@ pub enum ApplySnapshotResult {
 /// Snapshot message format - undefined for now
 pub const SNAPSHOT_MESSAGE_FORMAT: u32 = 1;
 
-use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -98,7 +97,6 @@ use crate::{
     comet_bft::{
         non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
     },
-    engine_util::{self},
     excecution_utils::authority_execution_utils::build_and_execute,
     metrics::AuthorityMetrics,
     utils::{call_notify_pegin, call_notify_pegout},
@@ -126,7 +124,7 @@ pub struct BlockWithContext {
 }
 
 /// ABCI client builder
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     bitcoin_checkpoint: BitcoinCheckpoint,
@@ -134,7 +132,6 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
     is_fed_node: bool,
     metrics: Arc<AuthorityMetrics>,
-    snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     compressor: DataParser,
     task_executor: TaskExecutor,
     abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
@@ -154,10 +151,9 @@ where
         authority_consensus: AuthorityConsensus,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
         is_fed_node: bool,
-        snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
-        compressor: DataParser,
-        task_executor: TaskExecutor,
         metrics: Arc<AuthorityMetrics>,
+        task_executor: TaskExecutor,
+        compressor: DataParser,
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Self {
@@ -171,7 +167,6 @@ where
             task_executor,
             abci_driver_tx,
             provider_factory,
-            snapshot_manager_tx,
             compressor,
         }
     }
@@ -198,13 +193,6 @@ where
             self.compressor.clone(),
             self.task_executor.clone(),
             self.provider_factory.clone(),
-        );
-        let mut abci_driver = ABCIDriver::new(
-            self.btc_server.clone(),
-            self.abci_driver_tx,
-            self.provider_factory.clone(),
-            self.authority_consensus.clone(),
-            self.snapshot_manager_tx.clone(),
         );
 
         let server_builder = ServerBuilder::default();
@@ -252,7 +240,7 @@ enum PayloadBuilderError {
     ParentBlockDoesNotExist,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
     validator: EthTransactionValidator<DB, EthPooledTransaction>,
@@ -1245,6 +1233,7 @@ pub struct ABCIDriver<BtcServerClient, DatabaseRW> {
     database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
     canon_state_notification_sender: CanonStateNotificationSender,
     blockchain_provider_2: BlockchainProvider2<DatabaseRW>,
+    snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
 }
 
 impl<BtcServerClient, DatabaseRW> ABCIDriver<BtcServerClient, DatabaseRW>
@@ -1267,6 +1256,7 @@ where
             database_provider,
             canon_state_notification_sender,
             blockchain_provider_2,
+            snapshot_manager_tx,
         }
     }
 
@@ -1276,6 +1266,7 @@ where
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
                     ABCIDriverMessage::CommitBlock((sealed_block_with_context, cbft_hash, tx)) => {
+                        let sealed_block_with_context_clone = sealed_block_with_context.clone();
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
@@ -1363,7 +1354,7 @@ where
                             tokio::sync::oneshot::channel::<()>();
                         self.snapshot_manager_tx
                             .blocking_send(ABCIDriverMessage::CommitBlock((
-                                sealed_block_with_context,
+                                sealed_block_with_context_clone,
                                 cbft_hash,
                                 snapshot_manager_announced_tx,
                             )))
@@ -1510,8 +1501,6 @@ mod tests {
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
         let (driver_tx, _driver_rx) = tokio::sync::mpsc::channel(100);
-        let (tx, _rx) =
-            tokio::sync::mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
         let abci_client = ABCIClient::new(
             storage,
             validator.validator,

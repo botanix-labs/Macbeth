@@ -74,6 +74,15 @@ pub struct CliArgs {
     /// max frost signers
     #[argh(option, default = "2")]
     pub max_signers: u16,
+    /// max_snapshot_size_bytes
+    #[argh(option, default = "10240")]
+    pub max_snapshot_size_bytes: usize,
+    /// snapshot_chunk_size_bytes
+    #[argh(option, default = "1024")]
+    pub snapshot_chunk_size_bytes: usize,
+    /// snapshot_keep_recent
+    #[argh(option, default = "3")]
+    pub snapshot_keep_recent: u64,
     /// rpc nodes
     #[argh(option, default = "1")]
     pub rpc_nodes: u16,

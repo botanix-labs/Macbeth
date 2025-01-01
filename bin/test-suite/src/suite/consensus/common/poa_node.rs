@@ -18,11 +18,17 @@ use ethers::{
 };
 use reth::args::{FedMemberPubKey, FederationTomlConfig};
 use reth_chainspec::{create_botanix_config_with_genesis, BOTANIX_TESTNET};
+use reth_db::{
+    mdbx::{DatabaseArguments, MaxReadTransactionDuration},
+    models::ClientVersion,
+    open_db_read_only, DatabaseEnv,
+};
 use reth_network_peers::pk2id;
 use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     public_key_to_address, Address,
 };
+use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
@@ -69,6 +75,7 @@ pub struct SpawnedPoaServerProcess {
     pub ws_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
+    pub provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
 }
 
 impl SpawnedPoaServerProcess {
@@ -128,6 +135,9 @@ pub struct FederationMemberTestConfig {
     pub sender: tokio::sync::broadcast::Sender<Notifications>,
     pub frost_min_signers: u16,
     pub frost_max_signers: u16,
+    pub max_snapshot_size_bytes: usize,
+    pub snapshot_chunk_size_bytes: usize,
+    pub snapshot_keep_recent: u64,
     pub peer_id: PeerId,
     pub is_dkg_ready: bool,
     pub edh: Option<ExtraDataHeader>,
@@ -148,6 +158,9 @@ impl FederationMemberTestConfig {
         bitcoin_server_url: String,
         frost_min_signers: u16,
         frost_max_signers: u16,
+        max_snapshot_size_bytes: usize,
+        snapshot_chunk_size_bytes: usize,
+        snapshot_keep_recent: u64,
         peer_id: PeerId,
         rpc_port: u16,
         ws_port: u16,
@@ -173,6 +186,9 @@ impl FederationMemberTestConfig {
             sender,
             frost_min_signers,
             frost_max_signers,
+            max_snapshot_size_bytes,
+            snapshot_chunk_size_bytes,
+            snapshot_keep_recent,
             peer_id,
             is_dkg_ready: false,
             edh: None,
@@ -294,6 +310,9 @@ impl FederationMemberTestConfig {
         let bitcoind_password = self.bitcoind_password.clone();
         let frost_min_signers = self.frost_min_signers.to_string();
         let frost_max_signers = self.frost_max_signers.to_string();
+        let max_snapshot_size_bytes = self.max_snapshot_size_bytes.to_string();
+        let snapshot_chunk_size_bytes = self.snapshot_chunk_size_bytes.to_string();
+        let snapshot_keep_recent = self.snapshot_keep_recent.to_string();
         let discovery_port = self.discovery_port.to_string();
         let abci_port = self.abci_port.to_string();
 
@@ -348,6 +367,12 @@ impl FederationMemberTestConfig {
             frost_min_signers.as_str(),
             "--frost.max_signers",
             frost_max_signers.as_str(),
+            "--sync.max_snapshot_size_bytes",
+            max_snapshot_size_bytes.as_str(),
+            "--sync.snapshot_chunk_size_bytes",
+            snapshot_chunk_size_bytes.as_str(),
+            "--sync.snapshot_keep_recent",
+            snapshot_keep_recent.as_str(),
             "--port",
             discovery_port.as_str(),
             "--p2p-secret-key",
@@ -365,16 +390,44 @@ impl FederationMemberTestConfig {
             self.botanix_fee_recipient.clone(),
         );
 
+        let child_process =
+            spawn_child_process(Scope::PoaNode(self.index), command, args, working_directory)?;
+
+        // database provider
+        let db_args = DatabaseArguments::new(ClientVersion::default())
+            .with_exclusive(Some(false))
+            .with_log_level(Some(LogLevel::Debug))
+            .with_max_read_transaction_duration(Some(MaxReadTransactionDuration::Unbounded));
+        let node_config = BOTANIX_TESTNET.clone();
+        let db_dir = Path::new(&self.temp_path).join("db");
+        let static_files_dir = Path::new(&self.temp_path).join("static_files");
+
+        let db = loop {
+            match open_db_read_only(&db_dir, db_args.clone()) {
+                Ok(db) => {
+                    break db;
+                }
+                Err(_) => {
+                    std::thread::sleep(Duration::from_secs(1));
+                    continue;
+                }
+            }
+        };
+
+        let database = Arc::new(db);
+        let static_file_provider = StaticFileProvider::read_only(static_files_dir)?;
+        let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+            database,
+            node_config,
+            static_file_provider.clone(),
+        );
+
         Ok(SpawnedPoaServerProcess {
-            child_process: spawn_child_process(
-                Scope::PoaNode(self.index),
-                command,
-                args,
-                working_directory,
-            )?,
+            child_process,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
             ws_port: self.ws_port,
+            provider_factory,
         })
     }
 
@@ -707,6 +760,9 @@ pub async fn create_poa_nodes(
             format!("localhost:{}", port),
             global_context.min_signers,
             global_context.max_signers,
+            global_context.max_snapshot_size_bytes,
+            global_context.snapshot_chunk_size_bytes,
+            global_context.snapshot_keep_recent,
             member_peerid,
             RPC_PORT_BASE + member_index,
             WS_PORT_BASE + member_index,

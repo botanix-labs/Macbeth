@@ -16,6 +16,10 @@ pub use rpc_server::RpcServerArgs;
 mod rpc_state_cache;
 pub use rpc_state_cache::RpcStateCacheArgs;
 
+/// `StateSyncArgs` struct for configuring state sync
+mod state_sync;
+pub use state_sync::StateSyncArgs;
+
 /// DebugArgs struct for debugging purposes
 mod debug;
 pub use debug::DebugArgs;

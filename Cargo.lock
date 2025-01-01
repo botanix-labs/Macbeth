@@ -12424,6 +12424,7 @@ dependencies = [
  "reth-cli-commands",
  "reth-cli-runner",
  "reth-consensus",
+ "reth-db",
  "reth-network-peers",
  "reth-node-core",
  "reth-primitives",

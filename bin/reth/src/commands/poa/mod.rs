@@ -15,7 +15,7 @@ use futures::TryFutureExt;
 use reth_authority_consensus::{
     comet_bft::abci::{ABCIDriver, ABCIDriverMessage},
     random_source_provider::RandomSourceProvider,
-    snapshot_manager::SnapshotRunnable,
+    snapshot_manager::{self, SnapshotRunnable},
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
@@ -166,6 +166,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[command(flatten)]
     pub network: NetworkArgs,
 
+    /// All state sync related arguments
+    #[command(flatten)]
+    pub state_sync: StateSyncArgs,
+
     /// All rpc related arguments
     #[command(flatten)]
     pub rpc: RpcServerArgs,
@@ -250,6 +254,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             abci_port,
             cometbft_rpc_port,
             cometbft_rpc_host,
+            state_sync,
         } = self;
 
         // Load reth config which is a bit different than cli config
@@ -278,6 +283,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             dev: Default::default(),
             pruning: Default::default(),
             builder: PayloadBuilderArgs::default(),
+            state_sync,
         };
 
         let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
@@ -553,11 +559,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         };
 
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(1);
+        let (snapshot_manager_tx, snapshot_manager_rx) =
+            tokio::sync::mpsc::channel::<ABCIDriverMessage>(100);
         let mut abci_driver = ABCIDriver::new(
             btc_server_client,
             driver_rx,
             provider_factory.clone(),
             blockchain_db.clone(),
+            snapshot_manager_tx,
         );
 
         // check Minting.sol deployed bytecode matches known bytecode
@@ -754,6 +763,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             cometbft_rpc_factory,
             RandomSourceProvider::new(),
             driver_tx,
+            node_config.state_sync,
             provider_factory.clone(),
         ) {
             Ok(consensus) => consensus.build::<BtcServerExtendedClient, ABCIDriver<BtcServerExtendedClient, Arc<DatabaseEnv>>>(canon_state_reciever).await,

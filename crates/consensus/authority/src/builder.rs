@@ -21,12 +21,13 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_network_p2p::{BodiesClient, HeadersClient};
+use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotification, CanonStateNotificationSender,
-    CanonStateSubscriptions, ProviderFactory, SnapshotReader, SnapshotWriter, StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderFactory,
+    SnapshotReader, SnapshotWriter, StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
@@ -54,6 +55,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Sour
     metrics: Arc<AuthorityMetrics>,
     abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    state_sync: StateSyncArgs,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -100,6 +102,7 @@ where
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
         random_source_provider: Source,
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+        state_sync: StateSyncArgs,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
@@ -185,6 +188,7 @@ where
             metrics: Arc::new(AuthorityMetrics::default()),
             abci_driver_tx,
             provider_factory,
+            state_sync,
         })
     }
 
@@ -194,6 +198,7 @@ where
     pub async fn build<BtcServerClient, Canon: CanonStateSubscriptions>(
         self,
         canon_notification_reciever: tokio::sync::broadcast::Receiver<CanonStateNotification>,
+        snapshot_manager_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     ) -> (
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
@@ -219,6 +224,7 @@ where
             metrics,
             abci_driver_tx,
             provider_factory,
+            state_sync,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let chain_spec = storage.chain_spec.clone();
@@ -276,9 +282,6 @@ where
             frost_task = Some(task);
         }
 
-        let (snapshot_manager_tx, snapshot_manager_rx) =
-            tokio::sync::mpsc::channel::<ABCIDriverMessage>(100);
-
         // all nodes will have an abci client builder
         let abci_client_builder = Some(ABCIClientBuilder::new(
             storage.clone(),
@@ -288,15 +291,17 @@ where
             is_fed_node,
             Arc::clone(&metrics),
             task_executor.clone(),
+            parser.clone(),
             abci_driver_tx,
             provider_factory,
-            snapshot_manager_tx,
-            parser.clone(),
-            task_executor.clone(),
         ));
 
-        let snapshot_manager =
-            Some(SnapshotManager::new(storage.clone(), parser.clone(), snapshot_manager_rx));
+        let snapshot_manager = Some(SnapshotManager::new(
+            storage.clone(),
+            parser.clone(),
+            snapshot_manager_rx,
+            state_sync,
+        ));
 
         (frost_task, abci_client_builder, snapshot_manager)
     }

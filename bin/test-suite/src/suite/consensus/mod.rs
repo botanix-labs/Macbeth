@@ -32,6 +32,8 @@ use common::{
     },
 };
 use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use reth_db::DatabaseEnv;
+use reth_provider::ProviderFactory;
 use reth_tracing::tracing::error;
 use std::{
     collections::{HashMap, HashSet},
@@ -56,6 +58,7 @@ pub struct ConsensusIntegrationTestSuite {
     pub outcomes: Vec<Outcome>,
     pub local_context: LocalContext,
 }
+
 pub struct LocalContext {
     // bitcoind
     pub bitcoind_process: Option<SpawnedBitcoindProcess>,
@@ -200,6 +203,20 @@ impl LocalContext {
 
         let hs: HashSet<u16> = HashSet::from_iter(rpc_ports);
         hs.into_iter().collect()
+    }
+
+    pub fn get_dbs(&self) -> Vec<ProviderFactory<Arc<DatabaseEnv>>> {
+        let db_provider_factories = self
+            .poa_processes
+            .as_ref()
+            .map(|poa_processes| {
+                poa_processes
+                    .iter()
+                    .map(|process| process.provider_factory.clone())
+                    .collect::<Vec<ProviderFactory<Arc<DatabaseEnv>>>>()
+            })
+            .unwrap_or_default();
+        db_provider_factories
     }
 
     pub fn get_rpc_processes_discovery_ports(&self) -> Vec<u16> {

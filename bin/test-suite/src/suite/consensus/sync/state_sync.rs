@@ -1,8 +1,7 @@
 use bitcoincore_rpc::RpcApi;
-use ethers::types::H256;
-use reth::primitives::public_key_to_address;
+use reth_provider::SnapshotReader;
 
-use std::{collections::HashSet, str::FromStr, time::Duration};
+use std::{collections::HashSet, time::Duration};
 
 use crate::{
     it_info_print,
@@ -50,59 +49,31 @@ pub async fn state_sync(
     let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
 
     // take the first member as the inturn member
-    let inturn_member_index = 0;
+    let member_index = 0;
 
     // assign targeted fed member
-    let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
+    let targeted_fed_member = test_fed_members.get(&(member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
     let botanix_eth_client =
         targeted_fed_member.botanix_eth_client.clone().expect("Botanix Client must be initialized");
 
-    let addr = reth_primitives::Address::from_str(&suite.global_context.botanix_fee_recipient)
-        .expect("valid eth address");
-    let botanix_block_reward_address_balance_before =
-        botanix_eth_client.get_botanix_balance(addr).await.unwrap();
-    it_info_print!(
-        "Botanix block fee recipient balance before",
-        botanix_block_reward_address_balance_before
-    );
-
     // create a hashmap to store tx hashes
     let mut tx_hashes_set = HashSet::new();
 
-    // send eoa messages to the node at selected index
-    it_info_print!("Sending eoa transaction...");
-    let eoa_receiver = ethers::core::types::Address::random();
-    it_info_print!("Eoa receiver: {:?}", eoa_receiver.to_string());
-    let tx_receipt = botanix_eth_client.send_eoa(eoa_receiver, SEND_AMOUNT).await.unwrap().unwrap();
-    it_info_print!("Eoa tx receipt hash: {:?}", tx_receipt.transaction_hash);
-    tx_hashes_set.insert(tx_receipt.transaction_hash);
-
-    // retrieve the current aggregate public key
-    let aggregate_public_key_str =
-        suite.local_context.btc_server_clients.clone().expect("btc server clients")[0]
-            .get_public_key(client::Empty {})
-            .await
-            .unwrap()
-            .into_inner()
-            .publickey;
-
-    let _aggregate_public_key = secp256k1::PublicKey::from_str(&aggregate_public_key_str).unwrap();
-    // Oof this is nasty, lets just put authorities in a vec in local context
-    let _authority_signers = &suite
-        .local_context
-        .poa_nodes
-        .as_ref()
-        .unwrap()
-        .values()
-        .next()
-        .unwrap()
-        .authorities
-        .clone();
+    // send eoa messages to random addresses
+    for _ in 0..100 {
+        it_info_print!("Sending eoa transaction...");
+        let eoa_receiver = ethers::core::types::Address::random();
+        it_info_print!("Eoa receiver: {:?}", eoa_receiver.to_string());
+        let tx_receipt =
+            botanix_eth_client.send_eoa(eoa_receiver, SEND_AMOUNT).await.unwrap().unwrap();
+        it_info_print!("Eoa tx receipt hash: {:?}", tx_receipt.transaction_hash);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        tx_hashes_set.insert(tx_receipt.transaction_hash);
+    }
 
     // wait for canonical chain updates reported by the node, then send new tx
-    let mut tx_hashes_set: HashSet<u16> = HashSet::new();
     while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
             it_info_print!(
@@ -113,49 +84,15 @@ pub async fn state_sync(
                 "Received block number from engine = {:?}",
                 canon_state_notification.block.number.map(|n| n.as_u64())
             );
-
-            // read all tx hashes from the block receipts
-            let block_receipt_hashes = canon_state_notification
-                .tx_receipts
-                .iter()
-                .map(|r| r.transaction_hash)
-                .collect::<Vec<H256>>();
-            it_info_print!("Block receipts hashes ?", block_receipt_hashes);
-
-            // if the received tx hash is not the one we are interested in, skip
-            if !block_receipt_hashes.contains(&tx_receipt.transaction_hash) {
-                continue;
-            }
-            tx_hashes_set.insert(canon_state_notification.engine_index);
-
-            let fed_member_pub_key = suite
+            let db_provider = suite
                 .local_context
-                .authorities
-                .get((canon_state_notification.engine_index) as usize)
+                .get_dbs()
+                .get(canon_state_notification.engine_index as usize)
+                .cloned()
                 .unwrap();
-            let fed_member_ethereum_address = public_key_to_address(*fed_member_pub_key);
-
-            let fed_member_balance =
-                botanix_eth_client.get_botanix_balance(fed_member_ethereum_address).await.unwrap();
-            it_info_print!("Fed member balance", fed_member_balance);
-
-            if tx_hashes_set.len() == test_fed_members.len() {
-                return Ok(());
-            }
+            let snapshots = db_provider.get_snapshots().unwrap_or_default();
+            it_info_print!("Snapshots", snapshots);
         }
-    }
-
-    // Check that all members accepted the block
-    for (index, fed_member_config) in test_fed_members.iter() {
-        let botanix_eth_client = fed_member_config
-            .botanix_eth_client
-            .clone()
-            .expect("Botanix Client must be initialized");
-        let fed_member_pub_key = suite.local_context.authorities.get(*index as usize).unwrap();
-        let fed_member_ethereum_address = public_key_to_address(*fed_member_pub_key);
-        let fed_member_balance =
-            botanix_eth_client.get_botanix_balance(fed_member_ethereum_address).await.unwrap();
-        it_info_print!("Fed member balance", fed_member_balance);
     }
 
     Ok(())

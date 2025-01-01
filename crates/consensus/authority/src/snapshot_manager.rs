@@ -5,15 +5,9 @@ use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_db::models::ChunkId;
 use reth_evm::execute::BlockExecutorProvider;
+use reth_node_core::args::StateSyncArgs;
 use reth_provider::{BlockReaderIdExt, ProviderError, SnapshotReader, SnapshotWriter};
 use tracing::{debug, error, info, trace, warn};
-
-/// The default maximum size for a snapshot in bytes (8 MB).
-pub const DEFAULT_MAX_SNAPSHOT_SIZE_BYTES: u64 = 8 * 1024 * 1024; // 8 Mbs max size
-/// The default size for a snapshot chunk in bytes (1 MB).
-pub const DEFAULT_SNAPSHOT_CHUNK_SIZE_BYTES: u64 = 1 * 1024 * 1024; // 1 MB
-/// The default number of recent snapshots to keep.
-pub const DEFAULT_SNAPSHOT_KEEP_RECENT: u64 = 3;
 
 /// Snapshot manager error
 #[derive(Debug, thiserror::Error)]
@@ -41,9 +35,7 @@ pub struct SnapshotManager<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     compressor: DataParser,
     snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
-    max_snapshot_size_bytes: u64,
-    snapshot_chunk_size_bytes: u64,
-    snapshot_keep_recent: u64,
+    state_sync: StateSyncArgs,
 }
 
 impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
@@ -56,15 +48,9 @@ where
         storage: Storage<EF, BF, DB>,
         compressor: DataParser,
         snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
+        state_sync: StateSyncArgs,
     ) -> Self {
-        Self {
-            storage,
-            compressor,
-            snapshot_manager_tx,
-            max_snapshot_size_bytes: DEFAULT_MAX_SNAPSHOT_SIZE_BYTES,
-            snapshot_chunk_size_bytes: DEFAULT_SNAPSHOT_CHUNK_SIZE_BYTES,
-            snapshot_keep_recent: DEFAULT_SNAPSHOT_KEEP_RECENT,
-        }
+        Self { storage, compressor, snapshot_manager_tx, state_sync }
     }
 }
 
@@ -74,10 +60,16 @@ where
     EF: BlockExecutorProvider + Clone + 'static,
     DB: BlockReaderIdExt + SnapshotWriter + SnapshotReader + Clone + 'static,
 {
-    // Note: this function should not be called unless we are fully synced
     async fn run(&mut self) -> Result<(), SnapshotManagerError> {
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
         let client = self.storage.client.clone();
+
+        let latest_block_number =
+            client.latest_header()?.as_ref().map(|h| h.number).unwrap_or_default();
+        if latest_block_number > 0 {
+            warn!(target: "consensus::authority::snapshot_manager::run", "State sync will not run as it requires an empty state but it currently has a block number of {}", latest_block_number);
+            return Ok(());
+        }
 
         while let Some(abci_driver_message) = self.snapshot_manager_tx.recv().await {
             debug!(target: "consensus::authority::snapshot_manager::run", "received abci driver message {:?}", abci_driver_message);
@@ -126,9 +118,9 @@ where
                     // Check if there is enough space in the latest snapshot
                     debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
                     if latest_snapshot_size + serialized_compressed_sealed_block.len() >
-                        self.max_snapshot_size_bytes as usize
+                        self.state_sync.max_snapshot_size_bytes
                     {
-                        error!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.max_snapshot_size_bytes, latest_snapshot_size, serialized_compressed_sealed_block.len());
+                        error!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.state_sync.max_snapshot_size_bytes, latest_snapshot_size, serialized_compressed_sealed_block.len());
                         // create a new snapshot
                         last_snapshot_id =
                             client.create_new_snapshot(sealed_block.number, sealed_block.hash())?;
@@ -136,7 +128,7 @@ where
 
                     // Split the serialized block into smaller chunks
                     let chunks = serialized_compressed_sealed_block
-                        .chunks(self.snapshot_chunk_size_bytes as usize);
+                        .chunks(self.state_sync.snapshot_chunk_size_bytes);
                     debug!(target: "consensus::authority::snapshot_manager::run", "Created chunks after split: {:?}", chunks);
                     let mut new_chunks: Vec<ChunkId> = vec![];
                     for chunk in chunks {
@@ -151,7 +143,8 @@ where
                     client.create_block_chunks_register(sealed_block.number, new_chunks)?;
 
                     // check if we need to delete older snapshots (Retention policy)
-                    if client.get_snapshots_count()? > self.snapshot_keep_recent as usize {
+                    if client.get_snapshots_count()? > self.state_sync.snapshot_keep_recent as usize
+                    {
                         client.remove_oldest_snapshot()?;
                     }
                 }
