@@ -11,7 +11,8 @@ use btcserverlib::{
     pegout_id::PegoutId,
 };
 use client::{
-    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest, ScriptBuf, SigningPackage, TxOut, Utxo,
+    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutsRequest, PendingPegout, ScriptBuf,
+    SigningPackage, TxOut, Utxo,
 };
 use futures_util::Future;
 use reth_btc_wallet::psbt::PsbtOutputExt;
@@ -143,18 +144,17 @@ where
     if pegouts.is_empty() {
         return Ok(());
     }
+    let mut reqs = Vec::new();
 
-    // TODO: do we want to modify NotifyPegoutRequest to take a list of pegouts?
-    // loop through pegouts and notify
     for pegout in pegouts {
-        let request = NotifyPegoutRequest {
+        reqs.push(PendingPegout {
             pegout_id: pegout.id.as_bytes().to_vec(),
             spk: pegout.data.destination.script_pubkey().to_bytes().to_vec(),
             amount: pegout.data.amount.to_sat(),
             height,
-        };
-        btc_server.notify_pegout(request).await?;
+        });
     }
+    btc_server.notify_pegouts(NotifyPegoutsRequest { pending_pegouts: reqs }).await?;
 
     Ok(())
 }

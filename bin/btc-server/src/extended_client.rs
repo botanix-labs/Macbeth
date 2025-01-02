@@ -3,11 +3,11 @@ use alloy_rpc_types_engine::{Claims, JwtSecret};
 use client::{
     BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
     FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
-    GetGatewayAddressResponse, GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse,
-    GetSigningStatusRequest, GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, 
-    NotifyPeginsRequest, NotifyPegoutRequest, ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage, 
-    SigningPackageRequest, SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
-    GetPendingPegoutsResponse,
+    GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
+    GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
+    GetTrackedTxsResponse, MakeTxRequest, NotifyPeginsRequest, NotifyPegoutsRequest,
+    ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage, SigningPackageRequest,
+    SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
 };
 use displaydoc::Display as DisplayDoc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -52,7 +52,7 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
     fn generate_jwt_token(&mut self) -> Option<String>;
     
     fn notify_pegins<'a>(&'a mut self, request: NotifyPeginsRequest) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn notify_pegout<'a>(&'a mut self, request: NotifyPegoutRequest) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn notify_pegouts<'a>(&'a mut self, request: NotifyPegoutsRequest) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
     fn get_gateway_address<'a>(&'a mut self, request: GetGatewayAddressRequest) -> BoxFuture<'a, Result<GetGatewayAddressResponse, GrpcClientError>>;
     fn get_public_key<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<GetPublicKeyResponse, GrpcClientError>>;
     fn get_round1_dkg_package<'a>(&'a mut self, request: Empty) -> BoxFuture<'a, Result<DkgPayload, GrpcClientError>>;
@@ -144,7 +144,7 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     }
 
     generate_method!(notify_pegins, NotifyPeginsRequest, Empty);
-    generate_method!(notify_pegout, NotifyPegoutRequest, Empty);
+    generate_method!(notify_pegouts, NotifyPegoutsRequest, Empty);
     generate_method!(get_gateway_address, GetGatewayAddressRequest, GetGatewayAddressResponse);
     generate_method!(get_public_key, Empty, GetPublicKeyResponse);
     generate_method!(get_round1_dkg_package, Empty, DkgPayload);

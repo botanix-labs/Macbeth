@@ -1141,17 +1141,21 @@ mod test {
         let spk = random_p2wpkh_script().as_bytes().to_vec();
 
         // notify about a new pegout
-        let request_1 = rpc::NotifyPegoutRequest {
-            pegout_id: pegout_id.as_bytes().to_vec(),
-            spk: spk.clone(),
-            amount: 100_000, // sats
-            height: 1,
+        let request_1 = rpc::NotifyPegoutsRequest {
+            pending_pegouts: vec![rpc::PendingPegout {
+                pegout_id: pegout_id.as_bytes().to_vec(),
+                spk: spk.clone(),
+                amount: 100_000, // sats
+                height: 1,
+            }],
         };
 
         // since the db is empty and there are no available utxos or tracked inputs, the pegout
         // should not be added
-        let response = app.notify_pegout(Request::new(request_1.clone())).await;
-        assert!(response.is_ok());
+        let _ = app
+            .notify_pegouts(Request::new(request_1.clone()))
+            .await
+            .expect("valid pending pegouts");
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
         assert_eq!(pending_pegouts.len(), 0);
 
@@ -1160,10 +1164,8 @@ mod test {
             signing_session_id: [0u8; 32].to_vec(),
             checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
         });
-        let response = app.get_psbt(request).await;
-        assert!(response.is_err());
-        let error_response = response.unwrap_err();
-        assert_eq!(error_response.code(), Code::Internal);
+        let response = app.get_psbt(request).await.unwrap_err();
+        assert_eq!(response.code(), Code::Internal);
         assert_eq!(
             error_response.message(),
             "internal error: Failed to make tx: coin selection error: Outputs cannot be empty"
@@ -1186,7 +1188,7 @@ mod test {
         }
 
         // retry the pegout
-        app.notify_pegout(Request::new(request_1)).await.expect("valid pegout request");
+        app.notify_pegouts(Request::new(request_1)).await.expect("valid pegout request");
 
         // assert the pending pegouts
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
@@ -1197,15 +1199,17 @@ mod test {
         assert_eq!(pegout.id, pegout_id);
 
         // prepare another request
-        let request_2 = Request::new(rpc::NotifyPegoutRequest {
-            pegout_id: pegout_id.as_bytes().to_vec(),
-            spk: spk.clone(),
-            amount: 100_000, // sats
-            height: 1,
+        let request_2 = Request::new(rpc::NotifyPegoutsRequest {
+            pending_pegouts: vec![rpc::PendingPegout {
+                pegout_id: pegout_id.as_bytes().to_vec(),
+                spk: spk.clone(),
+                amount: 100_000, // sats
+                height: 1,
+            }],
         });
 
         // Notifying with the same pegout id shouldn't make a difference
-        app.notify_pegout(request_2).await.expect("valid pegout request");
+        app.notify_pegouts(request_2).await.expect("valid pegout request");
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
         assert_eq!(pending_pegouts.len(), 1);
 
@@ -1221,16 +1225,38 @@ mod test {
         let mut tx_id = [0u8; 32];
         rng.fill(&mut tx_id);
         let pegout_id = PegoutId::new(tx_id, tx_idx);
-        let request_3 = Request::new(rpc::NotifyPegoutRequest {
-            pegout_id: pegout_id.as_bytes().to_vec(),
-            spk: spk.clone(),
-            amount: 100_000, // sats
-            height: 1,
+        let request_3 = Request::new(rpc::NotifyPegoutsRequest {
+            pending_pegouts: vec![rpc::PendingPegout {
+                pegout_id: pegout_id.as_bytes().to_vec(),
+                spk: spk.clone(),
+                amount: 100_000, // sats
+                height: 1,
+            }],
         });
 
-        app.notify_pegout(request_3).await.expect("valid pegout request");
+        app.notify_pegouts(request_3).await.expect("valid pegout request");
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
         assert_eq!(pending_pegouts.len(), 2);
+
+        // Multi pegout request
+        let request_multi_pegouts = {
+            let mut reqs = Vec::new();
+            for i in 0..10 {
+                reqs.push(rpc::PendingPegout {
+                    pegout_id: PegoutId::new([i as u8; 32], 0).as_bytes().to_vec(),
+                    spk: spk.clone(),
+                    amount: 100_000, // sats
+                    height: 1,
+                });
+            }
+            rpc::NotifyPegoutsRequest { pending_pegouts: reqs }
+        };
+
+        app.notify_pegouts(Request::new(request_multi_pegouts))
+            .await
+            .expect("valid pegout request");
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert_eq!(pending_pegouts.len(), 12);
     }
 
     #[test]

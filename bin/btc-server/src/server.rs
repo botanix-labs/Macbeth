@@ -199,27 +199,12 @@ where
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
-    async fn notify_pegout(
+    async fn notify_pegouts(
         &self,
-        req: tonic::Request<rpc::NotifyPegoutRequest>,
+        req: tonic::Request<rpc::NotifyPegoutsRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        let spk = ScriptBuf::from_bytes(req.spk);
-        // basic sanity check over spk
-        let _ = bitcoin::Address::from_script(&spk, self.btc_network).map_err(|e| {
-            error!("Failed to parse pegout spk for network: {:?}, error: {}", self.btc_network, e);
-            badarg!("Failed to parse pegout spk for network: {:?}, error: {}", self.btc_network, e)
-        })?;
-        let pegout_req = PegoutRequest {
-            id: PegoutId::from_bytes(&req.pegout_id).map_err(|_e| {
-                error!("Failed to parse pegout id: {:?}", req.pegout_id);
-                badarg!("Failed to parse pegout id: {:?}", req.pegout_id)
-            })?,
-            spk,
-            value: Amount::from_sat(req.amount),
-            botanix_height: req.height,
-        };
 
         // do not accept any pending pegouts when there are not available UTXOs and tracked inputs
         let (available_utxos, tracked_inputs) =
@@ -231,8 +216,39 @@ where
             error!("Received a pegout request when there are no utxos or pending transactions");
             return Ok(tonic::Response::new(rpc::Empty {}));
         }
+        let pegouts = req
+            .pending_pegouts
+            .into_iter()
+            .map(|p| {
+                let spk = ScriptBuf::from_bytes(p.spk);
+                // basic sanity check over spk
+                let _ = bitcoin::Address::from_script(&spk, self.btc_network).map_err(|e| {
+                    error!(
+                        "Failed to parse pegout spk for network: {:?}, error: {}",
+                        self.btc_network, e
+                    );
+                    badarg!(
+                        "Failed to parse pegout spk for network: {:?}, error: {}",
+                        self.btc_network,
+                        e
+                    )
+                })?;
+                Ok(PegoutRequest {
+                    id: PegoutId::from_bytes(&p.pegout_id).map_err(|_| {
+                        error!("Failed to parse pegout id: {:?}", p.pegout_id);
+                        badarg!("Failed to parse pegout id: {:?}", p.pegout_id)
+                    })?,
+                    spk,
+                    value: Amount::from_sat(p.amount),
+                    botanix_height: p.height,
+                })
+            })
+            .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
-        self.db.store_pending_pegout(&pegout_req)?;
+        let pegouts = pegouts?;
+        let pegouts_refs: Vec<&PegoutRequest> = pegouts.iter().collect();
+
+        self.db.store_pending_pegouts(&pegouts_refs)?;
         self.db.flush()?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
