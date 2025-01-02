@@ -13,7 +13,7 @@ service BtcServer {
 
     rpc NotifyPegins(NotifyPeginsRequest) returns (Empty) {}
 
-    rpc NotifyPegout(NotifyPegoutRequest) returns (Empty) {}
+    rpc NotifyPegouts(NotifyPegoutsRequest) returns (Empty) {}
 
     rpc GetPendingPegouts(Empty) returns (GetPendingPegoutsResponse) {}
 
@@ -72,11 +72,8 @@ service BtcServer {
     rpc ResetWalletState(ResetWalletStateRequest) returns (Empty) {}
 }
 
-message NotifyPegoutRequest {
-    bytes pegout_id = 1;
-    bytes spk = 2;
-    uint64 amount = 3;
-    uint64 height = 4;
+message NotifyPegoutsRequest {
+    repeated PendingPegout pending_pegouts = 1;
 }
 
 message PendingPegout {

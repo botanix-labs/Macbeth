@@ -154,11 +154,13 @@ pub async fn send_pegout_notification(
     spk: bitcoin::ScriptBuf,
 ) -> Result<(), Error> {
     let _ = client
-        .notify_pegout(tonic::Request::new(client::NotifyPegoutRequest {
-            pegout_id: pegout_id.clone().as_bytes().to_vec(),
-            spk: spk.to_bytes().to_vec(),
-            amount,
-            height: bitcoin_height,
+        .notify_pegouts(tonic::Request::new(client::NotifyPegoutsRequest {
+            pending_pegouts: vec![client::PendingPegout {
+                pegout_id: pegout_id.clone().as_bytes().to_vec(),
+                spk: spk.to_bytes().to_vec(),
+                amount,
+                height: bitcoin_height,
+            }],
         }))
         .await
         .map_err(Error::PegoutNotification)?;
