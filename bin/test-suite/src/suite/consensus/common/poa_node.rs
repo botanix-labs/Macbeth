@@ -284,8 +284,6 @@ impl FederationMemberTestConfig {
         for _ in 0..2 {
             working_directory.pop();
         }
-        working_directory.push("bin");
-        working_directory.push("reth");
 
         let federation_config_path = federation_config_path.display().to_string();
         let rpc_port = self.rpc_port.to_string();
@@ -300,12 +298,8 @@ impl FederationMemberTestConfig {
         let abci_port = self.abci_port.to_string();
 
         // prepare run arguments
-        let command = "cargo";
+        let command = "./target/debug/reth";
         let args = vec![
-            "run",
-            "--bin",
-            "reth",
-            "--",
             "poa",
             "-vvv",
             "--disable-discovery",

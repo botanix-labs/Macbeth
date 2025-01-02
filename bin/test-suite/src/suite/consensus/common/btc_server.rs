@@ -60,8 +60,6 @@ fn spawn_btc_server_process(
     for _ in 0..2 {
         working_directory.pop();
     }
-    // working_directory.push("bin");
-    // working_directory.push("btc-server");
 
     let identifier = id.to_string();
     let frost_max_signers = global_context.max_signers.to_string();
