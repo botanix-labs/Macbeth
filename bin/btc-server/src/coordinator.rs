@@ -170,22 +170,16 @@ where
         &self,
         eth_tweak: &EthAddress,
     ) -> Result<(PublicKey, PublicKey, Address), CoordinatorError> {
-        // TODO(armins) tapscript merkle root will need to be updated when we add tapleaves
-        let signing_parameters = SigningParameters {
-            tapscript_merkle_root: None,
-            additional_tweak: Some(eth_tweak.to_vec()),
-        };
         // try to get pk package from db in case we already did dkg round 3
         if let Some(pk_package) = self.db.get_public_key_package()? {
             let agg_key = pk_package
                 .verifying_key()
                 .to_secp_pk()
                 .map_err(CoordinatorError::FailedToConvertVerifyingKeyToSecpPk)?;
-            let tweaked_key = pk_package
-                .tweak(&signing_parameters)
-                .verifying_key()
-                .to_secp_pk()
-                .map_err(CoordinatorError::FailedToConvertVerifyingKeyToSecpPk)?;
+            let tweaked_key = reth_btc_wallet::address::generate_tweaked_public_key(
+                &pk_package.verifying_key(),
+                eth_tweak,
+            )?;
             let gateway_address =
                 reth_btc_wallet::address::generate_taproot_address(&tweaked_key, self.btc_network);
 

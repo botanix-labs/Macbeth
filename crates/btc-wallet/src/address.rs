@@ -1,5 +1,8 @@
 use bitcoin::{key::TweakedPublicKey, Address, Network, ScriptBuf};
+use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use secp256k1::PublicKey;
+
+use crate::util::{VerifyingKeyExt, VerifyingKeyExtError};
 
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
@@ -15,6 +18,18 @@ impl EthAddress for Vec<u8> {
     fn as_slice(&self) -> &[u8] {
         self
     }
+}
+
+pub fn generate_tweaked_public_key(
+    verifying_key: &frost::VerifyingKey,
+    eth_address: &[u8; 20],
+) -> Result<PublicKey, VerifyingKeyExtError> {
+    let signing_parameters = SigningParameters {
+        tapscript_merkle_root: None,
+        additional_tweak: Some(eth_address.to_vec()),
+    };
+    let tweaked_pk = verifying_key.tweak(&signing_parameters).to_secp_pk()?;
+    Ok(tweaked_pk)
 }
 
 /// Generate a taproot address from a given tweaked public key
