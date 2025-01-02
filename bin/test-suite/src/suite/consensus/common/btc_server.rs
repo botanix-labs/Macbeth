@@ -60,8 +60,8 @@ fn spawn_btc_server_process(
     for _ in 0..2 {
         working_directory.pop();
     }
-    working_directory.push("bin");
-    working_directory.push("btc-server");
+    // working_directory.push("bin");
+    // working_directory.push("btc-server");
 
     let identifier = id.to_string();
     let frost_max_signers = global_context.max_signers.to_string();
@@ -69,10 +69,8 @@ fn spawn_btc_server_process(
     let address = format!("0.0.0.0:{}", port);
     let http_port = (BTC_SERVER_HTTP_PORT + id).to_string();
 
-    let command = "cargo";
+    let command = "./target/debug/btc-server";
     let args = vec![
-        "run",
-        "--",
         "--btc-network",
         "regtest",
         "--db",
@@ -86,7 +84,7 @@ fn spawn_btc_server_process(
         "--max-signers",
         frost_max_signers.as_str(),
         "--toml",
-        "./config.toml",
+        "./bin/btc-server/config.toml",
         "--bitcoind-url",
         global_context.bitcoind_url.as_str(),
         "--bitcoind-user",
