@@ -24,7 +24,8 @@ concurrency:
 jobs:
   test:
     name: test / ethereum
-    runs-on: botanix-actions-runner-vm-1
+    runs-on:
+      group: macbeth
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
@@ -60,7 +61,8 @@ jobs:
 
   state:
     name: Ethereum state tests
-    runs-on: botanix-actions-runner-vm-1
+    runs-on:
+      group: macbeth
     env:
       RUST_LOG: info,sync=error
       RUST_BACKTRACE: 1
@@ -91,7 +93,8 @@ jobs:
 
   doc:
     name: doc tests (ethereum)
-    runs-on: botanix-actions-runner-vm-1
+    runs-on:
+      group: macbeth
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
