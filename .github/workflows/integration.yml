@@ -20,7 +20,8 @@ concurrency:
 jobs:
   e2e:
     name: test / e2e
-    runs-on: botanix-actions-runner-vm-1
+    runs-on: 
+      group: macbeth
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
@@ -37,8 +38,6 @@ jobs:
 
       - name: Install killall 
         run: sudo apt-get install psmisc
-
-      - run: rustup toolchain install stable --profile minimal
 
       - uses: Swatinem/rust-cache@v2
         with:
