@@ -20,9 +20,11 @@ pub(crate) enum NonDeterministicDataDeserializeError {
 /// Type that encapsulates non-deterministic data needed for consensus
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NonDeterministicData {
-    pub(crate) version: u16,
     pub(crate) bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     pub(crate) aggregated_public_key: secp256k1::PublicKey,
+    // Version is sandwitched in the middle of the data b/c CometBFT does not support the first 16
+    // bits of a tx being 0-bytes not sure if this is bug or feature
+    pub(crate) version: u16,
 }
 
 impl NonDeterministicData {
@@ -61,9 +63,6 @@ impl NonDeterministicData {
             encode::Error::ParseFailed("malformed aggregate public key")
         })?;
         let version = u16::consensus_decode(reader)?;
-        if version != NonDeterministicData::version_default() {
-            return Err(NonDeterministicDataDeserializeError::InvalidVersion);
-        }
 
         Ok(Self { version, bitcoin_block_hash, aggregated_public_key })
     }
