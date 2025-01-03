@@ -3,6 +3,9 @@ use bitcoin::consensus::encode::{self, Decodable, Encodable};
 use std::io;
 use thiserror::Error;
 
+pub(crate) const NDD_VERSION_0: u16 = 0;
+pub(crate) const NDD_VERSION_1: u16 = 1;
+
 /// Errors that can occur when deserializing NonDeterministicData
 #[derive(Debug, Error)]
 pub(crate) enum NonDeterministicDataDeserializeError {
@@ -12,9 +15,6 @@ pub(crate) enum NonDeterministicDataDeserializeError {
     #[error("invalid data format")]
     /// Invalid data format
     Decoding(#[from] encode::Error),
-    #[error("invalid version")]
-    /// Invalid NonDeterministicData, version
-    InvalidVersion,
 }
 
 /// Type that encapsulates non-deterministic data needed for consensus
@@ -25,11 +25,12 @@ pub(crate) struct NonDeterministicData {
     // Version is sandwitched in the middle of the data b/c CometBFT does not support the first 16
     // bits of a tx being 0-bytes not sure if this is bug or feature
     pub(crate) version: u16,
+    pub(crate) voting_bitmask: Option<u16>,
 }
 
 impl NonDeterministicData {
     pub(crate) fn version_default() -> u16 {
-        0
+        NDD_VERSION_0
     }
 
     pub(crate) fn new(
@@ -40,7 +41,18 @@ impl NonDeterministicData {
             version: NonDeterministicData::version_default(),
             bitcoin_block_hash,
             aggregated_public_key,
+            voting_bitmask: None,
         }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn set_voting_bitmask(&mut self, voting_bitmask: u16) {
+        self.voting_bitmask = Some(voting_bitmask);
+    }
+
+    #[allow(unused)]
+    pub(crate) fn set_version(&mut self, version: u16) {
+        self.version = version;
     }
 
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, io::Error> {
@@ -48,6 +60,11 @@ impl NonDeterministicData {
         self.bitcoin_block_hash.consensus_encode(&mut writer)?;
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
         self.version.consensus_encode(&mut writer)?;
+        if self.version >= NDD_VERSION_1 {
+            if let Some(voting_bitmask) = self.voting_bitmask {
+                voting_bitmask.consensus_encode(&mut writer)?;
+            }
+        }
 
         Ok(writer.to_vec())
     }
@@ -63,8 +80,13 @@ impl NonDeterministicData {
             encode::Error::ParseFailed("malformed aggregate public key")
         })?;
         let version = u16::consensus_decode(reader)?;
+        let voting_bitmask = if version >= NDD_VERSION_1 {
+            Some(u16::consensus_decode(reader)?)
+        } else {
+            None
+        };
 
-        Ok(Self { version, bitcoin_block_hash, aggregated_public_key })
+        Ok(Self { version, bitcoin_block_hash, aggregated_public_key, voting_bitmask })
     }
 }
 
@@ -73,27 +95,6 @@ mod tests {
     use bitcoin::{hashes::Hash, BlockHash};
 
     use super::*;
-
-    #[test]
-    fn test_version_default() {
-        let version = NonDeterministicData::version_default();
-        assert_eq!(version, 0);
-    }
-
-    #[test]
-    fn test_non_deterministic_data_new() {
-        let bitcoin_block_hash = BlockHash::all_zeros();
-        let pk = secp256k1::PublicKey::from_slice(
-            hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
-                .unwrap()
-                .as_slice(),
-        )
-        .unwrap();
-        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk);
-        assert_eq!(ndd.version, NonDeterministicData::version_default());
-        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
-        assert_eq!(ndd.aggregated_public_key, pk);
-    }
 
     #[test]
     fn test_non_deterministic_data_deserialize() {
@@ -108,8 +109,24 @@ mod tests {
         let res = ev.serialize().unwrap();
         let mut reader = io::Cursor::new(res);
         let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
-        assert_eq!(deserialized.version, ev.version);
-        assert_eq!(deserialized.bitcoin_block_hash, ev.bitcoin_block_hash);
-        assert_eq!(deserialized.aggregated_public_key, ev.aggregated_public_key);
+        assert_eq!(deserialized, ev);
+    }
+
+    #[test]
+    fn test_non_deterministic_data_deserialize_with_voting_bitmask() {
+        let bitcoin_block_hash = BlockHash::all_zeros();
+        let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
+            hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let mut ev = NonDeterministicData::new(bitcoin_block_hash, pk);
+        ev.set_version(NDD_VERSION_1);
+        ev.set_voting_bitmask(1);
+        let res = ev.serialize().unwrap();
+        let mut reader = io::Cursor::new(res);
+        let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
+        assert_eq!(deserialized, ev);
     }
 }
