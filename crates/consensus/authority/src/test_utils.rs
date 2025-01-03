@@ -10,7 +10,7 @@ mod test_utils {
         GetAllUtxosResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
         GetPendingPegoutsResponse, GetPublicKeyResponse, GetSessionIdsRequest,
         GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
-        GetTrackedTxsResponse, MakeTxRequest, NotifyPeginsRequest, NotifyPegoutRequest,
+        GetTrackedTxsResponse, MakeTxRequest, NotifyPeginsRequest, NotifyPegoutsRequest,
         ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage, SigningPackageRequest,
         SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
     };
@@ -52,7 +52,6 @@ mod test_utils {
         /// The round 2 signing share
         pub signing_round2_share: Option<SignatureShare>,
     }
-
 
     #[allow(unused)]
     /// Generate test vectors for DKG
@@ -554,13 +553,6 @@ mod test_utils {
             Box::pin(async move { unimplemented!("Not required for core DKG/signing tests") })
         }
 
-        fn notify_pegout<'a>(
-            &'a mut self,
-            _: NotifyPegoutRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<Empty, GrpcClientError>> + Send + 'a>> {
-            Box::pin(async move { unimplemented!("Not required for core DKG/signing tests") })
-        }
-
         fn get_gateway_address<'a>(
             &'a mut self,
             _: GetGatewayAddressRequest,
@@ -595,6 +587,12 @@ mod test_utils {
             Box<dyn Future<Output = Result<FinalizeSigningResponse, GrpcClientError>> + Send + 'a>,
         > {
             unimplemented!("Not required for DKG/signing tests")
+        }
+        fn notify_pegouts<'a>(
+            &'a mut self,
+            _: NotifyPegoutsRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<Empty, GrpcClientError>> + Send + 'a>> {
+            Box::pin(async move { unimplemented!("Not required for core DKG/signing tests") })
         }
 
         fn get_wallet_state<'a>(

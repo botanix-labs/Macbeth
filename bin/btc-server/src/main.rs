@@ -1167,7 +1167,7 @@ mod test {
         let response = app.get_psbt(request).await.unwrap_err();
         assert_eq!(response.code(), Code::Internal);
         assert_eq!(
-            error_response.message(),
+            response.message(),
             "internal error: Failed to make tx: coin selection error: Outputs cannot be empty"
         );
 
