@@ -141,7 +141,7 @@ mod test_utils {
         pub max_signers: u16,
         /// The minimum number of signers
         pub min_signers: u16,
-        /// The test vectors. Manupilating this will emulate the application behavior that we want to test
+        /// The test vectors.  Manipulating this will emulate the application behavior that we want to test
         pub test_vectors: Vec<TestData>,
         /// The added round 1 DKG packages
         pub added_round1_packages: BTreeMap<Vec<u8>, Vec<u8>>,

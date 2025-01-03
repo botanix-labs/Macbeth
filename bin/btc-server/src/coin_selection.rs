@@ -166,7 +166,7 @@ mod tests {
 
     // The ideal test case here would iterate over many outputs with varying values
     // checking each time that the fee per output is met and that the change is correct
-    // And would also covert the case where change is not needed
+    // And would also cover the case where change is not needed
     #[test]
     fn coin_selection_sanity_checks() {
         let change_script = random_p2tr_keyspend_script();
