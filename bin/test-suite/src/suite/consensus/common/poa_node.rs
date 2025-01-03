@@ -25,7 +25,7 @@ use reth_db::{
 };
 use reth_network_peers::pk2id;
 use reth_primitives::{
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION_1},
     public_key_to_address, Address,
 };
 use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
@@ -777,7 +777,7 @@ pub async fn create_poa_nodes(
     // now create the edh
     let prikey = secp256k1::SecretKey::new(&mut rand::thread_rng());
     let extra_data_header = ExtraDataHeader::new(
-        EXTRA_HEADER_VERSION,
+        EXTRA_HEADER_VERSION_1,
         CHAIN_VERSION,
         bitcoin::hash_types::BlockHash::all_zeros(),
         secp256k1::PublicKey::from_secret_key(secp256k1::SECP256K1, &prikey),

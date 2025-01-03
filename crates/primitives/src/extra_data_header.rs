@@ -8,8 +8,12 @@ use bitcoin::{
 use revm_primitives::Address;
 use thiserror::Error;
 
-/// The version of the extra data header
-pub const EXTRA_HEADER_VERSION: u32 = 0;
+/// Version 0 of the extra data header
+pub const EXTRA_HEADER_VERSION_0: u32 = 0;
+
+/// Version 1 of the extra data header includes a voting bitmask
+pub const EXTRA_HEADER_VERSION_1: u32 = 1;
+
 /// The version of the chain
 pub const CHAIN_VERSION: u32 = 0;
 
@@ -32,17 +36,22 @@ pub struct ExtraDataHeader {
     pub aggregated_public_key: secp256k1::PublicKey,
     /// Block producer address
     pub block_producer_address: Address,
+    /// Voting bitmask, bitmask is None for several reasons
+    /// 1. if a block producer is not voting
+    /// 2. Version 0 of the EDH does not have a voting bitmask
+    pub voting_bitmask: Option<u16>,
 }
 
 impl Default for ExtraDataHeader {
     // Note: default should never be used outside of tests
     fn default() -> Self {
         Self {
-            version: EXTRA_HEADER_VERSION,
+            version: EXTRA_HEADER_VERSION_0,
             chain_version: CHAIN_VERSION,
             bitcoin_block_hash: bitcoin::hash_types::BlockHash::all_zeros(),
             aggregated_public_key: nums_secp256k1_pk(),
             block_producer_address: Address::ZERO,
+            voting_bitmask: None,
         }
     }
 }
@@ -88,7 +97,13 @@ impl ExtraDataHeader {
             bitcoin_block_hash,
             aggregated_public_key,
             block_producer_address,
+            voting_bitmask: None,
         }
+    }
+
+    /// Set the voting bitmask
+    pub fn set_voting_bitmask(&mut self, voting_bitmask: u16) {
+        self.voting_bitmask = Some(voting_bitmask);
     }
 
     /// Serialize the extra data header without the signature
@@ -102,6 +117,11 @@ impl ExtraDataHeader {
         self.aggregated_public_key.serialize().consensus_encode(writer)?;
         let block_producer_address_bytes = self.block_producer_address.0 .0;
         let _ = writer.write(&block_producer_address_bytes)?;
+        if self.version >= EXTRA_HEADER_VERSION_1 {
+            if let Some(voting_bitmask) = self.voting_bitmask {
+                voting_bitmask.consensus_encode(writer)?;
+            }
+        }
 
         Ok(())
     }
@@ -130,12 +150,18 @@ impl ExtraDataHeader {
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
         let pk_bytes = <[u8; 33]>::consensus_decode(reader)?;
         let aggregated_public_key = secp256k1::PublicKey::from_slice(&pk_bytes).map_err(|e| {
-            println!("Error: {:?}", e);
             encode::Error::ParseFailed("malformed aggregate public key")
         })?;
         let mut block_producer_address_bytes: [u8; 20] = [0; 20];
         reader.read_exact(&mut block_producer_address_bytes)?;
         let block_producer_address = Address::from_slice(&block_producer_address_bytes);
+
+        let voting_bitmask = if version >= EXTRA_HEADER_VERSION_1 {
+            Some(u16::consensus_decode(reader)?)
+        } else {
+            // version 0 of the EDH does not have a voting bitmask
+            None
+        };
 
         Ok(Self {
             version,
@@ -143,6 +169,7 @@ impl ExtraDataHeader {
             bitcoin_block_hash,
             aggregated_public_key,
             block_producer_address,
+            voting_bitmask,
         })
     }
 
@@ -174,13 +201,13 @@ mod tests {
         let mainchain = BlockHash::hash(&[1, 2, 3]);
 
         let header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
+            EXTRA_HEADER_VERSION_0,
             CHAIN_VERSION,
             mainchain,
             nums_secp256k1_pk(),
             Address::ZERO,
         );
-        assert_eq!(header.version, EXTRA_HEADER_VERSION);
+        assert_eq!(header.version, EXTRA_HEADER_VERSION_0);
         assert_eq!(header.chain_version, CHAIN_VERSION);
         assert_eq!(header.bitcoin_block_hash, mainchain);
     }
@@ -202,7 +229,7 @@ mod tests {
         let address = Address::random();
 
         let header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
+            EXTRA_HEADER_VERSION_0,
             CHAIN_VERSION,
             BlockHash::hash(&[1]),
             nums_secp256k1_pk(),
@@ -214,6 +241,44 @@ mod tests {
         let serialized =
             ExtraDataHeader::deserialize(&mut buf.as_slice()).expect("Deserialization");
         assert_eq!(serialized, header);
+    }
+
+    #[test]
+    fn can_create_version_1_header() {
+        let mut header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION_1,
+            CHAIN_VERSION,
+            BlockHash::hash(&[1]),
+            nums_secp256k1_pk(),
+            Address::ZERO,
+        );
+        header.set_voting_bitmask(1);
+        let mut buf: Vec<u8> = vec![];
+        header.encode_into(&mut buf).unwrap();
+        let serialized =
+            ExtraDataHeader::deserialize(&mut buf.as_slice()).expect("Deserialization");
+        assert_eq!(serialized, header);
+        assert_eq!(serialized.voting_bitmask, Some(1));
+    }
+
+    #[test]
+    fn can_create_version_0_header_with_voting_bitmask() {
+        let mut header = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION_0,
+            CHAIN_VERSION,
+            BlockHash::hash(&[1]),
+            nums_secp256k1_pk(),
+            Address::ZERO,
+        );
+        header.set_voting_bitmask(1);
+        let mut buf: Vec<u8> = vec![];
+        header.encode_into(&mut buf).unwrap();
+        let serialized =
+            ExtraDataHeader::deserialize(&mut buf.as_slice()).expect("Deserialization");
+
+        let mut header_with_out_voting_bitmask = header.clone();
+        header_with_out_voting_bitmask.voting_bitmask = None;
+        assert_eq!(serialized, header_with_out_voting_bitmask);
     }
 
     #[test]
@@ -232,7 +297,7 @@ mod tests {
         .unwrap();
 
         let extra_data_header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
+            EXTRA_HEADER_VERSION_0,
             CHAIN_VERSION,
             BlockHash::hash(&[1]),
             nums_secp256k1_pk(),

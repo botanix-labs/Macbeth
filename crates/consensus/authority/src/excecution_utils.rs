@@ -13,7 +13,7 @@ pub(crate) mod authority_execution_utils {
         botanix::block_with_peg::SealedBlockWithPeg,
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         eip4844::calculate_excess_blob_gas,
-        extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+        extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION_1},
         header_ext::HeaderExt,
         proofs, Address, Block, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes, Header, Receipt,
         ReceiptWithBloom, Requests, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
@@ -172,7 +172,7 @@ pub(crate) mod authority_execution_utils {
         // Construct [ExtraDataHeader] with the bitcoin checkpoint and aggregated public key
         // so the botanix consensus package can be constructed from the EDH
         let edh = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
+            EXTRA_HEADER_VERSION_1,
             CHAIN_VERSION,
             *bitcoin_checkpoint,
             *agg_pk,
@@ -275,7 +275,7 @@ pub(crate) mod authority_execution_utils {
         })?;
         // Construct [ExtraDataHeader] and sign the block
         let edh = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
+            EXTRA_HEADER_VERSION_1,
             CHAIN_VERSION,
             recent_block_hash,
             *agg_pk,

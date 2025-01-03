@@ -10,7 +10,7 @@ use reth_chainspec::{
 use reth_fs_util as fs;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION_1},
     Address,
 };
 use std::{path::PathBuf, str::FromStr, sync::Arc};
@@ -45,7 +45,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         info!("Botanix fee recipient: {:?}", botanix_fee_recipient);
 
         let extra_data_header = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
+            EXTRA_HEADER_VERSION_1,
             CHAIN_VERSION,
             bitcoin::hash_types::BlockHash::all_zeros(),
             nums_secp256k1_pk(),
@@ -153,7 +153,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
             let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient;
 
             let extra_data_header = ExtraDataHeader::new(
-                EXTRA_HEADER_VERSION,
+                EXTRA_HEADER_VERSION_1,
                 CHAIN_VERSION,
                 bitcoin::hash_types::BlockHash::all_zeros(),
                 // Agg key in genesis should always be NUMS point

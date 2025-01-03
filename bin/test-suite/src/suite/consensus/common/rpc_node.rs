@@ -18,7 +18,7 @@ use bitcoin::{hashes::Hash, BlockHash};
 use reth::args::FedMemberPubKey;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION_1},
     hex::encode as hex_encode,
     Address,
 };
@@ -150,7 +150,7 @@ impl NonFederationMemberTestConfig {
 
         // now create the edh
         let edh = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
+            EXTRA_HEADER_VERSION_1,
             CHAIN_VERSION,
             BlockHash::hash(&[1]),
             nums_secp256k1_pk(),
