@@ -58,6 +58,8 @@ pub mod metrics;
 pub mod random_source_provider;
 /// Expose test utils for unit testing
 pub mod test_utils;
+/// Activation params and status
+pub mod activation;
 
 /// Max EDH size; for specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 93;
