@@ -1,7 +1,12 @@
 use crate::{
-    comet_bft::abci::ABCIClientBuilder, compressor::Compressor, frost_task::FrostTask, healthcheck_task::HealthcheckTask, metrics::AuthorityMetrics, random_source_provider::RandomSource, wallet_state_sync::WalletStateSyncEngine, AuthorityConsensus, Storage
+    comet_bft::abci::ABCIClientBuilder, compressor::Compressor, frost_task::FrostTask,
+    healthcheck_task::HealthcheckTask, metrics::AuthorityMetrics,
+    random_source_provider::RandomSource, wallet_state_sync::WalletStateSyncEngine,
+    AuthorityConsensus, Storage,
 };
-use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory};
+use btcserverlib::extended_client::{
+    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
+};
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_blockchain_tree_api::BlockchainTreeEngine;
@@ -247,7 +252,7 @@ where
                         .build_and_connect()
                         .await
                         .expect("Failed to build and connect to btc server")
-                        .into()
+                        .into(),
                 )
             } else {
                 None
