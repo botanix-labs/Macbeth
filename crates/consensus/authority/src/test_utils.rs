@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod test_utils {
-    use crate::dkg::DKGState;
-    use crate::signing::SigningState;
+    use crate::{dkg::DKGState, signing::SigningState};
     use alloy_rpc_types_engine::JwtSecret;
     use anyhow::{Context, Error};
     use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
@@ -140,7 +139,8 @@ mod test_utils {
         pub max_signers: u16,
         /// The minimum number of signers
         pub min_signers: u16,
-        /// The test vectors.  Manipulating this will emulate the application behavior that we want to test
+        /// The test vectors.  Manipulating this will emulate the application behavior that we want
+        /// to test
         pub test_vectors: Vec<TestData>,
         /// The added round 1 DKG packages
         pub added_round1_packages: BTreeMap<Vec<u8>, Vec<u8>>,

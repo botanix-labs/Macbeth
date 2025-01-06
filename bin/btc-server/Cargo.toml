@@ -12,6 +12,9 @@ actix-server = "2.5.0"
 actix-web = "4.9.0"
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 anyhow = "1.0.75"
+
+#async
+async-trait = { workspace = true }
 base64 = "0.22.0"
 bdk = "1.0.0-alpha.1"
 bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }
@@ -66,9 +69,6 @@ tonic-health = { version = "0.12.3" }
 tonic-reflection = { version = "0.12.3" }
 tracing-actix-web = "0.7.14"
 url = "2.5.0"
-
-#async
-async-trait = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.13.3"

@@ -11,6 +11,10 @@ description = "A PoA consensus engine"
 
 [dependencies]
 
+# ethereum
+alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
+anyhow = "1.0.75"
+
 # compression
 async-compression = { version = "0.4.11", features = ["all"] }
 
@@ -50,6 +54,7 @@ postcard = "1.0.8"
 
 # prost
 prost = "0.13.3"
+rand = "0.8.5"
 reth-basic-payload-builder = { workspace = true }
 reth-beacon-consensus = { path = "../beacon" }
 reth-blockchain-tree = { workspace = true }
@@ -113,11 +118,6 @@ tracing = { workspace = true }
 
 # uuid
 uuid = { version = "1.8.0", features = ["v4"] }
-anyhow = "1.0.75"
-
-# ethereum
-alloy-rpc-types-engine = { version = "0.2.1",  default-features = false}
-rand = "0.8.5"
 
 [dev-dependencies]
 

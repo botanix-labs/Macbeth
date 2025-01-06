@@ -121,9 +121,10 @@ pub(crate) async fn get_psbt<BtcServerClient: BtcServerExtendedApi + Clone>(
 pub(crate) async fn call_notify_pegin<BtcServerClient>(
     btc_server: &mut BtcServerClient,
     pegins: &[PeginMeta],
-) -> Result<(), GrpcClientError> 
-where 
-    BtcServerClient: BtcServerExtendedApi + Clone {
+) -> Result<(), GrpcClientError>
+where
+    BtcServerClient: BtcServerExtendedApi + Clone,
+{
     if pegins.is_empty() {
         return Ok(());
     }
@@ -138,9 +139,10 @@ pub(crate) async fn call_notify_pegout<BtcServerClient>(
     btc_server: &mut BtcServerClient,
     pegouts: &[PegoutWithId],
     height: u64,
-) -> Result<(), GrpcClientError> 
-where 
-    BtcServerClient: BtcServerExtendedApi + Clone {
+) -> Result<(), GrpcClientError>
+where
+    BtcServerClient: BtcServerExtendedApi + Clone,
+{
     if pegouts.is_empty() {
         return Ok(());
     }

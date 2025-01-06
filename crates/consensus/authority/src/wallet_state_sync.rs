@@ -70,7 +70,8 @@ pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<EF, BF, DB, ToFrostMan, BtcServerClient> WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>
+impl<EF, BF, DB, ToFrostMan, BtcServerClient>
+    WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
@@ -89,7 +90,8 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan, BtcServerClient> WalletStateSync for WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>
+impl<EF, BF, DB, ToFrostMan, BtcServerClient> WalletStateSync
+    for WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,

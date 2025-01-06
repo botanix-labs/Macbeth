@@ -95,7 +95,8 @@ pub(crate) struct DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient> {
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<EF, BF, DB, ToFrostMan, BtcServerClient> DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient>
+impl<EF, BF, DB, ToFrostMan, BtcServerClient>
+    DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     DB: Clone,
@@ -146,7 +147,8 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan, BtcServerClient> DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient>
+impl<EF, BF, DB, ToFrostMan, BtcServerClient>
+    DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     DB: Clone,

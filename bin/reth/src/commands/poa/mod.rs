@@ -2,7 +2,9 @@
 
 use bitcoin::hashes::Hash;
 use bitcoincore_rpc::RpcApi;
-use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory};
+use btcserverlib::extended_client::{
+    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
+};
 use clap::{value_parser, Parser};
 use client::Empty;
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;

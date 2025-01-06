@@ -82,7 +82,8 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient> FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
+impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
+    FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     BF: Clone,
@@ -680,7 +681,8 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient> std::fmt::Debug for FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
+impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient> std::fmt::Debug
+    for FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     Source: RandomSource,
