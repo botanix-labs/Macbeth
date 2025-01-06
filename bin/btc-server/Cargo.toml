@@ -14,7 +14,7 @@ alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 anyhow = "1.0.75"
 
 #async
-async-trait = { workspace = true }
+async-trait = "0.1.68"
 base64 = "0.22.0"
 bdk = "1.0.0-alpha.1"
 bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }
