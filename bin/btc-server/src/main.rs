@@ -1195,7 +1195,7 @@ mod test {
 
         // add a couple of pegin utxos to spend
         for _ in 0..10 {
-            let dummy_tx = create_tx(1, 1, None);
+            let dummy_tx = create_tx(1, 1, None, false);
             let utxo =
                 Utxo::new(dummy_tx.input[0].previous_output, dummy_tx.output[0].clone(), None);
             app.add_pegins(&[&utxo]).expect("valid pegin utxo");
@@ -1384,7 +1384,7 @@ mod test {
 
         // now generate some random utxos and save them
         for _ in 0..3 {
-            let dummy_tx = create_tx(1, 1, None);
+            let dummy_tx = create_tx(1, 1, None, false);
             let utxo =
                 Utxo::new(dummy_tx.input[0].previous_output, dummy_tx.output[0].clone(), None);
             app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
@@ -1608,7 +1608,7 @@ mod test {
 
         // now generate some random utxos and save them
         for _ in 0..3 {
-            let dummy_tx = create_tx(1, 1, None);
+            let dummy_tx = create_tx(1, 1, None, false);
             let utxo =
                 Utxo::new(dummy_tx.input[0].previous_output, dummy_tx.output[0].clone(), None);
             app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");

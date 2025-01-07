@@ -819,7 +819,7 @@ mod tests {
         frost_id,
         test_utils::test_utils::{
             create_block, create_random_pegout_id, create_tx, pegout_requests_from_tx,
-            random_p2wpkh_script, setup_db, trusted_dealer_setup,
+            random_p2wpkh_script, setup_db, trusted_dealer_setup, MockBitcoind,
         },
     };
 
@@ -830,7 +830,7 @@ mod tests {
 
     #[test]
     fn tracked_tx_utils() {
-        let tx = create_tx(0, 0, None);
+        let tx = create_tx(0, 0, None, false);
         let tx = Tx {
             txid: tx.txid(),
             tx,
@@ -845,7 +845,7 @@ mod tests {
         assert_eq!(tx.change().count(), 0);
 
         // 5 inputs, 2 outputs
-        let dummy_tx = create_tx(5, 2, None);
+        let dummy_tx = create_tx(5, 2, None, false);
         assert_eq!(dummy_tx.input.len(), 5);
         assert_eq!(dummy_tx.output.len(), 2);
 
@@ -876,7 +876,7 @@ mod tests {
         db.set_pubkey_package(pk_package).expect("set public key package");
         db.set_key_package(key_package).expect("set key package");
 
-        let tx = create_tx(3, 3, None);
+        let tx = create_tx(3, 3, None, false);
         let pegout_idxs = vec![0, 1];
         let change_idxs = vec![2];
 
@@ -944,8 +944,8 @@ mod tests {
 
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
-        let tx1 = create_tx(3, 3, None);
-        let tx2 = create_tx(3, 3, None);
+        let tx1 = create_tx(3, 3, None, false);
+        let tx2 = create_tx(3, 3, None, false);
         let txs = vec![tx1.clone(), tx2.clone()];
         let pegouts1 = pegout_requests_from_tx(&tx1, &[0, 1]);
         let pegouts2 = pegout_requests_from_tx(&tx2, &[0, 1]);
@@ -986,8 +986,8 @@ mod tests {
 
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
-        let tx1 = create_tx(3, 3, Some(change_output.clone()));
-        let tx2 = create_tx(3, 3, Some(change_output));
+        let tx1 = create_tx(3, 3, Some(change_output.clone()), false);
+        let tx2 = create_tx(3, 3, Some(change_output), false);
         let txs = vec![tx1.clone(), tx2.clone()];
         let pegouts1 = pegout_requests_from_tx(&tx1, &[0, 1, 2]);
         let pegouts2 = pegout_requests_from_tx(&tx2, &[0, 1, 2]);
@@ -1033,7 +1033,7 @@ mod tests {
 
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
-        let tx = create_tx(3, 1, Some(change_output));
+        let tx = create_tx(3, 1, Some(change_output), false);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
 
@@ -1069,7 +1069,7 @@ mod tests {
 
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
-        let tx = create_tx(3, 2, None);
+        let tx = create_tx(3, 2, None, false);
         // Here we should be tracking indices 0 and 1.
         // But we are tracking 0 as a pegout, therefore output 1 is going to be mistaken as change
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
@@ -1112,6 +1112,7 @@ mod tests {
             3,
             2,
             Some(TxOut { value: Amount::from_sat(1000), script_pubkey: incorrect_change_spk }),
+            false,
         );
 
         let pegouts = pegout_requests_from_tx(&tx, &[0, 1]);
@@ -1138,7 +1139,7 @@ mod tests {
     #[test]
     fn start_with_existing_tracked_txs() {
         let db = setup_db().0;
-        let tx = create_tx(1, 2, None);
+        let tx = create_tx(1, 2, None, false);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
             txid: tx.txid(),
@@ -1176,7 +1177,7 @@ mod tests {
         let mut last_block_hash = bitcoin::BlockHash::all_zeros();
 
         for _ in 0..100 {
-            let tx = create_tx(1, 2, Some(change_output.clone()));
+            let tx = create_tx(1, 2, Some(change_output.clone()), false);
             let pegouts = pegout_requests_from_tx(&tx, &[0]);
             pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
             let block = create_block(vec![tx], last_block_hash);
@@ -1195,7 +1196,7 @@ mod tests {
     #[test]
     fn test_un_track_tx() {
         let db = setup_db().0;
-        let tx = create_tx(1, 2, None);
+        let tx = create_tx(1, 2, None, false);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
             txid: tx.txid(),
@@ -1229,7 +1230,7 @@ mod tests {
         let db = setup_db().0;
         let mut pegout_scheduler =
             PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
-        let tx = create_tx(1, 2, None);
+        let tx = create_tx(1, 2, None, false);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
 
         let tracked_tx = pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
@@ -1255,7 +1256,7 @@ mod tests {
     #[test]
     fn tracked_pegout_request_ids_should_return_ids() {
         let db = setup_db().0;
-        let tx = create_tx(1, 2, None);
+        let tx = create_tx(1, 2, None, false);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
             txid: tx.txid(),
@@ -1271,5 +1272,60 @@ mod tests {
         let pegout_request_ids = pegout_scheduler.tracked_pegout_request_ids();
         assert_eq!(pegout_request_ids.len(), 1);
         assert_eq!(pegout_request_ids[0], pegouts[0].id);
+    }
+
+    #[test]
+    fn track_mempool_should_add_back_pegout_when_still_in_mempool() {
+        let db = setup_db().0;
+        let mut pegout_scheduler =
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+        let tx = create_tx(1, 2, None, false);
+        let pegouts = pegout_requests_from_tx(&tx, &[0]);
+        pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
+
+        let mock_bitcoind = MockBitcoind::new();
+        let mut checkpoint = mock_bitcoind
+            .get_block_header_info(&bitcoin::BlockHash::all_zeros())
+            .expect("valid checkpoint");
+        // increase time for checkpoint block so tracked tx is older
+        checkpoint.time = checkpoint.time + 5;
+
+        let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
+        assert!(result.is_ok());
+
+        // assert the pegout was added to pending pegouts
+        let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
+        assert_eq!(pending_pegouts.len(), 1);
+        assert_eq!(pending_pegouts[0], pegouts[0]);
+    }
+
+    #[test]
+    fn track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool() {
+        let db = setup_db().0;
+        let mut pegout_scheduler =
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+        // mock bitcoind will trigger error path for `getmempoolentry` for a specific txid
+        // so pass true to create_tx() to make it deterministic which is
+        // "c5473905cc714c8b63f229246478e4e85faf32b96babffe4bba2ba8ddc05be3e" for this test
+        let tx = create_tx(1, 2, None, true);
+        let pegouts = pegout_requests_from_tx(&tx, &[0]);
+        pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
+
+        let mock_bitcoind = MockBitcoind::new();
+        let mut checkpoint = mock_bitcoind
+            .get_block_header_info(&bitcoin::BlockHash::all_zeros())
+            .expect("valid checkpoint");
+        // increase time for checkpoint block so tracked tx is older
+        checkpoint.time = checkpoint.time + 5;
+
+        let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
+        assert!(result.is_ok());
+
+        // assert the pegout was added to pending pegouts
+        let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
+        assert_eq!(pending_pegouts.len(), 1);
+
+        // assert there are no tracked txs
+        assert_eq!(pegout_scheduler.txs.len(), 0);
     }
 }
