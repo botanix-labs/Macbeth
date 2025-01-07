@@ -411,8 +411,6 @@ impl Stream for FrostProtoConnection {
                     peer_id: this.peer_id,
                 });
             }
-            // deprecated: TODO remove
-            FrostProtoMessageKind::Utxo(_data) => {}
         }
 
         Poll::Pending
