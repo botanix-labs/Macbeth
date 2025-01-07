@@ -99,76 +99,6 @@ pub(crate) mod authority_execution_utils {
         Ok((block_exec_output, block))
     }
 
-    /// Execute and run poa validation on the block without inserting it into the storage
-    /// Currently un-used
-    /*
-    #[allow(dead_code)]
-    pub(crate) fn execute_imported_block(
-        consensus: &AuthorityConsensus,
-        sealed_block: SealedBlock,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
-        executor_factory: &impl BlockExecutorProvider,
-        // This is an option because the block fetcher may not be an authority
-        agg_pk: Option<&secp256k1::PublicKey>,
-        _authorities: &Vec<secp256k1::PublicKey>,
-        genesis_authorities: &Vec<secp256k1::PublicKey>,
-    ) -> Result<ExecutionOutcome, BlockExecutionError> {
-        trace!(target: "consensus::authority", transactions=?&sealed_block.body, "executing transactions");
-        let senders =
-            TransactionSigned::recover_signers(&sealed_block.body, sealed_block.body.len()).ok_or(
-                BlockExecutionError::Validation(BlockValidationError::SenderRecoveryError),
-            )?;
-
-        let sealed_block_with_senders =
-            BlockWithSenders::new(sealed_block.clone().unseal(), senders.clone())
-                .expect("senders are valid");
-
-        // validate before executing block
-        // Edge case: block 1 for the rpc nodes
-        // Rpc nodes will typically store the agg pk from the latest block on boot up
-        // In the case where they boot up on block 0, they will not have an agg pk
-        // Here we pull the agg pk from the incoming block if it is not provided
-        let aggregate_public_key = {
-            if let Some(current_pk) = agg_pk {
-                current_pk.clone()
-            } else {
-                let current_agg_key =
-                    sealed_block.header.clone().unseal().get_aggregate_public_key().map_err(
-                        |_e| {
-                            BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-                        },
-                    )?;
-                current_agg_key.clone()
-            }
-        };
-
-        consensus
-            .validate_header_standalone(
-                &sealed_block.header.clone(),
-                &genesis_authorities,
-                // TODO(https://github.com/botanix-labs/botanix/issues/615) this shouldn't need to be an option
-                Some(&aggregate_public_key),
-            )
-            .map_err(|e| {
-                warn!(target: "consensus::authority", "failed to validate POA header: {:?}", e);
-                // TODO(armins) return more expressive error
-                BlockExecutionError::Validation(BlockValidationError::InvalidExtraData)
-            })?;
-
-        let _block_builder_address = get_block_producer_address(&sealed_block.header.clone());
-        let db = client.latest().map_err(|e| {
-            BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
-        })?;
-        let db = StateProviderDatabase::new(db);
-        let mut batch_executor = executor_factory.batch_executor(db);
-        let input = BlockExecutionInput::new(&block_with_senders, U256::ZERO);
-        let _ = batch_executor.execute_and_verify_one(input);
-        let execution_outcome = batch_executor.finalize();
-
-        Ok(execution_outcome)
-    }
-    */
-
     /// Fills in pre-execution header fields based on the current best block and given
     /// transactions.
     fn build_header_template(
@@ -269,7 +199,6 @@ pub(crate) mod authority_execution_utils {
                 Some(calculate_excess_blob_gas(parent_excess_blob_gas, parent_blob_gas_used))
         }
 
-        // TODO (armins) Poa shouldn't be minging empty blocks
         header.transactions_root = if transactions.is_empty() {
             EMPTY_TRANSACTIONS
         } else {
