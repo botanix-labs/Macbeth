@@ -206,19 +206,19 @@ impl Stream for FrostProtoConnection {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {
                             DkgEventResponseType::DkgRound1Request => {
-                                let req = DkgRequest::new(identifier, data);
+                                let req = DkgRequest::new(data, identifier);
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round1_dkg_request_message(req).encoded(),
                                 ))
                             }
                             DkgEventResponseType::DkgRound1 => {
-                                let req = DkgRequest::new(identifier, data);
+                                let req = DkgRequest::new(data, identifier);
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round1_dkg_message(req).encoded(),
                                 ))
                             }
                             DkgEventResponseType::DkgRound2 => {
-                                let req = DkgRequest::new(identifier, data);
+                                let req = DkgRequest::new(data, identifier);
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round2_dkg_message(req).encoded(),
                                 ))
@@ -226,17 +226,17 @@ impl Stream for FrostProtoConnection {
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, identifier, signing_session_id, psbt } =
+                        let SigningResponse { response_type, signing_session_id, psbt } =
                             signing_response;
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
-                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                let req = SignRequest::new(signing_session_id, psbt);
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round1_signer_package_message(req).encoded(),
                                 ))
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => {
-                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                let req = SignRequest::new(signing_session_id, psbt);
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round1_coordinator_signing_package_message(
                                         req,
@@ -245,13 +245,13 @@ impl Stream for FrostProtoConnection {
                                 ))
                             }
                             SigningEventResponseType::SignerRound2SigningPackage => {
-                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                let req = SignRequest::new(signing_session_id, psbt);
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round2_signer_package_message(req).encoded(),
                                 ))
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => {
-                                let req = SignRequest::new(identifier, signing_session_id, psbt);
+                                let req = SignRequest::new(signing_session_id, psbt);
                                 Poll::Ready(Some(
                                     FrostProtoMessage::round2_coordinator_signing_package_message(
                                         req,
@@ -357,7 +357,6 @@ impl Stream for FrostProtoConnection {
                 if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound1SigningPackage,
-                        identifier: data.identifier,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),
@@ -370,7 +369,6 @@ impl Stream for FrostProtoConnection {
                 if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
-                        identifier: data.identifier,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),
@@ -383,7 +381,6 @@ impl Stream for FrostProtoConnection {
                 if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound2SigningPackage,
-                        identifier: data.identifier,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),
@@ -396,7 +393,6 @@ impl Stream for FrostProtoConnection {
                 if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
-                        identifier: data.identifier,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),

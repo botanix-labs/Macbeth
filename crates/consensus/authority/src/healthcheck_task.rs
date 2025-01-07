@@ -195,8 +195,9 @@ where
         let peers_healthcheck_tracker = Arc::clone(&self.peers_healthcheck_tracker);
 
         // receive over a channel message from other peers
-        while let Some((_peerid, msg)) = peer_messages_rx.recv().await {
-            match msg {
+        while let Some(message_context) = peer_messages_rx.recv().await {
+            let peer_message = message_context.message;
+            match peer_message {
                 PeerMessageResponse::Dkg(_) => {
                     // Nothing to do for dkg related messages. Does are handled by the frost
                     // task

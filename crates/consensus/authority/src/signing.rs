@@ -288,14 +288,14 @@ where
 
     async fn new_round1_signing_package(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let new_round1_signing_package = self
             .btc_client
             .new_round1_signing_package(SigningPackage {
-                identifier,
+                identifier: frost_identifier.serialize().to_vec(),
                 psbt,
                 signing_session_id: signing_session_id.to_vec(),
             })
@@ -310,14 +310,14 @@ where
 
     async fn new_round2_signing_package(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
         let new_round2_signing_package = self
             .btc_client
             .new_round2_signing_package(SigningPackage {
-                identifier,
+                identifier: frost_identifier.serialize().to_vec(),
                 psbt,
                 signing_session_id: signing_session_id.to_vec(),
             })
@@ -451,7 +451,6 @@ where
     pub(crate) async fn gossip_to_peers(
         &mut self,
         signing_package: SigningPackage,
-        my_frost_identifier: Vec<u8>,
         response_type: SigningEventResponseType,
     ) -> Result<(), Error> {
         let SigningPackage { identifier: _, signing_session_id, psbt } = signing_package;
@@ -471,7 +470,6 @@ where
                 if connected_peer.frost_identifier != self.personal_frost_identifier {
                     let resp = PeerMessageResponse::Signing(SigningResponse {
                         response_type,
-                        identifier: my_frost_identifier.clone(),
                         signing_session_id: signing_session_id.clone(),
                         psbt: psbt.clone(),
                     });
@@ -542,8 +540,9 @@ where
         // then we send the psbt to other peers
         let signing_round1_package =
             self.get_round1_signing_package(signing_session_id, psbt).await?;
+        let my_frost_identifier = self.personal_frost_identifier;
         self.new_round1_signing_package(
-            self.personal_frost_identifier.serialize().to_vec(),
+            &my_frost_identifier,
             signing_session_id,
             signing_round1_package.clone().psbt,
         )
@@ -555,7 +554,6 @@ where
         if let Err(e) = self
             .gossip_to_peers(
                 signing_round1_package,
-                self.personal_frost_identifier.serialize().to_vec(),
                 SigningEventResponseType::SignerRound1SigningPackage,
             )
             .await
@@ -570,7 +568,7 @@ where
     /// A signer processes round 1 signing packages
     pub(crate) async fn signer_process_round1(
         &mut self,
-        identifier: Vec<u8>,
+        identifier: &frost::Identifier,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
@@ -588,7 +586,7 @@ where
 
         // check coordinator is sending the request
         let coordinator_frost_identifier = coordinator_peer_data.frost_identifier;
-        if coordinator_frost_identifier.serialize().to_vec() != identifier {
+        if coordinator_frost_identifier != *identifier {
             warn!(target: "consensus::authority::signing::signer_process_round1", "Round 1 signing request not from coordinator");
             return Ok(());
         }
@@ -632,7 +630,6 @@ where
         if coordinator_frost_identifier != self.personal_frost_identifier {
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
-                identifier: signing_package_round1.identifier.clone(),
                 signing_session_id: signing_package_round1.signing_session_id.clone(),
                 psbt: signing_package_round1.psbt.clone(),
             });
@@ -657,7 +654,7 @@ where
     /// A coordinator processes round 1 signing packages
     pub(crate) async fn coordinator_process_round1(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
@@ -673,22 +670,23 @@ where
             warn!(target: "consensus::authority::signing::coordinator_process_round1", "we are not the coordinator");
             return Ok(());
         }
+        let my_frost_identifier = self.personal_frost_identifier;
 
         info!(
             target: "consensus::authority::signing::coordinator_process_round1",
             "identifiers my peer id: {:?}, other peerid {:?}",
-            self.personal_frost_identifier,
-            deserialize_frost_peer_id(identifier.clone())?
+            my_frost_identifier,
+            frost_identifier
         );
 
         // return if the sending identifier is us
-        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
+        if my_frost_identifier == *frost_identifier {
             return Ok(());
         }
 
         // add the transmitted round 1 package data
         if let Err(e) =
-            self.new_round1_signing_package(identifier.clone(), signing_session_id, psbt).await
+            self.new_round1_signing_package(frost_identifier, signing_session_id, psbt).await
         {
             error!(target: "consensus::authority::signing::coordinator_process_round1","Error adding round 1 signing package {:?}", e);
             return Ok(());
@@ -702,7 +700,7 @@ where
                 .get_round2_signing_package(signing_session_id, to_sign_payload.psbt.clone())
                 .await?;
             self.new_round2_signing_package(
-                self.personal_frost_identifier.serialize().to_vec(),
+                &my_frost_identifier,
                 signing_session_id,
                 cord_round2.psbt,
             )
@@ -715,7 +713,6 @@ where
             if let Err(e) = self
                 .gossip_to_peers(
                     to_sign_payload.clone(),
-                    self.personal_frost_identifier.serialize().to_vec(),
                     SigningEventResponseType::SignerRound2SigningPackage,
                 )
                 .await
@@ -735,7 +732,7 @@ where
     /// A signer processes round 2 signing request
     pub(crate) async fn signer_process_round2(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
@@ -758,7 +755,7 @@ where
 
         // check coordinator is sending the request
         let coordinator_frost_identifier = coordinator_peer_data.frost_identifier;
-        if coordinator_frost_identifier.serialize().to_vec() != identifier {
+        if coordinator_frost_identifier != *frost_identifier {
             warn!(target: "consensus::authority::signing::signer_process_round2", "Round 2 signing request not from coordinator");
             return Ok(());
         }
@@ -784,7 +781,6 @@ where
 
         let resp = PeerMessageResponse::Signing(SigningResponse {
             response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
-            identifier: signing_package_round2.identifier.clone(),
             signing_session_id: signing_package_round2.signing_session_id.clone(),
             psbt: signing_package_round2.psbt.clone(),
         });
@@ -808,7 +804,7 @@ where
     /// A coordinator processes round 2 signing packages
     pub(crate) async fn coordinator_process_round2(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
     ) -> Result<(), Error> {
@@ -833,18 +829,18 @@ where
             target: "consensus::authority::signing::coordinator_process_round2",
             "My identifier {:?} and the peers identifier {:?}",
             self.personal_frost_identifier,
-            deserialize_frost_peer_id(identifier.clone())?
+            frost_identifier
         );
 
         // return if the sending identifier is us
-        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
+        if self.personal_frost_identifier == *frost_identifier {
             info!(target: "consensus::authority::signing::coordinator_process_round2", "identifier is us, this should not happen");
             return Ok(());
         }
 
         // add the transmitted round 2 package data
         if let Err(e) =
-            self.new_round2_signing_package(identifier.clone(), signing_session_id, psbt).await
+            self.new_round2_signing_package(frost_identifier, signing_session_id, psbt).await
         {
             error!(target: "consensus::authority::signing::coordinator_process_round2", "Error adding round 2 signing package {:?}", e);
             self.update_signing_state(session_id, SigningState::Failed).await;

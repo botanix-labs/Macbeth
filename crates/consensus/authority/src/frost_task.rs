@@ -6,7 +6,7 @@ use crate::{
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
     signing::SigningStateMachine,
-    utils::validate_psbt_by_ids,
+    utils::{deserialize_frost_peer_id, validate_psbt_by_ids},
     Storage,
 };
 
@@ -413,8 +413,11 @@ where
             }
 
             // receive over a channel message from other peers and update our state machine
-            while let Ok((peerid, msg)) = peer_messages_rx.try_recv() {
-                match msg {
+            while let Ok(message_context) = peer_messages_rx.try_recv() {
+                let peer_message = message_context.message;
+                let peer_id = message_context.peer_id;
+                let frost_identifier = message_context.frost_identifier;
+                match peer_message {
                     PeerMessageResponse::WalletState(mut response) => {
                         // Only handle response if it has no state: responses with state are also
                         // sent to WalletStateSyncEngine::sync_wallet_state
@@ -424,7 +427,7 @@ where
                         // TODO: create separate messages for asking for wallet state and sending
                         // wallet state
                         if Self::has_wallet_state(&response) {
-                            info!(target: "consensus::authority::wallet_syncer::start_task", "Received wallet state in frost task from peer {:?}", peerid);
+                            info!(target: "consensus::authority::wallet_syncer::start_task", "Received wallet state in frost task from peer {:?}", peer_id);
                             continue;
                         }
 
@@ -434,7 +437,7 @@ where
                             .await
                             .expect("expect all peers handle to exist");
                         let peer_handle =
-                            all_peers_handle.get(&peerid).expect("peer handle to exist");
+                            all_peers_handle.get(&peer_id).expect("peer handle to exist");
 
                         // Note its important we do not respond to this message if we are syncing
                         // ourselves This should be checked above
@@ -492,7 +495,7 @@ where
                         response.tracked_txs = serialized_compressed_tracked_txs;
                         response.pending_pegouts = serialized_compressed_pending_pegouts;
 
-                        info!(target: "consensus::authority::wallet_syncer::start_task", "Sending wallet state to peer {:?}", peerid);
+                        info!(target: "consensus::authority::wallet_syncer::start_task", "Sending wallet state to peer {:?}", peer_id);
                         if let Err(e) =
                             peer_handle.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
                                 PeerMessageResponse::WalletState(response),
@@ -510,6 +513,13 @@ where
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
+                        let frost_identifier = match deserialize_frost_peer_id(identifier) {
+                            Ok(frost_identifier) => frost_identifier,
+                            Err(e) => {
+                                error!(target: "consensus::authority::frost_task::start_task", "Error deserializing frost identifier in DKG payload {:?}", e);
+                                continue;
+                            }
+                        };
                         match response_type {
                             DkgEventResponseType::DkgRound1Request => {
                                 match self.dkg_state_machine.process_round1_request().await {
@@ -522,7 +532,10 @@ where
                                 }
                             }
                             DkgEventResponseType::DkgRound1 => {
-                                match self.dkg_state_machine.process_round1(identifier, data).await
+                                match self
+                                    .dkg_state_machine
+                                    .process_round1(&frost_identifier, data)
+                                    .await
                                 {
                                     Ok(_) => {
                                         info!(target: "consensus::authority::frost_task::start_task", "Processed Round 1 dkg package successfully")
@@ -533,7 +546,10 @@ where
                                 }
                             }
                             DkgEventResponseType::DkgRound2 => {
-                                match self.dkg_state_machine.process_round2(identifier, data).await
+                                match self
+                                    .dkg_state_machine
+                                    .process_round2(&frost_identifier, data)
+                                    .await
                                 {
                                     Ok(_) => {
                                         info!(target: "consensus::authority::frost_task::start_task", "Processed Round 2 dkg package successfully")
@@ -546,7 +562,7 @@ where
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, identifier, signing_session_id, psbt } =
+                        let SigningResponse { response_type, signing_session_id, psbt } =
                             signing_response;
                         let signing_session_id = FixedBytes::from_slice(&signing_session_id);
                         match response_type {
@@ -572,7 +588,11 @@ where
 
                                 if let Err(e) = self
                                     .signing_state_machine
-                                    .signer_process_round1(identifier, signing_session_id, psbt)
+                                    .signer_process_round1(
+                                        &frost_identifier,
+                                        signing_session_id,
+                                        psbt,
+                                    )
                                     .await
                                 {
                                     error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Peer Error processing round 1 signing {:?}", e);
@@ -601,7 +621,7 @@ where
                                 if let Err(e) = self
                                     .signing_state_machine
                                     .coordinator_process_round1(
-                                        identifier,
+                                        &frost_identifier,
                                         signing_session_id,
                                         psbt,
                                     )
@@ -632,7 +652,11 @@ where
 
                                 if let Err(e) = self
                                     .signing_state_machine
-                                    .signer_process_round2(identifier, signing_session_id, psbt)
+                                    .signer_process_round2(
+                                        &frost_identifier,
+                                        signing_session_id,
+                                        psbt,
+                                    )
                                     .await
                                 {
                                     error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Peer Error processing round 2 signing package {:?}", e);
@@ -661,7 +685,7 @@ where
                                 if let Err(e) = self
                                     .signing_state_machine
                                     .coordinator_process_round2(
-                                        identifier,
+                                        &frost_identifier,
                                         signing_session_id,
                                         psbt,
                                     )

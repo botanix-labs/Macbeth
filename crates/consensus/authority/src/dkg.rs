@@ -17,11 +17,7 @@ use std::{
 use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, info, warn};
 
-use crate::{
-    metrics::AuthorityMetrics,
-    utils::{deserialize_frost_peer_id, FrostParseError},
-    Storage,
-};
+use crate::{metrics::AuthorityMetrics, utils::FrostParseError, Storage};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -91,7 +87,7 @@ pub(crate) struct DKGStateMachine<EF, BF, DB, ToFrostMan, BtcServerClient> {
     frost_id_map: HashMap<frost::Identifier, PeerId>,
     // coordiantor only fields
     // Key frost id, values are round 1
-    round1_packages: BTreeMap<Vec<u8>, Vec<u8>>,
+    round1_packages: BTreeMap<frost::Identifier, Vec<u8>>,
     metrics: Arc<AuthorityMetrics>,
 }
 
@@ -136,7 +132,6 @@ where
     }
 
     /// Returns the public key package
-    #[allow(dead_code)]
     pub(crate) fn get_public_key_package(&self) -> Option<secp256k1::PublicKey> {
         self.public_key_package
     }
@@ -185,10 +180,10 @@ where
 
     async fn add_round1_dkg_package(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         payload: Vec<u8>,
     ) -> Result<(), Error> {
-        let req = client::DkgPayload { identifier, payload };
+        let req = client::DkgPayload { identifier: frost_identifier.serialize().to_vec(), payload };
         match self.btc_client.new_round1_dkg_package(req).await {
             Ok(round2_payload) => round2_payload,
             Err(e) => return Err(Error::from(e)),
@@ -198,10 +193,10 @@ where
 
     async fn add_round2_dkg_package(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         payload: Vec<u8>,
     ) -> Result<(), Error> {
-        let req = client::DkgPayload { identifier, payload };
+        let req = client::DkgPayload { identifier: frost_identifier.serialize().to_vec(), payload };
         match self.btc_client.new_round2_dkg_package(req).await {
             Ok(round2_payload) => round2_payload,
             Err(e) => return Err(Error::from(e)),
@@ -330,7 +325,7 @@ where
             our_round1.identifier.len(),
             our_round1.payload.len()
         );
-        self.round1_packages.insert(our_round1.identifier, our_round1.payload);
+        self.round1_packages.insert(self.personal_frost_identifier, our_round1.payload);
 
         // Start by sending round 1 requests
         self.gossip_to_peers(
@@ -394,7 +389,7 @@ where
     /// all peers
     pub(crate) async fn process_round1_coordinator(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         payload: Vec<u8>,
     ) -> Result<(), Error> {
         // If we are not the coordinator, we should not be processing this round 1 package response
@@ -407,7 +402,7 @@ where
         }
 
         // return if the sending identifier is us
-        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
+        if self.personal_frost_identifier == *frost_identifier {
             warn!(
                 target: "consensus::authority::dkg::process_round1_coordinator",
                 "Received our own round 1 package"
@@ -415,13 +410,13 @@ where
             return Ok(());
         }
         // add the transmitted round 1 package data
-        if let Err(e) = self.add_round1_dkg_package(identifier.clone(), payload.clone()).await {
+        if let Err(e) = self.add_round1_dkg_package(frost_identifier, payload.clone()).await {
             error!(
                 target: "consensus::authority::dkg::process_round1_coordinator",
                 "Error adding round 1 dkg package {:?}", e
             );
         }
-        self.round1_packages.insert(identifier, payload);
+        self.round1_packages.insert(*frost_identifier, payload);
 
         info!(
             target: "consensus::authority::dkg::process_round1_coordinator",
@@ -442,7 +437,10 @@ where
         // This includes our own round 1 package
         for (identifier, payload) in self.round1_packages.iter() {
             self.gossip_to_peers(
-                DkgPayload { identifier: identifier.clone(), payload: payload.clone() },
+                DkgPayload {
+                    identifier: identifier.serialize().to_vec(),
+                    payload: payload.clone(),
+                },
                 DkgEventResponseType::DkgRound1,
             )
             .await?;
@@ -468,28 +466,28 @@ where
     /// In the future this could be a single package containing all the round 1 packages
     pub(crate) async fn process_round1(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         payload: Vec<u8>,
     ) -> Result<(), Error> {
         // Ensure we are not the coordinator
         if self.personal_frost_identifier == self.coordinator_identifier() {
-            self.process_round1_coordinator(identifier, payload).await?;
+            self.process_round1_coordinator(frost_identifier, payload).await?;
             return Ok(());
         }
         info!(
             target: "consensus::authority::dkg::process_round1","identifiers {:?} {:?}",
             self.personal_frost_identifier,
-            deserialize_frost_peer_id(identifier.clone())?
+            frost_identifier
         );
 
         // return if the sending identifier is us
-        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
+        if self.personal_frost_identifier == *frost_identifier {
             warn!(target: "consensus::authority::dkg::process_round1", "Received our own round 1 package");
             return Ok(());
         }
 
         // add the transmitted round 1 package data
-        if let Err(e) = self.add_round1_dkg_package(identifier, payload).await {
+        if let Err(e) = self.add_round1_dkg_package(frost_identifier, payload).await {
             error!(target: "consensus::authority::dkg::process_round1", "Error adding round 1 dkg package {:?}", e);
         }
         self.metrics.received_round1_dkg_packages.increment(1);
@@ -512,23 +510,23 @@ where
     /// The coordinator DOES NOT have any special responsibilities here for round 2
     pub(crate) async fn process_round2(
         &mut self,
-        identifier: Vec<u8>,
+        frost_identifier: &frost::Identifier,
         payload: Vec<u8>,
     ) -> Result<(), Error> {
         info!(target: "consensus::authority::dkg::process_round2",
             "our id: {:?},\n peers id:  {:?}",
             self.personal_frost_identifier,
-            deserialize_frost_peer_id(identifier.clone())?
+            frost_identifier
         );
 
         // return if the sending identifier is us
-        if self.personal_frost_identifier == deserialize_frost_peer_id(identifier.clone())? {
+        if self.personal_frost_identifier == *frost_identifier {
             warn!(target: "consensus::authority::dkg::process_round2", "Received our own round 1 package");
             return Ok(());
         }
 
         // add the transmitted round 2 package data
-        if let Err(e) = self.add_round2_dkg_package(identifier, payload).await {
+        if let Err(e) = self.add_round2_dkg_package(frost_identifier, payload).await {
             warn!(target: "consensus::authority::dkg::process_round2", "Error adding round 2 dkg package {:?}", e);
             // We dont want to fail the whole dkg process if we can't add another's round2
             return Ok(());

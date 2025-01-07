@@ -45,21 +45,18 @@ impl fmt::Display for PeerMessageResponse {
 pub struct DkgResponse {
     /// The Response Type
     pub response_type: DkgEventResponseType,
-    /// Frost Identifier
-    pub identifier: Vec<u8>,
     /// Frost Data
     pub data: Vec<u8>,
+    /// Frost Identifier
+    /// Note: for signing we do not require this field as we can pull it from peer data when the
+    /// session is established for DKG we do require it as the coordinator sends the round 1
+    /// package on the behalf of the signers
+    pub identifier: Vec<u8>,
 }
 
 impl fmt::Display for DkgResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} - Identifier Size: {} bytes, Data Size: {} bytes",
-            self.response_type,
-            self.identifier.len(),
-            self.data.len()
-        )
+        write!(f, "{} - bytes, Data Size: {} bytes", self.response_type, self.data.len())
     }
 }
 
@@ -122,8 +119,6 @@ impl fmt::Display for HealthcheckResponse {
 pub struct SigningResponse {
     /// The Response Type
     pub response_type: SigningEventResponseType,
-    /// Frost identifier
-    pub identifier: Vec<u8>,
     /// Signing session id
     pub signing_session_id: Vec<u8>,
     /// Frost data
@@ -134,9 +129,8 @@ impl fmt::Display for SigningResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} - Identifier Size: {} bytes, Session ID Size: {} bytes, PSBT Size: {} bytes",
+            "{} - bytes, Session ID Size: {} bytes, PSBT Size: {} bytes",
             self.response_type,
-            self.identifier.len(),
             self.signing_session_id.len(),
             self.psbt.len()
         )

@@ -55,6 +55,17 @@ pub struct PeerData {
     pub frost_identifier: frost::Identifier,
 }
 
+/// Context for forwarding peer messages to the frost task
+#[derive(Debug, Clone)]
+pub struct PeerMessageContext {
+    /// the peer id
+    pub peer_id: PeerId,
+    /// frost identifier
+    pub frost_identifier: frost::Identifier,
+    /// The message itself
+    pub message: PeerMessageResponse,
+}
+
 /// Frost Manager implementation
 #[derive(Debug)]
 pub struct FrostManager {
@@ -73,7 +84,7 @@ pub struct FrostManager {
     /// total authorities to connect to, including ourselves
     authority_peerid: Vec<PeerId>,
     /// Forwards for message to the frost task
-    task_forwarder_txs: Vec<mpsc::UnboundedSender<(PeerId, PeerMessageResponse)>>,
+    task_forwarder_txs: Vec<mpsc::UnboundedSender<PeerMessageContext>>,
     /// Frost configuration
     config: FrostConfig,
 }
@@ -234,8 +245,15 @@ impl FrostManager {
                     return;
                 }
 
+                let peer_data =
+                    self.peers_connections.get(&peer_id).unwrap().first().expect("checked above");
+
                 for task_forwarder in &self.task_forwarder_txs {
-                    if let Err(send_res) = task_forwarder.send((peer_id, response.clone())) {
+                    if let Err(send_res) = task_forwarder.send(PeerMessageContext {
+                        peer_id,
+                        frost_identifier: peer_data.frost_identifier,
+                        message: response.clone(),
+                    }) {
                         error!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
                     }
                 }
@@ -321,7 +339,7 @@ impl FrostManager {
                 // create channel whereby keeping the sender half and sending to the caller the
                 // receiver
                 let (task_forwarder_txs, frost_task_forwarder_rx) =
-                    mpsc::unbounded_channel::<(PeerId, PeerMessageResponse)>();
+                    mpsc::unbounded_channel::<PeerMessageContext>();
                 self.task_forwarder_txs.push(task_forwarder_txs);
                 // reply to caller
                 if let Err(e) = tx.send(frost_task_forwarder_rx) {
@@ -385,7 +403,7 @@ pub enum FrostCommand {
     /// Get the readily connected peers
     GetAllConnectedPeers(oneshot::Sender<HashMap<PeerId, PeerData>>),
     /// Get a receiver for streaming peer messages
-    GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<(PeerId, PeerMessageResponse)>>),
+    GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageContext>>),
     /// Get wallet state from peer
     GetWalletStateFromPeer,
 }
