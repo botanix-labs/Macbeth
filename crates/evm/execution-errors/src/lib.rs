@@ -126,6 +126,10 @@ pub enum BlockValidationError {
     #[display("Bitcoin recent header is not available")]
     BitcoinRecentHeaderNotAvailable,
 
+    /// Poa specific error when we  Failed to fetch the block producer address
+    #[display("Failed to fetch the block producer address")]
+    FailedToFetchBlockProducerAddress,
+
     /// Failed to deserialize previous block header
     #[display("Failed to deserialize previous block header")]
     FailedToDeserializePreviousBlockHeader,
