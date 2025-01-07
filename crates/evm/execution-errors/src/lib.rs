@@ -190,29 +190,6 @@ pub enum BlockExecutionError {
     Consensus(ConsensusError),
     /// Internal, i.e. non consensus or validation related Block Executor Errors
     Internal(InternalBlockExecutionError),
-    // /// Cannot add and existing federation member to the federation
-    // #[display("Cannot add and existing federation member to the federation")]
-    // CannotAddExistingFederationMember,
-
-    // /// Failed to deserialize previous block header
-    // #[display("Failed to deserialize previous block header")]
-    // FailedToDeserializePreviousBlockHeader,
-
-    // /// Bitcoin recent header is not available
-    // #[display("Bitcoin recent header is not available")]
-    // BitcoinRecentHeaderNotAvailable,
-
-    // /// Consensus error during PBFT
-    // #[display("PBFT Consensus error: {_0}")]
-    // PBFTConsensusError(ConsensusError),
-
-    // /// TODO should pass error to this variant
-    // #[display("Failed to construct Botanix Consensus Pkg")]
-    // BotanixConsensusPkgError(),
-
-    // /// Missing aggregate public key
-    // #[display("Missing aggregate public key")]
-    // MissingAggregatePublicKey(),
 }
 
 impl BlockExecutionError {
