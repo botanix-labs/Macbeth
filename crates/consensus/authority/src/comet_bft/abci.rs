@@ -608,7 +608,6 @@ where
             self.storage.btc_network,
             &bitcoin_checkpoint_block_hash,
             &agg_pk.expect("agg pk to be defined"),
-            &self.storage.genesis_authorities,
             block_time,
         ) {
             Ok((exec_results, block)) => {
@@ -700,7 +699,6 @@ where
                     self.storage.btc_network,
                     &non_deterministic_data.bitcoin_block_hash,
                     &non_deterministic_data.aggregated_public_key,
-                    &self.storage.genesis_authorities,
                     block_time,
                 ) {
                     Ok((exec_results, block)) => {
