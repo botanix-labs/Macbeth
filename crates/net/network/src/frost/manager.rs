@@ -53,8 +53,6 @@ pub struct PeerData {
     pub direction: Direction,
     /// the frost identifier of the peer
     pub frost_identifier: frost::Identifier,
-    /// Did we receive a peer confirmation message from this peer?
-    pub peer_confirmed: bool,
 }
 
 /// Frost Manager implementation
@@ -211,7 +209,6 @@ impl FrostManager {
                 let peer_data = peers_connections.entry(peer_id).or_insert_with(Vec::new);
                 peer_data.push(PeerData {
                     peer_id,
-                    peer_confirmed: true,
                     direction,
                     peer_commands_tx,
                     frost_identifier: authority_index_to_frost_identifier(
