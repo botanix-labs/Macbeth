@@ -42,7 +42,7 @@ impl ToFrostManager for FrostHandle {
     }
 }
 
-/// Structure that stores all informattion about a connected peer
+/// Structure that stores all information about a connected peer
 #[derive(Debug, Clone)]
 pub struct PeerData {
     /// peer id

@@ -209,39 +209,15 @@ impl fmt::Display for SigningEventResponseType {
     }
 }
 
-/// Frost Protocol Events
+/// All events related to frost events emitted by the network.
+/// These are events that are emitted by the network to the frost manager.
+/// And most likely will be used to update the frost task state.
 #[derive(Debug, Clone)]
 pub enum FrostProtocolEvent {
     /// An emitted event once the connection is established
     ConnectionEstablished {
         #[allow(dead_code)]
         /// the connection direction - we connected to them, or they to us
-        direction: Direction,
-        /// the other peer id
-        peer_id: PeerId,
-        /// the tx sender we send to the other peer to enable it to communicate with us
-        peer_commands_tx: mpsc::UnboundedSender<FrostPeerCommand>,
-    },
-    /// An emitted event once a peer sends a message to another peer
-    PeerMessage {
-        /// The other peer id
-        peer_id: PeerId,
-        /// The message response
-        response: PeerMessageResponse,
-    },
-}
-
-/// All events related to frost events emitted by the network.
-/// These are events that are emitted by the network to the frost manager.
-/// And most likely will be used to update the frost task state.
-#[derive(Debug)]
-pub enum NetworkFrostEvent {
-    /// Represents the event of receiving a list of transactions from a peer.
-    ///
-    /// This indicates transactions that were broadcasted to us from the peer.
-    ConnectionEstablished {
-        #[allow(dead_code)]
-        /// the connection direction - we dialed them, or they dialed us
         direction: Direction,
         /// the other peer id
         peer_id: PeerId,
