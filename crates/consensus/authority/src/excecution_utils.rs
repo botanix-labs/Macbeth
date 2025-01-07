@@ -253,8 +253,9 @@ pub(crate) mod authority_execution_utils {
             .unwrap();
         header.state_root = state_root;
 
-        // TODO remove this unwrap
-        let block_producer_address = header.block_producer_address().unwrap();
+        let block_producer_address = header.block_producer_address().map_err(|_| {
+            BlockExecutionError::Validation(BlockValidationError::FailedToFetchBlockProducerAddress)
+        })?;
         // Construct [ExtraDataHeader] and sign the block
         let edh = ExtraDataHeader::new(
             EXTRA_HEADER_VERSION,
