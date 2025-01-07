@@ -1,5 +1,4 @@
 pub(crate) mod authority_execution_utils {
-    use bitcoin::hashes::{sha256, Hash};
     use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_chainspec::{ChainSpec, EthereumHardforks};
 
@@ -41,7 +40,6 @@ pub(crate) mod authority_execution_utils {
         bitcoin_network: bitcoin::Network,
         bitcoin_checkpoint_block_hash: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
-        authority_signers: &[secp256k1::PublicKey],
         timestamp: Timestamp,
     ) -> Result<(BlockExecutionOutput<Receipt>, Block), BlockExecutionError>
     where
@@ -83,14 +81,9 @@ pub(crate) mod authority_execution_utils {
             block_with_senders.header.clone(),
             &block_exec_output,
             block_exec_output.gas_used,
-            // Witness Data
-            &None,
             *bitcoin_checkpoint_block_hash,
-            // UTXO commitment
-            sha256::Hash::all_zeros(),
             client,
             agg_pk,
-            authority_signers,
         )?;
 
         // Replace header with the one that is completed
@@ -215,12 +208,9 @@ pub(crate) mod authority_execution_utils {
         mut header: Header,
         block_exec_result: &BlockExecutionOutput<Receipt>,
         gas_used: u64,
-        _witness_data: &Option<Vec<bitcoin::witness::Witness>>,
         recent_block_hash: bitcoin::BlockHash,
-        _utxo_commitment: sha256::Hash,
         client: &(impl BlockReaderIdExt + StateProviderFactory),
         agg_pk: &secp256k1::PublicKey,
-        _authorities: &[secp256k1::PublicKey],
     ) -> Result<Header, BlockExecutionError> {
         let exec_outcome = ExecutionOutcome::new(
             block_exec_result.state.clone(),
