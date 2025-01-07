@@ -358,8 +358,8 @@ impl InsertBlockErrorKindTwo {
                         Ok(InsertBlockValidationError::Consensus(err))
                     }
                     // these are internal errors, not caused by an invalid block
-                    BlockExecutionError::Internal(error) => {
-                        Err(InsertBlockFatalError::BlockExecutionError(error))
+                    BlockExecutionError::Internal(err) => {
+                        Err(InsertBlockFatalError::BlockExecutionError(err))
                     }
                 }
             }

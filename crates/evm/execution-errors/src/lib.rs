@@ -21,6 +21,7 @@ use reth_consensus::ConsensusError;
 use reth_prune_types::PruneSegmentError;
 use reth_storage_errors::provider::ProviderError;
 use revm_primitives::EVMError;
+use reth_primitives::header_ext::BotanixConsensusPackageError;
 
 pub mod trie;
 pub use trie::*;
@@ -166,11 +167,21 @@ pub enum BlockValidationError {
     /// [EIP-6110]: https://eips.ethereum.org/EIPS/eip-6110
     #[display("failed to decode deposit requests from receipts: {_0}")]
     DepositRequestDecode(String),
+
+    /// Error when creating a Botanix consensus package
+    #[display("Failed to construct Botanix Consensus Pkg")]
+    BotanixConsensusPkgError(BotanixConsensusPackageError),
 }
 
 impl From<StateRootError> for BlockValidationError {
     fn from(error: StateRootError) -> Self {
         Self::StateRoot(error)
+    }
+}
+
+impl From<BotanixConsensusPackageError> for BlockValidationError {
+    fn from(error: BotanixConsensusPackageError) -> Self {
+        Self::BotanixConsensusPkgError(error)
     }
 }
 

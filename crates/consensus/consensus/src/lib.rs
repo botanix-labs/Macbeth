@@ -327,10 +327,6 @@ pub enum ConsensusError {
     #[display("PBFT Consensus error")]
     PBFTConsensusError,
 
-    /// TODO should pass error to this variant
-    #[display("Failed to construct Botanix Consensus Pkg")]
-    BotanixConsensusPkgError(),
-
     /// Error when the difficulty after a merge is not zero.
     #[display("difficulty after merge is not zero")]
     TheMergeDifficultyIsNotZero,

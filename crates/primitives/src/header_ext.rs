@@ -63,6 +63,22 @@ pub enum BotanixConsensusPackageError {
     FailedToRetrieveBitcoinCheckpointHeight(BitcoindError),
 }
 
+impl Clone for BotanixConsensusPackageError {
+    fn clone(&self) -> Self {
+        match self {
+            _ => self.to_owned()
+        }
+    }
+}
+
+impl PartialEq for BotanixConsensusPackageError {
+    fn eq(&self, other: &Self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+    }
+}
+
+impl Eq for BotanixConsensusPackageError {}
+
 impl HeaderExt for Header {
     /// Adds extra data header to the header
     fn add_extra_data_header(&mut self, edh: &ExtraDataHeader) {

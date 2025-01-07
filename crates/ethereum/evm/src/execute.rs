@@ -571,7 +571,7 @@ where
             )
             .map_err(|e| {
                 error!("Failed to get botanix consensus package: {:?}", e);
-                BlockExecutionError::Validation(BlockValidationError::ExtraDataSerializeError)
+                BlockExecutionError::Validation(BlockValidationError::BotanixConsensusPkgError(e))
             })?;
 
         let block_builder_address = edh.block_producer_address;

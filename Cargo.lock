@@ -9059,6 +9059,7 @@ dependencies = [
  "derive_more 1.0.0",
  "nybbles",
  "reth-consensus",
+ "reth-primitives",
  "reth-prune-types",
  "reth-storage-errors",
  "revm-primitives",
