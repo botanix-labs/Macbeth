@@ -41,8 +41,9 @@ pub mod test_utils {
             _conf_target: u16,
             _estimate_mode: Option<EstimateMode>,
         ) -> Result<EstimateSmartFeeResult, bitcoincore_rpc::Error> {
+            let fee_rate = FeeRate::from_sat_per_vb(3).expect("valid fee rate");
             Ok(EstimateSmartFeeResult {
-                fee_rate: Some(Amount::from_sat(FEERATE.to_sat_per_kwu() * 4)),
+                fee_rate: Some(Amount::from_sat(fee_rate.to_sat_per_kwu() * 4)),
                 errors: None,
                 blocks: 1,
             })

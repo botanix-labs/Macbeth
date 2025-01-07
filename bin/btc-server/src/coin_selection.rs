@@ -35,8 +35,7 @@ impl PartialEq for CoinSelectionError {
 /// Coin selection
 pub(crate) fn coin_selection(
     available_utxos: HashMap<OutPoint, Utxo>,
-    // Currently unused, will be used for conflicting inputs
-    #[allow(unused)] required_utxos: HashMap<OutPoint, Utxo>,
+    required_utxos: HashMap<OutPoint, Utxo>,
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
     change_script: ScriptBuf,
@@ -67,17 +66,13 @@ pub(crate) fn coin_selection(
         }
     };
     let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
-
-    // Now we're going to hijack BDK coin selection real quick..
-    let bdk_utxos = available_utxos.values().map(to_bdk).collect::<Vec<_>>();
-
     let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
 
     // Try once with finalized, then add pending and try again.
     let selection = coin_select
         .coin_select(
-            vec![],
-            bdk_utxos.clone(),
+            required_utxos.values().map(to_bdk).collect::<Vec<_>>(),
+            available_utxos.values().map(to_bdk).collect::<Vec<_>>(),
             fee_rate,
             target_amount.to_sat(),
             &change_script, // drain_script
@@ -120,7 +115,6 @@ pub(crate) fn coin_selection(
 
     let absolute_fee = Amount::from_sat(original_psbt.fee_amount().expect("no missing any txouts"));
     let fee_per_output = absolute_fee / pegouts.len() as u64;
-
     for (output, _pegout_id) in pegouts.iter_mut() {
         output.value -= fee_per_output;
     }
@@ -130,7 +124,7 @@ pub(crate) fn coin_selection(
             ch.value += absolute_fee;
             Some(ch)
         } else {
-            None
+            Some(TxOut { script_pubkey: change_script.clone(), value: absolute_fee })
         }
     };
 

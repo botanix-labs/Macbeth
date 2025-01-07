@@ -24,10 +24,7 @@ use crate::{
     coin_selection,
     database::{Error as DbError, Utxo},
     pegout_id::PegoutId,
-    util::{
-        validate_psbt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION,
-        ROUND2,
-    },
+    util::{validate_psbt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     App, Error,
 };
 
@@ -244,8 +241,6 @@ where
             .filter(|(p, _u)| !tracked_inputs.contains(p))
             .collect::<HashMap<_, _>>();
 
-        // if we are retrying a pegout, we need to add a conflicting input
-        let tracked_pegout_request_ids = pegout_scheduler_lock.tracked_pegout_request_ids();
         // if we are retrying pegouts, we need to add a conflicting input for each tracked tx
         // that honors each pegout
         let mut conflicting_inputs: Result<Vec<Utxo>, CoordinatorError> = Ok(vec![]);
@@ -253,21 +248,23 @@ where
         if cfg!(feature = "conflicting_input") {
             let tracked_pegout_request_ids = tracked_txs
                 .iter()
-                .flat_map(|tx| tx.pegout_requests.clone().into_iter().map(|p| p.id))
+                .flat_map(|tx| tx.pegout_requests.iter().map(|p| p.id))
                 .collect::<HashSet<_>>();
+            println!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
 
             // Collect all pegout ids being retried.
-            let matching_pegouts: Vec<&PegoutId> = outputs
+            let matching_pegouts_ids: Vec<&PegoutId> = outputs
                 .iter()
-                .filter_map(|(_, pegout_id)| {
-                    pegout_id.as_ref().filter(|id| tracked_pegout_request_ids.contains(id))
-                })
+                .filter(|(_, pegout_id)| tracked_pegout_request_ids.contains(pegout_id))
+                .map(|(_, pegout_id)| pegout_id)
                 .collect();
 
             // get a tracked input for each matching pegout
             let matching_tracked_inputs: Result<Vec<OutPoint>, CoordinatorError> = tracked_txs
                 .iter()
-                .filter(|tx| tx.pegout_requests.iter().any(|p| matching_pegouts.contains(&&p.id)))
+                .filter(|tx| {
+                    tx.pegout_requests.iter().any(|p| matching_pegouts_ids.contains(&&p.id))
+                })
                 .map(|tx| tx.inputs().next().ok_or_else(|| CoordinatorError::NoConflictingInputs))
                 .collect();
             let matching_tracked_inputs = matching_tracked_inputs?;
@@ -288,11 +285,15 @@ where
                 })
                 .collect();
         }
-         // include conflicting utxos when selecting from available utxos
+
+        let conflicting_inputs = conflicting_inputs?;
+
+        // include conflicting utxos when selecting from available utxos
         // this is done after the coin selection result above to prevent duplicate utxos
-        conflicting_utxos.into_iter().for_each(|(op, u)| {
-            available_utxos.insert(op, u);
+        conflicting_utxos.iter().for_each(|(op, u)| {
+            available_utxos.insert(op.clone(), u.clone());
         });
+
         let psbt = coin_selection::coin_selection(
             available_utxos,
             conflicting_utxos,
