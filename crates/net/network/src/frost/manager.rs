@@ -228,6 +228,15 @@ impl FrostManager {
                     warn!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage message from non-authority peer {:?}", peer_id);
                     return;
                 }
+
+                // Check if the peer is in the peer connections. i.e. we have a valid connection to
+                // the peer. it may be find to address this message on the
+                // application level, but then we cannot respond
+                if !self.peers_connections.contains_key(&peer_id) {
+                    warn!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, but the peer is not in the peer connections", peer_id);
+                    return;
+                }
+
                 for task_forwarder in &self.task_forwarder_txs {
                     if let Err(send_res) = task_forwarder.send((peer_id, response.clone())) {
                         error!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
