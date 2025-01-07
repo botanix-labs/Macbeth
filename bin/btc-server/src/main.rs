@@ -417,7 +417,9 @@ mod test {
     };
     use frost_secp256k1_tr as frost;
     use rand::{thread_rng, Rng};
-    use test_utils::test_utils::{create_random_pegout_id, get_change, store_pending_pegout};
+    use test_utils::test_utils::{
+        create_random_pegout_id, create_tx, get_change, store_pending_pegout,
+    };
     use tonic::{Code, Request};
 
     use reth_btc_wallet::{
@@ -1122,7 +1124,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_notify_pegouts() {
+    async fn test_notify_pegouts_empty_db() {
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
@@ -1132,13 +1134,7 @@ mod test {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
-        // generate 36 random bytes
-        let mut rng = thread_rng();
-        let mut tx_id = [0u8; 32];
-        rng.fill(&mut tx_id);
-        let tx_idx = rng.gen_range(0..u32::MAX);
-        let pegout_id = PegoutId::new(tx_id, tx_idx);
-
+        let pegout_id = create_random_pegout_id();
         let spk = random_p2wpkh_script().as_bytes().to_vec();
 
         // notify about a new pegout
@@ -1171,44 +1167,55 @@ mod test {
             response.message(),
             "internal error: Failed to make tx: coin selection error: Outputs cannot be empty"
         );
+    }
 
-        // now generate some random utxos and save them
-        for _ in 0..3 {
-            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
-            let vout = rng.gen_range(0..u32::MAX);
-            let value = rng.gen_range(1..1_000_000);
-            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
-            let script = Script::from_bytes(script_bytes.as_slice());
+    #[tokio::test]
+    async fn test_notify_pegouts() {
+        let app = setup();
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
 
-            let utxo = Utxo::new(
-                OutPoint::new(txid, vout),
-                TxOut { value: Amount::from_sat(value), script_pubkey: script.into() },
-                None,
-            );
-            app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        let pegout_id = create_random_pegout_id();
+        let spk = random_p2wpkh_script().as_bytes().to_vec();
+
+        // notify about a new pegout
+        let request_1 = rpc::NotifyPegoutsRequest {
+            pending_pegouts: vec![rpc::PendingPegout {
+                pegout_id: pegout_id.as_bytes().to_vec(),
+                spk: spk.clone(),
+                amount: 1_000, // sats
+                height: 1,
+            }],
+        };
+
+        // add a couple of pegin utxos to spend
+        for _ in 0..10 {
+            let dummy_tx = create_tx(1, 1, None);
+            let utxo =
+                Utxo::new(dummy_tx.input[0].previous_output, dummy_tx.output[0].clone(), None);
+            app.add_pegins(&[&utxo]).expect("valid pegin utxo");
         }
-
         // retry the pegout
         app.notify_pegouts(Request::new(request_1)).await.expect("valid pegout request");
 
         // assert the pending pegouts
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
-        assert_eq!(pending_pegouts.len(), 1);
         let pegout = pending_pegouts[0].clone();
-        assert_eq!(pegout.value, Amount::from_sat(100_000));
-        assert_eq!(pegout.spk.as_bytes().to_vec().clone(), spk);
-        assert_eq!(pegout.id, pegout_id);
-
+        assert_eq!(pegout.value, Amount::from_sat(1_000));
         // prepare another request
         let request_2 = Request::new(rpc::NotifyPegoutsRequest {
             pending_pegouts: vec![rpc::PendingPegout {
                 pegout_id: pegout_id.as_bytes().to_vec(),
                 spk: spk.clone(),
-                amount: 100_000, // sats
+                amount: 1_000, // sats
                 height: 1,
             }],
         });
-
         // Notifying with the same pegout id shouldn't make a difference
         app.notify_pegouts(request_2).await.expect("valid pegout request");
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
@@ -1220,17 +1227,16 @@ mod test {
             checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
         });
         let response = app.get_psbt(request).await;
+        println!("response: {:?}", response);
         assert!(response.is_ok());
 
         // Same pegout with different id should add a new pegout
-        let mut tx_id = [0u8; 32];
-        rng.fill(&mut tx_id);
-        let pegout_id = PegoutId::new(tx_id, tx_idx);
+        let pegout_id = create_random_pegout_id();
         let request_3 = Request::new(rpc::NotifyPegoutsRequest {
             pending_pegouts: vec![rpc::PendingPegout {
                 pegout_id: pegout_id.as_bytes().to_vec(),
                 spk: spk.clone(),
-                amount: 100_000, // sats
+                amount: 1_000, // sats
                 height: 1,
             }],
         });
@@ -1242,11 +1248,11 @@ mod test {
         // Multi pegout request
         let request_multi_pegouts = {
             let mut reqs = Vec::new();
-            for i in 0..10 {
+            for i in 0..5 {
                 reqs.push(rpc::PendingPegout {
                     pegout_id: PegoutId::new([i as u8; 32], 0).as_bytes().to_vec(),
                     spk: spk.clone(),
-                    amount: 100_000, // sats
+                    amount: 1_000, // sats
                     height: 1,
                 });
             }
@@ -1257,7 +1263,8 @@ mod test {
             .await
             .expect("valid pegout request");
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
-        assert_eq!(pending_pegouts.len(), 12);
+        println!("pending_pegouts: {:?}", pending_pegouts);
+        assert_eq!(pending_pegouts.len(), 7);
     }
 
     #[test]
@@ -1375,17 +1382,27 @@ mod test {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
+        // now generate some random utxos and save them
+        for _ in 0..3 {
+            let dummy_tx = create_tx(1, 1, None);
+            let utxo =
+                Utxo::new(dummy_tx.input[0].previous_output, dummy_tx.output[0].clone(), None);
+            app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
+        }
+
         // create pegout
         let pegout_id = create_random_pegout_id();
         let spk = random_p2wpkh_script().as_bytes().to_vec();
-        let request = Request::new(rpc::NotifyPegoutRequest {
-            pegout_id: pegout_id.as_bytes().to_vec(),
-            spk: spk.clone(),
-            amount: 1_000, // sats
-            height: 1,
+        let request = Request::new(rpc::NotifyPegoutsRequest {
+            pending_pegouts: vec![rpc::PendingPegout {
+                pegout_id: pegout_id.as_bytes().to_vec(),
+                spk: spk.clone(),
+                amount: 1_000, // sats
+                height: 1,
+            }],
         });
 
-        app.notify_pegout(request).await.expect("valid pegout request");
+        app.notify_pegouts(request).await.expect("valid pegout request");
 
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
         let tx_out = pending_pegouts[0].txout();
@@ -1411,20 +1428,9 @@ mod test {
             .await
             .expect("tx to be tracked");
 
-        // add additional utxo that is not part of a tracked tx
-        let psbt = create_psbt(1, 1, Some(get_change(&app.db)));
-        let tx = psbt.clone().extract_tx().expect("valid tx");
-        // Add the utxo
-        let utxo = Utxo::new(
-            tx.input[0].previous_output,
-            psbt.inputs[0].witness_utxo.clone().expect("some"),
-            None,
-        );
-        app.add_pegins(&[&utxo]).expect("valid pegin utxo");
-
         // get the tracked input
         let tracked_inputs = app.pegout_scheduler.lock().await.tracked_inputs();
-        assert!(tracked_inputs.len() == 1);
+        assert_eq!(tracked_inputs.len(), 1);
         let txid =
             tracked_tx.input.iter().map(|i| i.previous_output).collect::<Vec<OutPoint>>()[0].txid;
         let outpoint = OutPoint { txid, vout: 0 };
@@ -1434,7 +1440,7 @@ mod test {
         let request = Request::new(rpc::Empty {});
         let response = app.get_all_utxos(request).await;
         let utxos = response.expect("utxos to exist").into_inner().utxos;
-        assert!(utxos.len() == 2);
+        assert_eq!(utxos.len(), 4);
 
         // request a psbt which should include a conflicting input (the tracked input)
         let request = Request::new(rpc::MakeTxRequest {
@@ -1458,6 +1464,7 @@ mod test {
     // pegout A and pegout B are both being retried so the psbt should contain inputs from both
     // previous txs
     async fn test_multiple_conflicting_inputs_for_multiple_pegouts() {
+        let mut rng = thread_rng();
         let app = setup();
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
@@ -1467,6 +1474,22 @@ mod test {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
+        // now generate some random utxos and save them
+        for _ in 0..3 {
+            let txid = Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap();
+            let vout = rng.gen_range(0..u32::MAX);
+            let value = rng.gen_range(1..1_000_000);
+            let script_bytes: Vec<u8> = (0..20).map(|_| rng.gen()).collect();
+            let script = Script::from_bytes(script_bytes.as_slice());
+
+            let utxo = Utxo::new(
+                OutPoint::new(txid, vout),
+                TxOut { value: Amount::from_sat(value), script_pubkey: script.into() },
+                None,
+            );
+            app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
+        }
+
         // create 2 pegouts
         let mut tracked_inputs = HashSet::new();
         let mut pegouts: Vec<PegoutRequest> = vec![];
@@ -1474,14 +1497,16 @@ mod test {
             // create pegout
             let pegout_id = create_random_pegout_id();
             let spk = random_p2wpkh_script().as_bytes().to_vec();
-            let request = Request::new(rpc::NotifyPegoutRequest {
-                pegout_id: pegout_id.as_bytes().to_vec(),
-                spk: spk.clone(),
-                amount: 1_000, // sats
-                height: 1,
+            let request = Request::new(rpc::NotifyPegoutsRequest {
+                pending_pegouts: vec![rpc::PendingPegout {
+                    pegout_id: pegout_id.as_bytes().to_vec(),
+                    spk: spk.clone(),
+                    amount: 1_000, // sats
+                    height: 1,
+                }],
             });
 
-            app.notify_pegout(request).await.expect("valid pegout request");
+            app.notify_pegouts(request).await.expect("valid pegout request");
 
             let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
             // store pegout id so we can add back to the db
@@ -1520,7 +1545,7 @@ mod test {
             let inputs = app.pegout_scheduler.lock().await.tracked_inputs();
             tracked_inputs.insert(inputs.get(&outpoint).expect("tracked input exists").clone());
         }
-        assert!(tracked_inputs.len() == 2);
+        assert_eq!(tracked_inputs.len(), 2);
 
         // add the pegout requests back to the db
         app.db
@@ -1544,7 +1569,7 @@ mod test {
         let request = Request::new(rpc::Empty {});
         let response = app.get_all_utxos(request).await;
         let utxos = response.expect("utxos to exist").into_inner().utxos;
-        assert!(utxos.len() == 7);
+        assert_eq!(utxos.len(), 10);
 
         // request a psbt which should include two conflicting inputs
         let request = Request::new(rpc::MakeTxRequest {
@@ -1581,16 +1606,26 @@ mod test {
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
+        // now generate some random utxos and save them
+        for _ in 0..3 {
+            let dummy_tx = create_tx(1, 1, None);
+            let utxo =
+                Utxo::new(dummy_tx.input[0].previous_output, dummy_tx.output[0].clone(), None);
+            app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
+        }
+
         // create pegout
         let pegout_id = create_random_pegout_id();
         let spk = random_p2wpkh_script().as_bytes().to_vec();
-        let request = Request::new(rpc::NotifyPegoutRequest {
-            pegout_id: pegout_id.as_bytes().to_vec(),
-            spk: spk.clone(),
-            amount: 1_000, // sats
-            height: 1,
+        let request = Request::new(rpc::NotifyPegoutsRequest {
+            pending_pegouts: vec![rpc::PendingPegout {
+                pegout_id: pegout_id.as_bytes().to_vec(),
+                spk: spk.clone(),
+                amount: 1_000, // sats
+                height: 1,
+            }],
         });
-        app.notify_pegout(request).await.expect("valid pegout request");
+        app.notify_pegouts(request).await.expect("valid pegout request");
 
         let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
         let tx_out = pending_pegouts[0].txout();

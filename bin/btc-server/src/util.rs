@@ -20,8 +20,6 @@ use crate::{
 };
 
 lazy_static! {
-    static ref MAX_BTC_AMOUNT: bitcoin::Amount =
-        bitcoin::Amount::from_sat(21_000_000 * 100_000_000);
     static ref MAX_FEERATE: bitcoin::FeeRate =
         bitcoin::FeeRate::from_sat_per_vb(300).expect("valid feerate");
 }
@@ -165,8 +163,10 @@ pub enum ValidatePSBTError {
     PsbtError(#[from] bitcoin::psbt::Error),
     #[error("cannot calculate fee rate")]
     FeeRateCalculationError(),
-    #[error("{0}")]
-    FeeSanityCheck(&'static str),
+    #[error(
+        "fee cannot be greater than the total value of all outputs, fee = {0}, total value = {1}"
+    )]
+    FeeSanityCheck(Amount, Amount),
     #[error("missing witness utxo")]
     MissingWitnessUtxo,
     #[error("cannot find UTXO in db")]
@@ -187,6 +187,10 @@ pub enum ValidatePSBTError {
     InvalidOutputs(#[from] ValidateOutputsError),
     #[error("error validating conflicting input: {0}")]
     ConflictingInputError(#[from] ConflictingInputError),
+    #[error("negative fee")]
+    NegativeFee,
+    #[error("fee overflow")]
+    FeeOverflow,
 }
 
 impl PartialEq for ValidatePSBTError {
@@ -236,12 +240,8 @@ pub fn validate_psbt(
     let fee = match psbt.fee() {
         Ok(fee) => fee,
         Err(e) => match e {
-            bitcoin::psbt::Error::NegativeFee => {
-                return Err(ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"))
-            }
-            bitcoin::psbt::Error::FeeOverflow => {
-                return Err(ValidatePSBTError::FeeSanityCheck("Fee overflow"))
-            }
+            bitcoin::psbt::Error::NegativeFee => return Err(ValidatePSBTError::NegativeFee),
+            bitcoin::psbt::Error::FeeOverflow => return Err(ValidatePSBTError::FeeOverflow),
             _ => return Err(ValidatePSBTError::PsbtError(e)),
         },
     };
@@ -261,15 +261,7 @@ pub fn validate_psbt(
         });
 
     if fee > total_outputs_amount {
-        return Err(ValidatePSBTError::FeeSanityCheck(
-            "Fee cannot be greater than the total value of all outputs",
-        ));
-    }
-
-    if total_outputs_amount > *MAX_BTC_AMOUNT {
-        return Err(ValidatePSBTError::FeeSanityCheck(
-            "The sum of all outputs cannot be greater than max btc amount",
-        ));
+        return Err(ValidatePSBTError::FeeSanityCheck(fee, total_outputs_amount));
     }
 
     // If we are just validating sanity checks we can stop here
@@ -608,7 +600,7 @@ mod util_tests {
             output.value = output.value.checked_add(Amount::from_sat(diff)).unwrap_or_default();
         }
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
-        assert_eq!(res.unwrap_err(), ValidatePSBTError::FeeSanityCheck("Fee cannot be negative"));
+        assert_eq!(res.unwrap_err(), ValidatePSBTError::NegativeFee);
     }
 
     #[test]
@@ -665,10 +657,9 @@ mod util_tests {
         assert!(total_outputs == Amount::ZERO);
 
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
-        assert!(res.is_err());
         assert_eq!(
-            res.unwrap_err().to_string(),
-            "Fee cannot be greater than the total value of all outputs"
+            res.unwrap_err(),
+            ValidatePSBTError::FeeSanityCheck(Amount::from_sat(2332), Amount::ZERO)
         );
     }
 
