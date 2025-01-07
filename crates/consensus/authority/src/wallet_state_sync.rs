@@ -122,7 +122,9 @@ where
         // try getting the wallet state from the random peer we pinged
         match tokio::time::timeout(Duration::from_secs(60), peer_messages_rx.recv()).await {
             Ok(peer_message) => {
-                if let Some((peer_id, peer_message)) = peer_message {
+                if let Some(message_context) = peer_message {
+                    let peer_message = message_context.message;
+                    let peer_id = message_context.peer_id;
                     info!(target: "consensus::authority::sync_wallet_state", "Received wallet state from peer {:?}", peer_id);
 
                     // Note: we ignore empty messages bc they are peer requests for wallet state
