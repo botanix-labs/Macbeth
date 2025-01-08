@@ -49,7 +49,7 @@ jobs:
       - name: Compile btc-server
         run: |
           cd ./bin/btc-server && \
-          cargo build --bin btc-server && \
+          cargo build --features conflicting_input --bin btc-server && \
           echo "Bitcoin server compiled successfully!"
 
       - name: Compile poa-node
