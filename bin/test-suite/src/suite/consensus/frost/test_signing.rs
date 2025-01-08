@@ -318,7 +318,9 @@ pub async fn test_many_inputs_signing(
         .ok_or_else(|| anyhow::anyhow!("error not present"))?;
     println!("err_res: {:?}", err_res);
 
-    assert!(err_res.to_string().contains("Failed to validate psbt: inputs cannot be 0"));
+    assert!(err_res.to_string().contains(
+        "internal error: Failed to make tx: coin selection error: Outputs cannot be empty"
+    ));
 
     // Notify some pending pegouts
     let amount = bitcoin::Amount::from_sat(100_000);
