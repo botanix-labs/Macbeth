@@ -425,16 +425,18 @@ pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<PegoutId> {
 pub fn validate_psbt_by_output(
     psbt: &Psbt,
     destination: &Address,
-    amount: Amount,
+    _amount: Amount,
 ) -> Result<(), PsbtValidationError> {
+    // TODO: to ensure the correct amount is being sent we need a psbt ext function to get the fee
+    // per output and compare it to the amount
     debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Validating {} outputs in psbt", psbt.outputs.len());
     match psbt.clone().extract_tx() {
         Ok(transaction) => {
-            match transaction.output.iter().find(|output| {
-                output.script_pubkey == destination.script_pubkey() &&
-                            // TODO: strict value checking will need to account for fees
-                            output.value == amount
-            }) {
+            match transaction
+                .output
+                .iter()
+                .find(|output| output.script_pubkey == destination.script_pubkey())
+            {
                 Some(_) => {
                     debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Found matching output in psbt");
                     Ok(())
