@@ -8102,6 +8102,7 @@ dependencies = [
  "reth-consensus-common",
  "reth-data-parser",
  "reth-db",
+ "reth-db-api",
  "reth-db-common",
  "reth-ethereum-consensus",
  "reth-ethereum-payload-builder",

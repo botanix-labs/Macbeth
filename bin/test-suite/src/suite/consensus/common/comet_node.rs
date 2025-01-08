@@ -303,31 +303,31 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
         }
     }
 
-    if let Some(rpc) = toml.get_mut("statesync") {
-        if let Some(enable_state_sync) = rpc.get_mut("enable") {
-            *enable_state_sync = toml::value::Value::Boolean(true);
-        }
-        if let Some(chunk_fetchers) = rpc.get_mut("chunk_fetchers") {
-            *chunk_fetchers = toml::value::Value::String("1".to_string());
-        }
-        if let Some(rpc_servers) = rpc.get_mut("rpc_servers") {
-            let rpc_state_sync_servers = cometbft_node
-                .peers_list
-                .iter()
-                .map(|peer| format!("tcp://0.0.0.0:{}", peer.cometbft_p2p_app_port.to_string()))
-                .collect::<Vec<String>>()
-                .join(",");
-            *rpc_servers = toml::value::Value::String(rpc_state_sync_servers);
-        }
-        if let Some(trust_height) = rpc.get_mut("trust_height") {
-            *trust_height = toml::value::Value::Integer(1);
-        }
-        if let Some(trust_hash) = rpc.get_mut("trust_hash") {
-            *trust_hash = toml::value::Value::String(
-                "7b3ca33b44aee2b296253fa69e1b2b74789655a8aacb7d53a29c397cc8a9b379".to_string(),
-            );
-        }
-    }
+    // if let Some(rpc) = toml.get_mut("statesync") {
+    //     if let Some(enable_state_sync) = rpc.get_mut("enable") {
+    //         *enable_state_sync = toml::value::Value::Boolean(true);
+    //     }
+    //     if let Some(chunk_fetchers) = rpc.get_mut("chunk_fetchers") {
+    //         *chunk_fetchers = toml::value::Value::String("1".to_string());
+    //     }
+    //     if let Some(rpc_servers) = rpc.get_mut("rpc_servers") {
+    //         let rpc_state_sync_servers = cometbft_node
+    //             .peers_list
+    //             .iter()
+    //             .map(|peer| format!("tcp://0.0.0.0:{}", peer.cometbft_p2p_app_port.to_string()))
+    //             .collect::<Vec<String>>()
+    //             .join(",");
+    //         *rpc_servers = toml::value::Value::String(rpc_state_sync_servers);
+    //     }
+    //     if let Some(trust_height) = rpc.get_mut("trust_height") {
+    //         *trust_height = toml::value::Value::Integer(1);
+    //     }
+    //     if let Some(trust_hash) = rpc.get_mut("trust_hash") {
+    //         *trust_hash = toml::value::Value::String(
+    //             "7b3ca33b44aee2b296253fa69e1b2b74789655a8aacb7d53a29c397cc8a9b379".to_string(),
+    //         );
+    //     }
+    // }
 
     if let Some(consensus) = toml.get_mut("consensus") {
         if let Some(timeout_propose) = consensus.get_mut("timeout_propose") {

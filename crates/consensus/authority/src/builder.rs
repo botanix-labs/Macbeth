@@ -26,8 +26,8 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderFactory,
-    SnapshotReader, SnapshotWriter, StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateNotification, CanonStateNotificationSender,
+    CanonStateSubscriptions, ProviderFactory, SnapshotReader, SnapshotWriter, StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
@@ -170,6 +170,7 @@ where
             bitcoind_factory,
             executor_factory,
             client.clone(),
+            provider_factory.clone(),
         );
 
         Ok(Self {

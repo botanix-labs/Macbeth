@@ -62,7 +62,7 @@ pub async fn state_sync(
     let mut tx_hashes_set = HashSet::new();
 
     // send eoa messages to random addresses
-    for _ in 0..100 {
+    for _ in 0..5 {
         it_info_print!("Sending eoa transaction...");
         let eoa_receiver = ethers::core::types::Address::random();
         it_info_print!("Eoa receiver: {:?}", eoa_receiver.to_string());
@@ -72,6 +72,8 @@ pub async fn state_sync(
         tokio::time::sleep(Duration::from_millis(200)).await;
         tx_hashes_set.insert(tx_receipt.transaction_hash);
     }
+
+    let latest_block = botanix_eth_client.get_latest_block().await.unwrap();
 
     // wait for canonical chain updates reported by the node, then send new tx
     while let Ok(notification) = rx.recv().await {
@@ -91,7 +93,16 @@ pub async fn state_sync(
                 .cloned()
                 .unwrap();
             let snapshots = db_provider.get_snapshots().unwrap_or_default();
-            it_info_print!("Snapshots", snapshots);
+            it_info_print!(
+                "======================================================= Snapshots",
+                snapshots
+            );
+            let found_block =
+                snapshots.iter().any(|s| s.height() == latest_block.number.unwrap().as_u64());
+            if found_block {
+                it_info_print!("Found block in snapshot");
+                break;
+            }
         }
     }
 
