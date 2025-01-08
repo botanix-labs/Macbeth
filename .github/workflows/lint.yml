@@ -58,39 +58,6 @@ jobs:
 
     # Commenting out for now, will re-enable after final upstream merge
 
-  validate-title:
-    name: Validate PR Title
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      contents: read
-    steps:
-      - uses: amannn/action-semantic-pull-request@v5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          requireScope: true
-          subjectPattern: ^([A-Z]).+$
-          types: |
-            build
-            ci
-            docs
-            feat
-            fix
-            perf
-            refactor
-            test
-          scopes: |
-            benches
-            repo
-            deps
-            release
-            btc-server
-            reth
-            tests-suite
-            fed-utils
-            frost
-
   crate-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 60
