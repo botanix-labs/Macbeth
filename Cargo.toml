@@ -363,7 +363,7 @@ reth-trie-db = { path = "crates/trie/db" }
 reth-trie-parallel = { path = "crates/trie/parallel" }
 
 # frost
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", rev = "be21f863dd782ae8ad030876964f7615ab392f0e", features = [
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", rev = "c018ae388c7a10fb9534391b8d09cb07230b78c4", features = [
     "serde",
     "serialization",
 ] }
