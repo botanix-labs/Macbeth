@@ -26,18 +26,22 @@ pub fn generate_tweaked_public_key(
 ) -> Result<PublicKey, VerifyingKeyExtError> {
     let signing_parameters = SigningParameters {
         tapscript_merkle_root: None,
-        additional_tweak: Some(eth_address.to_vec()),
+        additional_tweak: Some(eth_address.as_slice().to_vec()),
     };
     let tweaked_pk = verifying_key.tweak(&signing_parameters).to_secp_pk()?;
     Ok(tweaked_pk)
 }
 
+pub fn generate_taproot_scriptpubkey(tweaked_public_key: &PublicKey) -> ScriptBuf {
+    let tap_tweaked_key =
+        TweakedPublicKey::dangerous_assume_tweaked(tweaked_public_key.x_only_public_key().0);
+    bitcoin::ScriptBuf::new_p2tr_tweaked(tap_tweaked_key)
+}
+
 /// Generate a taproot address from a given tweaked public key
 /// Note this includes both the eth address tweak and the taproot merkel root tweak
 pub fn generate_taproot_address(tweaked_public_key: &PublicKey, network: Network) -> Address {
-    let tweaked_pk =
-        TweakedPublicKey::dangerous_assume_tweaked(tweaked_public_key.x_only_public_key().0);
-    let p2tr_script = bitcoin::ScriptBuf::new_p2tr_tweaked(tweaked_pk);
+    let p2tr_script = generate_taproot_scriptpubkey(tweaked_public_key);
     Address::from_script(&p2tr_script, network).expect("valid address")
 }
 

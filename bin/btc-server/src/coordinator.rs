@@ -175,18 +175,15 @@ where
     ) -> Result<(PublicKey, PublicKey, Address), CoordinatorError> {
         // try to get pk package from db in case we already did dkg round 3
         if let Some(pk_package) = self.db.get_public_key_package()? {
-            let agg_key = pk_package
-                .verifying_key()
-                .to_secp_pk()
-                .map_err(CoordinatorError::FailedToConvertVerifyingKeyToSecpPk)?;
-            let tweaked_key = reth_btc_wallet::address::generate_tweaked_public_key(
-                &pk_package.verifying_key(),
-                eth_tweak,
-            )?;
+            let agg_key = pk_package.verifying_key();
+
+            let tweaked_key =
+                reth_btc_wallet::address::generate_tweaked_public_key(&agg_key, eth_tweak)?;
+
             let gateway_address =
                 reth_btc_wallet::address::generate_taproot_address(&tweaked_key, self.btc_network);
 
-            return Ok((agg_key, tweaked_key, gateway_address));
+            return Ok((agg_key.to_secp_pk()?, tweaked_key, gateway_address));
         }
         Err(CoordinatorError::MissingKeyPackage)
     }
