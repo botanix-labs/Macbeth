@@ -12,12 +12,12 @@ use bitcoin::{
 };
 use btcserverlib::pegout_id::PegoutId;
 use ethers::types::U256;
+use frost_secp256k1_tr as frost;
+use reth_btc_wallet::address::{generate_taproot_scriptpubkey, generate_tweaked_public_key};
 use secp256k1::PublicKey;
 use thiserror::Error;
 
 use crate::{botanix::utils::AmountExt, Address};
-
-use super::utils::{generate_taproot_scriptpubkey, tweak_frost_verifying_key};
 
 const PEGIN_META_VERSION: u32 = 0;
 const _PEGOUT_META_VERSION: u32 = 0;
@@ -79,7 +79,10 @@ impl PeginData {
                 return Err(PeginDataError::Invalid("invalid tx or outpoint: output idx"));
             }
 
-            let tpk = tweak_frost_verifying_key(aggregate_pk, &self.account.into())
+            let encoded_pk = aggregate_pk.serialize();
+            let vk = frost::VerifyingKey::deserialize(&encoded_pk)
+                .map_err(|e| PeginDataError::FrostError(e))?;
+            let tpk = generate_tweaked_public_key(&vk, &self.account.into())
                 .map_err(|_e| PeginDataError::InvalidTweak())?;
             let gateway_script = generate_taproot_scriptpubkey(&tpk);
 
@@ -225,6 +228,9 @@ pub enum PeginDataError {
     /// Invalid tweak: failed to tweak aggregate public key
     #[error("invalid tweak: failed to tweak aggregate public key")]
     InvalidTweak(),
+    /// Frost related error
+    #[error("frost error {0}")]
+    FrostError(frost::Error),
 }
 
 /// Error type for pegout data
@@ -408,7 +414,9 @@ mod tests {
         };
 
         let account = Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
-        let tpk = tweak_frost_verifying_key(pk, &account.into()).unwrap();
+        let pk_encoded = pk.serialize();
+        let vk = frost::VerifyingKey::deserialize(&pk_encoded).unwrap();
+        let tpk = generate_tweaked_public_key(&vk, &account.into()).unwrap();
         let gateway_script = generate_taproot_scriptpubkey(&tpk);
 
         let tx_out = TxOut { value: Amount::from_sat(100), script_pubkey: gateway_script };

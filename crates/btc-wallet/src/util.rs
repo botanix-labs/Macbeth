@@ -17,6 +17,8 @@ pub enum VerifyingKeyExtError {
     FailedToConvertToSecpPk(bitcoin::secp256k1::Error),
     #[error("Frost error: {0}")]
     FrostError(#[from] frost::Error),
+    #[error("Failed to convert to secp pk: {0}")]
+    FailedToConvertToFrostPk(frost::Error),
 }
 
 /// Extension trait for Frost verifying key (aggregate key)
@@ -27,6 +29,15 @@ pub trait VerifyingKeyExt: Into<frost::VerifyingKey> {
             .map_err(VerifyingKeyExtError::FailedToConvertToSecpPk)?;
 
         Ok(pk)
+    }
+
+    fn from_secp_pk(
+        pk: &secp256k1::PublicKey,
+    ) -> Result<frost::VerifyingKey, VerifyingKeyExtError> {
+        let vk = frost::VerifyingKey::deserialize(pk.serialize().as_slice())
+            .map_err(VerifyingKeyExtError::FailedToConvertToFrostPk)?;
+
+        Ok(vk)
     }
 }
 

@@ -50,52 +50,6 @@ pub trait AmountExt: Copy + From<bitcoin::Amount> + Into<bitcoin::Amount> {
 }
 impl AmountExt for bitcoin::Amount {}
 
-/// Error type for key operations.
-#[derive(Debug, thiserror::Error)]
-pub enum KeyError {
-    /// The key is out of range.
-    #[error("The key is out of range")]
-    OutOfRange,
-    /// The key is invalid.
-    #[error("The key is invalid: {0}")]
-    SecpError(#[from] secp256k1::Error),
-    /// Frost error
-    #[error("Frost error: {0}")]
-    FrostError(#[from] frost::Error),
-}
-
-// TODO write tests for this
-/// Generate a tweaked public key from a given public key and tweak.
-pub fn tweak_frost_verifying_key(
-    pk: &secp256k1::PublicKey,
-    tweak: &EthAddress,
-) -> Result<secp256k1::PublicKey, KeyError> {
-    let signing_parameters =
-        SigningParameters { tapscript_merkle_root: None, additional_tweak: Some(tweak.to_vec()) };
-    let pk_slice: [u8; 33] = pk.serialize();
-    let vk = frost::VerifyingKey::deserialize(&pk_slice).map_err(KeyError::from)?;
-    let tweaked_vk = vk.tweak(&signing_parameters);
-    let tweaked_pk = secp256k1::PublicKey::from_slice(&tweaked_vk.serialize()?)?;
-
-    Ok(tweaked_pk)
-}
-
-/// Generate a taproot scriptpubkey from a given tweaked public key
-/// This includes both the eth address tweak and taproot merkel tweak
-pub fn generate_taproot_scriptpubkey(public_key: &secp256k1::PublicKey) -> ScriptBuf {
-    // This is commented out for now b/c the frost library only supports empty merkel root
-    // let taproot_spend_info =
-    //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
-
-    // Note that the public key is already tweaked with the eth address and the taptree merkel root
-    // so we can use the dangerous_assume_tweaked method to create the script
-    // In the case of a change output being created no eth address tweak is provided
-    let xonly =
-        bitcoin::XOnlyPublicKey::from_slice(&public_key.x_only_public_key().0.serialize()).unwrap();
-    let tweaked_pk = TweakedPublicKey::dangerous_assume_tweaked(xonly);
-    bitcoin::ScriptBuf::new_p2tr_tweaked(tweaked_pk)
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
