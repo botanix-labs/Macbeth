@@ -12,6 +12,8 @@ use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
 
 use crate::{database::Utxo, pegout_id::PegoutId, util::OutPointExt, Error};
 
+const TAPROOT_OUTPUT_DUST_THRESHOLD: Amount = Amount::from_sat(330);
+
 #[derive(Debug, Error)]
 pub enum CoinSelectionError {
     #[error("Coin selection error: {0}")]
@@ -124,7 +126,11 @@ pub(crate) fn coin_selection(
             ch.value += absolute_fee;
             Some(ch)
         } else {
-            Some(TxOut { script_pubkey: change_script.clone(), value: absolute_fee })
+            if absolute_fee > TAPROOT_OUTPUT_DUST_THRESHOLD {
+                Some(TxOut { script_pubkey: change_script.clone(), value: absolute_fee })
+            } else {
+                None
+            }
         }
     };
 
