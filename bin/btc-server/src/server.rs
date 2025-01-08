@@ -251,6 +251,8 @@ where
         self.db.store_pending_pegouts(&pegouts_refs)?;
         self.db.flush()?;
 
+        info!("stored pegouts.len(): {:?}", pegouts.len());
+
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
