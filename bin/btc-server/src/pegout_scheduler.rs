@@ -395,12 +395,13 @@ impl PegoutScheduler {
     ) -> &Tx {
         let pegout_idxs = {
             let mut ret = Vec::with_capacity(pegouts.len());
+            // TODO: the same pegout could be in the tx multiple times
             for pegout in pegouts {
                 let pegout_txout = pegout.txout();
                 let idx = tx
                     .output
                     .iter()
-                    .position(|txout| *txout == pegout_txout)
+                    .position(|txout| txout.script_pubkey == pegout_txout.script_pubkey)
                     .expect("tx doesn't contain all pegouts");
                 ret.push(idx);
             }
