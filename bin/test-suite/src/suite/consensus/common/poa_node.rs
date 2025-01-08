@@ -299,6 +299,9 @@ impl FederationMemberTestConfig {
 
         // prepare run arguments
         let command = "./target/debug/reth";
+        // TODO(scott): make features flag dynamic
+        // it can be passed in via cli and does default to the feature below but
+        // needs to be passed down to this function
         let args = vec![
             "poa",
             "-vvv",
