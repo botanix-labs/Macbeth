@@ -971,15 +971,20 @@ mod tests {
     }
 
     #[test]
+    // TODO(scott): refactor test once `validate_psbt_by_output` accounts for fee per output - see
+    // comment in method
     fn validate_psbt_by_output_should_fail_with_no_matching_value() {
-        // value should be 1000
         let value = bitcoin::Amount::from_sat(1);
         let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
         let psbt = create_psbt(1, &destination);
 
-        let result = validate_psbt_by_output(&psbt, &destination, value);
+        let incorrect_destination =
+            bitcoin::Address::from_str("bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh")
+                .expect("valid address")
+                .assume_checked();
+        let result = validate_psbt_by_output(&psbt, &incorrect_destination, value);
         assert!(result.is_err());
     }
 
