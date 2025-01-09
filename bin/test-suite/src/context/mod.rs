@@ -8,7 +8,7 @@ use crate::{
 
 pub const BOTANIX_FEE_RECEIPIENT: &str = "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5";
 pub const BTC_NETWORK: &str = "regtest";
-pub const BITCOIND_URL: &str = "http://localhost:18443";
+pub const BITCOIND_URL: &str = "http://127.0.0.1:18443";
 pub const BITCOIND_USER: &str = "foo";
 pub const BITCOIND_PASS: &str = "bar";
 
