@@ -66,7 +66,6 @@ pub enum BotanixConsensusPackageError {
 impl HeaderExt for Header {
     /// Adds extra data header to the header
     fn add_extra_data_header(&mut self, edh: &ExtraDataHeader) {
-        // TODO check if NUMS point is not aggregate key
         self.extra_data = Bytes::from(edh.serialize());
     }
 
