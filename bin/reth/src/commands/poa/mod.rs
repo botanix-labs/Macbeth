@@ -1,4 +1,4 @@
-//! Main node command
+//! POA node command
 
 use bitcoin::hashes::Hash;
 use bitcoincore_rpc::RpcApi;
@@ -89,7 +89,6 @@ use reth_provider::{
     BlockHashReader, CanonStateSubscriptions, HeaderProvider, ProviderFactory,
     StageCheckpointReader,
 };
-use reth_revm::primitives::EnvKzgSettings;
 use reth_rpc::{EngineApi, EthApi};
 use reth_static_file::StaticFileProducer;
 use reth_transaction_pool::{
@@ -594,7 +593,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let validator =
             TransactionValidationTaskExecutor::eth_builder(Arc::clone(&chain_arc.clone()))
                 .with_head_timestamp(head.timestamp)
-                .kzg_settings(self.kzg_settings()?)
                 .with_additional_tasks(1)
                 .build_with_tasks(blockchain_db.clone(), executor.clone(), blob_store.clone());
 
@@ -839,13 +837,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     frost_task.expect("frost task exists").start_task().await;
                 }),
             );
-
-            // executor.spawn_critical(
-            //     "Healthcheck Task",
-            //     Box::pin(async move {
-            //         healthcheck_task.expect("health check task exists").start_task().await;
-            //     }),
-            // );
         }
 
         let initial_target = node_config.debug.tip;
@@ -997,8 +988,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             let _ = tx.send(res);
         });
 
-        // let _ = ext.on_node_started(components);
-
         match rx.await? {
             Ok(()) => info!("Beacon consensus engine exited successfully"),
             Err(error) => {
@@ -1031,12 +1020,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }
             None => Ok(Config::default()),
         }
-    }
-
-    /// Loads `MAINNET_KZG_TRUSTED_SETUP`.
-    /// TODO I dont think we need this for `PoA`
-    const fn kzg_settings(&self) -> eyre::Result<EnvKzgSettings> {
-        Ok(EnvKzgSettings::Default)
     }
 
     /// Fetches the head block from the database.
@@ -1198,14 +1181,6 @@ mod tests {
         let err = PoaNodeCommand::try_parse_args_from(["reth", "--help"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
     }
-
-    // #[test]
-    // fn parse_common_node_command_chain_args() {
-    //     for chain in SUPPORTED_CHAINS {
-    //         let args: PoaNodeCommand = PoaNodeCommand::<()>::parse_from(["reth", "--chain",
-    // chain]);         assert_eq!(args.chain.chain,
-    // chain.parse::<reth_primitives::Chain>().unwrap());     }
-    // }
 
     #[test]
     fn parse_discovery_addr() {
