@@ -169,7 +169,7 @@ pub trait PsbtInputExt: BorrowMut<Input> {
 }
 impl PsbtInputExt for Input {}
 
-pub type PegoutId = [u8; 36]; //TODO(stevenroose) fix or import maybe
+pub type PegoutId = [u8; 36];
 
 pub trait PsbtOutputExt: BorrowMut<Output> {
     fn set_pegout_id(&mut self, pegout_id: PegoutId) {
