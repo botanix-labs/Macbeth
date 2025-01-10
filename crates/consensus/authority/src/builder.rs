@@ -316,6 +316,7 @@ where
             cometbft_rpc_factory.clone(),
             is_fed_node,
             Arc::clone(&metrics),
+            task_executor.clone(),
         ));
 
         (consensus, frost_task, healthcheck_task, abci_client_builder, wallet_sync)
