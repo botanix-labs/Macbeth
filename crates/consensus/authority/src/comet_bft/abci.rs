@@ -26,7 +26,7 @@ use reth_primitives::{
 use reth_provider::{BlockReaderIdExt, CanonChainTracker, ProviderError, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
-use reth_tasks::TaskSpawner;
+use reth_tasks::{TaskExecutor, TaskSpawner};
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
 use schnellru::{ByLength, LruMap};
 
@@ -53,10 +53,7 @@ use crate::{
     comet_bft::{
         non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
     },
-    engine_util::{
-        self,
-        SendForkChoiceUpdateError::{EngineError, InvalidPayload, RecvError},
-    },
+    engine_util,
     excecution_utils::authority_execution_utils::build_and_execute,
     metrics::AuthorityMetrics,
     utils::{call_notify_pegin, call_notify_pegout},
@@ -86,6 +83,7 @@ pub struct ABCIClientBuilder<EF, BF, DB, BtcServerClient> {
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
     is_fed_node: bool,
     metrics: Arc<AuthorityMetrics>,
+    task_executor: TaskExecutor,
 }
 
 impl<EF, BF, DB, BtcServerClient> ABCIClientBuilder<EF, BF, DB, BtcServerClient>
@@ -111,6 +109,7 @@ where
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
         is_fed_node: bool,
         metrics: Arc<AuthorityMetrics>,
+        task_executor: TaskExecutor,
     ) -> Self {
         Self {
             storage,
@@ -122,6 +121,7 @@ where
             cbft_rpc_client_factory,
             is_fed_node,
             metrics,
+            task_executor,
         }
     }
 
@@ -145,6 +145,7 @@ where
             self.authority_consensus.clone(),
             self.is_fed_node,
             self.metrics.clone(),
+            self.task_executor.clone(),
         );
         let mut abci_driver = ABCIDriver::new(
             self.storage.clone(),
@@ -155,6 +156,7 @@ where
             driver_rx,
             self.to_engine.clone(),
             self.is_fed_node,
+            self.task_executor.clone(),
         );
 
         let server_builder = ServerBuilder::default();
@@ -223,6 +225,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     authority_consensus: AuthorityConsensus,
     is_fed_node: bool,
     metrics: Arc<AuthorityMetrics>,
+    task_executor: TaskExecutor,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -248,6 +251,7 @@ where
         authority_consensus: AuthorityConsensus,
         is_fed_node: bool,
         metrics: Arc<AuthorityMetrics>,
+        task_executor: TaskExecutor,
     ) -> Self {
         Self {
             storage,
@@ -261,6 +265,7 @@ where
             authority_consensus,
             is_fed_node,
             metrics,
+            task_executor,
         }
     }
 
@@ -781,15 +786,19 @@ where
 
         // We want to explicitly panic if we cannot send the finalize message
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-        self.driver_tx
-            .blocking_send(ABCIDriverMessage::CommitBlock((
-                sealed_block_with_peg.clone(),
-                *cbft_block_hash,
-                tx,
-            )))
-            .expect("to send");
+        let driver_tx = self.driver_tx.clone();
+        let sealed_block_with_peg = sealed_block_with_peg.clone();
+        let cbft_block_hash = cbft_block_hash.clone();
+        self.task_executor.spawn_blocking(Box::pin(async move {
+            if let Err(e) = driver_tx
+                .send(ABCIDriverMessage::CommitBlock((sealed_block_with_peg, cbft_block_hash, tx)))
+                .await
+            {
+                error!("Error sending commit block message: {:?}", e);
+            }
+            rx.await.expect("to receive");
+        }));
 
-        rx.blocking_recv().expect("to receive");
         info!("Block finalized: {:?}", cbft_block_hash);
         self.metrics.commet_committed_blocks.increment(1);
 
@@ -821,6 +830,7 @@ pub(crate) struct ABCIDriver<EF, BF, DB, BtcServerClient> {
     driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     is_fed_node: bool,
+    task_executor: TaskExecutor,
 }
 
 impl<EF, BF, DB, BtcServerClient> ABCIDriver<EF, BF, DB, BtcServerClient>
@@ -845,6 +855,7 @@ where
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         is_fed_node: bool,
+        task_executor: TaskExecutor,
     ) -> Self {
         Self {
             storage,
@@ -855,6 +866,7 @@ where
             driver_rx,
             to_engine,
             is_fed_node,
+            task_executor,
         }
     }
 
@@ -894,19 +906,11 @@ where
                         client.set_safe(sealed_block_with_senders.header.clone());
                         client.set_finalized(sealed_block_with_senders.header.clone());
 
-                        let _engine = match engine_util::send_fork_choice_update_payload(
+                        let _ = engine_util::send_fork_choice_update_payload(
                             block_hash,
                             self.to_engine.clone(),
                         )
-                        .await
-                        {
-                            Ok(_) => Ok(()),
-                            Err(err) => match err {
-                                EngineError => Err(EngineError),
-                                InvalidPayload => Err(InvalidPayload),
-                                _ => Err(RecvError),
-                            },
-                        };
+                        .await?;
 
                         // Annount to the network
                         let block_to_commit = sealed_block_with_senders.block.clone().unseal();
@@ -1050,7 +1054,7 @@ mod tests {
             .with_head_timestamp(0)
             .kzg_settings(EnvKzgSettings::Default)
             .with_additional_tasks(1)
-            .build_with_tasks(client, task_executor, blob_store.clone());
+            .build_with_tasks(client, task_executor.clone(), blob_store.clone());
 
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
@@ -1081,6 +1085,7 @@ mod tests {
             AuthorityConsensus::new(spec),
             false,
             Arc::new(AuthorityMetrics::default()),
+            task_executor,
         );
 
         abci_client
