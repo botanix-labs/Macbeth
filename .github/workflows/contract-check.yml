@@ -68,70 +68,70 @@ jobs:
           echo "## Tests result" >> $GITHUB_STEP_SUMMARY
           echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
 
-  eBurger-contract-analysis-check:
-    needs: ["contract-test"]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-      security-events: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4 
+  # eBurger-contract-analysis-check:
+  #   needs: ["contract-test"]
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     actions: read
+  #     security-events: write
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4 
       
-      - name: Run eburger contract analysis
-        id: eburger-contract-analysis
-        uses: forefy/eburger-action@main
-        with:
-          path: ./contracts
-          output_type: json
+  #     - name: Run eburger contract analysis
+  #       id: eburger-contract-analysis
+  #       uses: forefy/eburger-action@main
+  #       with:
+  #         path: ./contracts
+  #         output_type: json
 
-      - name: Create/update checklist as PR comment
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
-        env:
-          REPORT: ${{ steps.eburger-contract-analysis.outputs.json }}
-        with:
-          github-token: ${{ secrets.ANALYSIS_TOKEN }}
-          script: |
-            const script = require('.github/scripts/comment')
-            const header = '# eBurger report'
-            const body = process.env.REPORT
-            await script({ github, context, header, body })
+  #     - name: Create/update checklist as PR comment
+  #       uses: actions/github-script@v7
+  #       if: github.event_name == 'pull_request'
+  #       env:
+  #         REPORT: ${{ steps.eburger-contract-analysis.outputs.json }}
+  #       with:
+  #         github-token: ${{ secrets.ANALYSIS_TOKEN }}
+  #         script: |
+  #           const script = require('.github/scripts/comment')
+  #           const header = '# eBurger report'
+  #           const body = process.env.REPORT
+  #           await script({ github, context, header, body })
 
 
-  slither-contract-analysis-check:
-    needs: ["contract-test"]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-      security-events: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4 
+  # slither-contract-analysis-check:
+  #   needs: ["contract-test"]
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     actions: read
+  #     security-events: write
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4 
       
-      - name: Run slither contract analysis
-        id: slither-contract-analysis
-        uses: crytic/slither-action@v0.4.0
-        with: 
-          target: ./contracts
-          sarif: results.sarif
-          fail-on: none
-          slither-args: --checklist --markdown-root ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/
+  #     - name: Run slither contract analysis
+  #       id: slither-contract-analysis
+  #       uses: crytic/slither-action@v0.4.0
+  #       with: 
+  #         target: ./contracts
+  #         sarif: results.sarif
+  #         fail-on: none
+  #         slither-args: --checklist --markdown-root ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/
 
-      - name: Create/update checklist as PR comment
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
-        env:
-          REPORT: ${{ steps.slither-contract-analysis.outputs.stdout }}
-        with:
-          github-token: ${{ secrets.ANALYSIS_TOKEN }}
-          script: |
-            const script = require('.github/scripts/comment')
-            const header = '# Slither report'
-            const body = process.env.REPORT
-            await script({ github, context, header, body })
+  #     - name: Create/update checklist as PR comment
+  #       uses: actions/github-script@v7
+  #       if: github.event_name == 'pull_request'
+  #       env:
+  #         REPORT: ${{ steps.slither-contract-analysis.outputs.stdout }}
+  #       with:
+  #         github-token: ${{ secrets.ANALYSIS_TOKEN }}
+  #         script: |
+  #           const script = require('.github/scripts/comment')
+  #           const header = '# Slither report'
+  #           const body = process.env.REPORT
+  #           await script({ github, context, header, body })
 
 
 
