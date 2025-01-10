@@ -561,7 +561,10 @@ impl PegoutScheduler {
     /// Updates the [SyncResult] with the data from newly finalized blocks.
     fn add_block(&mut self, block: &Block) {
         let hash: BlockHash = block.block_hash();
-        let height = block.bip34_block_height().expect("bip34 is active");
+        let height = block.bip34_block_height().map_err(|e| {
+            error!("bip34 is not active: {:?}", e);
+            panic!("bip34 is not active: {:?}", e);
+        }).expect("bip34 is active");
         let last = self.last_blocks.back().expect("always something");
         assert_eq!(block.header.prev_blockhash, last.hash, "adding {}:{}", height, hash);
 
