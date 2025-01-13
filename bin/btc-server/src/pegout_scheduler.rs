@@ -559,12 +559,14 @@ impl PegoutScheduler {
     /// Adds a new block to the chain.
     ///
     /// Updates the [SyncResult] with the data from newly finalized blocks.
-    fn add_block(&mut self, block: &Block) {
+    fn add_block(&mut self, block: &Block, height: usize) {
         let hash: BlockHash = block.block_hash();
-        let height = block.bip34_block_height().map_err(|e| {
-            error!("bip34 is not active: {:?}", e);
-            panic!("bip34 is not active: {:?}", e);
-        }).expect("bip34 is active");
+
+        // TODO this is broken for certain block heights https://github.com/rust-bitcoin/rust-bitcoin/issues/3583
+        // let height = block.bip34_block_height().map_err(|e| {
+        //     error!("bip34 is not active: {:?}", e);
+        //     panic!("bip34 is not active: {:?}", e);
+        // }).expect("bip34 is active");
         let last = self.last_blocks.back().expect("always something");
         assert_eq!(block.header.prev_blockhash, last.hash, "adding {}:{}", height, hash);
 
@@ -681,9 +683,9 @@ impl PegoutScheduler {
                 debug!("Checkpoint reached: {}", checkpoint);
                 break;
             }
-
+            let height = bitcoind.get_block_header_info(&hash)?.height;
             let block = bitcoind.get_block(&hash)?;
-            self.add_block(&block);
+            self.add_block(&block, height);
 
             if self.last_blocks.len() > self.conf_window as usize {
                 let deeply_confirmed_block = self.last_blocks.pop_front().unwrap();
@@ -901,7 +903,7 @@ mod tests {
         assert_eq!(pegout_scheduler.txs.len(), 2);
 
         let block = create_block(txs, bitcoin::BlockHash::all_zeros());
-        pegout_scheduler.add_block(&block);
+        pegout_scheduler.add_block(&block, 1);
 
         let last_blocks = pegout_scheduler.last_blocks;
         assert_eq!(last_blocks.len(), 2);
@@ -942,7 +944,7 @@ mod tests {
         pegout_scheduler.add_tx(tx2.clone(), &pegouts2, SystemTime::now());
 
         let block = create_block(txs, bitcoin::BlockHash::all_zeros());
-        pegout_scheduler.add_block(&block);
+        pegout_scheduler.add_block(&block, 1);
         let last_blocks = pegout_scheduler.last_blocks.clone();
         assert_eq!(last_blocks.len(), 2);
         let last_block = last_blocks.back().unwrap();
@@ -989,7 +991,7 @@ mod tests {
         assert_eq!(last_tx.change_idxs, vec![1]);
 
         let block = create_block(vec![tx], bitcoin::BlockHash::all_zeros());
-        pegout_scheduler.add_block(&block);
+        pegout_scheduler.add_block(&block, 1);
 
         let last_blocks = pegout_scheduler.last_blocks.clone();
         let last_block = last_blocks.back().unwrap();
@@ -1027,7 +1029,7 @@ mod tests {
         assert_eq!(last_tx.change_idxs, vec![1]);
 
         let block = create_block(vec![tx], bitcoin::BlockHash::all_zeros());
-        pegout_scheduler.add_block(&block);
+        pegout_scheduler.add_block(&block, 1);
 
         let last_blocks = pegout_scheduler.last_blocks.clone();
         let last_block = last_blocks.back().unwrap();
@@ -1069,7 +1071,7 @@ mod tests {
         assert_eq!(last_tx.change_idxs, vec![2]);
 
         let block = create_block(vec![tx], bitcoin::BlockHash::all_zeros());
-        pegout_scheduler.add_block(&block);
+        pegout_scheduler.add_block(&block, 1);
 
         let last_blocks = pegout_scheduler.last_blocks.clone();
         let last_block = last_blocks.back().unwrap();
@@ -1126,7 +1128,7 @@ mod tests {
             let pegouts = pegout_requests_from_tx(&tx, &[0]);
             pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
             let block = create_block(vec![tx], last_block_hash);
-            pegout_scheduler.add_block(&block);
+            pegout_scheduler.add_block(&block, 1);
             let last_blocks = pegout_scheduler.last_blocks.clone();
 
             let last_block = last_blocks.back().unwrap();
