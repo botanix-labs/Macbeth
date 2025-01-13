@@ -28,7 +28,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
-    utils::generate_blocks,
+    utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
 
 pub async fn frost_e2e_failed_signing_disconnect(
@@ -48,10 +48,8 @@ pub async fn frost_e2e_failed_signing_disconnect(
         // load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let _address =
-        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    generate_blocks(&bitcoind_rpc, 101).await;
+    generate_blocks(&bitcoind_rpc, MIN_BLOCKS_COINBASE_MATURE).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let test_fed_members = suite
@@ -77,12 +75,6 @@ pub async fn frost_e2e_failed_signing_disconnect(
         // load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let _address =
-        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
-    // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    generate_blocks(&bitcoind_rpc, 101).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();
 

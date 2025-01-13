@@ -21,7 +21,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
-    utils::generate_blocks,
+    utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
 
 const NUM_PEGINS: usize = 5;
@@ -204,7 +204,7 @@ pub async fn test_many_inputs_signing(
         // wallet already exists, load wallet
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
-    generate_blocks(&bitcoind, 202).await;
+    generate_blocks(&bitcoind, MIN_BLOCKS_COINBASE_MATURE).await;
 
     let address = bitcoind.get_new_address(None, None)?.assume_checked();
 

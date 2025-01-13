@@ -45,7 +45,6 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
         // wallet already exists, load wallet
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let _address = bitcoind.get_new_address(None, None).unwrap().assume_checked();
     // generate a block to the network looks live
     generate_blocks(&bitcoind, 1).await;
     tokio::time::sleep(Duration::from_secs(5)).await;

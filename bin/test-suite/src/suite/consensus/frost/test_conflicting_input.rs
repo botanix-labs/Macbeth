@@ -1,6 +1,9 @@
 use std::str::FromStr;
 
-use crate::suite::consensus::frost::test_signing::{do_signing, Pegin};
+use crate::{
+    suite::consensus::frost::test_signing::{do_signing, Pegin},
+    utils::MIN_BLOCKS_COINBASE_MATURE,
+};
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::pegout_id::PegoutId;
@@ -37,7 +40,7 @@ pub async fn test_conflicting_input(
         // wallet already exists, load wallet
         let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
     }
-    generate_blocks(&bitcoind, 202).await;
+    generate_blocks(&bitcoind, MIN_BLOCKS_COINBASE_MATURE).await;
 
     // create pegins container
     let mut pegins = vec![];

@@ -3,6 +3,8 @@ use bitcoin::hash_types::BlockHash;
 use bitcoincore_rpc::RpcApi;
 use std::time::Duration;
 
+pub const MIN_BLOCKS_COINBASE_MATURE: u32 = 101;
+
 /// Generate `num_blocks` blocks on the given bitcoind instance
 pub async fn generate_blocks(bitcoind: &impl RpcApi, num_blocks: u32) -> Vec<BlockHash> {
     let address = bitcoind.get_new_address(None, None).unwrap().assume_checked();

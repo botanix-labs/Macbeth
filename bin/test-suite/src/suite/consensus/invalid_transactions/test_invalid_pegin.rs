@@ -14,7 +14,7 @@ use crate::{
         common::events::{GatewayAddressResponse, BITCOIND_WALLET_NAME},
         ConsensusIntegrationTestSuite,
     },
-    utils::generate_blocks,
+    utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
 
 #[allow(clippy::too_many_lines)]
@@ -41,7 +41,7 @@ pub async fn invalid_pegin(
     let _address =
         bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    generate_blocks(&bitcoind_rpc, 101).await;
+    generate_blocks(&bitcoind_rpc, MIN_BLOCKS_COINBASE_MATURE).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let test_fed_members = suite
