@@ -188,6 +188,13 @@ pub async fn all_clients_have_same_wallet_state(
     Ok(())
 }
 
+// Need to define a custom struct as breaking changes in bitcoin-core will cause the
+// deserialization to fail
+#[derive(Deserialize)]
+pub struct BlockChainInfoRes {
+    pub blocks: u64,
+}
+
 pub async fn test_many_inputs_signing(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), anyhow::Error> {
@@ -400,13 +407,6 @@ pub async fn test_many_inputs_signing(
     assert_eq!(utxos.len(), 5);
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
     all_clients_have_same_wallet_state(&mut clients).await?;
-
-    // Need to define a custom struct as breaking changes in bitcoin-core will cause the
-    // deserialization to fail
-    #[derive(Deserialize)]
-    struct BlockChainInfoRes {
-        blocks: u64,
-    }
 
     let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks -
         (BOTANIX_TESTNET.parent_confirmation_depth as u64);
