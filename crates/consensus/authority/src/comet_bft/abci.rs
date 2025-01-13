@@ -23,7 +23,7 @@ use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
     SealedBlock, TransactionSigned,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, StateProviderFactory};
+use reth_provider::{BlockReaderIdExt, CanonChainTracker, ProviderError, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::TaskSpawner;
@@ -44,6 +44,7 @@ use tendermint_proto::{
     },
 };
 
+use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
@@ -197,6 +198,18 @@ where
     }
 }
 
+#[derive(Debug, Error)]
+enum PayloadBuilderError {
+    #[error("Provider failed db read: {0}")]
+    ProviderError(#[from] ProviderError),
+    #[error("Latest header does not exist")]
+    LatestHeaderDoesNotExist,
+    #[error("Latest block does not exist")]
+    LatestBlockDoesNotExist,
+    #[error("Parent block does not exist")]
+    ParentBlockDoesNotExist,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
@@ -253,24 +266,23 @@ where
 
     /// Returns the payload builder config
     /// this method will block and wait for the storage lock
-    fn payload_builder_arguments(&self) -> PayloadConfig<EthPayloadBuilderAttributes> {
+    fn payload_builder_arguments(
+        &self,
+    ) -> Result<PayloadConfig<EthPayloadBuilderAttributes>, PayloadBuilderError> {
         let client = self.storage.client.clone();
         let chain_spec = self.storage.chain_spec.clone();
 
         let best_header =
-            client.latest_header().expect("should have latest").expect("should have header");
-        let best_block = BlockReaderIdExt::block_by_id(&client, BlockId::latest())
-            .expect("have latest")
-            .expect("have block")
+            client.latest_header()?.ok_or_else(|| PayloadBuilderError::LatestHeaderDoesNotExist)?;
+        let best_block = BlockReaderIdExt::block_by_id(&client, BlockId::latest())?
+            .ok_or_else(|| PayloadBuilderError::LatestBlockDoesNotExist)?
             .seal(best_header.hash());
 
         let parent_block =
-            BlockReaderIdExt::block_by_id(&client, BlockId::hash(best_header.parent_hash))
-                .expect("have parent")
-                .expect("have block")
+            BlockReaderIdExt::block_by_id(&client, BlockId::hash(best_header.parent_hash))?
+                .ok_or_else(|| PayloadBuilderError::ParentBlockDoesNotExist)?
                 .seal(best_header.parent_hash);
 
-        // let builder_config = EthPayloadBuilderAttributes::new(best_block.hash(), );
         let payload_attributes = PayloadAttributes {
             // Attributes here dont really matter
             // We just want to build a payload with the best txs
@@ -284,12 +296,12 @@ where
         let payload_builder_attributes =
             EthPayloadBuilderAttributes::new(best_block.hash(), payload_attributes);
 
-        PayloadConfig::new(
+        Ok(PayloadConfig::new(
             Arc::new(best_block),
             reth_primitives::Bytes::default(),
             payload_builder_attributes,
             chain_spec,
-        )
+        ))
     }
 
     pub(crate) fn non_deterministic_data_bytes(&self) -> prost::bytes::Bytes {
@@ -402,7 +414,13 @@ where
             return ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
         }
 
-        let payload_config = self.payload_builder_arguments();
+        let payload_config = match self.payload_builder_arguments() {
+            Ok(payload_config) => payload_config,
+            Err(e) => {
+                error!("Error building payload config: {:?}", e);
+                return ResponsePrepareProposal { ..Default::default() };
+            }
+        };
         let client = self.storage.client.clone();
 
         let build_args = BuildArguments {
