@@ -70,6 +70,7 @@ pub struct LocalContext {
     // poa
     pub poa_processes: Option<Vec<SpawnedPoaServerProcess>>,
     pub poa_nodes: Option<HashMap<u16, FederationMemberTestConfig>>,
+    pub poa_nodes_syncing: Option<HashMap<u16, FederationMemberTestConfig>>,
     pub poa_notification: Option<tokio::sync::broadcast::Sender<PoaNodeNotifications>>,
     pub poa_eth_providers: Option<Vec<BotanixEthClient>>,
     // cometbft
@@ -319,6 +320,7 @@ pub struct CreateTestConfig {
     pub create_rpc_nodes: bool,
     pub create_btc_servers: bool,
     pub create_cometbft_nodes: bool,
+    pub create_state_syncing_node: bool,
 }
 
 impl CreateTestConfig {
@@ -330,6 +332,7 @@ impl CreateTestConfig {
             create_rpc_nodes: true,
             create_btc_servers: true,
             create_cometbft_nodes: true,
+            create_state_syncing_node: true,
         }
     }
 }
@@ -342,6 +345,7 @@ impl Default for CreateTestConfig {
             create_rpc_nodes: false,
             create_btc_servers: false,
             create_cometbft_nodes: false,
+            create_state_syncing_node: false,
         }
     }
 }
@@ -432,6 +436,33 @@ impl Suite for ConsensusIntegrationTestSuite {
                         ..Default::default()
                     },
                     frost::test_frost_e2e::frost_e2e_stable
+                )
+            }
+            "state_sync" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    sync::test_state_sync::state_sync
+                )
+            }
+            "state_sync_dynamic" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        create_state_syncing_node: true,
+                        ..Default::default()
+                    },
+                    sync::test_state_sync_dynamic::test_state_sync_dynamic
                 )
             }
             "frost_e2e_failed_signing_disconnect" => {
@@ -963,6 +994,7 @@ impl ConsensusIntegrationTestSuite {
             local_context: LocalContext {
                 btc_processes: None,
                 poa_nodes: None,
+                poa_nodes_syncing: None,
                 poa_notification: None,
                 poa_eth_providers: None,
                 poa_processes: None,

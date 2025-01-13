@@ -548,7 +548,8 @@ start-test-suite:
 	--dry-run false \
 	--min-signers 3 \
 	--max-signers 4 \
-	--rpc-nodes 1
+	--rpc-nodes 1 \
+	--syncing-nodes 1
 
 start-btc-server-1:
 	cd ./bin/btc-server && \

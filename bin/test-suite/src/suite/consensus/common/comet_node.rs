@@ -108,6 +108,7 @@ pub struct CometBftNodeConfig {
     pub peers_list: Vec<CometBftNodeConfig>,
     pub peer_id: String,
     pub test_signal_tx: Sender<TestSignal>,
+    pub is_state_syncing: bool,
 }
 
 impl CometBftNodeConfig {
@@ -120,6 +121,7 @@ impl CometBftNodeConfig {
         cometbft_p2p_app_port: u16,
         test_signal_tx: Sender<TestSignal>,
         working_directory: PathBuf,
+        is_state_syncing: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
@@ -131,6 +133,7 @@ impl CometBftNodeConfig {
             cometbft_rpc_app_port,
             cometbft_p2p_app_port,
             test_signal_tx,
+            is_state_syncing,
         })
     }
 
@@ -303,31 +306,43 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
         }
     }
 
-    // if let Some(rpc) = toml.get_mut("statesync") {
-    //     if let Some(enable_state_sync) = rpc.get_mut("enable") {
-    //         *enable_state_sync = toml::value::Value::Boolean(true);
-    //     }
-    //     if let Some(chunk_fetchers) = rpc.get_mut("chunk_fetchers") {
-    //         *chunk_fetchers = toml::value::Value::String("1".to_string());
-    //     }
-    //     if let Some(rpc_servers) = rpc.get_mut("rpc_servers") {
-    //         let rpc_state_sync_servers = cometbft_node
-    //             .peers_list
-    //             .iter()
-    //             .map(|peer| format!("tcp://0.0.0.0:{}", peer.cometbft_p2p_app_port.to_string()))
-    //             .collect::<Vec<String>>()
-    //             .join(",");
-    //         *rpc_servers = toml::value::Value::String(rpc_state_sync_servers);
-    //     }
-    //     if let Some(trust_height) = rpc.get_mut("trust_height") {
-    //         *trust_height = toml::value::Value::Integer(1);
-    //     }
-    //     if let Some(trust_hash) = rpc.get_mut("trust_hash") {
-    //         *trust_hash = toml::value::Value::String(
-    //             "7b3ca33b44aee2b296253fa69e1b2b74789655a8aacb7d53a29c397cc8a9b379".to_string(),
-    //         );
-    //     }
-    // }
+    if cometbft_node.is_state_syncing {
+        if let Some(rpc) = toml.get_mut("statesync") {
+            if let Some(enable_state_sync) = rpc.get_mut("enable") {
+                *enable_state_sync = toml::value::Value::Boolean(true);
+            }
+            if let Some(chunk_fetchers) = rpc.get_mut("chunk_fetchers") {
+                *chunk_fetchers = toml::value::Value::String("1".to_string());
+            }
+            if let Some(rpc_servers) = rpc.get_mut("rpc_servers") {
+                let rpc_state_sync_servers = cometbft_node
+                    .peers_list
+                    .iter()
+                    .map(|peer| {
+                        format!("http://localhost:{}", peer.cometbft_rpc_app_port.to_string())
+                    })
+                    .collect::<Vec<String>>()
+                    .join(",");
+                *rpc_servers = toml::value::Value::String(rpc_state_sync_servers);
+            }
+            if let Some(trust_height) = rpc.get_mut("trust_height") {
+                *trust_height = toml::value::Value::Integer(1000000);
+            }
+            if let Some(trust_hash) = rpc.get_mut("trust_hash") {
+                *trust_hash = toml::value::Value::String(
+                    "7b3ca33b44aee2b296253fa69e1b2b74789655a8aacb7d53a29c397cc8a9b379".to_string(),
+                );
+            }
+
+            if let Some(discovery_time) = rpc.get_mut("discovery_time") {
+                *discovery_time = toml::value::Value::String("1s".to_string());
+            }
+
+            if let Some(chunk_request_timeout) = rpc.get_mut("chunk_request_timeout") {
+                *chunk_request_timeout = toml::value::Value::String("10s".to_string());
+            }
+        }
+    }
 
     if let Some(consensus) = toml.get_mut("consensus") {
         if let Some(timeout_propose) = consensus.get_mut("timeout_propose") {
@@ -354,7 +369,7 @@ pub async fn create_cometbft_nodes(
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
     let mut cometbft_nodes: HashMap<u16, CometBftNodeConfig> = HashMap::new();
 
-    // loop and crete all cometbft nodes
+    // loop and create all cometbft nodes
     for member_index in 0..global_context.fed_instances {
         // allocate ports
         let cometbft_proxy_app_port = ABCI_PORT_BASE + 10000 * member_index;
@@ -429,6 +444,7 @@ pub async fn create_cometbft_nodes(
             cometbft_p2p_app_port,
             test_signal_tx,
             working_directory,
+            false,
         )
         .await?;
 

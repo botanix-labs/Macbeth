@@ -1,7 +1,9 @@
 use bitcoincore_rpc::RpcApi;
+use reth_data_parser::{DataParser, SerializationType};
+use reth_primitives::SealedBlockWithSenders;
 use reth_provider::SnapshotReader;
 
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use crate::{
     it_info_print,
@@ -16,10 +18,10 @@ use crate::{
 };
 
 #[allow(clippy::too_many_lines)]
-pub async fn state_sync(
+pub async fn test_state_sync_dynamic(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
-    it_info_print!("Running state sync test...");
+    it_info_print!("Running dynamic state sync test...");
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
 
     // Load up the bitcoin wallet and generate some blocks
@@ -53,6 +55,8 @@ pub async fn state_sync(
 
     // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(member_index as u16)).cloned().unwrap();
+    it_info_print!("Snapshot Chunk Size Bytes", targeted_fed_member.snapshot_chunk_size_bytes);
+    it_info_print!("Max Snapshot Chunk Size Bytes", targeted_fed_member.max_snapshot_size_bytes);
 
     // create a minting contract instance
     let botanix_eth_client =
@@ -62,6 +66,8 @@ pub async fn state_sync(
     let mut tx_hashes_set = HashSet::new();
 
     // send eoa messages to random addresses
+    // NOTE: this should be enough to trigger the creation of 2 snapshots considering the max
+    // snapshot size in test env.
     for _ in 0..5 {
         it_info_print!("Sending eoa transaction...");
         let eoa_receiver = ethers::core::types::Address::random();
@@ -71,6 +77,14 @@ pub async fn state_sync(
         it_info_print!("Eoa tx receipt hash: {:?}", tx_receipt.transaction_hash);
         tokio::time::sleep(Duration::from_millis(200)).await;
         tx_hashes_set.insert(tx_receipt.transaction_hash);
+    }
+
+    // start the syncing pod node
+    if let Some(poa_nodes_syncing) = suite.local_context.poa_nodes_syncing.as_ref() {
+        for (index, poa_node) in poa_nodes_syncing.iter() {
+            let build_command_authorities_list = Arc::new(suite.local_context.authorities.clone());
+            poa_node.spawn_service(build_command_authorities_list).unwrap();
+        }
     }
 
     let latest_block = botanix_eth_client.get_latest_block().await.unwrap();
@@ -93,14 +107,25 @@ pub async fn state_sync(
                 .cloned()
                 .unwrap();
             let snapshots = db_provider.get_snapshots().unwrap_or_default();
-            it_info_print!(
-                "======================================================= Snapshots",
-                snapshots
-            );
-            let found_block =
-                snapshots.iter().any(|s| s.height() == latest_block.number.unwrap().as_u64());
-            if found_block {
-                it_info_print!("Found block in snapshot");
+            // NOTE: it means that the second snapshot is being created at the moment, hence prev.
+            // one must be ready
+            if snapshots.len() == 2 {
+                let first_snapshot_block_id = snapshots.first().unwrap().height();
+                let snapshot_id = db_provider
+                    .get_snapshot_id_by_block_id(first_snapshot_block_id)
+                    .unwrap()
+                    .unwrap();
+                let data_parser =
+                    DataParser::default().with_serialization_type(SerializationType::Postcard);
+                let snapshot_chunks_data =
+                    db_provider.assemble_snapshot_chunks_data(snapshot_id).unwrap();
+                for (block, block_chunks) in snapshot_chunks_data {
+                    let sealed_block =
+                        data_parser.decode::<SealedBlockWithSenders>(&block_chunks).await;
+                    assert!(sealed_block.is_ok());
+                    let sealed_block = sealed_block.expect("must be a block");
+                    assert!(sealed_block.block.header().number == block);
+                }
                 break;
             }
         }

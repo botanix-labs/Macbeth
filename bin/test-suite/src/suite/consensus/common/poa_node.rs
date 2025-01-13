@@ -144,6 +144,7 @@ pub struct FederationMemberTestConfig {
     pub test_signal_tx: Sender<TestSignal>,
     pub botanix_fee_recipient: String,
     pub botanix_eth_client: Option<BotanixEthClient>,
+    pub is_state_syncing: bool,
 }
 
 impl FederationMemberTestConfig {
@@ -168,6 +169,7 @@ impl FederationMemberTestConfig {
         abci_port: u16,
         test_signal_tx: Sender<TestSignal>,
         botanix_fee_recipient: String,
+        is_state_syncing: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
@@ -195,6 +197,7 @@ impl FederationMemberTestConfig {
             test_signal_tx,
             botanix_fee_recipient,
             botanix_eth_client: None,
+            is_state_syncing,
         })
     }
 
@@ -770,6 +773,7 @@ pub async fn create_poa_nodes(
             ABCI_PORT_BASE + 10000 * member_index,
             test_signal_tx,
             global_context.botanix_fee_recipient.clone(),
+            false,
         )
         .await?;
         poa_nodes.insert(member_index, fed_member_config);
@@ -807,6 +811,100 @@ pub async fn create_poa_nodes(
     }
 
     Ok((poa_nodes, tx, authorities))
+}
+
+pub async fn create_poa_syncing_nodes(
+    global_context: Arc<GlobalContext>,
+    btc_server_processes: Option<&Vec<SpawnedBtcServerProcess>>,
+) -> anyhow::Result<(
+    HashMap<u16, FederationMemberTestConfig>,
+    tokio::sync::broadcast::Sender<Notifications>,
+    Vec<PublicKey>,
+)> {
+    let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
+
+    let mut poa_nodes_syncing: HashMap<u16, FederationMemberTestConfig> = HashMap::new();
+    let mut members_keypairs: Vec<(SecretKey, PublicKey, PeerId, Address)> = vec![];
+
+    for _ in 0..global_context.syncing_instances {
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = secret_key.public_key(SECP256K1);
+        let peer_id = pk2id(&pk);
+        let address = public_key_to_address(pk);
+        members_keypairs.push((secret_key, pk, peer_id, address));
+    }
+    let authorities = members_keypairs.iter().map(|(_, pk, _, _)| pk.clone()).collect::<Vec<_>>();
+
+    for member_index in 0..global_context.syncing_instances {
+        let port = btc_server_processes
+            .and_then(|processes| processes.iter().nth(member_index as usize).map(|val| val.port))
+            .context("Btc server process port must already exist")?;
+
+        let (member_secretkey, _, member_peerid, _) = members_keypairs
+            .get(member_index as usize)
+            .cloned()
+            .expect("To have keypair information");
+
+        let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
+        let fed_member_config = FederationMemberTestConfig::new(
+            member_index,
+            member_secretkey,
+            authorities.clone(),
+            tx.clone(),
+            global_context.bitcoind_url.clone(),
+            global_context.bitcoind_user.clone(),
+            global_context.bitcoind_pass.clone(),
+            format!("localhost:{}", port),
+            global_context.min_signers,
+            global_context.max_signers,
+            global_context.max_snapshot_size_bytes,
+            global_context.snapshot_chunk_size_bytes,
+            global_context.snapshot_keep_recent,
+            member_peerid,
+            RPC_PORT_BASE + member_index,
+            WS_PORT_BASE + member_index,
+            DISCOVERY_PORT_BASE + member_index,
+            ABCI_PORT_BASE + 10000 * member_index,
+            test_signal_tx,
+            global_context.botanix_fee_recipient.clone(),
+            true,
+        )
+        .await?;
+        poa_nodes_syncing.insert(member_index, fed_member_config);
+    }
+
+    // now create the edh
+    let prikey = secp256k1::SecretKey::new(&mut rand::thread_rng());
+    let extra_data_header = ExtraDataHeader::new(
+        EXTRA_HEADER_VERSION,
+        CHAIN_VERSION,
+        bitcoin::hash_types::BlockHash::all_zeros(),
+        secp256k1::PublicKey::from_secret_key(secp256k1::SECP256K1, &prikey),
+        Address::ZERO,
+    );
+
+    // now insert peers and edh into each federation member
+    for member_index in 0..global_context.fed_instances {
+        let peer_members = poa_nodes_syncing
+            .iter()
+            .filter_map(
+                |(index, &ref fed_mem)| {
+                    if *index != member_index {
+                        Some(fed_mem.clone())
+                    } else {
+                        None
+                    }
+                },
+            )
+            .collect::<Vec<_>>();
+
+        if let Some(fed_member) = poa_nodes_syncing.get_mut(&member_index) {
+            fed_member.insert_peers_list(peer_members);
+            fed_member.insert_edh(extra_data_header.clone());
+        };
+    }
+
+    Ok((poa_nodes_syncing, tx, authorities))
 }
 
 #[cfg(test)]

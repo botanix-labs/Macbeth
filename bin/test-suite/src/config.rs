@@ -86,6 +86,9 @@ pub struct CliArgs {
     /// rpc nodes
     #[argh(option, default = "1")]
     pub rpc_nodes: u16,
+    /// syncing nodes
+    #[argh(option, default = "1")]
+    pub syncing_nodes: u16,
     /// features to enable as a space delimited string
     #[argh(option, default = "String::from(\"conflicting_input\")")]
     pub features: String,
