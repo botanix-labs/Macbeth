@@ -1,7 +1,4 @@
-use bitcoin::{key::TweakedPublicKey, ScriptBuf};
 use ethabi::ethereum_types::U256;
-use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
-use reth_btc_wallet::psbt::EthAddress;
 
 /// One satoshi expressed in wei.
 ///
