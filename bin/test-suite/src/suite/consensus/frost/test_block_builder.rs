@@ -34,10 +34,8 @@ pub async fn block_builder(
         // load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let _address =
-        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    generate_blocks(&bitcoind_rpc, 101).await;
+    generate_blocks(&bitcoind_rpc, MIN_BLOCKS_COINBASE_MATURE).await;
     // sleep and wait for poa nodes to register this block
     tokio::time::sleep(Duration::from_secs(5)).await;
 
