@@ -21,9 +21,6 @@ use crate::{
     App, Error,
 };
 
-#[allow(dead_code)]
-const SATS_PER_KWU_DIVISOR: u64 = 4;
-
 #[derive(Debug)]
 pub enum SigningError {
     Round1(SigningRound1Error),
