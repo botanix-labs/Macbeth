@@ -13,16 +13,20 @@ actix-web = "4.9.0"
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 anyhow = "1.0.75"
 
-#async
+# Bitcoin related dependencies
+bitcoin = { version = "0.32.5", features = ["base64", "rand", "serde"] }
+bdk_wallet = "1.0.0" # just using this for the coin selection
+bitcoin_hashes = "0.14.0"
+bitcoincore-rpc = "0.19.0"
+miniscript = "12.3.0"
+frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
+    "serde",
+    "serialization",
+] }
+
 async-trait = "0.1.68"
 base64 = "0.22.0"
-bdk = "1.0.0-alpha.1"
-bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }
-bitcoin_hashes = "0.13.0"
-bitcoincore-rpc = "0.18.0"
 ciborium = "0.2.1"
-
-# clap
 clap = { version = "4.3.22", features = ["derive"] }
 client = { path = "./client" }
 confy = "0.6"
@@ -30,26 +34,17 @@ derive_more = { version = "1.0", features = ["full"] }
 displaydoc = "0.2"
 dotenvy = { version = "0.15.7" }
 env_logger = "0.11.3"
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
-    "serde",
-    "serialization",
-] }
-
 futures-util = "0.3.25"
 hex = "0.4.3"
 lazy_static = "1.4.0"
 log = "0.4.18"
-miniscript = "11.0.0"
 parking_lot = { version = "0.12", features = ["serde"] }
 prometheus = { version = "0.13", features = ["process"] }
 prost = "0.13.3"
 prost-types = "0.13.3"
 rand = "0.8.5"
 
-reth-btc-wallet = { path = "../../crates/btc-wallet" }
-
 rust_decimal = { version = "1.13" }
-secp256k1 = { version = "0.27.0", features = ["global-context", "rand-std", "recovery"] }
 serde = "1.0.171"
 serde_json = "1.0"
 serde_prometheus = { version = "0.2" }

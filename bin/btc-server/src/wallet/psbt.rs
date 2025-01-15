@@ -1,10 +1,12 @@
 use std::{borrow::BorrowMut, collections::BTreeMap};
 
 use bitcoin::{
-    hashes::Hash,
-    psbt::{raw::ProprietaryKey, Input, Output, Psbt},
+    psbt::{raw::ProprietaryKey, Input as PsbtInput, Output as PsbtOutput, Psbt},
+    OutPoint, TapSighash, TapSighashType, TxOut,
 };
+use bitcoin_hashes::Hash;
 use frost_secp256k1_tr as frost;
+use thiserror::Error;
 
 // input keys
 const ETH_ADDRESS_KEY_TYPE: u8 = 1;
@@ -45,7 +47,7 @@ trait ProprietaryKeyExt: BorrowMut<ProprietaryKey> {
 }
 impl ProprietaryKeyExt for ProprietaryKey {}
 
-pub trait PsbtInputExt: BorrowMut<Input> {
+pub trait PsbtInputExt: BorrowMut<PsbtInput> {
     fn set_eth_address(&mut self, eth_address: EthAddress) {
         // Key stores no keydata, only the type value
         self.borrow_mut().proprietary.insert(ETH_ADDRESS_KEY.clone(), eth_address.to_vec());
@@ -167,11 +169,11 @@ pub trait PsbtInputExt: BorrowMut<Input> {
         ret
     }
 }
-impl PsbtInputExt for Input {}
+impl PsbtInputExt for PsbtInput {}
 
 pub type PegoutId = [u8; 36];
 
-pub trait PsbtOutputExt: BorrowMut<Output> {
+pub trait PsbtOutputExt: BorrowMut<PsbtOutput> {
     fn set_pegout_id(&mut self, pegout_id: PegoutId) {
         // Key stores no keydata, only the type value
         self.borrow_mut().proprietary.insert(PEGOUT_ID_KEY.clone(), pegout_id.to_vec());
@@ -189,7 +191,7 @@ pub trait PsbtOutputExt: BorrowMut<Output> {
         })
     }
 }
-impl PsbtOutputExt for Output {}
+impl PsbtOutputExt for PsbtOutput {}
 
 pub trait PsbtExt: BorrowMut<Psbt> {
     /// Get all pegouts ids from this PSBT
@@ -214,7 +216,7 @@ pub trait PsbtExt: BorrowMut<Psbt> {
     ) -> Result<Vec<frost::SigningPackage>, PsbtToSigningPackageConversionError> {
         let mut ret = Vec::new();
         for (idx, input) in self.borrow().inputs.iter().enumerate() {
-            let sighash = crate::transaction::calculate_sighash(self.borrow(), idx)?;
+            let sighash = calculate_sighash(self.borrow(), idx)?;
 
             // Check if there are any signing commitments
             let sc = input.all_signing_commitments();
@@ -223,7 +225,7 @@ pub trait PsbtExt: BorrowMut<Psbt> {
             }
 
             let signing_package =
-                frost::SigningPackage::new(sc, sighash.to_raw_hash().to_byte_array().as_slice());
+                frost::SigningPackage::new(sc, sighash.to_raw_hash().as_byte_array().as_slice());
             ret.push(signing_package);
         }
         Ok(ret)
@@ -235,14 +237,14 @@ impl PsbtExt for Psbt {}
 /// a vector of signing packages for Frost signature generation and aggregation.
 #[derive(Debug, Error)]
 pub enum PsbtToSigningPackageConversionError {
-    #[error("Failed to calculate sighash: {0}")]
-    FailedToCalculateSighash(#[from] crate::transaction::CalculateSighashError),
+    #[error("Sighash error: {0}")]
+    SighashError(#[from] CalculateSighashError),
     #[error("Missing signing commitments")]
     MissingSigningCommitments,
     #[error("Frost error: {0}")]
     FrostError(#[from] frost::Error),
     #[error("Failed to deserialize frost peer id")]
-    FailedToDeserializeFrostPeerId(#[from] crate::util::ParsingError),
+    FailedToDeserializeFrostPeerId(#[from] crate::wallet::util::ParsingError),
 }
 
 pub fn frost_id_from_bytes(b: &[u8]) -> Option<frost::Identifier> {
@@ -251,4 +253,86 @@ pub fn frost_id_from_bytes(b: &[u8]) -> Option<frost::Identifier> {
 
 pub fn signature_share_from_bytes(b: &[u8]) -> Option<frost::round2::SignatureShare> {
     frost::round2::SignatureShare::deserialize(b.try_into().ok()?).ok()
+}
+
+/// Utxo DTO struct
+#[derive(Debug, Clone)]
+pub struct InputDTO {
+    pub outpoint: OutPoint,
+    pub output: TxOut,
+    pub eth_address: Option<[u8; 20]>,
+}
+
+/// Create psbt with proprietary tweak fields
+pub fn create_psbt(
+    inputs: Vec<InputDTO>,
+    outputs: Vec<(TxOut, PegoutId)>,
+    change: Option<TxOut>,
+) -> Psbt {
+    let mut output: Vec<TxOut> = outputs.iter().map(|(out, _)| out).cloned().collect();
+    if let Some(change) = change {
+        output.push(change);
+    }
+    let tx = bitcoin::Transaction {
+        version: bitcoin::transaction::Version::TWO,
+        lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+        input: inputs
+            .iter()
+            .map(|u| bitcoin::TxIn {
+                previous_output: u.outpoint,
+                sequence: bitcoin::Sequence::MAX,
+                script_sig: bitcoin::ScriptBuf::new(),
+                witness: Default::default(),
+            })
+            .collect(),
+        output,
+    };
+
+    // Create PSBT
+    // add input meta
+    let mut psbt = Psbt::from_unsigned_tx(tx).expect("tx is unsigned");
+    for (psbt_input, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
+        psbt_input.witness_utxo = Some(utxo.output.clone());
+        if let Some(eth_addr) = utxo.eth_address {
+            psbt_input.set_eth_address(eth_addr);
+        }
+    }
+
+    // add output meta
+    for (psbt_output, (_out, pegout_id)) in psbt.outputs.iter_mut().zip(outputs.iter()) {
+        // Pegout ids are stored in the proprietary field to be checked and validated
+        // by peers
+        psbt_output.set_pegout_id(*pegout_id);
+    }
+
+    psbt
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CalculateSighashError {
+    #[error("taproot error: {0}")]
+    TaprootError(#[from] bitcoin::sighash::TaprootError),
+    #[error("Missing witness utxo")]
+    MissingWitnessUtxo,
+}
+
+/// Calculate the sighash for a taproot keyspend
+/// Using tapsighash type ALL
+pub fn calculate_sighash(
+    psbt: &Psbt,
+    input_index: usize,
+) -> Result<TapSighash, CalculateSighashError> {
+    let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
+    let prevouts = psbt
+        .inputs
+        .iter()
+        .map(|i| i.witness_utxo.as_ref().ok_or(CalculateSighashError::MissingWitnessUtxo))
+        .collect::<Result<Vec<_>, CalculateSighashError>>()?;
+    let sighash = sighashcache.taproot_key_spend_signature_hash(
+        input_index,
+        &bitcoin::sighash::Prevouts::All(&prevouts),
+        TapSighashType::All,
+    )?;
+
+    Ok(sighash)
 }

@@ -11,19 +11,24 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use crate::wallet::{
+    address::generate_taproot_change_scriptpubkey,
+    util::{VerifyingKeyExt, VerifyingKeyExtError},
+};
+use crate::{telemetry::Telemetry, update_telemetry_error};
 use bitcoin::{
     absolute::LockTime, hashes::Hash, transaction::Version, Amount, Block, BlockHash, OutPoint,
     ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
 };
 use bitcoincore_rpc::RpcApi;
-use btcserverlib::{telemetry::Telemetry, update_telemetry_error};
-use reth_btc_wallet::{
-    address::generate_taproot_change_scriptpubkey,
-    util::{VerifyingKeyExt, VerifyingKeyExtError},
-};
+use log::{debug, error, info, trace, warn};
+use pegout_id::PegoutId;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{badarg, database, pegout_id::PegoutId, rpc};
+use crate::{database, rpc};
+
+pub mod pegout_id;
 
 macro_rules! print_safe {
     ($e:expr) => {
@@ -102,114 +107,114 @@ impl Tx {
     }
 }
 
-impl TryFrom<rpc::TrackedTx> for Tx {
-    type Error = tonic::Status;
+// impl TryFrom<rpc::TrackedTx> for Tx {
+//     type Error = tonic::Status;
 
-    fn try_from(tx: rpc::TrackedTx) -> Result<Self, Self::Error> {
-        if let Err(e) = tx.validate() {
-            error!("Invalid tracked tx: {}", e);
-            badarg!("invalid tracked tx: {}", e);
-        }
+//     fn try_from(tx: rpc::TrackedTx) -> Result<Self, Self::Error> {
+//         if let Err(e) = tx.validate() {
+//             error!("Invalid tracked tx: {}", e);
+//             badarg!("invalid tracked tx: {}", e);
+//         }
 
-        let tx_prost = tx.tx.ok_or_else(|| {
-            error!("Missing tx in tracked tx");
-            badarg!("missing tx in tracked tx")
-        })?;
+//         let tx_prost = tx.tx.ok_or_else(|| {
+//             error!("Missing tx in tracked tx");
+//             badarg!("missing tx in tracked tx")
+//         })?;
 
-        let tx_ins = tx_prost
-            .input
-            .into_iter()
-            .map(|tx_in| {
-                // validate tx_in optional fields contain valid values
-                // so the expect calls below are safe
-                if let Err(e) = tx_in.validate() {
-                    error!("Invalid tx input: {}", e);
-                    badarg!("invalid tx input: {}", e);
-                }
-                let previous_outpoint = tx_in.previous_outpoint.expect("valid previous outpoint");
+//         let tx_ins = tx_prost
+//             .input
+//             .into_iter()
+//             .map(|tx_in| {
+//                 // validate tx_in optional fields contain valid values
+//                 // so the expect calls below are safe
+//                 if let Err(e) = tx_in.validate() {
+//                     error!("Invalid tx input: {}", e);
+//                     badarg!("invalid tx input: {}", e);
+//                 }
+//                 let previous_outpoint = tx_in.previous_outpoint.expect("valid previous outpoint");
 
-                TxIn {
-                    previous_output: OutPoint {
-                        txid: Txid::from_slice(&previous_outpoint.txid).expect("valid txid"),
-                        vout: previous_outpoint.vout,
-                    },
-                    script_sig: ScriptBuf::from_bytes(
-                        tx_in.script_sig.expect("valid script sig").script,
-                    ),
-                    sequence: Sequence::from_consensus(tx_in.sequence),
-                    witness: Witness::from_slice(&tx_in.witness),
-                }
-            })
-            .collect::<Vec<_>>();
-        let tx_outs = tx_prost
-            .output
-            .into_iter()
-            .map(|tx_out| {
-                // validate tx_out has a script_pubkey
-                // so the expect call below is safe
-                if let Err(e) = tx_out.validate() {
-                    error!("Invalid tx output: {}", e);
-                    badarg!("invalid tx output: {}", e);
-                }
+//                 TxIn {
+//                     previous_output: OutPoint {
+//                         txid: Txid::from_slice(&previous_outpoint.txid).expect("valid txid"),
+//                         vout: previous_outpoint.vout,
+//                     },
+//                     script_sig: ScriptBuf::from_bytes(
+//                         tx_in.script_sig.expect("valid script sig").script,
+//                     ),
+//                     sequence: Sequence::from_consensus(tx_in.sequence),
+//                     witness: Witness::from_slice(&tx_in.witness),
+//                 }
+//             })
+//             .collect::<Vec<_>>();
+//         let tx_outs = tx_prost
+//             .output
+//             .into_iter()
+//             .map(|tx_out| {
+//                 // validate tx_out has a script_pubkey
+//                 // so the expect call below is safe
+//                 if let Err(e) = tx_out.validate() {
+//                     error!("Invalid tx output: {}", e);
+//                     badarg!("invalid tx output: {}", e);
+//                 }
 
-                TxOut {
-                    value: Amount::from_sat(tx_out.value),
-                    script_pubkey: ScriptBuf::from_bytes(
-                        tx_out.script_pubkey.expect("valid script pubkey").script,
-                    ),
-                }
-            })
-            .collect::<Vec<_>>();
-        let internal_tx = Transaction {
-            version: Version(tx_prost.version),
-            lock_time: LockTime::from_consensus(tx_prost.lock_time),
-            input: tx_ins,
-            output: tx_outs,
-        };
-        let pegout_requests = tx
-            .pegout_requests
-            .into_iter()
-            .map(|pegout| {
-                if let Err(_e) = PegoutId::from_bytes(&pegout.pegout_id) {
-                    error!("Could not deserialize pegout id");
-                    badarg!("invalid pegout id");
-                }
+//                 TxOut {
+//                     value: Amount::from_sat(tx_out.value),
+//                     script_pubkey: ScriptBuf::from_bytes(
+//                         tx_out.script_pubkey.expect("valid script pubkey").script,
+//                     ),
+//                 }
+//             })
+//             .collect::<Vec<_>>();
+//         let internal_tx = Transaction {
+//             version: Version(tx_prost.version),
+//             lock_time: LockTime::from_consensus(tx_prost.lock_time),
+//             input: tx_ins,
+//             output: tx_outs,
+//         };
+//         let pegout_requests = tx
+//             .pegout_requests
+//             .into_iter()
+//             .map(|pegout| {
+//                 if let Err(_e) = PegoutId::from_bytes(&pegout.pegout_id) {
+//                     error!("Could not deserialize pegout id");
+//                     badarg!("invalid pegout id");
+//                 }
 
-                PegoutRequest {
-                    id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
-                    spk: ScriptBuf::from_bytes(pegout.spk),
-                    value: Amount::from_sat(pegout.amount),
-                    botanix_height: pegout.height,
-                }
-            })
-            .collect::<Vec<_>>();
+//                 PegoutRequest {
+//                     id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
+//                     spk: ScriptBuf::from_bytes(pegout.spk),
+//                     value: Amount::from_sat(pegout.amount),
+//                     botanix_height: pegout.height,
+//                 }
+//             })
+//             .collect::<Vec<_>>();
 
-        // validate Tx so expect calls are safe
-        if let Err(e) = Txid::from_slice(&tx.txid) {
-            error!("Invalid txid: {}", e);
-            badarg!("invalid txid: {}", e);
-        }
-        if tx.created.is_none() {
-            error!("Missing created timestamp");
-            badarg!("missing created timestamp");
-        }
+//         // validate Tx so expect calls are safe
+//         if let Err(e) = Txid::from_slice(&tx.txid) {
+//             error!("Invalid txid: {}", e);
+//             badarg!("invalid txid: {}", e);
+//         }
+//         if tx.created.is_none() {
+//             error!("Missing created timestamp");
+//             badarg!("missing created timestamp");
+//         }
 
-        Ok(Tx {
-            txid: Txid::from_slice(&tx.txid).expect("valid txid"),
-            // TODO: remove tx and pull it from bitcoind to reduce payload
-            tx: internal_tx,
-            pegout_idxs: tx.pegout_idxs.into_iter().map(|idx| idx as usize).collect(),
-            pegout_requests,
-            // TODO: remove change_idx and pull it from bitcoind to reduce payload
-            change_idxs: tx.change_idxs.into_iter().map(|idx| idx as usize).collect(),
-            created: SystemTime::UNIX_EPOCH +
-                Duration::new(
-                    tx.created.expect("timestamp to exist").seconds as u64,
-                    tx.created.expect("timestamp to exist").nanos as u32,
-                ),
-        })
-    }
-}
+//         Ok(Tx {
+//             txid: Txid::from_slice(&tx.txid).expect("valid txid"),
+//             // TODO: remove tx and pull it from bitcoind to reduce payload
+//             tx: internal_tx,
+//             pegout_idxs: tx.pegout_idxs.into_iter().map(|idx| idx as usize).collect(),
+//             pegout_requests,
+//             // TODO: remove change_idx and pull it from bitcoind to reduce payload
+//             change_idxs: tx.change_idxs.into_iter().map(|idx| idx as usize).collect(),
+//             created: SystemTime::UNIX_EPOCH
+//                 + Duration::new(
+//                     tx.created.expect("timestamp to exist").seconds as u64,
+//                     tx.created.expect("timestamp to exist").nanos as u32,
+//                 ),
+//         })
+//     }
+// }
 
 #[derive(Debug, Clone)]
 struct BlockInfo {
@@ -765,7 +770,7 @@ mod tests {
 
     use crate::{
         frost_id,
-        test_utils::test_utils::{
+        test_utils::{
             create_block, create_random_pegout_id, create_tx, pegout_requests_from_tx,
             random_p2wpkh_script, setup_db, trusted_dealer_setup,
         },

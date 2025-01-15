@@ -1,6 +1,7 @@
 use clap::Parser;
 use confy::ConfyError;
 use displaydoc::Display as DisplayDoc;
+use log::info;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     path::{Path, PathBuf},
@@ -143,28 +144,25 @@ async fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> 
 
 // Cli args and config
 
-#[derive(Clone, Debug, Parser, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Parser)]
 pub(crate) struct CliConfig {
     /// The path to the database.
     #[arg(long)]
-    db: Option<PathBuf>,
-    /// The path to the database.
-    #[arg(long)]
-    config_path: Option<PathBuf>,
+    db: PathBuf,
     /// The bitcoin network to operate on.
     #[arg(long)]
-    btc_network: Option<bitcoin::Network>,
+    btc_network: bitcoin::Network,
     /// Frost participant identifier
     #[arg(long)]
-    identifier: Option<u16>,
+    identifier: u16,
     #[arg(long)]
-    address: Option<String>,
+    address: String,
     /// max signers
     #[arg(long)]
-    max_signers: Option<u16>,
+    max_signers: u16,
     /// min signers
     #[arg(long)]
-    min_signers: Option<u16>,
+    min_signers: u16,
     /// toml configuration path
     #[arg(long)]
     toml: Option<PathBuf>,
@@ -173,13 +171,13 @@ pub(crate) struct CliConfig {
     btc_signing_server_jwt_secret: Option<PathBuf>,
     #[arg(long)]
     /// bitcoind url
-    bitcoind_url: Option<Url>,
+    bitcoind_url: Url,
     #[arg(long)]
     /// bitcoind user
-    bitcoind_user: Option<String>,
+    bitcoind_user: String,
     #[arg(long)]
     /// bitcoind pass
-    bitcoind_pass: Option<String>,
+    bitcoind_pass: String,
     #[arg(long)]
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     fee_rate_diff_percentage: Option<u32>,
@@ -228,67 +226,22 @@ pub(crate) struct Config {
 pub fn load_config() -> Result<Config, Error> {
     // First parse from cli
     let cli_config = CliConfig::parse();
-    // Initialize settings from file if specified
-    let mut file_config = CliConfig::default();
-    if let Some(path) = &cli_config.config_path {
-        file_config = confy::load_path::<CliConfig>(&path).map_err(Error::Confy)?;
-        info!("Loaded config from file: {:?}", path);
-    }
 
     let config = Config {
-        db: cli_config
-            .db
-            .or(file_config.db)
-            .ok_or(Error::MissingConfigElement("db is required"))?,
-        toml: cli_config.toml.or(file_config.toml),
-        btc_network: cli_config
-            .btc_network
-            .or(file_config.btc_network)
-            .ok_or(Error::MissingConfigElement("btc_network is required"))?,
-        identifier: cli_config
-            .identifier
-            .or(file_config.identifier)
-            .ok_or(Error::MissingConfigElement("identifier is required"))?,
-        address: cli_config
-            .address
-            .or(file_config.address)
-            .ok_or(Error::MissingConfigElement("address is required"))?,
-        max_signers: cli_config
-            .max_signers
-            .or(file_config.max_signers)
-            .ok_or(Error::MissingConfigElement("max_signers is required"))?,
-        min_signers: cli_config
-            .min_signers
-            .or(file_config.min_signers)
-            .ok_or(Error::MissingConfigElement("min_signers is required"))?,
-        btc_signing_server_jwt_secret: cli_config
-            .btc_signing_server_jwt_secret
-            .or(file_config.btc_signing_server_jwt_secret),
-        bitcoind_url: cli_config
-            .bitcoind_url
-            .or(file_config.bitcoind_url)
-            .ok_or(Error::MissingConfigElement("bitcoind_url is required"))?,
-        bitcoind_user: cli_config
-            .bitcoind_user
-            .or(file_config.bitcoind_user)
-            .ok_or(Error::MissingConfigElement("bitcoind_user is required"))?,
-        bitcoind_pass: cli_config
-            .bitcoind_pass
-            .or(file_config.bitcoind_pass)
-            .ok_or(Error::MissingConfigElement("bitcoind_pass is required"))?,
-        metrics_port: cli_config
-            .metrics_port
-            .or(file_config.metrics_port)
-            .ok_or(Error::MissingConfigElement("metrics_port is required"))?,
-        fee_rate_diff_percentage: cli_config
-            .fee_rate_diff_percentage
-            .or(file_config.fee_rate_diff_percentage)
-            .ok_or(Error::MissingConfigElement("fee_rate_diff_percentage is required"))?,
-        fall_back_fee_rate_sat_per_vbyte: cli_config
-            .fall_back_fee_rate_sat_per_vbyte
-            .or(file_config.fall_back_fee_rate_sat_per_vbyte)
-            .ok_or(Error::MissingConfigElement("fall_back_fee_rate_sat_per_vbyte is required"))?,
+        db: cli_config.db,
+        toml: cli_config.toml,
+        btc_network: cli_config.btc_network,
+        identifier: cli_config.identifier,
+        address: cli_config.address,
+        max_signers: cli_config.max_signers,
+        min_signers: cli_config.min_signers,
+        btc_signing_server_jwt_secret: cli_config.btc_signing_server_jwt_secret,
+        bitcoind_url: cli_config.bitcoind_url,
+        bitcoind_user: cli_config.bitcoind_user,
+        bitcoind_pass: cli_config.bitcoind_pass,
+        metrics_port: cli_config.metrics_port.unwrap_or(7000),
+        fee_rate_diff_percentage: cli_config.fee_rate_diff_percentage.unwrap_or(2),
+        fall_back_fee_rate_sat_per_vbyte: cli_config.fall_back_fee_rate_sat_per_vbyte.unwrap_or(10),
     };
-
     Ok(config)
 }
