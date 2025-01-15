@@ -6,7 +6,8 @@ use bitcoin::{
 };
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
-use reth_btc_wallet::{
+use log::info;
+use crate::wallet::{
     address::generate_taproot_change_scriptpubkey,
     psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
     util::VerifyingKeyExt,
@@ -15,9 +16,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     database::{self, Db, Utxo},
-    pegout_id::PegoutId,
-    Error,
+    pegout_scheduler::pegout_id::PegoutId,
 };
+use thiserror::Error;
 
 lazy_static! {
     static ref MAX_FEERATE: bitcoin::FeeRate =
@@ -69,15 +70,15 @@ pub trait OutPointExt: Into<OutPoint> {
     }
 
     // stopgap for dealing with BDK with other rust-bitcoin version
-    fn to_bdk(self) -> bdk::bitcoin::OutPoint {
+    fn to_bdk(self) -> bdk_wallet::bitcoin::OutPoint {
         let OutPoint { txid, vout } = self.into();
-        bdk::bitcoin::OutPoint {
-            txid: bdk::bitcoin::hashes::Hash::from_slice(&txid.to_byte_array()).unwrap(),
+        bdk_wallet::bitcoin::OutPoint {
+            txid: bdk_wallet::bitcoin::hashes::Hash::from_slice(&txid.to_byte_array()).unwrap(),
             vout,
         }
     }
 
-    fn from_bdk(outpoint: bdk::bitcoin::OutPoint) -> OutPoint {
+    fn from_bdk(outpoint: bdk_wallet::bitcoin::OutPoint) -> OutPoint {
         bitcoin::OutPoint { txid: outpoint.txid, vout: outpoint.vout }
     }
 }
@@ -482,19 +483,19 @@ pub fn has_conflicting_input(db: &Db, psbt: &Psbt) -> Result<(), ConflictingInpu
 }
 
 #[cfg(test)]
-mod util_tests {
-
+mod tests {
     use std::time::SystemTime;
 
     use bitcoin::{psbt::Psbt, ScriptBuf, TxOut};
-    use reth_btc_wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt};
+    use crate::frost_id;
+    use crate::wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt};
 
     use crate::{
         database::{self},
         pegout_scheduler::{PegoutRequest, Tx},
-        test_utils::test_utils::{
+        test_utils::{
             create_psbt, create_random_pegout_id, create_tx, eth_vector_to_fixed_bytes, get_change,
-            setup, setup_db, store_pending_pegout, trusted_dealer_setup,
+            setup_db, store_pending_pegout, trusted_dealer_setup,
         },
         util::*,
     };
@@ -508,17 +509,17 @@ mod util_tests {
 
     #[test]
     fn should_perform_general_sanity_checks() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
 
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
-        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        let pegout_id = store_pending_pegout(&db);
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
@@ -526,11 +527,11 @@ mod util_tests {
             eth_address: None,
         };
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
 
         // No inputs
@@ -552,16 +553,16 @@ mod util_tests {
 
     #[test]
     fn should_perform_sanity_negative_fee_check() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
-        let mut psbt = create_psbt(2, 1, Some(get_change(&app.db)));
+        let pegout_id = store_pending_pegout(&db);
+        let mut psbt = create_psbt(2, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -576,8 +577,8 @@ mod util_tests {
             output: psbt.inputs[1].witness_utxo.clone().unwrap(),
             eth_address: None,
         };
-        app.db.store_utxos(&[&utxo1, &utxo2]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo1, &utxo2]).unwrap();
+        db.flush().unwrap();
 
         let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
             total.checked_add(output.value.clone()).unwrap_or_default()
@@ -599,22 +600,22 @@ mod util_tests {
         for output in psbt.unsigned_tx.output.iter_mut() {
             output.value = output.value.checked_add(Amount::from_sat(diff)).unwrap_or_default();
         }
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert_eq!(res.unwrap_err(), ValidatePSBTError::NegativeFee);
     }
 
     #[test]
     fn should_perform_sanity_total_outputs_value() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
-        let mut psbt = create_psbt(2, 1, Some(get_change(&app.db)));
+        let pegout_id = store_pending_pegout(&db);
+        let mut psbt = create_psbt(2, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo1 = database::Utxo {
@@ -628,8 +629,8 @@ mod util_tests {
             output: psbt.inputs[1].witness_utxo.clone().unwrap(),
             eth_address: None,
         };
-        app.db.store_utxos(&[&utxo1, &utxo2]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo1, &utxo2]).unwrap();
+        db.flush().unwrap();
 
         let total_outputs = psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
             total.checked_add(output.value.clone()).unwrap_or_default()
@@ -656,29 +657,29 @@ mod util_tests {
         });
         assert!(total_outputs == Amount::ZERO);
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &app.db);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert_eq!(
             res.unwrap_err(),
-            ValidatePSBTError::FeeSanityCheck(Amount::from_sat(2332), Amount::ZERO)
+            ValidatePSBTError::FeeSanityCheck(Amount::from_sat(2346), Amount::ZERO)
         );
     }
 
     #[test]
     fn should_look_for_utxo_in_db() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
 
-        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&psbt, ROUND1, 2, &app.db);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "cannot find UTXO in db");
 
@@ -689,25 +690,25 @@ mod util_tests {
             eth_address: None,
         };
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1, 2, &app.db);
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_ok());
     }
 
     #[test]
     fn should_fail_if_eth_tweak_missing() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
 
-        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -718,30 +719,30 @@ mod util_tests {
             eth_address: Some(eth),
         };
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND1, 2, &app.db);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert_eq!(res.unwrap_err().to_string(), "eth tweak mismatch");
 
         psbt.inputs[0].set_eth_address(eth);
-        let res = validate_psbt(&psbt, ROUND1, 2, &app.db);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_ok());
     }
 
     #[test]
     fn should_fail_if_tx_out_mismatch() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
 
-        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -759,26 +760,26 @@ mod util_tests {
             script_pubkey: ScriptBuf::from_hex("7e").expect("valid script"),
         });
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1, 2, &app.db);
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
+        let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "txout mismatch");
     }
 
     #[test]
     fn round_1_transition_tests() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
 
-        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
@@ -787,33 +788,31 @@ mod util_tests {
             eth_address: None,
         };
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &app.db);
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
+        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of signing commitments");
 
-        let app = setup();
+        let db = db_setup();
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
-        let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");
-        let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
         let key_package1 = frost::keys::KeyPackage::try_from(
-            shares[&frost::Identifier::try_from(1u16).expect("valid id")].clone(),
+            shares[&frost_id!(1)].clone(),
         )
         .expect("valid key package");
 
         let key_package2 = frost::keys::KeyPackage::try_from(
-            shares[&frost::Identifier::try_from(2u16).expect("valid id")].clone(),
+            shares[&frost_id!(2)].clone(),
         )
         .expect("valid key package");
         let rng = &mut rand::thread_rng();
@@ -822,42 +821,42 @@ mod util_tests {
         let (_, signing_commits1) = frost::round1::commit(key_package1.signing_share(), rng);
         let (_, signing_commits2) = frost::round1::commit(key_package2.signing_share(), rng);
 
-        psbt.inputs[0].set_signing_commitment(frost_id1, &signing_commits1);
-        psbt.inputs[0].set_signing_commitment(frost_id2, &signing_commits2);
+        psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1);
+        psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits2);
 
-        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &app.db);
+        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db);
         assert!(res.is_ok());
 
         // Round 2 at this point should pass as well. B/c we have not hit a limit in the number of
-        // signatures
-        let app = setup();
+        // signatures   
+        let db = db_setup();
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&psbt, ROUND2, 2, &app.db);
+        let res = validate_psbt(&psbt, ROUND2, 2, &db);
         assert!(res.is_ok());
     }
 
     #[test]
     fn round2_psbt_validation_checks() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
 
-        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -868,23 +867,22 @@ mod util_tests {
         };
         let rng = &mut rand::thread_rng();
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
-        let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
         let key_package1 = frost::keys::KeyPackage::try_from(
-            shares[&frost::Identifier::try_from(1u16).expect("valid id")].clone(),
+            shares[&frost_id!(1)].clone(),
         )
         .expect("valid key package");
 
         let key_package2 = frost::keys::KeyPackage::try_from(
-            shares[&frost::Identifier::try_from(2u16).expect("valid id")].clone(),
+            shares[&frost_id!(2)].clone(),
         )
         .expect("valid key package");
 
         let (_, signing_commits1) = frost::round1::commit(key_package1.signing_share(), rng);
-        psbt.inputs[0].set_signing_commitment(frost_id1, &signing_commits1);
+        psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1);
 
         // Lets add two signatures and use min_signers = 1
         let sig_share1 =
@@ -892,103 +890,101 @@ mod util_tests {
         let sig_share2 =
             frost::round2::SignatureShare::deserialize(&[2u8; 32]).expect("valid sig share");
 
-        psbt.inputs[0].set_partial_signature(frost_id1, &sig_share1);
+        psbt.inputs[0].set_partial_signature(frost_id!(1), &sig_share1);
 
         // Should pass with 1 signature
-        let res = validate_psbt(&psbt, ROUND2, 1, &app.db);
+        let res = validate_psbt(&psbt, ROUND2, 1, &db);
         assert!(res.is_ok());
 
         // Should fail with two signatures
-        let app = setup();
+        let db = db_setup();
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
-        psbt.inputs[0].set_partial_signature(frost_id2, &sig_share2);
+        psbt.inputs[0].set_partial_signature(frost_id!(2), &sig_share2);
         // restore the utxos
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND2, 1, &app.db);
+        let res = validate_psbt(&psbt, ROUND2, 1, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
 
         // Should fail ROUND2_TRANSITION since we haven't added other signers signing commit
-        let app = setup();
+        let db = db_setup();
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 1, &app.db);
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 1, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
 
         // Add other signing commit
-        let app = setup();
+        let db = db_setup();
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
         let (_, signing_commits2) = frost::round1::commit(key_package2.signing_share(), rng);
-        psbt.inputs[0].set_signing_commitment(frost_id2, &signing_commits2);
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &app.db);
+        psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits2);
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db);
         assert!(res.is_ok());
 
         // Should fail if there is another signer
-        let app = setup();
+        let db = db_setup();
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
-        let frost_id3 = frost::Identifier::try_from(3u16).expect("valid id");
         let key_package3 = frost::keys::KeyPackage::try_from(
-            shares[&frost::Identifier::try_from(3u16).expect("valid id")].clone(),
+            shares[&frost_id!(3)].clone(),
         )
         .expect("valid key package");
 
         let (_, signing_commits3) = frost::round1::commit(key_package3.signing_share(), rng);
-        psbt.inputs[0].set_signing_commitment(frost_id3, &signing_commits3);
+        psbt.inputs[0].set_signing_commitment(frost_id!(3), &signing_commits3);
         let sig = frost::round2::SignatureShare::deserialize(&[3u8; 32]).expect("valid sig share");
-        psbt.inputs[0].set_partial_signature(frost_id3, &sig);
+        psbt.inputs[0].set_partial_signature(frost_id!(3), &sig);
 
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &app.db);
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db);
         assert_eq!(res.unwrap_err(), ValidatePSBTError::InvalidNumberOfPartialSignatures);
     }
 
     #[test]
     fn test_duplicate_output() {
-        let app = setup();
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
 
-        let pegout_id = store_pending_pegout(&app.db);
+        let pegout_id = store_pending_pegout(&db);
 
-        let mut psbt = create_psbt(1, 1, Some(get_change(&app.db)));
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -997,12 +993,12 @@ mod util_tests {
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
         };
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
 
-        validate_psbt(&psbt, NO_FLAGS, app.min_signers, &app.db).expect("valid psbt");
+        validate_psbt(&psbt, NO_FLAGS, 2, &db).expect("valid psbt");
 
-        let mut dup_psbt = create_psbt(1, 2, Some(get_change(&app.db)));
+        let mut dup_psbt = create_psbt(1, 2, Some(get_change(&db)));
 
         let tx = dup_psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
@@ -1010,12 +1006,12 @@ mod util_tests {
             output: dup_psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
         };
-        app.db.store_utxos(&[&utxo]).unwrap();
-        app.db.flush().unwrap();
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
         dup_psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         dup_psbt.outputs[1].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&dup_psbt, NO_FLAGS, app.min_signers, &app.db);
+        let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db);
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
@@ -1024,15 +1020,15 @@ mod util_tests {
 
         // Its fine for the same exact output to the present multiple times, as a user can have
         // multiple pegouts but they should have different pegout ids
-        let pegout_id2 = store_pending_pegout(&app.db);
+        let pegout_id2 = store_pending_pegout(&db);
         dup_psbt.outputs[1].set_pegout_id(pegout_id2.as_bytes());
-        let res = validate_psbt(&dup_psbt, NO_FLAGS, app.min_signers, &app.db);
+        let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
     }
 
     #[test]
     fn convert_bdk_fee_rate() {
-        let bdk_fee = bdk::bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
+        let bdk_fee = bdk_wallet::bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
         let rust_bitcoin_fee = bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
 
         assert_eq!(bdk_fee, rust_bitcoin_fee);
@@ -1041,17 +1037,15 @@ mod util_tests {
     #[test]
     fn should_add_signing_commits_to_psbt() {
         let num_inputs = 2;
-        let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");
-        let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
         let key_package1 = frost::keys::KeyPackage::try_from(
-            shares[&frost::Identifier::try_from(1u16).expect("valid id")].clone(),
+            shares[&frost_id!(1)].clone(),
         )
         .expect("valid key package");
 
         let key_package2 = frost::keys::KeyPackage::try_from(
-            shares[&frost::Identifier::try_from(2u16).expect("valid id")].clone(),
+            shares[&frost_id!(2)].clone(),
         )
         .expect("valid key package");
         let rng = &mut rand::thread_rng();
@@ -1067,19 +1061,19 @@ mod util_tests {
 
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments to the psbt for each input
-        psbt.inputs[0].set_signing_commitment(frost_id1, &signing_commits1_0);
-        psbt.inputs[1].set_signing_commitment(frost_id1, &signing_commits1_1);
-        psbt.inputs[0].set_signing_commitment(frost_id2, &signing_commits2_0);
-        psbt.inputs[1].set_signing_commitment(frost_id2, &signing_commits2_1);
+        psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1_0);
+        psbt.inputs[1].set_signing_commitment(frost_id!(1), &signing_commits1_1);
+        psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits2_0);
+        psbt.inputs[1].set_signing_commitment(frost_id!(2), &signing_commits2_1);
 
         // lets try to retrieve the signing commitments
         let retrieved_scs = (0..2)
-            .map(|i| psbt.inputs[i].signing_commitments(frost_id1).unwrap())
+            .map(|i| psbt.inputs[i].signing_commitments(frost_id!(1)).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(retrieved_scs, vec![signing_commits1_0, signing_commits1_1]);
 
         let retrieved_scs = (0..2)
-            .map(|i| psbt.inputs[i].signing_commitments(frost_id2).unwrap())
+            .map(|i| psbt.inputs[i].signing_commitments(frost_id!(2)).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(retrieved_scs, vec![signing_commits2_0, signing_commits2_1]);
     }
@@ -1087,8 +1081,6 @@ mod util_tests {
     #[test]
     fn should_add_partial_signatures_to_psbt() {
         let num_inputs = 2;
-        let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");
-        let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
 
         let sig_share1_0 =
             frost::round2::SignatureShare::deserialize(&[1u8; 32]).expect("valid sig share");
@@ -1103,19 +1095,19 @@ mod util_tests {
         let tx = create_tx(num_inputs, 1, None);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments to the psbt for each input
-        psbt.inputs[0].set_partial_signature(frost_id1, &sig_share1_0);
-        psbt.inputs[1].set_partial_signature(frost_id1, &sig_share1_1);
-        psbt.inputs[0].set_partial_signature(frost_id2, &sig_share2_0);
-        psbt.inputs[1].set_partial_signature(frost_id2, &sig_share2_1);
+        psbt.inputs[0].set_partial_signature(frost_id!(1), &sig_share1_0);
+        psbt.inputs[1].set_partial_signature(frost_id!(1), &sig_share1_1);
+        psbt.inputs[0].set_partial_signature(frost_id!(2), &sig_share2_0);
+        psbt.inputs[1].set_partial_signature(frost_id!(2), &sig_share2_1);
 
         // lets try to retrieve
         let retrieved_sigs = (0..2)
-            .map(|i| psbt.inputs[i].partial_signature(frost_id1).unwrap())
+            .map(|i| psbt.inputs[i].partial_signature(frost_id!(1)).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(retrieved_sigs, vec![sig_share1_0, sig_share1_1]);
 
         let retrieved_sigs = (0..2)
-            .map(|i| psbt.inputs[i].partial_signature(frost_id2).unwrap())
+            .map(|i| psbt.inputs[i].partial_signature(frost_id!(2)).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(retrieved_sigs, vec![sig_share2_0, sig_share2_1]);
     }
@@ -1131,7 +1123,7 @@ mod util_tests {
         assert!(signing_packages.is_err());
         assert_eq!(
             signing_packages.unwrap_err().to_string(),
-            reth_btc_wallet::psbt::PsbtToSigningPackageConversionError::MissingSigningCommitments
+            crate::wallet::psbt::PsbtToSigningPackageConversionError::MissingSigningCommitments
                 .to_string()
         );
     }
@@ -1140,13 +1132,11 @@ mod util_tests {
     fn should_generate_singning_packages() {
         // Setup
         let num_inputs = 2;
-        let frost_id1 = frost::Identifier::try_from(1u16).expect("valid id");
-        let frost_id2 = frost::Identifier::try_from(2u16).expect("valid id");
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
-        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id1].clone())
+        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
-        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id2].clone())
+        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id!(2)].clone())
             .expect("valid key package");
 
         let rng = &mut rand::thread_rng();
@@ -1166,10 +1156,10 @@ mod util_tests {
             Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
         psbt.inputs[1].witness_utxo =
             Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
-        psbt.inputs[0].set_signing_commitment(frost_id1, &signing_commits1_0);
-        psbt.inputs[1].set_signing_commitment(frost_id1, &signing_commits1_1);
-        psbt.inputs[0].set_signing_commitment(frost_id2, &signing_commits2_0);
-        psbt.inputs[1].set_signing_commitment(frost_id2, &signing_commits2_1);
+        psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1_0);
+        psbt.inputs[1].set_signing_commitment(frost_id!(1), &signing_commits1_1);
+        psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits2_0);
+        psbt.inputs[1].set_signing_commitment(frost_id!(2), &signing_commits2_1);
 
         // Add a eth tweak to the first input
         let eth_tweak = eth_vector_to_fixed_bytes(vec![1u8; 20]);
@@ -1194,7 +1184,7 @@ mod util_tests {
                 .copied()
                 .collect::<Vec<frost::Identifier>>()
                 .clone(),
-            vec![frost_id1, frost_id2]
+            vec![frost_id!(1), frost_id!(2)]
         );
 
         assert_eq!(
@@ -1214,7 +1204,7 @@ mod util_tests {
                 .copied()
                 .collect::<Vec<frost::Identifier>>()
                 .clone(),
-            vec![frost_id1, frost_id2]
+            vec![frost_id!(1), frost_id!(2)]
         );
     }
 

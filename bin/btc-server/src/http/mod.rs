@@ -1,11 +1,10 @@
-pub mod state;
-
 use actix_cors::Cors;
 use actix_server::Server;
 use actix_web::{http, web, App, HttpResponse, HttpServer};
 use std::net::SocketAddr;
 use tracing_actix_web::TracingLogger;
 
+pub mod state;
 use state::ServerState;
 
 const MAX_WORKERS: usize = 2;

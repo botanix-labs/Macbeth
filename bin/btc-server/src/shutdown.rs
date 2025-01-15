@@ -1,3 +1,4 @@
+use log::{error, info};
 use tokio::signal::unix::{signal, SignalKind};
 
 pub struct StopHandle {

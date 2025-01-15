@@ -1,23 +1,22 @@
-use std::collections::HashMap;
-
-use bdk::{
-    psbt::PsbtUtils,
-    wallet::coin_selection::{CoinSelectionAlgorithm, Error as BdkCoinselectionError},
+use crate::wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use bdk_wallet::{
+    coin_selection::{CoinSelectionAlgorithm, InsufficientFunds, OldestFirstCoinSelection},
 };
 use bitcoin::{
     psbt::{Error as PsbtError, ExtractTxError, Psbt},
     Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
 };
-use reth_btc_wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use std::collections::HashMap;
+use thiserror::Error;
 
-use crate::{database::Utxo, pegout_id::PegoutId, util::OutPointExt, Error};
+use crate::{database::Utxo, pegout_scheduler::pegout_id::PegoutId, util::OutPointExt};
 
 const TAPROOT_OUTPUT_DUST_THRESHOLD: Amount = Amount::from_sat(330);
 
 #[derive(Debug, Error)]
 pub enum CoinSelectionError {
     #[error("Coin selection error: {0}")]
-    CoinSelectionBdk(#[from] BdkCoinselectionError),
+    CoinSelectionBdk(#[from] InsufficientFunds),
     #[error("PSBT error: {0}")]
     PsbtError(#[from] PsbtError),
     #[error("Extract tx error: {0}")]
@@ -51,33 +50,42 @@ pub(crate) fn coin_selection(
     }
 
     let to_bdk = |u: &Utxo| {
-        bdk::WeightedUtxo {
-            satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT.to_wu() as usize,
-            utxo: bdk::Utxo::Local(bdk::LocalOutput {
+        bdk_wallet::WeightedUtxo {
+            satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+            utxo: bdk_wallet::Utxo::Local(bdk_wallet::LocalOutput {
                 outpoint: u.outpoint.to_bdk(),
-                txout: bdk::bitcoin::TxOut {
+                txout: bdk_wallet::bitcoin::TxOut {
                     script_pubkey: u.output.script_pubkey.to_bytes().into(),
                     value: u.output.value,
                 },
-                keychain: bdk::KeychainKind::External,
+                keychain: bdk_wallet::KeychainKind::External,
                 is_spent: false,
                 derivation_index: 0, // we're not using this
                 // Also not used
-                confirmation_time: bdk::chain::ConfirmationTime::Confirmed { height: 1, time: 1 },
+                chain_position: bdk_wallet::chain::ChainPosition::Confirmed {
+                    anchor: bdk_wallet::chain::ConfirmationBlockTime::default(),
+                    transitively: None,
+                },
             }),
         }
     };
-    let coin_select = bdk::wallet::coin_selection::BranchAndBoundCoinSelection::new(0);
+
+    let coin_select = bdk_wallet::coin_selection::BranchAndBoundCoinSelection::new(
+        0,
+        OldestFirstCoinSelection::default(),
+    );
     let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
 
+    let mut rng = rand::thread_rng();
     // Try once with finalized, then add pending and try again.
     let selection = coin_select
         .coin_select(
             required_utxos.values().map(to_bdk).collect::<Vec<_>>(),
             available_utxos.values().map(to_bdk).collect::<Vec<_>>(),
             fee_rate,
-            target_amount.to_sat(),
+            target_amount,
             &change_script, // drain_script
+            &mut rng,
         )
         .map_err(CoinSelectionError::CoinSelectionBdk)?;
 
@@ -89,10 +97,10 @@ pub(crate) fn coin_selection(
         .collect::<Vec<_>>();
 
     let change = match selection.excess {
-        bdk::wallet::coin_selection::Excess::Change { amount, .. } => {
-            Some(TxOut { script_pubkey: change_script.clone(), value: Amount::from_sat(amount) })
+        bdk_wallet::coin_selection::Excess::Change { amount, .. } => {
+            Some(TxOut { script_pubkey: change_script.clone(), value: amount })
         }
-        bdk::wallet::coin_selection::Excess::NoChange { .. } => None,
+        bdk_wallet::coin_selection::Excess::NoChange { .. } => None,
     };
 
     let mut pegouts = outputs
@@ -100,22 +108,19 @@ pub(crate) fn coin_selection(
         .map(|(txout, pegout_id)| (txout, pegout_id.as_bytes()))
         .collect::<Vec<_>>();
 
-    let selected_inputs: Vec<reth_btc_wallet::transaction::Input> = selected
+    let selected_inputs: Vec<crate::wallet::psbt::InputDTO> = selected
         .iter()
-        .map(|s| reth_btc_wallet::transaction::Input {
+        .map(|s| crate::wallet::psbt::InputDTO {
             outpoint: s.outpoint,
             output: s.output.clone(),
             eth_address: s.eth_address,
         })
         .collect();
 
-    let original_psbt = reth_btc_wallet::transaction::create_psbt(
-        selected_inputs.clone(),
-        pegouts.clone(),
-        change.clone(),
-    );
+    let original_psbt =
+        crate::wallet::psbt::create_psbt(selected_inputs.clone(), pegouts.clone(), change.clone());
 
-    let absolute_fee = Amount::from_sat(original_psbt.fee_amount().expect("no missing any txouts"));
+    let absolute_fee = original_psbt.fee().expect("no missing any txouts");
     let fee_per_output = absolute_fee / pegouts.len() as u64;
     for (output, _pegout_id) in pegouts.iter_mut() {
         output.value -= fee_per_output;
@@ -134,8 +139,7 @@ pub(crate) fn coin_selection(
         }
     };
 
-    let updated_psbt =
-        reth_btc_wallet::transaction::create_psbt(selected_inputs, pegouts, updated_changed);
+    let updated_psbt = crate::wallet::psbt::create_psbt(selected_inputs, pegouts, updated_changed);
 
     // Lets extract the tx, doing so will do some fee sanity checks
     // Better to catch them here than later in signing
@@ -152,14 +156,14 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
-        coin_selection::CoinSelectionError,
         database::Utxo,
-        test_utils::test_utils::{
+        test_utils::{
             create_random_pegout_id, create_tx, random_p2tr_keyspend_script, random_p2wpkh_script,
-            setup,
+            setup_db,
         },
+        wallet::coin_selection::CoinSelectionError,
     };
-    use bdk::psbt::PsbtUtils;
+    use bdk_wallet::psbt::PsbtUtils;
     use bitcoin::{Amount, FeeRate, OutPoint, TxOut};
 
     use super::coin_selection;
@@ -195,7 +199,7 @@ mod tests {
 
     #[test]
     fn should_take_fee_out_of_outputs() {
-        let app = setup();
+        let (db, _) = setup_db();
         // Add 15 utxos
         let tx = create_tx(15, 1, None);
         let change_script = random_p2tr_keyspend_script();
@@ -212,10 +216,10 @@ mod tests {
         }
 
         let available_utxos = utxos.iter().map(|u| u).collect::<Vec<_>>();
-        app.add_pegins(&available_utxos).expect("add pegins");
+        db.store_utxos(&available_utxos).expect("add pegins");
 
         let mut available_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
-        for utxo in app.db.get_all_utxos().unwrap() {
+        for utxo in db.get_all_utxos().unwrap() {
             available_utxos.insert(utxo.outpoint, utxo);
         }
 

@@ -1,3 +1,4 @@
+use bitcoin::secp256k1;
 use frost_secp256k1_tr as frost;
 use thiserror::Error;
 

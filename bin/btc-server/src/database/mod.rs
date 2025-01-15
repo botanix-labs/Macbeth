@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    pegout_id::PegoutId,
+    pegout_scheduler::pegout_id::PegoutId,
     pegout_scheduler::{self},
     rpc::{OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut, Utxo as RpcUtxo},
     util::{parse_eth_address, OutPointExt},
@@ -22,7 +22,11 @@ use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
-use thiserror::Error;
+
+
+pub mod error;
+
+pub use error::Error;
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -729,55 +733,7 @@ impl Db {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("internal DB error")]
-    Db(#[from] sled::Error),
-    #[error("data corruption error")]
-    DataCorruption(#[from] ciborium::de::Error<io::Error>),
-    #[error("Frost serialization error {0}")]
-    FrostSerialization(#[from] frost::Error),
-    #[error("Serialization error {0}")]
-    Serialization(#[from] TryFromSliceError),
-    #[error("bitcoin serialization error {0}")]
-    BitcoinSerialization(#[from] bitcoin::consensus::encode::Error),
-    #[error("PSBT error: {0}")]
-    Psbt(#[from] psbt::Error),
-    #[error("Transaction error: {0}")]
-    Transaction(String),
-    #[error("Rpc to db data mapping error: {0}")]
-    RpcToDbMap(String),
-    #[error("empty merkle root")]
-    EmptyMerkleRoot,
-    #[error("Ciborium write error {0}")]
-    CiboriumWrite(#[from] ciborium::ser::Error<std::io::Error>),
-    #[error("expected output at index but not found")]
-    OutputNotFound(usize),
-    #[error("hash engine error {0}")]
-    HashEngine(#[from] std::io::Error),
-}
 
-impl PartialEq for Error {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_string() == other.to_string()
-    }
-}
-
-impl From<sled::transaction::TransactionError<sled::Error>> for Error {
-    fn from(e: sled::transaction::TransactionError<sled::Error>) -> Error {
-        match e {
-            sled::transaction::TransactionError::Abort(e) => Error::Db(e),
-            sled::transaction::TransactionError::Storage(e) => Error::Db(e),
-        }
-    }
-}
-
-// To make it easier to return tonic status error from the callers
-impl From<Error> for tonic::Status {
-    fn from(e: Error) -> tonic::Status {
-        tonic::Status::internal(e.to_string())
-    }
-}
 
 impl TryFrom<RpcUtxo> for Utxo {
     type Error = Error;
@@ -842,16 +798,15 @@ impl TryFrom<Utxo> for RpcUtxo {
 #[cfg(test)]
 mod tests {
     use std::time::SystemTime;
-
     use crate::{
         pegout_scheduler::{PegoutRequest, Tx},
-        test_utils::test_utils::{
+        test_utils::{
             create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db,
         },
     };
 
     use super::*;
-    use crate::pegout_id::PegoutId;
+    use crate::pegout_scheduler::pegout_id::PegoutId;
 
     #[test]
     fn can_save_and_read_pegout_reqs() {

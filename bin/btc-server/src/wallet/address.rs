@@ -1,17 +1,12 @@
 use bitcoin::{key::TweakedPublicKey, Address, Network, ScriptBuf};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
-use secp256k1::PublicKey;
+use bitcoin::secp256k1::PublicKey;
 
-use crate::util::{VerifyingKeyExt, VerifyingKeyExtError};
+use crate::{wallet::util::{VerifyingKeyExt, VerifyingKeyExtError}};
+
 
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
-}
-
-impl EthAddress for ethers::types::Address {
-    fn as_slice(&self) -> &[u8] {
-        self.as_bytes()
-    }
 }
 
 impl EthAddress for Vec<u8> {
@@ -50,8 +45,11 @@ pub fn generate_taproot_change_scriptpubkey(public_key: &PublicKey) -> ScriptBuf
     // let taproot_spend_info =
     //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
 
+    // TODO: secp context should be a global variable or passed down
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+
     bitcoin::ScriptBuf::new_p2tr(
-        bitcoin::secp256k1::SECP256K1,
+        &secp,
         public_key.x_only_public_key().0,
         None,
     )
@@ -60,10 +58,11 @@ pub fn generate_taproot_change_scriptpubkey(public_key: &PublicKey) -> ScriptBuf
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::{rand::rngs::OsRng, Keypair};
+    use bitcoin::secp256k1::{rand::rngs::OsRng, Keypair};
     fn generate_key_pair() -> Keypair {
-        let (secret_key, _) = secp256k1::SECP256K1.generate_keypair(&mut OsRng);
-        let keypair = Keypair::from_secret_key(secp256k1::SECP256K1, &secret_key);
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let (secret_key, _) = secp.generate_keypair(&mut OsRng);
+        let keypair = Keypair::from_secret_key(&secp, &secret_key);
 
         keypair
     }
