@@ -1302,10 +1302,7 @@ mod tests {
         let _response = abci_client.finalize_block(request);
     }
 
-    // this needs to be an integration test bc the driver needs to be spun up as well
-    // this requires a btc server to be running
     #[test]
-    #[should_panic]
     fn test_commit() {
         let abci_client = abci_client_builder();
 
@@ -1324,7 +1321,7 @@ mod tests {
         // need to call finalize block first to generate a block in the cache to commit
         let _finalize_block_response = abci_client.finalize_block(request);
 
-        // will panic bc the driver isn't running
-        let _response = abci_client.commit();
+        let response = abci_client.commit();
+        assert_eq!(response, ResponseCommit::default());
     }
 }
