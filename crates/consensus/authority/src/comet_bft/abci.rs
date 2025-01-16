@@ -642,6 +642,12 @@ where
             }
         };
 
+        // Validation done as a result of this call:
+        // - botanix consensus package created on the fly and compared to the incoming block EDH
+        // - mint validation checks
+        // - state trie calculated for header
+        // This means no additional validation is needed when the ABCI driver inserts the block into
+        // the canonical chain
         match build_and_execute(
             txs,
             self.storage.chain_spec.clone(),
@@ -901,16 +907,10 @@ where
                         let sealed_header = sealed_block_with_senders.header.clone();
                         let block_hash = sealed_header.hash();
 
-                        // Update canonical chain
-                        match client.insert_block(
-                            sealed_block_with_senders.clone(),
-                            BlockValidationKind::Exhaustive,
-                        ) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!(target: "consensus::authority", ?e, "Failed to insert block");
-                                return Err(Box::new(e));
-                            }
+                        // Update the canonical chain
+                        if let Err(e) = client.make_canonical(block_hash) {
+                            error!("Failed to make block canonical in abci driver: {:?}", e);
+                            return Err(Box::new(e));
                         }
 
                         // Rpc node needs to store aggregate public key from block height 1
@@ -923,15 +923,12 @@ where
                             storage.aggregate_public_key = Some(edh.aggregated_public_key);
                         }
 
+                        // Update canon chain tracker for rpc calls:
+                        // we need to do this manually since we're not sending a fork choice update
+                        // anymore which would update the canon chain tracker
                         client.set_canonical_head(sealed_block_with_senders.header.clone());
                         client.set_safe(sealed_block_with_senders.header.clone());
                         client.set_finalized(sealed_block_with_senders.header.clone());
-
-                        let _ = engine_util::send_fork_choice_update_payload(
-                            block_hash,
-                            self.to_engine.clone(),
-                        )
-                        .await?;
 
                         // Annount to the network
                         let block_to_commit = sealed_block_with_senders.block.clone().unseal();
