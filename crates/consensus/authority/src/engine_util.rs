@@ -86,7 +86,7 @@ pub(crate) enum SendForkChoiceUpdateError {
 pub(crate) async fn send_fork_choice_update_payload<Engine: reth_node_api::EngineTypes>(
     new_block_hash: BlockHash,
     to_engine: UnboundedSender<BeaconEngineMessage<Engine>>,
-) -> Result<(), SendForkChoiceUpdateError> {
+) -> Result<ForkchoiceStatus, SendForkChoiceUpdateError> {
     let state = ForkchoiceState {
         head_block_hash: new_block_hash,
         finalized_block_hash: new_block_hash,
@@ -105,11 +105,10 @@ pub(crate) async fn send_fork_choice_update_payload<Engine: reth_node_api::Engin
         match recv {
             Ok(fcu_response) => {
                 match fcu_response.forkchoice_status() {
-                    ForkchoiceStatus::Valid => return Ok(()),
+                    ForkchoiceStatus::Valid => return Ok(ForkchoiceStatus::Valid),
                     ForkchoiceStatus::Invalid => {
                         error!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned invalid response");
-                        // TODO(armins) maybe we should return the status here
-                        return Ok(());
+                        return Ok(ForkchoiceStatus::Invalid);
                     }
                     ForkchoiceStatus::Syncing => {
                         trace!(target: "consensus::authority", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");

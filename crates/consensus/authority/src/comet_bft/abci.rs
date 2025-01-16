@@ -8,7 +8,7 @@ use std::{
 
 use btcserverlib::extended_client::BtcServerExtendedApi;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
-use reth_beacon_consensus::BeaconEngineMessage;
+use reth_beacon_consensus::{BeaconEngineMessage, ForkchoiceStatus};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::Consensus;
 use reth_consensus_common::utils::unix_timestamp;
@@ -906,11 +906,13 @@ where
                         client.set_safe(sealed_block_with_senders.header.clone());
                         client.set_finalized(sealed_block_with_senders.header.clone());
 
-                        let _ = engine_util::send_fork_choice_update_payload(
+                        if engine_util::send_fork_choice_update_payload(
                             block_hash,
                             self.to_engine.clone(),
                         )
-                        .await?;
+                        .await? == ForkchoiceStatus::Invalid {
+                            warn!("Forkchoice state is invalid");
+                        }
 
                         // Annount to the network
                         let block_to_commit = sealed_block_with_senders.block.clone().unseal();
