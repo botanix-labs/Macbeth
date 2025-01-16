@@ -20,15 +20,15 @@ use reth_evm::execute::BlockExecutorProvider;
 use reth_network::NetworkHandle;
 use reth_node_ethereum::EthEngineTypes;
 
-use reth_blockchain_tree_api::{BlockValidationKind, BlockchainTreeEngine};
+use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
     SealedBlock, TransactionSigned,
 };
 use reth_provider::{
-    BlockReaderIdExt, BlockWriter, CanonChainTracker, DatabaseProviderFactory, ProviderError,
-    ProviderFactory, StateProviderFactory,
+    BlockReaderIdExt, BlockWriter, CanonChainTracker, ProviderError, ProviderFactory,
+    StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
@@ -165,7 +165,6 @@ where
             driver_rx,
             self.to_engine.clone(),
             self.is_fed_node,
-            self.task_executor.clone(),
             database_provider,
         );
 
@@ -867,7 +866,6 @@ pub(crate) struct ABCIDriver<EF, BF, DB, BtcServerClient, DatabaseRW> {
     driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     is_fed_node: bool,
-    task_executor: TaskExecutor,
     database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
 }
 
@@ -887,7 +885,6 @@ where
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         is_fed_node: bool,
-        task_executor: TaskExecutor,
         database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
     ) -> Self {
         Self {
@@ -899,7 +896,6 @@ where
             driver_rx,
             to_engine,
             is_fed_node,
-            task_executor,
             database_provider,
         }
     }
