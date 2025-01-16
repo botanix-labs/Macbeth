@@ -15,7 +15,6 @@ use reth_chainspec::ChainSpec;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
-    message::NewBlockMessageWithPeerId,
     NetworkHandle,
 };
 use reth_network_p2p::{BodiesClient, HeadersClient};
@@ -29,11 +28,7 @@ use reth_provider::{
 
 use reth_tasks::TaskExecutor;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::{
-    broadcast::Receiver as BroadcastReceiver,
-    mpsc::{UnboundedReceiver, UnboundedSender},
-    RwLock,
-};
+use tokio::sync::{broadcast::Receiver as BroadcastReceiver, mpsc::UnboundedSender, RwLock};
 use tracing::info;
 
 pub(crate) type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
@@ -51,7 +46,6 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Sour
     network_handle: NetworkHandle,
     network_client: NetworkClient,
     frost_handle: Option<ToFrostMan>,
-    block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
     task_executor: TaskExecutor,
     frost_config: Option<FrostConfig>,
     payload_builder: PayloadBuilderHandle<EthEngineTypes>,
@@ -100,7 +94,6 @@ where
         network_handle: NetworkHandle,
         network_client: NetworkClient,
         frost_handle: Option<ToFrostMan>,
-        block_import_rx: UnboundedReceiver<NewBlockMessageWithPeerId>,
         task_executor: TaskExecutor,
         frost_config: Option<FrostConfig>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
@@ -192,7 +185,6 @@ where
             network_handle,
             network_client,
             frost_handle,
-            block_import_rx,
             task_executor,
             frost_config,
             payload_builder,
@@ -230,7 +222,6 @@ where
             network_handle,
             network_client: _,
             frost_handle,
-            block_import_rx: _,
             task_executor,
             frost_config,
             payload_builder: _,

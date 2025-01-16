@@ -66,7 +66,6 @@ use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
     frost::{manager::FrostConfig, protocol::FrostProtoHandler},
-    import::ProofOfAuthorityBlockImport,
     protocol::IntoRlpxSubProtocol,
     BlockDownloaderProvider, NetworkEventListenerProvider, NetworkHandle, NetworkManager,
 };
@@ -623,10 +622,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             debug!(target: "reth::cli", "Spawned txpool maintenance task");
         }
 
-        // Set up block import structures
-        let (block_import_tx, block_import_rx) = unbounded_channel();
-        let _block_import = ProofOfAuthorityBlockImport::new(chain_arc.clone(), block_import_tx);
-
         if let (Some(min_signers), Some(max_signers)) = (rpc.min_signers, rpc.max_signers) {
             if min_signers > max_signers {
                 return Err(eyre::eyre!("min_signers should be less than or equal to max_signers"));
@@ -783,7 +778,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             network_handle.clone(),
             network_client.clone(),
             frost_handle,
-            block_import_rx,
             executor.clone(),
             frost_config,
             payload_builder.clone(),
