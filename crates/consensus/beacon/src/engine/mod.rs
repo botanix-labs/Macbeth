@@ -1364,8 +1364,9 @@ where
                     if let Some(target_hash) =
                         ForkchoiceStateHash::find(&target, inserted.hash).filter(|h| !h.is_head())
                     {
-                        // TODO: do not ignore this
-                        let _ = self.blockchain.make_canonical(*target_hash.as_ref());
+                        if let Err(e) = self.blockchain.make_canonical(*target_hash.as_ref()) {
+                            return Err((*target_hash.as_ref(), e));
+                        }
                     }
                 } else if let Some(block_number) = err.optimistic_revert_block_number() {
                     self.sync.set_pipeline_sync_target(PipelineTarget::Unwind(block_number));
