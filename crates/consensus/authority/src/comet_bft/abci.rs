@@ -10,7 +10,7 @@ use btcserverlib::extended_client::BtcServerExtendedApi;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_consensus::Consensus;
+use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::utils::unix_timestamp;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
@@ -309,13 +309,14 @@ where
         ))
     }
 
-    pub(crate) fn non_deterministic_data_bytes(&self) -> prost::bytes::Bytes {
-        let ndd = NonDeterministicData::new(self.bitcoin_blockhash(), self.aggregate_public_key());
+    pub(crate) fn non_deterministic_data_bytes(&self) -> Result<prost::bytes::Bytes, ConsensusError> {
+        let aggregate_public_key = self.aggregate_public_key()?;
+        let ndd = NonDeterministicData::new(self.bitcoin_blockhash(), aggregate_public_key);
         let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
             ndd.serialize().expect("non deterministic data to be serialized").as_slice(),
         );
 
-        ndd_bytes
+        Ok(ndd_bytes)
     }
 
     pub(crate) fn validate_block(&self, block: &SealedBlock) -> ResponseProcessProposal {
@@ -338,8 +339,14 @@ where
         }
 
         // poa validation
-        let agg_pk =
-            self.storage.inner.blocking_read().aggregate_public_key.expect("agg pk to exist");
+        let agg_pk = match self.aggregate_public_key() {
+            Ok(pk) => pk,
+            Err(e) => {
+                error!("Error getting aggregate public key: {:?}", e);
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
+        
         match self.authority_consensus.validate_header_standalone(
             block.header(),
             self.storage.genesis_authorities.as_slice(),
@@ -355,9 +362,11 @@ where
         ResponseProcessProposal { status: VERIFY_ACCEPTED }
     }
 
-    pub(crate) fn aggregate_public_key(&self) -> secp256k1::PublicKey {
-        // TODO should return error if agg pk is not set
-        self.storage.inner.blocking_read().aggregate_public_key.expect("agg pk exists")
+    pub(crate) fn aggregate_public_key(&self) -> Result<secp256k1::PublicKey, ConsensusError> {
+        match self.storage.inner.blocking_read().aggregate_public_key {
+            Some(pk) => Ok(pk),
+            None => Err(ConsensusError::InvalidAggregatedPublicKey(InvalidAggregatedPublicKeyError::MissingAggregatedPublicKey)),
+        }
     }
 
     pub(crate) fn bitcoin_blockhash(&self) -> bitcoin::BlockHash {
@@ -412,7 +421,14 @@ where
         let _txs_bytes = request.txs;
 
         // insert non-deterministic data tx at index 0 so historical sync will pass verification
-        let non_deterministic_data_bytes = self.non_deterministic_data_bytes();
+        let non_deterministic_data_bytes = match self.non_deterministic_data_bytes() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error!("Error getting non-deterministic data bytes: {:?}", e);
+                return ResponsePrepareProposal { ..Default::default() };
+            }
+        };
+
         if self.pool.pool_size().total == 0 {
             info!("No transactions in pool, waiting...");
 
@@ -549,21 +565,22 @@ where
         info!("process_proposal request for height: {:?}", request.height);
         debug!("process_proposal request: {:?}", request);
         let storage = self.storage.inner.blocking_read();
-        let agg_pk = storage.aggregate_public_key;
+        let agg_pk = match self.aggregate_public_key() {
+            Ok(pk) => pk,
+            Err(_) => {
+                // Fed nodes must always have an aggregate public key
+                if self.is_fed_node {
+                    warn!("Aggregate public key for fed node is not set in process proposal");
+                }
 
-        if agg_pk.is_none() {
-            // Fed nodes must always have an aggregate public key
-            if self.is_fed_node {
-                warn!("Aggregate public key for fed node is not set in process proposal");
+                // Rpc nodes will have an aggregate public key above block height 1
+                if request.height > 1 {
+                    warn!("Aggregate public key for rpc node is not set in process proposal");
+                }
+
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
-
-            // Rpc nodes will have an aggregate public key above block height 1
-            if request.height > 1 {
-                warn!("Aggregate public key for rpc node is not set in process proposal");
-                return ResponseProcessProposal { status: VERIFY_REJECT };
-            }
-        }
+        };
 
         // Drop the lock
         drop(storage);
@@ -607,7 +624,7 @@ where
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
-        if agg_pk.expect("agg pk to be defined") != non_deterministic_data.aggregated_public_key {
+        if agg_pk != non_deterministic_data.aggregated_public_key {
             warn!("Aggregate public key mismatch");
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
@@ -630,7 +647,7 @@ where
             &self.storage.bitcoind_factory,
             self.storage.btc_network,
             &bitcoin_checkpoint_block_hash,
-            &agg_pk.expect("agg pk to be defined"),
+            &agg_pk,
             block_time,
         ) {
             Ok((exec_results, block)) => {
@@ -1137,7 +1154,7 @@ mod tests {
 
         let expected_ndd = NonDeterministicData::new(
             abci_client.bitcoin_blockhash(),
-            abci_client.aggregate_public_key(),
+            abci_client.aggregate_public_key().expect("to have agg pk"),
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
@@ -1173,7 +1190,7 @@ mod tests {
 
         let expected_ndd = NonDeterministicData::new(
             abci_client.bitcoin_blockhash(),
-            abci_client.aggregate_public_key(),
+            abci_client.aggregate_public_key().expect("to have agg pk"),
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
@@ -1192,7 +1209,7 @@ mod tests {
 
         let mut request = RequestProcessProposal::default();
 
-        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
 
         request.txs = vec![ndd_bytes];
 
@@ -1212,7 +1229,7 @@ mod tests {
         let abci_client = abci_client_builder();
 
         // first tx should be non-deterministic data
-        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
 
         // second tx should be a signed transaction
         let mut tx_generator = TransactionGenerator::new(thread_rng());
@@ -1243,7 +1260,7 @@ mod tests {
 
         let mut request = RequestFinalizeBlock::default();
 
-        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
 
         request.txs = vec![ndd_bytes.clone()];
 
@@ -1280,7 +1297,7 @@ mod tests {
         let mut request = RequestFinalizeBlock::default();
 
         // first tx should be non-deterministic data
-        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
 
         // second tx should be a signed transaction
         let mut tx_generator = TransactionGenerator::new(thread_rng());
@@ -1308,7 +1325,7 @@ mod tests {
 
         let mut request = RequestFinalizeBlock::default();
 
-        let ndd_bytes = abci_client.non_deterministic_data_bytes();
+        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("msg to have ndd");
 
         request.txs = vec![ndd_bytes.clone()];
 
