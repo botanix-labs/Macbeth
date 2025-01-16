@@ -963,6 +963,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let fut = || async {
             abci_client_builder
                 .start_server(
+                    provider_factory.clone(),
                     &executor.clone(),
                     eth_tx_validator.clone(),
                     transaction_pool.clone(),

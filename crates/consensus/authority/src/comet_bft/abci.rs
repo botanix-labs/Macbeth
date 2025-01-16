@@ -6,6 +6,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use reth_chainspec::ChainSpec;
+use reth_db::Database;
+
 use btcserverlib::extended_client::BtcServerExtendedApi;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_beacon_consensus::BeaconEngineMessage;
@@ -23,7 +26,10 @@ use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
     SealedBlock, TransactionSigned,
 };
-use reth_provider::{BlockReaderIdExt, CanonChainTracker, ProviderError, StateProviderFactory};
+use reth_provider::{
+    BlockReaderIdExt, BlockWriter, CanonChainTracker, DatabaseProviderFactory, ProviderError,
+    ProviderFactory, StateProviderFactory,
+};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
@@ -53,7 +59,6 @@ use crate::{
     comet_bft::{
         non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
     },
-    engine_util,
     excecution_utils::authority_execution_utils::build_and_execute,
     metrics::AuthorityMetrics,
     utils::{call_notify_pegin, call_notify_pegout},
@@ -125,8 +130,12 @@ where
         }
     }
 
-    pub async fn start_server<Pool: TransactionPool + Clone + 'static>(
+    pub async fn start_server<
+        Pool: TransactionPool + Clone + 'static,
+        DatabaseRW: Database + Clone + 'static,
+    >(
         &self,
+        database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
         task_executor: &impl TaskSpawner,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
@@ -157,6 +166,7 @@ where
             self.to_engine.clone(),
             self.is_fed_node,
             self.task_executor.clone(),
+            database_provider,
         );
 
         let server_builder = ServerBuilder::default();
@@ -848,7 +858,7 @@ enum ABCIDriverMessage {
 // * Sending pegins / pegouts to the btc server
 // * Updating the [ExtraDataHeader] with the block witnesses
 #[allow(dead_code)]
-pub(crate) struct ABCIDriver<EF, BF, DB, BtcServerClient> {
+pub(crate) struct ABCIDriver<EF, BF, DB, BtcServerClient, DatabaseRW> {
     storage: Storage<EF, BF, DB>,
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
     authority_consensus: AuthorityConsensus,
@@ -858,18 +868,13 @@ pub(crate) struct ABCIDriver<EF, BF, DB, BtcServerClient> {
     to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     is_fed_node: bool,
     task_executor: TaskExecutor,
+    database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
 }
 
-impl<EF, BF, DB, BtcServerClient> ABCIDriver<EF, BF, DB, BtcServerClient>
+impl<EF, BF, DB, BtcServerClient, DatabaseRW> ABCIDriver<EF, BF, DB, BtcServerClient, DatabaseRW>
 where
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
-    EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + Unpin + 'static,
+    DB: CanonChainTracker + Clone + 'static,
+    DatabaseRW: Database + Clone + 'static,
     BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
 {
     #[allow(clippy::too_many_arguments)]
@@ -883,6 +888,7 @@ where
         to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         is_fed_node: bool,
         task_executor: TaskExecutor,
+        database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
     ) -> Self {
         Self {
             storage,
@@ -894,6 +900,7 @@ where
             to_engine,
             is_fed_node,
             task_executor,
+            database_provider,
         }
     }
 
@@ -902,16 +909,15 @@ where
             if let Some(message) = self.driver_rx.recv().await {
                 match message {
                     ABCIDriverMessage::CommitBlock((sealed_block_with_peg, _cbft_hash, tx)) => {
+                        let db_rw = self.database_provider.provider_rw().unwrap();
                         let client = self.storage.client.clone();
                         let sealed_block_with_senders = sealed_block_with_peg.block();
                         let sealed_header = sealed_block_with_senders.header.clone();
-                        let block_hash = sealed_header.hash();
 
-                        // Update the canonical chain
-                        if let Err(e) = client.make_canonical(block_hash) {
-                            error!("Failed to make block canonical in abci driver: {:?}", e);
-                            return Err(Box::new(e));
-                        }
+                        db_rw
+                            .insert_block(sealed_block_with_senders.clone())
+                            .expect("to insert block");
+                        db_rw.commit().expect("to commit");
 
                         // Rpc node needs to store aggregate public key from block height 1
                         if !self.is_fed_node && sealed_block_with_senders.number == 1 {
