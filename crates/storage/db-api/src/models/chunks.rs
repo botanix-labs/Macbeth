@@ -1,10 +1,9 @@
 //! Models for snapshots and chunks.
 
-use std::collections::HashSet;
-
 use reth_codecs::{add_arbitrary_tests, Compact};
 use reth_primitives::{BlockNumber, B256};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// A snapshot sync id.
 pub type SnapshotSyncId = u64;
@@ -95,12 +94,19 @@ pub struct Snapshot {
     block_ids: Vec<BlockNumber>,
     /// The hash of the block at that height
     block_hash: B256,
+    /// App hash from cometbft
+    app_hash: Vec<u8>,
 }
 
 impl Snapshot {
     /// Creates a new snapshot by given height and block_hash
-    pub fn new(height: u64, block_hash: B256) -> Self {
-        Self { height, chunk_ids: Vec::new(), block_ids: Vec::new(), block_hash }
+    pub fn new(id: u64, height: u64, block_hash: B256, app_hash: Vec<u8>) -> Self {
+        Self { id, height, chunk_ids: Vec::new(), block_ids: Vec::new(), block_hash, app_hash }
+    }
+
+    /// Sets the snapshot id.
+    pub fn set_id(&mut self, id: u64) {
+        self.id = id;
     }
 
     /// Sets the snapshot height.
@@ -131,6 +137,11 @@ impl Snapshot {
     /// Sets the block hash of the snapshot.
     pub fn set_block_hash(&mut self, block_hash: B256) {
         self.block_hash = block_hash;
+    }
+
+    /// Sets the cometbft app hash.
+    pub fn set_app_hash(&mut self, app_hash: &[u8]) {
+        self.app_hash = app_hash.to_vec();
     }
 
     /// Adds a block ID to the snapshot if it doesn't already exist.
@@ -192,6 +203,11 @@ impl Snapshot {
     /// Return the hash of this snapshot block.
     pub const fn block_hash(&self) -> B256 {
         self.block_hash
+    }
+
+    /// Gets the cometbft app hash.
+    pub fn get_app_hash(&self) -> &[u8] {
+        self.app_hash.as_slice()
     }
 }
 
@@ -297,7 +313,8 @@ mod tests {
             height: 12000,
             block_ids: vec![1001],
             chunk_ids: vec![1, 2],
-            block_hash: Default::default(),
+            block_hash: block_hash.clone(),
+            app_hash: Vec::new(),
         };
 
         assert_eq!(snapshot.chunk_ids(), &vec![1, 2]);

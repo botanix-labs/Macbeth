@@ -1608,6 +1608,7 @@ impl SnapshotWriter for StaticFileProvider {
         &self,
         _block_id: BlockNumber,
         _block_hash: B256,
+        _app_hash: &[u8],
     ) -> ProviderResult<SnapshotId> {
         Err(ProviderError::UnsupportedProvider)
     }

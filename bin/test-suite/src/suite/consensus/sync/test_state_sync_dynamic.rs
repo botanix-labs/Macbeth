@@ -1,17 +1,16 @@
 use bitcoincore_rpc::RpcApi;
-use reth_data_parser::{DataParser, SerializationType};
-use reth_primitives::SealedBlockWithSenders;
-use reth_provider::SnapshotReader;
+use comet_bft_rpc::{Client, CometBftRpcFactory};
+use reth_provider::{BlockNumReader, SnapshotReader};
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::{
-            events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
-            poa_node::Notifications,
-        },
+        common::events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
         ConsensusIntegrationTestSuite,
     },
     utils::generate_blocks,
@@ -79,57 +78,105 @@ pub async fn test_state_sync_dynamic(
         tx_hashes_set.insert(tx_receipt.transaction_hash);
     }
 
-    // start the syncing pod node
-    if let Some(poa_nodes_syncing) = suite.local_context.poa_nodes_syncing.as_ref() {
-        for (index, poa_node) in poa_nodes_syncing.iter() {
-            let build_command_authorities_list = Arc::new(suite.local_context.authorities.clone());
-            poa_node.spawn_service(build_command_authorities_list).unwrap();
-        }
-    }
+    // get a lightlight client for a non-syncing poa node
+    let (trusted_block_height, trusted_block_hash) =
+        if let Some(cometbft_lightclients) = suite.local_context.cometbft_lightclients.as_ref() {
+            let cometrpc = cometbft_lightclients.get(member_index).unwrap().clone();
+            let cometbft_http_client = cometrpc.build_and_connect().expect("to be connected");
 
-    let latest_block = botanix_eth_client.get_latest_block().await.unwrap();
+            let trusted_block_height = 1u32;
+            let trusted_block_hash = cometbft_http_client
+                .block(trusted_block_height)
+                .await
+                .expect("to have first block")
+                .block
+                .header
+                .hash();
+            it_info_print!("COMET>>>>> TRUSTED HASH FOR HEIGHT 1!", trusted_block_hash);
+            let latest_block =
+                cometbft_http_client.latest_block().await.unwrap().block.header().height.value();
+            it_info_print!("COMET>>>>> LATEST COMMET BLOCK HEIGHT", latest_block);
+            (trusted_block_height, trusted_block_hash)
+        } else {
+            panic!("No trusted block height and hash");
+        };
 
-    // wait for canonical chain updates reported by the node, then send new tx
-    while let Ok(notification) = rx.recv().await {
-        if let Notifications::CanonState(canon_state_notification) = notification {
-            it_info_print!(
-                "Received payload from engine index",
-                canon_state_notification.engine_index
-            );
-            it_info_print!(
-                "Received block number from engine = {:?}",
-                canon_state_notification.block.number.map(|n| n.as_u64())
-            );
-            let db_provider = suite
-                .local_context
-                .get_dbs()
-                .get(canon_state_notification.engine_index as usize)
-                .cloned()
-                .unwrap();
+    let latest_botanix_block = botanix_eth_client.get_latest_block().await.unwrap();
+    it_info_print!(
+        "COMET>>>>> LATEST BOTANIX HEIGHT",
+        latest_botanix_block.number.unwrap_or_default().as_u64()
+    );
+
+    it_info_print!("COMET>>>>> SYNCING NODES", suite.local_context.cometbft_nodes_syncing);
+
+    // wait until all poas have at least 2 snapshots to sync against
+    let member_ids = suite
+        .local_context
+        .poa_nodes
+        .clone()
+        .unwrap_or_default()
+        .keys()
+        .cloned()
+        .collect::<Vec<u16>>();
+    let member_ids: Vec<u16> = member_ids[..member_ids.len().saturating_sub(1)].to_vec(); // remove the syncing nodes
+    it_info_print!("AWAITING CONDITION TO BE FULFILLED", member_ids);
+    let mut snapshots_per_fed_member: HashMap<u16, usize> = HashMap::new();
+    let expected_sync_height = 'outer: loop {
+        for memeber_id in member_ids.clone() {
+            let db_provider =
+                suite.local_context.get_dbs().get(memeber_id as usize).cloned().unwrap();
             let snapshots = db_provider.get_snapshots().unwrap_or_default();
-            // NOTE: it means that the second snapshot is being created at the moment, hence prev.
-            // one must be ready
-            if snapshots.len() == 2 {
-                let first_snapshot_block_id = snapshots.first().unwrap().height();
-                let snapshot_id = db_provider
-                    .get_snapshot_id_by_block_id(first_snapshot_block_id)
-                    .unwrap()
-                    .unwrap();
-                let data_parser =
-                    DataParser::default().with_serialization_type(SerializationType::Postcard);
-                let snapshot_chunks_data =
-                    db_provider.assemble_snapshot_chunks_data(snapshot_id).unwrap();
-                for (block, block_chunks) in snapshot_chunks_data {
-                    let sealed_block =
-                        data_parser.decode::<SealedBlockWithSenders>(&block_chunks).await;
-                    assert!(sealed_block.is_ok());
-                    let sealed_block = sealed_block.expect("must be a block");
-                    assert!(sealed_block.block.header().number == block);
+            snapshots_per_fed_member.insert(memeber_id, snapshots.len());
+
+            let expected_sync_height =
+                snapshots.first().as_ref().map(|s| s.height()).unwrap_or_default();
+
+            let insuficient_snapshots = snapshots_per_fed_member.iter().any(|(_, snapshots)| {
+                if *snapshots < 2 {
+                    return true
                 }
-                break;
+                false
+            });
+            if !insuficient_snapshots {
+                break 'outer expected_sync_height;
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+    it_info_print!("ALL NODES HAVE AT LEAST 2 SNAPSHOTS");
+
+    // start the syncing cometbft node
+    if let Some(cometbft_nodes_syncing) = suite.local_context.cometbft_nodes_syncing.as_ref() {
+        for (_index, comet_node) in cometbft_nodes_syncing.iter() {
+            if let Some(spawned_cometbft_processes) =
+                suite.local_context.cometbft_processes.as_mut()
+            {
+                // overwrite the config with the trusted block hash and height
+                update_config_toml_with_trusted_height_and_hash(
+                    &comet_node,
+                    trusted_block_height as i64,
+                    &trusted_block_hash.to_string(),
+                )
+                .unwrap();
+                // spawn the comet process
+                spawned_cometbft_processes.push(comet_node.spawn_service().unwrap());
+                // await initialization
+                comet_node.await_initialization().unwrap();
             }
         }
     }
 
-    Ok(())
+    // get the syncing node db
+    let db_provider_syncing_member =
+        suite.local_context.get_dbs().get(member_ids.len()).cloned().unwrap();
+
+    // wait for the syncing node to catch up with expected_sync_height
+    loop {
+        let last_block_number = db_provider_syncing_member.last_block_number().unwrap();
+        it_info_print!("SYNCING NODE LAST BLOCK NUMBER {:?}", last_block_number);
+        if expected_sync_height == last_block_number {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
 }

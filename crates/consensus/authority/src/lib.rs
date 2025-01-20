@@ -345,8 +345,6 @@ pub(crate) struct Storage<EF, BF, DB> {
     pub(crate) executor_factory: EF,
     // The inner storage, everything here is rw locked
     pub(crate) inner: Arc<RwLock<StorageInner>>,
-    /// Provider factory
-    pub(crate) provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
 }
 
 impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
@@ -364,7 +362,6 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
         bitcoind_factory: BF,
         executor_factory: EF,
         client: DB,
-        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Self {
         let storage_inner = StorageInner { aggregate_public_key };
 
@@ -379,7 +376,6 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
             chain_spec,
             bitcoind_factory,
             executor_factory,
-            provider_factory,
             inner: Arc::new(RwLock::new(storage_inner)),
         }
     }

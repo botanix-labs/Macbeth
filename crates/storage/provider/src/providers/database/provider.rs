@@ -3850,6 +3850,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         &self,
         block_id: BlockNumber,
         block_hash: B256,
+        app_hash: &[u8],
     ) -> ProviderResult<SnapshotId> {
         let last_snasphot_id =
             self.get_last_snapshot_height()?.map(|snapshot| snapshot.0).unwrap_or(1);
@@ -3857,6 +3858,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         let mut new_snapshot = Snapshot::default();
         new_snapshot.set_height(block_id);
         new_snapshot.set_block_hash(block_hash);
+        new_snapshot.set_app_hash(app_hash);
         self.tx.put::<tables::Snapshots>(new_snapshot_id, new_snapshot)?;
         self.tx.put::<tables::BlockSnapshots>(block_id, new_snapshot_id)?;
         Ok(new_snapshot_id)

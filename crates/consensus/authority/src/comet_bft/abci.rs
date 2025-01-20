@@ -1354,7 +1354,7 @@ where
                             tokio::sync::oneshot::channel::<()>();
                         self.snapshot_manager_tx
                             .blocking_send(ABCIDriverMessage::CommitBlock((
-                                sealed_block_with_context_clone,
+                                sealed_block_with_context,
                                 cbft_hash,
                                 snapshot_manager_announced_tx,
                             )))
@@ -1501,6 +1501,8 @@ mod tests {
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
         let (driver_tx, _driver_rx) = tokio::sync::mpsc::channel(100);
+        let (tx, _rx) =
+            tokio::sync::mpsc::unbounded_channel::<BeaconEngineMessage<EthEngineTypes>>();
         let abci_client = ABCIClient::new(
             storage,
             validator.validator,
