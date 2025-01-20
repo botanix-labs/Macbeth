@@ -122,7 +122,6 @@ pub const HOLESKY_GENESIS_HASH: B256 =
 pub const DEV_GENESIS_HASH: B256 =
     b256!("2f980576711e3617a5e4d83dd539548ec0f7792007d505a3d2e9674833af2d7c");
 
-// TODO include botanix and botanix testnet genesis hash
 /// Botanix Testnet genesis hash.
 pub const BOTANIX_TESTNET_GENESIS: B256 =
     b256!("3797638175875c37cefa72ef546db685e43c81ba4af8238b48a495f98d61588d");
