@@ -279,7 +279,7 @@ where
                             result
                         }
                         Err(e) => {
-                            error!("Botanix Minting contract event validation failed: {:?}", e);
+                            info!("Botanix Minting contract event validation failed: {:?}", e);
                             // Update state for reverted pegins/pegouts:
                             // balances have been updated since tx was successful according to EVM
                             // and we are reverting according to botanix validation
