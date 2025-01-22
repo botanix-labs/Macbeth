@@ -47,14 +47,12 @@ pub async fn test_state_sync_dynamic(
         .as_ref()
         .expect("test federation member configurations")
         .clone();
-    let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
 
     // take the first member as the inturn member
     let member_index = 0;
 
     // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(member_index as u16)).cloned().unwrap();
-    it_info_print!("Snapshot Chunk Size Bytes", targeted_fed_member.snapshot_chunk_size_bytes);
     it_info_print!("Max Snapshot Chunk Size Bytes", targeted_fed_member.max_snapshot_size_bytes);
 
     // create a minting contract instance
@@ -119,7 +117,6 @@ pub async fn test_state_sync_dynamic(
         .cloned()
         .collect::<Vec<u16>>();
     let member_ids: Vec<u16> = member_ids[..member_ids.len().saturating_sub(1)].to_vec(); // remove the syncing nodes
-    it_info_print!("AWAITING CONDITION TO BE FULFILLED", member_ids);
     let mut snapshots_per_fed_member: HashMap<u16, usize> = HashMap::new();
     let expected_sync_height = 'outer: loop {
         for memeber_id in member_ids.clone() {
@@ -143,7 +140,8 @@ pub async fn test_state_sync_dynamic(
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     };
-    it_info_print!("ALL NODES HAVE AT LEAST 2 SNAPSHOTS");
+    it_info_print!("All nodes have produced at least 2 snapshots");
+    it_info_print!("Expected sync height", expected_sync_height);
 
     // start the syncing cometbft node
     if let Some(cometbft_nodes_syncing) = suite.local_context.cometbft_nodes_syncing.as_ref() {
@@ -173,8 +171,8 @@ pub async fn test_state_sync_dynamic(
     // wait for the syncing node to catch up with expected_sync_height
     loop {
         let last_block_number = db_provider_syncing_member.last_block_number().unwrap();
-        it_info_print!("SYNCING NODE LAST BLOCK NUMBER {:?}", last_block_number);
-        if expected_sync_height == last_block_number {
+        it_info_print!("Syncing last block number {:?}", last_block_number);
+        if last_block_number >= expected_sync_height {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_secs(5)).await;

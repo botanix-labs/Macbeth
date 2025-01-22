@@ -53,6 +53,7 @@ pub async fn state_sync(
 
     // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(member_index as u16)).cloned().unwrap();
+    it_info_print!("Max Snapshot Chunk Size Bytes", targeted_fed_member.max_snapshot_size_bytes);
 
     // create a minting contract instance
     let botanix_eth_client =
@@ -72,8 +73,6 @@ pub async fn state_sync(
         tokio::time::sleep(Duration::from_millis(200)).await;
         tx_hashes_set.insert(tx_receipt.transaction_hash);
     }
-
-    let latest_block = botanix_eth_client.get_latest_block().await.unwrap();
 
     // wait for canonical chain updates reported by the node, then send new tx
     while let Ok(notification) = rx.recv().await {

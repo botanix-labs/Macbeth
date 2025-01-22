@@ -252,25 +252,18 @@ where
                     //     continue;
                     // }
 
-                    // Split the serialized block into smaller chunks
-                    let chunks = serialized_compressed_sealed_block
-                        .chunks(self.state_sync_args.snapshot_chunk_size_bytes);
-                    info!(target: "consensus::authority::snapshot_manager::run", "Created chunks after split: {:?}", chunks.len());
-                    let mut new_chunk_ids: Vec<ChunkId> = vec![];
-                    for chunk in chunks {
-                        let chunk_id = self.create_new_chunk(
-                            last_snapshot_id,
-                            sealed_block.number,
-                            chunk.to_vec(),
-                        )?;
-                        new_chunk_ids.push(chunk_id);
-                        info!(
-                            "Updating snapshot with: {:?} {:?} {:?}",
-                            last_snapshot_id, sealed_block.number, chunk_id
-                        );
-                        self.update_snapshot(last_snapshot_id, sealed_block.number, chunk_id)?;
-                    }
-                    self.create_block_chunks_register(sealed_block.number, new_chunk_ids)?;
+                    // Treat the block as a snapshot chunk
+                    let chunk_id = self.create_new_chunk(
+                        last_snapshot_id,
+                        sealed_block.number,
+                        serialized_compressed_sealed_block,
+                    )?;
+                    info!(
+                        "Updating snapshot with: {:?} {:?} {:?}",
+                        last_snapshot_id, sealed_block.number, chunk_id
+                    );
+                    self.update_snapshot(last_snapshot_id, sealed_block.number, chunk_id)?;
+                    self.create_block_chunks_register(sealed_block.number, vec![chunk_id])?;
                     self.insert_block_snapshot_id_mapping(sealed_block.number, last_snapshot_id)?;
 
                     // check if we need to delete older snapshots (Retention policy)
@@ -520,7 +513,6 @@ mod tests {
 
         snapshot_sync_by_id.set_height(33);
         snapshot_sync_by_id.set_total_chunks(44);
-        snapshot_sync_by_id.append_chunk_data(vec![1, 2, 3, 4, 5]);
         client.update_snapshot_sync(3, snapshot_sync_by_id).unwrap();
 
         let updated_snapshot_sync_by_id = client.get_snapshot_sync_by_id(id).unwrap().unwrap();
@@ -528,6 +520,5 @@ mod tests {
         assert!(updated_snapshot_sync_by_id.total_chunks() == 44);
         assert!(updated_snapshot_sync_by_id.format() == 1);
         assert!(updated_snapshot_sync_by_id.last_applied_chunk_index() == 0);
-        assert!(updated_snapshot_sync_by_id.data().to_vec() == vec![1, 2, 3, 4, 5]);
     }
 }

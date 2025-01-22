@@ -136,7 +136,6 @@ pub struct FederationMemberTestConfig {
     pub frost_min_signers: u16,
     pub frost_max_signers: u16,
     pub max_snapshot_size_bytes: usize,
-    pub snapshot_chunk_size_bytes: usize,
     pub snapshot_keep_recent: u64,
     pub peer_id: PeerId,
     pub is_dkg_ready: bool,
@@ -160,7 +159,6 @@ impl FederationMemberTestConfig {
         frost_min_signers: u16,
         frost_max_signers: u16,
         max_snapshot_size_bytes: usize,
-        snapshot_chunk_size_bytes: usize,
         snapshot_keep_recent: u64,
         peer_id: PeerId,
         rpc_port: u16,
@@ -189,7 +187,6 @@ impl FederationMemberTestConfig {
             frost_min_signers,
             frost_max_signers,
             max_snapshot_size_bytes,
-            snapshot_chunk_size_bytes,
             snapshot_keep_recent,
             peer_id,
             is_dkg_ready: false,
@@ -314,7 +311,6 @@ impl FederationMemberTestConfig {
         let frost_min_signers = self.frost_min_signers.to_string();
         let frost_max_signers = self.frost_max_signers.to_string();
         let max_snapshot_size_bytes = self.max_snapshot_size_bytes.to_string();
-        let snapshot_chunk_size_bytes = self.snapshot_chunk_size_bytes.to_string();
         let snapshot_keep_recent = self.snapshot_keep_recent.to_string();
         let discovery_port = self.discovery_port.to_string();
         let abci_port = self.abci_port.to_string();
@@ -372,8 +368,6 @@ impl FederationMemberTestConfig {
             frost_max_signers.as_str(),
             "--sync.max_snapshot_size_bytes",
             max_snapshot_size_bytes.as_str(),
-            "--sync.snapshot_chunk_size_bytes",
-            snapshot_chunk_size_bytes.as_str(),
             "--sync.snapshot_keep_recent",
             snapshot_keep_recent.as_str(),
             "--port",
@@ -523,22 +517,24 @@ impl FederationMemberTestConfig {
                     let tx_receipts = botanix_eth_client
                         .get_tx_receipts(BlockId::Number(BlockNumber::Number(block_number)))
                         .await
-                        .expect("Failed to get block receipts");
-                    // send a notification about a new block
-                    match rx_sender.send(Notifications::CanonState(
-                        CannonStateNofificationPayload {
-                            engine_index,
-                            ts: tokio::time::Instant::now(),
-                            tx_receipts,
-                            block,
-                        },
-                    )) {
-                        Ok(_) => {}
-                        // all receivers have been dropped temporarily here. Just sleep
-                        // and await new ones to be created
-                        Err(_) => {
-                            tokio::time::sleep(Duration::from_secs(1)).await;
-                            continue;
+                        .ok();
+                    if let Some(tx_receipts) = tx_receipts {
+                        // send a notification about a new block
+                        match rx_sender.send(Notifications::CanonState(
+                            CannonStateNofificationPayload {
+                                engine_index,
+                                ts: tokio::time::Instant::now(),
+                                tx_receipts,
+                                block,
+                            },
+                        )) {
+                            Ok(_) => {}
+                            // all receivers have been dropped temporarily here. Just sleep
+                            // and await new ones to be created
+                            Err(_) => {
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                continue;
+                            }
                         }
                     }
                 }
@@ -764,7 +760,6 @@ pub async fn create_poa_nodes(
             global_context.min_signers,
             global_context.max_signers,
             global_context.max_snapshot_size_bytes,
-            global_context.snapshot_chunk_size_bytes,
             global_context.snapshot_keep_recent,
             member_peerid,
             RPC_PORT_BASE + member_index,

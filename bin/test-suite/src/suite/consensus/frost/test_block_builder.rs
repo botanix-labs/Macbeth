@@ -83,7 +83,7 @@ pub async fn block_builder(
             it_info_print!("Block receipts hashes ?", block_receipt_hashes);
 
             if block_producer_address.is_none() {
-                let mut extra_data = canon_state_notification.block.extra_data.0.to_vec();
+                let extra_data = canon_state_notification.block.extra_data.0.to_vec();
                 let edh = ExtraDataHeader::deserialize(&mut extra_data.as_slice()).unwrap();
                 block_producer_address = Some(edh.block_producer_address);
             }

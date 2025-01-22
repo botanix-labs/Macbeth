@@ -664,67 +664,82 @@ where
         // set the last applied chunk index
         snapshot.set_last_applied_chunk_index(request.index as u64);
 
-        // append the chunk data
-        snapshot.append_chunk_data(request.chunk.as_ref().to_vec());
-
         // update the db
-        client
-            .update_snapshot_sync(last_snapshot_sync_id, snapshot.clone())
-            .expect("to update snapshot sync");
-
-        // check if the snapshot is finally assembled and has all chunks in it
-        if snapshot.is_assembled() {
-            let compressor = self.compressor.clone();
-            let (compressor_task_tx, compressor_task_rx) =
-                tokio::sync::oneshot::channel::<SealedBlockWithSenders>();
-            self.task_executor.spawn_blocking(Box::pin(async move {
-                let sealed_block_with_senders: SealedBlockWithSenders = compressor
-                    .decode(snapshot.data())
-                    .await
-                    .expect("Failed to deserialize and decompress sealed block");
-                let _ = compressor_task_tx.send(sealed_block_with_senders);
-            }));
-
-            // await the repsonse from the compressor task
-            let sealed_block_with_senders = compressor_task_rx
-                .blocking_recv()
-                .expect("to receive confirmation from snapshot manager");
-
-            let sealed_header = sealed_block_with_senders.header.clone();
-            let block_hash = sealed_header.hash();
-
-            // Update canonical chain
-            match client
-                .insert_block(sealed_block_with_senders.clone(), BlockValidationKind::Exhaustive)
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(target: "consensus::authority::abci", ?e, "Failed to insert block");
-                }
-            }
-
-            // set canonical head
-            client.set_canonical_head(sealed_block_with_senders.header.clone());
-            client.set_safe(sealed_block_with_senders.header.clone());
-            client.set_finalized(sealed_block_with_senders.header.clone());
-
-            let (fork_choice_update_task_tx, fork_choice_update_task_rx) =
-                tokio::sync::oneshot::channel::<()>();
-            let to_engine = self.to_engine.clone();
-            self.task_executor.spawn_blocking(Box::pin(async move {
-                if let Err(e) =
-                    engine_util::send_fork_choice_update_payload(block_hash, to_engine).await
-                {
-                    error!("Error sending fork choice update to engine {:?}", e);
-                }
-                let _ = fork_choice_update_task_tx.send(());
-            }));
-
-            // await the response from the fork choice update task
-            fork_choice_update_task_rx
-                .blocking_recv()
-                .expect("to receive confirmation from fork choice updater");
+        if let Err(e) = self.update_snapshot_sync(last_snapshot_sync_id, snapshot.clone()) {
+            error!(
+                "Error updating snapshot sync {:?} in the db. error = {:?}",
+                last_snapshot_sync_id, e
+            );
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
         }
+
+        // decompress and decode the snapshot chunk (= block) and apply it
+        let compressor = self.compressor.clone();
+        let (compressor_task_tx, compressor_task_rx) =
+            tokio::sync::oneshot::channel::<SealedBlockWithSenders>();
+        self.task_executor.spawn_blocking(Box::pin(async move {
+            let sealed_block_with_senders: SealedBlockWithSenders = compressor
+                .decode(request.chunk.as_ref())
+                .await
+                .expect("Failed to deserialize and decompress sealed block");
+            let _ = compressor_task_tx.send(sealed_block_with_senders);
+        }));
+
+        // await the response from the compressor task
+        let sealed_block_with_senders = compressor_task_rx
+            .blocking_recv()
+            .expect("to receive confirmation from snapshot manager");
+
+        let sealed_header = sealed_block_with_senders.header.clone();
+        let block_hash = sealed_header.hash();
+        info!("Restored Snapshot Hash {:?}", hex::encode(block_hash.to_vec().as_slice()));
+
+        // Update canonical chain
+        if let Err(e) =
+            client.insert_block(sealed_block_with_senders.clone(), BlockValidationKind::Exhaustive)
+        {
+            error!(target: "consensus::authority::abci", ?e, "Failed to insert block");
+        }
+        info!(
+            "Db Latest Hash {:?}",
+            hex::encode(
+                client
+                    .latest_header()
+                    .expect("should have latest")
+                    .expect("should have header")
+                    .hash()
+                    .to_vec()
+                    .as_slice()
+            )
+        );
+        let hash = self.application_hash(&client);
+        info!("Current application Hash {:?}", hex::encode(hash.to_vec().as_slice()));
+
+        // set canonical head
+        client.set_canonical_head(sealed_block_with_senders.header.clone());
+        client.set_safe(sealed_block_with_senders.header.clone());
+        client.set_finalized(sealed_header);
+
+        let (fork_choice_update_task_tx, fork_choice_update_task_rx) =
+            tokio::sync::oneshot::channel::<()>();
+        let to_engine = self.to_engine.clone();
+        self.task_executor.spawn_blocking(Box::pin(async move {
+            if let Err(e) =
+                engine_util::send_fork_choice_update_payload(block_hash, to_engine).await
+            {
+                error!("Error sending fork choice update to engine {:?}", e);
+            }
+            let _ = fork_choice_update_task_tx.send(());
+        }));
+
+        // await the response from the fork choice update task
+        fork_choice_update_task_rx
+            .blocking_recv()
+            .expect("to receive confirmation from fork choice updater");
 
         return ResponseApplySnapshotChunk {
             result: ApplySnapshotResult::Accept as i32,

@@ -77,9 +77,6 @@ pub struct CliArgs {
     /// max_snapshot_size_bytes
     #[argh(option, default = "10240")]
     pub max_snapshot_size_bytes: usize,
-    /// snapshot_chunk_size_bytes
-    #[argh(option, default = "1024")]
-    pub snapshot_chunk_size_bytes: usize,
     /// snapshot_keep_recent
     #[argh(option, default = "3")]
     pub snapshot_keep_recent: u64,

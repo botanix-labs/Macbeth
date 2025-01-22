@@ -248,11 +248,11 @@ pub enum PsbtToSigningPackageConversionError {
 }
 
 pub fn frost_id_from_bytes(b: &[u8]) -> Option<frost::Identifier> {
-    frost::Identifier::deserialize(&b).ok()
+    frost::Identifier::deserialize(b).ok()
 }
 
 pub fn signature_share_from_bytes(b: &[u8]) -> Option<frost::round2::SignatureShare> {
-    frost::round2::SignatureShare::deserialize(b.try_into().ok()?).ok()
+    frost::round2::SignatureShare::deserialize(b).ok()
 }
 
 /// Utxo DTO struct

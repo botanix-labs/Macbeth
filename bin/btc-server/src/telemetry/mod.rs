@@ -198,7 +198,7 @@ impl Telemetry {
                 .with_label_values(&[
                     &btc_chain.to_string(),
                     &self_id.to_string(),
-                    &session_id.map(|s| hex::encode(s)).unwrap_or_default(),
+                    &session_id.map(hex::encode).unwrap_or_default(),
                     error,
                 ])
                 .inc();

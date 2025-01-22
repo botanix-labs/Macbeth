@@ -3,7 +3,7 @@
 use reth_codecs::{add_arbitrary_tests, Compact};
 use reth_primitives::{BlockNumber, B256};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 /// A snapshot sync id.
 pub type SnapshotSyncId = u64;
@@ -147,7 +147,7 @@ impl Snapshot {
     /// Adds a block ID to the snapshot if it doesn't already exist.
     /// Returns `true` if the block ID was added, `false` if it was already present.
     pub fn add_block_id_if_not_exists(&mut self, block_id: BlockNumber) -> bool {
-        let mut block_ids_set: HashSet<u64> = self.block_ids.iter().copied().collect();
+        let mut block_ids_set: BTreeSet<u64> = self.block_ids.iter().copied().collect();
         if block_ids_set.insert(block_id) {
             self.block_ids.push(block_id);
             true
@@ -159,7 +159,7 @@ impl Snapshot {
     /// Adds a chunk ID to the snapshot if it doesn't already exist.
     /// Returns `true` if the block ID was added, `false` if it was already present.
     pub fn add_chunk_id_if_not_exists(&mut self, chunk_id: ChunkId) -> bool {
-        let mut chunk_ids_set: HashSet<u64> = self.chunk_ids.iter().copied().collect();
+        let mut chunk_ids_set: BTreeSet<u64> = self.chunk_ids.iter().copied().collect();
         if chunk_ids_set.insert(chunk_id) {
             self.chunk_ids.push(chunk_id);
             true
@@ -224,8 +224,6 @@ pub struct SnapshotSync {
     last_applied_chunk_index: u64,
     /// The snapshot hash
     snapshot_hash: B256,
-    /// The combined snapshot data
-    data: Vec<u8>,
     /// The application-specific snapshot format
     format: u64,
 }
@@ -233,14 +231,7 @@ pub struct SnapshotSync {
 impl SnapshotSync {
     /// Creates a new snapshot sync by given height and block_hash
     pub fn new(height: u64, snapshot_hash: B256, format: u64, total_chunks: u64) -> Self {
-        Self {
-            height,
-            total_chunks,
-            last_applied_chunk_index: 0,
-            snapshot_hash,
-            data: Vec::new(),
-            format,
-        }
+        Self { height, total_chunks, last_applied_chunk_index: 0, snapshot_hash, format }
     }
 
     /// Sets the snapshot height.
@@ -256,16 +247,6 @@ impl SnapshotSync {
     /// Sets the last_applied_chunk_index.
     pub fn set_last_applied_chunk_index(&mut self, last_applied_chunk_index: u64) {
         self.last_applied_chunk_index = last_applied_chunk_index;
-    }
-
-    /// appends chunk data.
-    pub fn append_chunk_data(&mut self, data: Vec<u8>) {
-        self.data.extend(data);
-    }
-
-    /// appends chunk data.
-    pub fn is_assembled(&self) -> bool {
-        self.last_applied_chunk_index == self.total_chunks - 1
     }
 
     /// Return the height.
@@ -291,11 +272,6 @@ impl SnapshotSync {
     /// Return the format.
     pub const fn format(&self) -> u64 {
         self.format
-    }
-
-    /// Return the data of this snapshot sync.
-    pub fn data(&self) -> &[u8] {
-        self.data.as_slice()
     }
 }
 
