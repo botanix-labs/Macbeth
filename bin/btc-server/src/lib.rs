@@ -1,10 +1,14 @@
 pub mod extended_client;
 pub mod wallet;
+pub mod pegout_id;
+
 pub(crate) mod http;
 pub(crate) mod telemetry;
 pub(crate) mod util;
 pub(crate) mod database;
 pub(crate) mod pegout_scheduler;
+
+
 pub(crate) mod coordinator;
 pub(crate) mod signer;
 pub(crate) mod config;

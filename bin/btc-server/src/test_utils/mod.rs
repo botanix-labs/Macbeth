@@ -15,7 +15,8 @@ use tempfile::TempDir;
 
 use crate::{
     database,
-    pegout_scheduler::{pegout_id::PegoutId, PegoutRequest},
+    pegout_id::PegoutId,
+    pegout_scheduler::PegoutRequest,
 };
 
 #[macro_export]

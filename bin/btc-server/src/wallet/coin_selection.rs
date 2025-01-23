@@ -9,7 +9,7 @@ use bitcoin::{
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::{database::Utxo, pegout_scheduler::pegout_id::PegoutId, util::OutPointExt};
+use crate::{database::Utxo, pegout_id::PegoutId, util::OutPointExt};
 
 const TAPROOT_OUTPUT_DUST_THRESHOLD: Amount = Amount::from_sat(330);
 

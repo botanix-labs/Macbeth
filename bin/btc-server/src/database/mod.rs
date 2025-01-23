@@ -6,10 +6,10 @@ use std::{
 };
 
 use crate::{
-    pegout_scheduler::pegout_id::PegoutId,
     pegout_scheduler::{self},
     rpc::{OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut, Utxo as RpcUtxo},
     util::{parse_eth_address, OutPointExt},
+    pegout_id::PegoutId,
 };
 use bitcoin::{
     consensus::encode::Encodable,
@@ -806,7 +806,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::pegout_scheduler::pegout_id::PegoutId;
+    use crate::pegout_id::PegoutId;
 
     #[test]
     fn can_save_and_read_pegout_reqs() {
