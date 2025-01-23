@@ -8,14 +8,13 @@ use bitcoin::{
 };
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
-    pegout_id::PegoutId,
+    pegout_id::PegoutId, wallet::psbt::PsbtOutputExt,
 };
 use client::{
     MakeTxRequest, NotifyPeginsRequest, NotifyPegoutsRequest, PendingPegout, ScriptBuf,
     SigningPackage, TxOut, Utxo,
 };
 use futures_util::Future;
-use reth_btc_wallet::psbt::PsbtOutputExt;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{
     botanix::{
@@ -511,6 +510,7 @@ mod tests {
         transaction::Version,
         FeeRate, OutPoint, Sequence, Transaction, TxIn, Txid,
     };
+    use btcserverlib::wallet::psbt::PsbtOutputExt;
     use rand::{thread_rng, Rng, RngCore};
     use reth_primitives::{
         address, b256, bytes, hex_literal::hex, Bytes, Header, Log, LogData, Receipt, TxHash,

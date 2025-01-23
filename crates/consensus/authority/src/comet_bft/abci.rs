@@ -606,8 +606,8 @@ where
         };
         let reader_inner: Vec<u8> =
             vec![non_deterministic_data_bytes].into_iter().flatten().collect();
-        let mut reader = &mut io::Cursor::new(reader_inner);
-        let non_deterministic_data = match NonDeterministicData::deserialize(&mut reader) {
+        let reader = &mut io::Cursor::new(reader_inner);
+        let non_deterministic_data = match NonDeterministicData::deserialize(reader) {
             Ok(data) => data,
             Err(e) => {
                 warn!("Error deserializing non-deterministic data: {:?}", e);
@@ -708,8 +708,8 @@ where
                 };
                 let reader_inner: Vec<u8> =
                     vec![non_deterministic_data_bytes].into_iter().flatten().collect();
-                let mut reader = &mut io::Cursor::new(reader_inner);
-                let non_deterministic_data = match NonDeterministicData::deserialize(&mut reader) {
+                let reader = &mut io::Cursor::new(reader_inner);
+                let non_deterministic_data = match NonDeterministicData::deserialize(reader) {
                     Ok(data) => data,
                     Err(e) => panic!("Error deserializing non-deterministic data: {:?}", e),
                 };
@@ -1158,8 +1158,8 @@ mod tests {
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
-        let mut reader = &mut io::Cursor::new(reader_inner);
-        let response_ndd = NonDeterministicData::deserialize(&mut reader).expect("to deserialize");
+        let reader = &mut io::Cursor::new(reader_inner);
+        let response_ndd = NonDeterministicData::deserialize(reader).expect("to deserialize");
 
         assert_eq!(response.txs.len(), 1);
         assert_eq!(response_ndd, expected_ndd);
@@ -1194,8 +1194,8 @@ mod tests {
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
-        let mut reader = &mut io::Cursor::new(reader_inner);
-        let response_ndd = NonDeterministicData::deserialize(&mut reader).expect("to deserialize");
+        let reader = &mut io::Cursor::new(reader_inner);
+        let response_ndd = NonDeterministicData::deserialize(reader).expect("to deserialize");
 
         // todo: deserialize tx
 

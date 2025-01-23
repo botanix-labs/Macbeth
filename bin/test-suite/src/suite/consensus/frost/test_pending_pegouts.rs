@@ -131,7 +131,7 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
         let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
 
         let pk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest).public_key(&secp);
-        let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest).unwrap().script_pubkey();
+        let spk = pk.p2wpkh_script_code().expect("valid pk");
 
         send_pegout_notification(&mut clients[0], amount, height, pegout_id, spk.clone()).await?;
         pending_pegouts_sent.push((spk, pegout_id, amount, height));

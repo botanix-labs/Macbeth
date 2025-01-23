@@ -201,8 +201,7 @@ pub async fn test_round1_then_new_signing_session(
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
-
-    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest)?.script_pubkey();
+    let spk = pk.p2wpkh_script_code().expect("valid pk");
 
     // Notify some pending pegouts
     let amount = bitcoin::Amount::from_sat(100_000);

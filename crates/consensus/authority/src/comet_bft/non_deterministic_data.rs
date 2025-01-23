@@ -51,7 +51,7 @@ impl NonDeterministicData {
     }
 
     pub(crate) fn deserialize(
-        reader: &mut impl io::Read,
+        reader: &mut impl bitcoin::io::Read,
     ) -> Result<Self, NonDeterministicDataDeserializeError> {
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
 

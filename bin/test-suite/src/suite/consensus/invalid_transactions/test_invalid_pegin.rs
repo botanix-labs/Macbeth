@@ -3,7 +3,6 @@ use std::{str::FromStr, time::Duration};
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid};
 use bitcoincore_rpc::RpcApi;
 use ethers::{prelude::Provider, providers::Http};
-use reth_btc_wallet::address::EthAddress;
 use reth_primitives::botanix::{peg_contract::PeginMeta, utils::AmountExt};
 
 use reth_primitives::Address;
@@ -106,7 +105,7 @@ pub async fn invalid_pegin(
     it_info_print!("Gateway Data", gateway_address_response);
     it_info_print!("Gateway Data Pub key", gateway_address_response.aggregate_public_key);
 
-    let eth_account = Address::from_slice(eth_destination.as_slice());
+    let eth_account = Address::from_slice(eth_destination.as_bytes());
     let (vout, pegin_output) = pegin_tx
         .output
         .iter()

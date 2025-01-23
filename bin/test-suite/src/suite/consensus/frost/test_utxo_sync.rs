@@ -160,6 +160,6 @@ pub async fn utxo_sync(
     // Lets compare the merkel root of the utxo set from the btc server with the latest block header
     let latest_extra_data = poa_eth_clients[0].get_latest_block().await.unwrap().extra_data;
 
-    let _latest_edh = ExtraDataHeader::deserialize(&mut latest_extra_data.reader()).unwrap();
+    let _latest_edh = ExtraDataHeader::deserialize(&mut latest_extra_data.to_vec().as_slice()).unwrap();
     Ok(())
 }

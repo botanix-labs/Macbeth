@@ -1,6 +1,5 @@
 [package]
 name = "reth-btc-wallet"
-# IMPORTANT do not using workspace deps as btc-server dockerfile will fail to build
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.70"
@@ -10,16 +9,11 @@ exclude = [".github/"]
 
 [dependencies]
 anyhow = "1.0.71"
-bitcoin = { version = "0.31.0", features = ["base64", "rand", "serde"] }
-
-bitcoincore-rpc = "0.18.0"
+bitcoin = { workspace = true }
+bitcoincore-rpc = { workspace = true }
 ethers = "2.0.10"
 
-frost-secp256k1-tr = { git = "https://github.com/0xBEEFCAF3/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
-    "serde",
-    "serialization",
-] }
-
+frost-secp256k1-tr = { workspace = true }
 hex = "0.4.3"
 lazy_static = "1.4.0"
 miniscript = "11.0.0"

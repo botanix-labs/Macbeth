@@ -6,7 +6,7 @@ use ethers::{
     prelude::Provider,
     providers::{Http, PendingTransaction},
 };
-use reth_btc_wallet::address::EthAddress;
+
 use reth_primitives::botanix::{
     mint_validation::MINT_TOPIC,
     peg_contract::{PeginData, PeginMeta},
@@ -163,7 +163,7 @@ pub async fn batch_pegins(
         let tx_res = bitcoind_rpc.get_transaction(&txid, None).expect("valid tx");
         assert!(tx_res.info.confirmations > 1);
         let pegin_tx = tx_res.transaction().expect("valid tx");
-        let eth_account = Address::from_slice(eth_address.as_slice());
+        let eth_account = Address::from_slice(eth_address.as_bytes());
         let (vout, pegin_output) = pegin_tx
             .output
             .iter()

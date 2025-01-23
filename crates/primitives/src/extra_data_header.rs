@@ -52,7 +52,7 @@ impl Default for ExtraDataHeader {
 pub enum ExtraDataHeaderDeserializeError {
     #[error("I/O error")]
     /// I/O error
-    Io(#[from] io::Error),
+    Io(#[from] bitcoin::io::Error),
     #[error("invalid data format")]
     /// Invalid data format
     Decoding(#[from] encode::Error),
@@ -94,7 +94,7 @@ impl ExtraDataHeader {
     /// Serialize the extra data header without the signature
     pub fn encode_into_without_signature(
         &self,
-        writer: &mut impl io::Write,
+        writer: &mut impl bitcoin::io::Write,
     ) -> Result<(), io::Error> {
         self.version.consensus_encode(writer)?;
         self.chain_version.consensus_encode(writer)?;
@@ -107,7 +107,7 @@ impl ExtraDataHeader {
     }
 
     /// Serialize the extra data header into the writer.
-    pub fn encode_into(&self, writer: &mut impl io::Write) -> Result<(), io::Error> {
+    pub fn encode_into(&self, writer: &mut impl bitcoin::io::Write) -> Result<(), io::Error> {
         self.encode_into_without_signature(writer)?;
         Ok(())
     }
@@ -121,7 +121,7 @@ impl ExtraDataHeader {
 
     /// Deserialize the extra data header
     pub fn deserialize(
-        reader: &mut impl io::Read,
+        reader: &mut impl bitcoin::io::Read,
     ) -> Result<Self, ExtraDataHeaderDeserializeError> {
         let version = u32::consensus_decode(reader)?;
         // in the future you can deserialize specific versions of edh based on the version
