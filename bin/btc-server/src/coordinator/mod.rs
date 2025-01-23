@@ -10,7 +10,7 @@ use crate::wallet::{
 };
 use crate::{
     database::{Error as DbError, Utxo},
-    pegout_scheduler::pegout_id::PegoutId,
+    pegout_id::PegoutId,
     util::{validate_psbt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
 };
 use bitcoin::{

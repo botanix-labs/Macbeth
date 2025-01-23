@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     database::{self, Db, Utxo},
-    pegout_scheduler::pegout_id::PegoutId,
+    pegout_id::PegoutId,
 };
 use thiserror::Error;
 

@@ -22,13 +22,11 @@ use bitcoin::{
 };
 use bitcoincore_rpc::RpcApi;
 use log::{debug, error, info, trace, warn};
-use pegout_id::PegoutId;
+use crate::pegout_id::PegoutId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{database, rpc};
-
-pub mod pegout_id;
 
 macro_rules! print_safe {
     ($e:expr) => {
