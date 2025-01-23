@@ -4,10 +4,10 @@ use std::{fmt, str::FromStr};
 
 use bitcoincore_rpc::RpcApi;
 use frost_secp256k1_tr::{self as frost};
-use reth_btc_wallet::{
-    address::generate_tweaked_public_key,
-    bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory},
-};
+use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+
+use btcserverlib::wallet::address::{generate_taproot_address, generate_tweaked_public_key};
+
 use reth_primitives::{header_ext::HeaderExt, U256};
 use reth_storage_api::BlockReaderIdExt;
 use thiserror::Error;
@@ -61,9 +61,9 @@ pub enum GatewayAddressRPCError {
     /// Failed to deserialize aggregated public key
     #[error("Frost deserialization failed {0}")]
     FailedToDeserializeAggregatedPublicKey(#[from] frost::Error),
-    /// Failed to convert to secp pk
-    #[error("Failed to convert to secp pk {0}")]
-    FailedToConvertToSecpPk(#[from] reth_btc_wallet::util::VerifyingKeyExtError),
+    /// Failed to tweak the public key
+    #[error("Failed to tweak the public key")]
+    FailedToTweakPublicKey,
 }
 
 /// Errors from get merkle proof RPC endpoint
@@ -178,11 +178,10 @@ impl Botanix {
             .aggregated_public_key;
 
         let vpk = frost::VerifyingKey::deserialize(&agg_pk.serialize())?;
-        let tweaked_pk = generate_tweaked_public_key(&vpk, &eth_address_bytes)?;
-        let address = reth_btc_wallet::address::generate_taproot_address(
-            &tweaked_pk,
-            self.botanix_rpc_config.bitcoin_network,
-        );
+        let tweaked_pk = generate_tweaked_public_key(&vpk, &eth_address_bytes)
+            .map_err(|_| GatewayAddressRPCError::FailedToTweakPublicKey)?;
+        let address =
+            generate_taproot_address(&tweaked_pk, self.botanix_rpc_config.bitcoin_network);
 
         Ok((address, agg_pk))
     }

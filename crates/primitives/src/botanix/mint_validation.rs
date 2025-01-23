@@ -423,7 +423,7 @@ mod test {
         assert_eq!(
             pegout_data.destination,
             bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
-                .expect("valid address")
+                .expect("valid address").assume_checked()
         );
         assert_eq!(pegout_data.network, bitcoin::Network::Regtest);
     }

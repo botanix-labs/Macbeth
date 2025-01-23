@@ -16,9 +16,12 @@ workspace = true
 # ethereum
 alloy-sol-types = { workspace = true }
 
-## Bitcoin
+# Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
+
+# Bitcoin signing server
+btc-server = { path = "../../../bin/btc-server"}
 
 derive_more = { workspace = true }
 

@@ -10,10 +10,12 @@ use bitcoin::{
     merkle_tree::PartialMerkleTree,
     TxOut,
 };
-use btcserverlib::pegout_id::PegoutId;
 use ethers::types::U256;
 use frost_secp256k1_tr as frost;
-use reth_btc_wallet::address::{generate_taproot_scriptpubkey, generate_tweaked_public_key};
+use btcserverlib::{
+    wallet::address::{generate_taproot_scriptpubkey, generate_tweaked_public_key},
+    pegout_id::PegoutId,
+};
 use secp256k1::PublicKey;
 use thiserror::Error;
 
@@ -239,9 +241,6 @@ pub enum PegoutDataError {
     /// Invalid pegout proof
     #[error("invalid pegout proof")]
     Invalid(&'static str),
-    /// Invalid bitcoin address
-    #[error("invalid bitcoin address")]
-    InvalidAddress(bitcoin::address::Error),
 }
 
 /// Pegout data structure

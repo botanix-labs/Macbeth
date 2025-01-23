@@ -7,7 +7,6 @@ use ethers::{
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
-use reth_btc_wallet::address::EthAddress;
 use reth_primitives::botanix::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
     peg_contract::{PeginData, PeginMeta, PegoutData},
@@ -114,7 +113,7 @@ pub async fn frost_e2e_stable(
     it_info_print!("Gateway Data", gateway_address_response);
     it_info_print!("Gateway Data Pub key", gateway_address_response.aggregate_public_key);
 
-    let eth_account = Address::from_slice(eth_destination.as_slice());
+    let eth_account = Address::from_slice(eth_destination.as_bytes());
     let (vout, pegin_output) = pegin_tx
         .output
         .iter()

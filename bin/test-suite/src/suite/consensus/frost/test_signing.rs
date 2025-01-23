@@ -1,7 +1,6 @@
 use std::{collections::HashSet, str::FromStr};
 
-use bitcoin::{consensus::Encodable, Address};
-use bitcoin_hashes::Hash;
+use bitcoin::{consensus::Encodable, hashes::Hash, Address};
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::pegout_id::PegoutId;
 use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
@@ -308,8 +307,7 @@ pub async fn test_many_inputs_signing(
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
-
-    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest)?.script_pubkey();
+    let spk = pk.p2wpkh_script_code().expect("valid pk");
 
     // Calling do_signing should fail as we have no pending pegouts
     let err_res = do_signing(&mut clients, &bitcoind, &[0u8; 32])
@@ -356,7 +354,7 @@ pub async fn test_many_inputs_signing(
         // get new a key
         let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
         let pk = sk.public_key(&secp);
-        let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest)?.script_pubkey();
+        let spk = pk.p2wpkh_script_code().expect("valid pk");
 
         pending_pegouts.push((pegout_id, amount, spk.clone(), pegout_id));
     }
@@ -377,9 +375,9 @@ pub async fn test_many_inputs_signing(
 
     let final_tx = do_signing(&mut clients, &bitcoind, &[2u8; 32]).await?;
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
-    let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None).expect("valid tx");
+    let tx_res = bitcoind.get_raw_transaction(&final_tx.compute_txid(), None).expect("valid tx");
 
-    assert_eq!(tx_res.txid(), final_tx.txid());
+    assert_eq!(tx_res.compute_txid(), final_tx.compute_txid());
     assert!(final_tx.input.len() > 1);
     // 5 pegout outputs + 1 change output
     assert_eq!(final_tx.output.len(), 6);
@@ -413,8 +411,10 @@ pub async fn test_many_inputs_signing(
     let deep_block_hash = bitcoind.get_block_hash(deep_tip).unwrap();
 
     for c in clients.iter_mut() {
+        let mut cbh = vec![];
+        deep_block_hash.consensus_encode(&mut cbh)?;
         c.tx_index_new_checkpoint(tonic::Request::new(client::SyncTxIndexRequest {
-            checkpoint_block_hash: deep_block_hash.to_byte_array().to_vec(),
+            checkpoint_block_hash: cbh,
         }))
         .await
         .expect("valid checkpoint");
@@ -460,7 +460,7 @@ pub async fn test_many_inputs_signing(
     // get new a key
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
-    let spk = bitcoin::Address::p2wpkh(&pk, bitcoin::Network::Regtest)?.script_pubkey();
+    let spk = pk.p2wpkh_script_code().expect("valid pk");
 
     for c in clients.iter_mut() {
         send_pegout_notification(c, rand_amount, 1, pegout_id, spk.clone()).await?;
@@ -470,9 +470,9 @@ pub async fn test_many_inputs_signing(
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
     it_info_print!("final_tx: {:?}", final_tx);
 
-    let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None)?;
+    let tx_res = bitcoind.get_raw_transaction(&final_tx.compute_txid(), None)?;
     let tx_ots = final_tx.input.iter().map(|i| i.previous_output).collect::<Vec<_>>();
-    assert_eq!(tx_res.txid(), final_tx.txid());
+    assert_eq!(tx_res.compute_txid(), final_tx.compute_txid());
 
     // Should contain at least one of the change utxos
     let found_match = change_ots.iter().any(|change_ot| tx_ots.contains(change_ot));
