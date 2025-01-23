@@ -10,7 +10,7 @@ use crate::{
     Storage,
 };
 
-use bitcoin_hashes::Hash;
+use bitcoin::consensus::Encodable;
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::SyncTxIndexRequest;
 use reth_blockchain_tree::BlockchainTreeEngine;
@@ -177,7 +177,7 @@ where
 
         if prost_utxos.utxos.is_empty() {
             warn!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Received empty utxos from btc server");
-            return Ok(vec![])
+            return Ok(vec![]);
         }
 
         // serialize the prost message
@@ -205,7 +205,7 @@ where
 
         if prost_tracked_txs.tracked_txs.is_empty() {
             warn!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Received empty tracked txs from btc server");
-            return Ok(vec![])
+            return Ok(vec![]);
         }
 
         // serialize the prost message
@@ -233,7 +233,7 @@ where
 
         if prost_pending_pegouts.pending_pegouts.is_empty() {
             warn!(target: "consensus::authority::pending_pegouts_syncer::get_pending_pegouts", "Received empty pending pegouts from btc server");
-            return Ok(vec![])
+            return Ok(vec![]);
         }
 
         // serialize the prost message
@@ -252,9 +252,9 @@ where
     }
 
     fn has_wallet_state(response: &WalletStateResponse) -> bool {
-        !response.utxos.is_empty() ||
-            !response.tracked_txs.is_empty() ||
-            !response.pending_pegouts.is_empty()
+        !response.utxos.is_empty()
+            || !response.tracked_txs.is_empty()
+            || !response.pending_pegouts.is_empty()
     }
 
     pub async fn start_task(&mut self) {
@@ -298,9 +298,9 @@ where
                 authority_index_to_frost_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
             // start dkg only when we are the coordinator+ initial state + no public key
-            if is_coordinator &&
-                !self.dkg_state_machine.get_dkg_state().is_running() &&
-                self.dkg_state_machine.get_public_key().await.is_err()
+            if is_coordinator
+                && !self.dkg_state_machine.get_dkg_state().is_running()
+                && self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
             }
@@ -316,18 +316,26 @@ where
                             .unwrap()
                             .bitcoin_block_hash;
 
-                        match self
-                            .btc_server
-                            .tx_index_new_checkpoint(SyncTxIndexRequest {
-                                checkpoint_block_hash: cp_block_hash.to_byte_array().to_vec(),
-                            })
-                            .await
-                        {
+                        let mut block_hash_writer = vec![];
+                        match cp_block_hash.consensus_encode(&mut block_hash_writer) {
                             Ok(_) => {
-                                info!(target: "consensus::authority::frost_task::start_task", "Sent checkpoint to btc server");
+                                match self
+                                    .btc_server
+                                    .tx_index_new_checkpoint(SyncTxIndexRequest {
+                                        checkpoint_block_hash: block_hash_writer,
+                                    })
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        info!(target: "consensus::authority::frost_task::start_task", "Sent checkpoint to btc server");
+                                    }
+                                    Err(e) => {
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error sending checkpoint to btc server: {}", e);
+                                    }
+                                }
                             }
                             Err(e) => {
-                                error!(target: "consensus::authority::frost_task::start_task", "Error sending checkpoint to btc server: {}", e);
+                                error!(target: "consensus::authority::frost_task::start_task", "Error encoding checkpoint block hash: {}", e);
                             }
                         }
 

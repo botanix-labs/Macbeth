@@ -42,7 +42,7 @@ use std::{
 use crate::config::Error as ConfigError;
 use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
-use bitcoin::{psbt::PsbtParseError, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut};
+use bitcoin::{consensus::Decodable, psbt::PsbtParseError, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut};
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use config::Config;
@@ -490,12 +490,12 @@ where
         request: tonic::Request<rpc::SyncTxIndexRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&request)?;
-        let checkpoint =
-            bitcoin::BlockHash::from_slice(request.into_inner().checkpoint_block_hash.as_slice())
-                .map_err(|e| {
-                error!("Failed to parse checkpoint hash: {}", e);
-                badarg!("Failed to parse checkpoint hash: {}", e)
-            })?;
+        let inner = request.into_inner();
+        let reader = &mut inner.checkpoint_block_hash.as_slice();
+        let checkpoint = bitcoin::BlockHash::consensus_decode(reader).map_err(|e| {
+            error!("Failed to parse checkpoint hash: {}", e);
+            badarg!("Failed to parse checkpoint hash: {}", e)
+        })?;
 
         self.sync_pegout_scheduler(checkpoint).await.to_status()?;
 
