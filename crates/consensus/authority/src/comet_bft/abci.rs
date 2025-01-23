@@ -22,7 +22,8 @@ use reth_evm::execute::BlockExecutorProvider;
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, SealedBlock, TransactionSigned,
+    botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
+    SealedBlock, TransactionSigned,
 };
 use reth_provider::{
     providers::{BlockchainProvider2, ConsistentDbView},
@@ -667,7 +668,9 @@ where
                         exec_results.state,
                         exec_results.receipts.into(),
                         block_number,
-                        // TODO: pull requests from the block exec outcome
+                        // an empty vec since these requests are for the consensus layer (ie
+                        // validator withdrawals) which have no meaning in
+                        // our context
                         vec![],
                     ),
                     trie_updates: None,
@@ -826,14 +829,18 @@ where
     fn commit(&self) -> ResponseCommit {
         info!("commit request received");
         let candidate_blocks = self.block_cache.write().expect("to get write lock");
-        // We want to explicitly panic since we cannot get the lock and send the finalize message
-        let (cbft_block_hash, sealed_block_with_peg) =
+        // We want to explicitly panic since we cannot get the lock and send the commit message
+        let (cbft_block_hash, sealed_block_with_context) =
             candidate_blocks.peek_newest().expect("to have block");
 
-        // We want to explicitly panic if we cannot send the finalize message
+        // need to clone since `sealed_block_with_context` is behind a lock
+        let sealed_block_with_context = sealed_block_with_context.clone();
+        let block_height = sealed_block_with_context.sealed_block_with_peg.block().number;
+        let sealed_block_with_peg_binding = sealed_block_with_context.sealed_block_with_peg.clone();
+        let sealed_block_with_senders = sealed_block_with_peg_binding.block();
+
+        // We want to explicitly panic if we cannot send the commit message
         let driver_tx = self.driver_tx.clone();
-        let sealed_block_with_context = sealed_block_with_peg.clone();
-        let cbft_block_hash = cbft_block_hash.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
             if let Err(e) =
                 driver_tx.send(ABCIDriverMessage::CommitBlock(sealed_block_with_context)).await
@@ -842,8 +849,18 @@ where
             }
         }));
 
-        info!("Block finalized: {:?}", cbft_block_hash);
+        let cbft_block_hash = cbft_block_hash.clone();
+        info!("Block committed: {:?}", cbft_block_hash);
         self.metrics.commet_committed_blocks.increment(1);
+
+        // Rpc node needs to store aggregate public key from block height 1
+        if !self.is_fed_node && block_height == 1 {
+            let edh =
+                sealed_block_with_senders.deserialize_extra_data_header().expect("edh to exist");
+
+            let mut storage = self.storage.inner.blocking_write();
+            storage.aggregate_public_key = Some(edh.aggregated_public_key);
+        }
 
         ResponseCommit::default()
     }
@@ -900,6 +917,18 @@ where
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
                     ABCIDriverMessage::CommitBlock(sealed_block_with_context) => {
+<<<<<<< HEAD
+=======
+                        let consistent_db_view =
+                            ConsistentDbView::new_with_latest_tip(self.database_provider.clone())?;
+                        let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
+                        let (_, trie_updates) =
+                            ParallelStateRoot::new(consistent_db_view, hashed_state.clone())
+                                .incremental_root_with_updates()
+                                .map(|(root, updates)| (root, Some(updates)))
+                                .map_err(ProviderError::from)?;
+
+>>>>>>> 21cc5d57c (fix(abci): update rpc storage with agg_pk in commit() instead of driver)
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
@@ -935,7 +964,6 @@ where
                         self.blockchain_provider_2
                             .on_forkchoice_update_received(&ForkchoiceState::default());
 
-                        // print block number
                         info!("Block height from sealed block: {:?}", block_height);
                         self.blockchain_provider_2.set_canonical_head(new_header.clone());
                         self.blockchain_provider_2.set_safe(new_header.clone());
