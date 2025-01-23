@@ -14,11 +14,6 @@
 //! A [Consensus] implementation of Clique Proof of Authority (POA)
 //! that authoritymatically seals blocks.
 //!
-//! The Mining task polls a [MiningMode], and will return a list of transactions that are ready to
-//! be mined.
-//!
-//! These downloaders poll the miner, assemble the block, and return transactions that are ready to
-//! be mined.
 
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
@@ -48,7 +43,8 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
 
 mod builder;
-mod comet_bft;
+/// Comet BFT abci and consensus driver
+pub mod comet_bft;
 
 pub use comet_bft::light_client::LightCBFTClientBuilder;
 mod compressor;
@@ -351,7 +347,6 @@ pub(crate) struct Storage<EF, BF, DB> {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
-#[allow(dead_code)]
 impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
     /// Create a new instance of the storage
     #[allow(clippy::too_many_arguments)]

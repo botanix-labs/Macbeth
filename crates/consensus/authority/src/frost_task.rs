@@ -13,7 +13,6 @@ use crate::{
 use bitcoin::consensus::Encodable;
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::SyncTxIndexRequest;
-use reth_blockchain_tree::BlockchainTreeEngine;
 use reth_chainspec::ChainSpec;
 use reth_network::{
     frost::{
@@ -25,10 +24,10 @@ use reth_network::{
 };
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateNotification, StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
-use tokio::sync::{broadcast::Receiver as BroadcastReceiver, oneshot::error::RecvError};
+use tokio::sync::oneshot::error::RecvError;
 use tracing::{debug, error, info, warn};
 
 #[allow(dead_code)]
@@ -77,7 +76,7 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     /// btc server client
     btc_server: BtcServerClient,
     /// Channel to receive canon state notifications
-    canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
+    canon_state_notification_receiver: tokio::sync::broadcast::Receiver<CanonStateNotification>,
     /// Authority Metrics
     metrics: Arc<AuthorityMetrics>,
 }
@@ -87,12 +86,7 @@ impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     BF: Clone,
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
     EF: Clone,
     Source: RandomSource,
     BtcServerClient: BtcServerExtendedApi + Clone,
@@ -108,7 +102,7 @@ where
         storage: Storage<EF, BF, DB>,
         compressor: Compressor,
         random_source_provider: Source,
-        canon_state_notification_receiver: BroadcastReceiver<CanonStateNotification>,
+        canon_state_notification_receiver: tokio::sync::broadcast::Receiver<CanonStateNotification>,
         metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len() - 1);
@@ -306,16 +300,23 @@ where
             }
 
             // Receive canon state notifications
-            while let Ok(notification) = self.canon_state_notification_receiver.try_recv() {
+            while let Ok(ref notification) = self.canon_state_notification_receiver.try_recv() {
+                info!(target: "consensus::authority::frost_task::start_task", "canon state notification received {:?}", notification);
                 match notification {
                     CanonStateNotification::Commit { new } => {
                         let tip = new.tip();
-                        let cp_block_hash = tip
+                        // TODO(armins) make this block of code more readable by removing all the matches
+                        let edh = match tip
                             .header()
                             .deserialize_extra_data_header()
-                            .unwrap()
-                            .bitcoin_block_hash;
-
+                        {
+                            Ok(edh) => edh,
+                            Err(e) => {
+                                error!(target: "consensus::authority::frost_task::start_task", "Error deserializing extra data header: {}", e);
+                                continue;
+                            }
+                        };
+                        let cp_block_hash = edh.bitcoin_block_hash;
                         let mut block_hash_writer = vec![];
                         match cp_block_hash.consensus_encode(&mut block_hash_writer) {
                             Ok(_) => {
@@ -348,21 +349,10 @@ where
                                 continue;
                             } else {
                                 // create psbt and send init signing message
-                                let bitcoin_checkpoint = match tip
-                                    .header
-                                    .header()
-                                    .deserialize_extra_data_header()
-                                {
-                                    Ok(edh) => edh.bitcoin_block_hash,
-                                    Err(e) => {
-                                        error!(target: "consensus::authority", ?e, "Failed to deserialize extra data header in frost task");
-                                        continue;
-                                    }
-                                };
                                 match crate::utils::get_psbt(
                                     &mut self.btc_server,
                                     &tip.hash(),
-                                    bitcoin_checkpoint,
+                                    cp_block_hash,
                                 )
                                 .await
                                 {
@@ -419,7 +409,6 @@ where
                     }
                 }
             }
-
             // receive over a channel message from other peers and update our state machine
             while let Ok(message_context) = peer_messages_rx.try_recv() {
                 let peer_message = message_context.message;

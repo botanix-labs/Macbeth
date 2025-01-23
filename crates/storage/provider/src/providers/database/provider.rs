@@ -65,7 +65,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// A [`DatabaseProvider`] that holds a read-only database transaction.
 pub type DatabaseProviderRO<DB> = DatabaseProvider<<DB as Database>::TX>;

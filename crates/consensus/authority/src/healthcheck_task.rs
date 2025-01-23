@@ -22,7 +22,7 @@ use tracing::{error, info, warn};
 
 const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 45;
 
-pub struct HealthcheckTask<EF, BF, DB, ToFrostMan> {
+pub(crate) struct HealthcheckTask<EF, BF, DB, ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
@@ -61,7 +61,7 @@ where
         }
     }
 
-    pub async fn start_task(&mut self) {
+    pub(crate) async fn start_task(&mut self) {
         info!(target: "HealthcheckTask::start_task", "Starting HealthcheckTask");
 
         // get all authority peers in the federation (at this point we must be connected to all of

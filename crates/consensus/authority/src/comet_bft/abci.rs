@@ -1,3 +1,9 @@
+use alloy_rpc_types_engine::ForkchoiceState;
+use reth_chain_state::ExecutedBlock;
+use reth_chainspec::ChainSpec;
+use reth_db::{Database, DatabaseEnv};
+use reth_provider::{BlockWriter, CanonChainTracker};
+use reth_trie::updates::TrieUpdates;
 /// The purpose of this module is to provide a bridge between the CometBFT and the EVM
 /// application state
 use std::{
@@ -6,34 +12,29 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use reth_chainspec::ChainSpec;
-use reth_db::Database;
-
 use btcserverlib::extended_client::BtcServerExtendedApi;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
-use reth_beacon_consensus::BeaconEngineMessage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::utils::unix_timestamp;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
-use reth_network::NetworkHandle;
-use reth_node_ethereum::EthEngineTypes;
 
-use reth_blockchain_tree_api::BlockchainTreeEngine;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    SealedBlock, TransactionSigned,
+    botanix::block_with_peg::SealedBlockWithPeg, Address, BlockHash, SealedBlock, TransactionSigned,
 };
 use reth_provider::{
-    BlockReaderIdExt, BlockWriter, CanonChainTracker, ProviderError, ProviderFactory,
-    StateProviderFactory,
+    providers::{BlockchainProvider2, ConsistentDbView},
+    BlockReaderIdExt, CanonStateNotification, CanonStateNotificationSender,
+    CanonStateNotifications, CanonStateSubscriptions, Chain, ExecutionOutcome, ProviderError,
+    ProviderFactory, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
+use reth_trie_parallel::parallel_root::ParallelStateRoot;
 use schnellru::{ByLength, LruMap};
 
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
@@ -51,7 +52,7 @@ use tendermint_proto::{
 };
 
 use thiserror::Error;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -77,95 +78,80 @@ const VERIFY_REJECT: i32 = 2;
 // Version
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Block with execution context
+#[derive(Clone)]
+pub struct BlockWithContext {
+    sealed_block_with_peg: SealedBlockWithPeg,
+    exec_outcome: ExecutionOutcome,
+    trie_updates: Option<TrieUpdates>,
+}
+
+/// ABCI client builder
 #[derive(Clone, Debug)]
-pub struct ABCIClientBuilder<EF, BF, DB, BtcServerClient> {
+pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     bitcoin_checkpoint: BitcoinCheckpoint,
-    network_handle: NetworkHandle,
-    btc_server: Option<BtcServerClient>,
     authority_consensus: AuthorityConsensus,
-    to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
     is_fed_node: bool,
     metrics: Arc<AuthorityMetrics>,
     task_executor: TaskExecutor,
+    abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+    provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
 }
 
-impl<EF, BF, DB, BtcServerClient> ABCIClientBuilder<EF, BF, DB, BtcServerClient>
+impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
 where
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
-    BtcServerClient: BtcServerExtendedApi + Clone + Sync + Send + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
         bitcoin_checkpoint: BitcoinCheckpoint,
-        network_handle: NetworkHandle,
-        btc_server: Option<BtcServerClient>,
         authority_consensus: AuthorityConsensus,
-        to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
         is_fed_node: bool,
         metrics: Arc<AuthorityMetrics>,
         task_executor: TaskExecutor,
+        abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Self {
         Self {
             storage,
             bitcoin_checkpoint,
-            network_handle,
-            btc_server,
             authority_consensus,
-            to_engine,
             cbft_rpc_client_factory,
             is_fed_node,
             metrics,
             task_executor,
+            abci_driver_tx,
+            provider_factory,
         }
     }
 
-    pub async fn start_server<
-        Pool: TransactionPool + Clone + 'static,
-        DatabaseRW: Database + Clone + 'static,
-    >(
+    /// Start the ABCI server
+    pub async fn start_server<Pool: TransactionPool + Clone + 'static>(
         &self,
-        database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
         task_executor: &impl TaskSpawner,
         validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
         abci_host: String,
         abci_port: u16,
     ) -> Result<(), tendermint_abci::Error> {
-        let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(100);
-
         let app = ABCIClient::new(
             self.storage.clone(),
             validator,
             tx_pool,
             self.bitcoin_checkpoint.clone(),
-            driver_tx,
+            self.abci_driver_tx.clone(),
             self.cbft_rpc_client_factory.clone(),
             self.authority_consensus.clone(),
             self.is_fed_node,
             self.metrics.clone(),
             self.task_executor.clone(),
-        );
-        let mut abci_driver = ABCIDriver::new(
-            self.storage.clone(),
-            self.cbft_rpc_client_factory.clone(),
-            self.authority_consensus.clone(),
-            self.btc_server.clone(),
-            self.network_handle.clone(),
-            driver_rx,
-            self.to_engine.clone(),
-            self.is_fed_node,
-            database_provider,
+            self.provider_factory.clone(),
         );
 
         let server_builder = ServerBuilder::default();
@@ -197,14 +183,6 @@ where
                 server.listen().expect("to start server");
             }),
         );
-        task_executor.spawn_critical(
-            "ABCI Driver",
-            Box::pin(async move {
-                if let Err(e) = abci_driver.start().await {
-                    panic!("ABCI Driver encountered a error: {:?}", e);
-                }
-            }),
-        );
         Ok(())
     }
 }
@@ -227,7 +205,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     validator: EthTransactionValidator<DB, EthPooledTransaction>,
     pool: Pool,
     bitcoin_checkpoint: BitcoinCheckpoint,
-    block_cache: Arc<RwLock<LruMap<BlockHash, SealedBlockWithPeg>>>,
+    block_cache: Arc<RwLock<LruMap<BlockHash, BlockWithContext>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     #[allow(dead_code)]
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -235,16 +213,12 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     is_fed_node: bool,
     metrics: Arc<AuthorityMetrics>,
     task_executor: TaskExecutor,
+    provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
 where
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -261,6 +235,7 @@ where
         is_fed_node: bool,
         metrics: Arc<AuthorityMetrics>,
         task_executor: TaskExecutor,
+        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Self {
         Self {
             storage,
@@ -275,6 +250,7 @@ where
             is_fed_node,
             metrics,
             task_executor,
+            provider_factory,
         }
     }
 
@@ -394,12 +370,7 @@ where
 
 impl<EF, BF, DB, Pool> Application for ABCIClient<EF, BF, DB, Pool>
 where
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonChainTracker
-        + BlockchainTreeEngine
-        + Clone
-        + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -672,6 +643,7 @@ where
             Ok((exec_results, block)) => {
                 info!("Block built successfully, resulting block hash: {:?}", block.hash_slow());
                 let block_hash = block.hash_slow();
+                let block_number = block.number;
                 info!("Block built successfully, resulting block hash: {:?}", block_hash);
                 let sealed_block_with_sender =
                     block.seal_slow().try_seal_with_senders().expect("to seal");
@@ -689,10 +661,22 @@ where
                     }
                 }
 
+                let block_with_context = BlockWithContext {
+                    sealed_block_with_peg,
+                    exec_outcome: ExecutionOutcome::new(
+                        exec_results.state,
+                        exec_results.receipts.into(),
+                        block_number,
+                        // TODO: pull requests from the block exec outcome
+                        vec![],
+                    ),
+                    trie_updates: None,
+                };
+
                 self.block_cache
                     .write()
                     .expect("to get write lock")
-                    .insert(cbft_block_hash, sealed_block_with_peg);
+                    .insert(cbft_block_hash, block_with_context);
             }
             Err(e) => {
                 error!("Error building block: {:?}", e);
@@ -713,7 +697,7 @@ where
         debug!("finalize_block request: {:?}", request);
         let cbft_block_hash = FixedBytes::<32>::from_slice(request.hash.to_vec().as_slice());
         let mut block_cache_write = self.block_cache.write().expect("should get write lock");
-        let sealed_block_with_peg = match block_cache_write.get(&cbft_block_hash) {
+        let block_with_context = match block_cache_write.get(&cbft_block_hash) {
             Some(block) => block.clone(),
             None => {
                 // No block in cache: this happens during historical (block) sync
@@ -762,6 +746,7 @@ where
                 ) {
                     Ok((exec_results, block)) => {
                         let block_hash = block.hash_slow();
+                        let block_number = block.number;
                         info!("Block built successfully, resulting block hash: {:?}", block_hash);
                         let sealed_block_with_sender =
                             block.seal_slow().try_seal_with_senders().expect("to seal");
@@ -770,10 +755,35 @@ where
                             exec_results.pegins,
                             exec_results.pegouts,
                         );
+                        let exec_outcome = ExecutionOutcome::new(
+                            exec_results.state,
+                            exec_results.receipts.into(),
+                            block_number,
+                            vec![],
+                        );
+                        let consistent_db_view =
+                            ConsistentDbView::new_with_latest_tip(self.provider_factory.clone())
+                                .expect("to get consistent db view");
+                        let hashed_state = exec_outcome.hash_state_slow();
+                        let (_, trie_updates) =
+                            match ParallelStateRoot::new(consistent_db_view, hashed_state.clone())
+                                .incremental_root_with_updates()
+                                .map(|(root, updates)| (root, Some(updates)))
+                            {
+                                Ok((root, updates)) => (root, updates),
+                                Err(e) => {
+                                    panic!("Error calculating incremental root: {:?}", e);
+                                }
+                            };
+                        let block_with_context = BlockWithContext {
+                            sealed_block_with_peg: sealed_block_with_peg.clone(),
+                            exec_outcome,
+                            trie_updates,
+                        };
 
-                        block_cache_write.insert(cbft_block_hash, sealed_block_with_peg.clone());
+                        block_cache_write.insert(cbft_block_hash, block_with_context.clone());
 
-                        sealed_block_with_peg
+                        block_with_context
                     }
                     Err(e) => panic!("Error building block in finalize block: {:?}", e),
                 }
@@ -787,7 +797,7 @@ where
             ExecTxResult { code: SUCCESS, data: non_deterministic_data_tx, ..Default::default() };
         exec_results.push(first_exec_tx_result);
 
-        for _tx in sealed_block_with_peg.block().body.iter() {
+        for _tx in block_with_context.sealed_block_with_peg.block().body.iter() {
             // https://docs.cometbft.com/v0.38/spec/abci/abci++_app_requirements#transaction-results
             exec_results.push(ExecTxResult {
                 code: SUCCESS,
@@ -801,7 +811,7 @@ where
             });
         }
 
-        let block_hash = sealed_block_with_peg.block().hash();
+        let block_hash = block_with_context.sealed_block_with_peg.block().hash();
         self.metrics.commet_finalzied_blocks.increment(1);
         ResponseFinalizeBlock {
             events: vec![],
@@ -821,18 +831,15 @@ where
             candidate_blocks.peek_newest().expect("to have block");
 
         // We want to explicitly panic if we cannot send the finalize message
-        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         let driver_tx = self.driver_tx.clone();
-        let sealed_block_with_peg = sealed_block_with_peg.clone();
+        let sealed_block_with_context = sealed_block_with_peg.clone();
         let cbft_block_hash = cbft_block_hash.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
-            if let Err(e) = driver_tx
-                .send(ABCIDriverMessage::CommitBlock((sealed_block_with_peg, cbft_block_hash, tx)))
-                .await
+            if let Err(e) =
+                driver_tx.send(ABCIDriverMessage::CommitBlock(sealed_block_with_context)).await
             {
                 error!("Error sending commit block message: {:?}", e);
             }
-            rx.await.expect("to receive");
         }));
 
         info!("Block finalized: {:?}", cbft_block_hash);
@@ -842,99 +849,108 @@ where
     }
 }
 
-#[allow(dead_code)]
-enum ABCIDriverMessage {
+/// ABCI driver message
+#[derive(Clone)]
+pub enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    CommitBlock((SealedBlockWithPeg, FixedBytes<32>, tokio::sync::oneshot::Sender<()>)),
+    CommitBlock(BlockWithContext),
+    /// Exit the driver
     Exit,
 }
 
-// The driver is mainly responsible for driving block completion and finalization
-// Once a finalize block is received the drive is responsible for
-// * Updating the canonical chain via DB
-// * Sending the finalized block to the network
-// * Sending the finalized block to the engine (FCU)
-// * Sending pegins / pegouts to the btc server
-// * Updating the [ExtraDataHeader] with the block witnesses
-#[allow(dead_code)]
-pub(crate) struct ABCIDriver<EF, BF, DB, BtcServerClient, DatabaseRW> {
-    storage: Storage<EF, BF, DB>,
-    cbft_rpc_provider: HttpCometBFTRpcClientFactory,
-    authority_consensus: AuthorityConsensus,
+/// The driver is mainly responsible for driving block completion and finalization
+/// Once a finalize block is received the drive is responsible for
+/// * Updating the canonical chain via DB
+/// * Sending pegins / pegouts to the btc server
+
+#[derive(Clone)]
+pub struct ABCIDriver<BtcServerClient, DatabaseRW> {
     btc_server: Option<BtcServerClient>,
-    network_handle: NetworkHandle,
-    driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
-    to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
-    is_fed_node: bool,
+    driver_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<ABCIDriverMessage>>>,
     database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
+    canon_state_notification_sender: CanonStateNotificationSender,
+    blockchain_provider_2: BlockchainProvider2<DatabaseRW>,
 }
 
-impl<EF, BF, DB, BtcServerClient, DatabaseRW> ABCIDriver<EF, BF, DB, BtcServerClient, DatabaseRW>
+impl<BtcServerClient, DatabaseRW> ABCIDriver<BtcServerClient, DatabaseRW>
 where
-    DB: CanonChainTracker + Clone + 'static,
-    DatabaseRW: Database + Clone + 'static,
+    DatabaseRW: Database + Clone + Send + Sync + 'static,
     BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
 {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        storage: Storage<EF, BF, DB>,
-        cbft_rpc_provider: HttpCometBFTRpcClientFactory,
-        authority_consensus: AuthorityConsensus,
+    /// Create a new ABCI drivers
+    pub fn new(
         btc_server: Option<BtcServerClient>,
-        network_handle: NetworkHandle,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
-        to_engine: UnboundedSender<BeaconEngineMessage<EthEngineTypes>>,
-        is_fed_node: bool,
         database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
+        blockchain_provider_2: BlockchainProvider2<DatabaseRW>,
     ) -> Self {
+        let (canon_state_notification_sender, _) = tokio::sync::broadcast::channel(100);
         Self {
-            storage,
-            cbft_rpc_provider,
-            authority_consensus,
             btc_server,
-            network_handle,
-            driver_rx,
-            to_engine,
-            is_fed_node,
+            driver_rx: Arc::new(Mutex::new(driver_rx)),
             database_provider,
+            canon_state_notification_sender,
+            blockchain_provider_2,
         }
     }
 
-    async fn start(&mut self) -> Result<(), Box<dyn Error>> {
+    /// Start the ABCI driver
+    pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         loop {
-            if let Some(message) = self.driver_rx.recv().await {
+            if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
-                    ABCIDriverMessage::CommitBlock((sealed_block_with_peg, _cbft_hash, tx)) => {
+                    ABCIDriverMessage::CommitBlock(sealed_block_with_context) => {
+                        let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
+                        let new_header = sealed_block_with_peg.block().header.clone();
+                        let block_height = sealed_block_with_peg.block().number;
+                        let sealed_block_with_senders = sealed_block_with_peg.block().to_owned();
+                        let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
+                        let trie_updates =
+                            sealed_block_with_context.trie_updates.expect("to have trie updates");
+                        info!("Inserting block into db: {:?}", sealed_block_with_senders.number);
+
+                        let executed_block = ExecutedBlock::new(
+                            Arc::new(sealed_block_with_senders.block.clone()),
+                            Arc::new(sealed_block_with_senders.senders.clone()),
+                            Arc::new(sealed_block_with_context.exec_outcome.clone()),
+                            Arc::new(hashed_state.clone()),
+                            Arc::new(trie_updates.clone()),
+                        );
+
                         let db_rw = self.database_provider.provider_rw().unwrap();
-                        let client = self.storage.client.clone();
-                        let sealed_block_with_senders = sealed_block_with_peg.block();
-                        let sealed_header = sealed_block_with_senders.header.clone();
+                        db_rw.append_blocks_with_state(
+                            vec![sealed_block_with_senders.clone()],
+                            sealed_block_with_context.exec_outcome.clone(),
+                            hashed_state.into_sorted(),
+                            trie_updates,
+                        )?;
 
-                        db_rw
-                            .insert_block(sealed_block_with_senders.clone())
-                            .expect("to insert block");
-                        db_rw.commit().expect("to commit");
+                        let new_chain = reth_chain_state::NewCanonicalChain::Commit {
+                            new: vec![executed_block],
+                        };
+                        self.blockchain_provider_2
+                            .canonical_in_memory_state()
+                            .update_chain(new_chain);
 
-                        // Rpc node needs to store aggregate public key from block height 1
-                        if !self.is_fed_node && sealed_block_with_senders.number == 1 {
-                            let edh = sealed_block_with_senders
-                                .deserialize_extra_data_header()
-                                .expect("edh to exist");
+                        self.blockchain_provider_2
+                            .on_forkchoice_update_received(&ForkchoiceState::default());
 
-                            let mut storage = self.storage.inner.write().await;
-                            storage.aggregate_public_key = Some(edh.aggregated_public_key);
-                        }
+                        // print block number
+                        info!("Block height from sealed block: {:?}", block_height);
+                        self.blockchain_provider_2.set_canonical_head(new_header.clone());
+                        self.blockchain_provider_2.set_safe(new_header.clone());
+                        self.blockchain_provider_2.set_finalized(new_header.clone());
 
-                        // Update canon chain tracker for rpc calls:
-                        // we need to do this manually since we're not sending a fork choice update
-                        // anymore which would update the canon chain tracker
-                        client.set_canonical_head(sealed_block_with_senders.header.clone());
-                        client.set_safe(sealed_block_with_senders.header.clone());
-                        client.set_finalized(sealed_block_with_senders.header.clone());
+                        let chain = Chain::new(
+                            vec![sealed_block_with_senders].into_iter(),
+                            sealed_block_with_context.exec_outcome.clone(),
+                            None,
+                        );
 
-                        // Annount to the network
-                        let block_to_commit = sealed_block_with_senders.block.clone().unseal();
-                        let block_height = block_to_commit.number;
+                        // TODO(armins) handle error
+                        self.canon_state_notification_sender
+                            .send(CanonStateNotification::Commit { new: Arc::new(chain) })
+                            .unwrap();
 
                         let pegins = sealed_block_with_peg
                             .pegins()
@@ -965,8 +981,6 @@ where
                                 error!("Error notifying pegouts: {:?}", e);
                             }
                         }
-
-                        tx.send(()).expect("to send");
                     }
                     ABCIDriverMessage::Exit => {
                         break;
@@ -975,6 +989,17 @@ where
             }
         }
         Ok(())
+    }
+}
+
+impl<BtcServerClient, DatabaseRW> CanonStateSubscriptions
+    for ABCIDriver<BtcServerClient, DatabaseRW>
+where
+    BtcServerClient: Send + Sync + 'static,
+    DatabaseRW: Send + Sync + 'static,
+{
+    fn subscribe_to_canonical_state(&self) -> CanonStateNotifications {
+        self.canon_state_notification_sender.subscribe()
     }
 }
 
@@ -1049,8 +1074,9 @@ mod tests {
                 .expect("static file providerto exist"),
         );
         let _ = init_genesis(factory.clone()).expect("to init genesis");
-        let client = BlockchainProvider::new(factory, Arc::new(NoopBlockchainTree::default()))
-            .expect("to create blockchain provider");
+        let client =
+            BlockchainProvider::new(factory.clone(), Arc::new(NoopBlockchainTree::default()))
+                .expect("to create blockchain provider");
 
         let storage = Storage::new(
             Vec::new(),
@@ -1095,7 +1121,6 @@ mod tests {
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
         let (driver_tx, _driver_rx) = tokio::sync::mpsc::channel(100);
-
         let abci_client = ABCIClient::new(
             storage,
             validator.validator,
@@ -1107,6 +1132,7 @@ mod tests {
             false,
             Arc::new(AuthorityMetrics::default()),
             task_executor,
+            factory,
         );
 
         abci_client
@@ -1278,9 +1304,10 @@ mod tests {
 
         // get newly made block from cache to recreate expected app hash
         let mut rw_lock = abci_client.block_cache.write().expect("should get lock");
-        let sealed_block_with_peg = rw_lock.pop_newest().expect("to have block");
-        let expected_app_hash =
-            prost::bytes::Bytes::copy_from_slice(&sealed_block_with_peg.1.block().hash().0);
+        let sealed_block_with_context = rw_lock.pop_newest().expect("to have block").1;
+        let expected_app_hash = prost::bytes::Bytes::copy_from_slice(
+            &sealed_block_with_context.sealed_block_with_peg.block().hash().0,
+        );
 
         let expected_response = ResponseFinalizeBlock {
             events: vec![],

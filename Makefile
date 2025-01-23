@@ -584,7 +584,7 @@ start-btc-server-2:
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5 \
-	--metrics-port 7001
+	--metrics-port 7000
 
 start-btc-server-3:
 	cd ./bin/btc-server && \
