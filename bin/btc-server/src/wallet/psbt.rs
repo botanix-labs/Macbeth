@@ -257,14 +257,14 @@ pub fn signature_share_from_bytes(b: &[u8]) -> Option<frost::round2::SignatureSh
 
 /// Utxo DTO struct
 #[derive(Debug, Clone)]
-pub struct InputDTO {
+pub(crate) struct InputDTO {
     pub outpoint: OutPoint,
     pub output: TxOut,
     pub eth_address: Option<[u8; 20]>,
 }
 
 /// Create psbt with proprietary tweak fields
-pub fn create_psbt(
+pub(crate) fn create_psbt(
     inputs: Vec<InputDTO>,
     outputs: Vec<(TxOut, PegoutId)>,
     change: Option<TxOut>,
@@ -309,7 +309,7 @@ pub fn create_psbt(
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum CalculateSighashError {
+pub(crate) enum CalculateSighashError {
     #[error("taproot error: {0}")]
     TaprootError(#[from] bitcoin::sighash::TaprootError),
     #[error("Missing witness utxo")]
@@ -318,7 +318,7 @@ pub enum CalculateSighashError {
 
 /// Calculate the sighash for a taproot keyspend
 /// Using tapsighash type ALL
-pub fn calculate_sighash(
+pub(crate) fn calculate_sighash(
     psbt: &Psbt,
     input_index: usize,
 ) -> Result<TapSighash, CalculateSighashError> {
