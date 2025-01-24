@@ -1,9 +1,9 @@
-use bitcoin::{psbt::ExtractTxError, taproot::SigFromSliceError};
+use bitcoin::psbt::ExtractTxError;
 use thiserror::Error;
 
 use frost_secp256k1_tr as frost;
 
-use crate::{database, util::ValidateOutputsError, wallet::psbt::CalculateSighashError};
+use crate::{database, wallet::psbt::CalculateSighashError};
 
 #[derive(Debug, Error)]
 pub enum SigningError {

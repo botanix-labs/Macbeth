@@ -102,6 +102,7 @@ impl Tx {
     }
 }
 
+// Currently not used
 // impl TryFrom<rpc::TrackedTx> for Tx {
 //     type Error = tonic::Status;
 

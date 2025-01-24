@@ -1,8 +1,7 @@
 use clap::Parser;
 use confy::ConfyError;
 use displaydoc::Display as DisplayDoc;
-use log::info;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
@@ -145,7 +144,7 @@ async fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> 
 // Cli args and config
 
 #[derive(Clone, Debug, Parser)]
-pub(crate) struct CliConfig {
+pub struct CliConfig {
     /// The path to the database.
     #[arg(long)]
     db: PathBuf,
@@ -190,37 +189,37 @@ pub(crate) struct CliConfig {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Config {
+pub struct Config {
     /// The path to the database.
-    pub(crate) db: PathBuf,
+    pub db: PathBuf,
     /// The bitcoin L1 network
-    pub(crate) btc_network: bitcoin::Network,
+    pub btc_network: bitcoin::Network,
     /// Frost participant identifier. Should be your index into the chain.toml federation pk list
     /// for example if you are the first signer in the chain.toml you should use 0
-    pub(crate) identifier: u16,
+    pub identifier: u16,
     /// Address to bind to.
-    pub(crate) address: String,
+    pub address: String,
     /// multisig max signers
-    pub(crate) max_signers: u16,
+    pub max_signers: u16,
     /// multisig min signers
-    pub(crate) min_signers: u16,
+    pub min_signers: u16,
     /// toml configuration path. Leave blank to use defaults
-    pub(crate) toml: Option<PathBuf>,
+    pub toml: Option<PathBuf>,
     /// jwt secret path
-    pub(crate) btc_signing_server_jwt_secret: Option<PathBuf>,
+    pub btc_signing_server_jwt_secret: Option<PathBuf>,
     /// bitcoind url
-    pub(crate) bitcoind_url: Url,
+    pub bitcoind_url: Url,
     /// bitcoind RPC user
-    pub(crate) bitcoind_user: String,
+    pub bitcoind_user: String,
     /// bitcoind RPC pass
-    pub(crate) bitcoind_pass: String,
+    pub bitcoind_pass: String,
     /// metrics port
-    pub(crate) metrics_port: u16,
+    pub metrics_port: u16,
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     /// signing will refuse to sign if the fee rate is more than this percentage off from the
     pub fee_rate_diff_percentage: u32,
     /// Fall back fee rate expressed in sat per vbyte
-    pub(crate) fall_back_fee_rate_sat_per_vbyte: u64,
+    pub fall_back_fee_rate_sat_per_vbyte: u64,
 }
 
 pub fn load_config() -> Result<Config, Error> {

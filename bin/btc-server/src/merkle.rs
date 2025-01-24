@@ -14,7 +14,7 @@ pub fn get_utxo_set_merkle_root(db: &Db) -> Result<Vec<u8>, Error> {
 }
 
 /// Get the merkle root of the tracked tx set.
-pub fn get_tracked_tx_set_merkle_root(db: &Db) -> Result<Vec<u8>, Error> {
+fn get_tracked_tx_set_merkle_root(db: &Db) -> Result<Vec<u8>, Error> {
     let root = db.get_tracked_tx_merkle_root()?;
     if let Some(root) = root {
         Ok(root[..].to_vec())

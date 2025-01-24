@@ -8,12 +8,12 @@ use std::{
 use crate::telemetry::Telemetry;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct HealthResponse {
+pub struct HealthResponse {
     pub uptime: u64,
 }
 
 #[derive(Clone)]
-pub(crate) struct ServerState {
+pub struct ServerState {
     pub telemetry: Arc<Telemetry>,
     pub start_time: Instant,
     pub connection_count: Arc<RwLock<u32>>,

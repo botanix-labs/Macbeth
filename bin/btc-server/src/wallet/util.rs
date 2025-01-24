@@ -32,6 +32,7 @@ pub trait VerifyingKeyExt: Into<frost::VerifyingKey> {
         Ok(pk)
     }
 
+    #[allow(unused)]
     fn from_secp_pk(
         pk: &secp256k1::PublicKey,
     ) -> Result<frost::VerifyingKey, VerifyingKeyExtError> {

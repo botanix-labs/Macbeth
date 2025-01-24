@@ -34,8 +34,8 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error
         let pk = client.get_public_key(tonic::Request::new(client::Empty {})).await;
         assert!(pk.is_err());
         let err = pk.err().unwrap();
-        assert_eq!(err.code(), tonic::Code::Internal);
-        assert!(err.message().contains("missing key package"));
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(err.message().contains("Missing key package"));
     }
 
     // now do the dkg

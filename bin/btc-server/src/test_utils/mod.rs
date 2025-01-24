@@ -6,7 +6,7 @@ use std::{
 use crate::wallet::{address::generate_taproot_change_scriptpubkey, util::VerifyingKeyExt};
 use bitcoin::{
     absolute::LockTime, block::Header, blockdata::transaction::TxOut, hashes::Hash, psbt::Psbt,
-    Amount, Block, BlockHash, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid,
+    Amount, Block, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid,
 };
 use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult, StringOrStringArray};
 use frost_secp256k1_tr as frost;

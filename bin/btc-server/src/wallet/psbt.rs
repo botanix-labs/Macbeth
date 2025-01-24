@@ -309,7 +309,7 @@ pub(crate) fn create_psbt(
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum CalculateSighashError {
+pub enum CalculateSighashError {
     #[error("taproot error: {0}")]
     TaprootError(#[from] bitcoin::sighash::TaprootError),
     #[error("Missing witness utxo")]
