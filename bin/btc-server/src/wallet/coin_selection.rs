@@ -12,7 +12,7 @@ use crate::{database::Utxo, pegout_id::PegoutId, util::OutPointExt};
 const TAPROOT_OUTPUT_DUST_THRESHOLD: Amount = Amount::from_sat(330);
 
 #[derive(Debug, Error)]
-pub enum CoinSelectionError {
+pub(crate) enum CoinSelectionError {
     #[error("Coin selection error: {0}")]
     CoinSelectionBdk(#[from] InsufficientFunds),
     #[error("PSBT error: {0}")]

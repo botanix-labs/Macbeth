@@ -4,27 +4,17 @@ use crate::coordinator::error::CoordinatorError;
 use crate::database::Db;
 use crate::pegout_scheduler::Tx;
 use crate::wallet::coin_selection;
-use crate::wallet::{
-    psbt::{EthAddress, PsbtExt as BtcPsbtExt, PsbtInputExt},
-    util::{VerifyingKeyExt, VerifyingKeyExtError},
-};
+use crate::wallet::psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt};
 use crate::{
     database::{Error as DbError, Utxo},
     pegout_id::PegoutId,
-    util::{validate_psbt, ValidatePSBTError, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
+    util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
 };
-use bitcoin::{
-    hashes::sha256,
-    psbt::{ExtractTxError, Psbt},
-    secp256k1::PublicKey,
-    Address, BlockHash, FeeRate, OutPoint, ScriptBuf, TxOut,
-};
-use bitcoincore_rpc::RpcApi;
-use client::SigningStatus;
+use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use std::{
     collections::{HashMap, HashSet},
-    time::{Instant, SystemTime},
+    time::Instant,
 };
 
 pub(crate) mod error;

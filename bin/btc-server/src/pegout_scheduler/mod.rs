@@ -11,18 +11,15 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use crate::pegout_id::PegoutId;
 use crate::wallet::{
     address::generate_taproot_change_scriptpubkey,
     util::{VerifyingKeyExt, VerifyingKeyExtError},
 };
 use crate::{telemetry::Telemetry, update_telemetry_error};
-use bitcoin::{
-    absolute::LockTime, hashes::Hash, transaction::Version, Amount, Block, BlockHash, OutPoint,
-    ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-};
+use bitcoin::{Amount, Block, BlockHash, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use bitcoincore_rpc::RpcApi;
 use log::{debug, error, info, trace, warn};
-use crate::pegout_id::PegoutId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

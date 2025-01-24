@@ -9,7 +9,7 @@ use state::ServerState;
 
 const MAX_WORKERS: usize = 2;
 
-pub fn create_web_server(
+pub(crate) fn create_web_server(
     state: ServerState,
     actix_server_addr: SocketAddr,
 ) -> anyhow::Result<Server> {
