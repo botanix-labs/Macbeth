@@ -32,7 +32,7 @@ pub(crate) const ROUND1_TRANSITION: u8 = 1u8 << 1 | ROUND1;
 pub(crate) const ROUND2: u8 = 1u8 << 2 | ROUND1_TRANSITION;
 pub(crate) const ROUND2_TRANSITION: u8 = 1u8 << 3 | ROUND1_TRANSITION;
 
-pub(crate) fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
+pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     let sats = btc_per_kb.to_sat();
     info!("fee rate sats: {:?}", sats);
 
@@ -43,7 +43,7 @@ pub(crate) fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     FeeRate::from_sat_per_vb_unchecked(sat_per_vb.ceil() as u64)
 }
 
-pub(crate) fn get_pegin_confirmation_depth(network: bitcoin::Network) -> u32 {
+pub fn get_pegin_confirmation_depth(network: bitcoin::Network) -> u32 {
     match network {
         bitcoin::Network::Regtest | bitcoin::Network::Signet => 1,
         _ => panic!("Unsupported network"),
@@ -427,7 +427,7 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     Ok(())
 }
 
-pub(crate) async fn get_available_utxos(
+pub async fn get_available_utxos(
     db: &database::Db,
 ) -> Result<(HashMap<OutPoint, Utxo>, HashSet<OutPoint>), database::Error> {
     let utxos: HashMap<OutPoint, Utxo> =

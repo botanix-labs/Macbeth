@@ -3,7 +3,6 @@ use bitcoin::psbt::Psbt;
 use error::{SigningRound1Error, SigningRound2Error};
 use frost_secp256k1_tr::{
     self as frost,
-    keys::Tweak,
     round1::{SigningCommitments, SigningNonces},
     Identifier, SigningParameters,
 };
@@ -14,7 +13,7 @@ use crate::{
     util::{validate_psbt, ROUND1},
 };
 
-pub(crate) mod error;
+pub mod error;
 
 pub async fn get_round1_signing_package(
     psbt: &mut Psbt,
@@ -99,9 +98,8 @@ pub async fn get_round1_signing_package(
 /// Important note here is that we never reuse the same nonce pairs for a different signing
 /// request Should always generate new ones or if we are in a signing session refuse
 /// to provide new ones
-pub(crate) async fn get_round2_signing_package(
+pub async fn get_round2_signing_package(
     psbt: &mut Psbt,
-    signing_session_id: &[u8; 32],
     min_signers: u16,
     db: &Database,
     identifier: &Identifier,

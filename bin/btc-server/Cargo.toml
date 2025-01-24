@@ -6,6 +6,14 @@ edition = "2021"
 [lib]
 name = "btcserverlib"
 
+[[bin]]
+name = "btc-server"
+path = "src/bin/main.rs"
+
+[features]
+default = []
+conflicting_input = []
+
 [dependencies]
 actix-cors = "0.7.0"
 actix-server = "2.5.0"
@@ -72,6 +80,3 @@ tonic-build = "0.12.3"
 [dev-dependencies]
 test-log = "0.2.12"
 
-[features]
-default = []
-conflicting_input = []

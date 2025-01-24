@@ -17,19 +17,19 @@ use std::{
     time::Instant,
 };
 
-pub(crate) mod error;
+pub mod error;
 
 #[allow(dead_code)]
 const MIN_RELAY_FEE_RATE_SAT_VB: u64 = 1;
 
-pub(crate) fn add_round1_signing(
+pub fn add_round1_signing(
     signing_session_id: &[u8; 32],
     frost_id: frost::Identifier,
     psbt: &Psbt,
     db: &Db,
     min_signers: u16,
 ) -> Result<(), CoordinatorError> {
-    let start = Instant::now();
+    let _start = Instant::now();
     validate_psbt(psbt, ROUND1, min_signers, db)?;
 
     info!("psbt() = {}", psbt);
@@ -55,7 +55,7 @@ pub(crate) fn add_round1_signing(
     Ok(())
 }
 
-pub(crate) fn add_round2_signing(
+pub fn add_round2_signing(
     signing_session_id: &[u8; 32],
     frost_id: frost::Identifier,
     psbt: &Psbt,
@@ -82,7 +82,7 @@ pub(crate) fn add_round2_signing(
     Ok(())
 }
 
-pub(crate) async fn make_tx(
+pub async fn make_tx(
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
     change_script: ScriptBuf,
@@ -187,7 +187,7 @@ pub(crate) async fn make_tx(
 /// If no Err is return the original psbt served to this function is good to go out to the
 /// signers nothing needs to be added to it as the signers all provided their signing
 /// commitments already and the coordinator just need to verify them
-pub(crate) fn get_to_sign(
+pub fn get_to_sign(
     signing_session_id: &[u8; 32],
     db: &Db,
     min_signers: u16,
@@ -213,7 +213,7 @@ pub(crate) fn get_to_sign(
 }
 
 /// Returns finalized and ready to broadcast tx
-pub(crate) async fn finalize_signing(
+pub async fn finalize_signing(
     signing_session_id: &[u8; 32],
     db: &Db,
 ) -> Result<Psbt, CoordinatorError> {
