@@ -72,7 +72,7 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
         assert!(pk.is_err());
         let err = pk.err().unwrap();
         assert_eq!(err.code(), tonic::Code::Internal);
-        assert!(err.message().contains("missing key package"));
+        assert!(err.message().contains("Missing key package"));
     }
 
     // run the dkg

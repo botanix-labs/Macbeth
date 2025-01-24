@@ -9,7 +9,7 @@ use tonic::transport::Channel;
 
 macro_rules! frost_id {
     ($index:expr) => {
-        frost::Identifier::derive($index.to_le_bytes().as_slice()).expect("valid id")
+        frost::Identifier::try_from($index + 1).expect("valid id")
     };
 }
 

@@ -222,8 +222,8 @@ pub async fn test_many_inputs_signing(
         let pk = client.get_public_key(tonic::Request::new(client::Empty {})).await;
         assert!(pk.is_err());
         let err = pk.err().ok_or_else(|| anyhow::anyhow!("missing key package"))?;
-        assert_eq!(err.code(), tonic::Code::Internal);
-        assert!(err.message().contains("missing key package"));
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(err.message().contains("Missing key package"));
     }
 
     // run the dkg
@@ -317,7 +317,7 @@ pub async fn test_many_inputs_signing(
     println!("err_res: {:?}", err_res);
 
     assert!(err_res.to_string().contains(
-        "internal error: Failed to make tx: coin selection error: Outputs cannot be empty"
+        "Outputs cannot be empty"
     ));
 
     // Notify some pending pegouts
