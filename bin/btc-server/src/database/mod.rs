@@ -1,20 +1,15 @@
-use std::{
-    array::TryFromSliceError,
-    collections::BTreeMap,
-    io::{self, Write},
-    path::Path,
-};
+use std::{collections::BTreeMap, io::Write, path::Path};
 
 use crate::{
+    pegout_id::PegoutId,
     pegout_scheduler::{self},
     rpc::{OutPoint as RpcOutPoint, ScriptBuf as RpcScriptBuf, TxOut as RpcTxOut, Utxo as RpcUtxo},
     util::{parse_eth_address, OutPointExt},
-    pegout_id::PegoutId,
 };
 use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
-    psbt::{self, Psbt},
+    psbt::Psbt,
     Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
 };
 use client::SigningStatus;
@@ -22,7 +17,6 @@ use frost_secp256k1_tr as frost;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
-
 
 pub mod error;
 
@@ -733,8 +727,6 @@ impl Db {
     }
 }
 
-
-
 impl TryFrom<RpcUtxo> for Utxo {
     type Error = Error;
 
@@ -797,13 +789,11 @@ impl TryFrom<Utxo> for RpcUtxo {
 
 #[cfg(test)]
 mod tests {
-    use std::time::SystemTime;
     use crate::{
         pegout_scheduler::{PegoutRequest, Tx},
-        test_utils::{
-            create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db,
-        },
+        test_utils::{create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db},
     };
+    use std::time::SystemTime;
 
     use super::*;
     use crate::pegout_id::PegoutId;

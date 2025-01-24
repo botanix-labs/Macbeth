@@ -21,10 +21,8 @@ pub(crate) mod rpc {
     mod type_extensions;
 
     pub use btc_server::{
-        btc_server_server::{BtcServer, BtcServerServer},
         *,
     };
-    pub use file_descriptor::FILE_DESCRIPTOR_SET;
 }
 
 
