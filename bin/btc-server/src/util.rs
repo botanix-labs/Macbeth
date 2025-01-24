@@ -1305,7 +1305,7 @@ mod tests {
             botanix_height: 0,
         }];
         let tracked_tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx: tx.clone(),
             change_idxs: vec![1],
             pegout_idxs: vec![0],

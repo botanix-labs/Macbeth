@@ -420,7 +420,7 @@ impl PegoutScheduler {
             }
             ret
         };
-        let txid = tx.txid();
+        let txid = tx.compute_txid();
         self.track_tx(Tx {
             created: timestamp,
             change_idxs,
@@ -576,7 +576,7 @@ impl PegoutScheduler {
         let mut relevant_txs = Vec::new();
         let mut relevant_inputs = Vec::new();
         for tx in &block.txdata {
-            let txid = tx.txid();
+            let txid = tx.compute_txid();
             if self.txs.contains_key(&txid) {
                 debug!("Indexed tx {} confirmed in block {}:{}", txid, height, hash);
                 relevant_txs.push(txid);
@@ -783,7 +783,7 @@ mod tests {
     fn tracked_tx_utils() {
         let tx = create_tx(0, 0, None);
         let tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx,
             pegout_idxs: vec![],
             change_idxs: vec![],
@@ -801,7 +801,7 @@ mod tests {
         assert_eq!(dummy_tx.output.len(), 2);
 
         let tx2 = Tx {
-            txid: dummy_tx.txid(),
+            txid: dummy_tx.compute_txid(),
             tx: dummy_tx.clone(),
             pegout_idxs: vec![0],
             change_idxs: vec![1],
@@ -850,7 +850,7 @@ mod tests {
         let pending_txs = pegout_scheduler.txs.clone();
         assert_eq!(pending_txs.len(), 1);
         let (pending_txid, pending_tx) = pending_txs.into_iter().next().unwrap();
-        assert_eq!(pending_txid, tx.txid());
+        assert_eq!(pending_txid, tx.compute_txid());
         assert_eq!(pending_tx.pegout_idxs, pegout_idxs);
         assert_eq!(pending_tx.change_idxs, change_idxs);
 
@@ -858,13 +858,13 @@ mod tests {
         let txs_by_pegout = pegout_scheduler.txs_by_pegout.clone();
         assert_eq!(txs_by_pegout.len(), 2);
         for pegout in pegouts.iter() {
-            assert_eq!(txs_by_pegout.get(&pegout.txout()).unwrap(), &vec![tx.txid()]);
+            assert_eq!(txs_by_pegout.get(&pegout.txout()).unwrap(), &vec![tx.compute_txid()]);
         }
 
         let tx_by_input = pegout_scheduler.txs_by_input.clone();
         assert_eq!(tx_by_input.len(), 3);
         for input in tx.input.iter() {
-            assert_eq!(tx_by_input.get(&input.previous_output).unwrap(), &vec![tx.txid()]);
+            assert_eq!(tx_by_input.get(&input.previous_output).unwrap(), &vec![tx.compute_txid()]);
         }
 
         let tracked_inputs = pegout_scheduler.tracked_inputs();
@@ -878,7 +878,7 @@ mod tests {
         assert_eq!(pegout_scheduler.txs.len(), 1);
         let pending_txs = pegout_scheduler.txs.clone();
         let (pending_txid, pending_tx) = pending_txs.into_iter().next().unwrap();
-        assert_eq!(pending_txid, tx.txid());
+        assert_eq!(pending_txid, tx.compute_txid());
         assert_eq!(pending_tx.pegout_idxs, pegout_idxs);
         assert_eq!(pending_tx.change_idxs, change_idxs);
     }
@@ -916,8 +916,8 @@ mod tests {
         assert_eq!(last_block.hash, block.block_hash());
 
         let txs = last_block.relevant_txs.clone();
-        assert!(txs.contains(&tx1.txid()));
-        assert!(txs.contains(&tx2.txid()));
+        assert!(txs.contains(&tx1.compute_txid()));
+        assert!(txs.contains(&tx2.compute_txid()));
     }
 
     #[test]
@@ -989,7 +989,7 @@ mod tests {
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
 
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
-        assert_eq!(last_tx_txid, tx.txid());
+        assert_eq!(last_tx_txid, tx.compute_txid());
         assert_eq!(last_tx.pegout_idxs, vec![0]);
         assert_eq!(last_tx.change_idxs, vec![1]);
 
@@ -1027,7 +1027,7 @@ mod tests {
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
 
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
-        assert_eq!(last_tx_txid, tx.txid());
+        assert_eq!(last_tx_txid, tx.compute_txid());
         assert_eq!(last_tx.pegout_idxs, vec![0]);
         assert_eq!(last_tx.change_idxs, vec![1]);
 
@@ -1069,7 +1069,7 @@ mod tests {
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
 
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
-        assert_eq!(last_tx_txid, tx.txid());
+        assert_eq!(last_tx_txid, tx.compute_txid());
         assert_eq!(last_tx.pegout_idxs, vec![0, 1]);
         assert_eq!(last_tx.change_idxs, vec![2]);
 
@@ -1092,7 +1092,7 @@ mod tests {
         let tx = create_tx(1, 2, None);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx: tx.clone(),
             pegout_idxs: vec![0],
             change_idxs: vec![1],
@@ -1103,7 +1103,7 @@ mod tests {
         let pegout_scheduler =
             PegoutScheduler::new(1, vec![tracked_tx], bitcoin::BlockHash::all_zeros(), db);
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
-        assert_eq!(last_tx_txid, tx.txid());
+        assert_eq!(last_tx_txid, tx.compute_txid());
         assert_eq!(last_tx.pegout_idxs, vec![0]);
         assert_eq!(last_tx.change_idxs, vec![1]);
     }
@@ -1149,7 +1149,7 @@ mod tests {
         let tx = create_tx(1, 2, None);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx: tx.clone(),
             pegout_idxs: vec![0],
             change_idxs: vec![1],
@@ -1161,7 +1161,7 @@ mod tests {
             PegoutScheduler::new(1, vec![tracked_tx], bitcoin::BlockHash::all_zeros(), db);
         assert_eq!(pegout_scheduler.txs.len(), 1);
 
-        pegout_scheduler.un_track_tx(&tx.txid()).expect("untrack tx");
+        pegout_scheduler.un_track_tx(&tx.compute_txid()).expect("untrack tx");
         // Check the mapping is correct
         let txs_by_pegout = pegout_scheduler.txs_by_pegout.clone();
         assert_eq!(txs_by_pegout.len(), 0);
@@ -1191,7 +1191,7 @@ mod tests {
         // Add a block
         let block = BlockInfo {
             hash: bitcoin::BlockHash::all_zeros(),
-            relevant_txs: vec![tx.txid()],
+            relevant_txs: vec![tx.compute_txid()],
             relevant_inputs: vec![],
         };
         pegout_scheduler.last_blocks.push_back(block);
@@ -1209,7 +1209,7 @@ mod tests {
         let tx = create_tx(1, 2, None);
         let pegouts = pegout_requests_from_tx(&tx, &[0]);
         let tracked_tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx: tx.clone(),
             pegout_idxs: vec![0],
             change_idxs: vec![1],

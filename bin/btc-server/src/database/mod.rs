@@ -922,7 +922,7 @@ mod tests {
     fn from_db_utxo_to_rpc_utxo() {
         let tx = create_tx(1, 1, None);
         let utxo = Utxo::new(
-            OutPoint::new(tx.txid(), 0),
+            OutPoint::new(tx.compute_txid(), 0),
             tx.output.get(0).expect("one output").clone(),
             Some([0; 20]),
         );
@@ -932,7 +932,7 @@ mod tests {
 
         // Without eth address
         let utxo = Utxo::new(
-            OutPoint::new(tx.txid(), 2),
+            OutPoint::new(tx.compute_txid(), 2),
             tx.output.get(0).expect("one output").clone(),
             None,
         );
@@ -947,7 +947,7 @@ mod tests {
 
         let tx = create_tx(2, 1, None);
         let utxo = Utxo::new(
-            OutPoint::new(tx.txid(), 0),
+            OutPoint::new(tx.compute_txid(), 0),
             tx.output.get(0).expect("one output").clone(),
             None,
         );
@@ -966,7 +966,7 @@ mod tests {
         for _ in 0..num_txs {
             let tx = create_tx(2, 1, None);
             let utxo = Utxo::new(
-                OutPoint::new(tx.txid(), 0),
+                OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
                 None,
             );
@@ -999,7 +999,7 @@ mod tests {
         for _ in 0..num_txs {
             let tx = create_tx(1, 1, None);
             let utxo = Utxo::new(
-                OutPoint::new(tx.txid(), 0),
+                OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
                 None,
             );
@@ -1024,7 +1024,7 @@ mod tests {
         for _ in 0..num_txs {
             let tx = create_tx(1, 1, None);
             let utxo = Utxo::new(
-                OutPoint::new(tx.txid(), 0),
+                OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
                 None,
             );
@@ -1056,7 +1056,7 @@ mod tests {
         for _ in 0..num_txs {
             let tx = create_tx(2, 1, None);
             let utxo = Utxo::new(
-                OutPoint::new(tx.txid(), 0),
+                OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
                 None,
             );
@@ -1089,7 +1089,7 @@ mod tests {
         for _ in 0..num_txs {
             let tx = create_tx(2, 1, None);
             let utxo = Utxo::new(
-                OutPoint::new(tx.txid(), 0),
+                OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
                 None,
             );
@@ -1110,7 +1110,7 @@ mod tests {
         // Adding an additional utxo should change the merkle root
         let tx = create_tx(2, 1, None);
         let utxo = Utxo::new(
-            OutPoint::new(tx.txid(), 1),
+            OutPoint::new(tx.compute_txid(), 1),
             tx.output.get(0).expect("one output").clone(),
             None,
         );
@@ -1173,7 +1173,7 @@ mod tests {
             botanix_height: 0,
         }];
         let tracked_tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx: tx.clone(),
             change_idxs: vec![1],
             pegout_idxs: vec![0],
@@ -1193,7 +1193,7 @@ mod tests {
         assert_eq!(tx_retrieved[0], tracked_tx);
 
         // Remove the tracked tx
-        db.remove_tracked_tx(&tx.txid()).unwrap();
+        db.remove_tracked_tx(&tx.compute_txid()).unwrap();
         db.flush().unwrap();
         let tx_retrieved = db.get_tracked_txs().unwrap();
         assert_eq!(tx_retrieved.len(), 0);
@@ -1213,7 +1213,7 @@ mod tests {
                 botanix_height: 0,
             }];
             let tracked_tx = Tx {
-                txid: tx.txid(),
+                txid: tx.compute_txid(),
                 tx: tx.clone(),
                 change_idxs: vec![1],
                 pegout_idxs: vec![0],
@@ -1250,7 +1250,7 @@ mod tests {
                 botanix_height: 0,
             }];
             let tracked_tx = Tx {
-                txid: tx.txid(),
+                txid: tx.compute_txid(),
                 tx: tx.clone(),
                 change_idxs: vec![1],
                 pegout_idxs: vec![0],
@@ -1283,7 +1283,7 @@ mod tests {
             botanix_height: 0,
         }];
         let tracked_tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx: tx.clone(),
             change_idxs: vec![1],
             pegout_idxs: vec![0],
@@ -1309,7 +1309,7 @@ mod tests {
             botanix_height: 0,
         }];
         let tracked_tx2 = Tx {
-            txid: tx2.txid(),
+            txid: tx2.compute_txid(),
             tx: tx2.clone(),
             change_idxs: vec![1],
             pegout_idxs: vec![0],
@@ -1427,7 +1427,7 @@ mod tests {
             botanix_height: 0,
         }];
         let tracked_tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx: tx.clone(),
             change_idxs: vec![1],
             pegout_idxs: vec![0],
@@ -1455,7 +1455,7 @@ mod tests {
             botanix_height: 0,
         }];
         let tracked_tx = Tx {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             tx: tx.clone(),
             change_idxs: vec![1],
             pegout_idxs: vec![0],
@@ -1473,7 +1473,7 @@ mod tests {
             botanix_height: 0,
         }];
         let tracked_tx2 = Tx {
-            txid: tx2.txid(),
+            txid: tx2.compute_txid(),
             tx: tx2.clone(),
             change_idxs: vec![1],
             pegout_idxs: vec![0],
