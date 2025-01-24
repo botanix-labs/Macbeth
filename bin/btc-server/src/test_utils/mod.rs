@@ -146,7 +146,7 @@ pub fn setup_db() -> (database::Db, TempDir) {
     (db, temp_dir)
 }
 
-pub fn random_txid() -> Txid {
+pub fn random_compute_txid() -> Txid {
     let mut rng = thread_rng();
     let mut txid = [0u8; 32];
     rng.fill_bytes(&mut txid);
@@ -190,7 +190,7 @@ pub fn trusted_dealer_setup(
 
 // Util function to create a btc tx with random inputs and outputs as defined by fn params
 pub fn create_tx(num_inputs: usize, num_outputs: usize, change: Option<TxOut>) -> Transaction {
-    let txid = random_txid();
+    let txid = random_compute_txid();
 
     let mut inputs = vec![];
     for i in 0..num_inputs {
