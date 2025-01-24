@@ -12,6 +12,7 @@ mod pegout_scheduler;
 mod shutdown;
 mod signer;
 mod telemetry;
+#[cfg(test)]
 mod test_utils;
 mod util;
 mod wallet;
@@ -31,7 +32,6 @@ mod rpc {
 }
 
 use std::{
-    collections::BTreeMap,
     fmt::Debug,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
@@ -42,7 +42,7 @@ use std::{
 use crate::config::Error as ConfigError;
 use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
-use bitcoin::{consensus::Decodable, psbt::PsbtParseError, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut};
+use bitcoin::{consensus::Decodable, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut};
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use config::Config;
@@ -63,7 +63,7 @@ use util::{get_available_utxos, get_pegin_confirmation_depth, parse_eth_address}
 use wallet::{
     address::{generate_taproot_address, generate_tweaked_public_key},
     psbt::PsbtExt,
-    util::{VerifyingKeyExt, VerifyingKeyExtError},
+    util::VerifyingKeyExt,
 };
 
 use crate::{
@@ -148,7 +148,18 @@ impl<T, S: Into<Error> + Debug> ToStatus<T> for Result<T, S> {
         match self {
             Ok(v) => Ok(v),
             Err(e) => match e.into() {
+                Error::Signing(signing) => Err(internal!("Signing error: {}", signing)),
                 Error::Config(internal) => Err(internal!("{:?}", internal)),
+                Error::Frost(frost) => Err(internal!("Frost error: {}", frost)),
+                Error::Coordination(coordination) => Err(internal!("Coordination error: {}", coordination)),
+                Error::Parsing(parsing) => Err(internal!("Parsing error: {}", parsing)),
+                Error::Io(io) => Err(internal!("Io error: {}", io)),
+                Error::Jwt(jwt) => Err(internal!("Jwt error: {}", jwt)),
+                Error::ReflectionServer(reflection_server) => Err(internal!("Reflection server error: {}", reflection_server)),
+                Error::Db(db) => Err(internal!("Db error: {}", db)),
+                Error::PegoutSchedulerSync(pegout_scheduler_sync) => Err(internal!("Pegout scheduler sync error: {}", pegout_scheduler_sync)),
+                Error::FailedToReachCheckPoint(failed_to_reach_check_point) => Err(internal!("Failed to reach check point: {}", failed_to_reach_check_point)),
+                Error::Dkg(dkg) => Err(internal!("Dkg error: {}", dkg)),
                 _ => Err(internal!("Unknown error")),
             },
         }
@@ -299,8 +310,10 @@ where
         let config = config.clone();
         let db = database::Db::open(&config.db).expect("failed to open db");
 
+        // +1 b/c we use the index of the federation member's pk as the identifier
+        // And 0 is not a valid identifier
         let frost_identifier =
-            frost::Identifier::try_from(config.identifier).expect("valid identifier");
+            frost::Identifier::try_from(config.identifier + 1).expect("valid identifier");
         info!("Frost identifier: {:?} - {:?}", config.identifier, frost_identifier);
 
         let min_signers = config.min_signers;

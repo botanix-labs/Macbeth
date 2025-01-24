@@ -1,7 +1,5 @@
 use crate::wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
-use bdk_wallet::{
-    coin_selection::{CoinSelectionAlgorithm, InsufficientFunds, OldestFirstCoinSelection},
-};
+use bdk_wallet::coin_selection::{CoinSelectionAlgorithm, InsufficientFunds, OldestFirstCoinSelection};
 use bitcoin::{
     psbt::{Error as PsbtError, ExtractTxError, Psbt},
     Amount, FeeRate, OutPoint, ScriptBuf, TxOut,

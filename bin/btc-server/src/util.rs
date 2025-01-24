@@ -26,13 +26,13 @@ lazy_static! {
 }
 
 // Psbt validation flags
-pub const NO_FLAGS: u8 = 0u8;
-pub const ROUND1: u8 = 1u8;
-pub const ROUND1_TRANSITION: u8 = 1u8 << 1 | ROUND1;
-pub const ROUND2: u8 = 1u8 << 2 | ROUND1_TRANSITION;
-pub const ROUND2_TRANSITION: u8 = 1u8 << 3 | ROUND1_TRANSITION;
+pub(crate) const NO_FLAGS: u8 = 0u8;
+pub(crate) const ROUND1: u8 = 1u8;
+pub(crate) const ROUND1_TRANSITION: u8 = 1u8 << 1 | ROUND1;
+pub(crate) const ROUND2: u8 = 1u8 << 2 | ROUND1_TRANSITION;
+pub(crate) const ROUND2_TRANSITION: u8 = 1u8 << 3 | ROUND1_TRANSITION;
 
-pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
+pub(crate) fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     let sats = btc_per_kb.to_sat();
     info!("fee rate sats: {:?}", sats);
 
@@ -43,7 +43,7 @@ pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     FeeRate::from_sat_per_vb_unchecked(sat_per_vb.ceil() as u64)
 }
 
-pub fn get_pegin_confirmation_depth(network: bitcoin::Network) -> u32 {
+pub(crate) fn get_pegin_confirmation_depth(network: bitcoin::Network) -> u32 {
     match network {
         bitcoin::Network::Regtest | bitcoin::Network::Signet => 1,
         _ => panic!("Unsupported network"),
