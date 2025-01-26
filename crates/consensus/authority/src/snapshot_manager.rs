@@ -193,7 +193,7 @@ where
                         .provider_rw()?
                         .create_new_snapshot(sealed_block.number, sealed_block.hash())?;
 
-                    // first attempt to deserialize and decompress the sealed block
+                    // first attempt to serialize and compress the sealed block
                     let serialized_compressed_sealed_block = self.compressor.encode(sealed_block).await.map_err(|e| {
                             error!(target:"consensus::authority::snapshot_manager", "Failed to serialize and compress sealed block {:?}", e);
                             SnapshotManagerError::DataParser(e)

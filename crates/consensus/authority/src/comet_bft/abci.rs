@@ -447,19 +447,31 @@ where
         info!("list_snapshots request");
         let client = self.storage.client.clone();
         match client.get_snapshots() {
-            Ok(snapshots) => snapshots.into_iter().fold(
-                ResponseListSnapshots { snapshots: vec![] },
-                |mut acc, snapshot| {
-                    acc.snapshots.push(Snapshot {
-                        height: snapshot.height(),
-                        format: SNAPSHOT_MESSAGE_FORMAT,
-                        chunks: snapshot.chunk_ids().len() as u32,
-                        hash: prost::bytes::Bytes::copy_from_slice(&snapshot.block_hash().0),
-                        metadata: prost::bytes::Bytes::new(),
+            Ok(snapshots) => {
+                let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read()
+                else {
+                    error!("Error getting a snapshot state lock");
+                    return ResponseListSnapshots { snapshots: vec![] };
+                };
+                // filter out the snapshot that is the same as the current block as we might not be
+                // ready having all the chunks yet
+                let resp = snapshots
+                    .into_iter()
+                    .filter(|s| s.height() != snapshot_manager_state_lock.get_block_id())
+                    .fold(ResponseListSnapshots { snapshots: vec![] }, |mut acc, snapshot| {
+                        acc.snapshots.push(Snapshot {
+                            height: snapshot.height(),
+                            format: SNAPSHOT_MESSAGE_FORMAT,
+                            chunks: snapshot.chunk_ids().len() as u32,
+                            hash: snapshot.get_app_hash().to_vec().into(),
+                            metadata: prost::bytes::Bytes::new(),
+                        });
+                        acc
                     });
-                    acc
-                },
-            ),
+                drop(snapshot_manager_state_lock);
+                info!("Returned snapshots {:?}", resp);
+                return resp;
+            }
             Err(e) => {
                 error!("Error getting snapshots from db: {:?}", e);
                 return ResponseListSnapshots { snapshots: vec![] };
@@ -543,7 +555,10 @@ where
                 // now take the entire snapshot data
                 match client.get_snapshot_by_id(snapshot_id) {
                     Ok(Some(snapshot)) => {
-                        // check if the chunk id is found in the snapshot
+                        let mapped_request_chunk = request.chunk + 1;
+                        // check if the chunk id is found in the snapshot.
+                        // NOTE: we shift by 1 since all mdbx chunks start at 1 and cometbft
+                        // numeration starts at 0
                         if !snapshot
                             .chunk_ids()
                             .iter()
@@ -720,8 +735,8 @@ where
         info!("Current application Hash {:?}", hex::encode(hash.to_vec().as_slice()));
 
         // set canonical head
-        client.set_canonical_head(sealed_block_with_senders.header.clone());
-        client.set_safe(sealed_block_with_senders.header.clone());
+        client.set_canonical_head(sealed_header.clone());
+        client.set_safe(sealed_header.clone());
         client.set_finalized(sealed_header);
 
         let (fork_choice_update_task_tx, fork_choice_update_task_rx) =

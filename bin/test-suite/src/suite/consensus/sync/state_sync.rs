@@ -92,14 +92,25 @@ pub async fn state_sync(
                 .cloned()
                 .unwrap();
             let snapshots = db_provider.get_snapshots().unwrap_or_default();
-            it_info_print!(
-                "======================================================= Snapshots",
-                snapshots
-            );
-            let found_block =
-                snapshots.iter().any(|s| s.height() == latest_block.number.unwrap().as_u64());
-            if found_block {
-                it_info_print!("Found block in snapshot");
+            // NOTE: at these point we should have 2 snapshots in the db, the first one being
+            // finalized and the second one being in progress
+            if snapshots.len() == 2 {
+                let first_snapshot_block_id = snapshots.first().unwrap().height();
+                let snapshot_id = db_provider
+                    .get_snapshot_id_by_block_id(first_snapshot_block_id)
+                    .unwrap()
+                    .unwrap();
+                let data_parser =
+                    DataParser::default().with_serialization_type(SerializationType::Postcard);
+                let snapshot_chunks_data =
+                    db_provider.assemble_snapshot_chunks_data(snapshot_id).unwrap();
+                for (block, block_chunks) in snapshot_chunks_data {
+                    let sealed_block =
+                        data_parser.decode::<SealedBlockWithSenders>(&block_chunks).await;
+                    assert!(sealed_block.is_ok());
+                    let sealed_block = sealed_block.expect("must be a block");
+                    assert!(sealed_block.block.header().number == block);
+                }
                 break;
             }
         }
