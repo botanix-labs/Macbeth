@@ -1,9 +1,7 @@
-use bitcoin::{key::TweakedPublicKey, Address, Network, ScriptBuf};
+use bitcoin::{key::TweakedPublicKey, secp256k1::PublicKey, Address, Network, ScriptBuf};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
-use bitcoin::secp256k1::PublicKey;
 
-use crate::{wallet::util::{VerifyingKeyExt, VerifyingKeyExtError}};
-
+use crate::wallet::util::{VerifyingKeyExt, VerifyingKeyExtError};
 
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
@@ -48,11 +46,7 @@ pub fn generate_taproot_change_scriptpubkey(public_key: &PublicKey) -> ScriptBuf
     // TODO: secp context should be a global variable or passed down
     let secp = bitcoin::secp256k1::Secp256k1::new();
 
-    bitcoin::ScriptBuf::new_p2tr(
-        &secp,
-        public_key.x_only_public_key().0,
-        None,
-    )
+    bitcoin::ScriptBuf::new_p2tr(&secp, public_key.x_only_public_key().0, None)
 }
 
 #[cfg(test)]

@@ -172,8 +172,8 @@ pub async fn get_round2_signing_package(
 //     finalized_psbt: Psbt,
 // ) -> Result<Psbt, SigningFinalizeError> {
 //     let mut finalized_psbt = finalized_psbt.clone();
-//     let _key_package = self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
-//     let pk_package =
+//     let _key_package =
+// self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;     let pk_package =
 //         self.db.get_public_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
 
 //     let signing_packages = finalized_psbt

@@ -316,9 +316,7 @@ pub async fn test_many_inputs_signing(
         .ok_or_else(|| anyhow::anyhow!("error not present"))?;
     println!("err_res: {:?}", err_res);
 
-    assert!(err_res.to_string().contains(
-        "Outputs cannot be empty"
-    ));
+    assert!(err_res.to_string().contains("Outputs cannot be empty"));
 
     // Notify some pending pegouts
     let amount = bitcoin::Amount::from_sat(100_000);

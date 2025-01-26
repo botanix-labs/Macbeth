@@ -1,11 +1,26 @@
-# Botanix Protocol
-
-[![CI status](https://github.com/paradigmxyz/reth/workflows/ci/badge.svg)]
-[![cargo-deny status](https://github.com/paradigmxyz/reth/workflows/deny/badge.svg)]
-
-## A blazing fast and secure L2 for Bitcoin using the EVM as a superstructure
-
-![](./images/botanix.jpg)
+<div align="center">
+    <a href="https://www.botanixlabs.xyz/en/home">
+        <img src="./images/botanix.jpg" alt="Logo" style="transform: scale(0.7);">
+    </a>
+    <h1 align="center">Botanix Protocol</h1>
+    <p align="center">
+        A blazing fast and secure L2 for Bitcoin using the EVM as a superstructure.
+    </p>
+    <p align="center">
+        <a href="https://github.com/botanix-labs/Macbeth/actions/workflows/unit.yml" style="text-decoration: none;">
+            <img src="https://github.com/botanix-labs/Macbeth/actions/workflows/unit.yml/badge.svg?branch=fix/rwlock/coverage" alt="Botanix Unit Tests">
+        </a>
+        <a href="https://github.com/botanix-labs/Macbeth/actions/workflows/integration.yml" style="text-decoration: none;">
+            <img src="https://github.com/botanix-labs/Macbeth/actions/workflows/integration.yml/badge.svg?branch=fix/rwlock/coverage" alt="Botanix Integration Tests">
+        </a>
+         <a href="https://codecov.io/github/botanix-labs/Macbeth/" style="text-decoration: none;">
+          <img src="https://codecov.io/github/botanix-labs/Macbeth/graph/badge.svg?token=V1NH5QV17M" alt="Coverage"/>
+        </a>
+        <a href="https://github.com/botanix-labs/Macbeth/blob/main/LICENSE-MIT" style="text-decoration: none;">
+            <img src="https://img.shields.io/badge/license-MIT-007EC7.svg" alt="License">
+        </a>
+    </p>
+</div>
 
 # Running and Testing the Project
 

@@ -69,7 +69,6 @@ pub enum SigningRound2Error {
     ExtractTxError(#[from] ExtractTxError),
 }
 
-
 // Currently not used
 // #[derive(Debug, Error)]
 // pub enum SigningFinalizeError {
@@ -106,4 +105,3 @@ pub enum SigningRound2Error {
 //     #[error("failed to validate outputs: {0}")]
 //     ValidateOutputsError(#[from] ValidateOutputsError),
 // }
-

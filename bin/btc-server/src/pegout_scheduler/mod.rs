@@ -11,12 +11,15 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use crate::pegout_id::PegoutId;
-use crate::wallet::{
-    address::generate_taproot_change_scriptpubkey,
-    util::{VerifyingKeyExt, VerifyingKeyExtError},
+use crate::{
+    pegout_id::PegoutId,
+    telemetry::Telemetry,
+    update_telemetry_error,
+    wallet::{
+        address::generate_taproot_change_scriptpubkey,
+        util::{VerifyingKeyExt, VerifyingKeyExtError},
+    },
 };
-use crate::{telemetry::Telemetry, update_telemetry_error};
 use bitcoin::{Amount, Block, BlockHash, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use bitcoincore_rpc::RpcApi;
 use log::{debug, error, info, trace, warn};
@@ -127,7 +130,8 @@ impl Tx {
 //                     error!("Invalid tx input: {}", e);
 //                     badarg!("invalid tx input: {}", e);
 //                 }
-//                 let previous_outpoint = tx_in.previous_outpoint.expect("valid previous outpoint");
+//                 let previous_outpoint = tx_in.previous_outpoint.expect("valid previous
+// outpoint");
 
 //                 TxIn {
 //                     previous_output: OutPoint {
@@ -204,9 +208,8 @@ impl Tx {
 //             // TODO: remove change_idx and pull it from bitcoind to reduce payload
 //             change_idxs: tx.change_idxs.into_iter().map(|idx| idx as usize).collect(),
 //             created: SystemTime::UNIX_EPOCH
-//                 + Duration::new(
-//                     tx.created.expect("timestamp to exist").seconds as u64,
-//                     tx.created.expect("timestamp to exist").nanos as u32,
+//                 + Duration::new( tx.created.expect("timestamp to exist").seconds as u64,
+//                   tx.created.expect("timestamp to exist").nanos as u32,
 //                 ),
 //         })
 //     }

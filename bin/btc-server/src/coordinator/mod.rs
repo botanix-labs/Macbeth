@@ -1,14 +1,15 @@
 use log::{debug, error, info};
 
-use crate::coordinator::error::CoordinatorError;
-use crate::database::Db;
-use crate::pegout_scheduler::Tx;
-use crate::wallet::coin_selection;
-use crate::wallet::psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt};
 use crate::{
-    database::{Error as DbError, Utxo},
+    coordinator::error::CoordinatorError,
+    database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
+    pegout_scheduler::Tx,
     util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
+    wallet::{
+        coin_selection,
+        psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
+    },
 };
 use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};

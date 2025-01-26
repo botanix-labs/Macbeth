@@ -8,7 +8,6 @@ Ensure you have Rust and Cargo installed on your system.
 
 Run `make start-btc-server-1` from the project root directory
 
-
 To just generate the client. run `cargo build --features conflicting_input`.
 
 Take a look at the integration test suite in `bin/test-suite` for examples of using the client.
