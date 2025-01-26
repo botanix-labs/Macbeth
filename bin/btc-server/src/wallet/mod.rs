@@ -1,7 +1,7 @@
-pub(crate) mod coin_selection;
-pub mod util;
-pub mod psbt;
 pub mod address;
+pub(crate) mod coin_selection;
+pub mod psbt;
+pub mod util;
 
 use bitcoin::Weight;
 

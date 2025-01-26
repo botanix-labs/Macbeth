@@ -1,6 +1,8 @@
-use crate::util::ValidatePSBTError;
-use crate::wallet::util::VerifyingKeyExtError;
-use crate::{database::Error as DbError, wallet::psbt::CalculateSighashError};
+use crate::{
+    database::Error as DbError,
+    util::ValidatePSBTError,
+    wallet::{psbt::CalculateSighashError, util::VerifyingKeyExtError},
+};
 use bitcoin::{hashes::sha256, psbt::ExtractTxError};
 use frost_secp256k1_tr::{self as frost};
 use miniscript::psbt::Error as PsbtError;

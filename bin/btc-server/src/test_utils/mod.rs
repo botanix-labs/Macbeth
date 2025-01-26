@@ -13,11 +13,7 @@ use frost_secp256k1_tr as frost;
 use rand::{rngs::OsRng, thread_rng, RngCore};
 use tempfile::TempDir;
 
-use crate::{
-    database,
-    pegout_id::PegoutId,
-    pegout_scheduler::PegoutRequest,
-};
+use crate::{database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest};
 
 #[macro_export]
 macro_rules! frost_id {
@@ -32,7 +28,6 @@ const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
 #[derive(Clone, Debug)]
 pub struct MockBitcoind;
 impl bitcoincore_rpc::RpcApi for MockBitcoind {
-
     fn get_block_count(&self) -> Result<u64, bitcoincore_rpc::Error> {
         Ok(1)
     }

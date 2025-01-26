@@ -169,16 +169,16 @@ test-unit-op: ## Run unit tests
 .PHONY: cov-unit
 cov-unit: ## Run unit tests with coverage.
 	rm -f $(COV_FILE)
-	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS)
+	cargo llvm-cov nextest --lcov  --all-features --color always --frozen --locked --output-path $(COV_FILE) $(UNIT_TEST_ARGS)
 
 .PHONY: cov-unit-op
 cov-unit-op: ## Run unit tests with coverage
 	rm -f $(COV_FILE)
-	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS_OP)
+	cargo llvm-cov nextest --lcov  --all-features --color always --frozen --locked --output-path $(COV_FILE) $(UNIT_TEST_ARGS_OP)
 
 .PHONY: cov-report-html
 cov-report-html: cov-unit ## Generate a HTML coverage report and open it in the browser.
-	cargo llvm-cov report --html
+	cargo llvm-cov report --html --all-features --color always --frozen --locked
 	open target/llvm-cov/html/index.html
 
 # Downloads and unpacks Ethereum Foundation tests in the `$(EF_TESTS_DIR)` directory.
@@ -530,13 +530,6 @@ audit-fix-test:
 
 audit-fix:
 	cargo audit fix
-
-# ------------------------------------------------------------
-# Coverage
-# ------------------------------------------------------------
-
-coverage:
-	RUSTFLAGS="-Z threads=8" cargo +nightly tarpaulin --config ./tarpaulin.toml
 
 clean-unused-deps:
 	cargo machete --fix

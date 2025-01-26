@@ -20,10 +20,10 @@ derive_more = { workspace = true }
 nybbles = { workspace = true }
 # reth
 reth-consensus = { workspace = true }
+reth-primitives = { workspace = true, features = ["secp256k1"] }
 reth-prune-types = { workspace = true }
 reth-storage-errors = { workspace = true }
 revm-primitives = { workspace = true }
-reth-primitives = { workspace = true, features = ["secp256k1"] }
 
 [features]
 default = ["std"]

@@ -9,38 +9,40 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use btcserverlib::config::Error as ConfigError;
 use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{consensus::Decodable, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut};
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
-use btcserverlib::coordinator::error::CoordinatorError;
-use btcserverlib::pegout_id::PegoutId;
-use btcserverlib::pegout_scheduler::PegoutRequest;
-use btcserverlib::signer::error::SigningRound1Error;
-use btcserverlib::wallet::{
-    address::{generate_taproot_address, generate_tweaked_public_key},
-    psbt::PsbtExt,
-    util::VerifyingKeyExt,
-};
 use btcserverlib::{
-    coordinator, database,
+    config::{Config, Error as ConfigError},
+    coordinator,
+    coordinator::error::CoordinatorError,
+    database,
     merkle::get_wallet_state_commitment,
-    pegout_scheduler, rpc, signer,
+    pegout_id::PegoutId,
+    pegout_scheduler,
+    pegout_scheduler::PegoutRequest,
+    rpc,
+    shutdown::{stop_signal, StopHandle},
+    signer,
+    signer::error::SigningRound1Error,
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
         get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, ParsingError,
     },
     wallet,
+    wallet::{
+        address::{generate_taproot_address, generate_tweaked_public_key},
+        psbt::PsbtExt,
+        util::VerifyingKeyExt,
+    },
 };
-use btcserverlib::config::Config;
 use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures_util::future::FutureExt;
 use rand::thread_rng;
-use btcserverlib::shutdown::{stop_signal, StopHandle};
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
@@ -1209,8 +1211,8 @@ where
             .as_ref()
             .ok_or(DKGError::MissingRound1DkgPayload)
             .to_status()?
-            .1
-            == dkg_round1
+            .1 ==
+            dkg_round1
         {
             return Err(badarg!("Cannot add own round1 dkg package"));
         }

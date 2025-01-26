@@ -18,10 +18,10 @@ use alloy_primitives::B256;
 use core::fmt;
 use derive_more::Display;
 use reth_consensus::ConsensusError;
+use reth_primitives::header_ext::BotanixConsensusPackageError;
 use reth_prune_types::PruneSegmentError;
 use reth_storage_errors::provider::ProviderError;
 use revm_primitives::EVMError;
-use reth_primitives::header_ext::BotanixConsensusPackageError;
 
 pub mod trie;
 pub use trie::*;

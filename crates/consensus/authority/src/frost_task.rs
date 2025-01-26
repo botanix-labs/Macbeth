@@ -252,9 +252,9 @@ where
     }
 
     fn has_wallet_state(response: &WalletStateResponse) -> bool {
-        !response.utxos.is_empty()
-            || !response.tracked_txs.is_empty()
-            || !response.pending_pegouts.is_empty()
+        !response.utxos.is_empty() ||
+            !response.tracked_txs.is_empty() ||
+            !response.pending_pegouts.is_empty()
     }
 
     pub async fn start_task(&mut self) {
@@ -298,9 +298,9 @@ where
                 authority_index_to_frost_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;
             // start dkg only when we are the coordinator+ initial state + no public key
-            if is_coordinator
-                && !self.dkg_state_machine.get_dkg_state().is_running()
-                && self.dkg_state_machine.get_public_key().await.is_err()
+            if is_coordinator &&
+                !self.dkg_state_machine.get_dkg_state().is_running() &&
+                self.dkg_state_machine.get_public_key().await.is_err()
             {
                 self.start_dkg().await;
             }

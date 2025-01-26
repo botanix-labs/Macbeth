@@ -62,7 +62,8 @@ pub fn validate_block_pre_execution(
 
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
-    if chain_spec.is_shanghai_active_at_timestamp(block.timestamp) && chain_spec.chain.id() != BOTANIX_TESTNET.chain.id()
+    if chain_spec.is_shanghai_active_at_timestamp(block.timestamp) &&
+        chain_spec.chain.id() != BOTANIX_TESTNET.chain.id()
     {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;

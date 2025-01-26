@@ -66,7 +66,7 @@ pub enum BotanixConsensusPackageError {
 impl Clone for BotanixConsensusPackageError {
     fn clone(&self) -> Self {
         match self {
-            _ => self.to_owned()
+            _ => self.to_owned(),
         }
     }
 }

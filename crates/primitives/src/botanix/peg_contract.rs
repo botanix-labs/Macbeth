@@ -10,12 +10,12 @@ use bitcoin::{
     merkle_tree::PartialMerkleTree,
     TxOut,
 };
+use btcserverlib::{
+    pegout_id::PegoutId,
+    wallet::address::{generate_taproot_scriptpubkey, generate_tweaked_public_key},
+};
 use ethers::types::U256;
 use frost_secp256k1_tr as frost;
-use btcserverlib::{
-    wallet::address::{generate_taproot_scriptpubkey, generate_tweaked_public_key},
-    pegout_id::PegoutId,
-};
 use secp256k1::PublicKey;
 use thiserror::Error;
 
@@ -548,7 +548,8 @@ mod tests {
         let different_txid = bitcoin::Txid::all_zeros();
         let different_txids = vec![different_txid];
         let matches = vec![true];
-        pegin_data.meta.first_mut().unwrap().merkle_proof = PartialMerkleTree::from_txids(&different_txids, &matches);
+        pegin_data.meta.first_mut().unwrap().merkle_proof =
+            PartialMerkleTree::from_txids(&different_txids, &matches);
 
         pegin_data.validate(&(header, 1_u32), &pk).unwrap();
     }
@@ -576,8 +577,9 @@ mod tests {
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        
-        pegin_data.meta.first_mut().unwrap().block_headers[0].merkle_root = TxMerkleNode::all_zeros();
+
+        pegin_data.meta.first_mut().unwrap().block_headers[0].merkle_root =
+            TxMerkleNode::all_zeros();
 
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
         pegin_data.validate(&(*header, 1_u32), &pk).unwrap();
@@ -592,12 +594,13 @@ mod tests {
 
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
-        
+
         let original_txid = pegin_data.meta.first().unwrap().outpoint.txid;
-        
+
         let txids = vec![original_txid];
         let matches = vec![true];
-        pegin_data.meta.first_mut().unwrap().merkle_proof = PartialMerkleTree::from_txids(&txids, &matches);
+        pegin_data.meta.first_mut().unwrap().merkle_proof =
+            PartialMerkleTree::from_txids(&txids, &matches);
 
         pegin_data.validate(&(header, 1_u32), &pk).unwrap();
     }
@@ -640,15 +643,15 @@ mod tests {
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
 
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        
+
         pegin_data.meta.first_mut().unwrap().tx.output[0].script_pubkey = bitcoin::ScriptBuf::new();
-        
+
         let new_txid = pegin_data.meta.first().unwrap().tx.txid();
-        
+
         let txids = vec![new_txid];
         let matches = vec![true];
         let merkle_proof = PartialMerkleTree::from_txids(&txids, &matches);
-        
+
         let mut txids = Vec::with_capacity(1);
         let mut idxs = Vec::with_capacity(1);
         let root = merkle_proof.extract_matches(&mut txids, &mut idxs).unwrap();
@@ -662,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "invalid script pubkey")] 
+    #[should_panic(expected = "invalid script pubkey")]
     fn validate_pegin_data_with_different_account() {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = rand::thread_rng();
@@ -677,17 +680,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "invalid script pubkey")] 
+    #[should_panic(expected = "invalid script pubkey")]
     fn validate_pegin_data_with_different_pubkey() {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = rand::thread_rng();
-        
+
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
         let pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
-        let different_pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-        
+        let different_pk =
+            secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
+
         pegin_data.validate(&(header, 1_u32), &different_pk).unwrap();
     }
 
@@ -711,7 +715,8 @@ mod tests {
         };
         pegin_data.meta.first_mut().unwrap().block_headers.push(second_header);
 
-        pegin_data.meta.first_mut().unwrap().block_headers[1].prev_blockhash = bitcoin::BlockHash::all_zeros();
+        pegin_data.meta.first_mut().unwrap().block_headers[1].prev_blockhash =
+            bitcoin::BlockHash::all_zeros();
 
         pegin_data.validate(&(header, 1_u32), &pk).unwrap();
     }
@@ -761,7 +766,9 @@ mod tests {
 
         pegin_data.bitcoin_block_height = 999;
 
-        assert!(matches!(pegin_data.validate(&(header, 1_u32), &pk), Err(PeginDataError::InvalidBitcoinBlockHeight)));
+        assert!(matches!(
+            pegin_data.validate(&(header, 1_u32), &pk),
+            Err(PeginDataError::InvalidBitcoinBlockHeight)
+        ));
     }
 }
-

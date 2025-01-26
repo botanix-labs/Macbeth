@@ -24,7 +24,7 @@ pub trait StateRootProvider: Send + Sync {
     /// Returns the state root of the `HashedPostState` on top of the current state.
     fn hashed_state_root(&self, hashed_state: HashedPostState) -> ProviderResult<B256>;
 
-    /// Returns the state root of the `HashedPostState` on top of the current state but re-uses the
+    /// Returns the state root of the `HashedPostState` on top of the current state but reuses the
     /// intermediate nodes to speed up the computation. It's up to the caller to construct the
     /// prefix sets and inform the provider of the trie paths that have changes.
     fn hashed_state_root_from_nodes(

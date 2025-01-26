@@ -104,9 +104,9 @@ impl ProofOfAuthorityBlockImport {
     /// NOTE: this is not used currently but if its needed again lets add validation
     fn validate(&self, new_block: &SealedBlock) -> Result<(), ConsensusError> {
         let _header = new_block.header.clone();
-        //validation::validate_header_with_total_difficulty(&header, header.difficulty)?; 
+        //validation::validate_header_with_total_difficulty(&header, header.difficulty)?;
         // check after reabse validation::validate_block_standalone(new_block,
-        // &self.chain_spec)?; 
+        // &self.chain_spec)?;
         Ok(())
     }
 }

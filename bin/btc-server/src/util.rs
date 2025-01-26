@@ -1,3 +1,8 @@
+use crate::wallet::{
+    address::generate_taproot_change_scriptpubkey,
+    psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
+    util::VerifyingKeyExt,
+};
 use bitcoin::{
     consensus::encode as btcencode,
     hashes::Hash,
@@ -7,11 +12,6 @@ use bitcoin::{
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
 use log::info;
-use crate::wallet::{
-    address::generate_taproot_change_scriptpubkey,
-    psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
-    util::VerifyingKeyExt,
-};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
@@ -486,9 +486,11 @@ pub fn has_conflicting_input(db: &Db, psbt: &Psbt) -> Result<(), ConflictingInpu
 mod tests {
     use std::time::SystemTime;
 
+    use crate::{
+        frost_id,
+        wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
+    };
     use bitcoin::{psbt::Psbt, ScriptBuf, TxOut};
-    use crate::frost_id;
-    use crate::wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt};
 
     use crate::{
         database::{self},
@@ -806,15 +808,11 @@ mod tests {
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
-        let key_package1 = frost::keys::KeyPackage::try_from(
-            shares[&frost_id!(1)].clone(),
-        )
-        .expect("valid key package");
+        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
 
-        let key_package2 = frost::keys::KeyPackage::try_from(
-            shares[&frost_id!(2)].clone(),
-        )
-        .expect("valid key package");
+        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id!(2)].clone())
+            .expect("valid key package");
         let rng = &mut rand::thread_rng();
 
         // generate signing commitments for each input for each frost participant
@@ -828,7 +826,7 @@ mod tests {
         assert!(res.is_ok());
 
         // Round 2 at this point should pass as well. B/c we have not hit a limit in the number of
-        // signatures   
+        // signatures
         let db = db_setup();
         // Add the key packages
         db.set_pubkey_package(pk_package.clone()).expect("set public key package");
@@ -871,15 +869,11 @@ mod tests {
         db.flush().unwrap();
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
-        let key_package1 = frost::keys::KeyPackage::try_from(
-            shares[&frost_id!(1)].clone(),
-        )
-        .expect("valid key package");
+        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
 
-        let key_package2 = frost::keys::KeyPackage::try_from(
-            shares[&frost_id!(2)].clone(),
-        )
-        .expect("valid key package");
+        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id!(2)].clone())
+            .expect("valid key package");
 
         let (_, signing_commits1) = frost::round1::commit(key_package1.signing_share(), rng);
         psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1);
@@ -958,10 +952,8 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        let key_package3 = frost::keys::KeyPackage::try_from(
-            shares[&frost_id!(3)].clone(),
-        )
-        .expect("valid key package");
+        let key_package3 = frost::keys::KeyPackage::try_from(shares[&frost_id!(3)].clone())
+            .expect("valid key package");
 
         let (_, signing_commits3) = frost::round1::commit(key_package3.signing_share(), rng);
         psbt.inputs[0].set_signing_commitment(frost_id!(3), &signing_commits3);
@@ -1039,15 +1031,11 @@ mod tests {
         let num_inputs = 2;
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
-        let key_package1 = frost::keys::KeyPackage::try_from(
-            shares[&frost_id!(1)].clone(),
-        )
-        .expect("valid key package");
+        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
 
-        let key_package2 = frost::keys::KeyPackage::try_from(
-            shares[&frost_id!(2)].clone(),
-        )
-        .expect("valid key package");
+        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id!(2)].clone())
+            .expect("valid key package");
         let rng = &mut rand::thread_rng();
 
         // generate signing commitments for each input for each frost participant

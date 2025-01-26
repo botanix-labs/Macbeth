@@ -1,7 +1,7 @@
-use thiserror::Error;
+use bitcoin::psbt;
 use frost_secp256k1_tr as frost;
 use std::{array::TryFromSliceError, io};
-use bitcoin::psbt;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {

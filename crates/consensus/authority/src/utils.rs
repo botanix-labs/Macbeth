@@ -8,7 +8,8 @@ use bitcoin::{
 };
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
-    pegout_id::PegoutId, wallet::psbt::PsbtOutputExt,
+    pegout_id::PegoutId,
+    wallet::psbt::PsbtOutputExt,
 };
 use client::{
     MakeTxRequest, NotifyPeginsRequest, NotifyPegoutsRequest, PendingPegout, ScriptBuf,

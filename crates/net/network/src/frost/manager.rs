@@ -462,7 +462,7 @@ impl FrostConfig {
 }
 
 /// Maps an authority index to a frost specific identifier
-/// Indecies start at 0, so we add 1 to the index to get the correct identifier
+/// Indices start at 0, so we add 1 to the index to get the correct identifier
 /// As 0 is not a valid identifier
 pub fn authority_index_to_frost_identifier(authority_index: u16) -> frost::Identifier {
     frost::Identifier::try_from(authority_index + 1).expect("can derive identifier")

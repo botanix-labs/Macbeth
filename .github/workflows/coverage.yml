@@ -1,13 +1,18 @@
 name: Botanix Coverage
 
 on:
-    pull_request:
-    merge_group:
-        branches: [main]
-    push:
-        branches: [main]
+  pull_request:
+  merge_group:
+    branches:
+      - main
+  push:
+    branches:
+      - main
 
 env:
+  RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+  LLVM_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer
+  CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
   CLICOLOR: 1
   CI: true
@@ -15,34 +20,37 @@ env:
 jobs:
   coverage:
     name: Coverage
-    runs-on: ubuntu-latest
+    runs-on:
+      group: macbeth
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-            target: x86_64-unknown-linux-gnu
-            components: rustfmt, clippy
-
       - name: Install dependencies
         run: |
-            sudo apt-get update
-            sudo apt-get install -y libclang-dev curl protobuf-compiler
-      - name: Install Rustup
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          sudo apt-get update
+          sudo apt-get install -y build-essential libclang-dev lld llvm curl protobuf-compiler
 
-      - name: Install Tarpaulin (Pre-built Binary)
-        run: |
-          sudo mkdir -p /usr/local/bin
-          curl -L https://github.com/xd009642/tarpaulin/releases/download/0.31.1/cargo-tarpaulin-x86_64-unknown-linux-gnu.tar.gz | sudo tar xz -C /usr/local/bin
-      - uses: Swatinem/rust-cache@v2
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          toolchain: stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          cache-all-crates: true
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate Code Coverage
-        run: make coverage
+        run: make cov-unit-op
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
@@ -50,5 +58,5 @@ jobs:
           name: codecov-botanix
           fail_ci_if_error: true
           verbose: true
-          files: ./cov-reports/cobertura.xml ./cov-reports/tarpaulin-report.xml
+          files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
