@@ -48,11 +48,11 @@ pub async fn state_sync(
         .clone();
     let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
 
-    // take the first member as the inturn member
-    let member_index = 0;
+    // take the first member as the target member
+    let target_member_index = 0;
 
     // assign targeted fed member
-    let targeted_fed_member = test_fed_members.get(&(member_index as u16)).cloned().unwrap();
+    let targeted_fed_member = test_fed_members.get(&(target_member_index as u16)).cloned().unwrap();
     it_info_print!("Max Snapshot Chunk Size Bytes", targeted_fed_member.max_snapshot_size_bytes);
 
     // create a minting contract instance

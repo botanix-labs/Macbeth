@@ -58,8 +58,16 @@ use tendermint_proto::{
     },
 };
 
-use thiserror::Error;
-use tokio::sync::Mutex;
+impl From<&Snapshot> for SnapshotSyncStateLock {
+    fn from(snapshot: &Snapshot) -> Self {
+        let mut s = SnapshotSyncStateLock::default();
+        s.set_snapshot_height(snapshot.height as u64)
+            .set_snapshot_chunks(snapshot.chunks as u64)
+            .set_snapshot_format(snapshot.format as u64)
+            .set_snapshot_hash(Bytes::from(snapshot.hash.clone()));
+        s
+    }
+}
 
 /// Offer Snapshot Result
 enum SnapshotOfferResult {
@@ -115,7 +123,62 @@ const VERIFY_REJECT: i32 = 2;
 // Version
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Block with execution context
+/// Snapshot Sync State Lock
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SnapshotSyncStateLock {
+    snapshot_height: u64,
+    snapshot_hash: Bytes,
+    snapshot_chunks: u64,
+    snapshot_format: u64,
+}
+
+impl SnapshotSyncStateLock {
+    /// Set snapshot height
+    pub fn set_snapshot_height(&mut self, snapshot_id: u64) -> &mut Self {
+        self.snapshot_height = snapshot_id;
+        self
+    }
+
+    /// Set snapshot hash
+    pub fn set_snapshot_hash(&mut self, snapshot_hash: Bytes) -> &mut Self {
+        self.snapshot_hash = snapshot_hash;
+        self
+    }
+
+    /// Set snapshot chunks
+    pub fn set_snapshot_chunks(&mut self, snapshot_chunks: u64) -> &mut Self {
+        self.snapshot_chunks = snapshot_chunks;
+        self
+    }
+
+    /// Set snapshot format
+    pub fn set_snapshot_format(&mut self, snapshot_format: u64) -> &mut Self {
+        self.snapshot_format = snapshot_format;
+        self
+    }
+
+    /// Get snapshot chunks
+    pub fn get_snapshot_height(&self) -> u64 {
+        self.snapshot_height
+    }
+
+    /// Get snapshot hash
+    pub fn get_snapshot_hash(&self) -> &[u8] {
+        &self.snapshot_hash
+    }
+
+    /// Get snapshot chunks
+    pub fn get_snapshot_chunks(&self) -> u64 {
+        self.snapshot_chunks
+    }
+
+    /// Get snapshot format
+    pub fn get_snapshot_format(&self) -> u64 {
+        self.snapshot_format
+    }
+}
+
+/// Abci Client Builder
 #[derive(Clone)]
 pub struct BlockWithContext {
     sealed_block_with_peg: SealedBlockWithPeg,
@@ -510,6 +573,20 @@ where
             if snapshot.hash == prost::bytes::Bytes::default() {
                 warn!("Received snapshot has no hash (empty bytes), rejecting snapshot");
                 return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+            }
+
+            // read the lock and make sure we are not already syncing the snapshot we are being
+            // offered
+            if let Some(snapshot_sync_state_lock) = self.snapshot_sync_state_lock.as_ref() {
+                let snapshot_sync_state_lock =
+                    snapshot_sync_state_lock.read().expect("snapshot state sync locked");
+                // we are already syncing the this snapshot
+                if snapshot_sync_state_lock.eq(&SnapshotSyncStateLock::from(&snapshot)) {
+                    drop(snapshot_sync_state_lock);
+                    // since the lock is still on the currently accepted snapshot, we must return
+                    // accept
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::ACCEPT as i32 };
+                }
             }
 
             // check that we should not have the block at height already
@@ -1784,5 +1861,26 @@ mod tests {
 
         let response = abci_client.commit();
         assert_eq!(response, ResponseCommit::default());
+    }
+
+    #[test]
+    fn test_snapshot_sync_state_equality() {
+        let mut s1 = SnapshotSyncStateLock::default();
+        s1.set_snapshot_height(100)
+            .set_snapshot_chunks(30)
+            .set_snapshot_format(1)
+            .set_snapshot_hash(Bytes::from("hash".as_bytes()));
+
+        let mut s2 = SnapshotSyncStateLock::default();
+        s2.set_snapshot_height(100)
+            .set_snapshot_chunks(30)
+            .set_snapshot_format(1)
+            .set_snapshot_hash(Bytes::from("hash2".as_bytes()));
+
+        assert_ne!(s1, s2);
+
+        s2.set_snapshot_hash(Bytes::from("hash".as_bytes()));
+
+        assert_eq!(s1, s2);
     }
 }

@@ -1,20 +1,47 @@
 //! Snapshot manager is responsible for persisting snapshot chunks to disk
-
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::{comet_bft::abci::ABCIDriverMessage, Storage};
 use bytes::Bytes;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as DataParserError};
-use reth_db::{models::ChunkId, DatabaseEnv};
-use reth_db_api::database::Database;
+use reth_db::models::{ChunkId, SnapshotId};
 use reth_evm::execute::BlockExecutorProvider;
 use reth_node_core::args::StateSyncArgs;
-use reth_provider::{
-    BlockReaderIdExt, DatabaseProviderRW, ProviderError, ProviderFactory, SnapshotReader,
-    SnapshotWriter,
-};
+use reth_primitives::{BlockNumber, SealedBlockWithSenders, SealedHeader};
+use reth_provider::{BlockReaderIdExt, ProviderError, SnapshotReader, SnapshotWriter};
 use tracing::{debug, error, info, trace, warn};
+
+/// Snapshot Manager State Lock
+#[derive(Clone, Debug, Default)]
+pub struct SnapshotManagerStateLock {
+    snapshot_id: SnapshotId,
+    block_id: BlockNumber,
+}
+
+impl SnapshotManagerStateLock {
+    /// Set snapshot id
+    pub fn set_snapshot_id(&mut self, snapshot_id: SnapshotId) -> &mut Self {
+        self.snapshot_id = snapshot_id;
+        self
+    }
+
+    /// Set block number
+    pub fn set_block_number(&mut self, block_id: BlockNumber) -> &mut Self {
+        self.block_id = block_id;
+        self
+    }
+
+    /// Get snapshot id
+    pub fn get_snapshot_id(&self) -> u64 {
+        self.snapshot_id
+    }
+
+    /// Get block id
+    pub fn get_block_id(&self) -> u64 {
+        self.block_id
+    }
+}
 
 /// Snapshot manager error
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +79,7 @@ where
     EF: BlockExecutorProvider + Clone + 'static,
     DB: BlockReaderIdExt + SnapshotWriter + SnapshotReader + Clone + 'static,
 {
+    /// Constructor
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
         compressor: DataParser,
@@ -171,27 +199,15 @@ where
     async fn run(&mut self) -> Result<(), SnapshotManagerError> {
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
 
-        // let latest_block_number =
-        //     client.latest_header()?.as_ref().map(|h| h.number).unwrap_or_default();
-        // if latest_block_number > 0 {
-        //     warn!(target: "consensus::authority::snapshot_manager::run", "State sync will not run
-        // as it requires an empty state but it currently has a block number of {}",
-        // latest_block_number);     return Ok(());
-        // }
-
         while let Some(abci_driver_message) = self.snapshot_manager_tx.recv().await {
             debug!(target: "consensus::authority::snapshot_manager::run", "received abci driver message {:?}", abci_driver_message);
 
             match abci_driver_message {
                 ABCIDriverMessage::CommitBlock((sealed_block_with_peg, cbft_hash, _tx)) => {
                     // acknowledge the block
-                    tx.send(()).expect("acknowledging received block send");
+                    //tx.send(()).expect("acknowledging received block send");
 
                     let sealed_block = sealed_block_with_peg.block();
-                    self.storage
-                        .provider_factory
-                        .provider_rw()?
-                        .create_new_snapshot(sealed_block.number, sealed_block.hash())?;
 
                     // first attempt to serialize and compress the sealed block
                     let serialized_compressed_sealed_block = self.compressor.encode(sealed_block).await.map_err(|e| {
@@ -227,8 +243,9 @@ where
                     // now check the latest snapshot size
                     let latest_snapshot_size = self.get_snapshot_size(last_snapshot_id)?;
                     info!(
-                        "++++++++++++++++++++ SNAPSHOTS COUNT: {:?}",
-                        self.storage.provider_factory.provider_rw()?.get_snapshots_count()?
+                        "Latest_snapshot_size: {:?} {:?}",
+                        serialized_compressed_sealed_block.len(),
+                        latest_snapshot_size
                     );
 
                     // Check if there is enough space in the latest snapshot
@@ -246,11 +263,13 @@ where
                     }
                     info!("Snapshots count: {:?}", self.get_snapshots_count()?);
 
-                    // if serialized_compressed_sealed_block.is_empty() {
-                    //     error!(target: "consensus::authority::snapshot_manager::run",
-                    // "serialized_compressed_sealed_block is empty");
-                    //     continue;
-                    // }
+                    // update the snapshot state lock
+                    let mut state_lock =
+                        self.state_lock.write().expect("snapshot state sync locked");
+                    state_lock
+                        .set_snapshot_id(last_snapshot_id)
+                        .set_block_number(sealed_block.number);
+                    drop(state_lock);
 
                     // Treat the block as a snapshot chunk
                     let chunk_id = self.create_new_chunk(
@@ -268,7 +287,7 @@ where
 
                     // check if we need to delete older snapshots (Retention policy)
                     if self.get_snapshots_count()? >
-                        self.state_sync_args.snapshot_keep_recent as usize
+                        self.state_sync_args.num_snapshots_to_keep as usize
                     {
                         let oldest_snapshot_height = self
                             .storage
@@ -307,36 +326,64 @@ mod tests {
     use reth_provider::test_utils::create_test_provider_factory_with_chain_spec;
     use std::time::Duration;
 
-    #[test]
-    fn test_rw_snapshots() {
+    #[tokio::test]
+    async fn test_rw_snapshots() {
         let provider_factory = create_test_provider_factory_with_chain_spec(MAINNET.clone());
 
         init_genesis(provider_factory.clone()).unwrap();
-        // let client = BlockchainProvider::new(
-        //     provider_factory.clone(),
-        //     Arc::new(NoopBlockchainTree::default()),
-        // )
-        // .unwrap();
-
         let client = provider_factory.provider_rw().unwrap();
 
         // insert a new snapshot at block height 1
         client.create_new_snapshot(1, B256::random(), &vec![]).unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
 
+        // assertions
         let snapshots = client.get_snapshots().unwrap();
+        assert!(snapshots.len() == 1);
+        let first_snapshot = snapshots.first().unwrap().clone();
+        assert!(first_snapshot.id() == 1);
+        assert!(first_snapshot.height() == 1);
+        assert!(first_snapshot.block_ids().is_empty());
+        assert!(first_snapshot.chunk_ids().is_empty());
+        assert!(first_snapshot.size() > 0);
+        let last_snapshot = snapshots.last().unwrap().clone();
+        assert!(last_snapshot.height() == 1);
+        assert!(last_snapshot.block_ids().is_empty());
+        assert!(last_snapshot.chunk_ids().is_empty());
+        assert!(last_snapshot.size() > 0);
         let snapshots_count = client.get_snapshots_count().unwrap();
-        println!("snapshots: {:?} {:?}", snapshots, snapshots_count);
-
-        let last_snapshot = client.get_last_snapshot_height().unwrap();
-        println!("last snapshot height: {:?}", last_snapshot);
+        assert!(snapshots_count == 1);
+        let (snapshot_id, block_number) = client.get_first_snapshot_height().unwrap().unwrap();
+        assert!(snapshot_id == 1);
+        assert!(block_number == 1);
+        let (snapshot_id, block_number) = client.get_last_snapshot_height().unwrap().unwrap();
+        assert!(snapshot_id == 1);
+        assert!(block_number == 1);
 
         // insert a new snapshot at block height 2
         client.create_new_snapshot(2, B256::random(), &vec![]).unwrap();
 
+        // assertions
         let snapshots = client.get_snapshots().unwrap();
+        assert!(snapshots.len() == 2);
+        let first_snapshot = snapshots.first().unwrap().clone();
+        assert!(first_snapshot.id() == 1);
+        assert!(first_snapshot.height() == 1);
+        assert!(first_snapshot.block_ids().is_empty());
+        assert!(first_snapshot.chunk_ids().is_empty());
+        let last_snapshot = snapshots.last().unwrap().clone();
+        assert!(last_snapshot.id() == 2);
+        assert!(last_snapshot.height() == 2);
+        assert!(last_snapshot.block_ids().is_empty());
+        assert!(last_snapshot.chunk_ids().is_empty());
         let snapshots_count = client.get_snapshots_count().unwrap();
-        println!("snapshots: {:?} {:?}", snapshots, snapshots_count);
+        assert!(snapshots_count == 2);
+        let (snapshot_id, block_number) = client.get_first_snapshot_height().unwrap().unwrap();
+        assert!(snapshot_id == 1);
+        assert!(block_number == 1);
+        let (snapshot_id, block_number) = client.get_last_snapshot_height().unwrap().unwrap();
+        assert!(snapshot_id == 2);
+        assert!(block_number == 2);
 
         let snapshot_by_id = client.get_snapshot_by_id(snapshot_id).unwrap().unwrap();
         assert!(snapshot_by_id.height() == snapshot_id);

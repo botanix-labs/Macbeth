@@ -34,8 +34,7 @@ pub async fn test_state_sync_dynamic(
         // load wallet
         let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
     }
-    let _address =
-        bitcoind_rpc.get_new_address(None, None).expect("get new address").assume_checked();
+
     // generate > 100 blocks so coinbase utxos can be spent from the wallet
     generate_blocks(&bitcoind_rpc, 101).await;
     // sleep and wait for poa nodes to register this block
@@ -48,11 +47,11 @@ pub async fn test_state_sync_dynamic(
         .expect("test federation member configurations")
         .clone();
 
-    // take the first member as the inturn member
-    let member_index = 0;
+    // take the first member as the target member
+    let target_member_index = 0;
 
     // assign targeted fed member
-    let targeted_fed_member = test_fed_members.get(&(member_index as u16)).cloned().unwrap();
+    let targeted_fed_member = test_fed_members.get(&(target_member_index as u16)).cloned().unwrap();
     it_info_print!("Max Snapshot Chunk Size Bytes", targeted_fed_member.max_snapshot_size_bytes);
 
     // create a minting contract instance
@@ -79,7 +78,7 @@ pub async fn test_state_sync_dynamic(
     // get a lightlight client for a non-syncing poa node
     let (trusted_block_height, trusted_block_hash) =
         if let Some(cometbft_lightclients) = suite.local_context.cometbft_lightclients.as_ref() {
-            let cometrpc = cometbft_lightclients.get(member_index).unwrap().clone();
+            let cometrpc = cometbft_lightclients.get(target_member_index).unwrap().clone();
             let cometbft_http_client = cometrpc.build_and_connect().expect("to be connected");
 
             let trusted_block_height = 1u32;

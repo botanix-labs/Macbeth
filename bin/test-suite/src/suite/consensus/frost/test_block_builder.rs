@@ -30,11 +30,11 @@ pub async fn block_builder(
         .clone();
     let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
 
-    // take the first member as the inturn member
-    let inturn_member_index = 0;
+    // take the first member as the target member
+    let target_member_index = 0;
 
     // assign targeted fed member
-    let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
+    let targeted_fed_member = test_fed_members.get(&(target_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
     let botanix_eth_client =
