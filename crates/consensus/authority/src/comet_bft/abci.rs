@@ -309,7 +309,9 @@ where
         ))
     }
 
-    pub(crate) fn non_deterministic_data_bytes(&self) -> Result<prost::bytes::Bytes, ConsensusError> {
+    pub(crate) fn non_deterministic_data_bytes(
+        &self,
+    ) -> Result<prost::bytes::Bytes, ConsensusError> {
         let aggregate_public_key = self.aggregate_public_key()?;
         let ndd = NonDeterministicData::new(self.bitcoin_blockhash(), aggregate_public_key);
         let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
@@ -346,7 +348,7 @@ where
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
-        
+
         match self.authority_consensus.validate_header_standalone(
             block.header(),
             self.storage.genesis_authorities.as_slice(),
@@ -365,7 +367,9 @@ where
     pub(crate) fn aggregate_public_key(&self) -> Result<secp256k1::PublicKey, ConsensusError> {
         match self.storage.inner.blocking_read().aggregate_public_key {
             Some(pk) => Ok(pk),
-            None => Err(ConsensusError::InvalidAggregatedPublicKey(InvalidAggregatedPublicKeyError::MissingAggregatedPublicKey)),
+            None => Err(ConsensusError::InvalidAggregatedPublicKey(
+                InvalidAggregatedPublicKeyError::MissingAggregatedPublicKey,
+            )),
         }
     }
 
@@ -941,25 +945,26 @@ where
 
                         let pegouts = sealed_block_with_peg.pegouts();
 
-                        // TODO what happens if the pegins fail? Should we panic? Should this be
-                        // called in commit?
                         if self.btc_server.is_some() {
-                            // pegins
-                            call_notify_pegin(
+                            if let Err(e) = call_notify_pegin(
                                 self.btc_server.as_mut().expect("btc server to exist"),
                                 &pegins,
                             )
                             .await
-                            .expect("Should notify pegins");
+                            {
+                                error!("Error notifying pegins: {:?}", e);
+                            }
 
                             // pegouts
-                            call_notify_pegout(
+                            if let Err(e) = call_notify_pegout(
                                 self.btc_server.as_mut().expect("btc server to exist"),
                                 pegouts,
                                 block_height,
                             )
                             .await
-                            .expect("Should notify pegouts");
+                            {
+                                error!("Error notifying pegouts: {:?}", e);
+                            }
                         }
 
                         tx.send(()).expect("to send");
