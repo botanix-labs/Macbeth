@@ -77,9 +77,9 @@ pub struct CliArgs {
     /// max_snapshot_size_bytes
     #[argh(option, default = "10240")]
     pub max_snapshot_size_bytes: usize,
-    /// snapshot_keep_recent
+    /// num_snapshots_to_keep
     #[argh(option, default = "3")]
-    pub snapshot_keep_recent: u64,
+    pub num_snapshots_to_keep: u64,
     /// rpc nodes
     #[argh(option, default = "1")]
     pub rpc_nodes: u16,

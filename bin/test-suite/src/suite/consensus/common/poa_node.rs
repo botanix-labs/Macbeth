@@ -136,7 +136,7 @@ pub struct FederationMemberTestConfig {
     pub frost_min_signers: u16,
     pub frost_max_signers: u16,
     pub max_snapshot_size_bytes: usize,
-    pub snapshot_keep_recent: u64,
+    pub num_snapshots_to_keep: u64,
     pub peer_id: PeerId,
     pub is_dkg_ready: bool,
     pub edh: Option<ExtraDataHeader>,
@@ -159,7 +159,7 @@ impl FederationMemberTestConfig {
         frost_min_signers: u16,
         frost_max_signers: u16,
         max_snapshot_size_bytes: usize,
-        snapshot_keep_recent: u64,
+        num_snapshots_to_keep: u64,
         peer_id: PeerId,
         rpc_port: u16,
         ws_port: u16,
@@ -187,7 +187,7 @@ impl FederationMemberTestConfig {
             frost_min_signers,
             frost_max_signers,
             max_snapshot_size_bytes,
-            snapshot_keep_recent,
+            num_snapshots_to_keep,
             peer_id,
             is_dkg_ready: false,
             edh: None,
@@ -311,7 +311,7 @@ impl FederationMemberTestConfig {
         let frost_min_signers = self.frost_min_signers.to_string();
         let frost_max_signers = self.frost_max_signers.to_string();
         let max_snapshot_size_bytes = self.max_snapshot_size_bytes.to_string();
-        let snapshot_keep_recent = self.snapshot_keep_recent.to_string();
+        let num_snapshots_to_keep = self.num_snapshots_to_keep.to_string();
         let discovery_port = self.discovery_port.to_string();
         let abci_port = self.abci_port.to_string();
 
@@ -368,8 +368,8 @@ impl FederationMemberTestConfig {
             frost_max_signers.as_str(),
             "--sync.max_snapshot_size_bytes",
             max_snapshot_size_bytes.as_str(),
-            "--sync.snapshot_keep_recent",
-            snapshot_keep_recent.as_str(),
+            "--sync.num_snapshots_to_keep",
+            num_snapshots_to_keep.as_str(),
             "--port",
             discovery_port.as_str(),
             "--p2p-secret-key",
@@ -760,7 +760,7 @@ pub async fn create_poa_nodes(
             global_context.min_signers,
             global_context.max_signers,
             global_context.max_snapshot_size_bytes,
-            global_context.snapshot_keep_recent,
+            global_context.num_snapshots_to_keep,
             member_peerid,
             RPC_PORT_BASE + member_index,
             WS_PORT_BASE + member_index,

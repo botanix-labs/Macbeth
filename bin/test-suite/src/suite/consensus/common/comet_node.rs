@@ -330,7 +330,7 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
             }
             if let Some(trust_hash) = rpc.get_mut("trust_hash") {
                 // NOTE: this hash is random and it is meant to be dynamically overwritten by the
-                // trusted hash during the test exection Using the hash for block
+                // trusted hash during the test execution Using the hash for block
                 // height of 0 results in an error as the trusted height of the chain acc. to Comet
                 // cannot be set to 0 For Ref: cf. test_state_sync_dynamic.rs
                 *trust_hash = toml::value::Value::String(
