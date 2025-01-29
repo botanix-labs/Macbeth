@@ -13,7 +13,6 @@
 
 //! A [Consensus] implementation of Clique Proof of Authority (POA)
 //! that authoritymatically seals blocks.
-//!
 
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
