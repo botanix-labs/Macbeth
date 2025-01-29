@@ -11,8 +11,9 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
-use futures::{stream_select, StreamExt, TryFutureExt};
+use futures::TryFutureExt;
 use reth_authority_consensus::{
+    comet_bft::abci::ABCIDriver,
     random_source_provider::RandomSourceProvider,
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
@@ -20,14 +21,13 @@ use reth_authority_consensus::{
 use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
-use reth_engine_util::EngineMessageStreamExt;
 use reth_network_peers::pk2id;
 use reth_node_core::{
     args::DatadirArgs,
     cli::config::BtcServerConfig,
     version::{
-        BUILD_PROFILE_NAME, CARGO_PKG_VERSION, CLIENT_CODE, NAME_CLIENT, VERGEN_BUILD_TIMESTAMP,
-        VERGEN_CARGO_FEATURES, VERGEN_CARGO_TARGET_TRIPLE, VERGEN_GIT_SHA,
+        BUILD_PROFILE_NAME, CARGO_PKG_VERSION, VERGEN_BUILD_TIMESTAMP, VERGEN_CARGO_FEATURES,
+        VERGEN_CARGO_TARGET_TRIPLE, VERGEN_GIT_SHA,
     },
 };
 use reth_node_metrics::{
@@ -40,22 +40,14 @@ use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::botanix::mint_validation::MINT_CONTRACT_ADDRESS;
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
-use reth_rpc_engine_api::capabilities::EngineCapabilities;
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
-use reth_rpc_types::engine::ClientVersionV1;
 use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio_stream::wrappers::{BroadcastStream, UnboundedReceiverStream};
+use tokio_stream::wrappers::BroadcastStream;
 
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_beacon_consensus::{
-    hooks::EngineHooks, BeaconConsensusEngine, MIN_BLOCKS_FOR_PIPELINE_RUN,
-};
-use reth_blockchain_tree::{
-    BlockchainTree, BlockchainTreeConfig, ShareableBlockchainTree, TreeExternals,
-};
 use reth_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
@@ -66,9 +58,8 @@ use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
     frost::{manager::FrostConfig, protocol::FrostProtoHandler},
-    import::ProofOfAuthorityBlockImport,
     protocol::IntoRlpxSubProtocol,
-    BlockDownloaderProvider, NetworkEventListenerProvider, NetworkHandle, NetworkManager,
+    BlockDownloaderProvider, NetworkHandle, NetworkManager,
 };
 use reth_node_builder::{
     setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig,
@@ -82,14 +73,13 @@ use reth_node_core::{
     version,
 };
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
-use reth_node_events::node::handle_events;
 use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
 use reth_provider::{
-    providers::{BlockchainProvider, StaticFileProvider},
+    providers::{BlockchainProvider2, StaticFileProvider},
     BlockHashReader, CanonStateSubscriptions, HeaderProvider, ProviderFactory,
     StageCheckpointReader,
 };
-use reth_rpc::{EngineApi, EthApi};
+use reth_rpc::EthApi;
 use reth_static_file::StaticFileProducer;
 use reth_transaction_pool::{
     blobstore::InMemoryBlobStore, TransactionPoolExt, TransactionValidationTaskExecutor,
@@ -272,7 +262,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let chain_arc = Arc::new(chain.clone());
 
         // set up node config
-        // TODO should set up PoaConfig
         let mut node_config = NodeConfig {
             datadir: datadir.clone(),
             config: network_config_path.clone(),
@@ -412,7 +401,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         }
 
         let bitcoind_factory_clone = bitcoind_factory.clone();
-        let _bitcoind_signing_server_factory_clone = btc_server_factory.clone();
         let pegin_conf_depth = chain.parent_confirmation_depth;
         assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
         executor.spawn_critical(
@@ -489,8 +477,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         debug!(target: "reth::cli", ?network_secret_path, "Loading p2p key file");
         let secret_key = get_secret_key(&network_secret_path)?;
-        let pk = secret_key.public_key(SECP256K1);
-        info!(target: "reth::cli", "Public key: {}", pk.to_string());
+        let authority_pk = secret_key.public_key(SECP256K1);
+        tracing::info!("Federation Member PubKey {:?}", authority_pk.to_string());
+        tracing::info!("Federation Member Enode {:?}", pk2id(&authority_pk));
 
         // add trusted nodes with --trusted-peers flag
         info!(target: "reth::cli", "Adding trusted nodes");
@@ -527,10 +516,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let authorities_socket_addresses =
             federation_authorities.iter().map(|authority| authority.1).collect::<Vec<SocketAddr>>();
 
-        let authority_pk = secret_key.public_key(SECP256K1);
-        tracing::info!("Federation Member PubKey {:?}", authority_pk.to_string());
-        tracing::info!("Federation Member Enode {:?}", pk2id(&authority_pk));
-
         debug!(target: "reth::cli", "Spawning stages metrics listener task");
         let (sync_metrics_tx, sync_metrics_rx) = unbounded_channel();
         let sync_metrics_listener = reth_stages::MetricsListener::new(sync_metrics_rx);
@@ -538,45 +523,44 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        //let executor_factory = EvmFactory::new(Arc::new(chain.clone()), evm_config);
         let executor_factory = EthExecutorProvider::new(
             Arc::new(chain.clone()),
             evm_config,
             bitcoind_factory.clone(),
             node_config.rpc.btc_network,
         );
+        // fetch the head block from the database
+        let head = self.lookup_head(provider_factory.clone());
+        let latest_sealed_header = provider_factory
+            .header(&head.hash)
+            .expect("latest block to exist")
+            .expect("latest block to exist")
+            .seal(head.hash);
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
-
-        // configure blockchain tree
-        let tree_externals = TreeExternals::new(
-            provider_factory.clone(),
-            consensus.clone(),
-            executor_factory.clone(),
-        );
-
-        let tree = BlockchainTree::new(
-            tree_externals,
-            BlockchainTreeConfig::default(),
-            PruneModes::none(), /* Prune mode */
-        )?;
-
-        let canon_state_notification_sender = tree.canon_state_notification_sender();
-        let canon_state_notification_receiver = canon_state_notification_sender.subscribe();
-        let blockchain_tree = Arc::new(ShareableBlockchainTree::new(tree));
-        debug!(target: "reth::cli", "configured blockchain tree");
-
-        // fetch the head block from the database
-        let head = self.lookup_head(provider_factory.clone());
-
-        // setup the blockchain provider
+        let state_provider = provider_factory.latest().expect("provider factory to exist");
         let blockchain_db =
-            BlockchainProvider::new(provider_factory.clone(), blockchain_tree.clone())?;
+            BlockchainProvider2::with_latest(provider_factory.clone(), latest_sealed_header)
+                .expect("blockchain db to exist");
+
+        let btc_server_client = match btc_server_factory.clone() {
+            Some(btc_server_factory) => {
+                Some(btc_server_factory.build_and_connect().await.expect("can connect to bitcoind"))
+            }
+            None => None,
+        };
+
+        let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(1);
+        let mut abci_driver = ABCIDriver::new(
+            btc_server_client,
+            driver_rx,
+            provider_factory.clone(),
+            blockchain_db.clone(),
+        );
 
         // check Minting.sol deployed bytecode matches known bytecode
         info!(target: "reth::cli", "Checking minting contract bytecode");
-        let state_provider = provider_factory.latest().expect("provider factory to exist");
         let deployed_bytecode = state_provider
             .account_code(*MINT_CONTRACT_ADDRESS)
             .expect("Minting contract address exists")
@@ -608,12 +592,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // spawn txpool maintenance task
         {
             let pool = transaction_pool.clone();
-            let chain_events = blockchain_db.canonical_state_stream();
-            let client = blockchain_db.clone();
+            let chain_events = abci_driver.canonical_state_stream();
             executor.spawn_critical(
                 "txpool maintenance task",
                 reth_transaction_pool::maintain::maintain_transaction_pool_future(
-                    client,
+                    blockchain_db.clone(),
                     pool,
                     chain_events,
                     executor.clone(),
@@ -622,10 +605,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             );
             debug!(target: "reth::cli", "Spawned txpool maintenance task");
         }
-
-        // Set up block import structures
-        let (block_import_tx, block_import_rx) = unbounded_channel();
-        let _block_import = ProofOfAuthorityBlockImport::new(chain_arc.clone(), block_import_tx);
 
         if let (Some(min_signers), Some(max_signers)) = (rpc.min_signers, rpc.max_signers) {
             if min_signers > max_signers {
@@ -737,53 +716,30 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             node_config.chain.clone(),
             payload_builder,
         );
-        let (payload_service, payload_builder) = PayloadBuilderService::new(
-            payload_generator,
-            blockchain_db.clone().canonical_state_stream(),
-        );
+        let (payload_service, payload_builder) =
+            PayloadBuilderService::new(payload_generator, abci_driver.canonical_state_stream());
 
         executor.spawn_critical("payload builder service", Box::pin(payload_service));
         debug!(target: "reth::cli", "Spawned payload builder service");
-
-        let (consensus_engine_tx, consensus_engine_rx) = unbounded_channel();
-
-        let consensus_engine_stream = UnboundedReceiverStream::from(consensus_engine_rx)
-            .maybe_skip_fcu(node_config.debug.skip_fcu)
-            .maybe_skip_new_payload(node_config.debug.skip_new_payload)
-            .maybe_reorg(
-                blockchain_db.clone(),
-                evm_config,
-                reth_payload_validator::ExecutionPayloadValidator::new(node_config.chain.clone()),
-                node_config.debug.reorg_frequency,
-            )
-            // Store messages _after_ skipping so that `replay-engine` command
-            // would replay only the messages that were observed by the engine
-            // during this run.
-            .maybe_store_messages(node_config.debug.engine_api_store.clone());
 
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default()
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
         // Build authority Consensus
+        let canon_state_reciever = abci_driver.subscribe_to_canonical_state();
         let (
-            _authority_consensus,
             frost_task,
-            _healthcheck_task,
             abci_client_builder,
-            _wallet_sync,
         ) = match AuthorityConsensusBuilder::try_new(
             Arc::clone(&chain_arc.clone()),
             blockchain_db.clone(),
-            consensus_engine_tx.clone(),
-            canon_state_notification_sender.clone(),
             btc_server_factory.clone(),
             bitcoin_block_header_clone.clone(),
             secret_key,
             network_handle.clone(),
             network_client.clone(),
             frost_handle,
-            block_import_rx,
             executor.clone(),
             frost_config,
             payload_builder.clone(),
@@ -795,9 +751,10 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             evm_config,
             cometbft_rpc_factory,
             RandomSourceProvider::new(),
-            canon_state_notification_receiver,
+            driver_tx,
+            provider_factory.clone(),
         ) {
-            Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
+            Ok(consensus) => consensus.build::<BtcServerExtendedClient, ABCIDriver<BtcServerExtendedClient, Arc<DatabaseEnv>>>(canon_state_reciever).await,
             Err(e) => {
                 return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
             }
@@ -808,11 +765,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Configure pipeline
         let max_block = node_config.max_block(&network_client, provider_factory.clone()).await?;
-        let pipeline = build_networked_pipeline(
+        build_networked_pipeline(
             &StageConfig::default(),
             network_client.clone(),
             Arc::new(consensus.clone()),
-            provider_factory.clone(),
+            provider_factory,
             &executor,
             sync_metrics_tx,
             node_config.prune_config(),
@@ -824,12 +781,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             node_config.rpc.btc_network,
         )?;
 
-        let pipeline_events = pipeline.events();
-
         // Spawn authority consensus specific tasks
         // federation mode tasks
         // TODO  we should structure which tasks are spawned based on the node type using two
         // different structs
+
         if is_fed_node {
             executor.spawn_critical(
                 "Frost Task",
@@ -839,46 +795,31 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             );
         }
 
-        let initial_target = node_config.debug.tip;
-        let hooks = EngineHooks::new();
+        // NOTE: the node will block here until DKG has completed
+        let eth_tx_validator = validator.validator.clone();
+        let abci_client_builder = abci_client_builder.expect("abci client builder exists");
+        let fut = || async {
+            abci_client_builder
+                .start_server(
+                    &executor.clone(),
+                    eth_tx_validator.clone(),
+                    transaction_pool.clone(),
+                    abci_host.to_string(),
+                    *abci_port,
+                )
+                .await
+        };
 
-        // Configure the consensus engine
-        let (beacon_consensus_engine, beacon_engine_handle) = BeaconConsensusEngine::with_channel(
-            network_client,
-            pipeline,
-            blockchain_db.clone(),
-            Box::new(executor.clone()),
-            Box::new(network_handle.clone()),
-            max_block,
-            payload_builder.clone(),
-            initial_target,
-            MIN_BLOCKS_FOR_PIPELINE_RUN,
-            consensus_engine_tx,
-            Box::pin(consensus_engine_stream),
-            hooks,
-        )?;
-        info!(target: "reth::cli", "Consensus engine initialized");
-
-        let events = stream_select!(
-            network_handle.event_listener().map(Into::into),
-            beacon_engine_handle.event_listener().map(Into::into),
-            pipeline_events.map(Into::into),
-        );
-        executor.spawn_critical(
-            "events task",
-            handle_events(Some(Box::new(network_handle.clone())), Some(head.number), events),
-        );
+        match retry_exec("abci_server_start", fut, 3, Duration::from_secs(2)).await {
+            Ok(()) => {}
+            Err(err) => {
+                error!(target: "reth::cli", "Failed to connect to abci client: {}", err);
+                return Err(eyre::eyre!("Failed to connect to abci client: {}", err));
+            }
+        };
 
         // adjust rpc port numbers based on instance number
         node_config.adjust_instance_ports();
-
-        // build client
-        let client = ClientVersionV1 {
-            code: CLIENT_CODE,
-            name: NAME_CLIENT.to_string(),
-            version: CARGO_PKG_VERSION.to_string(),
-            commit: VERGEN_GIT_SHA.to_string(),
-        };
 
         // create botanix client
         let botanix_config =
@@ -886,17 +827,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Start RPC servers
         let botanix_provider = Botanix::new(botanix_config);
-        let _engine_api = EngineApi::new(
-            blockchain_db.clone(),
-            chain_arc.clone(),
-            beacon_engine_handle,
-            payload_builder.clone().into(),
-            Box::new(executor.clone()),
-            client,
-            EngineCapabilities::default(),
-            botanix_provider.clone(),
-        );
-
         let node_components = PoaNodeComponents::new(
             transaction_pool.clone(),
             evm_config,
@@ -933,7 +863,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 .with_provider(node_components.provider.clone())
                 .with_pool(node_components.pool.clone())
                 .with_network(node_components.network.clone())
-                .with_events(node_components.provider.clone())
+                .with_events(abci_driver.clone())
                 .with_executor(node_components.task_executor.clone())
                 .with_evm_config(node_components.evm_config)
                 .with_botanix_provider(botanix_provider.clone())
@@ -957,41 +887,19 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             launch_rpc.await?
         };
 
-        // NOTE: the node will block here until DKG has completed
-        let eth_tx_validator = validator.validator.clone();
-        let abci_client_builder = abci_client_builder.expect("abci client builder exists");
-        let fut = || async {
-            abci_client_builder
-                .start_server(
-                    &executor.clone(),
-                    eth_tx_validator.clone(),
-                    transaction_pool.clone(),
-                    abci_host.to_string(),
-                    *abci_port,
-                )
-                .await
-        };
-
-        match retry_exec("abci_server_start", fut, 3, Duration::from_secs(2)).await {
-            Ok(()) => {}
-            Err(err) => {
-                error!(target: "reth::cli", "Failed to connect to abci client: {}", err);
-                return Err(eyre::eyre!("Failed to connect to abci client: {}", err));
-            }
-        };
-
-        // Run consensus engine to completion
         let (tx, rx) = oneshot::channel();
-        info!(target: "reth::cli", "Starting consensus engine");
-        executor.spawn_critical_blocking("consensus engine", async move {
-            let res = beacon_consensus_engine.await;
-            let _ = tx.send(res);
-        });
+        executor.spawn_critical(
+            "abci driver",
+            Box::pin(async move {
+                let res = abci_driver.start().await;
+                let _ = tx.send(res);
+            }),
+        );
 
         match rx.await? {
-            Ok(()) => info!("Beacon consensus engine exited successfully"),
+            Ok(()) => info!("ABCIDriver exited successfully"),
             Err(error) => {
-                error!(target: "reth::cli", %error, "Beacon consensus engine exited with an error")
+                error!(target: "reth::cli", %error, "ABCIDriver exited with an error")
             }
         };
 
@@ -1090,7 +998,7 @@ pub struct PoaNodeComponents<P> {
     pub network: NetworkHandle,
     #[allow(dead_code)]
     /// The blockchain provider
-    pub provider: BlockchainProvider<Arc<DatabaseEnv>>,
+    pub provider: BlockchainProvider2<Arc<DatabaseEnv>>,
     /// payload builder
     pub payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     /// task executor
@@ -1106,7 +1014,7 @@ where
         evm_config: EthEvmConfig,
         executor: EthExecutorProvider<BitcoindClientFactory>,
         network: NetworkHandle,
-        provider: BlockchainProvider<Arc<DatabaseEnv>>,
+        provider: BlockchainProvider2<Arc<DatabaseEnv>>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         task_executor: TaskExecutor,
     ) -> Self {

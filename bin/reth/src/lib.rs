@@ -99,15 +99,6 @@ pub mod primitives {
     pub use reth_primitives::*;
 }
 
-/// Re-exported from `reth_beacon_consensus`.
-pub mod beacon_consensus {
-    pub use reth_beacon_consensus::*;
-}
-/// Re-exported from `reth_blockchain_tree`.
-pub mod blockchain_tree {
-    pub use reth_blockchain_tree::*;
-}
-
 /// Re-exported from `reth_consensus_common`.
 pub mod consensus_common {
     pub use reth_consensus_common::*;

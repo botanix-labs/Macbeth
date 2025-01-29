@@ -1,10 +1,7 @@
 use crate::{
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
-    utils::{
-        deserialize_frost_peer_id, parse_signing_session_id, retry_exec, retry_future,
-        FrostParseError,
-    },
+    utils::{parse_signing_session_id, retry_exec, retry_future, FrostParseError},
 };
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
