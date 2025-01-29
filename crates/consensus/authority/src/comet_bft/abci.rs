@@ -917,18 +917,6 @@ where
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
                     ABCIDriverMessage::CommitBlock(sealed_block_with_context) => {
-<<<<<<< HEAD
-=======
-                        let consistent_db_view =
-                            ConsistentDbView::new_with_latest_tip(self.database_provider.clone())?;
-                        let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
-                        let (_, trie_updates) =
-                            ParallelStateRoot::new(consistent_db_view, hashed_state.clone())
-                                .incremental_root_with_updates()
-                                .map(|(root, updates)| (root, Some(updates)))
-                                .map_err(ProviderError::from)?;
-
->>>>>>> 21cc5d57c (fix(abci): update rpc storage with agg_pk in commit() instead of driver)
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
@@ -1044,7 +1032,6 @@ mod tests {
     };
     use comet_bft_rpc::HttpCometBFTRpcClientFactory;
     use rand::thread_rng;
-    use reth_blockchain_tree::noop::NoopBlockchainTree;
     use reth_btc_wallet::{
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,
@@ -1073,11 +1060,11 @@ mod tests {
     fn abci_client_builder() -> ABCIClient<
         MockExecutorProvider,
         MockBitcoindFactory,
-        BlockchainProvider<Arc<reth_db::DatabaseEnv>>,
+        BlockchainProvider2<Arc<reth_db::DatabaseEnv>>,
         RethPool<
             TransactionValidationTaskExecutor<
                 EthTransactionValidator<
-                    BlockchainProvider<Arc<reth_db::DatabaseEnv>>,
+                    BlockchainProvider2<Arc<reth_db::DatabaseEnv>>,
                     EthPooledTransaction,
                 >,
             >,
@@ -1103,7 +1090,7 @@ mod tests {
         );
         let _ = init_genesis(factory.clone()).expect("to init genesis");
         let client =
-            BlockchainProvider::new(factory.clone(), Arc::new(NoopBlockchainTree::default()))
+            BlockchainProvider2::new(factory.clone())
                 .expect("to create blockchain provider");
 
         let storage = Storage::new(

@@ -20,8 +20,10 @@ use reth_tasks::TaskExecutor;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
+#[allow(dead_code)]
 const NONRESPONDING_PEERS_TIMEOUT_SECS: u64 = 45;
 
+#[allow(dead_code)]
 pub(crate) struct HealthcheckTask<EF, BF, DB, ToFrostMan> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
@@ -43,6 +45,7 @@ where
     DB: Clone,
 {
     /// Creates a new instance of the task
+    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         network_handle: NetworkHandle,
@@ -61,6 +64,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn start_task(&mut self) {
         info!(target: "HealthcheckTask::start_task", "Starting HealthcheckTask");
 

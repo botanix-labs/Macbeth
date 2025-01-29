@@ -49,7 +49,6 @@ pub mod comet_bft;
 pub use comet_bft::light_client::LightCBFTClientBuilder;
 mod compressor;
 mod dkg;
-mod engine_util;
 mod excecution_utils;
 mod frost_task;
 mod healthcheck_task;
@@ -385,6 +384,7 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
         self.inner.write().await
     }
 
+    #[allow(dead_code)]
     /// Returns the read lock of the storage
     pub(crate) async fn read(&self) -> RwLockReadGuard<'_, StorageInner> {
         self.inner.read().await

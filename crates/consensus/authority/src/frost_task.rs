@@ -24,7 +24,7 @@ use reth_network::{
 };
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use tokio::sync::oneshot::error::RecvError;

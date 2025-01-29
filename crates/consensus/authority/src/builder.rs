@@ -24,7 +24,7 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    providers::ConsistentDbView, BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions,
     ProviderFactory, StateProviderFactory,
 };
 
