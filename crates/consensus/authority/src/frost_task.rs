@@ -23,9 +23,7 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_primitives::header_ext::HeaderExt;
-use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, StateProviderFactory,
-};
+use reth_provider::{BlockReaderIdExt, CanonStateNotification, StateProviderFactory};
 use reth_revm::primitives::FixedBytes;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::{debug, error, info, warn};
@@ -305,11 +303,9 @@ where
                 match notification {
                     CanonStateNotification::Commit { new } => {
                         let tip = new.tip();
-                        // TODO(armins) make this block of code more readable by removing all the matches
-                        let edh = match tip
-                            .header()
-                            .deserialize_extra_data_header()
-                        {
+                        // TODO(armins) make this block of code more readable by removing all the
+                        // matches
+                        let edh = match tip.header().deserialize_extra_data_header() {
                             Ok(edh) => edh,
                             Err(e) => {
                                 error!(target: "consensus::authority::frost_task::start_task", "Error deserializing extra data header: {}", e);

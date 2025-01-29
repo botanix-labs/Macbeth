@@ -55,9 +55,9 @@ reth-basic-payload-builder = { workspace = true }
 
 ## Botanix
 reth-btc-wallet = { workspace = true }
-reth-chainspec = { workspace = true }
 # reth
 reth-chain-state = { workspace = true }
+reth-chainspec = { workspace = true }
 reth-cli-runner = { workspace = true }
 reth-consensus = { workspace = true }
 reth-consensus-common = { path = "../common" }
@@ -83,8 +83,8 @@ reth-revm = { workspace = true }
 reth-rpc-types = { workspace = true }
 reth-tasks = { workspace = true }
 reth-transaction-pool = { workspace = true, features = ["test-utils"] }
-reth-trie-parallel = { workspace = true, features = ["parallel"] }
 reth-trie = { workspace = true }
+reth-trie-parallel = { workspace = true, features = ["parallel"] }
 
 # LRU Cache
 schnellru = { workspace = true }
@@ -115,7 +115,7 @@ tracing = { workspace = true }
 uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
+anyhow = "1.0.75"
+rand = "0.8.5"
 
 reth-evm = { workspace = true, features = ["test-utils"] }
-rand = "0.8.5"
-anyhow = "1.0.75"
