@@ -15,12 +15,19 @@ Take a look at the `src/suite/consensus/mod.rs` file to see the different tests 
 
 ### Dependencies
 
-Ensure you have bitcoind in your PATH. Additionally ensure you have cometbft in your PATH.
+Ensure you have bitcoind and cometbft in your PATH.
 You can either install these binaries or make them from scratch.
 To run the integration tests suite:
 
 ```sh
 make start-test-suite
+```
+
+Note: the test suite will not build the btc server or reth binaries for you. It simply uses the binaries that are in /target/debug.
+So before running the test suite, you need to build the binaries.
+
+```bash
+cargo build && cd bin/btc-server && cargo build --bin btc-server --features conflicting_input
 ```
 
 However, integration tests can ONLY be run using the local bitcoind instance with `regtest`. Running them on the `signet` is not feasible as block times are quite long there and the test will not finish in time. You are advised, prior to running the integration tests suite to update the `.env` file with your paths:
