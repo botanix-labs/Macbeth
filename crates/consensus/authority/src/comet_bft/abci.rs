@@ -662,19 +662,31 @@ where
                     }
                 }
 
-                let block_with_context = BlockWithContext {
-                    sealed_block_with_peg,
-                    exec_outcome: ExecutionOutcome::new(
-                        exec_results.state,
-                        exec_results.receipts.into(),
-                        block_number,
-                        // an empty vec since these requests are for the consensus layer (ie
-                        // validator withdrawals) which have no meaning in
-                        // our context
-                        vec![],
-                    ),
-                    trie_updates: None,
-                };
+                let exec_outcome = ExecutionOutcome::new(
+                    exec_results.state,
+                    exec_results.receipts.into(),
+                    block_number,
+                    vec![],
+                );
+                // TODO(scott): pull out into util function
+                // ticket: https://github.com/botanix-labs/botanix/issues/896
+                let consistent_db_view =
+                    ConsistentDbView::new_with_latest_tip(self.provider_factory.clone())
+                        .expect("to get consistent db view");
+                let hashed_state = exec_outcome.hash_state_slow();
+                let (_, trie_updates) =
+                    match ParallelStateRoot::new(consistent_db_view, hashed_state.clone())
+                        .incremental_root_with_updates()
+                        .map(|(root, updates)| (root, Some(updates)))
+                    {
+                        Ok((root, updates)) => (root, updates),
+                        Err(e) => {
+                            panic!("Error calculating incremental root: {:?}", e);
+                        }
+                    };
+
+                let block_with_context =
+                    BlockWithContext { sealed_block_with_peg, exec_outcome, trie_updates };
 
                 self.block_cache
                     .write()
@@ -1090,8 +1102,7 @@ mod tests {
         );
         let _ = init_genesis(factory.clone()).expect("to init genesis");
         let client =
-            BlockchainProvider2::new(factory.clone())
-                .expect("to create blockchain provider");
+            BlockchainProvider2::new(factory.clone()).expect("to create blockchain provider");
 
         let storage = Storage::new(
             Vec::new(),
