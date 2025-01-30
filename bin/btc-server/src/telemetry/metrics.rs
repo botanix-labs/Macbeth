@@ -226,7 +226,7 @@ impl BtcServerMetrics {
         let pegout_scheduler_error_rates = register_int_counter_vec!(
             format!("{}pegout_scheduler_error_rates", metric_prefix),
             "A metric counting errors or failures during the pegout scheduler processing",
-            &[],
+            &["error_type"],
         )
         .expect("metric must be created");
 
