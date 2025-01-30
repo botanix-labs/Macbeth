@@ -658,7 +658,7 @@ where
     fn execute(mut self, input: Self::Input<'_>) -> Result<Self::Output, Self::Error> {
         let BlockExecutionInput { block, total_difficulty } = input;
         let EthExecuteOutput { receipts, requests, gas_used, total_block_fees, pegins, pegouts } =
-            self.execute_without_verification(block, total_difficulty)?; // TODO: check block address
+            self.execute_without_verification(block, total_difficulty)?;
 
         // TODO NOTE: we need to merge keep the reverts for the bundle retention
         self.state.merge_transitions(BundleRetention::Reverts);

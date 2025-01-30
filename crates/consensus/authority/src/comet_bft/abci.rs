@@ -22,8 +22,7 @@ use reth_evm::execute::BlockExecutorProvider;
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    SealedBlock, TransactionSigned,
+    botanix::block_with_peg::SealedBlockWithPeg, extra_data_header::ExtraDataHeader, header_ext::HeaderExt, Address, BlockHash, SealedBlock, TransactionSigned
 };
 use reth_provider::{
     providers::{BlockchainProvider2, ConsistentDbView},
@@ -599,6 +598,22 @@ where
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
+        
+        let edh = match ExtraDataHeader::deserialize(&mut io::Cursor::new(&txs_bytes[0])) {
+            Ok(edh) => edh,
+            Err(e) => {
+                warn!("Error deserializing extra data header: {:?}", e);
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
+
+        if edh.block_producer_address != block_builder_address {
+            warn!("Block producer address mismatch - EDH: {:?}, block builder: {:?}", 
+            edh.block_producer_address, 
+            block_builder_address
+            );
+            return ResponseProcessProposal { status: VERIFY_REJECT };
+        }
 
         let bitcoin_checkpoint_block_hash =
             self.bitcoin_checkpoint.blocking_read().expect("should have checkpoint").0.block_hash();
