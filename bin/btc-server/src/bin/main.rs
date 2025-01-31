@@ -1425,10 +1425,15 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         .filter_module("bitcoincore_rpc::", log::LevelFilter::Trace)
         .init();
 
-    let telemetry = Telemetry::new().await?;
-    telemetry.start().await?;
-
     let config = btcserverlib::config::load_config()?;
+
+    let telemetry = if config.metrics_port.is_some() {
+        let telemetry = Telemetry::new().await?;
+        telemetry.start().await?;
+        Some(telemetry)
+    } else {
+        None
+    };
 
     // setup the grpc server
     let bitcoind_client = bitcoincore_rpc::Client::new(
@@ -1437,7 +1442,7 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
     )
     .expect("bitcoind client");
     let btc_server: App<bitcoincore_rpc::Client> =
-        App::new(config.clone(), bitcoind_client, Some(telemetry.clone()))?;
+        App::new(config.clone(), bitcoind_client, telemetry.clone())?;
 
     // run grpc server in the background
     let grpc_stop_tx = match btc_server.serve_async().await {
@@ -1455,31 +1460,40 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
     // spawn terminate handlers routine
     let grpc_join_handle = tokio::spawn(stop_signal(grpc_stop_tx));
 
-    // create and spin up the http server
-    let state = ServerState::new(telemetry.clone()).await;
-    // create the actix webserver
-    let grpc_server_addr =
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), config.metrics_port);
-    let grpc_server = create_web_server(state, grpc_server_addr)?;
-    // get server handle
-    let server_handle = grpc_server.handle();
-    // spawn the server in the background
-    tokio::spawn(async move {
-        if let Err(err) = grpc_server.await {
-            error!("Actix Web server error: {:?}", err);
-        }
-    });
-    info!("Grpc server started.");
+    let server_handle = if let Some(telemetry) = telemetry {
+        // create and spin up the http server
+        let state = ServerState::new(telemetry.clone()).await;
+        // create the actix webserver
+        let port = config.metrics_port.unwrap_or(7000);
+        let grpc_server_addr =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
+        let grpc_server = create_web_server(state, grpc_server_addr)?;
+        // get server handle
+        let server_handle = grpc_server.handle();
+        // spawn the server in the background
+        tokio::spawn(async move {
+            if let Err(err) = grpc_server.await {
+                error!("Actix Web server error: {:?}", err);
+            }
+        });
+        info!("Grpc server started.");
+        Some(server_handle)
+    } else {
+        info!("Telemetry is disabled. Not starting the http server.");
+        None
+    };
 
     // // block and wait for a shutdown signal to terminate
     let _ = tokio::join!(grpc_join_handle);
 
     info!("Grpc server stopped");
 
-    // Await the Actix server shutdown
-    info!("Stopping actix server ...");
-    server_handle.stop(true).await;
-    info!("Actix server stopped. Goodbye!");
+    if let Some(server_handle) = server_handle {
+        // Await the Actix server shutdown
+        info!("Stopping actix server ...");
+        server_handle.stop(true).await;
+        info!("Actix server stopped. Goodbye!");
+    }
 
     Ok(())
 }
@@ -1517,7 +1531,7 @@ mod tests {
             bitcoind_url: Url::from_str("http://localhost:8332").unwrap(),
             bitcoind_user: "user".to_string(),
             bitcoind_pass: "pass".to_string(),
-            metrics_port: 8080,
+            metrics_port: Some(8080),
             fee_rate_diff_percentage: 10,
             fall_back_fee_rate_sat_per_vbyte: 1000,
         };
