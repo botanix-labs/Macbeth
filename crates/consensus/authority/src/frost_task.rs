@@ -299,7 +299,7 @@ where
 
             // Receive canon state notifications
             while let Ok(ref notification) = self.canon_state_notification_receiver.try_recv() {
-                info!(target: "consensus::authority::frost_task::start_task", "canon state notification received {:?}", notification);
+                info!(target: "consensus::authority::frost_task::start_task", "canon state notification received for block number {:?}", notification.tip().number);
                 match notification {
                     CanonStateNotification::Commit { new } => {
                         let tip = new.tip();
