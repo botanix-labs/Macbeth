@@ -224,13 +224,13 @@ where
                     let sealed_block = sealed_block_with_context.sealed_block_with_peg.block();
 
                     // first attempt to serialize and compress the sealed block
-                    let serialized_compressed_sealed_block = self.compressor.encode(sealed_block).await.map_err(|e| {
+                    let serialized_block_with_context = self.compressor.encode(&sealed_block_with_context).await.map_err(|e| {
                             error!(target:"consensus::authority::snapshot_manager", "Failed to serialize and compress sealed block {:?}", e);
                             SnapshotManagerError::DataParser(e)
                         })?;
 
-                    if serialized_compressed_sealed_block.is_empty() {
-                        error!(target: "consensus::authority::snapshot_manager::run", "serialized_compressed_sealed_block is empty");
+                    if serialized_block_with_context.is_empty() {
+                        error!(target: "consensus::authority::snapshot_manager::run", "serialized_block_with_context is empty");
                         continue;
                     }
 
@@ -258,16 +258,16 @@ where
                     let latest_snapshot_size = self.get_snapshot_size(last_snapshot_id)?;
                     info!(
                         "Latest_snapshot_size: {:?} {:?}",
-                        serialized_compressed_sealed_block.len(),
+                        serialized_block_with_context.len(),
                         latest_snapshot_size
                     );
 
                     // Check if there is enough space in the latest snapshot
                     debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
-                    if latest_snapshot_size + serialized_compressed_sealed_block.len() >
+                    if latest_snapshot_size + serialized_block_with_context.len() >
                         self.state_sync_args.max_snapshot_size_bytes
                     {
-                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.state_sync_args.max_snapshot_size_bytes, latest_snapshot_size, serialized_compressed_sealed_block.len());
+                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.state_sync_args.max_snapshot_size_bytes, latest_snapshot_size, serialized_block_with_context.len());
                         // create a new snapshot
                         last_snapshot_id = self.create_new_snapshot(
                             sealed_block,
@@ -289,7 +289,7 @@ where
                     let chunk_id = self.create_new_chunk(
                         last_snapshot_id,
                         sealed_block.number,
-                        serialized_compressed_sealed_block,
+                        serialized_block_with_context,
                     )?;
                     info!(
                         "Updating snapshot with: {:?} {:?} {:?}",

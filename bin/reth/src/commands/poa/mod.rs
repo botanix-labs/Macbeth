@@ -15,7 +15,7 @@ use futures::TryFutureExt;
 use reth_authority_consensus::{
     comet_bft::abci::{ABCIDriver, ABCIDriverMessage},
     random_source_provider::RandomSourceProvider,
-    snapshot_manager::{self, SnapshotRunnable},
+    snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
@@ -24,7 +24,7 @@ use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_network_peers::pk2id;
 use reth_node_core::{
-    args::DatadirArgs,
+    args::{DatadirArgs, StateSyncArgs},
     cli::config::BtcServerConfig,
     version::{
         BUILD_PROFILE_NAME, CARGO_PKG_VERSION, VERGEN_BUILD_TIMESTAMP, VERGEN_CARGO_FEATURES,
@@ -46,7 +46,7 @@ use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio_stream::wrappers::{BroadcastStream, UnboundedReceiverStream};
+use tokio_stream::wrappers::BroadcastStream;
 
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_btc_wallet::bitcoind::{
@@ -283,7 +283,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             dev: Default::default(),
             pruning: Default::default(),
             builder: PayloadBuilderArgs::default(),
-            state_sync,
+            state_sync: state_sync.clone(),
         };
 
         let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
@@ -1245,7 +1245,7 @@ mod tests {
 
     #[test]
     fn parse_db_path() {
-        let cmd = PoaNodeCommand::try_parse_args_from([
+        let _cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--network-config-path",
             "my/path/to/reth.toml",

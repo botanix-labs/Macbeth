@@ -10,10 +10,10 @@ exclude = { workspace = true }
 description = "A PoA consensus engine"
 
 [dependencies]
-anyhow = "1.0.94"
 
 # ethereum
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
+anyhow = "1.0.94"
 
 # compression
 async-compression = { version = "0.4.11", features = ["all"] }
@@ -81,7 +81,7 @@ reth-node-core = { workspace = true }
 reth-node-ethereum = { workspace = true }
 reth-payload-builder = { workspace = true }
 reth-primitives = { workspace = true, features = ["secp256k1"] }
-reth-provider = { workspace = true, features = ["test-utils"] }
+reth-provider = { workspace = true, features = ["test-utils", "serde"] }
 reth-revm = { workspace = true }
 reth-rpc-types = { workspace = true }
 reth-tasks = { workspace = true }
