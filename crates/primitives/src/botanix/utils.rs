@@ -1,4 +1,8 @@
+use core::str::FromStr;
+
+use bitcoin::consensus::{Decodable, Encodable};
 use ethabi::ethereum_types::U256;
+use serde::{Deserialize, Deserializer, Serializer};
 
 /// One satoshi expressed in wei.
 ///
@@ -47,6 +51,48 @@ pub trait AmountExt: Copy + From<bitcoin::Amount> + Into<bitcoin::Amount> {
 }
 impl AmountExt for bitcoin::Amount {}
 
+/// Helper functions for serializing any Bitcoin encodable type
+pub fn serialize_bitcoin_encodable<T: Encodable, S>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut buffer = Vec::new();
+    value.consensus_encode(&mut buffer).map_err(serde::ser::Error::custom)?;
+    serializer.serialize_bytes(&buffer)
+}
+
+/// Helper functions for deserializing any Bitcoin decodable type
+pub fn deserialize_bitcoin_decodable<'de, T: Decodable, D>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let bytes = Vec::<u8>::deserialize(deserializer)?;
+    let mut cursor = std::io::Cursor::new(bytes);
+    T::consensus_decode(&mut cursor).map_err(serde::de::Error::custom)
+}
+
+/// Custom serializer for bitcoin::Address
+pub fn serialize_bitcoin_address<S>(
+    address: &bitcoin::Address,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&address.to_string())
+}
+
+/// Custom deserializer for bitcoin::Address
+pub fn deserialize_bitcoin_address<'de, D>(deserializer: D) -> Result<bitcoin::Address, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Ok(bitcoin::Address::from_str(&s).map_err(serde::de::Error::custom)?.assume_checked())
+}
 #[cfg(test)]
 mod test {
     use super::*;

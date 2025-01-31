@@ -13,12 +13,6 @@ use reth_trie::updates::TrieUpdates;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use std::{
-    error::Error,
-    io::{self},
-    sync::{Arc, RwLock},
-};
-
 use btcserverlib::extended_client::BtcServerExtendedApi;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
@@ -27,11 +21,17 @@ use reth_consensus_common::utils::unix_timestamp;
 use reth_data_parser::DataParser;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
+use serde::{Deserialize, Serialize};
+use std::{
+    error::Error,
+    io::{self},
+    sync::{Arc, RwLock},
+};
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, SealedBlock, SealedBlockWithSenders, TransactionSigned, B256,
+    BlockNumber, SealedBlock, TransactionSigned, B256,
 };
 use reth_provider::{
     providers::{BlockchainProvider2, ConsistentDbView},
@@ -186,10 +186,13 @@ impl SnapshotSyncStateLock {
 }
 
 /// Abci Client Builder
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockWithContext {
+    /// Sealed block with pegouts
     pub sealed_block_with_peg: SealedBlockWithPeg,
+    /// Execution Outcome
     pub exec_outcome: ExecutionOutcome,
+    /// Trie updates
     pub trie_updates: Option<TrieUpdates>,
 }
 
@@ -895,46 +898,51 @@ where
         // decompress and decode the snapshot chunk (= block) and apply it
         let compressor = self.compressor.clone();
         let (compressor_task_tx, compressor_task_rx) =
-            tokio::sync::oneshot::channel::<SealedBlockWithSenders>();
+            tokio::sync::oneshot::channel::<BlockWithContext>();
         self.task_executor.spawn_blocking(Box::pin(async move {
-            let sealed_block_with_senders: SealedBlockWithSenders = compressor
+            let block_with_context: BlockWithContext = compressor
                 .decode(request.chunk.as_ref())
                 .await
-                .expect("Failed to deserialize and decompress sealed block");
-            let _ = compressor_task_tx.send(sealed_block_with_senders);
+                .expect("Failed to deserialize and decompress block with context");
+            let _ = compressor_task_tx.send(block_with_context);
         }));
 
         // await the response from the compressor task
-        let sealed_block_with_senders = compressor_task_rx
+        let sealed_block_with_context = compressor_task_rx
             .blocking_recv()
             .expect("to receive confirmation from snapshot manager");
 
-        let sealed_header = sealed_block_with_senders.header.clone();
-        let block_hash = sealed_header.hash();
-        info!("Restored Snapshot Hash {:?}", hex::encode(block_hash.to_vec().as_slice()));
-
-        // TODO: needs to be refactored to use `append_blocks_with_state`
-        // please see `process_proposal` to see how `exec_outcome` and `trie_updates` are generated
-        let block_height = sealed_block_with_senders.number;
-        let hashed_state = exec_outcome.hash_state_slow();
-        let trie_updates = trie_updates.expect("to have trie updates");
-        info!("Inserting block into db: {:?}", sealed_block_with_senders.number);
+        let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
+        let new_header = sealed_block_with_peg.block().header.clone();
+        let sealed_block_with_senders = sealed_block_with_peg.block().to_owned();
+        let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
+        let trie_updates = sealed_block_with_context.trie_updates.expect("to have trie updates");
 
         let executed_block = ExecutedBlock::new(
             Arc::new(sealed_block_with_senders.block.clone()),
             Arc::new(sealed_block_with_senders.senders.clone()),
-            Arc::new(exec_outcome.clone()),
+            Arc::new(sealed_block_with_context.exec_outcome.clone()),
             Arc::new(hashed_state.clone()),
             Arc::new(trie_updates.clone()),
         );
 
         let db_rw = self.provider_factory.provider_rw().unwrap();
-        db_rw.append_blocks_with_state(
+        if let Err(e) = db_rw.append_blocks_with_state(
             vec![sealed_block_with_senders.clone()],
-            exec_outcome.clone(),
+            sealed_block_with_context.exec_outcome.clone(),
             hashed_state.into_sorted(),
             trie_updates,
-        )?;
+        ) {
+            error!(
+                "Error appending blocks with state {:?} in the db. error = {:?}",
+                last_snapshot_sync_id, e
+            );
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        }
 
         let hash = self.application_hash(&client);
         info!("Current application Hash {:?}", hex::encode(hash.to_vec().as_slice()));
@@ -948,9 +956,9 @@ where
         client.on_forkchoice_update_received(&ForkchoiceState::default());
 
         // set canonical head
-        client.set_canonical_head(sealed_header.clone());
-        client.set_safe(sealed_header.clone());
-        client.set_finalized(sealed_header);
+        client.set_canonical_head(new_header.clone());
+        client.set_safe(new_header.clone());
+        client.set_finalized(new_header);
 
         return ResponseApplySnapshotChunk {
             result: ApplySnapshotResult::Accept as i32,
@@ -1641,7 +1649,7 @@ mod tests {
     use reth_evm::test_utils::MockExecutorProvider;
     use reth_node_core::{args::TxPoolArgs, cli::config::RethTransactionPoolConfig};
     use reth_node_ethereum::EthEvmConfig;
-    use reth_provider::providers::{BlockchainProvider, ProviderFactory, StaticFileProvider};
+    use reth_provider::providers::{ProviderFactory, StaticFileProvider};
     use reth_revm::primitives::EnvKzgSettings;
     use reth_tasks::TaskManager;
     use reth_transaction_pool::{

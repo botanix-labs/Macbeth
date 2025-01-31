@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use crate::{botanix::utils::AmountExt, Address};
 use bitcoin::{
     self,
     block::Header,
@@ -17,15 +18,19 @@ use btcserverlib::{
 use ethers::types::U256;
 use frost_secp256k1_tr as frost;
 use secp256k1::PublicKey;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{botanix::utils::AmountExt, Address};
+use super::utils::{
+    deserialize_bitcoin_address, deserialize_bitcoin_decodable, serialize_bitcoin_address,
+    serialize_bitcoin_encodable,
+};
 
 const PEGIN_META_VERSION: u32 = 0;
 const _PEGOUT_META_VERSION: u32 = 0;
 
 /// Pegin data structure
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PeginData {
     /// Account the pegin is sent from
     pub account: Address,
@@ -74,7 +79,7 @@ impl PeginData {
             }
 
             // then check that the merkle proof was indeed for the pegin tx
-            if pegin.tx.txid() != pegin.outpoint.txid {
+            if pegin.tx.compute_txid() != pegin.outpoint.txid {
                 return Err(PeginDataError::Invalid("invalid tx or outpoint: txid"));
             }
             if pegin.tx.output.len() < pegin.outpoint.vout as usize {
@@ -127,11 +132,13 @@ impl PeginData {
 }
 
 /// Pegin metadata structure
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PeginMeta {
     /// Version of the pegin metadata
     pub version: u32,
     /// Merkle proof for the pegin tx
+    #[serde(serialize_with = "serialize_bitcoin_encodable")]
+    #[serde(deserialize_with = "deserialize_bitcoin_decodable")]
     pub merkle_proof: PartialMerkleTree,
     /// Outpoint of the pegin tx
     pub outpoint: bitcoin::OutPoint,
@@ -244,18 +251,20 @@ pub enum PegoutDataError {
 }
 
 /// Pegout data structure
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PegoutData {
     /// Amount to be pegged out
     pub amount: bitcoin::Amount,
     /// Destination address
+    #[serde(serialize_with = "serialize_bitcoin_address")]
+    #[serde(deserialize_with = "deserialize_bitcoin_address")]
     pub destination: bitcoin::Address,
     /// Network the pegout should be performed on
     pub network: bitcoin::Network,
 }
 
 /// Pegout with `PegoutId` data structure
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct PegoutWithId {
     /// Pegout data
     pub data: PegoutData,
