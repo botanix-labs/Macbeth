@@ -461,9 +461,11 @@ impl FrostConfig {
     }
 }
 
+// TODO(armins): import btcserverlib::frost_id and use on the callers
 /// Maps an authority index to a frost specific identifier
 /// Indices start at 0, so we add 1 to the index to get the correct identifier
 /// As 0 is not a valid identifier
 pub fn authority_index_to_frost_identifier(authority_index: u16) -> frost::Identifier {
-    frost::Identifier::try_from(authority_index + 1).expect("can derive identifier")
+    frost::Identifier::derive(authority_index.to_le_bytes().as_slice())
+        .expect("can derive identifier")
 }

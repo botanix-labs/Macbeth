@@ -1,17 +1,11 @@
 use super::error::Error;
 use crate::{it_error_print, suite::consensus::ConsensusIntegrationTestSuite};
 use bitcoin::{consensus::Encodable, Address, Amount};
-use btcserverlib::pegout_id::PegoutId;
+use btcserverlib::{frost_id, pegout_id::PegoutId};
 use client::{self, BtcServerClient};
 use frost_secp256k1_tr as frost;
 use std::{collections::BTreeMap, str::FromStr, vec};
 use tonic::transport::Channel;
-
-macro_rules! frost_id {
-    ($index:expr) => {
-        frost::Identifier::try_from($index + 1).expect("valid id")
-    };
-}
 
 pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
     // create btc server clients
