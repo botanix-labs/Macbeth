@@ -8559,7 +8559,7 @@ dependencies = [
 
 [[package]]
 name = "reth-data-parser"
-version = "1.0.5"
+version = "1.0.1"
 dependencies = [
  "async-compression",
  "async-trait",
@@ -12425,6 +12425,7 @@ dependencies = [
  "reth-cli-commands",
  "reth-cli-runner",
  "reth-consensus",
+ "reth-data-parser",
  "reth-db",
  "reth-network-peers",
  "reth-node-core",

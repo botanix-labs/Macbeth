@@ -1636,6 +1636,13 @@ where
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
         self.database.get_first_chunk_id()
     }
+
+    fn assemble_snapshot_chunks_data(
+        &self,
+        snapshot_id: SnapshotId,
+    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
+        self.database.assemble_snapshot_chunks_data(snapshot_id)
+    }
 }
 
 #[cfg(test)]

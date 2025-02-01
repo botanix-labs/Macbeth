@@ -25,7 +25,7 @@ use reth_primitives::{
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SECP256K1};
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
@@ -220,14 +220,17 @@ impl NonFederationMemberTestConfig {
         let discovery_port = self.discovery_port.to_string();
 
         // prepare run arguments
-        let command = "cargo";
+        let command = "./target/debug/reth";
+        let binary_abs_path = working_directory.join(Path::new(command));
+        if !std::fs::exists(&binary_abs_path)? {
+            return Err(anyhow::anyhow!(
+                "reth binary not found at {}. Please compile it first before running the test-suite",
+                binary_abs_path.display().to_string()
+            ));
+        }
         let args = vec![
-            "run",
-            "--bin",
-            "reth",
-            "--",
             "poa",
-            "-vvvv",
+            "-vvv",
             "--disable-discovery",
             "--is-testnet",
             "--ntp-server",
@@ -329,12 +332,12 @@ impl NonFederationMemberTestConfig {
 pub async fn create_rpc_nodes(
     global_context: Arc<GlobalContext>,
 ) -> anyhow::Result<(
-    HashMap<u16, NonFederationMemberTestConfig>,
+    BTreeMap<u16, NonFederationMemberTestConfig>,
     tokio::sync::broadcast::Sender<Notifications>,
 )> {
     let secp = secp256k1::Secp256k1::new();
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
-    let mut rpc_members: HashMap<u16, NonFederationMemberTestConfig> = HashMap::new();
+    let mut rpc_members: BTreeMap<u16, NonFederationMemberTestConfig> = BTreeMap::new();
 
     // create all rpc instances
     for member_index in 0..global_context.rpc_instances {

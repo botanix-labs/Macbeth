@@ -1,20 +1,14 @@
-use bitcoincore_rpc::RpcApi;
 use ethers::types::H256;
-use reth::primitives::public_key_to_address;
 use reth_primitives::extra_data_header::ExtraDataHeader;
 
-use std::{collections::HashSet, str::FromStr, time::Duration};
+use std::{collections::HashSet, str::FromStr};
 
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::{
-            events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
-            poa_node::Notifications,
-        },
+        common::{events::SEND_AMOUNT, poa_node::Notifications},
         ConsensusIntegrationTestSuite,
     },
-    utils::generate_blocks,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -100,7 +94,7 @@ pub async fn block_builder(
     }
 
     // Check that all members accepted the block
-    for (index, fed_member_config) in test_fed_members.iter() {
+    for (_index, _fed_member_config) in test_fed_members.iter() {
         // verify 80/20 block reward split is correct
         let addr = reth_primitives::Address::from_str(&suite.global_context.botanix_fee_recipient)
             .expect("valid eth address");

@@ -5,11 +5,16 @@ use crate::{comet_bft::abci::ABCIDriverMessage, Storage};
 use bytes::Bytes;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as DataParserError};
-use reth_db::models::{ChunkId, SnapshotId};
+use reth_db::{
+    models::{ChunkId, SnapshotId},
+    DatabaseEnv,
+};
 use reth_evm::execute::BlockExecutorProvider;
 use reth_node_core::args::StateSyncArgs;
 use reth_primitives::{BlockNumber, SealedBlockWithSenders, SealedHeader};
-use reth_provider::{BlockReaderIdExt, ProviderError, SnapshotReader, SnapshotWriter};
+use reth_provider::{
+    BlockReaderIdExt, ProviderError, ProviderFactory, SnapshotReader, SnapshotWriter,
+};
 use tracing::{debug, error, info, trace, warn};
 
 /// Snapshot Manager State Lock
@@ -68,6 +73,7 @@ pub trait SnapshotRunnable {
 pub struct SnapshotManager<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     compressor: DataParser,
+    provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     state_sync_args: StateSyncArgs,
     state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
@@ -83,11 +89,19 @@ where
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
         compressor: DataParser,
+        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         state_sync_args: StateSyncArgs,
         state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     ) -> Self {
-        Self { storage, compressor, snapshot_manager_tx, state_sync_args, state_lock }
+        Self {
+            storage,
+            compressor,
+            provider_factory,
+            snapshot_manager_tx,
+            state_sync_args,
+            state_lock,
+        }
     }
 
     /// Create a new snapshot
@@ -96,7 +110,7 @@ where
         sealed_block: &SealedBlockWithSenders,
         app_hash: Bytes,
     ) -> Result<SnapshotId, SnapshotManagerError> {
-        let provider_rw = self.storage.provider_factory.provider_rw()?;
+        let provider_rw = self.provider_factory.provider_rw()?;
         let snapshot_id = provider_rw.create_new_snapshot(
             sealed_block.number,
             sealed_block.hash(),
@@ -108,7 +122,7 @@ where
 
     /// Remove oldest snapshot
     pub fn remove_oldest_snapshot(&self) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.storage.provider_factory.provider_rw()?;
+        let provider_rw = self.provider_factory.provider_rw()?;
         provider_rw.remove_oldest_snapshot()?;
         provider_rw.commit()?;
         Ok(())
@@ -121,7 +135,7 @@ where
         block_id: BlockNumber,
         chunk_data: Vec<u8>,
     ) -> Result<ChunkId, SnapshotManagerError> {
-        let provider_rw = self.storage.provider_factory.provider_rw()?;
+        let provider_rw = self.provider_factory.provider_rw()?;
         let chunk_id = provider_rw.create_new_chunk(snapshot_id, block_id, chunk_data)?;
         provider_rw.commit()?;
         Ok(chunk_id)
@@ -133,7 +147,7 @@ where
         block_id: BlockNumber,
         chunk_ids: Vec<ChunkId>,
     ) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.storage.provider_factory.provider_rw()?;
+        let provider_rw = self.provider_factory.provider_rw()?;
         provider_rw.create_block_chunks_register(block_id, chunk_ids)?;
         provider_rw.commit()?;
         Ok(())
@@ -145,7 +159,7 @@ where
         block_id: BlockNumber,
         snapshot_id: SnapshotId,
     ) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.storage.provider_factory.provider_rw()?;
+        let provider_rw = self.provider_factory.provider_rw()?;
         provider_rw.insert_block_snapshot_id_mapping(block_id, snapshot_id)?;
         provider_rw.commit()?;
         Ok(())
@@ -158,7 +172,7 @@ where
         block_id: BlockNumber,
         chunk_id: ChunkId,
     ) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.storage.provider_factory.provider_rw()?;
+        let provider_rw = self.provider_factory.provider_rw()?;
         provider_rw.update_snapshot(snapshot_id, block_id, chunk_id)?;
         provider_rw.commit()?;
         Ok(())
@@ -169,19 +183,19 @@ where
         &self,
         last_snapshot_id: SnapshotId,
     ) -> Result<usize, SnapshotManagerError> {
-        Ok(self.storage.provider_factory.provider()?.get_snapshot_size(last_snapshot_id)?)
+        Ok(self.provider_factory.provider()?.get_snapshot_size(last_snapshot_id)?)
     }
 
     /// Get snapshots count
     pub fn get_snapshots_count(&self) -> Result<usize, SnapshotManagerError> {
-        Ok(self.storage.provider_factory.provider()?.get_snapshots_count()?)
+        Ok(self.provider_factory.provider()?.get_snapshots_count()?)
     }
 
     /// Get last snapshot height
     pub fn get_last_snapshot_height(
         &self,
     ) -> Result<Option<(SnapshotId, BlockNumber)>, SnapshotManagerError> {
-        Ok(self.storage.provider_factory.provider()?.get_last_snapshot_height()?)
+        Ok(self.provider_factory.provider()?.get_last_snapshot_height()?)
     }
 
     /// Get latest header
@@ -203,11 +217,11 @@ where
             debug!(target: "consensus::authority::snapshot_manager::run", "received abci driver message {:?}", abci_driver_message);
 
             match abci_driver_message {
-                ABCIDriverMessage::CommitBlock((sealed_block_with_peg, cbft_hash, _tx)) => {
+                ABCIDriverMessage::CommitBlock((sealed_block_with_context, cbft_hash, _tx)) => {
                     // acknowledge the block
                     //tx.send(()).expect("acknowledging received block send");
 
-                    let sealed_block = sealed_block_with_peg.block();
+                    let sealed_block = sealed_block_with_context.sealed_block_with_peg.block();
 
                     // first attempt to serialize and compress the sealed block
                     let serialized_compressed_sealed_block = self.compressor.encode(sealed_block).await.map_err(|e| {
@@ -290,7 +304,6 @@ where
                         self.state_sync_args.num_snapshots_to_keep as usize
                     {
                         let oldest_snapshot_height = self
-                            .storage
                             .provider_factory
                             .get_first_snapshot_height()?
                             .map(|(_snapshot_id, snapshot_height)| snapshot_height)

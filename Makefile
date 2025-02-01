@@ -152,8 +152,8 @@ build-release-tarballs: ## Create a series of `.tar.gz` files in the BIN_DIR dir
 
 ##@ Test
 
-UNIT_TEST_ARGS := --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
-UNIT_TEST_ARGS_OP := --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
+UNIT_TEST_ARGS := --locked --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
+UNIT_TEST_ARGS_OP := --locked --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
 COV_FILE := lcov.info
 
 .PHONY: test-unit
@@ -169,16 +169,16 @@ test-unit-op: ## Run unit tests
 .PHONY: cov-unit
 cov-unit: ## Run unit tests with coverage.
 	rm -f $(COV_FILE)
-	cargo llvm-cov nextest --lcov  --all-features --color always --locked --output-path $(COV_FILE) $(UNIT_TEST_ARGS)
+	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS)
 
 .PHONY: cov-unit-op
 cov-unit-op: ## Run unit tests with coverage
 	rm -f $(COV_FILE)
-	cargo llvm-cov nextest --lcov  --all-features --color always --locked --output-path $(COV_FILE) $(UNIT_TEST_ARGS_OP)
+	cargo llvm-cov nextest --lcov --output-path $(COV_FILE) $(UNIT_TEST_ARGS_OP)
 
 .PHONY: cov-report-html
 cov-report-html: cov-unit ## Generate a HTML coverage report and open it in the browser.
-	cargo llvm-cov report --html --all-features --color always --locked
+	cargo llvm-cov report --html
 	open target/llvm-cov/html/index.html
 
 # Downloads and unpacks Ethereum Foundation tests in the `$(EF_TESTS_DIR)` directory.
@@ -531,6 +531,13 @@ audit-fix-test:
 audit-fix:
 	cargo audit fix
 
+# ------------------------------------------------------------
+# Coverage
+# ------------------------------------------------------------
+
+coverage:
+	RUSTFLAGS="-Z threads=8" cargo +nightly tarpaulin --config ./tarpaulin.toml
+
 clean-unused-deps:
 	cargo machete --fix
 
@@ -539,6 +546,21 @@ clean-unused-deps:
 # ------------------------------------------------------------
 
 start-test-suite:
+	cd ./bin/test-suite && \
+	cargo run --bin test-suite -- \
+	--test-to-run "${TEST_TO_RUN}" \
+	--config "./config.toml" \
+	--run-suite all \
+	--timeout 500000 \
+	--dry-run false \
+	--min-signers 3 \
+	--max-signers 4 \
+	--rpc-nodes 1 \
+	--syncing-nodes 1
+
+start-test-suite-build:
+	cargo build -p btc-server --bin btc-server && \
+	cargo build -p reth --bin reth && \
 	cd ./bin/test-suite && \
 	cargo run --bin test-suite -- \
 	--test-to-run "${TEST_TO_RUN}" \
@@ -585,7 +607,7 @@ start-btc-server-2:
 	--bitcoind-pass "${BITCOIND_PWD}" \
 	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
 	--fall-back-fee-rate-sat-per-vbyte 5 \
-	--metrics-port 7000
+	--metrics-port 7001
 
 start-btc-server-3:
 	cd ./bin/btc-server && \

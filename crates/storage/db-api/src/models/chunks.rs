@@ -34,6 +34,11 @@ impl BlockChunksRegister {
     pub fn new(chunk_ids: Vec<u64>) -> Self {
         Self { chunk_ids }
     }
+
+    /// Return the block chunk ids.
+    pub fn block_chunks(&self) -> &[u64] {
+        self.chunk_ids.as_slice()
+    }
 }
 
 /// The storage of the a single chunk within a snapshot.
@@ -86,6 +91,8 @@ impl SnapshotChunk {
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
 pub struct Snapshot {
+    /// The snapshot id
+    id: u64,
     /// The snapshot height (same as the block height)
     height: u64,
     /// The snapshot chunks ids
@@ -183,6 +190,11 @@ impl Snapshot {
         let chunk_ids_size = self.chunk_ids.len() * std::mem::size_of::<u64>();
 
         height_size + hash_size + block_ids_size + chunk_ids_size
+    }
+
+    /// Return the snapshot id.
+    pub const fn id(&self) -> u64 {
+        self.id
     }
 
     /// Return the snapshot height.
@@ -285,7 +297,9 @@ mod tests {
             SnapshotChunk { snapshot_id: 1, chunk_data: Vec::new() },
             SnapshotChunk { snapshot_id: 1, chunk_data: Vec::new() },
         ];
+        let block_hash = B256::random();
         let snapshot = Snapshot {
+            id: 100,
             height: 12000,
             block_ids: vec![1001],
             chunk_ids: vec![1, 2],
@@ -293,8 +307,9 @@ mod tests {
             app_hash: Vec::new(),
         };
 
+        assert_eq!(snapshot.id(), 100);
         assert_eq!(snapshot.chunk_ids(), &vec![1, 2]);
-        assert_eq!(snapshot.block_hash(), B256::default());
+        assert_eq!(snapshot.block_hash(), block_hash);
         assert_eq!(snapshot.block_ids(), vec![1001]);
         assert_eq!(snapshot.height(), 12000);
     }

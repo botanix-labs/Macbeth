@@ -10,7 +10,7 @@ use reth_chainspec::BOTANIX_TESTNET;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::ExitStatus,
@@ -326,7 +326,7 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
                 *rpc_servers = toml::value::Value::String(rpc_state_sync_servers);
             }
             if let Some(trust_height) = rpc.get_mut("trust_height") {
-                *trust_height = toml::value::Value::Integer(1000000);
+                *trust_height = toml::value::Value::Integer(1);
             }
             if let Some(trust_hash) = rpc.get_mut("trust_hash") {
                 // NOTE: this hash is random and it is meant to be dynamically overwritten by the
@@ -366,17 +366,48 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
     Ok(())
 }
 
+pub fn update_config_toml_with_trusted_height_and_hash(
+    cometbft_node: &CometBftNodeConfig,
+    trusted_height: i64,
+    trusted_hash: &str,
+) -> anyhow::Result<()> {
+    let config_file =
+        Path::new(&cometbft_node.working_directory).join("config").join("config.toml");
+    let mut toml: toml::Value = toml::from_str(&fs::read_to_string(&config_file)?)
+        .context("Unable to parse toml config file")?;
+    if cometbft_node.is_state_syncing {
+        if let Some(rpc) = toml.get_mut("statesync") {
+            if let Some(trust_height) = rpc.get_mut("trust_height") {
+                *trust_height = toml::value::Value::Integer(trusted_height);
+            }
+            if let Some(trust_hash) = rpc.get_mut("trust_hash") {
+                *trust_hash = toml::value::Value::String(trusted_hash.to_string());
+            }
+        }
+    }
+
+    // Serialize the modified object and write it back to the file
+    let updated_content =
+        toml::to_string_pretty(&toml).context("Failed to serialize updated config.toml content")?;
+    fs::write(&config_file, updated_content).context("Failed to write updated config.toml file")?;
+
+    Ok(())
+}
+
 pub async fn create_cometbft_nodes(
     global_context: Arc<GlobalContext>,
-) -> anyhow::Result<(HashMap<u16, CometBftNodeConfig>, tokio::sync::broadcast::Sender<Notifications>)>
-{
+) -> anyhow::Result<(
+    BTreeMap<u16, CometBftNodeConfig>,
+    tokio::sync::broadcast::Sender<Notifications>,
+)> {
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
-    let mut cometbft_nodes: HashMap<u16, CometBftNodeConfig> = HashMap::new();
+    let mut cometbft_nodes: BTreeMap<u16, CometBftNodeConfig> = BTreeMap::new();
 
     // loop and create all cometbft nodes
+    let poa_instances = global_context.fed_instances - global_context.syncing_instances;
     for member_index in 0..global_context.fed_instances {
         // allocate ports
-        let cometbft_proxy_app_port = ABCI_PORT_BASE + 10000 * member_index;
+        let cometbft_proxy_app_port = ABCI_PORT_BASE + 1000 * member_index;
         let cometbft_rpc_app_port = cometbft_proxy_app_port - 1;
         let cometbft_p2p_app_port = cometbft_rpc_app_port - 1;
 
@@ -448,7 +479,7 @@ pub async fn create_cometbft_nodes(
             cometbft_p2p_app_port,
             test_signal_tx,
             working_directory,
-            false,
+            member_index > poa_instances - 1,
         )
         .await?;
 

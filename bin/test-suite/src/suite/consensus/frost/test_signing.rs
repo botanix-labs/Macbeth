@@ -328,9 +328,9 @@ pub async fn test_many_inputs_signing(
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
 
     // Lets make sure it was broadcasted
-    let tx_res = bitcoind.get_raw_transaction(&final_tx.txid(), None).expect("valid tx");
+    let tx_res = bitcoind.get_raw_transaction(&final_tx.compute_txid(), None).expect("valid tx");
     it_info_print!("final tx_res: {:?}", tx_res);
-    assert_eq!(tx_res.txid(), final_tx.txid());
+    assert_eq!(tx_res.compute_txid(), final_tx.compute_txid());
 
     assert_eq!(final_tx.input.len(), 2);
     // One output should be the change output

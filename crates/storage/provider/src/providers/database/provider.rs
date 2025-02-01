@@ -70,7 +70,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 /// A [`DatabaseProvider`] that holds a read-only database transaction.
 pub type DatabaseProviderRO<DB> = DatabaseProvider<<DB as Database>::TX>;
@@ -3716,6 +3716,7 @@ impl<TX: DbTx> SnapshotReader for DatabaseProvider<TX> {
             .collect::<Result<HashMap<_, _>, _>>()?
             .values()
             .map(|value| value.clone())
+            .sorted_by_key(|s| s.height())
             .collect::<Vec<_>>())
     }
 
@@ -3780,19 +3781,66 @@ impl<TX: DbTx> SnapshotReader for DatabaseProvider<TX> {
             .map(|(_, snapshot)| (snapshot.size(), snapshot.chunk_ids().to_vec()))
             .unwrap_or_default();
 
-        let chunks_size = self
-            .tx
-            .cursor_read::<tables::Chunks>()?
-            .walk_range(
-                chunk_ids.first().cloned().unwrap_or_default()..
-                    chunk_ids.last().cloned().unwrap_or_default(),
-            )?
-            .collect::<Result<HashMap<_, _>, _>>()?
-            .values()
-            .map(|value| value.size())
-            .count();
+        let chunks_size = if chunk_ids.is_empty() {
+            0
+        } else {
+            self.tx
+                .cursor_read::<tables::Chunks>()?
+                .walk_range(
+                    chunk_ids.first().cloned().unwrap_or_default()..=
+                        chunk_ids.last().cloned().unwrap_or_default(),
+                )?
+                .collect::<Result<HashMap<_, _>, _>>()?
+                .values()
+                .map(|value| value.size())
+                .sum()
+        };
 
         Ok(snapshot_size + chunks_size)
+    }
+
+    fn assemble_snapshot_chunks_data(
+        &self,
+        snapshot_id: SnapshotId,
+    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
+        let snapshot = self.get_snapshot_by_id(snapshot_id)?;
+        if snapshot.is_none() {
+            return Ok(Vec::new());
+        }
+
+        let block_ids = snapshot.unwrap().block_ids().to_vec();
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut blocks_data: Vec<(u64, Vec<u8>)> = Vec::new();
+        for block in block_ids {
+            let (_block_id, block_chunk_ids) =
+                self.tx.cursor_read::<tables::BlockChunks>()?.seek_exact(block)?.unzip();
+            let block_chunk_ids =
+                block_chunk_ids.map(|bc| bc.block_chunks().to_vec()).unwrap_or_default();
+
+            let chunks_data = self
+                .tx
+                .cursor_read::<tables::Chunks>()?
+                .walk_range(
+                    block_chunk_ids.first().copied().unwrap_or_default()..=
+                        block_chunk_ids.last().copied().unwrap_or_default(),
+                )?
+                .collect::<Result<HashMap<_, _>, _>>()?
+                .values()
+                .map(|chunk| chunk.chunk_data().to_vec())
+                .collect::<Vec<_>>();
+
+            let mut concatenated = Vec::new();
+            for chunk_data in chunks_data {
+                concatenated.extend(chunk_data);
+            }
+
+            blocks_data.push((block, concatenated));
+        }
+
+        Ok(blocks_data)
     }
 
     fn get_snapshots_count(&self) -> ProviderResult<usize> {
@@ -3825,10 +3873,11 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         format: u64,
     ) -> ProviderResult<SnapshotSyncId> {
         let last_snapshot_sync_id =
-            self.get_last_chunk_id()?.map(|snapshot_sync_id| snapshot_sync_id).unwrap_or(1);
+            self.get_last_snapshot_sync_id()?.map(|snapshot_sync_id| snapshot_sync_id).unwrap_or(0);
+        let new_snapshot_sync_id = last_snapshot_sync_id + 1;
         let new_snapshot_sync = SnapshotSync::new(height, snapshot_hash, format, total_chunks);
-        self.tx.put::<tables::SnapshotSyncs>(last_snapshot_sync_id, new_snapshot_sync)?;
-        Ok(last_snapshot_sync_id)
+        self.tx.put::<tables::SnapshotSyncs>(new_snapshot_sync_id, new_snapshot_sync)?;
+        Ok(new_snapshot_sync_id)
     }
 
     fn create_new_chunk(
@@ -3836,8 +3885,8 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         snapshot_id: SnapshotId,
         block_id: BlockNumber,
         chunk_data: Vec<u8>,
-    ) -> ProviderResult<SnapshotId> {
-        let last_chunk_id = self.get_last_chunk_id()?.map(|chunk_id| chunk_id).unwrap_or(1);
+    ) -> ProviderResult<ChunkId> {
+        let last_chunk_id = self.get_last_chunk_id()?.map(|chunk_id| chunk_id).unwrap_or(0);
         let new_chunk_id = last_chunk_id + 1;
         let mut new_chunk = SnapshotChunk::new(snapshot_id);
         new_chunk.set_chunk_data(chunk_data);
@@ -3853,9 +3902,10 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         app_hash: &[u8],
     ) -> ProviderResult<SnapshotId> {
         let last_snasphot_id =
-            self.get_last_snapshot_height()?.map(|snapshot| snapshot.0).unwrap_or(1);
+            self.get_last_snapshot_height()?.map(|snapshot| snapshot.0).unwrap_or(0);
         let new_snapshot_id = last_snasphot_id + 1;
         let mut new_snapshot = Snapshot::default();
+        new_snapshot.set_id(new_snapshot_id);
         new_snapshot.set_height(block_id);
         new_snapshot.set_block_hash(block_hash);
         new_snapshot.set_app_hash(app_hash);
@@ -3912,6 +3962,9 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
             let snapshot = self.get_snapshot_by_id(snapshot_id)?.expect("Snapshot exists");
             self.remove_snapshots(RangeInclusive::new(snapshot_id, snapshot_id))?;
             let cids = snapshot.chunk_ids().to_vec();
+            if cids.is_empty() {
+                return Ok(())
+            }
             let range_to_delete = RangeInclusive::new(
                 cids.first().copied().unwrap_or_default(),
                 cids.last().copied().unwrap_or_default(),
@@ -3939,6 +3992,9 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
     }
 
     fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        if range.is_empty() {
+            return Ok(())
+        }
         Ok(self.tx.cursor_write::<tables::ChunkBlocks>()?.walk_range(range)?.delete_current()?)
     }
 }

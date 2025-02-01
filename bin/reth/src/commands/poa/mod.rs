@@ -766,7 +766,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             node_config.state_sync,
             provider_factory.clone(),
         ) {
-            Ok(consensus) => consensus.build::<BtcServerExtendedClient, ABCIDriver<BtcServerExtendedClient, Arc<DatabaseEnv>>>(canon_state_reciever).await,
+            Ok(consensus) => consensus.build::<BtcServerExtendedClient, ABCIDriver<BtcServerExtendedClient, Arc<DatabaseEnv>>>(canon_state_reciever, snapshot_manager_rx).await,
             Err(e) => {
                 return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
             }
@@ -828,6 +828,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     transaction_pool.clone(),
                     abci_host.to_string(),
                     *abci_port,
+                    blockchain_db.clone(),
                 )
                 .await
         };

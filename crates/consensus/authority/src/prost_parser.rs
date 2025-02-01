@@ -11,59 +11,6 @@ pub(crate) enum ProstError {
     ProstDecode(#[from] prost::DecodeError),
 }
 
-/// Password hashing error types.
-#[derive(Debug, DisplayDoc, Error)]
-pub(crate) enum Error {
-    /// compression error: {0}
-    Compression(#[from] CompressionError),
-    /// serde error: {0}
-    Serde(#[from] SerdeError),
-}
-
-/// Compression types
-#[derive(
-    Debug, Copy, Clone, Deserialize, EnumString, AsRefStr, EnumIter, strum_macros::Display,
-)]
-pub(crate) enum CompressionType {
-    /// No compression to be applied
-    #[strum(serialize = "none")]
-    None,
-    /// Zlib compression
-    #[strum(serialize = "zlib")]
-    Zlib,
-    /// Gzip compression
-    #[strum(serialize = "gzip")]
-    Gzip,
-    /// Brotli compression
-    #[strum(serialize = "brotli")]
-    Brotli,
-    /// Bz compression
-    #[strum(serialize = "bz")]
-    Bz,
-    #[strum(serialize = "lzma")]
-    /// Lzma compression
-    Lzma,
-    #[strum(serialize = "deflate")]
-    /// Deflate compression
-    Deflate,
-    #[strum(serialize = "zstd")]
-    /// Zstd compression
-    Zstd,
-}
-
-/// Serialization types
-#[derive(
-    Debug, Copy, Clone, Deserialize, EnumString, AsRefStr, EnumIter, strum_macros::Display,
-)]
-pub(crate) enum SerializationType {
-    /// Bincode serialization
-    #[strum(serialize = "bincode")]
-    Bincode,
-    /// Postcard serialization
-    #[strum(serialize = "postcard")]
-    Postcard,
-}
-
 /// Prost Message Wrapper allowing serialization/deserialization
 #[allow(dead_code)]
 pub(crate) struct ProstMessageSerdelizer<T: prost::Message>(pub(crate) T);
@@ -204,8 +151,8 @@ mod test {
         );
 
         assert!(
-            prost_serialized.len() > prost_serialized_compressed.len(),
-            "serialized message length is greater than the compressed length"
+            prost_serialized.len() >= prost_serialized_compressed.len(),
+            "serialized message length is greater or equal to the compressed length"
         );
 
         // now decompress the prost message

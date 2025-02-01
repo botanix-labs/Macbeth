@@ -19,9 +19,7 @@ use reth_primitives::Address;
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::events::{
-            await_botanix_event, GatewayAddressResponse, BITCOIND_WALLET_NAME, SEND_AMOUNT,
-        },
+        common::events::{await_botanix_event, GatewayAddressResponse, BITCOIND_WALLET_NAME},
         ConsensusIntegrationTestSuite,
     },
     utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
@@ -158,7 +156,7 @@ pub async fn frost_e2e_stable(
     let bitcoin_block_height = conf_block_info.height;
     let meta = PeginMeta {
         version: 0,
-        outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
+        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
         address: eth_account,
         aggregate_publickey: secp256k1::PublicKey::from_str(
             gateway_address_response.aggregate_public_key.as_str(),
@@ -259,7 +257,7 @@ pub async fn frost_e2e_stable(
     it_info_print!("Pegout tx: ", pegout_tx);
 
     assert_eq!(pegout_tx.input.len(), 1);
-    assert_eq!(pegout_tx.input[0].previous_output.txid, pegin_tx.txid());
+    assert_eq!(pegout_tx.input[0].previous_output.txid, pegin_tx.compute_txid());
     assert_eq!(pegout_tx.input[0].previous_output.vout, vout as u32);
     assert_eq!(pegout_tx.output.len(), 2);
     // One of the values here should be the pegout address

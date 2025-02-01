@@ -19,6 +19,7 @@ use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
+    metrics::AuthorityMetrics,
     prost_parser::{ProstError, ProstMessageSerdelizer},
     utils::UtxoMerkelRootError,
     Storage,
@@ -69,6 +70,7 @@ pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
     btc_server: BtcServerClient,
     to_frost_manager: ToFrostMan,
     compressor: DataParser,
+    metrics: Arc<AuthorityMetrics>,
 }
 
 impl<EF, BF, DB, ToFrostMan, BtcServerClient>
@@ -85,6 +87,7 @@ where
         btc_server: BtcServerClient,
         to_frost_manager: ToFrostMan,
         compressor: DataParser,
+        metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         Self { storage, btc_server, to_frost_manager, compressor, metrics }
     }

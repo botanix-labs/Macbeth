@@ -49,7 +49,7 @@ impl LightCBFTClientBuilder {
             .header
             .hash();
 
-        let light_client = LightClientBuilder::prod(
+        let light_client = match LightClientBuilder::prod(
             node_id,
             rpc_client.clone(),
             light_store,
@@ -63,7 +63,13 @@ impl LightCBFTClientBuilder {
             None,
         )
         .trust_primary_at(Height::from(trusted_block_height), block_hash)
-        .expect("to trust primary");
+        {
+            Ok(light_client) => light_client,
+            Err(e) => {
+                tracing::error!("Failed to create light client: {:?}", e);
+                panic!("Failed to create light client: {}", e);
+            }
+        };
 
         light_client.build()
     }

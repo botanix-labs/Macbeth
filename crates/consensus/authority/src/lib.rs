@@ -37,7 +37,6 @@ use reth_primitives::{
 };
 
 use reth_primitives::BlockWithSenders;
-use reth_provider::ProviderFactory;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
@@ -67,7 +66,7 @@ pub const MAX_EDH_SIZE: usize = 93;
 
 use ethabi as _;
 use reth_cli_runner as _;
-use reth_db::{self as _, DatabaseEnv};
+use reth_db::{self as _};
 use reth_db_common as _;
 use reth_node_core as _;
 use tempfile as _;

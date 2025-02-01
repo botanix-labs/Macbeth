@@ -40,7 +40,7 @@ impl GlobalContext {
         _config.from_envs();
 
         // compute instances and min/max signers
-        let frost_max_signers = args.max_signers;
+        let frost_max_signers = args.max_signers + args.syncing_nodes;
         let fed_instances = frost_max_signers; // this is the total number of instances to be spawned (poa nodes and btc servers)
         let frost_min_signers = ((frost_max_signers - 1).min(args.min_signers)).max(2); //  value must be in the bounds: [2; value; max_signers - 1]
         assert!(frost_max_signers >= frost_min_signers, "frost signers rule violated");

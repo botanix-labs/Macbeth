@@ -609,6 +609,13 @@ where
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
         self.database.provider()?.get_first_chunk_id()
     }
+
+    fn assemble_snapshot_chunks_data(
+        &self,
+        snapshot_id: SnapshotId,
+    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
+        self.database.provider()?.assemble_snapshot_chunks_data(snapshot_id)
+    }
 }
 
 impl<DB> SnapshotWriter for BlockchainProvider<DB>

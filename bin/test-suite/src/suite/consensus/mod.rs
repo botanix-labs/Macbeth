@@ -36,7 +36,7 @@ use reth_db::DatabaseEnv;
 use reth_provider::ProviderFactory;
 use reth_tracing::tracing::error;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     panic,
     path::PathBuf,
     process::Command,
@@ -51,6 +51,15 @@ mod frost;
 mod invalid_transactions;
 mod rpc_node;
 mod sync;
+
+fn split_members_at<T: Clone>(
+    map: BTreeMap<u16, T>,
+    at: usize,
+) -> (BTreeMap<u16, T>, BTreeMap<u16, T>) {
+    let entries: Vec<_> = map.into_iter().collect();
+    let (left, right) = entries.split_at(at);
+    (BTreeMap::from_iter(left.iter().cloned()), BTreeMap::from_iter(right.iter().cloned()))
+}
 
 pub struct ConsensusIntegrationTestSuite {
     pub timeout: Duration,
@@ -69,18 +78,18 @@ pub struct LocalContext {
     pub btc_server_clients: Option<Vec<BtcServerClient<Channel>>>,
     // poa
     pub poa_processes: Option<Vec<SpawnedPoaServerProcess>>,
-    pub poa_nodes: Option<HashMap<u16, FederationMemberTestConfig>>,
-    pub poa_nodes_syncing: Option<HashMap<u16, FederationMemberTestConfig>>,
+    pub poa_nodes: Option<BTreeMap<u16, FederationMemberTestConfig>>,
     pub poa_notification: Option<tokio::sync::broadcast::Sender<PoaNodeNotifications>>,
     pub poa_eth_providers: Option<Vec<BotanixEthClient>>,
     // cometbft
     pub cometbft_processes: Option<Vec<SpawnedCometBftProcess>>,
-    pub cometbft_nodes: Option<HashMap<u16, CometBftNodeConfig>>,
+    pub cometbft_nodes: Option<BTreeMap<u16, CometBftNodeConfig>>,
+    pub cometbft_nodes_syncing: Option<BTreeMap<u16, CometBftNodeConfig>>,
     pub cometbft_notification: Option<tokio::sync::broadcast::Sender<CometbftNotifications>>,
-    pub cometbft_lightclients: Option<Vec<tendermint_rpc::HttpClient>>,
+    pub cometbft_lightclients: Option<Vec<HttpCometBFTRpcClientFactory>>,
     // rpc
     pub rpc_processes: Option<Vec<SpawnedRpcServerProcess>>,
-    pub rpc_nodes: Option<HashMap<u16, NonFederationMemberTestConfig>>,
+    pub rpc_nodes: Option<BTreeMap<u16, NonFederationMemberTestConfig>>,
     pub rpc_notification: Option<tokio::sync::broadcast::Sender<RpcNotifications>>,
     pub rpc_eth_providers: Option<Vec<BotanixEthClient>>,
     // authority members in the federation
@@ -563,7 +572,8 @@ impl Suite for ConsensusIntegrationTestSuite {
                 frost::test_round1_then_new_signing_session::test_round1_then_new_signing_session
             ),
             _ => {
-                panic!("Test not found");
+                error!("Test {:?} not found", test_to_run.as_str());
+                return vec![];
             }
         };
 
@@ -724,7 +734,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         // =================== BITCOIND NODE ================== //
         if create_test_config.create_bitcoind_node {
             let (bitcoind_node, tx) = create_bitcoind_node(self.global_context.clone()).await?;
-            it_info_print!("Starting bitcoind node");
+            it_info_print!("Starting bitcoind node ...");
             // spawn bitcoind node as a process
             let spawned_bitcoind_process = bitcoind_node.spawn_service()?;
             tokio::time::sleep(Duration::from_secs(6)).await;
@@ -748,6 +758,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         // =================== BTC SERVERS ================== //
         let mut btc_server_clients = vec![];
         if create_test_config.create_btc_servers {
+            it_info_print!("Starting btc servers ...");
             self.local_context.btc_processes =
                 Some(spawn_n_btc_server_processes(self.global_context.clone())?);
             // let btc servers come up
@@ -773,11 +784,15 @@ impl Suite for ConsensusIntegrationTestSuite {
                         .await
                     {
                         Ok(_) => {
-                            it_info_print!("Connected to btc server at port", port);
+                            it_info_print!("Connected to btc server at port", port.to_string());
                             successes += 1;
                         }
                         Err(e) => {
-                            it_warn_print!("Failed to connect to btc server at port", port, e);
+                            it_warn_print!(
+                                "Failed to connect to btc server at port",
+                                port.to_string(),
+                                e
+                            );
                         }
                     }
 
@@ -810,28 +825,34 @@ impl Suite for ConsensusIntegrationTestSuite {
         if create_test_config.create_cometbft_nodes {
             it_info_print!("Starting cometbft nodes ...");
             let (cometbft_nodes, tx) = create_cometbft_nodes(self.global_context.clone()).await?;
+            let poa_instances =
+                self.global_context.fed_instances - self.global_context.syncing_instances;
+            let (cometbft_nodes, cometbft_nodes_syncing) =
+                split_members_at(cometbft_nodes, poa_instances as usize);
+
             for (_, cometbft_node) in cometbft_nodes.iter() {
                 // spawn cometbft node as a process
                 spawned_cometbft_processes.push(cometbft_node.spawn_service()?);
 
-                // create lightclient
+                // create cometbft client
                 let cometbft_client = HttpCometBFTRpcClientFactory::new(
                     "0.0.0.0".to_string(),
                     cometbft_node.cometbft_rpc_app_port,
                 );
-                let cometbft_client = cometbft_client.build_and_connect()?;
+                let _cometbft_http_client = cometbft_client.build_and_connect()?;
                 cometbft_lightclients.push(cometbft_client);
 
                 // await initialization
                 cometbft_node.await_initialization()?;
 
-                // wait for two seconds in between processes start
+                // wait for 5 seconds in between processes start
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
 
             // update local context
             self.local_context.cometbft_processes = Some(spawned_cometbft_processes);
             self.local_context.cometbft_nodes = Some(cometbft_nodes);
+            self.local_context.cometbft_nodes_syncing = Some(cometbft_nodes_syncing);
             self.local_context.cometbft_notification = Some(tx);
             self.local_context.cometbft_lightclients = Some(cometbft_lightclients);
         }
@@ -895,8 +916,10 @@ impl Suite for ConsensusIntegrationTestSuite {
             await_dkg(&mut poa_nodes, &mut rx).await;
 
             // At this point all the btc servers should have the same aggregate key
+            let (btc_server_clients, _btc_server_clients_syncing) =
+                btc_server_clients.split_at(self.global_context.fed_instances as usize);
             let mut keys = HashSet::new();
-            for client in btc_server_clients.iter_mut() {
+            for client in btc_server_clients.to_vec().iter_mut() {
                 let key = client
                     .get_public_key(client::Empty {})
                     .await
@@ -994,7 +1017,6 @@ impl ConsensusIntegrationTestSuite {
             local_context: LocalContext {
                 btc_processes: None,
                 poa_nodes: None,
-                poa_nodes_syncing: None,
                 poa_notification: None,
                 poa_eth_providers: None,
                 poa_processes: None,
@@ -1004,6 +1026,7 @@ impl ConsensusIntegrationTestSuite {
                 rpc_eth_providers: None,
                 rpc_processes: None,
                 cometbft_nodes: None,
+                cometbft_nodes_syncing: None,
                 cometbft_notification: None,
                 cometbft_lightclients: None,
                 cometbft_processes: None,

@@ -10,7 +10,10 @@ use std::{
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
+        common::{
+            comet_node::update_config_toml_with_trusted_height_and_hash,
+            events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
+        },
         ConsensusIntegrationTestSuite,
     },
     utils::generate_blocks,
@@ -18,7 +21,7 @@ use crate::{
 
 #[allow(clippy::too_many_lines)]
 pub async fn test_state_sync_dynamic(
-    suite: &ConsensusIntegrationTestSuite,
+    suite: &mut ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
     it_info_print!("Running dynamic state sync test...");
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();

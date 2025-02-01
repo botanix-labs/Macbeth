@@ -1,4 +1,6 @@
 use bitcoincore_rpc::RpcApi;
+use reth_data_parser::{DataParser, SerializationType};
+use reth_primitives::SealedBlockWithSenders;
 use reth_provider::SnapshotReader;
 
 use std::{collections::HashSet, time::Duration};
@@ -63,6 +65,8 @@ pub async fn state_sync(
     let mut tx_hashes_set = HashSet::new();
 
     // send eoa messages to random addresses
+    // NOTE: this should be enough to trigger the creation of 2 snapshots considering the max
+    // snapshot size in test env.
     for _ in 0..5 {
         it_info_print!("Sending eoa transaction...");
         let eoa_receiver = ethers::core::types::Address::random();

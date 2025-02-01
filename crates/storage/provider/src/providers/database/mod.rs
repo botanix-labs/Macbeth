@@ -272,6 +272,13 @@ impl<DB: Database> SnapshotReader for ProviderFactory<DB> {
         self.provider()?.get_snapshots()
     }
 
+    fn assemble_snapshot_chunks_data(
+        &self,
+        snapshot_id: SnapshotId,
+    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
+        self.provider()?.assemble_snapshot_chunks_data(snapshot_id)
+    }
+
     fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>> {
         self.provider()?.get_snapshot_by_id(snapshot_id)
     }
