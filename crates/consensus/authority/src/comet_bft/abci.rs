@@ -1422,7 +1422,7 @@ where
         // We want to explicitly panic if we cannot send the commit message
         let cbft_block_hash = cbft_block_hash.clone();
         let driver_tx = self.driver_tx.clone();
-        let (tx, _rx) = tokio::sync::oneshot::channel::<()>();
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         self.task_executor.spawn_blocking(Box::pin(async move {
             if let Err(e) = driver_tx
                 .send(ABCIDriverMessage::CommitBlock((
@@ -1434,6 +1434,7 @@ where
             {
                 error!("Error sending commit block message: {:?}", e);
             }
+            rx.await.expect("to receive confirmation from driver");
         }));
 
         info!("Block committed: {:?}", cbft_block_hash);
@@ -1469,6 +1470,7 @@ pub enum ABCIDriverMessage {
 #[derive(Clone)]
 pub struct ABCIDriver<BtcServerClient, DatabaseRW> {
     btc_server: Option<BtcServerClient>,
+    task_executor: TaskExecutor,
     driver_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<ABCIDriverMessage>>>,
     database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
     canon_state_notification_sender: CanonStateNotificationSender,
@@ -1478,12 +1480,13 @@ pub struct ABCIDriver<BtcServerClient, DatabaseRW> {
 
 impl<BtcServerClient, DatabaseRW> ABCIDriver<BtcServerClient, DatabaseRW>
 where
-    DatabaseRW: Database + Clone + Send + Sync + SnapshotReader + 'static,
+    DatabaseRW: Database + Clone + Send + Sync + 'static,
     BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
 {
     /// Create a new ABCI drivers
     pub fn new(
         btc_server: Option<BtcServerClient>,
+        task_executor: TaskExecutor,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
         blockchain_provider_2: BlockchainProvider2<DatabaseRW>,
@@ -1492,6 +1495,7 @@ where
         let (canon_state_notification_sender, _) = tokio::sync::broadcast::channel(100);
         Self {
             btc_server,
+            task_executor,
             driver_rx: Arc::new(Mutex::new(driver_rx)),
             database_provider,
             canon_state_notification_sender,
@@ -1502,6 +1506,7 @@ where
 
     /// Start the ABCI driver
     pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let task_executor = self.task_executor.clone();
         loop {
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
@@ -1590,18 +1595,21 @@ where
                         tx.send(()).expect("to send");
 
                         // Send message to snapshot manager
-                        let (snapshot_manager_announced_tx, snapshot_manager_announced_rx) =
+                        let (snapshot_manager_announced_tx, _snapshot_manager_announced_rx) =
                             tokio::sync::oneshot::channel::<()>();
-                        self.snapshot_manager_tx
-                            .blocking_send(ABCIDriverMessage::CommitBlock((
-                                sealed_block_with_context_clone,
-                                cbft_hash,
-                                snapshot_manager_announced_tx,
-                            )))
-                            .expect("to send to snapshot manager");
-                        snapshot_manager_announced_rx
-                            .blocking_recv()
-                            .expect("to receive confirmation from snapshot manager");
+                        let snapshot_manager_tx = self.snapshot_manager_tx.clone();
+                        task_executor.clone().spawn(Box::pin(async move {
+                            if let Err(e) = snapshot_manager_tx
+                                .send(ABCIDriverMessage::CommitBlock((
+                                    sealed_block_with_context_clone,
+                                    cbft_hash,
+                                    snapshot_manager_announced_tx,
+                                )))
+                                .await
+                            {
+                                error!("Error sending finalize message to driver: {:?}", e);
+                            }
+                        }));
                     }
                     ABCIDriverMessage::Exit => {
                         break;

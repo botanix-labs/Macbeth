@@ -84,7 +84,11 @@ pub async fn utxo_sync(
         .unwrap();
     it_info_print!("Eoa tx receipt hash: {:?}", tx_receipt.transaction_hash);
 
-    let poa_eth_clients = suite.local_context.poa_eth_providers.clone().unwrap();
+    let mut poa_eth_clients = suite.local_context.poa_eth_providers.clone().unwrap();
+    // remove the syncing clients
+    for _syncing_node in 0..suite.global_context.syncing_instances as usize {
+        poa_eth_clients.pop().unwrap();
+    }
 
     // wait for canonical chain updates reported by the node, then send new tx
     let mut tx_hashes_set: HashSet<u16> = HashSet::new();
@@ -112,7 +116,8 @@ pub async fn utxo_sync(
                 continue;
             }
             tx_hashes_set.insert(canon_state_notification.engine_index);
-            if tx_hashes_set.len() == test_fed_members.len() {
+            let syncing_instances = suite.global_context.syncing_instances as usize;
+            if tx_hashes_set.len() == test_fed_members.len() - syncing_instances {
                 break;
             }
         }

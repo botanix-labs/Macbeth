@@ -289,7 +289,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
         // prioritize the bitcoind config path from cli args
         if let Some(bitcoind_config_path) = bitcoind_config_path {
-            // node_config.rpc.bitcoind = Some(bitcoind_config_path);
             let config =
                 confy::load_path::<BitcoindArgs>(&bitcoind_config_path).wrap_err_with(|| {
                     format!("Could not load config file {:?}", bitcoind_config_path)
@@ -563,6 +562,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             tokio::sync::mpsc::channel::<ABCIDriverMessage>(100);
         let mut abci_driver = ABCIDriver::new(
             btc_server_client,
+            executor.clone(),
             driver_rx,
             provider_factory.clone(),
             blockchain_db.clone(),
@@ -763,7 +763,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             cometbft_rpc_factory,
             RandomSourceProvider::new(),
             driver_tx,
-            node_config.state_sync,
+            node_config.clone().state_sync,
             provider_factory.clone(),
         ) {
             Ok(consensus) => consensus.build::<BtcServerExtendedClient, ABCIDriver<BtcServerExtendedClient, Arc<DatabaseEnv>>>(canon_state_reciever, snapshot_manager_rx).await,

@@ -70,10 +70,10 @@ pub async fn test_state_sync_dynamic(
     for _ in 0..5 {
         it_info_print!("Sending eoa transaction...");
         let eoa_receiver = ethers::core::types::Address::random();
-        it_info_print!("Eoa receiver: {:?}", eoa_receiver.to_string());
+        it_info_print!("Eoa receiver: ", eoa_receiver.to_string());
         let tx_receipt =
             botanix_eth_client.send_eoa(eoa_receiver, SEND_AMOUNT).await.unwrap().unwrap();
-        it_info_print!("Eoa tx receipt hash: {:?}", tx_receipt.transaction_hash);
+        it_info_print!("Eoa tx receipt hash: ", tx_receipt.transaction_hash);
         tokio::time::sleep(Duration::from_millis(200)).await;
         tx_hashes_set.insert(tx_receipt.transaction_hash);
     }
@@ -173,7 +173,7 @@ pub async fn test_state_sync_dynamic(
     // wait for the syncing node to catch up with expected_sync_height
     loop {
         let last_block_number = db_provider_syncing_member.last_block_number().unwrap();
-        it_info_print!("Syncing last block number {:?}", last_block_number);
+        it_info_print!("Syncing last block number ", last_block_number);
         if last_block_number >= expected_sync_height {
             return Ok(());
         }

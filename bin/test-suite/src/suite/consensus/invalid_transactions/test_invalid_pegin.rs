@@ -152,7 +152,7 @@ pub async fn invalid_pegin(
     let bitcoin_block_height = conf_block_info.height;
     let meta = PeginMeta {
         version: 0,
-        outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
+        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
         address: eth_account.clone(),
         aggregate_publickey: secp256k1::PublicKey::from_str(
             gateway_address_response.aggregate_public_key.as_str(),
@@ -226,7 +226,7 @@ pub async fn invalid_pegin(
     let bitcoin_block_height = conf_block_info.height;
     let meta = PeginMeta {
         version: 0,
-        outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
+        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
         address: eth_account.clone(),
         aggregate_publickey: secp256k1::PublicKey::from_str(
             gateway_address_response.aggregate_public_key.as_str(),

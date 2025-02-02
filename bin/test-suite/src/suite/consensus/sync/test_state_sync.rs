@@ -18,7 +18,7 @@ use crate::{
 };
 
 #[allow(clippy::too_many_lines)]
-pub async fn state_sync(
+pub async fn test_state_sync(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
     it_info_print!("Running state sync test...");

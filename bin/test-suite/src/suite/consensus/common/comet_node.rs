@@ -339,7 +339,8 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
             }
 
             if let Some(discovery_time) = rpc.get_mut("discovery_time") {
-                *discovery_time = toml::value::Value::String("1s".to_string());
+                // must be at least 5s
+                *discovery_time = toml::value::Value::String("5s".to_string());
             }
 
             if let Some(chunk_request_timeout) = rpc.get_mut("chunk_request_timeout") {

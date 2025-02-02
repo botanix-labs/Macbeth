@@ -1,9 +1,7 @@
 mod compression_strategies;
 mod error;
-
-use std::{fmt::Debug, sync::Arc};
-
 pub use compression_strategies::*;
+use std::{fmt::Debug, sync::Arc};
 
 pub use crate::error::{CompressionError, Error, SerdeError};
 
