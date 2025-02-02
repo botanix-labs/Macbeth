@@ -457,7 +457,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                         create_cometbft_nodes: true,
                         ..Default::default()
                     },
-                    sync::test_state_sync::state_sync
+                    sync::test_state_sync::test_state_sync
                 )
             }
             "state_sync_dynamic" => {
