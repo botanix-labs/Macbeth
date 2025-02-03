@@ -953,6 +953,7 @@ where
                             hashed_state.into_sorted(),
                             trie_updates,
                         )?;
+                        db_rw.commit().expect("to commit");
 
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
                             new: vec![executed_block],
