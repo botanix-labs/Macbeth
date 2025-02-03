@@ -10,6 +10,7 @@ use std::{
     error::Error,
     io::{self},
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use btcserverlib::extended_client::BtcServerExtendedApi;
@@ -851,14 +852,21 @@ where
         let sealed_block_with_senders = sealed_block_with_peg_binding.block();
 
         // We want to explicitly panic if we cannot send the commit message
+        let (commit_oneshot_tx, commit_oneshot_rx) = std::sync::mpsc::channel::<()>();
         let driver_tx = self.driver_tx.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
-            if let Err(e) =
-                driver_tx.send(ABCIDriverMessage::CommitBlock(sealed_block_with_context)).await
+            if let Err(e) = driver_tx
+                .send(ABCIDriverMessage::CommitBlock(sealed_block_with_context, commit_oneshot_tx))
+                .await
             {
                 error!("Error sending commit block message: {:?}", e);
             }
         }));
+
+        // wait for a response from the driver
+        let _ = commit_oneshot_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("to receive commit block response");
 
         let cbft_block_hash = cbft_block_hash.clone();
         info!("Block committed: {:?}", cbft_block_hash);
@@ -881,7 +889,7 @@ where
 #[derive(Clone)]
 pub enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    CommitBlock(BlockWithContext),
+    CommitBlock(BlockWithContext, std::sync::mpsc::Sender<()>),
     /// Exit the driver
     Exit,
 }
@@ -927,7 +935,10 @@ where
         loop {
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
-                    ABCIDriverMessage::CommitBlock(sealed_block_with_context) => {
+                    ABCIDriverMessage::CommitBlock(
+                        sealed_block_with_context,
+                        commit_oneshot_tx,
+                    ) => {
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
@@ -1013,6 +1024,7 @@ where
                                 error!("Error notifying pegouts: {:?}", e);
                             }
                         }
+                        commit_oneshot_tx.send(()).unwrap();
                     }
                     ABCIDriverMessage::Exit => {
                         break;
