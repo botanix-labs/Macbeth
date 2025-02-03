@@ -23,7 +23,9 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_primitives::header_ext::HeaderExt;
-use reth_provider::{BlockReaderIdExt, CanonStateNotification, StateProviderFactory};
+use reth_provider::{
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StateProviderFactory,
+};
 use reth_revm::primitives::FixedBytes;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::{debug, error, info, warn};
@@ -73,8 +75,6 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     compressor: Compressor,
     /// btc server client
     btc_server: BtcServerClient,
-    /// Channel to receive canon state notifications
-    canon_state_notification_receiver: tokio::sync::broadcast::Receiver<CanonStateNotification>,
     /// Authority Metrics
     metrics: Arc<AuthorityMetrics>,
 }
@@ -84,7 +84,7 @@ impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     BF: Clone,
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + CanonStateSubscriptions + Clone + 'static,
     EF: Clone,
     Source: RandomSource,
     BtcServerClient: BtcServerExtendedApi + Clone,
@@ -100,7 +100,6 @@ where
         storage: Storage<EF, BF, DB>,
         compressor: Compressor,
         random_source_provider: Source,
-        canon_state_notification_receiver: tokio::sync::broadcast::Receiver<CanonStateNotification>,
         metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len() - 1);
@@ -131,7 +130,6 @@ where
             storage,
             btc_server,
             compressor,
-            canon_state_notification_receiver,
             metrics,
         }
     }
@@ -284,6 +282,7 @@ where
         } else {
             debug!(target: "consensus::authority::frost_task::start_task", "No public key found, proceeding with DKG");
         }
+        let mut canon_state_notifs = self.storage.client.subscribe_to_canonical_state();
 
         loop {
             let my_frost_id =
@@ -298,7 +297,7 @@ where
             }
 
             // Receive canon state notifications
-            while let Ok(ref notification) = self.canon_state_notification_receiver.try_recv() {
+            while let Ok(ref notification) = canon_state_notifs.try_recv() {
                 info!(target: "consensus::authority::frost_task::start_task", "canon state notification received for block number {:?}", notification.tip().number);
                 match notification {
                     CanonStateNotification::Commit { new } => {

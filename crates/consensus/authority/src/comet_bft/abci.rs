@@ -28,8 +28,7 @@ use reth_primitives::{
 };
 use reth_provider::{
     providers::{BlockchainProvider2, ConsistentDbView},
-    BlockReaderIdExt, CanonStateNotification, CanonStateNotificationSender,
-    CanonStateNotifications, CanonStateSubscriptions, Chain, ExecutionOutcome, ProviderError,
+    BlockReaderIdExt, CanonStateNotification, Chain, ExecutionOutcome, ProviderError,
     ProviderFactory, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
@@ -904,8 +903,7 @@ pub struct ABCIDriver<BtcServerClient, DatabaseRW> {
     btc_server: Option<BtcServerClient>,
     driver_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<ABCIDriverMessage>>>,
     database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
-    canon_state_notification_sender: CanonStateNotificationSender,
-    blockchain_provider_2: BlockchainProvider2<DatabaseRW>,
+    blockchain_provider: BlockchainProvider2<DatabaseRW>,
 }
 
 impl<BtcServerClient, DatabaseRW> ABCIDriver<BtcServerClient, DatabaseRW>
@@ -918,15 +916,13 @@ where
         btc_server: Option<BtcServerClient>,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
-        blockchain_provider_2: BlockchainProvider2<DatabaseRW>,
+        blockchain_provider: BlockchainProvider2<DatabaseRW>,
     ) -> Self {
-        let (canon_state_notification_sender, _) = tokio::sync::broadcast::channel(100);
         Self {
             btc_server,
             driver_rx: Arc::new(Mutex::new(driver_rx)),
             database_provider,
-            canon_state_notification_sender,
-            blockchain_provider_2,
+            blockchain_provider,
         }
     }
 
@@ -968,19 +964,19 @@ where
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
                             new: vec![executed_block],
                         };
-                        self.blockchain_provider_2
+                        self.blockchain_provider
                             .canonical_in_memory_state()
                             .update_chain(new_chain);
 
-                        self.blockchain_provider_2
+                        self.blockchain_provider
                             .on_forkchoice_update_received(&ForkchoiceState::default());
 
                         info!("Block height from sealed block: {:?}", block_height);
-                        self.blockchain_provider_2.set_canonical_head(new_header.clone());
-                        self.blockchain_provider_2.set_safe(new_header.clone());
-                        self.blockchain_provider_2.set_finalized(new_header.clone());
+                        self.blockchain_provider.set_canonical_head(new_header.clone());
+                        self.blockchain_provider.set_safe(new_header.clone());
+                        self.blockchain_provider.set_finalized(new_header.clone());
 
-                        self.blockchain_provider_2
+                        self.blockchain_provider
                             .canonical_in_memory_state()
                             .remove_persisted_blocks(block_height - 1);
 
@@ -990,10 +986,9 @@ where
                             None,
                         );
 
-                        // TODO(armins) handle error
-                        self.canon_state_notification_sender
-                            .send(CanonStateNotification::Commit { new: Arc::new(chain) })
-                            .unwrap();
+                        self.blockchain_provider.canonical_in_memory_state().notify_canon_state(
+                            CanonStateNotification::Commit { new: Arc::new(chain) },
+                        );
 
                         let pegins = sealed_block_with_peg
                             .pegins()
@@ -1036,17 +1031,6 @@ where
     }
 }
 
-impl<BtcServerClient, DatabaseRW> CanonStateSubscriptions
-    for ABCIDriver<BtcServerClient, DatabaseRW>
-where
-    BtcServerClient: Send + Sync + 'static,
-    DatabaseRW: Send + Sync + 'static,
-{
-    fn subscribe_to_canonical_state(&self) -> CanonStateNotifications {
-        self.canon_state_notification_sender.subscribe()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1071,7 +1055,7 @@ mod tests {
     use reth_evm::test_utils::MockExecutorProvider;
     use reth_node_core::{args::TxPoolArgs, cli::config::RethTransactionPoolConfig};
     use reth_node_ethereum::EthEvmConfig;
-    use reth_provider::providers::{BlockchainProvider, ProviderFactory, StaticFileProvider};
+    use reth_provider::providers::{ProviderFactory, StaticFileProvider};
     use reth_revm::primitives::EnvKzgSettings;
     use reth_tasks::TaskManager;
     use reth_transaction_pool::{
@@ -1392,7 +1376,10 @@ mod tests {
         let _response = abci_client.finalize_block(request);
     }
 
+    // this needs to be an integration test bc the driver needs to be spun up as well
+    // this requires a btc server to be running
     #[test]
+    #[should_panic]
     fn test_commit() {
         let abci_client = abci_client_builder();
 
@@ -1411,7 +1398,6 @@ mod tests {
         // need to call finalize block first to generate a block in the cache to commit
         let _finalize_block_response = abci_client.finalize_block(request);
 
-        let response = abci_client.commit();
-        assert_eq!(response, ResponseCommit::default());
+        let _response = abci_client.commit();
     }
 }

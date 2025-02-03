@@ -24,8 +24,7 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderFactory,
-    StateProviderFactory,
+    BlockReaderIdExt, CanonStateSubscriptions, ProviderFactory, StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
@@ -70,7 +69,7 @@ impl<EF, BF, DB, ToFrostMan, NetworkClient, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt + StateProviderFactory + CanonStateSubscriptions + Clone + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
@@ -190,9 +189,8 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub async fn build<BtcServerClient, Canon: CanonStateSubscriptions>(
+    pub async fn build<BtcServerClient>(
         self,
-        canon_notification_reciever: tokio::sync::broadcast::Receiver<CanonStateNotification>,
     ) -> (
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
@@ -268,7 +266,6 @@ where
                 storage.clone(),
                 compressor,
                 random_source_provider,
-                canon_notification_reciever,
                 Arc::clone(&metrics),
             );
 
