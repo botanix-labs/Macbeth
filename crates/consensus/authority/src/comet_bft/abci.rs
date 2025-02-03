@@ -642,7 +642,6 @@ where
             block_time,
         ) {
             Ok((exec_results, block)) => {
-                info!("Block built successfully, resulting block hash: {:?}", block.hash_slow());
                 let block_hash = block.hash_slow();
                 let block_number = block.number;
                 info!("Block built successfully, resulting block hash: {:?}", block_hash);
@@ -953,7 +952,7 @@ where
                             hashed_state.into_sorted(),
                             trie_updates,
                         )?;
-                        db_rw.commit().expect("to commit");
+                        db_rw.commit()?;
 
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
                             new: vec![executed_block],
@@ -969,6 +968,10 @@ where
                         self.blockchain_provider_2.set_canonical_head(new_header.clone());
                         self.blockchain_provider_2.set_safe(new_header.clone());
                         self.blockchain_provider_2.set_finalized(new_header.clone());
+
+                        self.blockchain_provider_2
+                            .canonical_in_memory_state()
+                            .remove_persisted_blocks(block_height - 1);
 
                         let chain = Chain::new(
                             vec![sealed_block_with_senders].into_iter(),
