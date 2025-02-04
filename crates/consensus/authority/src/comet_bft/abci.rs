@@ -1191,7 +1191,7 @@ mod tests {
         let response = abci_client.info(request);
 
         assert_eq!(response.data, String::default());
-        assert_eq!(response.version, "1.0.1".to_string());
+        assert_eq!(response.version, VERSION.to_string());
         assert_eq!(response.app_version, 1);
         assert_eq!(response.last_block_height, 0);
         let _response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
