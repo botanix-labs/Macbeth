@@ -1,14 +1,19 @@
 use bitcoincore_rpc::RpcApi;
+use comet_bft_rpc::{Client, CometBftRpcFactory};
 use reth_data_parser::{DataParser, SerializationType};
 use reth_primitives::SealedBlockWithSenders;
-use reth_provider::SnapshotReader;
+use reth_provider::{BlockNumReader, SnapshotReader};
 
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use crate::{
     it_info_print,
     suite::consensus::{
         common::{
+            comet_node::update_config_toml_with_trusted_height_and_hash,
             events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
             poa_node::Notifications,
         },
@@ -17,9 +22,11 @@ use crate::{
     utils::generate_blocks,
 };
 
+const MAX_RETRIES: u8 = 3;
+
 #[allow(clippy::too_many_lines)]
 pub async fn test_state_sync(
-    suite: &ConsensusIntegrationTestSuite,
+    suite: &mut ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
     it_info_print!("Running state sync test...");
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
@@ -120,5 +127,116 @@ pub async fn test_state_sync(
         }
     }
 
-    Ok(())
+    it_info_print!("Starting dynamic sync");
+
+    // get a lightlight client for a non-syncing poa node
+    let (trusted_block_height, trusted_block_hash) =
+        if let Some(cometbft_lightclients) = suite.local_context.cometbft_lightclients.as_ref() {
+            let cometrpc = cometbft_lightclients.get(target_member_index).unwrap().clone();
+            let cometbft_http_client = cometrpc.build_and_connect().expect("to be connected");
+
+            let trusted_block_height = 1u32;
+            let trusted_block_hash = cometbft_http_client
+                .block(trusted_block_height)
+                .await
+                .expect("to have first block")
+                .block
+                .header
+                .hash();
+            it_info_print!("COMET>>>>> TRUSTED HASH FOR HEIGHT 1!", trusted_block_hash);
+            let latest_block =
+                cometbft_http_client.latest_block().await.unwrap().block.header().height.value();
+            it_info_print!("COMET>>>>> LATEST COMMET BLOCK HEIGHT", latest_block);
+            (trusted_block_height, trusted_block_hash)
+        } else {
+            panic!("No trusted block height and hash");
+        };
+
+    let latest_botanix_block = botanix_eth_client.get_latest_block().await.unwrap();
+    it_info_print!(
+        "COMET>>>>> LATEST BOTANIX HEIGHT",
+        latest_botanix_block.number.unwrap_or_default().as_u64()
+    );
+
+    // wait until all poas have at least 2 snapshots to sync against
+    let member_ids = suite
+        .local_context
+        .poa_nodes
+        .clone()
+        .unwrap_or_default()
+        .keys()
+        .cloned()
+        .collect::<Vec<u16>>();
+    it_info_print!("Syncing instances", suite.global_context.syncing_instances);
+    let member_ids: Vec<u16> = member_ids
+        [..member_ids.len().saturating_sub(suite.global_context.syncing_instances as usize)] // remove the syncing nodes
+        .to_vec();
+    let mut snapshots_per_fed_member: HashMap<u16, usize> = HashMap::new();
+    let expected_sync_height = 'outer: loop {
+        for memeber_id in member_ids.clone() {
+            let db_provider =
+                suite.local_context.get_dbs().get(memeber_id as usize).cloned().unwrap();
+            let snapshots = db_provider.get_snapshots().unwrap_or_default();
+            snapshots_per_fed_member.insert(memeber_id, snapshots.len());
+
+            let expected_sync_height =
+                snapshots.first().as_ref().map(|s| s.height()).unwrap_or_default();
+
+            let insuficient_snapshots = snapshots_per_fed_member.iter().any(|(_, snapshots)| {
+                if *snapshots < 2 {
+                    return true
+                }
+                false
+            });
+            if !insuficient_snapshots {
+                break 'outer expected_sync_height;
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+    it_info_print!("All nodes have produced at least 2 snapshots");
+    it_info_print!("Expected sync height", expected_sync_height);
+
+    // start the syncing cometbft node
+    if let Some(cometbft_nodes_syncing) = suite.local_context.cometbft_nodes_syncing.as_ref() {
+        for (_index, comet_node) in cometbft_nodes_syncing.iter() {
+            if let Some(spawned_cometbft_processes) =
+                suite.local_context.cometbft_processes.as_mut()
+            {
+                // overwrite the config with the trusted block hash and height
+                update_config_toml_with_trusted_height_and_hash(
+                    &comet_node,
+                    trusted_block_height as i64,
+                    &trusted_block_hash.to_string(),
+                )
+                .unwrap();
+                // spawn the comet process
+                spawned_cometbft_processes.push(comet_node.spawn_service().unwrap());
+                // await initialization
+                comet_node.await_initialization().unwrap();
+            }
+        }
+    }
+
+    // get the syncing node db
+    let db_provider_syncing_member =
+        suite.local_context.get_dbs().get(member_ids.len()).cloned().unwrap();
+
+    let mut retries = 0;
+
+    loop {
+        let last_block_number = db_provider_syncing_member.last_block_number().unwrap();
+        it_info_print!("Syncing last block number ", last_block_number);
+
+        if last_block_number >= expected_sync_height {
+            return Ok(());
+        }
+
+        retries += 1;
+        if retries >= MAX_RETRIES {
+            panic!("Syncing failed after {} retries!", MAX_RETRIES);
+        }
+
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
 }

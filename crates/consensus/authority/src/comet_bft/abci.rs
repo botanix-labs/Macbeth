@@ -823,7 +823,8 @@ where
         &self,
         request: RequestApplySnapshotChunk,
     ) -> ResponseApplySnapshotChunk {
-        info!("apply_snapshot_chunk request");
+        info!("apply_snapshot_chunk request, index: {:?}", request.index);
+
         let client = self.storage.client.clone();
 
         // get the last snapshot sync id - there should always be one provided the offer_snapshot
@@ -870,7 +871,10 @@ where
         };
 
         // check the snapshot sync is done in sequential manner
-        if snapshot.last_applied_chunk_index() + 1 != request.index as u64 {
+        info!("last applied chunk index: {:?}", snapshot.last_applied_chunk_index());
+
+        // request index will be ahead `last_applied_chunk_index` by 1 except for the first chunk
+        if snapshot.last_applied_chunk_index().saturating_sub(1) > request.index as u64 {
             error!("Last applied chunk index is not sequential with the incoming chunk index");
             return ResponseApplySnapshotChunk {
                 result: ApplySnapshotResult::RetrySnapshot as i32,
@@ -943,6 +947,17 @@ where
                 reject_senders: vec![],
             };
         }
+        if let Err(e) = db_rw.commit() {
+            error!(
+                "Error committing db after appending blocks with state {:?} in the db. error = {:?}",
+                last_snapshot_sync_id, e
+            );
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        };
 
         let hash = self.application_hash(&client);
         info!("Current application Hash {:?}", hex::encode(hash.to_vec().as_slice()));

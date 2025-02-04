@@ -74,7 +74,7 @@ pub struct SnapshotManager<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     compressor: DataParser,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
-    snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
+    snapshot_manager_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     state_sync_args: StateSyncArgs,
     state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
 }
@@ -90,7 +90,7 @@ where
         storage: Storage<EF, BF, DB>,
         compressor: DataParser,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
-        snapshot_manager_tx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
+        snapshot_manager_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         state_sync_args: StateSyncArgs,
         state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     ) -> Self {
@@ -98,7 +98,7 @@ where
             storage,
             compressor,
             provider_factory,
-            snapshot_manager_tx,
+            snapshot_manager_rx,
             state_sync_args,
             state_lock,
         }
@@ -213,7 +213,7 @@ where
     async fn run(&mut self) -> Result<(), SnapshotManagerError> {
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
 
-        while let Some(abci_driver_message) = self.snapshot_manager_tx.recv().await {
+        while let Some(abci_driver_message) = self.snapshot_manager_rx.recv().await {
             debug!(target: "consensus::authority::snapshot_manager::run", "received abci driver message {:?}", abci_driver_message);
 
             match abci_driver_message {

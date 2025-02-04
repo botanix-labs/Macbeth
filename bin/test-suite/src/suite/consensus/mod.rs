@@ -460,20 +460,6 @@ impl Suite for ConsensusIntegrationTestSuite {
                     sync::test_state_sync::test_state_sync
                 )
             }
-            "state_sync_dynamic" => {
-                run_test!(
-                    self,
-                    CreateTestConfig {
-                        create_bitcoind_node: true,
-                        create_poa_nodes: true,
-                        create_btc_servers: true,
-                        create_cometbft_nodes: true,
-                        create_state_syncing_node: true,
-                        ..Default::default()
-                    },
-                    sync::test_state_sync_dynamic::test_state_sync_dynamic
-                )
-            }
             "frost_e2e_failed_signing_disconnect" => {
                 run_test!(
                     self,
