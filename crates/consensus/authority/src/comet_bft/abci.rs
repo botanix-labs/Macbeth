@@ -851,7 +851,7 @@ where
         let sealed_block_with_senders = sealed_block_with_peg_binding.block();
 
         // We want to explicitly panic if we cannot send the commit message
-        let (commit_tx, commit_rx) = tokio::sync::oneshot::channel::<()>();
+        let (commit_tx, commit_rx) = std::sync::mpsc::channel::<()>();
         let driver_tx = self.driver_tx.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
             if let Err(e) = driver_tx
@@ -860,8 +860,8 @@ where
             {
                 error!("Error sending commit block message: {:?}", e);
             }
-            let _ = commit_rx.await.expect("to receive commit block response");
         }));
+        let _ = commit_rx.recv().expect("to receive commit block response");
 
         let cbft_block_hash = cbft_block_hash.clone();
         info!("Block committed: {:?}", cbft_block_hash);
@@ -883,7 +883,7 @@ where
 /// ABCI driver message
 pub enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    CommitBlock(BlockWithContext, tokio::sync::oneshot::Sender<()>),
+    CommitBlock(BlockWithContext, std::sync::mpsc::Sender<()>),
     /// Exit the driver
     Exit,
 }
