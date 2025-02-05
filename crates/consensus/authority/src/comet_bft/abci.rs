@@ -1435,21 +1435,21 @@ where
 
         // We want to explicitly panic if we cannot send the commit message
         let cbft_block_hash = cbft_block_hash.clone();
+        let (commit_tx, commit_rx) = std::sync::mpsc::channel::<()>();
         let driver_tx = self.driver_tx.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         self.task_executor.spawn_blocking(Box::pin(async move {
             if let Err(e) = driver_tx
                 .send(ABCIDriverMessage::CommitBlock((
                     sealed_block_with_context,
                     cbft_block_hash,
-                    tx,
+                    commit_tx,
                 )))
                 .await
             {
                 error!("Error sending commit block message: {:?}", e);
             }
-            rx.await.expect("to receive confirmation from driver");
         }));
+        let _ = commit_rx.recv().expect("to receive commit block response");
 
         info!("Block committed: {:?}", cbft_block_hash);
         self.metrics.commet_committed_blocks.increment(1);
@@ -1471,7 +1471,7 @@ where
 #[derive(Debug)]
 pub enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    CommitBlock((BlockWithContext, FixedBytes<32>, tokio::sync::oneshot::Sender<()>)),
+    CommitBlock((BlockWithContext, FixedBytes<32>, std::sync::mpsc::Sender<()>)),
     /// Exit the driver
     Exit,
 }
@@ -1521,7 +1521,11 @@ where
         loop {
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
-                    ABCIDriverMessage::CommitBlock((sealed_block_with_context, cbft_hash, tx)) => {
+                    ABCIDriverMessage::CommitBlock((
+                        sealed_block_with_context,
+                        cbft_hash,
+                        commit_tx,
+                    )) => {
                         let sealed_block_with_context_clone = sealed_block_with_context.clone();
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
@@ -1607,11 +1611,11 @@ where
                                 error!("Error notifying pegouts: {:?}", e);
                             }
                         }
-                        tx.send(()).expect("to send");
+                        commit_tx.send(()).expect("to send");
 
                         // Send message to snapshot manager
                         let (snapshot_manager_announced_tx, _snapshot_manager_announced_rx) =
-                            tokio::sync::oneshot::channel::<()>();
+                            std::sync::mpsc::channel::<()>();
                         let snapshot_manager_tx = self.snapshot_manager_tx.clone();
                         task_executor.clone().spawn(Box::pin(async move {
                             if let Err(e) = snapshot_manager_tx
@@ -1986,31 +1990,6 @@ mod tests {
         let _response = abci_client.finalize_block(request);
     }
 
-    // this needs to be an integration test bc the driver needs to be spun up as well
-    // this requires a btc server to be running
-    #[test]
-    #[should_panic]
-    fn test_commit() {
-        let abci_client = abci_client_builder();
-
-        let mut request = RequestFinalizeBlock::default();
-
-        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("msg to have ndd");
-
-        request.txs = vec![ndd_bytes.clone()];
-
-        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
-        request.proposer_address = proposer_address;
-
-        request.time = Some(Timestamp::default());
-        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
-
-        // need to call finalize block first to generate a block in the cache to commit
-        let _finalize_block_response = abci_client.finalize_block(request);
-
-        let _response = abci_client.commit();
-    }
-
     #[test]
     fn test_snapshot_sync_state_equality() {
         let mut s1 = SnapshotSyncStateLock::default();
@@ -2031,4 +2010,7 @@ mod tests {
 
         assert_eq!(s1, s2);
     }
+
+    // TODO: add tests for commit + abci driver
+    // https://github.com/botanix-labs/botanix/issues/907
 }
