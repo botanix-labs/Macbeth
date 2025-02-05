@@ -1192,7 +1192,7 @@ mod tests {
         let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let authority = FedMemberPubKey {
             key: secret_key.public_key(SECP256K1).to_string(),
-            socket_addr: format!("127.0.0.1:30303"),
+            socket_addr: "127.0.0.1:30303".to_string(),
         };
         let authorities = vec![authority];
         let federation_config =
@@ -1231,7 +1231,7 @@ mod tests {
         let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let authority = FedMemberPubKey {
             key: secret_key.public_key(SECP256K1).to_string(),
-            socket_addr: format!("127.0.0.1:30303"),
+            socket_addr: "127.0.0.1:30303".to_string(),
         };
         let authorities = vec![authority];
         let federation_config =
