@@ -37,6 +37,7 @@ reth-stages-types = { workspace = true }
 reth-storage-errors = { workspace = true }
 reth-trie-common = { workspace = true }
 serde = { workspace = true, default-features = false }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 

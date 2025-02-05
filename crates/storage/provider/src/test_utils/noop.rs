@@ -9,6 +9,7 @@ use reth_chain_state::{
     ForkChoiceSubscriptions,
 };
 use reth_chainspec::{ChainInfo, ChainSpec, MAINNET};
+use reth_db::models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId};
 use reth_db_api::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_errors::ProviderError;
 use reth_evm::ConfigureEvmEnv;
@@ -33,9 +34,9 @@ use crate::{
     traits::{BlockSource, ReceiptProvider},
     AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
     ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider, PruneCheckpointReader,
-    ReceiptProviderIdExt, RequestsProvider, StageCheckpointReader, StateProvider, StateProviderBox,
-    StateProviderFactory, StateRootProvider, StaticFileProviderFactory, TransactionVariant,
-    TransactionsProvider, WithdrawalsProvider,
+    ReceiptProviderIdExt, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
+    StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
+    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WithdrawalsProvider,
 };
 
 /// Supports various api interfaces for testing purposes.
@@ -149,6 +150,149 @@ impl BlockReader for NoopProvider {
         _range: RangeInclusive<BlockNumber>,
     ) -> ProviderResult<Vec<SealedBlockWithSenders>> {
         Ok(vec![])
+    }
+}
+
+impl SnapshotReader for NoopProvider {
+    fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>> {
+        Ok(vec![])
+    }
+
+    fn get_snapshot_by_id(&self, _snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>> {
+        Ok(None)
+    }
+
+    fn get_last_snapshot_sync_id(&self) -> ProviderResult<Option<SnapshotSyncId>> {
+        Ok(None)
+    }
+
+    fn get_snapshot_sync_by_height(&self, _height: u64) -> ProviderResult<Option<SnapshotSync>> {
+        Ok(None)
+    }
+
+    fn get_snapshot_sync_by_id(&self, _id: u64) -> ProviderResult<Option<SnapshotSync>> {
+        Ok(None)
+    }
+
+    fn get_chunk_by_id(
+        &self,
+        _chunk_id: reth_db::models::ChunkId,
+    ) -> ProviderResult<Option<SnapshotChunk>> {
+        Ok(None)
+    }
+
+    fn get_snapshot_id_by_block_height(
+        &self,
+        _block_id: BlockNumber,
+    ) -> ProviderResult<Option<SnapshotId>> {
+        Ok(None)
+    }
+
+    fn get_chunk_block_height(&self, _chunk_id: ChunkId) -> ProviderResult<Option<BlockNumber>> {
+        Ok(None)
+    }
+
+    fn get_last_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        Ok(None)
+    }
+
+    fn get_first_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        Ok(None)
+    }
+
+    fn get_snapshot_size(&self, _snapshot_id: SnapshotId) -> ProviderResult<usize> {
+        Ok(0)
+    }
+
+    fn get_snapshots_count(&self) -> ProviderResult<usize> {
+        Ok(0)
+    }
+
+    fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        Ok(None)
+    }
+
+    fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        Ok(None)
+    }
+}
+
+impl SnapshotWriter for NoopProvider {
+    fn create_new_snapshot_sync(
+        &self,
+        _block_id: BlockNumber,
+        _snapshot_hash: B256,
+        _total_chunks: u64,
+        _format: u64,
+    ) -> ProviderResult<SnapshotId> {
+        Ok(0)
+    }
+
+    fn create_new_snapshot(
+        &self,
+        _block_id: BlockNumber,
+        _block_hash: B256,
+        _app_hash: &[u8],
+    ) -> ProviderResult<SnapshotId> {
+        Ok(0)
+    }
+
+    fn create_new_chunk(
+        &self,
+        _snapshot_id: SnapshotId,
+        _block_id: BlockNumber,
+        _chunk_data: Vec<u8>,
+    ) -> ProviderResult<SnapshotId> {
+        Ok(0)
+    }
+
+    fn create_block_chunks_register(
+        &self,
+        _block_id: BlockNumber,
+        _chunk_ids: Vec<ChunkId>,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn update_snapshot(
+        &self,
+        _snapshot_id: SnapshotId,
+        _block_id: BlockNumber,
+        _chunk_id: ChunkId,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn update_snapshot_sync(
+        &self,
+        _snapshot_sync_id: SnapshotSyncId,
+        _updated_snapshot: SnapshotSync,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn insert_block_snapshot_id_mapping(
+        &self,
+        _block_id: BlockNumber,
+        _snapshot_id: SnapshotId,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn remove_snapshots(&self, _range: RangeInclusive<SnapshotId>) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn remove_oldest_snapshot(&self) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn remove_chunks(&self, _range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn delete_chunks_in_blocks(&self, _range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        Ok(())
     }
 }
 

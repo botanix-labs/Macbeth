@@ -9,6 +9,8 @@ use reth_chain_state::{CanonStateSubscriptions, ForkChoiceSubscriptions};
 use reth_chainspec::{ChainSpec, EthChainSpec};
 use reth_db_api::database::Database;
 
+use super::{SnapshotReader, SnapshotWriter};
+
 /// Helper trait to unify all provider traits for simplicity.
 pub trait FullProvider<DB: Database, ChainSpec: EthChainSpec>:
     DatabaseProviderFactory<DB>
@@ -22,6 +24,8 @@ pub trait FullProvider<DB: Database, ChainSpec: EthChainSpec>:
     + CanonStateSubscriptions
     + ForkChoiceSubscriptions
     + StageCheckpointReader
+    + SnapshotWriter
+    + SnapshotReader
     + Clone
     + Unpin
     + 'static
@@ -40,6 +44,8 @@ impl<T, DB: Database, ChainSpec: EthChainSpec> FullProvider<DB, ChainSpec> for T
         + CanonStateSubscriptions
         + ForkChoiceSubscriptions
         + StageCheckpointReader
+        + SnapshotWriter
+        + SnapshotReader
         + Clone
         + Unpin
         + 'static
@@ -56,6 +62,8 @@ pub trait FullRpcProvider:
     + HeaderProvider
     + TransactionsProvider
     + StageCheckpointReader
+    + SnapshotWriter
+    + SnapshotReader
     + Clone
     + Unpin
     + 'static
@@ -70,6 +78,8 @@ impl<T> FullRpcProvider for T where
         + HeaderProvider
         + TransactionsProvider
         + StageCheckpointReader
+        + SnapshotWriter
+        + SnapshotReader
         + Clone
         + Unpin
         + 'static

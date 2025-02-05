@@ -9,6 +9,9 @@ pub use reth_evm::provider::EvmEnvProvider;
 mod block;
 pub use block::*;
 
+mod snapshot;
+pub use snapshot::*;
+
 mod chain_info;
 pub use chain_info::CanonChainTracker;
 
