@@ -2,6 +2,7 @@ pub(crate) mod authority_execution_utils {
     use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_chainspec::{ChainSpec, EthereumHardforks};
 
+    use reth_db::Database;
     use reth_evm::execute::Executor;
     use reth_evm_ethereum::execute::EthBlockExecutor;
     use reth_execution_errors::{
@@ -9,6 +10,7 @@ pub(crate) mod authority_execution_utils {
     };
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
+        botanix::block_with_peg::SealedBlockWithPeg,
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         eip4844::calculate_excess_blob_gas,
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
@@ -17,38 +19,43 @@ pub(crate) mod authority_execution_utils {
         ReceiptWithBloom, Requests, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
-        BlockExecutionInput, BlockExecutionOutput, BlockReaderIdExt, ExecutionOutcome,
-        ProviderError, StateProviderFactory,
+        BlockExecutionInput, BlockExecutionOutput, BlockHashReader, BlockNumReader,
+        ExecutionOutcome, HeaderProvider, ProviderFactory,
     };
     use reth_revm::{database::StateProviderDatabase, db::State};
+    use reth_trie::StateRoot;
+    use reth_trie_db::DatabaseStateRoot;
 
     use std::sync::Arc;
     use tendermint_proto::google::protobuf::Timestamp;
     use tracing::{info, trace};
 
+    use crate::comet_bft::abci::BlockWithContext;
+
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns bundle state, block, and gas used.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_and_execute<BF>(
+    pub(crate) fn build_and_execute<BF, DB>(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
         block_builder_address: &Address,
         evm_config: EthEvmConfig,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
+        database_provider: &ProviderFactory<DB>,
         bitcoind_factory: &BF,
         bitcoin_network: bitcoin::Network,
         bitcoin_checkpoint_block_hash: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
         timestamp: Timestamp,
-    ) -> Result<(BlockExecutionOutput<Receipt>, Block), BlockExecutionError>
+    ) -> Result<BlockWithContext, BlockExecutionError>
     where
         BF: BitcoindFactory + Clone + Unpin + 'static,
+        DB: Database,
     {
         // Construct block and header
         let header = build_header_template(
             &transactions,
-            client,
+            &database_provider,
             bitcoin_checkpoint_block_hash,
             chain_spec.clone(),
             agg_pk,
@@ -69,7 +76,7 @@ pub(crate) mod authority_execution_utils {
         info!(target: "consensus::authority", "block_builder_address: {:?}", block_builder_address);
         let block_exec_output = execute(
             &block_with_senders,
-            client,
+            &database_provider,
             Some(*block_builder_address),
             bitcoind_factory,
             bitcoin_network,
@@ -82,27 +89,52 @@ pub(crate) mod authority_execution_utils {
             &block_exec_output,
             block_exec_output.gas_used,
             *bitcoin_checkpoint_block_hash,
-            client,
+            &database_provider,
             agg_pk,
         )?;
 
         // Replace header with the one that is completed
         block.header = completed_header.clone();
+        let sealed_block_with_senders =
+            block.seal_slow().try_seal_with_senders().expect("same senders are passed above");
+        let sealed_block_with_peg = SealedBlockWithPeg::new(
+            sealed_block_with_senders,
+            block_exec_output.pegins,
+            block_exec_output.pegouts,
+        );
 
-        Ok((block_exec_output, block))
+        let exec_outcome = ExecutionOutcome::new(
+            block_exec_output.state,
+            block_exec_output.receipts.into(),
+            completed_header.number,
+            // TODO: does authority consensus need to check against this?
+            vec![],
+        );
+        let hashed_state = exec_outcome.hash_state_slow();
+        let (_state_root, trie_updates) = StateRoot::overlay_root_with_updates(
+            database_provider.provider()?.tx_ref(),
+            hashed_state.clone(),
+        )
+        .map_err(|e| BlockExecutionError::Validation(BlockValidationError::StateRoot(e)))?;
+
+        let block_with_context =
+            BlockWithContext { sealed_block_with_peg, exec_outcome, trie_updates };
+
+        Ok(block_with_context)
     }
 
     /// Fills in pre-execution header fields based on the current best block and given
     /// transactions.
-    fn build_header_template(
+    fn build_header_template<DB: Database>(
         transactions: &[TransactionSigned],
-        client: &impl BlockReaderIdExt,
+        database_provider: &ProviderFactory<DB>,
         bitcoin_checkpoint: &bitcoin::BlockHash,
         chain_spec: Arc<ChainSpec>,
         agg_pk: &secp256k1::PublicKey,
         timestamp: Timestamp,
         block_builder_address: &Address,
     ) -> Result<Header, BlockExecutionError> {
+        let client = database_provider.provider()?;
         let best_block = client.best_block_number().map_err(|e| {
             BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
         })?;
@@ -204,12 +236,12 @@ pub(crate) mod authority_execution_utils {
     /// Fills in the post-execution header fields based on the given PostState and gas used.
     /// In doing this, the state root is calculated and the final header is returned.
     #[allow(clippy::too_many_arguments)]
-    fn complete_header(
+    fn complete_header<DB: Database>(
         mut header: Header,
         block_exec_result: &BlockExecutionOutput<Receipt>,
         gas_used: u64,
         recent_block_hash: bitcoin::BlockHash,
-        client: &(impl BlockReaderIdExt + StateProviderFactory),
+        database_provider: &ProviderFactory<DB>,
         agg_pk: &secp256k1::PublicKey,
     ) -> Result<Header, BlockExecutionError> {
         let exec_outcome = ExecutionOutcome::new(
@@ -232,15 +264,10 @@ pub(crate) mod authority_execution_utils {
         };
         header.gas_used = gas_used;
         // calculate the state root
-        let state_root = client
-            .latest()
-            .map_err(|_| {
-                BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(
-                    ProviderError::StateForHashNotFound(header.hash_slow()),
-                ))
-            })?
-            .state_root(&block_exec_result.state)
-            .unwrap();
+        let provider = database_provider.provider()?;
+        let state_root = provider
+            .state_provider_by_block_number(header.number - 1)?
+            .state_root(&block_exec_result.state)?;
         header.state_root = state_root;
 
         let block_producer_address = header.block_producer_address().map_err(|_| {
@@ -261,9 +288,9 @@ pub(crate) mod authority_execution_utils {
     /// Executes the block with the given block and senders, on the provided [Executor].
     ///
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    fn execute<BF>(
+    fn execute<BF, DB>(
         block: &BlockWithSenders,
-        client: &(impl StateProviderFactory + BlockReaderIdExt),
+        database_provider: &ProviderFactory<DB>,
         _block_builder_address: Option<Address>,
         bitcoind_factory: &BF,
         bitcoin_network: bitcoin::Network,
@@ -272,13 +299,17 @@ pub(crate) mod authority_execution_utils {
     ) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError>
     where
         BF: BitcoindFactory + Clone + Unpin + 'static,
+        DB: Database,
     {
         // We cannot call `execute_and_verify_receipt()` here as we dont know the gas used yet
         // We must set those values on the executor after the execution
         // This is only an execution for the block builder, all other executing operations
         // should use `execute_and_verify_receipt`
+        let provider =
+            database_provider.provider()?.state_provider_by_block_number(block.number - 1)?;
+
         let db = State::builder()
-            .with_database_boxed(Box::new(StateProviderDatabase::new(client.latest().unwrap())))
+            .with_database_boxed(Box::new(StateProviderDatabase::new(provider)))
             .with_bundle_update()
             .build();
 
