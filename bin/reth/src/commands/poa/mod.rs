@@ -542,6 +542,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .expect("latest block to exist")
             .expect("latest block to exist")
             .seal(head.hash);
+        info!(target: "reth::cli", "Latest sealed header: {}", latest_sealed_header.number);
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
@@ -602,7 +603,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // spawn txpool maintenance task
         {
             let pool = transaction_pool.clone();
-            let chain_events = abci_driver.canonical_state_stream();
+            let chain_events = blockchain_db.canonical_state_stream();
             executor.spawn_critical(
                 "txpool maintenance task",
                 reth_transaction_pool::maintain::maintain_transaction_pool_future(
@@ -727,7 +728,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             payload_builder,
         );
         let (payload_service, payload_builder) =
-            PayloadBuilderService::new(payload_generator, abci_driver.canonical_state_stream());
+            PayloadBuilderService::new(payload_generator, blockchain_db.canonical_state_stream());
 
         executor.spawn_critical("payload builder service", Box::pin(payload_service));
         debug!(target: "reth::cli", "Spawned payload builder service");
@@ -737,40 +738,38 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_host(cometbft_rpc_host);
 
         // Build authority Consensus
-        let canon_state_reciever = abci_driver.subscribe_to_canonical_state();
-        let (
-            frost_task,
-            abci_client_builder,
-            snapshot_manager,
-        ) = match AuthorityConsensusBuilder::try_new(
-            Arc::clone(&chain_arc.clone()),
-            blockchain_db.clone(),
-            btc_server_factory.clone(),
-            bitcoin_block_header_clone.clone(),
-            secret_key,
-            network_handle.clone(),
-            network_client.clone(),
-            frost_handle,
-            executor.clone(),
-            frost_config,
-            payload_builder.clone(),
-            node_config.rpc.btc_network,
-            genesis_authorities.clone(),
-            authorities_socket_addresses,
-            executor_factory.clone(),
-            bitcoind_factory.clone(),
-            evm_config,
-            cometbft_rpc_factory,
-            RandomSourceProvider::new(),
-            driver_tx,
-            node_config.clone().state_sync,
-            provider_factory.clone(),
-        ) {
-            Ok(consensus) => consensus.build::<BtcServerExtendedClient, ABCIDriver<BtcServerExtendedClient, Arc<DatabaseEnv>>>(canon_state_reciever, snapshot_manager_rx).await,
-            Err(e) => {
-                return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
-            }
-        };
+        let (frost_task, abci_client_builder, snapshot_manager) =
+            match AuthorityConsensusBuilder::try_new(
+                Arc::clone(&chain_arc.clone()),
+                blockchain_db.clone(),
+                btc_server_factory.clone(),
+                bitcoin_block_header_clone.clone(),
+                secret_key,
+                network_handle.clone(),
+                network_client.clone(),
+                frost_handle,
+                executor.clone(),
+                frost_config,
+                payload_builder.clone(),
+                node_config.rpc.btc_network,
+                genesis_authorities.clone(),
+                authorities_socket_addresses,
+                executor_factory.clone(),
+                bitcoind_factory.clone(),
+                evm_config,
+                cometbft_rpc_factory,
+                RandomSourceProvider::new(),
+                driver_tx,
+                node_config.clone().state_sync,
+                provider_factory.clone(),
+            ) {
+                Ok(consensus) => {
+                    consensus.build::<BtcServerExtendedClient>(snapshot_manager_rx).await
+                }
+                Err(e) => {
+                    return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
+                }
+            };
 
         executor.spawn_critical(
             "Snapshot Manager",
@@ -886,7 +885,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 .with_provider(node_components.provider.clone())
                 .with_pool(node_components.pool.clone())
                 .with_network(node_components.network.clone())
-                .with_events(abci_driver.clone())
+                .with_events(blockchain_db.clone())
                 .with_executor(node_components.task_executor.clone())
                 .with_evm_config(node_components.evm_config)
                 .with_botanix_provider(botanix_provider.clone())

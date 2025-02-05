@@ -846,7 +846,7 @@ mod tests {
     fn round2_psbt_validation_checks() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(0)].clone())
             .expect("valid key package");
         // Add the key packages
         db.set_pubkey_package(pk_package.clone()).expect("set public key package");
@@ -869,14 +869,14 @@ mod tests {
         db.flush().unwrap();
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
-        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(0)].clone())
             .expect("valid key package");
 
-        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id!(2)].clone())
+        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
 
         let (_, signing_commits1) = frost::round1::commit(key_package1.signing_share(), rng);
-        psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1);
+        psbt.inputs[0].set_signing_commitment(frost_id!(0), &signing_commits1);
 
         // Lets add two signatures and use min_signers = 1
         let sig_share1 =
@@ -884,7 +884,7 @@ mod tests {
         let sig_share2 =
             frost::round2::SignatureShare::deserialize(&[2u8; 32]).expect("valid sig share");
 
-        psbt.inputs[0].set_partial_signature(frost_id!(1), &sig_share1);
+        psbt.inputs[0].set_partial_signature(frost_id!(0), &sig_share1);
 
         // Should pass with 1 signature
         let res = validate_psbt(&psbt, ROUND2, 1, &db);
@@ -898,8 +898,7 @@ mod tests {
 
         let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
-
-        psbt.inputs[0].set_partial_signature(frost_id!(2), &sig_share2);
+        psbt.inputs[0].set_partial_signature(frost_id!(1), &sig_share2);
         // restore the utxos
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
@@ -936,11 +935,12 @@ mod tests {
         db.flush().unwrap();
 
         let (_, signing_commits2) = frost::round1::commit(key_package2.signing_share(), rng);
-        psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits2);
+        psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits2);
         let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db);
         assert!(res.is_ok());
 
-        // Should fail if there is another signer
+        // Should fail if there is another signer as the number of signatures on a input is greater
+        // than min_signers
         let db = db_setup();
         // Add the key packages
         db.set_pubkey_package(pk_package.clone()).expect("set public key package");
@@ -952,13 +952,13 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        let key_package3 = frost::keys::KeyPackage::try_from(shares[&frost_id!(3)].clone())
+        let key_package3 = frost::keys::KeyPackage::try_from(shares[&frost_id!(2)].clone())
             .expect("valid key package");
 
         let (_, signing_commits3) = frost::round1::commit(key_package3.signing_share(), rng);
-        psbt.inputs[0].set_signing_commitment(frost_id!(3), &signing_commits3);
-        let sig = frost::round2::SignatureShare::deserialize(&[3u8; 32]).expect("valid sig share");
-        psbt.inputs[0].set_partial_signature(frost_id!(3), &sig);
+        psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits3);
+        let sig = frost::round2::SignatureShare::deserialize(&[2u8; 32]).expect("valid sig share");
+        psbt.inputs[0].set_partial_signature(frost_id!(2), &sig);
 
         let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db);
         assert_eq!(res.unwrap_err(), ValidatePSBTError::InvalidNumberOfPartialSignatures);
@@ -1122,9 +1122,9 @@ mod tests {
         let num_inputs = 2;
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
-        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+        let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(0)].clone())
             .expect("valid key package");
-        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id!(2)].clone())
+        let key_package2 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
 
         let rng = &mut rand::thread_rng();
@@ -1135,6 +1135,10 @@ mod tests {
 
         let (_, signing_commits2_0) = frost::round1::commit(key_package2.signing_share(), rng);
         let (_, signing_commits2_1) = frost::round1::commit(key_package2.signing_share(), rng);
+        let scs = vec![
+            (signing_commits1_0, signing_commits2_0),
+            (signing_commits1_1, signing_commits2_1),
+        ];
 
         // Set up the psbt
         let tx = create_tx(num_inputs, 1, None);
@@ -1144,56 +1148,37 @@ mod tests {
             Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
         psbt.inputs[1].witness_utxo =
             Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
-        psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1_0);
-        psbt.inputs[1].set_signing_commitment(frost_id!(1), &signing_commits1_1);
-        psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits2_0);
-        psbt.inputs[1].set_signing_commitment(frost_id!(2), &signing_commits2_1);
+
+        psbt.inputs[0].set_signing_commitment(frost_id!(0), &signing_commits1_0);
+        psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits2_0);
+
+        psbt.inputs[1].set_signing_commitment(frost_id!(0), &signing_commits1_1);
+        psbt.inputs[1].set_signing_commitment(frost_id!(1), &signing_commits2_1);
 
         // Add a eth tweak to the first input
         let eth_tweak = eth_vector_to_fixed_bytes(vec![1u8; 20]);
         psbt.inputs[0].set_eth_address(eth_tweak);
 
         let signing_packages = psbt.signing_packages().expect("valid list signing package");
-        assert_eq!(signing_packages.len(), 2);
-        assert_eq!(
-            signing_packages[0]
+        assert_eq!(signing_packages.len(), num_inputs);
+        for i in 0..num_inputs {
+            let signing_commitments = signing_packages[i]
                 .signing_commitments()
                 .values()
                 .copied()
                 .collect::<Vec<frost::round1::SigningCommitments>>()
-                .clone(),
-            vec![signing_commits1_0, signing_commits2_0]
-        );
-        // check the frost ids as well
-        assert_eq!(
-            signing_packages[0]
+                .clone();
+            assert!(signing_commitments.contains(&scs[i].0));
+            assert!(signing_commitments.contains(&scs[i].1));
+            let frost_ids = signing_packages[i]
                 .signing_commitments()
                 .keys()
                 .copied()
                 .collect::<Vec<frost::Identifier>>()
-                .clone(),
-            vec![frost_id!(1), frost_id!(2)]
-        );
-
-        assert_eq!(
-            signing_packages[1]
-                .signing_commitments()
-                .values()
-                .copied()
-                .collect::<Vec<frost::round1::SigningCommitments>>()
-                .clone(),
-            vec![signing_commits1_1, signing_commits2_1]
-        );
-        // check the frost ids as well
-        assert_eq!(
-            signing_packages[1]
-                .signing_commitments()
-                .keys()
-                .copied()
-                .collect::<Vec<frost::Identifier>>()
-                .clone(),
-            vec![frost_id!(1), frost_id!(2)]
-        );
+                .clone();
+            assert!(frost_ids.contains(&frost_id!(0)));
+            assert!(frost_ids.contains(&frost_id!(1)));
+        }
     }
 
     #[test]

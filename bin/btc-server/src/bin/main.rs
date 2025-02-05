@@ -302,7 +302,8 @@ where
         // +1 b/c we use the index of the federation member's pk as the identifier
         // And 0 is not a valid identifier
         let frost_identifier =
-            frost::Identifier::try_from(config.identifier + 1).expect("valid identifier");
+            frost::Identifier::derive(config.identifier.to_le_bytes().as_slice())
+                .expect("valid identifier");
         info!("Frost identifier: {:?} - {:?}", config.identifier, frost_identifier);
 
         let min_signers = config.min_signers;
@@ -1531,7 +1532,6 @@ mod tests {
         let app = setup().await;
         let req = tonic::Request::new(rpc::Empty {});
         let res = app.get_public_key(req).await.unwrap_err();
-        println!("{:?}", res);
         assert_eq!(res.code(), tonic::Code::InvalidArgument);
         assert_eq!(res.message(), "Missing key package");
     }
@@ -1543,7 +1543,7 @@ mod tests {
         let round1_dkg = app.get_round1_dkg_package(req).await.unwrap();
         let inner = round1_dkg.into_inner();
         let frost_id = deserialize_frost_peer_id(inner.identifier).unwrap();
-        assert_eq!(frost_id, frost_id!(1));
+        assert_eq!(frost_id, frost_id!(0));
         let payload = inner.payload;
         let _round1_dkg_pkg = frost::keys::dkg::round1::Package::deserialize(&payload).unwrap();
         // Not much to assert on here, just that we can deserialize the package
@@ -1725,7 +1725,7 @@ mod tests {
         let rng = thread_rng();
         let mut round1_dkgs = vec![];
         // reminder that frost identifiers start at 1
-        for index in 1..(app.max_signers + 1) {
+        for index in 0..(app.max_signers) {
             round1_dkgs.push(
                 frost::keys::dkg::part1(
                     frost_id!(index),
@@ -1745,13 +1745,13 @@ mod tests {
 
         // Lets add the round 1 dkg for the first two participants
         let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(2).serialize().to_vec(),
+            identifier: frost_id!(1).serialize().to_vec(),
             payload: round1_dkgs[1].clone().1.serialize().unwrap().to_vec(),
         });
         app.new_round1_dkg_package(req).await.unwrap();
 
         let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(3).serialize().to_vec(),
+            identifier: frost_id!(2).serialize().to_vec(),
             payload: round1_dkgs[2].clone().1.serialize().unwrap().to_vec(),
         });
         app.new_round1_dkg_package(req).await.unwrap();
@@ -1762,8 +1762,8 @@ mod tests {
         let inner = res.into_inner();
         let pkgs: HashMap<frost::Identifier, frost::keys::dkg::round2::Package> =
             serde_json::from_slice(&inner.payload).unwrap();
+        assert!(pkgs.contains_key(&frost_id!(1)));
         assert!(pkgs.contains_key(&frost_id!(2)));
-        assert!(pkgs.contains_key(&frost_id!(3)));
         assert_eq!(pkgs.len(), 2);
 
         // Ensure the round2 dkg secret package is stored
@@ -1776,7 +1776,7 @@ mod tests {
         let rng = thread_rng();
         let mut round1_dkgs = vec![];
         // reminder that frost identifiers start at 1
-        for index in 1..(app.max_signers + 1) {
+        for index in 0..(app.max_signers) {
             round1_dkgs.push(
                 frost::keys::dkg::part1(
                     frost_id!(index),
@@ -1790,12 +1790,12 @@ mod tests {
 
         // Add round 1 dkg for the first two participants
         let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(2).serialize().to_vec(),
+            identifier: frost_id!(1).serialize().to_vec(),
             payload: round1_dkgs[1].clone().1.serialize().unwrap().to_vec(),
         });
         app.new_round1_dkg_package(req).await.unwrap();
         let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(3).serialize().to_vec(),
+            identifier: frost_id!(2).serialize().to_vec(),
             payload: round1_dkgs[2].clone().1.serialize().unwrap().to_vec(),
         });
         app.new_round1_dkg_package(req).await.unwrap();
@@ -1805,14 +1805,14 @@ mod tests {
         let inner = round2_dkg.into_inner();
         let pkgs: HashMap<frost::Identifier, frost::keys::dkg::round2::Package> =
             serde_json::from_slice(&inner.payload).unwrap();
+        assert!(pkgs.contains_key(&frost_id!(1)));
         assert!(pkgs.contains_key(&frost_id!(2)));
-        assert!(pkgs.contains_key(&frost_id!(3)));
         assert_eq!(pkgs.len(), 2);
 
         // Try to add round 2 dkg from ourselves
         let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(1).serialize().to_vec(),
-            payload: serde_json::to_vec(&pkgs.get(&frost_id!(2))).unwrap(),
+            identifier: frost_id!(0).serialize().to_vec(),
+            payload: serde_json::to_vec(&pkgs.get(&frost_id!(1))).unwrap(),
         });
         let res = app.new_round2_dkg_package(req).await.unwrap_err();
         assert_eq!(res.code(), tonic::Code::InvalidArgument);

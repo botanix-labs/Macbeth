@@ -82,6 +82,7 @@ where
         + SnapshotReader
         + SnapshotWriter
         + CanonChainTracker
+        + CanonStateSubscriptions
         + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
@@ -204,9 +205,8 @@ where
     /// Builds and returns the necessary components for the authority consensus, including the
     /// consensus itself, the client used to interact with the consensus, and the block
     /// production task.
-    pub async fn build<BtcServerClient, Canon: CanonStateSubscriptions>(
+    pub async fn build<BtcServerClient>(
         self,
-        canon_notification_reciever: tokio::sync::broadcast::Receiver<CanonStateNotification>,
         snapshot_manager_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     ) -> (
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
@@ -285,7 +285,6 @@ where
                 storage.clone(),
                 parser.clone(),
                 random_source_provider,
-                canon_notification_reciever,
                 Arc::clone(&metrics),
             );
 

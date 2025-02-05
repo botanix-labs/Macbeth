@@ -18,7 +18,7 @@ use crate::{database, pegout_id::PegoutId, pegout_scheduler::PegoutRequest};
 #[macro_export]
 macro_rules! frost_id {
     ($index:expr) => {
-        frost::Identifier::try_from($index).expect("valid id")
+        frost::Identifier::derive(($index as u16).to_le_bytes().as_slice()).expect("valid id")
     };
 }
 
@@ -174,10 +174,11 @@ pub fn trusted_dealer_setup(
     max_signers: u16,
 ) -> (BTreeMap<frost::Identifier, frost::keys::SecretShare>, frost::keys::PublicKeyPackage) {
     let rng: rand::prelude::ThreadRng = thread_rng();
+    let ids = (0..max_signers).map(|i| frost_id!(i)).collect::<Vec<_>>();
     frost::keys::generate_with_dealer(
         max_signers,
         min_signers,
-        frost::keys::IdentifierList::Default,
+        frost::keys::IdentifierList::Custom(&ids),
         rng,
     )
     .expect("valid key package")
