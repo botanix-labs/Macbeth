@@ -32,6 +32,7 @@ members = [
     "crates/consensus/beacon/",
     "crates/consensus/common/",
     "crates/consensus/consensus/",
+    "crates/consensus/data-parser",
     "crates/consensus/debug-client/",
     "crates/e2e-test-utils/",
     "crates/engine/primitives/",
@@ -258,6 +259,7 @@ reth = { path = "bin/reth" }
 reth-auto-seal-consensus = { path = "crates/consensus/auto-seal" }
 reth-basic-payload-builder = { path = "crates/payload/basic" }
 reth-authority-consensus = { path = "crates/consensus/authority" }
+reth-data-parser = { path = "crates/consensus/data-parser" }
 reth-beacon-consensus = { path = "crates/consensus/beacon" }
 reth-bench = { path = "bin/reth-bench" }
 reth-blockchain-tree = { path = "crates/blockchain-tree" }
