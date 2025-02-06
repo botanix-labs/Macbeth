@@ -20,10 +20,7 @@ use rayon::slice::ParallelSliceMut;
 use reth_chainspec::{ChainInfo, ChainSpec, EthereumHardforks};
 use reth_db::{
     cursor::DbDupCursorRW,
-    models::{
-        BlockChunksRegister, ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
-        SnapshotSyncId,
-    },
+    models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
     tables, BlockNumberList, PlainAccountState, PlainStorageState,
 };
 use reth_db_api::{
@@ -3799,50 +3796,6 @@ impl<TX: DbTx> SnapshotReader for DatabaseProvider<TX> {
         Ok(snapshot_size + chunks_size)
     }
 
-    fn assemble_snapshot_chunks_data(
-        &self,
-        snapshot_id: SnapshotId,
-    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
-        let snapshot = self.get_snapshot_by_id(snapshot_id)?;
-        if snapshot.is_none() {
-            return Ok(Vec::new());
-        }
-
-        let block_ids = snapshot.unwrap().block_ids().to_vec();
-        if block_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut blocks_data: Vec<(u64, Vec<u8>)> = Vec::new();
-        for block in block_ids {
-            let (_block_id, block_chunk_ids) =
-                self.tx.cursor_read::<tables::BlockChunks>()?.seek_exact(block)?.unzip();
-            let block_chunk_ids =
-                block_chunk_ids.map(|bc| bc.block_chunks().to_vec()).unwrap_or_default();
-
-            let chunks_data = self
-                .tx
-                .cursor_read::<tables::Chunks>()?
-                .walk_range(
-                    block_chunk_ids.first().copied().unwrap_or_default()..=
-                        block_chunk_ids.last().copied().unwrap_or_default(),
-                )?
-                .collect::<Result<HashMap<_, _>, _>>()?
-                .values()
-                .map(|chunk| chunk.chunk_data().to_vec())
-                .collect::<Vec<_>>();
-
-            let mut concatenated = Vec::new();
-            for chunk_data in chunks_data {
-                concatenated.extend(chunk_data);
-            }
-
-            blocks_data.push((block, concatenated));
-        }
-
-        Ok(blocks_data)
-    }
-
     fn get_snapshots_count(&self) -> ProviderResult<usize> {
         Ok(self.tx.cursor_read::<tables::Snapshots>()?.walk(None)?.count())
     }
@@ -3909,14 +3862,6 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         self.tx.put::<tables::Snapshots>(new_snapshot_id, new_snapshot)?;
         self.tx.put::<tables::BlockSnapshots>(block_number, new_snapshot_id)?;
         Ok(new_snapshot_id)
-    }
-
-    fn create_block_chunks_register(
-        &self,
-        block_number: BlockNumber,
-        chunk_ids: Vec<ChunkId>,
-    ) -> ProviderResult<()> {
-        Ok(self.tx.put::<tables::BlockChunks>(block_number, BlockChunksRegister::new(chunk_ids))?)
     }
 
     fn update_snapshot(

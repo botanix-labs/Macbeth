@@ -10,12 +10,6 @@ pub trait SnapshotReader: Send + Sync {
     fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>>;
 
     /// Get snapshot by id
-    fn assemble_snapshot_chunks_data(
-        &self,
-        snapshot_id: SnapshotId,
-    ) -> ProviderResult<Vec<(u64, Vec<u8>)>>;
-
-    /// Get snapshot by id
     fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>>;
 
     /// Get last snapshot sync by id
@@ -87,13 +81,6 @@ pub trait SnapshotWriter: Send + Sync {
         block_id: BlockNumber,
         chunk_data: Vec<u8>,
     ) -> ProviderResult<SnapshotId>;
-
-    /// Create new block chunks register
-    fn create_block_chunks_register(
-        &self,
-        block_id: BlockNumber,
-        chunk_ids: Vec<ChunkId>,
-    ) -> ProviderResult<()>;
 
     /// Updates a snapshot with block and chunk id
     fn update_snapshot(

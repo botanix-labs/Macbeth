@@ -23,10 +23,7 @@ use reth_db_api::{
     models::{
         accounts::BlockNumberAddress,
         blocks::{HeaderHash, StoredBlockOmmers},
-        chunks::{
-            BlockChunksRegister, ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
-            SnapshotSyncId,
-        },
+        chunks::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
         client_version::ClientVersion,
         storage_sharded_key::StorageShardedKey,
         AccountBeforeTx, CompactU256, ShardedKey, StoredBlockBodyIndices, StoredBlockWithdrawals,
@@ -322,9 +319,6 @@ tables! {
 
     /// Stores the chunk to Block ids
     table ChunkBlocks<Key = ChunkId, Value = BlockNumber>;
-
-    /// Stores the block number to chunk ids
-    table BlockChunks<Key = BlockNumber, Value = BlockChunksRegister>;
 
     /// Table used when syncing snapshots.
     table SnapshotSyncs<Key = SnapshotSyncId, Value = SnapshotSync>;

@@ -1520,14 +1520,6 @@ where
         self.database.create_new_chunk(snapshot_id, block_id, chunk_data)
     }
 
-    fn create_block_chunks_register(
-        &self,
-        block_id: BlockNumber,
-        chunk_ids: Vec<ChunkId>,
-    ) -> ProviderResult<()> {
-        self.database.create_block_chunks_register(block_id, chunk_ids)
-    }
-
     fn update_snapshot(
         &self,
         snapshot_id: SnapshotId,
@@ -1634,13 +1626,6 @@ where
 
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
         self.database.get_first_chunk_id()
-    }
-
-    fn assemble_snapshot_chunks_data(
-        &self,
-        snapshot_id: SnapshotId,
-    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
-        self.database.assemble_snapshot_chunks_data(snapshot_id)
     }
 }
 

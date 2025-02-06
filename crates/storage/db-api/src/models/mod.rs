@@ -210,7 +210,6 @@ impl_compression_for_compact!(
     Snapshot,
     SnapshotChunk,
     SnapshotSync,
-    BlockChunksRegister,
     Log,
     Receipt,
     TxType,

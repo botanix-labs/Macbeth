@@ -272,13 +272,6 @@ impl<DB: Database> SnapshotReader for ProviderFactory<DB> {
         self.provider()?.get_snapshots()
     }
 
-    fn assemble_snapshot_chunks_data(
-        &self,
-        snapshot_id: SnapshotId,
-    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
-        self.provider()?.assemble_snapshot_chunks_data(snapshot_id)
-    }
-
     fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>> {
         self.provider()?.get_snapshot_by_id(snapshot_id)
     }
@@ -365,15 +358,6 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
     ) -> ProviderResult<SnapshotId> {
         self.provider_rw()?.create_new_chunk(snapshot_id, block_id, chunk_data)
     }
-
-    fn create_block_chunks_register(
-        &self,
-        block_id: BlockNumber,
-        chunk_ids: Vec<ChunkId>,
-    ) -> ProviderResult<()> {
-        self.provider_rw()?.create_block_chunks_register(block_id, chunk_ids)
-    }
-
     fn update_snapshot(
         &self,
         snapshot_id: SnapshotId,
