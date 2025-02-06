@@ -8124,6 +8124,7 @@ dependencies = [
  "reth-tasks",
  "reth-transaction-pool",
  "reth-trie",
+ "reth-trie-db",
  "reth-trie-parallel",
  "schnellru",
  "secp256k1 0.29.1",

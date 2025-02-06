@@ -9,7 +9,17 @@ use reth_db::{
     models::{SnapshotSync, SnapshotSyncId},
     Database, DatabaseEnv,
 };
+use reth_provider::{
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
+};
 use reth_trie::updates::TrieUpdates;
+/// The purpose of this module is to provide a bridge between the CometBFT and the EVM
+/// application state
+use std::{
+    error::Error,
+    io::{self},
+    sync::{Arc, RwLock},
+};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
@@ -22,11 +32,6 @@ use reth_data_parser::DataParser;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 use serde::{Deserialize, Serialize};
-use std::{
-    error::Error,
-    io::{self},
-    sync::{Arc, RwLock},
-};
 
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
@@ -34,16 +39,13 @@ use reth_primitives::{
     BlockNumber, SealedBlock, TransactionSigned, B256,
 };
 use reth_provider::{
-    providers::{BlockchainProvider2, ConsistentDbView},
-    BlockReaderIdExt, BlockWriter, CanonChainTracker, CanonStateNotification, Chain,
-    ExecutionOutcome, ProviderError, ProviderFactory, SnapshotReader, SnapshotWriter,
-    StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
+    SnapshotReader, SnapshotWriter, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
-use reth_trie_parallel::parallel_root::ParallelStateRoot;
 use schnellru::{ByLength, LruMap};
 
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
@@ -81,7 +83,7 @@ enum SnapshotOfferResult {
     #[allow(dead_code)]
     Abort = 2, // Abort snapshot restoration, and don't try any other snapshots.
     #[allow(dead_code)]
-    Reject = 3,  // Reject this specific snapshot, try others.
+    Reject = 3, // Reject this specific snapshot, try others.
     #[allow(dead_code)]
     RejectFormat = 4, // Reject all snapshots with this `format`, try others.
     #[allow(dead_code)]
@@ -188,15 +190,15 @@ impl SnapshotSyncStateLock {
     }
 }
 
-/// Abci Client Builder
+/// Block with execution context, trie updates and botanix peg data
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockWithContext {
-    /// Sealed block with pegouts
+    /// The sealed block with peg data
     pub sealed_block_with_peg: SealedBlockWithPeg,
-    /// Execution Outcome
+    /// The execution outcome
     pub exec_outcome: ExecutionOutcome,
-    /// Trie updates
-    pub trie_updates: Option<TrieUpdates>,
+    /// The trie updates
+    pub trie_updates: TrieUpdates,
 }
 
 /// ABCI client builder
@@ -923,7 +925,7 @@ where
         let new_header = sealed_block_with_peg.block().header.clone();
         let sealed_block_with_senders = sealed_block_with_peg.block().to_owned();
         let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
-        let trie_updates = sealed_block_with_context.trie_updates.expect("to have trie updates");
+        let trie_updates = sealed_block_with_context.trie_updates;
 
         let executed_block = ExecutedBlock::new(
             Arc::new(sealed_block_with_senders.block.clone()),
@@ -1220,59 +1222,25 @@ where
             self.storage.chain_spec.clone(),
             &block_builder_address,
             self.storage.evm_config,
-            &self.storage.client,
+            &self.provider_factory,
             &self.storage.bitcoind_factory,
             self.storage.btc_network,
             &bitcoin_checkpoint_block_hash,
             &agg_pk,
             block_time,
         ) {
-            Ok((exec_results, block)) => {
+            Ok(block_with_context) => {
+                let block = block_with_context.sealed_block_with_peg.block();
                 let block_hash = block.hash_slow();
-                let block_number = block.number;
                 info!("Block built successfully, resulting block hash: {:?}", block_hash);
-                let sealed_block_with_sender =
-                    block.seal_slow().try_seal_with_senders().expect("to seal");
-                let sealed_block_with_peg = SealedBlockWithPeg::new(
-                    sealed_block_with_sender,
-                    exec_results.pegins,
-                    exec_results.pegouts,
-                );
 
                 // validate block before caching
-                match self.validate_block(&sealed_block_with_peg.block().block.clone()) {
+                match self.validate_block(&block) {
                     ResponseProcessProposal { status: VERIFY_ACCEPTED } => {}
                     _ => {
                         return ResponseProcessProposal { status: VERIFY_REJECT };
                     }
                 }
-
-                let exec_outcome = ExecutionOutcome::new(
-                    exec_results.state,
-                    exec_results.receipts.into(),
-                    block_number,
-                    vec![],
-                );
-                // TODO(scott): pull out into util function
-                // ticket: https://github.com/botanix-labs/botanix/issues/896
-                let consistent_db_view =
-                    ConsistentDbView::new_with_latest_tip(self.provider_factory.clone())
-                        .expect("to get consistent db view");
-                let hashed_state = exec_outcome.hash_state_slow();
-                let (_, trie_updates) =
-                    match ParallelStateRoot::new(consistent_db_view, hashed_state.clone())
-                        .incremental_root_with_updates()
-                        .map(|(root, updates)| (root, Some(updates)))
-                    {
-                        Ok((root, updates)) => (root, updates),
-                        Err(e) => {
-                            panic!("Error calculating incremental root: {:?}", e);
-                        }
-                    };
-
-                let block_with_context =
-                    BlockWithContext { sealed_block_with_peg, exec_outcome, trie_updates };
-
                 self.block_cache
                     .write()
                     .expect("to get write lock")
@@ -1337,50 +1305,17 @@ where
                     self.storage.chain_spec.clone(),
                     &block_builder_address,
                     self.storage.evm_config,
-                    &self.storage.client,
+                    &self.provider_factory,
                     &self.storage.bitcoind_factory,
                     self.storage.btc_network,
                     &non_deterministic_data.bitcoin_block_hash,
                     &non_deterministic_data.aggregated_public_key,
                     block_time,
                 ) {
-                    Ok((exec_results, block)) => {
+                    Ok(block_with_context) => {
+                        let block = block_with_context.sealed_block_with_peg.block();
                         let block_hash = block.hash_slow();
-                        let block_number = block.number;
                         info!("Block built successfully, resulting block hash: {:?}", block_hash);
-                        let sealed_block_with_sender =
-                            block.seal_slow().try_seal_with_senders().expect("to seal");
-                        let sealed_block_with_peg = SealedBlockWithPeg::new(
-                            sealed_block_with_sender,
-                            exec_results.pegins,
-                            exec_results.pegouts,
-                        );
-                        let exec_outcome = ExecutionOutcome::new(
-                            exec_results.state,
-                            exec_results.receipts.into(),
-                            block_number,
-                            vec![],
-                        );
-                        let consistent_db_view =
-                            ConsistentDbView::new_with_latest_tip(self.provider_factory.clone())
-                                .expect("to get consistent db view");
-                        let hashed_state = exec_outcome.hash_state_slow();
-                        let (_, trie_updates) =
-                            match ParallelStateRoot::new(consistent_db_view, hashed_state.clone())
-                                .incremental_root_with_updates()
-                                .map(|(root, updates)| (root, Some(updates)))
-                            {
-                                Ok((root, updates)) => (root, updates),
-                                Err(e) => {
-                                    panic!("Error calculating incremental root: {:?}", e);
-                                }
-                            };
-                        let block_with_context = BlockWithContext {
-                            sealed_block_with_peg: sealed_block_with_peg.clone(),
-                            exec_outcome,
-                            trie_updates,
-                        };
-
                         block_cache_write.insert(cbft_block_hash, block_with_context.clone());
 
                         block_with_context
@@ -1535,8 +1470,7 @@ where
                         let block_height = sealed_block_with_peg.block().number;
                         let sealed_block_with_senders = sealed_block_with_peg.block().to_owned();
                         let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
-                        let trie_updates =
-                            sealed_block_with_context.trie_updates.expect("to have trie updates");
+                        let trie_updates = sealed_block_with_context.trie_updates;
                         info!("Inserting block into db: {:?}", sealed_block_with_senders.number);
 
                         let executed_block = ExecutedBlock::new(
@@ -1547,7 +1481,8 @@ where
                             Arc::new(trie_updates.clone()),
                         );
 
-                        let db_rw = self.database_provider.provider_rw().unwrap();
+                        let db_rw = self.database_provider.provider_rw().expect("to get db rw");
+
                         db_rw.append_blocks_with_state(
                             vec![sealed_block_with_senders.clone()],
                             sealed_block_with_context.exec_outcome.clone(),
