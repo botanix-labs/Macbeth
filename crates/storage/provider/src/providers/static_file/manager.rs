@@ -1621,6 +1621,15 @@ impl SnapshotWriter for StaticFileProvider {
         Err(ProviderError::UnsupportedProvider)
     }
 
+    fn append_to_chunk(
+        &self,
+        _chunk_id: ChunkId,
+        _block_number: BlockNumber,
+        _data: Vec<u8>,
+    ) -> ProviderResult<()> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
     fn update_snapshot(
         &self,
         _snapshot_id: SnapshotId,

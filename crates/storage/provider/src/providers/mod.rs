@@ -647,6 +647,15 @@ where
         self.database.provider_rw()?.create_new_chunk(snapshot_id, block_id, chunk_data)
     }
 
+    fn append_to_chunk(
+        &self,
+        chunk_id: ChunkId,
+        block_number: BlockNumber,
+        data: Vec<u8>,
+    ) -> ProviderResult<()> {
+        self.database.provider_rw()?.append_to_chunk(chunk_id, block_number, data)
+    }
+
     fn update_snapshot(
         &self,
         snapshot_id: SnapshotId,
