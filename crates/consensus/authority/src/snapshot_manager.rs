@@ -10,7 +10,7 @@ use reth_db::{
 };
 use reth_evm::execute::BlockExecutorProvider;
 use reth_node_core::args::StateSyncArgs;
-use reth_primitives::{BlockNumber, SealedBlockWithSenders, SealedHeader};
+use reth_primitives::{BlockNumber, SealedBlockWithSenders};
 use reth_provider::{
     BlockReaderIdExt, ProviderError, ProviderFactory, SnapshotReader, SnapshotWriter,
 };
@@ -104,7 +104,7 @@ where
     }
 
     /// Create a new snapshot
-    pub fn create_new_snapshot(
+    fn create_new_snapshot(
         &self,
         sealed_block: &SealedBlockWithSenders,
     ) -> Result<SnapshotId, SnapshotManagerError> {
@@ -116,7 +116,7 @@ where
     }
 
     /// Remove oldest snapshot
-    pub fn remove_oldest_snapshot(&self) -> Result<(), SnapshotManagerError> {
+    fn remove_oldest_snapshot(&self) -> Result<(), SnapshotManagerError> {
         let provider_rw = self.provider_factory.provider_rw()?;
         provider_rw.remove_oldest_snapshot()?;
         provider_rw.commit()?;
@@ -124,7 +124,7 @@ where
     }
 
     /// Create a new chunk
-    pub fn create_new_chunk(
+    fn create_new_chunk(
         &self,
         snapshot_id: SnapshotId,
         block_id: BlockNumber,
@@ -137,7 +137,7 @@ where
     }
 
     /// Create block chunks register
-    pub fn create_block_chunks_register(
+    fn create_block_chunks_register(
         &self,
         block_id: BlockNumber,
         chunk_ids: Vec<ChunkId>,
@@ -149,7 +149,7 @@ where
     }
 
     /// Insert block snapshot id mapping
-    pub fn insert_block_snapshot_id_mapping(
+    fn insert_block_snapshot_id_mapping(
         &self,
         block_id: BlockNumber,
         snapshot_id: SnapshotId,
@@ -161,7 +161,7 @@ where
     }
 
     /// Get snapshot
-    pub fn update_snapshot(
+    fn update_snapshot(
         &self,
         snapshot_id: SnapshotId,
         block_id: BlockNumber,
@@ -174,7 +174,7 @@ where
     }
 
     /// Get snapshots size
-    pub fn get_snapshot_size(
+    fn get_snapshot_size(
         &self,
         last_snapshot_id: SnapshotId,
     ) -> Result<usize, SnapshotManagerError> {
@@ -182,20 +182,15 @@ where
     }
 
     /// Get snapshots count
-    pub fn get_snapshots_count(&self) -> Result<usize, SnapshotManagerError> {
+    fn get_snapshots_count(&self) -> Result<usize, SnapshotManagerError> {
         Ok(self.provider_factory.provider()?.get_snapshots_count()?)
     }
 
     /// Get last snapshot height
-    pub fn get_last_snapshot_height(
+    fn get_last_snapshot_height(
         &self,
     ) -> Result<Option<(SnapshotId, BlockNumber)>, SnapshotManagerError> {
         Ok(self.provider_factory.provider()?.get_last_snapshot_height()?)
-    }
-
-    /// Get latest header
-    pub fn latest_header(&self) -> Result<Option<SealedHeader>, SnapshotManagerError> {
-        Ok(self.storage.client.latest_header()?)
     }
 }
 
@@ -213,9 +208,6 @@ where
 
             match abci_driver_message {
                 ABCIDriverMessage::CommitBlock((sealed_block_with_context, cbft_hash, _tx)) => {
-                    // acknowledge the block
-                    //tx.send(()).expect("acknowledging received block send");
-
                     let sealed_block = sealed_block_with_context.sealed_block_with_peg.block();
 
                     // first attempt to serialize and compress the sealed block
