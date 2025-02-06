@@ -78,7 +78,6 @@ pub trait SnapshotWriter: Send + Sync {
         &self,
         block_id: BlockNumber,
         block_hash: B256,
-        app_hash: &[u8],
     ) -> ProviderResult<SnapshotId>;
 
     /// Create new chunk

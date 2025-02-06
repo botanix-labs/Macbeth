@@ -353,9 +353,8 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
         &self,
         block_id: BlockNumber,
         block_hash: B256,
-        app_hash: &[u8],
     ) -> ProviderResult<SnapshotId> {
-        self.provider_rw()?.create_new_snapshot(block_id, block_hash, app_hash)
+        self.provider_rw()?.create_new_snapshot(block_id, block_hash)
     }
 
     fn create_new_chunk(

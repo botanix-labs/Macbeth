@@ -3,6 +3,7 @@
 use reth_codecs::{add_arbitrary_tests, Compact};
 use reth_primitives::{BlockNumber, B256};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 /// A snapshot sync id.
@@ -101,14 +102,21 @@ pub struct Snapshot {
     block_ids: Vec<BlockNumber>,
     /// The hash of the block at that height
     block_hash: B256,
-    /// App hash from cometbft
-    app_hash: Vec<u8>,
+    /// Hash of the snapshot
+    hash: Vec<u8>,
 }
 
 impl Snapshot {
     /// Creates a new snapshot by given height and block_hash
-    pub fn new(id: u64, height: u64, block_hash: B256, app_hash: Vec<u8>) -> Self {
-        Self { id, height, chunk_ids: Vec::new(), block_ids: Vec::new(), block_hash, app_hash }
+    pub fn new(id: u64, height: u64, block_hash: B256) -> Self {
+        Self {
+            id,
+            height,
+            chunk_ids: Vec::new(),
+            block_ids: Vec::new(),
+            block_hash,
+            hash: Vec::new(),
+        }
     }
 
     /// Sets the snapshot id.
@@ -146,9 +154,19 @@ impl Snapshot {
         self.block_hash = block_hash;
     }
 
-    /// Sets the cometbft app hash.
-    pub fn set_app_hash(&mut self, app_hash: &[u8]) {
-        self.app_hash = app_hash.to_vec();
+    /// Sets the snapshot hash.
+    pub fn set_hash(&mut self) {
+        let mut hasher = Sha256::new();
+        hasher.update(self.id.to_le_bytes());
+        hasher.update(self.height.to_le_bytes());
+        for chunk_id in &self.chunk_ids {
+            hasher.update(chunk_id.to_le_bytes());
+        }
+        for block_id in &self.block_ids {
+            hasher.update(block_id.to_le_bytes());
+        }
+        hasher.update(self.block_hash);
+        self.hash = hasher.finalize().to_vec();
     }
 
     /// Adds a block ID to the snapshot if it doesn't already exist.
@@ -217,9 +235,9 @@ impl Snapshot {
         self.block_hash
     }
 
-    /// Gets the cometbft app hash.
-    pub fn get_app_hash(&self) -> &[u8] {
-        self.app_hash.as_slice()
+    /// Gets the snapshot hash.
+    pub fn get_hash(&self) -> &[u8] {
+        self.hash.as_slice()
     }
 }
 
@@ -304,7 +322,7 @@ mod tests {
             block_ids: vec![1001],
             chunk_ids: vec![1, 2],
             block_hash: block_hash.clone(),
-            app_hash: Vec::new(),
+            hash: Vec::new(),
         };
 
         assert_eq!(snapshot.id(), 100);
@@ -312,5 +330,24 @@ mod tests {
         assert_eq!(snapshot.block_hash(), block_hash);
         assert_eq!(snapshot.block_ids(), vec![1001]);
         assert_eq!(snapshot.height(), 12000);
+    }
+
+    #[test]
+    // We don't care about deserialize and serialize here
+    // As long as the hash function is deterministic,
+    // Comet can use the hash to ensure snapshots are the same across nodes
+    fn set_hash_should_hash_the_snapshot() {
+        let mut snapshot = Snapshot {
+            id: 100,
+            height: 12000,
+            block_ids: vec![1001],
+            chunk_ids: vec![1, 2],
+            block_hash: B256::random(),
+            hash: Vec::new(),
+        };
+
+        snapshot.set_hash();
+
+        assert_eq!(snapshot.hash.len(), 32);
     }
 }

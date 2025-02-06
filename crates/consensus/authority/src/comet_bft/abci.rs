@@ -605,7 +605,7 @@ where
                             height: snapshot.height(),
                             format: SNAPSHOT_MESSAGE_FORMAT,
                             chunks: snapshot.chunk_ids().len() as u32,
-                            hash: snapshot.get_app_hash().to_vec().into(),
+                            hash: snapshot.get_hash().to_vec().into(),
                             metadata: prost::bytes::Bytes::new(),
                         });
                         acc

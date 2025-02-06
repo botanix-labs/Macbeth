@@ -2,7 +2,6 @@
 use std::sync::{Arc, RwLock};
 
 use crate::{comet_bft::abci::ABCIDriverMessage, Storage};
-use bytes::Bytes;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_db::{
@@ -110,14 +109,10 @@ where
     pub fn create_new_snapshot(
         &self,
         sealed_block: &SealedBlockWithSenders,
-        app_hash: Bytes,
     ) -> Result<SnapshotId, SnapshotManagerError> {
         let provider_rw = self.provider_factory.provider_rw()?;
-        let snapshot_id = provider_rw.create_new_snapshot(
-            sealed_block.number,
-            sealed_block.hash(),
-            app_hash.as_ref(),
-        )?;
+        let snapshot_id =
+            provider_rw.create_new_snapshot(sealed_block.number, sealed_block.hash())?;
         provider_rw.commit()?;
         Ok(snapshot_id)
     }
@@ -247,10 +242,7 @@ where
                         }
                         None => {
                             info!(target: "consensus::authority::snapshot_manager::run", "no last snapshot height. Creating a new snapshot at height {}...", sealed_block.number); // create a new snapshot
-                            self.create_new_snapshot(
-                                sealed_block,
-                                Bytes::from(prost::bytes::Bytes::copy_from_slice(&cbft_hash.0)),
-                            )?
+                            self.create_new_snapshot(sealed_block)?
                         }
                     };
 
@@ -271,10 +263,7 @@ where
                     {
                         info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", MAX_SNAPSHOT_SIZE_BYTES, latest_snapshot_size, serialized_block_with_context.len());
                         // create a new snapshot
-                        last_snapshot_id = self.create_new_snapshot(
-                            sealed_block,
-                            Bytes::from(prost::bytes::Bytes::copy_from_slice(&cbft_hash.0)),
-                        )?;
+                        last_snapshot_id = self.create_new_snapshot(sealed_block)?;
                         info!("Created last_snapshot_id: {:?}", last_snapshot_id);
                     }
                     info!("Snapshots count: {:?}", self.get_snapshots_count()?);
@@ -349,7 +338,7 @@ mod tests {
         let client = provider_factory.provider_rw().unwrap();
 
         // insert a new snapshot at block height 1
-        client.create_new_snapshot(1, B256::random(), &vec![]).unwrap();
+        client.create_new_snapshot(1, B256::random()).unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // assertions
@@ -376,7 +365,7 @@ mod tests {
         assert!(block_number == 1);
 
         // insert a new snapshot at block height 2
-        client.create_new_snapshot(2, B256::random(), &vec![]).unwrap();
+        client.create_new_snapshot(2, B256::random()).unwrap();
 
         // assertions
         let snapshots = client.get_snapshots().unwrap();
@@ -431,7 +420,7 @@ mod tests {
 
         // insert a new snapshot
         let block_id = 1;
-        let snapshot_id = client.create_new_snapshot(block_id, B256::random(), &vec![]).unwrap();
+        let snapshot_id = client.create_new_snapshot(block_id, B256::random()).unwrap();
 
         // insert block with some chunks
         let (first_block_id, first_block_chunks) = (1, 1..=10);
@@ -465,7 +454,7 @@ mod tests {
 
         // insert a new snapshot
         let block_id = 1;
-        let snapshot_id = client.create_new_snapshot(block_id, B256::random(), &vec![]).unwrap();
+        let snapshot_id = client.create_new_snapshot(block_id, B256::random()).unwrap();
 
         // insert block with some chunks
         let (first_block_id, first_block_chunks) = (1, 1..=10);
@@ -498,7 +487,7 @@ mod tests {
 
         // insert a new snapshot
         let block_id = 1;
-        let snapshot_id = client.create_new_snapshot(block_id, B256::random(), &vec![]).unwrap();
+        let snapshot_id = client.create_new_snapshot(block_id, B256::random()).unwrap();
         assert!(snapshot_id == 1);
 
         // insert block with some chunks
