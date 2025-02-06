@@ -609,13 +609,6 @@ where
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
         self.database.provider()?.get_first_chunk_id()
     }
-
-    fn assemble_snapshot_chunks_data(
-        &self,
-        snapshot_id: SnapshotId,
-    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
-        self.database.provider()?.assemble_snapshot_chunks_data(snapshot_id)
-    }
 }
 
 impl<DB> SnapshotWriter for BlockchainProvider<DB>
@@ -652,14 +645,6 @@ where
         chunk_data: Vec<u8>,
     ) -> ProviderResult<SnapshotId> {
         self.database.provider_rw()?.create_new_chunk(snapshot_id, block_id, chunk_data)
-    }
-
-    fn create_block_chunks_register(
-        &self,
-        block_id: BlockNumber,
-        chunk_ids: Vec<ChunkId>,
-    ) -> ProviderResult<()> {
-        self.database.provider_rw()?.create_block_chunks_register(block_id, chunk_ids)
     }
 
     fn update_snapshot(

@@ -12,7 +12,8 @@ use reth_evm::execute::BlockExecutorProvider;
 use reth_node_core::args::StateSyncArgs;
 use reth_primitives::{BlockNumber, SealedBlockWithSenders};
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError, ProviderFactory, SnapshotReader, SnapshotWriter
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
+    ProviderFactory, SnapshotReader, SnapshotWriter,
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -82,7 +83,12 @@ impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    DB: BlockReaderIdExt + SnapshotWriter + SnapshotReader + CanonStateSubscriptions + Clone + 'static,
+    DB: BlockReaderIdExt
+        + SnapshotWriter
+        + SnapshotReader
+        + CanonStateSubscriptions
+        + Clone
+        + 'static,
 {
     /// Constructor
     pub(crate) fn new(
@@ -136,18 +142,6 @@ where
         Ok(chunk_id)
     }
 
-    /// Create block chunks register
-    fn create_block_chunks_register(
-        &self,
-        block_id: BlockNumber,
-        chunk_ids: Vec<ChunkId>,
-    ) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.provider_factory.provider_rw()?;
-        provider_rw.create_block_chunks_register(block_id, chunk_ids)?;
-        provider_rw.commit()?;
-        Ok(())
-    }
-
     /// Insert block snapshot id mapping
     fn insert_block_snapshot_id_mapping(
         &self,
@@ -198,7 +192,12 @@ impl<EF, BF, DB> SnapshotRunnable for SnapshotManager<EF, BF, DB>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    DB: BlockReaderIdExt + SnapshotWriter + SnapshotReader + CanonStateSubscriptions + Clone + 'static,
+    DB: BlockReaderIdExt
+        + SnapshotWriter
+        + SnapshotReader
+        + CanonStateSubscriptions
+        + Clone
+        + 'static,
 {
     async fn run(&mut self) -> Result<(), SnapshotManagerError> {
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
@@ -247,9 +246,7 @@ where
 
                     // Check if there is enough space in the latest snapshot
                     debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
-                    if latest_snapshot_size + serialized_block.len() >
-                        MAX_SNAPSHOT_SIZE_BYTES
-                    {
+                    if latest_snapshot_size + serialized_block.len() > MAX_SNAPSHOT_SIZE_BYTES {
                         info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", MAX_SNAPSHOT_SIZE_BYTES, latest_snapshot_size, serialized_block.len());
                         // create a new snapshot
                         last_snapshot_id = self.create_new_snapshot(sealed_block_with_senders)?;
@@ -275,9 +272,15 @@ where
                         "Updating snapshot with: {:?} {:?} {:?}",
                         last_snapshot_id, sealed_block_with_senders.number, chunk_id
                     );
-                    self.update_snapshot(last_snapshot_id, sealed_block_with_senders.number, chunk_id)?;
-                    self.create_block_chunks_register(sealed_block_with_senders.number, vec![chunk_id])?;
-                    self.insert_block_snapshot_id_mapping(sealed_block_with_senders.number, last_snapshot_id)?;
+                    self.update_snapshot(
+                        last_snapshot_id,
+                        sealed_block_with_senders.number,
+                        chunk_id,
+                    )?;
+                    self.insert_block_snapshot_id_mapping(
+                        sealed_block_with_senders.number,
+                        last_snapshot_id,
+                    )?;
 
                     // check if we need to delete older snapshots (Retention policy)
                     if self.get_snapshots_count()? >

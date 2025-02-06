@@ -22,27 +22,6 @@ pub type SnapshotChunkIndex = u64;
 pub type SnapshotChunkHash = B256;
 
 /// The storage of the a single chunk within a snapshot.
-#[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
-#[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
-#[add_arbitrary_tests(compact)]
-pub struct BlockChunksRegister {
-    /// The block chunk ids
-    chunk_ids: Vec<u64>,
-}
-
-impl BlockChunksRegister {
-    /// Creates a new BlockChunksRegister
-    pub fn new(chunk_ids: Vec<u64>) -> Self {
-        Self { chunk_ids }
-    }
-
-    /// Return the block chunk ids.
-    pub fn block_chunks(&self) -> &[u64] {
-        self.chunk_ids.as_slice()
-    }
-}
-
-/// The storage of the a single chunk within a snapshot.
 /// Chunks are many blocks with senders
 /// It is expected for the same snapshot to have multiple chunks
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
@@ -355,6 +334,9 @@ mod tests {
         };
         let snapshot_hash = snapshot.get_hash();
 
-        assert_eq!(hex::encode(snapshot_hash), "55418ead0d08a6acc2544763f47641046787942f196eaf4a3b7de4f7c6d94e98");
+        assert_eq!(
+            hex::encode(snapshot_hash),
+            "55418ead0d08a6acc2544763f47641046787942f196eaf4a3b7de4f7c6d94e98"
+        );
     }
 }

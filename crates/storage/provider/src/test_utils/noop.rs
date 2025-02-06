@@ -215,13 +215,6 @@ impl SnapshotReader for NoopProvider {
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
         Ok(None)
     }
-
-    fn assemble_snapshot_chunks_data(
-        &self,
-        _snapshot_id: SnapshotId,
-    ) -> ProviderResult<Vec<(u64, Vec<u8>)>> {
-        Ok(Vec::new())
-    }
 }
 
 impl SnapshotWriter for NoopProvider {
@@ -250,14 +243,6 @@ impl SnapshotWriter for NoopProvider {
         _chunk_data: Vec<u8>,
     ) -> ProviderResult<SnapshotId> {
         Ok(0)
-    }
-
-    fn create_block_chunks_register(
-        &self,
-        _block_id: BlockNumber,
-        _chunk_ids: Vec<ChunkId>,
-    ) -> ProviderResult<()> {
-        Ok(())
     }
 
     fn update_snapshot(
