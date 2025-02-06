@@ -136,6 +136,11 @@ impl Snapshot {
         self.block_hash = block_hash;
     }
 
+    /// Get latest chunk id
+    pub fn get_latest_chunk_id(&self) -> Option<ChunkId> {
+        self.chunk_ids.last().copied()
+    }
+
     /// Adds a block ID to the snapshot if it doesn't already exist.
     /// Returns `true` if the block ID was added, `false` if it was already present.
     pub fn add_block_id_if_not_exists(&mut self, block_id: BlockNumber) -> bool {

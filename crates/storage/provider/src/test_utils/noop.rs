@@ -245,6 +245,15 @@ impl SnapshotWriter for NoopProvider {
         Ok(0)
     }
 
+    fn append_to_chunk(
+        &self,
+        _chunk_id: ChunkId,
+        _block_number: BlockNumber,
+        _data: Vec<u8>,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
     fn update_snapshot(
         &self,
         _snapshot_id: SnapshotId,

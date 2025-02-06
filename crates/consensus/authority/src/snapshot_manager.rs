@@ -5,7 +5,7 @@ use crate::{comet_bft::abci::ABCIDriverMessage, Storage};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_db::{
-    models::{ChunkId, SnapshotId},
+    models::{ChunkId, Snapshot, SnapshotId},
     DatabaseEnv,
 };
 use reth_evm::execute::BlockExecutorProvider;
@@ -17,7 +17,8 @@ use reth_provider::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-const MAX_SNAPSHOT_SIZE_BYTES: usize = 10 * 1024 * 1024; // 10 Mbs
+const MAX_SNAPSHOT_SIZE_BYTES: usize = 500 * 1024 * 1024; // 500 MB
+const MAX_SNAPSHOT_CHUNK_SIZE_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
 /// Snapshot Manager State Lock
 #[derive(Clone, Debug, Default)]
@@ -186,6 +187,22 @@ where
     ) -> Result<Option<(SnapshotId, BlockNumber)>, SnapshotManagerError> {
         Ok(self.provider_factory.provider()?.get_last_snapshot_height()?)
     }
+
+    fn get_snapshot_by_id(
+        &self,
+        snapshot_id: SnapshotId,
+    ) -> Result<Option<Snapshot>, SnapshotManagerError> {
+        Ok(self.provider_factory.provider()?.get_snapshot_by_id(snapshot_id)?)
+    }
+
+    fn append_to_chunk(
+        &self,
+        chunk_id: ChunkId,
+        block_number: BlockNumber,
+        data: Vec<u8>,
+    ) -> Result<(), SnapshotManagerError> {
+        Ok(self.provider_factory.provider_rw()?.append_to_chunk(chunk_id, block_number, data)?)
+    }
 }
 
 impl<EF, BF, DB> SnapshotRunnable for SnapshotManager<EF, BF, DB>
@@ -262,12 +279,25 @@ where
                         .set_block_number(sealed_block_with_senders.number);
                     drop(state_lock);
 
-                    // Treat the block as a snapshot chunk
-                    let chunk_id = self.create_new_chunk(
-                        last_snapshot_id,
-                        sealed_block_with_senders.number,
-                        serialized_block,
-                    )?;
+                    let snapshot =
+                        self.get_snapshot_by_id(last_snapshot_id)?.expect("checked above");
+                    let chunk_id = match snapshot.get_latest_chunk_id() {
+                        Some(chunk_id) => {
+                            // Existing chunk lets append to it
+                            self.append_to_chunk(
+                                chunk_id,
+                                sealed_block_with_senders.number,
+                                serialized_block,
+                            )?;
+                            chunk_id
+                        }
+                        None => self.create_new_chunk(
+                            last_snapshot_id,
+                            sealed_block_with_senders.number,
+                            serialized_block,
+                        )?,
+                    };
+
                     info!(
                         "Updating snapshot with: {:?} {:?} {:?}",
                         last_snapshot_id, sealed_block_with_senders.number, chunk_id

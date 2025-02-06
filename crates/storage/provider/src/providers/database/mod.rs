@@ -350,6 +350,15 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
         self.provider_rw()?.create_new_snapshot(block_id, block_hash)
     }
 
+    fn append_to_chunk(
+        &self,
+        chunk_id: ChunkId,
+        block_number: BlockNumber,
+        data: Vec<u8>,
+    ) -> ProviderResult<()> {
+        self.provider_rw()?.append_to_chunk(chunk_id, block_number, data)
+    }
+
     fn create_new_chunk(
         &self,
         snapshot_id: SnapshotId,

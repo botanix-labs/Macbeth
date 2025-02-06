@@ -3847,6 +3847,18 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         Ok(new_chunk_id)
     }
 
+    fn append_to_chunk(
+        &self,
+        chunk_id: ChunkId,
+        block_number: BlockNumber,
+        data: Vec<u8>,
+    ) -> ProviderResult<()> {
+        let mut chunk = self.get_chunk_by_id(chunk_id)?.expect("chunk exists");
+        chunk.append_chunk_data(&data, block_number);
+        self.tx.put::<tables::Chunks>(chunk_id, chunk)?;
+        Ok(())
+    }
+
     fn create_new_snapshot(
         &self,
         block_number: BlockNumber,
