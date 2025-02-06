@@ -51,7 +51,6 @@ impl SnapshotManagerStateLock {
 
 /// Snapshot manager error
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
 pub enum SnapshotManagerError {
     #[error("db provider error: {0}")]
     /// Error related to the database provider
@@ -62,7 +61,6 @@ pub enum SnapshotManagerError {
 }
 
 /// Snapshot manager monitoring trait
-#[allow(dead_code)]
 pub trait SnapshotRunnable {
     /// Starts the snapshot runnerable
     fn run(&mut self)
