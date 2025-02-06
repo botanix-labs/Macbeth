@@ -35,8 +35,7 @@ use reth_primitives::{
 };
 use reth_provider::{
     providers::{BlockchainProvider2, ConsistentDbView},
-    BlockReaderIdExt, BlockWriter, CanonChainTracker, CanonStateNotification,
-    CanonStateNotificationSender, CanonStateNotifications, CanonStateSubscriptions, Chain,
+    BlockReaderIdExt, BlockWriter, CanonChainTracker, CanonStateNotification, Chain,
     ExecutionOutcome, ProviderError, ProviderFactory, SnapshotReader, SnapshotWriter,
     StateProviderFactory,
 };
@@ -77,12 +76,16 @@ impl From<&Snapshot> for SnapshotSyncStateLock {
 
 /// Offer Snapshot Result
 enum SnapshotOfferResult {
-    UNKNOWN = 0,       // Unknown result, abort all snapshot restoration
-    ACCEPT = 1,        // Snapshot is accepted, start applying chunks.
-    ABORT = 2,         // Abort snapshot restoration, and don't try any other snapshots.
-    REJECT = 3,        // Reject this specific snapshot, try others.
-    REJECT_FORMAT = 4, // Reject all snapshots with this `format`, try others.
-    REJECT_SENDER = 5, // Reject all snapshots from all senders of this snapshot, try others.
+    Unknown = 0, // Unknown result, abort all snapshot restoration
+    Accept = 1,  // Snapshot is accepted, start applying chunks.
+    #[allow(dead_code)]
+    Abort = 2, // Abort snapshot restoration, and don't try any other snapshots.
+    #[allow(dead_code)]
+    Reject = 3,  // Reject this specific snapshot, try others.
+    #[allow(dead_code)]
+    RejectFormat = 4, // Reject all snapshots with this `format`, try others.
+    #[allow(dead_code)]
+    RejectSender = 5, // Reject all snapshots from all senders of this snapshot, try others.
 }
 
 /// Apply Snapshot Results
@@ -628,29 +631,29 @@ where
         // it
         if request.app_hash.is_empty() {
             warn!("Received empty app hash in offer_snapshot request, rejecting snapshot");
-            return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+            return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
         }
 
         let client = self.storage.client.clone();
         if self.application_hash(&client) == request.app_hash {
             warn!("Application hash matches, snapshot must have already been applied, rejecting snapshot");
-            return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+            return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
         }
 
         if let Some(snapshot) = request.snapshot {
             if snapshot.format != SNAPSHOT_MESSAGE_FORMAT {
                 warn!("Received snapshot format is not supported, rejecting snapshot");
-                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT_FORMAT as i32 };
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::RejectFormat as i32 };
             }
 
             if snapshot.chunks == 0 {
                 warn!("Received snapshot has no chunks, rejecting snapshot");
-                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
             }
 
             if snapshot.hash == prost::bytes::Bytes::default() {
                 warn!("Received snapshot has no hash (empty bytes), rejecting snapshot");
-                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
             }
 
             // read the lock and make sure we are not already syncing the snapshot we are being
@@ -663,14 +666,14 @@ where
                     drop(snapshot_sync_state_lock);
                     // since the lock is still on the currently accepted snapshot, we must return
                     // accept
-                    return ResponseOfferSnapshot { result: SnapshotOfferResult::ACCEPT as i32 };
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Accept as i32 };
                 }
             }
 
             // check that we should not have the block at height already
             if let Some(_) = client.block_by_id(BlockId::number(snapshot.height)).ok().flatten() {
                 warn!("Block at height {:?} already exists, rejecting snapshot", snapshot.height);
-                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
             }
 
             // get the latest header
@@ -683,7 +686,7 @@ where
                     "Latest header height {:?} is greater than snapshot height {:?}, rejecting snapshot",
                     latest_header.header().number, snapshot.height
                 );
-                return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
             }
 
             // ensure that the last sync lock is less than the newly offered height
@@ -697,7 +700,7 @@ where
                             "Offered Snapshot height {:?} is less than or equal to the last locked snapshot height {:?}, rejecting snapshot",
                             snapshot.height, snapshot_sync_state_lock_height
                         );
-                    return ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 };
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
                 }
             }
 
@@ -720,16 +723,16 @@ where
                         drop(snapshot_sync_state_lock);
                     }
                     // we have accepted the snapshot already, just re-accept it
-                    return ResponseOfferSnapshot { result: SnapshotOfferResult::ACCEPT as i32 };
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Accept as i32 };
                 }
                 Err(e) => {
                     error!("error persisting new snapshot sync: {:?}", e);
-                    return ResponseOfferSnapshot { result: SnapshotOfferResult::UNKNOWN as i32 };
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Unknown as i32 };
                 }
             }
         }
 
-        ResponseOfferSnapshot { result: SnapshotOfferResult::REJECT as i32 }
+        ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 }
     }
 
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#loadsnapshotchunk
