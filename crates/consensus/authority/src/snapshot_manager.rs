@@ -17,6 +17,8 @@ use reth_provider::{
 };
 use tracing::{debug, error, info, trace, warn};
 
+const MAX_SNAPSHOT_SIZE_BYTES: usize = 10 * 1024 * 1024; // 10 Mbs
+
 /// Snapshot Manager State Lock
 #[derive(Clone, Debug, Default)]
 pub struct SnapshotManagerStateLock {
@@ -265,9 +267,9 @@ where
                     // Check if there is enough space in the latest snapshot
                     debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
                     if latest_snapshot_size + serialized_block_with_context.len() >
-                        self.state_sync_args.max_snapshot_size_bytes
+                        MAX_SNAPSHOT_SIZE_BYTES
                     {
-                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.state_sync_args.max_snapshot_size_bytes, latest_snapshot_size, serialized_block_with_context.len());
+                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", MAX_SNAPSHOT_SIZE_BYTES, latest_snapshot_size, serialized_block_with_context.len());
                         // create a new snapshot
                         last_snapshot_id = self.create_new_snapshot(
                             sealed_block,

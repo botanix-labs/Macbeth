@@ -655,7 +655,6 @@ start-poa-server-1:
 	--bitcoind.password "${BITCOIND_PWD}" \
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
-	--sync.max_snapshot_size_bytes 8388608 \
 	--sync.num_snapshots_to_keep 3 \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
 	--port 30303 \
@@ -689,7 +688,6 @@ start-poa-server-2:
 	--bitcoind.password "${BITCOIND_PWD}" \
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
-	--sync.max_snapshot_size_bytes 8388608 \
 	--sync.num_snapshots_to_keep 3 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304 \
@@ -723,7 +721,6 @@ start-poa-server-3:
 	--bitcoind.password "${BITCOIND_PWD}" \
 	--frost.min_signers 3 \
 	--frost.max_signers 3 \
-	--sync.max_snapshot_size_bytes 8388608 \
 	--sync.num_snapshots_to_keep 3 \
 	--p2p-secret-key "${NODE_3_DIR}/discovery-secret" \
 	--port 30305 \
