@@ -12,7 +12,7 @@ use reth_evm::execute::BlockExecutorProvider;
 use reth_node_core::args::StateSyncArgs;
 use reth_primitives::{BlockNumber, SealedBlockWithSenders};
 use reth_provider::{
-    BlockReaderIdExt, ProviderError, ProviderFactory, SnapshotReader, SnapshotWriter,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError, ProviderFactory, SnapshotReader, SnapshotWriter
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -82,7 +82,7 @@ impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    DB: BlockReaderIdExt + SnapshotWriter + SnapshotReader + Clone + 'static,
+    DB: BlockReaderIdExt + SnapshotWriter + SnapshotReader + CanonStateSubscriptions + Clone + 'static,
 {
     /// Constructor
     pub(crate) fn new(
@@ -198,62 +198,61 @@ impl<EF, BF, DB> SnapshotRunnable for SnapshotManager<EF, BF, DB>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    DB: BlockReaderIdExt + SnapshotWriter + SnapshotReader + Clone + 'static,
+    DB: BlockReaderIdExt + SnapshotWriter + SnapshotReader + CanonStateSubscriptions + Clone + 'static,
 {
     async fn run(&mut self) -> Result<(), SnapshotManagerError> {
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
+        let mut canon_events = self.storage.client.subscribe_to_canonical_state();
 
-        while let Some(abci_driver_message) = self.snapshot_manager_rx.recv().await {
-            debug!(target: "consensus::authority::snapshot_manager::run", "received abci driver message {:?}", abci_driver_message);
+        while let Ok(canon_event) = canon_events.recv().await {
+            debug!(target: "consensus::authority::snapshot_manager::run", "received canon event {:?}", canon_event);
 
-            match abci_driver_message {
-                ABCIDriverMessage::CommitBlock((sealed_block_with_context, cbft_hash, _tx)) => {
-                    let sealed_block = sealed_block_with_context.sealed_block_with_peg.block();
-
+            match canon_event {
+                CanonStateNotification::Commit { new } => {
+                    // All canonical chains events right now have a single block
+                    let sealed_block_with_senders = new.first();
                     // first attempt to serialize and compress the sealed block
-                    let serialized_block_with_context = self.compressor.encode(&sealed_block_with_context).await.map_err(|e| {
+                    let serialized_block = self.compressor.encode(sealed_block_with_senders).await.map_err(|e| {
                             error!(target:"consensus::authority::snapshot_manager", "Failed to serialize and compress sealed block {:?}", e);
                             SnapshotManagerError::DataParser(e)
-                        })?;
-
-                    if serialized_block_with_context.is_empty() {
-                        error!(target: "consensus::authority::snapshot_manager::run", "serialized_block_with_context is empty");
+                    })?;
+                    if serialized_block.is_empty() {
+                        error!(target: "consensus::authority::snapshot_manager::run", "serialized_block is empty");
                         continue;
                     }
 
                     // check the block height vs. the last snapshot height
                     let mut last_snapshot_id = match self.get_last_snapshot_height()? {
                         Some((last_snapshot_id, last_snapshot_height)) => {
-                            if sealed_block.number < last_snapshot_height {
-                                warn!(target: "consensus::authority::snapshot_manager::run", "block number {} is less than last snapshot height {}", sealed_block.number, last_snapshot_height);
+                            if sealed_block_with_senders.number < last_snapshot_height {
+                                warn!(target: "consensus::authority::snapshot_manager::run", "block number {} is less than last snapshot height {}", sealed_block_with_senders.number, last_snapshot_height);
                                 continue;
                             }
                             last_snapshot_id
                         }
                         None => {
-                            info!(target: "consensus::authority::snapshot_manager::run", "no last snapshot height. Creating a new snapshot at height {}...", sealed_block.number); // create a new snapshot
-                            self.create_new_snapshot(sealed_block)?
+                            info!(target: "consensus::authority::snapshot_manager::run", "no last snapshot height. Creating a new snapshot at height {}...", sealed_block_with_senders.number); // create a new snapshot
+                            self.create_new_snapshot(sealed_block_with_senders)?
                         }
                     };
-
                     info!("Last_snapshot_id: {:?}", last_snapshot_id);
 
                     // now check the latest snapshot size
                     let latest_snapshot_size = self.get_snapshot_size(last_snapshot_id)?;
                     info!(
                         "Latest_snapshot_size: {:?} {:?}",
-                        serialized_block_with_context.len(),
+                        serialized_block.len(),
                         latest_snapshot_size
                     );
 
                     // Check if there is enough space in the latest snapshot
                     debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
-                    if latest_snapshot_size + serialized_block_with_context.len() >
+                    if latest_snapshot_size + serialized_block.len() >
                         MAX_SNAPSHOT_SIZE_BYTES
                     {
-                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", MAX_SNAPSHOT_SIZE_BYTES, latest_snapshot_size, serialized_block_with_context.len());
+                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", MAX_SNAPSHOT_SIZE_BYTES, latest_snapshot_size, serialized_block.len());
                         // create a new snapshot
-                        last_snapshot_id = self.create_new_snapshot(sealed_block)?;
+                        last_snapshot_id = self.create_new_snapshot(sealed_block_with_senders)?;
                         info!("Created last_snapshot_id: {:?}", last_snapshot_id);
                     }
                     info!("Snapshots count: {:?}", self.get_snapshots_count()?);
@@ -263,22 +262,22 @@ where
                         self.state_lock.write().expect("snapshot state sync locked");
                     state_lock
                         .set_snapshot_id(last_snapshot_id)
-                        .set_block_number(sealed_block.number);
+                        .set_block_number(sealed_block_with_senders.number);
                     drop(state_lock);
 
                     // Treat the block as a snapshot chunk
                     let chunk_id = self.create_new_chunk(
                         last_snapshot_id,
-                        sealed_block.number,
-                        serialized_block_with_context,
+                        sealed_block_with_senders.number,
+                        serialized_block,
                     )?;
                     info!(
                         "Updating snapshot with: {:?} {:?} {:?}",
-                        last_snapshot_id, sealed_block.number, chunk_id
+                        last_snapshot_id, sealed_block_with_senders.number, chunk_id
                     );
-                    self.update_snapshot(last_snapshot_id, sealed_block.number, chunk_id)?;
-                    self.create_block_chunks_register(sealed_block.number, vec![chunk_id])?;
-                    self.insert_block_snapshot_id_mapping(sealed_block.number, last_snapshot_id)?;
+                    self.update_snapshot(last_snapshot_id, sealed_block_with_senders.number, chunk_id)?;
+                    self.create_block_chunks_register(sealed_block_with_senders.number, vec![chunk_id])?;
+                    self.insert_block_snapshot_id_mapping(sealed_block_with_senders.number, last_snapshot_id)?;
 
                     // check if we need to delete older snapshots (Retention policy)
                     if self.get_snapshots_count()? >
@@ -300,8 +299,8 @@ where
                         }
                     }
                 }
-                ABCIDriverMessage::Exit => {
-                    debug!(target: "consensus::authority::snapshot_manager::run", "exiting");
+                CanonStateNotification::Reorg { old: _old, new: _new } => {
+                    warn!(target: "consensus::authority::snapshot_manager::run", "reorg detected, this should not happen");
                     return Ok(());
                 }
             }

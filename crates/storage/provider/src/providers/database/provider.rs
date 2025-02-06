@@ -3883,21 +3883,20 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
     fn create_new_chunk(
         &self,
         snapshot_id: SnapshotId,
-        block_id: BlockNumber,
+        block_number: BlockNumber,
         chunk_data: Vec<u8>,
     ) -> ProviderResult<ChunkId> {
         let last_chunk_id = self.get_last_chunk_id()?.map(|chunk_id| chunk_id).unwrap_or(0);
         let new_chunk_id = last_chunk_id + 1;
-        let mut new_chunk = SnapshotChunk::new(snapshot_id);
-        new_chunk.set_chunk_data(chunk_data);
+        let new_chunk = SnapshotChunk::new(snapshot_id, block_number, chunk_data);
         self.tx.put::<tables::Chunks>(new_chunk_id, new_chunk)?;
-        self.tx.put::<tables::ChunkBlocks>(new_chunk_id, block_id)?;
+        self.tx.put::<tables::ChunkBlocks>(new_chunk_id, block_number)?;
         Ok(new_chunk_id)
     }
 
     fn create_new_snapshot(
         &self,
-        block_id: BlockNumber,
+        block_number: BlockNumber,
         block_hash: B256,
     ) -> ProviderResult<SnapshotId> {
         let last_snasphot_id =
@@ -3905,34 +3904,33 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         let new_snapshot_id = last_snasphot_id + 1;
         let mut new_snapshot = Snapshot::default();
         new_snapshot.set_id(new_snapshot_id);
-        new_snapshot.set_height(block_id);
+        new_snapshot.set_height(block_number);
         new_snapshot.set_block_hash(block_hash);
-        new_snapshot.set_hash();
         self.tx.put::<tables::Snapshots>(new_snapshot_id, new_snapshot)?;
-        self.tx.put::<tables::BlockSnapshots>(block_id, new_snapshot_id)?;
+        self.tx.put::<tables::BlockSnapshots>(block_number, new_snapshot_id)?;
         Ok(new_snapshot_id)
     }
 
     fn create_block_chunks_register(
         &self,
-        block_id: BlockNumber,
+        block_number: BlockNumber,
         chunk_ids: Vec<ChunkId>,
     ) -> ProviderResult<()> {
-        Ok(self.tx.put::<tables::BlockChunks>(block_id, BlockChunksRegister::new(chunk_ids))?)
+        Ok(self.tx.put::<tables::BlockChunks>(block_number, BlockChunksRegister::new(chunk_ids))?)
     }
 
     fn update_snapshot(
         &self,
         snapshot_id: SnapshotId,
-        block_id: BlockNumber,
+        block_number: BlockNumber,
         chunk_id: ChunkId,
     ) -> ProviderResult<()> {
         let mut plain_cursor = self.tx.cursor_write::<tables::Snapshots>()?;
         let existing_entry = plain_cursor.seek_exact(snapshot_id)?;
         if let Some((snapshot_id, mut snapshot)) = existing_entry {
-            snapshot.add_block_id_if_not_exists(block_id);
+            snapshot.add_block_id_if_not_exists(block_number);
             snapshot.add_chunk_id_if_not_exists(chunk_id);
-            snapshot.set_height(block_id);
+            snapshot.set_height(block_number);
             plain_cursor.upsert(snapshot_id, snapshot)?;
         }
         Ok(())

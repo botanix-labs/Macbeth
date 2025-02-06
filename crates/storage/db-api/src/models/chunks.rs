@@ -43,6 +43,8 @@ impl BlockChunksRegister {
 }
 
 /// The storage of the a single chunk within a snapshot.
+/// Chunks are many blocks with senders
+/// It is expected for the same snapshot to have multiple chunks
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
@@ -51,22 +53,31 @@ pub struct SnapshotChunk {
     snapshot_id: u64,
     /// The data of the chunk
     chunk_data: Vec<u8>,
+    /// Starting Block Number
+    starting_block_number: BlockNumber,
+    /// Ending Block Number
+    ending_block_number: BlockNumber,
 }
 
 impl SnapshotChunk {
     /// Creates a new snapshot chunk for a given snapshot id
-    pub fn new(snapshot_id: SnapshotId) -> Self {
-        Self { snapshot_id, chunk_data: Vec::new() }
-    }
-
-    /// Sets the data of the chunk, replacing the existing data.
-    pub fn set_chunk_data(&mut self, chunk_data: Vec<u8>) {
-        self.chunk_data = chunk_data;
+    pub fn new(
+        snapshot_id: SnapshotId,
+        starting_block_number: BlockNumber,
+        chunk_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            snapshot_id,
+            chunk_data,
+            starting_block_number,
+            ending_block_number: starting_block_number,
+        }
     }
 
     /// Appends data to the existing chunk data.
-    pub fn append_chunk_data(&mut self, additional_data: &[u8]) {
+    pub fn append_chunk_data(&mut self, additional_data: &[u8], ending_block_number: BlockNumber) {
         self.chunk_data.extend_from_slice(additional_data);
+        self.ending_block_number = ending_block_number;
     }
 
     /// Return the size of this chunk.
@@ -99,24 +110,16 @@ pub struct Snapshot {
     /// The snapshot chunks ids
     chunk_ids: Vec<ChunkId>,
     /// The snapshot block ids
+    /// TODO: this could be start and end block number not a vec
     block_ids: Vec<BlockNumber>,
     /// The hash of the block at that height
     block_hash: B256,
-    /// Hash of the snapshot
-    hash: Vec<u8>,
 }
 
 impl Snapshot {
     /// Creates a new snapshot by given height and block_hash
     pub fn new(id: u64, height: u64, block_hash: B256) -> Self {
-        Self {
-            id,
-            height,
-            chunk_ids: Vec::new(),
-            block_ids: Vec::new(),
-            block_hash,
-            hash: Vec::new(),
-        }
+        Self { id, height, chunk_ids: Vec::new(), block_ids: Vec::new(), block_hash }
     }
 
     /// Sets the snapshot id.
@@ -152,21 +155,6 @@ impl Snapshot {
     /// Sets the block hash of the snapshot.
     pub fn set_block_hash(&mut self, block_hash: B256) {
         self.block_hash = block_hash;
-    }
-
-    /// Sets the snapshot hash.
-    pub fn set_hash(&mut self) {
-        let mut hasher = Sha256::new();
-        hasher.update(self.id.to_le_bytes());
-        hasher.update(self.height.to_le_bytes());
-        for chunk_id in &self.chunk_ids {
-            hasher.update(chunk_id.to_le_bytes());
-        }
-        for block_id in &self.block_ids {
-            hasher.update(block_id.to_le_bytes());
-        }
-        hasher.update(self.block_hash);
-        self.hash = hasher.finalize().to_vec();
     }
 
     /// Adds a block ID to the snapshot if it doesn't already exist.
@@ -236,8 +224,18 @@ impl Snapshot {
     }
 
     /// Gets the snapshot hash.
-    pub fn get_hash(&self) -> &[u8] {
-        self.hash.as_slice()
+    pub fn get_hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(self.id.to_le_bytes());
+        hasher.update(self.height.to_le_bytes());
+        for chunk_id in &self.chunk_ids {
+            hasher.update(chunk_id.to_le_bytes());
+        }
+        for block_id in &self.block_ids {
+            hasher.update(block_id.to_le_bytes());
+        }
+        hasher.update(self.block_hash);
+        hasher.finalize().to_vec()
     }
 }
 
@@ -307,13 +305,25 @@ impl SnapshotSync {
 
 #[cfg(test)]
 mod tests {
+    use reth_primitives::hex;
+
     use super::*;
 
     #[test]
     fn snapshot_chunks_test() {
         let _chunks = vec![
-            SnapshotChunk { snapshot_id: 1, chunk_data: Vec::new() },
-            SnapshotChunk { snapshot_id: 1, chunk_data: Vec::new() },
+            SnapshotChunk {
+                snapshot_id: 1,
+                chunk_data: Vec::new(),
+                starting_block_number: 1001,
+                ending_block_number: 1001,
+            },
+            SnapshotChunk {
+                snapshot_id: 1,
+                chunk_data: Vec::new(),
+                starting_block_number: 1002,
+                ending_block_number: 1002,
+            },
         ];
         let block_hash = B256::random();
         let snapshot = Snapshot {
@@ -322,7 +332,6 @@ mod tests {
             block_ids: vec![1001],
             chunk_ids: vec![1, 2],
             block_hash: block_hash.clone(),
-            hash: Vec::new(),
         };
 
         assert_eq!(snapshot.id(), 100);
@@ -337,17 +346,15 @@ mod tests {
     // As long as the hash function is deterministic,
     // Comet can use the hash to ensure snapshots are the same across nodes
     fn set_hash_should_hash_the_snapshot() {
-        let mut snapshot = Snapshot {
+        let snapshot = Snapshot {
             id: 100,
             height: 12000,
             block_ids: vec![1001],
             chunk_ids: vec![1, 2],
-            block_hash: B256::random(),
-            hash: Vec::new(),
+            block_hash: B256::ZERO,
         };
+        let snapshot_hash = snapshot.get_hash();
 
-        snapshot.set_hash();
-
-        assert_eq!(snapshot.hash.len(), 32);
+        assert_eq!(hex::encode(snapshot_hash), "55418ead0d08a6acc2544763f47641046787942f196eaf4a3b7de4f7c6d94e98");
     }
 }
