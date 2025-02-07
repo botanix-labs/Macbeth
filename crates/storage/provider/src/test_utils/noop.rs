@@ -181,6 +181,10 @@ impl SnapshotReader for NoopProvider {
         Ok(None)
     }
 
+    fn get_chunk_size(&self, _chunk_id: reth_db::models::ChunkId) -> ProviderResult<usize> {
+        Ok(0)
+    }
+
     fn get_snapshot_id_by_block_id(
         &self,
         _block_id: BlockNumber,

@@ -575,6 +575,10 @@ where
         self.database.provider()?.get_chunk_by_id(chunk_id)
     }
 
+    fn get_chunk_size(&self, chunk_id: reth_db::models::ChunkId) -> ProviderResult<usize> {
+        self.database.provider()?.get_chunk_size(chunk_id)
+    }
+
     fn get_snapshot_id_by_block_id(
         &self,
         block_id: BlockNumber,

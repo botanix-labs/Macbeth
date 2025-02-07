@@ -283,6 +283,19 @@ where
                         self.get_snapshot_by_id(last_snapshot_id)?.expect("checked above");
                     let chunk_id = match snapshot.get_latest_chunk_id() {
                         Some(chunk_id) => {
+                            // Check if there is enough space in the latest chunk
+                            let latest_chunk_size =
+                                self.provider_factory.provider()?.get_chunk_size(chunk_id)?;
+                            if latest_chunk_size + serialized_block.len() >
+                                MAX_SNAPSHOT_CHUNK_SIZE_BYTES
+                            {
+                                self.create_new_chunk(
+                                    last_snapshot_id,
+                                    sealed_block_with_senders.number,
+                                    serialized_block.clone(),
+                                )?;
+                            }
+
                             // Existing chunk lets append to it
                             self.append_to_chunk(
                                 chunk_id,

@@ -3705,6 +3705,17 @@ impl<TX: DbTx> SnapshotReader for DatabaseProvider<TX> {
         Ok(self.tx.get::<tables::Chunks>(chunk_id)?)
     }
 
+    fn get_chunk_size(&self, chunk_id: reth_db::models::ChunkId) -> ProviderResult<usize> {
+        Ok(self
+            .tx
+            .cursor_read::<tables::Chunks>()?
+            .seek_exact(chunk_id)
+            .ok()
+            .flatten()
+            .map(|(_, chunk)| chunk.size())
+            .unwrap_or_default())
+    }
+
     fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>> {
         Ok(self
             .tx

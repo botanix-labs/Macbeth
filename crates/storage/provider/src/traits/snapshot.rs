@@ -27,6 +27,9 @@ pub trait SnapshotReader: Send + Sync {
         chunk_id: reth_db::models::ChunkId,
     ) -> ProviderResult<Option<SnapshotChunk>>;
 
+    /// Get chunk size
+    fn get_chunk_size(&self, chunk_id: reth_db::models::ChunkId) -> ProviderResult<usize>;
+
     /// Get snapshot id by block id
     fn get_snapshot_id_by_block_id(
         &self,
