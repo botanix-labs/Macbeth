@@ -1557,6 +1557,10 @@ impl SnapshotReader for StaticFileProvider {
         Err(ProviderError::UnsupportedProvider)
     }
 
+    fn get_chunk_size(&self, _chunk_id: reth_db::models::ChunkId) -> ProviderResult<usize> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
     fn get_snapshot_id_by_block_id(
         &self,
         _block_id: BlockNumber,
