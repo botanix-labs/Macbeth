@@ -10,11 +10,10 @@ use reth_db::{
     Database, DatabaseEnv,
 };
 use reth_provider::{
-    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
+    providers::BlockchainProvider2, writer::UnifiedStorageWriter, BlockWriter, CanonChainTracker,
+    ExecutionOutcome, OriginalValuesKnown, StaticFileProviderFactory,
 };
 use reth_trie::updates::TrieUpdates;
-/// The purpose of this module is to provide a bridge between the CometBFT and the EVM
-/// application state
 use std::{
     error::Error,
     io::{self},
@@ -31,24 +30,22 @@ use reth_consensus_common::utils::unix_timestamp;
 use reth_data_parser::DataParser;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
-use serde::{Deserialize, Serialize};
 
+use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, SealedBlock, TransactionSigned, B256,
+    BlockNumber, BlockWithSenders, SealedBlock, TransactionSigned, B256,
 };
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
-    SnapshotReader, SnapshotWriter, StateProviderFactory,
+    SnapshotReader, SnapshotWriter, StateProviderFactory, StateWriter,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
 use schnellru::{ByLength, LruMap};
-
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
@@ -116,7 +113,7 @@ use crate::{
     comet_bft::{
         non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
     },
-    excecution_utils::authority_execution_utils::build_and_execute,
+    excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     metrics::AuthorityMetrics,
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
     utils::{call_notify_pegin, call_notify_pegout},
@@ -829,7 +826,6 @@ where
         request: RequestApplySnapshotChunk,
     ) -> ResponseApplySnapshotChunk {
         info!("apply_snapshot_chunk request, index: {:?}", request.index);
-
         let client = self.storage.client.clone();
 
         // get the last snapshot sync id - there should always be one provided the offer_snapshot
@@ -904,81 +900,56 @@ where
             };
         }
 
-        // decompress and decode the snapshot chunk (= block) and apply it
+        // decompress and decode the snapshot chunk (= n blocks) and apply it
         let compressor = self.compressor.clone();
         let (compressor_task_tx, compressor_task_rx) =
-            tokio::sync::oneshot::channel::<BlockWithContext>();
+            tokio::sync::oneshot::channel::<Vec<BlockWithSenders>>();
         self.task_executor.spawn_blocking(Box::pin(async move {
-            let block_with_context: BlockWithContext = compressor
+            let blocks_with_senders: Vec<BlockWithSenders> = compressor
                 .decode(request.chunk.as_ref())
                 .await
                 .expect("Failed to deserialize and decompress block with context");
-            let _ = compressor_task_tx.send(block_with_context);
+            let _ = compressor_task_tx.send(blocks_with_senders);
         }));
 
         // await the response from the compressor task
-        let sealed_block_with_context = compressor_task_rx
+        let sealed_blocks_with_senders = compressor_task_rx
             .blocking_recv()
             .expect("to receive confirmation from snapshot manager");
 
-        let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
-        let new_header = sealed_block_with_peg.block().header.clone();
-        let sealed_block_with_senders = sealed_block_with_peg.block().to_owned();
-        let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
-        let trie_updates = sealed_block_with_context.trie_updates;
-
-        let executed_block = ExecutedBlock::new(
-            Arc::new(sealed_block_with_senders.block.clone()),
-            Arc::new(sealed_block_with_senders.senders.clone()),
-            Arc::new(sealed_block_with_context.exec_outcome.clone()),
-            Arc::new(hashed_state.clone()),
-            Arc::new(trie_updates.clone()),
-        );
-
-        let db_rw = self.provider_factory.provider_rw().unwrap();
-        if let Err(e) = db_rw.append_blocks_with_state(
-            vec![sealed_block_with_senders.clone()],
-            sealed_block_with_context.exec_outcome.clone(),
-            hashed_state.into_sorted(),
-            trie_updates,
+        let exec_outcome = match batch_execute(
+            sealed_blocks_with_senders,
+            &self.provider_factory,
+            self.storage.executor_factory.clone(),
         ) {
-            error!(
-                "Error appending blocks with state {:?} in the db. error = {:?}",
-                last_snapshot_sync_id, e
-            );
-            return ResponseApplySnapshotChunk {
-                result: ApplySnapshotResult::RetrySnapshot as i32,
-                refetch_chunks: vec![],
-                reject_senders: vec![],
-            };
-        }
-        if let Err(e) = db_rw.commit() {
-            error!(
-                "Error committing db after appending blocks with state {:?} in the db. error = {:?}",
-                last_snapshot_sync_id, e
-            );
-            return ResponseApplySnapshotChunk {
-                result: ApplySnapshotResult::RetrySnapshot as i32,
-                refetch_chunks: vec![],
-                reject_senders: vec![],
-            };
+            Ok(exec_outcome) => exec_outcome,
+            Err(e) => {
+                error!("Error executing blocks: {:?}", e);
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
         };
 
-        let hash = self.application_hash(&client);
-        info!("Current application Hash {:?}", hex::encode(hash.to_vec().as_slice()));
+        let provider = match self.provider_factory.provider_rw() {
+            Ok(provider) => provider,
+            Err(e) => {
+                error!("Error getting provider: {:?}", e);
+                return ResponseApplySnapshotChunk { ..Default::default() };
+            }
+        };
 
-        let new_chain = reth_chain_state::NewCanonicalChain::Commit { new: vec![executed_block] };
-        // this is a bit hacky: client is a block_provider_2 but client is constrained by traits
-        // and the methods used here are directly implemented on the block_provider_2 and not part
-        // of a trait
-        self.block_chain_provider_2.canonical_in_memory_state().update_chain(new_chain);
-
-        client.on_forkchoice_update_received(&ForkchoiceState::default());
-
-        // set canonical head
-        client.set_canonical_head(new_header.clone());
-        client.set_safe(new_header.clone());
-        client.set_finalized(new_header);
+        // TODO: Provide static file provider
+        let mut writer = UnifiedStorageWriter::new(&provider, None);
+        match writer.write_to_storage(exec_outcome, OriginalValuesKnown::Yes) {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Error writing to storage: {:?}", e);
+                return ResponseApplySnapshotChunk { ..Default::default() };
+            }
+        }
 
         return ResponseApplySnapshotChunk {
             result: ApplySnapshotResult::Accept as i32,
