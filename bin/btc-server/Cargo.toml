@@ -46,7 +46,7 @@ hex = "0.4.3"
 lazy_static = "1.4.0"
 log = "0.4.18"
 miniscript = "12.3.0"
-parking_lot = { version = "0.12", features = ["serde"] }
+parking_lot = { version = "0.12.3", features = ["serde"] }
 prometheus = { version = "0.13", features = ["process"] }
 prost = "0.13.3"
 prost-types = "0.13.3"
