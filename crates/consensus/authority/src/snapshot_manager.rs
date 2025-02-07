@@ -10,7 +10,7 @@ use reth_db::{
 };
 use reth_evm::execute::BlockExecutorProvider;
 use reth_node_core::args::StateSyncArgs;
-use reth_primitives::{BlockNumber, SealedBlockWithSenders};
+use reth_primitives::{BlockNumber, BlockWithSenders};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
     ProviderFactory, SnapshotReader, SnapshotWriter,
@@ -113,11 +113,11 @@ where
     /// Create a new snapshot
     fn create_new_snapshot(
         &self,
-        sealed_block: &SealedBlockWithSenders,
+        sealed_block: &BlockWithSenders,
     ) -> Result<SnapshotId, SnapshotManagerError> {
         let provider_rw = self.provider_factory.provider_rw()?;
-        let snapshot_id =
-            provider_rw.create_new_snapshot(sealed_block.number, sealed_block.hash())?;
+        let snapshot_id = provider_rw
+            .create_new_snapshot(sealed_block.number, sealed_block.header.hash_slow())?;
         provider_rw.commit()?;
         Ok(snapshot_id)
     }
@@ -226,9 +226,10 @@ where
             match canon_event {
                 CanonStateNotification::Commit { new } => {
                     // All canonical chains events right now have a single block
-                    let sealed_block_with_senders = new.first();
+                    // TODO: constly clone. Can we avoid this?
+                    let block_with_senders = new.first().clone().unseal();
                     // first attempt to serialize and compress the sealed block
-                    let serialized_block = self.compressor.encode(sealed_block_with_senders).await.map_err(|e| {
+                    let serialized_block = self.compressor.encode(&block_with_senders).await.map_err(|e| {
                             error!(target:"consensus::authority::snapshot_manager", "Failed to serialize and compress sealed block {:?}", e);
                             SnapshotManagerError::DataParser(e)
                     })?;
@@ -240,15 +241,15 @@ where
                     // check the block height vs. the last snapshot height
                     let mut last_snapshot_id = match self.get_last_snapshot_height()? {
                         Some((last_snapshot_id, last_snapshot_height)) => {
-                            if sealed_block_with_senders.number < last_snapshot_height {
-                                warn!(target: "consensus::authority::snapshot_manager::run", "block number {} is less than last snapshot height {}", sealed_block_with_senders.number, last_snapshot_height);
+                            if block_with_senders.number < last_snapshot_height {
+                                warn!(target: "consensus::authority::snapshot_manager::run", "block number {} is less than last snapshot height {}", block_with_senders.number, last_snapshot_height);
                                 continue;
                             }
                             last_snapshot_id
                         }
                         None => {
-                            info!(target: "consensus::authority::snapshot_manager::run", "no last snapshot height. Creating a new snapshot at height {}...", sealed_block_with_senders.number); // create a new snapshot
-                            self.create_new_snapshot(sealed_block_with_senders)?
+                            info!(target: "consensus::authority::snapshot_manager::run", "no last snapshot height. Creating a new snapshot at height {}...", block_with_senders.number); // create a new snapshot
+                            self.create_new_snapshot(&block_with_senders)?
                         }
                     };
                     info!("Last_snapshot_id: {:?}", last_snapshot_id);
@@ -266,7 +267,7 @@ where
                     if latest_snapshot_size + serialized_block.len() > MAX_SNAPSHOT_SIZE_BYTES {
                         info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", MAX_SNAPSHOT_SIZE_BYTES, latest_snapshot_size, serialized_block.len());
                         // create a new snapshot
-                        last_snapshot_id = self.create_new_snapshot(sealed_block_with_senders)?;
+                        last_snapshot_id = self.create_new_snapshot(&block_with_senders)?;
                         info!("Created last_snapshot_id: {:?}", last_snapshot_id);
                     }
                     info!("Snapshots count: {:?}", self.get_snapshots_count()?);
@@ -276,7 +277,7 @@ where
                         self.state_lock.write().expect("snapshot state sync locked");
                     state_lock
                         .set_snapshot_id(last_snapshot_id)
-                        .set_block_number(sealed_block_with_senders.number);
+                        .set_block_number(block_with_senders.number);
                     drop(state_lock);
 
                     let snapshot =
@@ -286,48 +287,45 @@ where
                             // Check if there is enough space in the latest chunk
                             let latest_chunk_size =
                                 self.provider_factory.provider()?.get_chunk_size(chunk_id)?;
-                            if latest_chunk_size + serialized_block.len() >
-                                MAX_SNAPSHOT_CHUNK_SIZE_BYTES
+                            if latest_chunk_size + serialized_block.len()
+                                > MAX_SNAPSHOT_CHUNK_SIZE_BYTES
                             {
-                                self.create_new_chunk(
+                                let new_chunk_id = self.create_new_chunk(
                                     last_snapshot_id,
-                                    sealed_block_with_senders.number,
+                                    block_with_senders.number,
                                     serialized_block.clone(),
                                 )?;
+                                new_chunk_id
+                            } else {
+                                // Existing chunk lets append to it
+                                self.append_to_chunk(
+                                    chunk_id,
+                                    block_with_senders.number,
+                                    serialized_block,
+                                )?;
+                                chunk_id
                             }
-
-                            // Existing chunk lets append to it
-                            self.append_to_chunk(
-                                chunk_id,
-                                sealed_block_with_senders.number,
-                                serialized_block,
-                            )?;
-                            chunk_id
                         }
                         None => self.create_new_chunk(
                             last_snapshot_id,
-                            sealed_block_with_senders.number,
+                            block_with_senders.number,
                             serialized_block,
                         )?,
                     };
 
                     info!(
                         "Updating snapshot with: {:?} {:?} {:?}",
-                        last_snapshot_id, sealed_block_with_senders.number, chunk_id
+                        last_snapshot_id, block_with_senders.number, chunk_id
                     );
-                    self.update_snapshot(
-                        last_snapshot_id,
-                        sealed_block_with_senders.number,
-                        chunk_id,
-                    )?;
+                    self.update_snapshot(last_snapshot_id, block_with_senders.number, chunk_id)?;
                     self.insert_block_snapshot_id_mapping(
-                        sealed_block_with_senders.number,
+                        block_with_senders.number,
                         last_snapshot_id,
                     )?;
 
                     // check if we need to delete older snapshots (Retention policy)
-                    if self.get_snapshots_count()? >
-                        self.state_sync_args.num_snapshots_to_keep as usize
+                    if self.get_snapshots_count()?
+                        > self.state_sync_args.num_snapshots_to_keep as usize
                     {
                         let oldest_snapshot_height = self
                             .provider_factory

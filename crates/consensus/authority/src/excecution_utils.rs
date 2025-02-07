@@ -3,8 +3,8 @@ pub(crate) mod authority_execution_utils {
     use reth_chainspec::{ChainSpec, EthereumHardforks};
 
     use reth_db::Database;
-    use reth_evm::execute::Executor;
-    use reth_evm_ethereum::execute::EthBlockExecutor;
+    use reth_evm::execute::{BatchExecutor, BlockExecutorProvider, Executor};
+    use reth_evm_ethereum::execute::{EthBatchExecutor, EthBlockExecutor};
     use reth_execution_errors::{
         BlockExecutionError, BlockValidationError, InternalBlockExecutionError,
     };
@@ -19,8 +19,8 @@ pub(crate) mod authority_execution_utils {
         ReceiptWithBloom, Requests, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
-        BlockExecutionInput, BlockExecutionOutput, BlockHashReader, BlockNumReader,
-        ExecutionOutcome, HeaderProvider, ProviderFactory,
+        BlockExecutionInput, BlockExecutionOutput, BlockExecutionWriter, BlockHashReader,
+        BlockNumReader, ExecutionOutcome, HeaderProvider, ProviderFactory,
     };
     use reth_revm::{database::StateProviderDatabase, db::State};
     use reth_trie::StateRoot;
@@ -283,6 +283,40 @@ pub(crate) mod authority_execution_utils {
         );
         header.extra_data = Bytes::from(edh.serialize());
         Ok(header)
+    }
+
+    pub(crate) fn batch_execute<DB, EF>(
+        blocks: Vec<BlockWithSenders>,
+        database_provider: &ProviderFactory<DB>,
+        executor_factory: EF,
+    ) -> Result<ExecutionOutcome, BlockExecutionError>
+    where
+        DB: Database,
+        EF: BlockExecutorProvider,
+    {
+        // Assuming blocks are sorted
+        if blocks.is_empty() {
+            return Err(BlockExecutionError::msg("cannot execute empty batch"));
+        }
+
+        let starting_block_number = blocks.first().expect("checked above").number;
+        let ending_block_number = blocks.last().expect("checked above").number;
+        let provider = database_provider
+            .provider()?
+            .state_provider_by_block_number(starting_block_number - 1)?;
+        let db = State::builder()
+            .with_database_boxed(Box::new(StateProviderDatabase::new(provider)))
+            .with_bundle_update()
+            .build();
+        let mut executor = executor_factory.batch_executor(db);
+
+        executor.set_tip(ending_block_number);
+        // TODO: set prune modes on executor
+        let out = executor.execute_and_verify_batch(
+            blocks.iter().map(|b| BlockExecutionInput::new(b, U256::ZERO)),
+        )?;
+
+        Ok(out)
     }
 
     /// Executes the block with the given block and senders, on the provided [Executor].
