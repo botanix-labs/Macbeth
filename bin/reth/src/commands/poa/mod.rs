@@ -827,7 +827,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     transaction_pool.clone(),
                     abci_host.to_string(),
                     *abci_port,
-                    blockchain_db.clone(),
                 )
                 .await
         };

@@ -4,7 +4,7 @@ pub(crate) mod authority_execution_utils {
 
     use reth_db::Database;
     use reth_evm::execute::{BatchExecutor, BlockExecutorProvider, Executor};
-    use reth_evm_ethereum::execute::{EthBatchExecutor, EthBlockExecutor};
+    use reth_evm_ethereum::execute::EthBlockExecutor;
     use reth_execution_errors::{
         BlockExecutionError, BlockValidationError, InternalBlockExecutionError,
     };
@@ -19,7 +19,7 @@ pub(crate) mod authority_execution_utils {
         ReceiptWithBloom, Requests, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
-        BlockExecutionInput, BlockExecutionOutput, BlockExecutionWriter, BlockHashReader,
+        BlockExecutionInput, BlockExecutionOutput, BlockHashReader,
         BlockNumReader, ExecutionOutcome, HeaderProvider, ProviderFactory,
     };
     use reth_revm::{database::StateProviderDatabase, db::State};

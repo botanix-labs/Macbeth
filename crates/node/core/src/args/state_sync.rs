@@ -1,7 +1,5 @@
 use clap::Args;
 
-/// The default maximum size for a snapshot in bytes (8 MB).
-pub(crate) const DEFAULT_MAX_SNAPSHOT_SIZE_BYTES: usize = 8 * 1024 * 1024; // 8 Mbs max size
 /// The default number of recent snapshots to keep.
 pub(crate) const DEFAULT_NUM_SNAPSHOTS_TO_KEEP: u64 = 3;
 

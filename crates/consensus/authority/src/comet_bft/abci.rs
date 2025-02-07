@@ -11,7 +11,7 @@ use reth_db::{
 };
 use reth_provider::{
     providers::BlockchainProvider2, writer::UnifiedStorageWriter, BlockWriter, CanonChainTracker,
-    ExecutionOutcome, OriginalValuesKnown, StaticFileProviderFactory,
+    ExecutionOutcome, OriginalValuesKnown,
 };
 use reth_trie::updates::TrieUpdates;
 use std::{
@@ -265,7 +265,6 @@ where
         tx_pool: Pool,
         abci_host: String,
         abci_port: u16,
-        block_chain_provider_2: BlockchainProvider2<Arc<DatabaseEnv>>,
     ) -> Result<(), tendermint_abci::Error> {
         let app = ABCIClient::new(
             self.storage.clone(),
@@ -282,7 +281,6 @@ where
             self.provider_factory.clone(),
             self.snapshot_manager_state_lock.clone(),
             self.snapshot_sync_state_lock.clone(),
-            block_chain_provider_2,
         );
 
         let server_builder = ServerBuilder::default();
@@ -348,7 +346,6 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     compressor: DataParser,
     snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
-    block_chain_provider_2: BlockchainProvider2<Arc<DatabaseEnv>>,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -380,7 +377,6 @@ where
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
         snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
-        block_chain_provider_2: BlockchainProvider2<Arc<DatabaseEnv>>,
     ) -> Self {
         Self {
             storage,
@@ -399,7 +395,6 @@ where
             provider_factory,
             snapshot_manager_state_lock,
             snapshot_sync_state_lock,
-            block_chain_provider_2,
         }
     }
 
@@ -1681,7 +1676,6 @@ mod tests {
             factory,
             Arc::new(RwLock::new(SnapshotManagerStateLock::default())),
             Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
-            client,
         );
 
         abci_client

@@ -1,8 +1,6 @@
-use core::str::FromStr;
-
-use bitcoin::consensus::{Decodable, Encodable};
+use bitcoin::consensus::Encodable;
 use ethabi::ethereum_types::U256;
-use serde::{Deserialize, Deserializer, Serializer};
+use serde::Serializer;
 
 /// One satoshi expressed in wei.
 ///
