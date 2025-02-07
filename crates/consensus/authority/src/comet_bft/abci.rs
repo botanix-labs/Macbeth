@@ -1355,6 +1355,18 @@ where
             }
         };
 
+        if matches!(
+            self.validate_block(&block_with_context.sealed_block_with_peg.block()),
+            ResponseProcessProposal { status: VERIFY_REJECT }
+        ) {
+            let err: String = format!(
+                "Block validation failed in method finalize block for block number {:?}",
+                block_with_context.sealed_block_with_peg.block().header().number
+            );
+            error!(err);
+            panic!("{}", err);
+        }
+
         let mut exec_results = vec![];
         // insert non-deterministic data tx which is first in the block
         let non_deterministic_data_tx = request.txs.first().expect("tx to exist").clone();
