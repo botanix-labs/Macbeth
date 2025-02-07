@@ -240,8 +240,8 @@ impl CanonicalInMemoryState {
     {
         {
             // acquire all locks
-            let mut numbers = self.inner.in_memory_state.numbers.write();
             let mut blocks = self.inner.in_memory_state.blocks.write();
+            let mut numbers = self.inner.in_memory_state.numbers.write();
 
             // we first remove the blocks from the reorged chain
             for block in reorged {
