@@ -1,9 +1,8 @@
 use super::peg_contract::{PeginData, PegoutWithId};
 use crate::SealedBlockWithSenders;
-use serde::{Deserialize, Serialize};
 
 /// Sealed block with pegin and pegout data
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SealedBlockWithPeg {
     /// Sealed block with senders
     block: SealedBlockWithSenders,

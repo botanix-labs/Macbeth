@@ -191,7 +191,7 @@ impl SnapshotSyncStateLock {
 }
 
 /// Block with execution context, trie updates and botanix peg data
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockWithContext {
     /// The sealed block with peg data
     pub sealed_block_with_peg: SealedBlockWithPeg,
