@@ -164,7 +164,7 @@ impl DisplayHardforks {
                 ForkCondition::Timestamp(_) => {
                     post_merge.push(display_fork);
                 }
-                ForkCondition::Never => continue,
+                ForkCondition::Never => {},
             }
         }
 
