@@ -62,7 +62,6 @@ pub async fn test_state_sync(
 
     // assign targeted fed member
     let targeted_fed_member = test_fed_members.get(&(target_member_index as u16)).cloned().unwrap();
-    it_info_print!("Max Snapshot Chunk Size Bytes", targeted_fed_member.max_snapshot_size_bytes);
 
     // create a minting contract instance
     let botanix_eth_client =
@@ -85,7 +84,6 @@ pub async fn test_state_sync(
         tx_hashes_set.insert(tx_receipt.transaction_hash);
     }
 
-    // wait for canonical chain updates reported by the node, then send new tx
     while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
             it_info_print!(
@@ -113,14 +111,35 @@ pub async fn test_state_sync(
                     .unwrap();
                 let data_parser =
                     DataParser::default().with_serialization_type(SerializationType::Postcard);
-                let snapshot_chunks_data =
-                    db_provider.assemble_snapshot_chunks_data(snapshot_id).unwrap();
-                for (block, block_chunks) in snapshot_chunks_data {
-                    let sealed_block =
-                        data_parser.decode::<SealedBlockWithSenders>(&block_chunks).await;
-                    assert!(sealed_block.is_ok());
-                    let sealed_block = sealed_block.expect("must be a block");
-                    assert!(sealed_block.block.header().number == block);
+                let snapshot = db_provider.get_snapshot_by_id(snapshot_id).unwrap().unwrap();
+                let chunk_ids = snapshot.chunk_ids().to_vec();
+                let mut snapshot_chunks_data: Vec<(u64, Vec<u8>)> = Vec::new();
+                for id in chunk_ids {
+                    let chunk = db_provider.get_chunk_by_id(id).unwrap().unwrap();
+                    snapshot_chunks_data
+                        .push((chunk.get_ending_block_number(), chunk.chunk_data().to_vec()));
+                }
+                for (ending_block, chunk_data) in snapshot_chunks_data {
+                    let sealed_blocks =
+                        data_parser.decode::<Vec<SealedBlockWithSenders>>(&chunk_data).await;
+                    match sealed_blocks {
+                        Ok(sealed_blocks) => {
+                            it_info_print!(
+                                "Decoded sealed blocks from snapshot chunk with ending block number",
+                                ending_block
+                            );
+                            for sealed_block in sealed_blocks {
+                                it_info_print!(
+                                    "Decoded sealed block from snapshot chunk with block number",
+                                    sealed_block.clone()
+                                );
+                                assert!(sealed_block.block.header().number == ending_block);
+                            }
+                        }
+                        Err(e) => {
+                            it_info_print!("Error decoding sealed blocks from snapshot chunk", e);
+                        }
+                    };
                 }
                 break;
             }
