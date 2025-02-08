@@ -75,6 +75,11 @@ impl SnapshotChunk {
     pub fn chunk_data(&self) -> &[u8] {
         self.chunk_data.as_slice()
     }
+
+    /// Return the ending block number of this chunk.
+    pub fn get_ending_block_number(&self) -> BlockNumber {
+        self.ending_block_number
+    }
 }
 
 /// Snapshot data structure

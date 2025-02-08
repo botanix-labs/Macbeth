@@ -74,9 +74,6 @@ pub struct CliArgs {
     /// max frost signers
     #[argh(option, default = "2")]
     pub max_signers: u16,
-    /// max_snapshot_size_bytes
-    #[argh(option, default = "10240")]
-    pub max_snapshot_size_bytes: usize,
     /// num_snapshots_to_keep
     #[argh(option, default = "3")]
     pub num_snapshots_to_keep: u64,

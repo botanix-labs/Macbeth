@@ -17,7 +17,9 @@ use reth_provider::{
 };
 use tracing::{debug, error, info, trace, warn};
 
+/// Maximum snapshot size in bytes
 const MAX_SNAPSHOT_SIZE_BYTES: usize = 500 * 1024 * 1024; // 500 MB
+/// Maximum snapshot chunk size in bytes
 const MAX_SNAPSHOT_CHUNK_SIZE_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
 /// Snapshot Manager State Lock
@@ -226,7 +228,7 @@ where
             match canon_event {
                 CanonStateNotification::Commit { new } => {
                     // All canonical chains events right now have a single block
-                    // TODO: constly clone. Can we avoid this?
+                    // TODO: costly clone. Can we avoid this?
                     let block_with_senders = new.first().clone().unseal();
                     // first attempt to serialize and compress the sealed block
                     let serialized_block = self.compressor.encode(&block_with_senders).await.map_err(|e| {
@@ -287,8 +289,8 @@ where
                             // Check if there is enough space in the latest chunk
                             let latest_chunk_size =
                                 self.provider_factory.provider()?.get_chunk_size(chunk_id)?;
-                            if latest_chunk_size + serialized_block.len()
-                                > MAX_SNAPSHOT_CHUNK_SIZE_BYTES
+                            if latest_chunk_size + serialized_block.len() >
+                                MAX_SNAPSHOT_CHUNK_SIZE_BYTES
                             {
                                 let new_chunk_id = self.create_new_chunk(
                                     last_snapshot_id,
@@ -324,8 +326,8 @@ where
                     )?;
 
                     // check if we need to delete older snapshots (Retention policy)
-                    if self.get_snapshots_count()?
-                        > self.state_sync_args.num_snapshots_to_keep as usize
+                    if self.get_snapshots_count()? >
+                        self.state_sync_args.num_snapshots_to_keep as usize
                     {
                         let oldest_snapshot_height = self
                             .provider_factory
