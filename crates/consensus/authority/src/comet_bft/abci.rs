@@ -1,6 +1,5 @@
 //! The purpose of this module is to provide a bridge between the CometBFT and the EVM application
 //! state
-
 use alloy_rpc_types_engine::ForkchoiceState;
 use bytes::Bytes;
 use reth_chain_state::ExecutedBlock;
@@ -10,10 +9,10 @@ use reth_db::{
     Database, DatabaseEnv,
 };
 use reth_provider::{
-    providers::BlockchainProvider2, writer::UnifiedStorageWriter, BlockWriter, CanonChainTracker,
-    ExecutionOutcome, OriginalValuesKnown,
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
 };
-use reth_trie::updates::TrieUpdates;
+use reth_trie::{updates::TrieUpdates, StateRoot};
+use reth_trie_db::DatabaseStateRoot;
 use std::{
     error::Error,
     io::{self},
@@ -39,10 +38,10 @@ use reth_primitives::{
 };
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
-    SnapshotReader, SnapshotWriter, StateProviderFactory, StateWriter,
+    SnapshotReader, SnapshotWriter, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
-use reth_rpc_types::{engine::PayloadAttributes, BlockId};
+use reth_rpc_types::{engine::PayloadAttributes, quantity::vec, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
 use schnellru::{ByLength, LruMap};
@@ -908,12 +907,12 @@ where
         }));
 
         // await the response from the compressor task
-        let sealed_blocks_with_senders = compressor_task_rx
+        let blocks_with_senders = compressor_task_rx
             .blocking_recv()
             .expect("to receive confirmation from snapshot manager");
 
         let exec_outcome = match batch_execute(
-            sealed_blocks_with_senders,
+            blocks_with_senders.clone(),
             &self.provider_factory,
             self.storage.executor_factory.clone(),
         ) {
@@ -936,15 +935,48 @@ where
             }
         };
 
-        // TODO: Provide static file provider
-        let mut writer = UnifiedStorageWriter::new(&provider, None);
-        match writer.write_to_storage(exec_outcome, OriginalValuesKnown::Yes) {
-            Ok(_) => (),
-            Err(e) => {
-                error!("Error writing to storage: {:?}", e);
-                return ResponseApplySnapshotChunk { ..Default::default() };
-            }
+        let hashed_state = exec_outcome.hash_state_slow();
+        let (_state_root, trie_updates) =
+            match StateRoot::overlay_root_with_updates(provider.tx_ref(), hashed_state.clone()) {
+                Ok((state_root, trie_updates)) => (state_root, trie_updates),
+                Err(e) => {
+                    error!("Error overlaying root with updates: {:?}", e);
+                    return ResponseApplySnapshotChunk { ..Default::default() };
+                }
+            };
+
+        // seal blocks
+        let sealed_blocks_with_senders =
+            blocks_with_senders.into_iter().map(|block| block.seal_slow()).collect::<Vec<_>>();
+
+        if let Err(e) = provider.append_blocks_with_state(
+            sealed_blocks_with_senders,
+            exec_outcome,
+            hashed_state.into_sorted(),
+            trie_updates,
+        ) {
+            error!(
+                "Error appending blocks with state {:?} in the db. error = {:?}",
+                last_snapshot_sync_id, e
+            );
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
         }
+
+        if let Err(e) = provider.commit() {
+            error!(
+                "Error committing db after appending blocks with state {:?} in the db. error = {:?}",
+                last_snapshot_sync_id, e
+            );
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        };
 
         return ResponseApplySnapshotChunk {
             result: ApplySnapshotResult::Accept as i32,
