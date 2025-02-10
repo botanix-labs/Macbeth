@@ -20,6 +20,7 @@ use crate::{
 };
 
 const MAX_RETRIES: u8 = 5;
+const REQUIRED_SNAPSHOTS: usize = 1;
 
 #[allow(clippy::too_many_lines)]
 pub async fn test_state_sync(
@@ -78,7 +79,7 @@ pub async fn test_state_sync(
                 .cloned()
                 .unwrap();
             let snapshots = db_provider.get_snapshots().unwrap_or_default();
-            if snapshots.len() > 1 {
+            if snapshots.len() >= REQUIRED_SNAPSHOTS {
                 let first_snapshot_block_id = snapshots.first().unwrap().height();
                 let snapshot_id = db_provider
                     .get_snapshot_id_by_block_id(first_snapshot_block_id)
@@ -178,8 +179,9 @@ pub async fn test_state_sync(
             let expected_sync_height =
                 snapshots.first().as_ref().map(|s| s.height()).unwrap_or_default();
 
-            let insuficient_snapshots =
-                snapshots_per_fed_member.iter().any(|(_, snapshots)| *snapshots > 1);
+            let insuficient_snapshots = snapshots_per_fed_member
+                .iter()
+                .any(|(_, snapshots)| *snapshots < REQUIRED_SNAPSHOTS);
             if !insuficient_snapshots {
                 break 'outer expected_sync_height;
             }

@@ -306,6 +306,7 @@ where
             abci_driver_tx,
             provider_factory.clone(),
             Arc::clone(&snapshot_manager_state_lock),
+            state_sync.snapshot_message_format,
         ));
 
         let snapshot_manager_state_lock =

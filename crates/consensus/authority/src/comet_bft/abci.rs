@@ -102,9 +102,6 @@ pub enum ApplySnapshotResult {
     RejectSnapshot = 5,
 }
 
-/// Snapshot message format - undefined for now
-pub const SNAPSHOT_MESSAGE_FORMAT: u32 = 1;
-
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -212,6 +209,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
+    snapshot_format: u32,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -239,6 +237,7 @@ where
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
+        snapshot_format: u32,
     ) -> Self {
         Self {
             storage,
@@ -253,6 +252,7 @@ where
             compressor,
             snapshot_manager_state_lock,
             snapshot_sync_state_lock: Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
+            snapshot_format,
         }
     }
 
@@ -280,6 +280,7 @@ where
             self.provider_factory.clone(),
             self.snapshot_manager_state_lock.clone(),
             self.snapshot_sync_state_lock.clone(),
+            self.snapshot_format,
         );
 
         let server_builder = ServerBuilder::default();
@@ -345,6 +346,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     compressor: DataParser,
     snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
+    snapshot_format: u32,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -376,6 +378,7 @@ where
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
         snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
+        snapshot_format: u32,
     ) -> Self {
         Self {
             storage,
@@ -394,6 +397,7 @@ where
             provider_factory,
             snapshot_manager_state_lock,
             snapshot_sync_state_lock,
+            snapshot_format,
         }
     }
 
@@ -599,7 +603,7 @@ where
                     .fold(ResponseListSnapshots { snapshots: vec![] }, |mut acc, snapshot| {
                         acc.snapshots.push(Snapshot {
                             height: snapshot.height(),
-                            format: SNAPSHOT_MESSAGE_FORMAT,
+                            format: self.snapshot_format,
                             chunks: snapshot.chunk_ids().len() as u32,
                             hash: snapshot.get_hash().to_vec().into(),
                             metadata: prost::bytes::Bytes::new(),
@@ -637,7 +641,7 @@ where
         }
 
         if let Some(snapshot) = request.snapshot {
-            if snapshot.format != SNAPSHOT_MESSAGE_FORMAT {
+            if snapshot.format != self.snapshot_format {
                 warn!("Received snapshot format is not supported, rejecting snapshot");
                 return ResponseOfferSnapshot { result: SnapshotOfferResult::RejectFormat as i32 };
             }
@@ -1703,6 +1707,7 @@ mod tests {
             factory,
             Arc::new(RwLock::new(SnapshotManagerStateLock::default())),
             Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
+            1,
         );
 
         abci_client

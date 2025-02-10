@@ -17,10 +17,25 @@ use reth_provider::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-/// Maximum snapshot size in bytes
-const MAX_SNAPSHOT_SIZE_BYTES: usize = 1024 * 5; // 2 KB
-/// Maximum snapshot chunk size in bytes
-const MAX_SNAPSHOT_CHUNK_SIZE_BYTES: usize = 1024; // 1 KB
+/// Snapshot size limits for state sync
+pub struct SnapshotSizeLimits {
+    /// Maximum snapshot size in bytes
+    pub snapshot_max_size: usize,
+    /// Maximum snapshot chunk size in bytes
+    pub snapshot_chunk_size: usize,
+}
+
+/// Snapshot size limits for state sync test
+pub const SNAPSHOT_SIZE_LIMITS_TEST: SnapshotSizeLimits = SnapshotSizeLimits {
+    snapshot_max_size: 1024 * 5, // 5 KB
+    snapshot_chunk_size: 1024,   // 1 KB
+};
+
+/// Snapshot size limits for state sync prod
+pub const SNAPSHOT_SIZE_LIMITS_PROD: SnapshotSizeLimits = SnapshotSizeLimits {
+    snapshot_max_size: 1024 * 1024 * 500,  // 500 MB
+    snapshot_chunk_size: 1024 * 1024 * 10, // 10 MB
+};
 
 /// Snapshot Manager State Lock
 #[derive(Clone, Debug, Default)]
@@ -79,6 +94,7 @@ pub struct SnapshotManager<EF, BF, DB> {
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     state_sync_args: StateSyncArgs,
     state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
+    snapshot_size_limits: SnapshotSizeLimits,
 }
 
 impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
@@ -100,7 +116,18 @@ where
         state_sync_args: StateSyncArgs,
         state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     ) -> Self {
-        Self { storage, compressor, provider_factory, state_sync_args, state_lock }
+        let snapshot_size_limits = match state_sync_args.snapshot_message_format {
+            SNAPSHOT_MESSAGE_FORMAT_TEST => SNAPSHOT_SIZE_LIMITS_TEST,
+            SNAPSHOT_MESSAGE_FORMAT_PROD => SNAPSHOT_SIZE_LIMITS_PROD,
+        };
+        Self {
+            storage,
+            compressor,
+            provider_factory,
+            state_sync_args,
+            state_lock,
+            snapshot_size_limits,
+        }
     }
 
     /// Create a new snapshot
@@ -257,8 +284,10 @@ where
 
                     // Check if there is enough space in the latest snapshot
                     debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
-                    if latest_snapshot_size + serialized_block.len() > MAX_SNAPSHOT_SIZE_BYTES {
-                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", MAX_SNAPSHOT_SIZE_BYTES, latest_snapshot_size, serialized_block.len());
+                    if latest_snapshot_size + serialized_block.len() >
+                        self.snapshot_size_limits.snapshot_max_size
+                    {
+                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.snapshot_size_limits.snapshot_max_size, latest_snapshot_size, serialized_block.len());
                         // create a new snapshot
                         last_snapshot_id = self.create_new_snapshot(&block_with_senders)?;
                         info!("Created last_snapshot_id: {:?}", last_snapshot_id);
@@ -281,7 +310,7 @@ where
                             let latest_chunk_size =
                                 self.provider_factory.provider()?.get_chunk_size(chunk_id)?;
                             if latest_chunk_size + serialized_block.len() >
-                                MAX_SNAPSHOT_CHUNK_SIZE_BYTES
+                                self.snapshot_size_limits.snapshot_chunk_size
                             {
                                 let new_chunk_id = self.create_new_chunk(
                                     last_snapshot_id,

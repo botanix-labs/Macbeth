@@ -1,7 +1,7 @@
 //! Models for snapshots and chunks.
 
 use reth_codecs::{add_arbitrary_tests, Compact};
-use reth_primitives::{revm_primitives::FixedBytes, BlockNumber, Bytes, B256};
+use reth_primitives::{BlockNumber, Bytes, B256};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;

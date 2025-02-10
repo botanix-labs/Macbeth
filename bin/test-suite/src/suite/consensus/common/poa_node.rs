@@ -368,6 +368,8 @@ impl FederationMemberTestConfig {
             frost_max_signers.as_str(),
             "--sync.num_snapshots_to_keep",
             num_snapshots_to_keep.as_str(),
+            "--sync.snapshot_message_format",
+            "2",
             "--port",
             discovery_port.as_str(),
             "--p2p-secret-key",
