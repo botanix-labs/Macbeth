@@ -607,7 +607,10 @@ where
                         acc
                     });
                 drop(snapshot_manager_state_lock);
-                info!("Returned snapshots {:?}", resp);
+                info!(
+                    "Returned snapshots for block heights {:?}",
+                    resp.snapshots.iter().map(|s| s.height).collect::<Vec<_>>()
+                );
                 return resp;
             }
             Err(e) => {

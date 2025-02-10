@@ -2,7 +2,7 @@ use bytes::Bytes;
 use displaydoc::Display as DisplayDoc;
 use thiserror::Error;
 
-/// Password hashing error types.
+/// Prost encode/decode error types.
 #[derive(Debug, DisplayDoc, Error)]
 pub(crate) enum ProstError {
     /// serde prost encode error

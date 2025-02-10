@@ -314,7 +314,7 @@ tables! {
     /// Store chunk id to chunk data.
     table Chunks<Key = ChunkId, Value = SnapshotChunk>;
 
-    /// Stores block snapshots.
+    /// Stores block number to snapshot id.
     table BlockSnapshots<Key = BlockNumber, Value = SnapshotId>;
 
     /// Stores the chunk to Block ids
