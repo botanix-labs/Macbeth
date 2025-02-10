@@ -17,7 +17,7 @@ askama = "0.12.1"
 async-trait = "0.1.68"
 base64 = "0.22.1"
 bitcoin = { workspace = true }
-bitcoin_hashes = "0.13.0"
+bitcoin_hashes = "0.16.0"
 
 ## Bitcoin rpc
 bitcoincore-rpc = { workspace = true }
@@ -67,8 +67,8 @@ strum = { version = "0.25.0", features = ["derive"] }
 strum_macros = "0.25.0"
 tempfile = { workspace = true }
 tendermint-rpc = { workspace = true }
-thiserror = "1.0.40"
-tokio = { version = "1.37.0", features = ["full"] }
+thiserror = "2.0.11"
+tokio = { version = "1.43.0", features = ["full"] }
 toml = "0.8.0"
 tonic = { version = "0.12.3", features = ["gzip"] }
 tracing = { workspace = true }

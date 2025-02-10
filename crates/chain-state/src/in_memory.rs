@@ -92,7 +92,9 @@ impl InMemoryState {
 
     /// Returns the state for a given block number.
     pub(crate) fn state_by_number(&self, number: u64) -> Option<Arc<BlockState>> {
-        self.numbers.read().get(&number).and_then(|hash| self.blocks.read().get(hash).cloned())
+        let blocks = self.blocks.read();
+        let numbers = self.numbers.read();
+        numbers.get(&number).and_then(|hash| blocks.get(hash).cloned())
     }
 
     /// Returns the hash for a specific block number
@@ -102,11 +104,12 @@ impl InMemoryState {
 
     /// Returns the current chain head state.
     pub(crate) fn head_state(&self) -> Option<Arc<BlockState>> {
-        self.numbers
-            .read()
+        let blocks = self.blocks.read();
+        let numbers = self.numbers.read();
+        numbers
             .iter()
             .max_by_key(|(&number, _)| number)
-            .and_then(|(_, hash)| self.blocks.read().get(hash).cloned())
+            .and_then(|(_, hash)| blocks.get(hash).cloned())
     }
 
     /// Returns the pending state corresponding to the current head plus one,
@@ -240,8 +243,8 @@ impl CanonicalInMemoryState {
     {
         {
             // acquire all locks
-            let mut numbers = self.inner.in_memory_state.numbers.write();
             let mut blocks = self.inner.in_memory_state.blocks.write();
+            let mut numbers = self.inner.in_memory_state.numbers.write();
 
             // we first remove the blocks from the reorged chain
             for block in reorged {
