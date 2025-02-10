@@ -41,7 +41,7 @@ use reth_provider::{
     SnapshotReader, SnapshotWriter, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
-use reth_rpc_types::{engine::PayloadAttributes, quantity::vec, BlockId};
+use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
 use schnellru::{ByLength, LruMap};
@@ -1375,11 +1375,7 @@ where
         let driver_tx = self.driver_tx.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
             if let Err(e) = driver_tx
-                .send(ABCIDriverMessage::CommitBlock((
-                    sealed_block_with_context,
-                    cbft_block_hash,
-                    commit_tx,
-                )))
+                .send(ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)))
                 .await
             {
                 error!("Error sending commit block message: {:?}", e);
@@ -1407,7 +1403,7 @@ where
 #[derive(Debug)]
 pub enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    CommitBlock((BlockWithContext, FixedBytes<32>, std::sync::mpsc::Sender<()>)),
+    CommitBlock((BlockWithContext, std::sync::mpsc::Sender<()>)),
     /// Exit the driver
     Exit,
 }
@@ -1420,11 +1416,9 @@ pub enum ABCIDriverMessage {
 #[derive(Clone)]
 pub struct ABCIDriver<BtcServerClient, DatabaseRW> {
     btc_server: Option<BtcServerClient>,
-    task_executor: TaskExecutor,
     driver_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<ABCIDriverMessage>>>,
     database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
     blockchain_provider: BlockchainProvider2<DatabaseRW>,
-    snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
 }
 
 impl<BtcServerClient, DatabaseRW> ABCIDriver<BtcServerClient, DatabaseRW>
@@ -1435,34 +1429,24 @@ where
     /// Create a new ABCI drivers
     pub fn new(
         btc_server: Option<BtcServerClient>,
-        task_executor: TaskExecutor,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
         blockchain_provider: BlockchainProvider2<DatabaseRW>,
-        snapshot_manager_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     ) -> Self {
         Self {
             btc_server,
-            task_executor,
             driver_rx: Arc::new(Mutex::new(driver_rx)),
             database_provider,
             blockchain_provider,
-            snapshot_manager_tx,
         }
     }
 
     /// Start the ABCI driver
     pub async fn start(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let task_executor = self.task_executor.clone();
         loop {
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
-                    ABCIDriverMessage::CommitBlock((
-                        sealed_block_with_context,
-                        cbft_hash,
-                        commit_tx,
-                    )) => {
-                        let sealed_block_with_context_clone = sealed_block_with_context.clone();
+                    ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)) => {
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
@@ -1548,23 +1532,6 @@ where
                             }
                         }
                         commit_tx.send(()).expect("to send");
-
-                        // Send message to snapshot manager
-                        let (snapshot_manager_announced_tx, _snapshot_manager_announced_rx) =
-                            std::sync::mpsc::channel::<()>();
-                        let snapshot_manager_tx = self.snapshot_manager_tx.clone();
-                        task_executor.clone().spawn(Box::pin(async move {
-                            if let Err(e) = snapshot_manager_tx
-                                .send(ABCIDriverMessage::CommitBlock((
-                                    sealed_block_with_context_clone,
-                                    cbft_hash,
-                                    snapshot_manager_announced_tx,
-                                )))
-                                .await
-                            {
-                                error!("Error sending finalize message to driver: {:?}", e);
-                            }
-                        }));
                     }
                     ABCIDriverMessage::Exit => {
                         break;

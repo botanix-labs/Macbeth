@@ -13,7 +13,7 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
-    comet_bft::abci::{ABCIDriver, ABCIDriverMessage},
+    comet_bft::abci::ABCIDriver,
     random_source_provider::RandomSourceProvider,
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
@@ -559,15 +559,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         };
 
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(1);
-        let (snapshot_manager_tx, snapshot_manager_rx) =
-            tokio::sync::mpsc::channel::<ABCIDriverMessage>(100);
         let mut abci_driver = ABCIDriver::new(
             btc_server_client,
-            executor.clone(),
             driver_rx,
             provider_factory.clone(),
             blockchain_db.clone(),
-            snapshot_manager_tx,
         );
 
         // check Minting.sol deployed bytecode matches known bytecode
@@ -763,9 +759,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 node_config.clone().state_sync,
                 provider_factory.clone(),
             ) {
-                Ok(consensus) => {
-                    consensus.build::<BtcServerExtendedClient>(snapshot_manager_rx).await
-                }
+                Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
                 Err(e) => {
                     return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
                 }

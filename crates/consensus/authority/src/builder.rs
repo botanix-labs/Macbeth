@@ -26,8 +26,8 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions,
-    ProviderFactory, SnapshotReader, SnapshotWriter, StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
+    SnapshotWriter, StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
@@ -207,7 +207,6 @@ where
     /// production task.
     pub async fn build<BtcServerClient>(
         self,
-        snapshot_manager_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     ) -> (
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
@@ -315,7 +314,6 @@ where
             storage.clone(),
             parser.clone(),
             provider_factory,
-            snapshot_manager_rx,
             state_sync,
             Arc::clone(&snapshot_manager_state_lock),
         ));

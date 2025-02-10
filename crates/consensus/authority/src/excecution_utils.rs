@@ -19,8 +19,8 @@ pub(crate) mod authority_execution_utils {
         ReceiptWithBloom, Requests, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };
     use reth_provider::{
-        BlockExecutionInput, BlockExecutionOutput, BlockHashReader,
-        BlockNumReader, ExecutionOutcome, HeaderProvider, ProviderFactory,
+        BlockExecutionInput, BlockExecutionOutput, BlockHashReader, BlockNumReader,
+        ExecutionOutcome, HeaderProvider, ProviderFactory,
     };
     use reth_revm::{database::StateProviderDatabase, db::State};
     use reth_trie::StateRoot;

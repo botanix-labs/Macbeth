@@ -1,7 +1,7 @@
 //! Snapshot manager is responsible for persisting snapshot chunks to disk
 use std::sync::{Arc, RwLock};
 
-use crate::{comet_bft::abci::ABCIDriverMessage, Storage};
+use crate::Storage;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_db::{
@@ -77,7 +77,6 @@ pub struct SnapshotManager<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     compressor: DataParser,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
-    snapshot_manager_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
     state_sync_args: StateSyncArgs,
     state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
 }
@@ -98,18 +97,10 @@ where
         storage: Storage<EF, BF, DB>,
         compressor: DataParser,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
-        snapshot_manager_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         state_sync_args: StateSyncArgs,
         state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     ) -> Self {
-        Self {
-            storage,
-            compressor,
-            provider_factory,
-            snapshot_manager_rx,
-            state_sync_args,
-            state_lock,
-        }
+        Self { storage, compressor, provider_factory, state_sync_args, state_lock }
     }
 
     /// Create a new snapshot
