@@ -214,7 +214,7 @@ pub struct Config {
     /// bitcoind RPC pass
     pub bitcoind_pass: String,
     /// metrics port
-    pub metrics_port: u16,
+    pub metrics_port: Option<u16>,
     /// acceptable fee rate difference percentage as an integer (ex. 2 = 2%, 20 = 20%)
     /// signing will refuse to sign if the fee rate is more than this percentage off from the
     pub fee_rate_diff_percentage: u32,
@@ -238,7 +238,7 @@ pub fn load_config() -> Result<Config, Error> {
         bitcoind_url: cli_config.bitcoind_url,
         bitcoind_user: cli_config.bitcoind_user,
         bitcoind_pass: cli_config.bitcoind_pass,
-        metrics_port: cli_config.metrics_port.unwrap_or(7000),
+        metrics_port: cli_config.metrics_port,
         fee_rate_diff_percentage: cli_config.fee_rate_diff_percentage.unwrap_or(2),
         fall_back_fee_rate_sat_per_vbyte: cli_config.fall_back_fee_rate_sat_per_vbyte.unwrap_or(10),
     };
