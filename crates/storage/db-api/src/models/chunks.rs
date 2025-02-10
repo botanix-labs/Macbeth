@@ -1,7 +1,7 @@
 //! Models for snapshots and chunks.
 
 use reth_codecs::{add_arbitrary_tests, Compact};
-use reth_primitives::{BlockNumber, B256};
+use reth_primitives::{revm_primitives::FixedBytes, BlockNumber, Bytes, B256};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -31,7 +31,7 @@ pub struct SnapshotChunk {
     /// The snapshot id
     snapshot_id: u64,
     /// The data of the chunk
-    chunk_data: Vec<u8>,
+    chunk_data: Vec<Bytes>,
     /// Starting Block Number
     starting_block_number: BlockNumber,
     /// Ending Block Number
@@ -47,23 +47,27 @@ impl SnapshotChunk {
     ) -> Self {
         Self {
             snapshot_id,
-            chunk_data,
+            chunk_data: vec![Bytes::from(chunk_data)],
             starting_block_number,
             ending_block_number: starting_block_number,
         }
     }
 
     /// Appends data to the existing chunk data.
-    pub fn append_chunk_data(&mut self, additional_data: &[u8], ending_block_number: BlockNumber) {
-        self.chunk_data.extend_from_slice(additional_data);
+    pub fn append_chunk_data(
+        &mut self,
+        additional_data: Vec<u8>,
+        ending_block_number: BlockNumber,
+    ) {
+        self.chunk_data.push(Bytes::from(additional_data));
         self.ending_block_number = ending_block_number;
     }
 
     /// Return the size of this chunk.
     pub fn size(&self) -> usize {
-        let snapshot_id_size = std::mem::size_of::<u64>();
-        let data_size = self.chunk_data.len();
-        snapshot_id_size + data_size
+        let chunk_id_size = std::mem::size_of::<u64>();
+        let data_size = self.chunk_data.iter().map(|data| data.len()).sum::<usize>();
+        chunk_id_size + data_size
     }
 
     /// Return the snapshot id of this chunk.
@@ -72,8 +76,9 @@ impl SnapshotChunk {
     }
 
     /// Return the data of this chunk.
-    pub fn chunk_data(&self) -> &[u8] {
-        self.chunk_data.as_slice()
+    /// Each chunk is a [BlockWithSenders]
+    pub fn chunk_data(&self) -> &[Bytes] {
+        &self.chunk_data
     }
 
     /// Return the ending block number of this chunk.

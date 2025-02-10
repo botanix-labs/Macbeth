@@ -40,7 +40,7 @@ use reth_execution_types::{Chain, ExecutionOutcome};
 use reth_network_p2p::headers::downloader::SyncTarget;
 use reth_primitives::{
     keccak256, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockNumber,
-    BlockWithSenders, Bytecode, GotExpected, Header, Receipt, Requests, SealedBlock,
+    BlockWithSenders, Bytecode, Bytes, GotExpected, Header, Receipt, Requests, SealedBlock,
     SealedBlockWithSenders, SealedHeader, StaticFileSegment, StorageEntry, TransactionMeta,
     TransactionSigned, TransactionSignedEcRecovered, TransactionSignedNoHash, TxHash, TxNumber,
     Withdrawal, Withdrawals, B256, U256,
@@ -67,7 +67,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// A [`DatabaseProvider`] that holds a read-only database transaction.
 pub type DatabaseProviderRO<DB> = DatabaseProvider<<DB as Database>::TX>;
@@ -3789,6 +3789,8 @@ impl<TX: DbTx> SnapshotReader for DatabaseProvider<TX> {
             .map(|(_, snapshot)| (snapshot.size(), snapshot.chunk_ids().to_vec()))
             .unwrap_or_default();
 
+        info!(">>>>>>>>>>> chunk ids: {:?}", chunk_ids);
+
         let chunks_size = if chunk_ids.is_empty() {
             0
         } else {
@@ -3865,7 +3867,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         data: Vec<u8>,
     ) -> ProviderResult<()> {
         let mut chunk = self.get_chunk_by_id(chunk_id)?.expect("chunk exists");
-        chunk.append_chunk_data(&data, block_number);
+        chunk.append_chunk_data(data, block_number);
         self.tx.put::<tables::Chunks>(chunk_id, chunk)?;
         Ok(())
     }

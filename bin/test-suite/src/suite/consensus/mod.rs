@@ -86,7 +86,7 @@ pub struct LocalContext {
     pub cometbft_nodes: Option<BTreeMap<u16, CometBftNodeConfig>>,
     pub cometbft_nodes_syncing: Option<BTreeMap<u16, CometBftNodeConfig>>,
     pub cometbft_notification: Option<tokio::sync::broadcast::Sender<CometbftNotifications>>,
-    pub cometbft_lightclients: Option<Vec<HttpCometBFTRpcClientFactory>>,
+    pub cometbft_rpc_clients: Option<Vec<HttpCometBFTRpcClientFactory>>,
     // rpc
     pub rpc_processes: Option<Vec<SpawnedRpcServerProcess>>,
     pub rpc_nodes: Option<BTreeMap<u16, NonFederationMemberTestConfig>>,
@@ -806,7 +806,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         }
 
         // =================== COMMETBFT NODES ================== //
-        let mut cometbft_lightclients = vec![];
+        let mut cometbft_rpc_clients = vec![];
         let mut spawned_cometbft_processes = vec![];
         if create_test_config.create_cometbft_nodes {
             it_info_print!("Starting cometbft nodes ...");
@@ -826,7 +826,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                     cometbft_node.cometbft_rpc_app_port,
                 );
                 let _cometbft_http_client = cometbft_client.build_and_connect()?;
-                cometbft_lightclients.push(cometbft_client);
+                cometbft_rpc_clients.push(cometbft_client);
 
                 // await initialization
                 cometbft_node.await_initialization()?;
@@ -840,7 +840,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             self.local_context.cometbft_nodes = Some(cometbft_nodes);
             self.local_context.cometbft_nodes_syncing = Some(cometbft_nodes_syncing);
             self.local_context.cometbft_notification = Some(tx);
-            self.local_context.cometbft_lightclients = Some(cometbft_lightclients);
+            self.local_context.cometbft_rpc_clients = Some(cometbft_rpc_clients);
         }
 
         // =================== POA NODES ================== //
@@ -1014,7 +1014,7 @@ impl ConsensusIntegrationTestSuite {
                 cometbft_nodes: None,
                 cometbft_nodes_syncing: None,
                 cometbft_notification: None,
-                cometbft_lightclients: None,
+                cometbft_rpc_clients: None,
                 cometbft_processes: None,
                 bitcoind_node: None,
                 bitcoind_notification: None,

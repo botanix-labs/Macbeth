@@ -18,9 +18,9 @@ use reth_provider::{
 use tracing::{debug, error, info, trace, warn};
 
 /// Maximum snapshot size in bytes
-const MAX_SNAPSHOT_SIZE_BYTES: usize = 500 * 1024 * 1024; // 500 MB
+const MAX_SNAPSHOT_SIZE_BYTES: usize = 1024 * 5; // 2 KB
 /// Maximum snapshot chunk size in bytes
-const MAX_SNAPSHOT_CHUNK_SIZE_BYTES: usize = 10 * 1024 * 1024; // 10 MB
+const MAX_SNAPSHOT_CHUNK_SIZE_BYTES: usize = 1024; // 1 KB
 
 /// Snapshot Manager State Lock
 #[derive(Clone, Debug, Default)]
@@ -250,7 +250,7 @@ where
                     // now check the latest snapshot size
                     let latest_snapshot_size = self.get_snapshot_size(last_snapshot_id)?;
                     info!(
-                        "Latest_snapshot_size: {:?} {:?}",
+                        "Latest_snapshot_size. Serialized block size: {:?}, Latest snapshot size: {:?}",
                         serialized_block.len(),
                         latest_snapshot_size
                     );
@@ -307,7 +307,7 @@ where
                     };
 
                     info!(
-                        "Updating snapshot with: {:?} {:?} {:?}",
+                        "Updating snapshot. Last snapshot id: {:?}, block number: {:?}, chunk id: {:?}",
                         last_snapshot_id, block_with_senders.number, chunk_id
                     );
                     self.update_snapshot(last_snapshot_id, block_with_senders.number, chunk_id)?;
@@ -429,7 +429,7 @@ mod tests {
         assert!(snapshots_count == 1);
         let snapshots = client.get_snapshots().unwrap();
         assert!(snapshots.len() == 1);
-        let snp = snapshots.iter().next().unwrap().clone();
+        let _snp = snapshots.iter().next().unwrap().clone();
         assert!(snapshot_by_id.height() == 2);
 
         client.remove_snapshots(2..=2).unwrap();
@@ -548,12 +548,13 @@ mod tests {
 
         // insert block chunks
         let snapshot_id = 1;
-        let chunk_data: Vec<u8> = vec![1, 2, 3, 4, 5];
+        let chunk_data: Vec<Vec<u8>> = vec![vec![1, 2, 3, 4, 5]];
         let block_ids = 1..=10;
         // loop over block_heights
         let mut chunk_id = 0;
         for block_id in block_ids.clone() {
-            chunk_id = client.create_new_chunk(snapshot_id, block_id, chunk_data.clone()).unwrap();
+            chunk_id =
+                client.create_new_chunk(snapshot_id, block_id, chunk_data[0].clone()).unwrap();
         }
         assert!(chunk_id == *block_ids.end());
         assert!(client.get_last_chunk_id().unwrap().unwrap() == *block_ids.end());

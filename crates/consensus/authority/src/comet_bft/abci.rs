@@ -772,11 +772,35 @@ where
                             );
                             return ResponseLoadSnapshotChunk::default();
                         }
-                        // then retrieve the actual chunk data
+
                         match client.get_chunk_by_id(mapped_request_chunk as u64) {
-                            Ok(Some(chunk)) => ResponseLoadSnapshotChunk {
-                                chunk: prost::bytes::Bytes::copy_from_slice(chunk.chunk_data()),
-                            },
+                            Ok(Some(chunk)) => {
+                                let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
+                                let compressor = self.compressor.clone();
+
+                                self.task_executor.spawn_blocking(Box::pin(async move {
+                                    let mut blocks = Vec::new();
+                                    for chunk in chunk.chunk_data() {
+                                        let block_with_sender: BlockWithSenders =
+                                            compressor.decode(chunk.as_ref()).await.unwrap();
+                                        blocks.push(block_with_sender);
+                                    }
+                                    // TODO: handle the error
+                                    let serialized_blocks =
+                                        compressor.encode(&blocks).await.unwrap();
+                                    let _ = oneshot_tx.send(serialized_blocks);
+                                }));
+
+                                let serialized_blocks = oneshot_rx.blocking_recv().unwrap();
+
+                                let res = ResponseLoadSnapshotChunk {
+                                    chunk: prost::bytes::Bytes::copy_from_slice(
+                                        serialized_blocks.as_ref(),
+                                    ),
+                                };
+
+                                res
+                            }
                             Ok(None) => {
                                 error!("Chunk with id {:?} not found", mapped_request_chunk);
                                 ResponseLoadSnapshotChunk::default()
@@ -905,6 +929,7 @@ where
             let blocks_with_senders: Vec<BlockWithSenders> = compressor
                 .decode(request.chunk.as_ref())
                 .await
+                // TODO: handle the error
                 .expect("Failed to deserialize and decompress block with context");
             let _ = compressor_task_tx.send(blocks_with_senders);
         }));
