@@ -771,7 +771,7 @@ impl NewCanonicalChain {
                     );
                     chain
                 }));
-                CanonStateNotification::Commit { new }
+                CanonStateNotification::Commit { new, pegins: None, pegouts: None }
             }
             Self::Reorg { new, old } => {
                 let new = Arc::new(new.iter().fold(Chain::default(), |mut chain, exec| {
@@ -1368,7 +1368,9 @@ mod tests {
                     vec![block0.sealed_block_with_senders(), block1.sealed_block_with_senders()],
                     sample_execution_outcome.clone(),
                     None
-                ))
+                )),
+                pegins: None,
+                pegouts: None
             }
         );
 

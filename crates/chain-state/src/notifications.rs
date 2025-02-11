@@ -3,7 +3,10 @@
 use auto_impl::auto_impl;
 use derive_more::{Deref, DerefMut};
 use reth_execution_types::{BlockReceipts, Chain};
-use reth_primitives::{SealedBlockWithSenders, SealedHeader};
+use reth_primitives::{
+    botanix::peg_contract::{PeginMeta, PegoutWithId},
+    SealedBlockWithSenders, SealedHeader,
+};
 use std::{
     pin::Pin,
     sync::Arc,
@@ -73,6 +76,10 @@ pub enum CanonStateNotification {
     Commit {
         /// The newly added chain segment.
         new: Arc<Chain>,
+        /// Pegins
+        pegins: Option<Vec<PeginMeta>>,
+        /// Pegouts
+        pegouts: Option<Vec<PegoutWithId>>,
     },
     /// A chain segment was reverted or reorged.
     ///
@@ -103,7 +110,7 @@ impl CanonStateNotification {
     /// Get the newly imported chain segment, if any.
     pub fn committed(&self) -> Arc<Chain> {
         match self {
-            Self::Commit { new } | Self::Reorg { new, .. } => new.clone(),
+            Self::Commit { new, .. } | Self::Reorg { new, .. } => new.clone(),
         }
     }
 
@@ -113,7 +120,7 @@ impl CanonStateNotification {
     /// 1 new block.
     pub fn tip(&self) -> &SealedBlockWithSenders {
         match self {
-            Self::Commit { new } | Self::Reorg { new, .. } => new.tip(),
+            Self::Commit { new, .. } | Self::Reorg { new, .. } => new.tip(),
         }
     }
 

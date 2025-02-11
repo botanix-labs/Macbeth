@@ -1131,7 +1131,11 @@ where
         let chain_notification = if new_canon_chain.fork_block().hash == old_tip.hash {
             // Commit new canonical chain to database.
             self.commit_canonical_to_database(new_canon_chain.clone(), &mut durations_recorder)?;
-            CanonStateNotification::Commit { new: Arc::new(new_canon_chain) }
+            CanonStateNotification::Commit {
+                new: Arc::new(new_canon_chain),
+                pegins: None,
+                pegouts: None,
+            }
         } else {
             // It forks to canonical block that is not the tip.
             let canon_fork: BlockNumHash = new_canon_chain.fork_block();
@@ -1177,7 +1181,11 @@ where
             } else {
                 // error here to confirm that we are reverting nothing from db.
                 error!(target: "blockchain_tree", %block_hash, "Nothing was removed from database");
-                CanonStateNotification::Commit { new: Arc::new(new_canon_chain) }
+                CanonStateNotification::Commit {
+                    new: Arc::new(new_canon_chain),
+                    pegins: None,
+                    pegouts: None,
+                }
             }
         };
 
@@ -2082,12 +2090,12 @@ mod tests {
         // make block1 canonical
         tree.make_canonical(block1.hash()).unwrap();
         // check notification
-        assert_matches!(canon_notif.try_recv(), Ok(CanonStateNotification::Commit{ new}) if *new.blocks() == BTreeMap::from([(block1.number,block1.clone())]));
+        assert_matches!(canon_notif.try_recv(), Ok(CanonStateNotification::Commit{ new, ..}) if *new.blocks() == BTreeMap::from([(block1.number,block1.clone())]));
 
         // make block2 canonicals
         tree.make_canonical(block2.hash()).unwrap();
         // check notification.
-        assert_matches!(canon_notif.try_recv(), Ok(CanonStateNotification::Commit{ new}) if *new.blocks() == BTreeMap::from([(block2.number,block2.clone())]));
+        assert_matches!(canon_notif.try_recv(), Ok(CanonStateNotification::Commit{ new, ..}) if *new.blocks() == BTreeMap::from([(block2.number,block2.clone())]));
 
         // Trie state:
         // b2 (canonical block)
@@ -2317,7 +2325,7 @@ mod tests {
 
         // check notification.
         assert_matches!(canon_notif.try_recv(),
-            Ok(CanonStateNotification::Commit{ new })
+            Ok(CanonStateNotification::Commit{ new, .. })
             if *new.blocks() == BTreeMap::from([(block2.number,block2.clone())]));
 
         // insert unconnected block2b

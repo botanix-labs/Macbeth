@@ -307,7 +307,8 @@ where
             while let Ok(ref notification) = canon_state_notifs.try_recv() {
                 info!(target: "consensus::authority::frost_task::start_task", "canon state notification received for block number {:?}", notification.tip().number);
                 match notification {
-                    CanonStateNotification::Commit { new } => {
+                    // TODO(scott): handle pegins/pegouts
+                    CanonStateNotification::Commit { new, pegins: _, pegouts: _ } => {
                         let tip = new.tip();
                         // TODO(armins) make this block of code more readable by removing all the
                         // matches

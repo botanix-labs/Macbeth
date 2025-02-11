@@ -262,7 +262,7 @@ where
             debug!(target: "consensus::authority::snapshot_manager::run", "received canon event {:?}", canon_event);
 
             match canon_event {
-                CanonStateNotification::Commit { new } => {
+                CanonStateNotification::Commit { new, .. } => {
                     // All canonical chains events right now have a single block
                     // TODO: costly clone. Can we avoid this?
                     let block_with_senders = new.first().clone().unseal();
