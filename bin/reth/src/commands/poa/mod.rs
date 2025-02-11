@@ -551,20 +551,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             BlockchainProvider2::with_latest(provider_factory.clone(), latest_sealed_header)
                 .expect("blockchain db to exist");
 
-        let btc_server_client = match btc_server_factory.clone() {
-            Some(btc_server_factory) => {
-                Some(btc_server_factory.build_and_connect().await.expect("can connect to bitcoind"))
-            }
-            None => None,
-        };
-
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(1);
-        let mut abci_driver = ABCIDriver::new(
-            btc_server_client,
-            driver_rx,
-            provider_factory.clone(),
-            blockchain_db.clone(),
-        );
+        let mut abci_driver =
+            ABCIDriver::new(driver_rx, provider_factory.clone(), blockchain_db.clone());
 
         // check Minting.sol deployed bytecode matches known bytecode
         info!(target: "reth::cli", "Checking minting contract bytecode");
