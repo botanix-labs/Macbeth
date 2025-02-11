@@ -21,12 +21,10 @@ macro_rules! run_test {
         } else {
             "FullRun"
         };
-        $self.destroy_local_context().await;
         match $self.create_new_local_context($create_test_config).await {
             Ok(_) => { }
             Err(err) => {
                 error!("Error creating local context {:?}", err);
-                $self.destroy_local_context().await;
             }
         }
 
@@ -35,19 +33,16 @@ macro_rules! run_test {
             result = $module::$scope::$test_name($self $(, $arg )*) => match result {
                 Ok(_) => {
                     info!("({}) {} {} ({}ms)", purple(test_type), cyan(test), green("\u{2713} PASSED"), elapsed());
-                    $self.destroy_local_context().await;
                 }
                 Err(err) => {
                     error!("({}) {} {} ({}ms): {}", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed(), err);
                     $self.outcomes.push(crate::suite::Outcome::Failed);
-                    $self.destroy_local_context().await;
                 }
             },
 
             _ = &mut timer => {
                 error!("({}) {} {} ({}ms): timeout", purple(test_type), red(test), red("\u{2718} FAILED"), elapsed());
                 $self.outcomes.push(crate::suite::Outcome::Failed);
-                $self.destroy_local_context().await;
             }
         }
     }};

@@ -1,6 +1,7 @@
 use tokio::{
     signal::unix::{signal, SignalKind},
     sync::{broadcast, OnceCell},
+    task::JoinHandle,
 };
 use tracing::info;
 
@@ -23,9 +24,9 @@ impl StopHandle {
         Self { sender, receiver, shutdown_initiated: OnceCell::new() }
     }
 
-    pub fn spawn_signal_listener(&self) {
+    pub fn spawn_signal_listener(&self) -> JoinHandle<()> {
         let sender = self.sender.clone();
-        tokio::spawn(async move {
+        let thread_handle = tokio::spawn(async move {
             let mut sigint = signal(SignalKind::interrupt()).expect("shutdown_listener");
             let mut sigterm = signal(SignalKind::terminate()).expect("shutdown_listener");
 
@@ -40,6 +41,7 @@ impl StopHandle {
                 }
             }
         });
+        thread_handle
     }
 
     pub async fn wait_for_signal(&mut self) -> bool {

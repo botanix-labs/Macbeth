@@ -1,7 +1,8 @@
 use super::{create_temp_working_directory, kill_process_at_port, Scope};
 use crate::{
     context::GlobalContext,
-    suite::consensus::common::{events::BITCOIND_WALLET_NAME, spawn_child_process}, utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
+    suite::consensus::common::{events::BITCOIND_WALLET_NAME, spawn_child_process},
+    utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
 use bitcoincore_rpc::RpcApi;
 use std::{fs, path::PathBuf, sync::Arc};
