@@ -9,13 +9,20 @@ use reth_db::{
     DatabaseEnv,
 };
 use reth_evm::execute::BlockExecutorProvider;
-use reth_node_core::args::StateSyncArgs;
 use reth_primitives::{BlockNumber, BlockWithSenders};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
     ProviderFactory, SnapshotReader, SnapshotWriter,
 };
 use tracing::{debug, error, info, trace, warn};
+
+// TODO(armins) this is defined in reth-node-core, we should move it to reth-consensus-authority but
+// there is a circular dependency
+/// Snapshot message format for state sync prod
+pub const SNAPSHOT_MESSAGE_FORMAT: u32 = 1;
+
+/// Snapshot message format for state sync test
+pub const SNAPSHOT_MESSAGE_FORMAT_TEST: u32 = 2;
 
 /// Snapshot size limits for state sync
 pub struct SnapshotSizeLimits {
@@ -92,7 +99,8 @@ pub struct SnapshotManager<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     compressor: DataParser,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
-    state_sync_args: StateSyncArgs,
+    snapshots_to_keep: u64,
+    snapshot_message_format: u32,
     state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_size_limits: SnapshotSizeLimits,
 }
@@ -113,18 +121,21 @@ where
         storage: Storage<EF, BF, DB>,
         compressor: DataParser,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
-        state_sync_args: StateSyncArgs,
+        snapshots_to_keep: u64,
+        snapshot_message_format: u32,
         state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     ) -> Self {
-        let snapshot_size_limits = match state_sync_args.snapshot_message_format {
+        let snapshot_size_limits = match snapshot_message_format {
+            SNAPSHOT_MESSAGE_FORMAT => SNAPSHOT_SIZE_LIMITS_PROD,
             SNAPSHOT_MESSAGE_FORMAT_TEST => SNAPSHOT_SIZE_LIMITS_TEST,
-            SNAPSHOT_MESSAGE_FORMAT_PROD => SNAPSHOT_SIZE_LIMITS_PROD,
+            _ => SNAPSHOT_SIZE_LIMITS_PROD,
         };
         Self {
             storage,
             compressor,
             provider_factory,
-            state_sync_args,
+            snapshots_to_keep,
+            snapshot_message_format,
             state_lock,
             snapshot_size_limits,
         }
@@ -346,9 +357,7 @@ where
                     )?;
 
                     // check if we need to delete older snapshots (Retention policy)
-                    if self.get_snapshots_count()? >
-                        self.state_sync_args.num_snapshots_to_keep as usize
-                    {
+                    if self.get_snapshots_count()? > self.snapshots_to_keep as usize {
                         let oldest_snapshot_height = self
                             .provider_factory
                             .get_first_snapshot_height()?

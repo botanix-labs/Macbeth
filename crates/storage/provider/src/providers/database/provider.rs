@@ -3789,8 +3789,6 @@ impl<TX: DbTx> SnapshotReader for DatabaseProvider<TX> {
             .map(|(_, snapshot)| (snapshot.size(), snapshot.chunk_ids().to_vec()))
             .unwrap_or_default();
 
-        info!(">>>>>>>>>>> chunk ids: {:?}", chunk_ids);
-
         let chunks_size = if chunk_ids.is_empty() {
             0
         } else {

@@ -46,6 +46,7 @@ pub enum WalletStateSyncError {
     #[error("Failed to decompress utxo set data {0}")]
     /// Prost error
     Prost(#[from] ProstError),
+    /// Data parser error
     #[error("Data Parser Error: {0}")]
     DataParser(#[from] DataParserError),
     #[error("Failed to generate utxo merkel root {0}")]

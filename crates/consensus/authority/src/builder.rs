@@ -315,7 +315,8 @@ where
             storage.clone(),
             parser.clone(),
             provider_factory,
-            state_sync,
+            state_sync.num_snapshots_to_keep,
+            state_sync.snapshot_message_format,
             Arc::clone(&snapshot_manager_state_lock),
         ));
 
