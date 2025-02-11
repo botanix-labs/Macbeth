@@ -48,7 +48,7 @@ impl ExExNotification {
 impl From<CanonStateNotification> for ExExNotification {
     fn from(notification: CanonStateNotification) -> Self {
         match notification {
-            CanonStateNotification::Commit { new } => Self::ChainCommitted { new },
+            CanonStateNotification::Commit { new, .. } => Self::ChainCommitted { new },
             CanonStateNotification::Reorg { old, new } => Self::ChainReorged { old, new },
         }
     }
