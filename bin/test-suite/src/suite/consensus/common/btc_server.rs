@@ -94,7 +94,7 @@ fn spawn_btc_server_process(
         "--fall-back-fee-rate-sat-per-vbyte",
         "5",
     ];
-    
+
     Ok(SpawnedBtcServerProcess {
         child_process: spawn_child_process(Scope::BtcServer(id), command, args, working_directory)?,
         db_path,

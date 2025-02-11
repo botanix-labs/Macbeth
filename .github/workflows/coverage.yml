@@ -1,13 +1,8 @@
 name: Botanix Coverage
 
 on:
-  pull_request:
-  merge_group:
-    branches:
-      - main
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: '0 0 * * *'
 
 env:
   RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
