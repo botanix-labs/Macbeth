@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
             std::process::exit(0);
         }
         Err(err) => {
-            it_warn_print!("Testing failed: {}", err);
+            it_warn_print!("Testing failed: ", err);
             std::process::exit(1);
         }
     }
