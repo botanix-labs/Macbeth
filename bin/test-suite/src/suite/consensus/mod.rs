@@ -725,7 +725,6 @@ impl Suite for ConsensusIntegrationTestSuite {
             let spawned_bitcoind_process = bitcoind_node.spawn_service()?;
             tokio::time::sleep(Duration::from_secs(6)).await;
 
-
             let bitcoind_factory = BitcoindClientFactory::new(BitcoindConfig::new(
                 self.global_context.bitcoind_url.clone(),
                 self.global_context.bitcoind_user.clone(),

@@ -34,7 +34,7 @@ impl TestServer {
 
     async fn run(&self, test_to_run: String) -> Result<(), Error> {
         let mut stop_handle = StopHandle::new();
-        stop_handle.spawn_signal_listener();
+        let signal_listener = stop_handle.spawn_signal_listener();
         let mut test_suite = self.create_consensus_test_suite();
 
         tokio::select! {
@@ -52,7 +52,9 @@ impl TestServer {
                     if outcomes.iter().any(|outcome| outcome == &Outcome::Failed) {
                         return Err(Error::TestRunFailed);
                     }
-                Ok(())
+                    signal_listener.abort();
+                    test_suite.destroy_local_context().await;
+                    Ok(())
             } => { return res; },
         }
     }
