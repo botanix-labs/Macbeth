@@ -579,6 +579,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             error!(target: "reth::cli", "{}", e);
             panic!("{}", e);
         }
+        drop(state_provider);
 
         let blob_store = InMemoryBlobStore::default();
         let validator =
