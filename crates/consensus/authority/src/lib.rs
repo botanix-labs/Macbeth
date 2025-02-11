@@ -54,7 +54,6 @@ mod prost_parser;
 mod signing;
 pub mod snapshot_manager;
 pub mod utils;
-pub mod wallet_state_sync;
 pub use builder::AuthorityConsensusBuilder;
 pub mod metrics;
 pub mod random_source_provider;
