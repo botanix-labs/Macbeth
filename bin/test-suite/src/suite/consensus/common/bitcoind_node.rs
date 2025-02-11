@@ -22,6 +22,7 @@ pub enum TestSignal {
 pub struct SpawnedBitcoindProcess {
     pub child_process: Child,
     pub port: u16,
+    pub working_directory: PathBuf,
 }
 
 impl SpawnedBitcoindProcess {
@@ -29,6 +30,10 @@ impl SpawnedBitcoindProcess {
         // kill the process
         let _ = self.child_process.kill().await;
         kill_process_at_port(self.port);
+
+        if let Err(e) = std::fs::remove_dir_all(&self.working_directory) {
+            warn!("Couldn't remove bitcoind db dir at {}: {}", self.working_directory.display(), e);
+        }
     }
 
     pub async fn destroy_all_sync(&self) {
@@ -94,6 +99,7 @@ impl BitcoindNodeConfig {
                 &self.working_directory,
             )?,
             port: 18443, // Note: using default port
+            working_directory: self.working_directory.clone(),
         })
     }
 }
