@@ -188,7 +188,7 @@ pub async fn batch_pegins(
         let bitcoin_block_height = conf_block_info.height;
         let meta = PeginMeta {
             version: 0,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
+            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
             address: eth_account,
             aggregate_publickey: agg_pk,
             tx: pegin_tx.clone(),
@@ -277,7 +277,7 @@ pub async fn batch_pegins(
         let utxo = utxos.iter().find(|utxo| {
             bitcoin::Txid::from_slice(utxo.outpoint.as_ref().unwrap().txid.as_slice())
                 .expect("valid txid") ==
-                pegin.meta[0].tx.txid()
+                pegin.meta[0].tx.compute_txid()
         });
         assert!(utxo.is_some());
     }

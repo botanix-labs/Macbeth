@@ -1,9 +1,9 @@
 use crate::{
     comet_bft::abci::{ABCIClientBuilder, ABCIDriverMessage},
-    compressor::Compressor,
     frost_task::FrostTask,
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
+    snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
     wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
@@ -13,6 +13,7 @@ use btcserverlib::extended_client::{
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::ChainSpec;
+use reth_data_parser::{DataParser, SerializationType};
 use reth_db::DatabaseEnv;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
@@ -20,19 +21,24 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_network_p2p::{BodiesClient, HeadersClient};
+use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonStateSubscriptions, ProviderFactory, StateProviderFactory,
+    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
+    SnapshotWriter, StateProviderFactory,
 };
 
 use reth_tasks::TaskExecutor;
-use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::RwLock;
+use std::{
+    net::SocketAddr,
+    sync::{Arc, RwLock},
+};
+use tokio::sync::RwLock as TokioRwLock;
 use tracing::info;
 
-pub(crate) type BitcoinCheckpoint = Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>;
+pub(crate) type BitcoinCheckpoint = Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>;
 
 /// Builder type for configuring the setup
 #[allow(dead_code)]
@@ -40,7 +46,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Sour
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
     btc_server_factory: Option<GrpcClientFactory>,
-    bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>>,
+    bitcoin_block_header: Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>,
     network_handle: NetworkHandle,
     network_client: NetworkClient,
     frost_handle: Option<ToFrostMan>,
@@ -52,6 +58,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Sour
     metrics: Arc<AuthorityMetrics>,
     abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    state_sync: StateSyncArgs,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -69,7 +76,14 @@ impl<EF, BF, DB, ToFrostMan, NetworkClient, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
-    DB: BlockReaderIdExt + StateProviderFactory + CanonStateSubscriptions + Clone + 'static,
+    DB: BlockReaderIdExt
+        + StateProviderFactory
+        + Clone
+        + SnapshotReader
+        + SnapshotWriter
+        + CanonChainTracker
+        + CanonStateSubscriptions
+        + 'static,
     NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
@@ -98,6 +112,7 @@ where
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
         random_source_provider: Source,
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
+        state_sync: StateSyncArgs,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
@@ -183,6 +198,7 @@ where
             metrics: Arc::new(AuthorityMetrics::default()),
             abci_driver_tx,
             provider_factory,
+            state_sync,
         })
     }
 
@@ -194,6 +210,7 @@ where
     ) -> (
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
+        Option<SnapshotManager<EF, BF, DB>>,
     )
     where
         BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
@@ -215,10 +232,11 @@ where
             metrics,
             abci_driver_tx,
             provider_factory,
+            state_sync,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let chain_spec = storage.chain_spec.clone();
-        let compressor = Compressor::new();
+        let parser = DataParser::default().with_serialization_type(SerializationType::Postcard);
 
         let btc_server_client: Option<BtcServerClient> = async {
             if is_fed_node {
@@ -243,7 +261,7 @@ where
                     storage.clone(),
                     btc_server.clone(),
                     frost_handle.clone().expect("Requires frost handle"),
-                    compressor.clone(),
+                    parser.clone(),
                     Arc::clone(&metrics),
                 );
                 Some(wallet_state_sync_engine)
@@ -264,13 +282,16 @@ where
                 frost_handle.clone().expect("Requires frost handle"),
                 frost_config.clone().expect("frost config exists"),
                 storage.clone(),
-                compressor,
+                parser.clone(),
                 random_source_provider,
                 Arc::clone(&metrics),
             );
 
             frost_task = Some(task);
         }
+
+        let snapshot_manager_state_lock =
+            Arc::new(RwLock::new(SnapshotManagerStateLock::default()));
 
         // all nodes will have an abci client builder
         let abci_client_builder = Some(ABCIClientBuilder::new(
@@ -281,10 +302,24 @@ where
             is_fed_node,
             Arc::clone(&metrics),
             task_executor.clone(),
+            parser.clone(),
             abci_driver_tx,
-            provider_factory,
+            provider_factory.clone(),
+            Arc::clone(&snapshot_manager_state_lock),
+            state_sync.snapshot_message_format,
         ));
 
-        (frost_task, abci_client_builder)
+        let snapshot_manager_state_lock =
+            Arc::new(RwLock::new(SnapshotManagerStateLock::default()));
+        let snapshot_manager = Some(SnapshotManager::new(
+            storage.clone(),
+            parser.clone(),
+            provider_factory,
+            state_sync.num_snapshots_to_keep,
+            state_sync.snapshot_message_format,
+            Arc::clone(&snapshot_manager_state_lock),
+        ));
+
+        (frost_task, abci_client_builder, snapshot_manager)
     }
 }

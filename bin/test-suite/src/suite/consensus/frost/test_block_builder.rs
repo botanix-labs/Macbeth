@@ -1,20 +1,14 @@
-use bitcoincore_rpc::RpcApi;
 use ethers::types::H256;
-use reth::primitives::public_key_to_address;
 use reth_primitives::extra_data_header::ExtraDataHeader;
 
-use std::{collections::HashSet, str::FromStr, time::Duration};
+use std::{collections::HashSet, str::FromStr};
 
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::{
-            events::{BITCOIND_WALLET_NAME, SEND_AMOUNT},
-            poa_node::Notifications,
-        },
+        common::{events::SEND_AMOUNT, poa_node::Notifications},
         ConsensusIntegrationTestSuite,
     },
-    utils::generate_blocks,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -30,11 +24,11 @@ pub async fn block_builder(
         .clone();
     let mut rx = suite.local_context.poa_notification.as_ref().expect("poa notifs").subscribe();
 
-    // take the first member as the inturn member
-    let inturn_member_index = 0;
+    // take the first member as the target member
+    let target_member_index = 0;
 
     // assign targeted fed member
-    let targeted_fed_member = test_fed_members.get(&(inturn_member_index as u16)).cloned().unwrap();
+    let targeted_fed_member = test_fed_members.get(&(target_member_index as u16)).cloned().unwrap();
 
     // create a minting contract instance
     let botanix_eth_client =
@@ -83,7 +77,7 @@ pub async fn block_builder(
             it_info_print!("Block receipts hashes ?", block_receipt_hashes);
 
             if block_producer_address.is_none() {
-                let mut extra_data = canon_state_notification.block.extra_data.0.to_vec();
+                let extra_data = canon_state_notification.block.extra_data.0.to_vec();
                 let edh = ExtraDataHeader::deserialize(&mut extra_data.as_slice()).unwrap();
                 block_producer_address = Some(edh.block_producer_address);
             }
@@ -100,7 +94,7 @@ pub async fn block_builder(
     }
 
     // Check that all members accepted the block
-    for (index, fed_member_config) in test_fed_members.iter() {
+    for (_index, _fed_member_config) in test_fed_members.iter() {
         // verify 80/20 block reward split is correct
         let addr = reth_primitives::Address::from_str(&suite.global_context.botanix_fee_recipient)
             .expect("valid eth address");

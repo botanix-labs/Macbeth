@@ -4,13 +4,13 @@ use crate::{
 };
 use client::SigningStatus;
 use reth_primitives::B256;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 pub const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
 pub const SEND_AMOUNT: u64 = 1; // = 1 ether
 
 pub async fn await_dkg(
-    fed_members: &mut HashMap<u16, FederationMemberTestConfig>,
+    fed_members: &mut BTreeMap<u16, FederationMemberTestConfig>,
     rx: &mut tokio::sync::broadcast::Receiver<Notifications>,
 ) {
     let mut pub_keys = vec![];

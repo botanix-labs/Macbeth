@@ -17,10 +17,12 @@ pub struct GlobalContext {
     pub dry_run: bool,
     pub fed_instances: u16,
     pub rpc_instances: u16,
+    pub syncing_instances: u16,
     pub run_suite: RunSuite,
     pub timeout: u64,
     pub min_signers: u16,
     pub max_signers: u16,
+    pub num_snapshots_to_keep: u64,
     pub btc_network: String,
     pub bitcoind_url: Url,
     pub bitcoind_user: String,
@@ -37,7 +39,7 @@ impl GlobalContext {
         _config.from_envs();
 
         // compute instances and min/max signers
-        let frost_max_signers = args.max_signers;
+        let frost_max_signers = args.max_signers + args.syncing_nodes;
         let fed_instances = frost_max_signers; // this is the total number of instances to be spawned (poa nodes and btc servers)
         let frost_min_signers = ((frost_max_signers - 1).min(args.min_signers)).max(2); //  value must be in the bounds: [2; value; max_signers - 1]
         assert!(frost_max_signers >= frost_min_signers, "frost signers rule violated");
@@ -47,10 +49,12 @@ impl GlobalContext {
             dry_run: args.dry_run,
             fed_instances,
             rpc_instances: args.rpc_nodes,
+            syncing_instances: args.syncing_nodes,
             run_suite: args.run_suite,
             timeout: args.timeout,
             min_signers: frost_min_signers,
             max_signers: frost_max_signers,
+            num_snapshots_to_keep: args.num_snapshots_to_keep,
             btc_network: BTC_NETWORK.to_string(),
             bitcoind_url: BITCOIND_URL.parse().context("Failed to parse BITCOIND_URL to an Url")?,
             bitcoind_user: BITCOIND_USER.to_string(),

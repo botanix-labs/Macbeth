@@ -4,11 +4,17 @@ use crate::{
     traits::{BlockSource, ReceiptProvider},
     BlockHashReader, BlockNumReader, BlockReader, ChainSpecProvider, DatabaseProviderFactory,
     EvmEnvProvider, HeaderProvider, HeaderSyncGap, HeaderSyncGapProvider, ProviderError,
-    PruneCheckpointReader, RequestsProvider, StageCheckpointReader, StateProviderBox,
-    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WithdrawalsProvider,
+    PruneCheckpointReader, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
+    StateProviderBox, StaticFileProviderFactory, TransactionVariant, TransactionsProvider,
+    WithdrawalsProvider,
 };
 use reth_chainspec::{ChainInfo, ChainSpec, EthChainSpec};
-use reth_db::{init_db, mdbx::DatabaseArguments, DatabaseEnv};
+use reth_db::{
+    init_db,
+    mdbx::DatabaseArguments,
+    models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
+    DatabaseEnv,
+};
 use reth_db_api::{database::Database, models::StoredBlockBodyIndices};
 use reth_errors::{RethError, RethResult};
 use reth_evm::ConfigureEvmEnv;
@@ -258,6 +264,152 @@ impl<DB: Database> HeaderProvider for ProviderFactory<DB> {
             |range, predicate| self.provider()?.sealed_headers_while(range, predicate),
             predicate,
         )
+    }
+}
+
+impl<DB: Database> SnapshotReader for ProviderFactory<DB> {
+    fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>> {
+        self.provider()?.get_snapshots()
+    }
+
+    fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>> {
+        self.provider()?.get_snapshot_by_id(snapshot_id)
+    }
+
+    fn get_last_snapshot_sync_id(&self) -> ProviderResult<Option<SnapshotSyncId>> {
+        self.provider()?.get_last_snapshot_sync_id()
+    }
+
+    fn get_snapshot_sync_by_height(&self, height: u64) -> ProviderResult<Option<SnapshotSync>> {
+        self.provider()?.get_snapshot_sync_by_height(height)
+    }
+
+    fn get_snapshot_sync_by_id(&self, id: u64) -> ProviderResult<Option<SnapshotSync>> {
+        self.provider()?.get_snapshot_sync_by_id(id)
+    }
+
+    fn get_chunk_by_id(
+        &self,
+        chunk_id: reth_db::models::ChunkId,
+    ) -> ProviderResult<Option<SnapshotChunk>> {
+        self.provider()?.get_chunk_by_id(chunk_id)
+    }
+
+    fn get_chunk_size(&self, chunk_id: reth_db::models::ChunkId) -> ProviderResult<usize> {
+        self.provider()?.get_chunk_size(chunk_id)
+    }
+
+    fn get_snapshot_id_by_block_id(
+        &self,
+        block_id: BlockNumber,
+    ) -> ProviderResult<Option<SnapshotId>> {
+        self.provider()?.get_snapshot_id_by_block_id(block_id)
+    }
+
+    fn get_chunk_block_number(&self, chunk_id: ChunkId) -> ProviderResult<Option<BlockNumber>> {
+        self.provider()?.get_chunk_block_number(chunk_id)
+    }
+
+    fn get_last_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        self.provider()?.get_last_snapshot_height()
+    }
+
+    fn get_first_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        self.provider()?.get_first_snapshot_height()
+    }
+
+    fn get_snapshot_size(&self, snapshot_id: SnapshotId) -> ProviderResult<usize> {
+        self.provider()?.get_snapshot_size(snapshot_id)
+    }
+
+    fn get_snapshots_count(&self) -> ProviderResult<usize> {
+        self.provider()?.get_snapshots_count()
+    }
+
+    fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        self.provider()?.get_last_chunk_id()
+    }
+
+    fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        self.provider()?.get_first_chunk_id()
+    }
+}
+
+impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
+    fn create_new_snapshot_sync(
+        &self,
+        block_id: BlockNumber,
+        snapshot_hash: B256,
+        total_chunks: u64,
+        format: u64,
+    ) -> ProviderResult<SnapshotId> {
+        self.provider_rw()?.create_new_snapshot_sync(block_id, snapshot_hash, total_chunks, format)
+    }
+
+    fn create_new_snapshot(
+        &self,
+        block_id: BlockNumber,
+        block_hash: B256,
+    ) -> ProviderResult<SnapshotId> {
+        self.provider_rw()?.create_new_snapshot(block_id, block_hash)
+    }
+
+    fn append_to_chunk(
+        &self,
+        chunk_id: ChunkId,
+        block_number: BlockNumber,
+        data: Vec<u8>,
+    ) -> ProviderResult<()> {
+        self.provider_rw()?.append_to_chunk(chunk_id, block_number, data)
+    }
+
+    fn create_new_chunk(
+        &self,
+        snapshot_id: SnapshotId,
+        block_id: BlockNumber,
+        chunk_data: Vec<u8>,
+    ) -> ProviderResult<SnapshotId> {
+        self.provider_rw()?.create_new_chunk(snapshot_id, block_id, chunk_data)
+    }
+    fn update_snapshot(
+        &self,
+        snapshot_id: SnapshotId,
+        block_id: BlockNumber,
+        chunk_id: ChunkId,
+    ) -> ProviderResult<()> {
+        self.provider_rw()?.update_snapshot(snapshot_id, block_id, chunk_id)
+    }
+
+    fn update_snapshot_sync(
+        &self,
+        snapshot_sync_id: SnapshotSyncId,
+        updated_snapshot: SnapshotSync,
+    ) -> ProviderResult<()> {
+        self.provider_rw()?.update_snapshot_sync(snapshot_sync_id, updated_snapshot)
+    }
+
+    fn insert_block_snapshot_id_mapping(
+        &self,
+        block_id: BlockNumber,
+        snapshot_id: SnapshotId,
+    ) -> ProviderResult<()> {
+        self.provider_rw()?.insert_block_snapshot_id_mapping(block_id, snapshot_id)
+    }
+
+    fn remove_snapshots(&self, range: RangeInclusive<SnapshotId>) -> ProviderResult<()> {
+        self.provider_rw()?.remove_snapshots(range)
+    }
+
+    fn remove_oldest_snapshot(&self) -> ProviderResult<()> {
+        self.provider_rw()?.remove_oldest_snapshot()
+    }
+
+    fn remove_chunks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        self.provider_rw()?.remove_chunks(range)
+    }
+
+    fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        self.provider_rw()?.delete_chunks_in_blocks(range)
     }
 }
 

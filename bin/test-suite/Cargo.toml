@@ -50,6 +50,8 @@ reth-chainspec = { workspace = true }
 reth-cli-commands = { workspace = true }
 reth-cli-runner = { workspace = true }
 reth-consensus = { workspace = true }
+reth-data-parser = { workspace = true }
+reth-db = { workspace = true, features = ["mdbx"] }
 reth-network-peers = { workspace = true }
 reth-node-core = { workspace = true }
 reth-primitives = { workspace = true, features = ["secp256k1"] }

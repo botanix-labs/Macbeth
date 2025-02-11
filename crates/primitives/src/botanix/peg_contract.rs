@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use crate::{botanix::utils::AmountExt, Address};
 use bitcoin::{
     self,
     block::Header,
@@ -18,8 +19,6 @@ use ethers::types::U256;
 use frost_secp256k1_tr as frost;
 use secp256k1::PublicKey;
 use thiserror::Error;
-
-use crate::{botanix::utils::AmountExt, Address};
 
 const PEGIN_META_VERSION: u32 = 0;
 const _PEGOUT_META_VERSION: u32 = 0;
@@ -74,7 +73,7 @@ impl PeginData {
             }
 
             // then check that the merkle proof was indeed for the pegin tx
-            if pegin.tx.txid() != pegin.outpoint.txid {
+            if pegin.tx.compute_txid() != pegin.outpoint.txid {
                 return Err(PeginDataError::Invalid("invalid tx or outpoint: txid"));
             }
             if pegin.tx.output.len() < pegin.outpoint.vout as usize {

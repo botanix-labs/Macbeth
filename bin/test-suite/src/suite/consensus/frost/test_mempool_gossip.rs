@@ -58,7 +58,8 @@ pub async fn test_mempool_gossip(
             if block_receipt_hashes.contains(&tx_receipt.transaction_hash) {
                 tx_hashes_set.insert(canon_state_notification.engine_index);
             }
-            if tx_hashes_set.len() == test_fed_members.len() {
+            let syncing_instances = suite.global_context.syncing_instances as usize;
+            if tx_hashes_set.len() == test_fed_members.len() - syncing_instances {
                 return Ok(());
             }
         }

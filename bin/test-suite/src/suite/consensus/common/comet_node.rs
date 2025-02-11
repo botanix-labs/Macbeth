@@ -10,7 +10,7 @@ use reth_chainspec::BOTANIX_TESTNET;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::ExitStatus,
@@ -108,6 +108,7 @@ pub struct CometBftNodeConfig {
     pub peers_list: Vec<CometBftNodeConfig>,
     pub peer_id: String,
     pub test_signal_tx: Sender<TestSignal>,
+    pub is_state_syncing: bool,
 }
 
 impl CometBftNodeConfig {
@@ -120,6 +121,7 @@ impl CometBftNodeConfig {
         cometbft_p2p_app_port: u16,
         test_signal_tx: Sender<TestSignal>,
         working_directory: PathBuf,
+        is_state_syncing: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
@@ -131,6 +133,7 @@ impl CometBftNodeConfig {
             cometbft_rpc_app_port,
             cometbft_p2p_app_port,
             test_signal_tx,
+            is_state_syncing,
         })
     }
 
@@ -303,6 +306,49 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
         }
     }
 
+    if cometbft_node.is_state_syncing {
+        if let Some(rpc) = toml.get_mut("statesync") {
+            if let Some(enable_state_sync) = rpc.get_mut("enable") {
+                *enable_state_sync = toml::value::Value::Boolean(true);
+            }
+            if let Some(chunk_fetchers) = rpc.get_mut("chunk_fetchers") {
+                *chunk_fetchers = toml::value::Value::String("1".to_string());
+            }
+            if let Some(rpc_servers) = rpc.get_mut("rpc_servers") {
+                let rpc_state_sync_servers = cometbft_node
+                    .peers_list
+                    .iter()
+                    .map(|peer| {
+                        format!("http://localhost:{}", peer.cometbft_rpc_app_port.to_string())
+                    })
+                    .collect::<Vec<String>>()
+                    .join(",");
+                *rpc_servers = toml::value::Value::String(rpc_state_sync_servers);
+            }
+            if let Some(trust_height) = rpc.get_mut("trust_height") {
+                *trust_height = toml::value::Value::Integer(1);
+            }
+            if let Some(trust_hash) = rpc.get_mut("trust_hash") {
+                // NOTE: this hash is random and it is meant to be dynamically overwritten by the
+                // trusted hash during the test execution Using the hash for block
+                // height of 0 results in an error as the trusted height of the chain acc. to Comet
+                // cannot be set to 0 For Ref: cf. test_state_sync_dynamic.rs
+                *trust_hash = toml::value::Value::String(
+                    "7b3ca33b44aee2b296253fa69e1b2b74789655a8aacb7d53a29c397cc8a9b379".to_string(),
+                );
+            }
+
+            if let Some(discovery_time) = rpc.get_mut("discovery_time") {
+                // must be at least 5s
+                *discovery_time = toml::value::Value::String("5s".to_string());
+            }
+
+            if let Some(chunk_request_timeout) = rpc.get_mut("chunk_request_timeout") {
+                *chunk_request_timeout = toml::value::Value::String("10s".to_string());
+            }
+        }
+    }
+
     if let Some(consensus) = toml.get_mut("consensus") {
         if let Some(timeout_propose) = consensus.get_mut("timeout_propose") {
             *timeout_propose = toml::value::Value::String("8s".to_string());
@@ -321,17 +367,48 @@ fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> 
     Ok(())
 }
 
+pub fn update_config_toml_with_trusted_height_and_hash(
+    cometbft_node: &CometBftNodeConfig,
+    trusted_height: i64,
+    trusted_hash: &str,
+) -> anyhow::Result<()> {
+    let config_file =
+        Path::new(&cometbft_node.working_directory).join("config").join("config.toml");
+    let mut toml: toml::Value = toml::from_str(&fs::read_to_string(&config_file)?)
+        .context("Unable to parse toml config file")?;
+    if cometbft_node.is_state_syncing {
+        if let Some(rpc) = toml.get_mut("statesync") {
+            if let Some(trust_height) = rpc.get_mut("trust_height") {
+                *trust_height = toml::value::Value::Integer(trusted_height);
+            }
+            if let Some(trust_hash) = rpc.get_mut("trust_hash") {
+                *trust_hash = toml::value::Value::String(trusted_hash.to_string());
+            }
+        }
+    }
+
+    // Serialize the modified object and write it back to the file
+    let updated_content =
+        toml::to_string_pretty(&toml).context("Failed to serialize updated config.toml content")?;
+    fs::write(&config_file, updated_content).context("Failed to write updated config.toml file")?;
+
+    Ok(())
+}
+
 pub async fn create_cometbft_nodes(
     global_context: Arc<GlobalContext>,
-) -> anyhow::Result<(HashMap<u16, CometBftNodeConfig>, tokio::sync::broadcast::Sender<Notifications>)>
-{
+) -> anyhow::Result<(
+    BTreeMap<u16, CometBftNodeConfig>,
+    tokio::sync::broadcast::Sender<Notifications>,
+)> {
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
-    let mut cometbft_nodes: HashMap<u16, CometBftNodeConfig> = HashMap::new();
+    let mut cometbft_nodes: BTreeMap<u16, CometBftNodeConfig> = BTreeMap::new();
 
-    // loop and crete all cometbft nodes
+    // loop and create all cometbft nodes
+    let poa_instances = global_context.fed_instances - global_context.syncing_instances;
     for member_index in 0..global_context.fed_instances {
         // allocate ports
-        let cometbft_proxy_app_port = ABCI_PORT_BASE + 10000 * member_index;
+        let cometbft_proxy_app_port = ABCI_PORT_BASE + 1000 * member_index;
         let cometbft_rpc_app_port = cometbft_proxy_app_port - 1;
         let cometbft_p2p_app_port = cometbft_rpc_app_port - 1;
 
@@ -403,6 +480,7 @@ pub async fn create_cometbft_nodes(
             cometbft_p2p_app_port,
             test_signal_tx,
             working_directory,
+            member_index > poa_instances - 1,
         )
         .await?;
 

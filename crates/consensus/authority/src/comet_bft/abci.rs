@@ -1,41 +1,50 @@
+//! The purpose of this module is to provide a bridge between the CometBFT and the EVM application
+//! state
 use alloy_rpc_types_engine::ForkchoiceState;
+use bytes::Bytes;
 use reth_chain_state::ExecutedBlock;
 use reth_chainspec::ChainSpec;
-use reth_db::{Database, DatabaseEnv};
-use reth_provider::{BlockWriter, CanonChainTracker, ExecutionOutcome};
-use reth_trie::updates::TrieUpdates;
-/// The purpose of this module is to provide a bridge between the CometBFT and the EVM
-/// application state
+use reth_db::{
+    models::{SnapshotSync, SnapshotSyncId},
+    Database, DatabaseEnv,
+};
+use reth_provider::{
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
+};
+use reth_trie::{updates::TrieUpdates, StateRoot};
+use reth_trie_db::DatabaseStateRoot;
 use std::{
     error::Error,
     io::{self},
     sync::{Arc, RwLock},
 };
+use thiserror::Error;
+use tokio::sync::Mutex;
 
 use btcserverlib::extended_client::BtcServerExtendedApi;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::utils::unix_timestamp;
+use reth_data_parser::DataParser;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 
+use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    SealedBlock, TransactionSigned,
+    BlockNumber, BlockWithSenders, SealedBlock, TransactionSigned, B256,
 };
 use reth_provider::{
-    providers::BlockchainProvider2, BlockReaderIdExt, CanonStateNotification, Chain, ProviderError,
-    ProviderFactory, StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
+    SnapshotReader, SnapshotWriter, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
 use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
 use schnellru::{ByLength, LruMap};
-
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 
 use tendermint_abci::{Application, ServerBuilder};
 use tendermint_proto::{
@@ -44,13 +53,55 @@ use tendermint_proto::{
         ResponsePrepareProposal, ResponseProcessProposal,
     },
     v0_38::abci::{
-        RequestCheckTx, RequestFinalizeBlock, RequestInfo, RequestInitChain, ResponseCheckTx,
-        ResponseFinalizeBlock, ResponseInfo, ResponseInitChain,
+        RequestApplySnapshotChunk, RequestCheckTx, RequestFinalizeBlock, RequestInfo,
+        RequestInitChain, RequestLoadSnapshotChunk, RequestOfferSnapshot,
+        ResponseApplySnapshotChunk, ResponseCheckTx, ResponseFinalizeBlock, ResponseInfo,
+        ResponseInitChain, ResponseListSnapshots, ResponseLoadSnapshotChunk, ResponseOfferSnapshot,
+        Snapshot,
     },
 };
 
-use thiserror::Error;
-use tokio::sync::Mutex;
+impl From<&Snapshot> for SnapshotSyncStateLock {
+    fn from(snapshot: &Snapshot) -> Self {
+        let mut s = SnapshotSyncStateLock::default();
+        s.set_snapshot_height(snapshot.height as u64)
+            .set_snapshot_chunks(snapshot.chunks as u64)
+            .set_snapshot_format(snapshot.format as u64)
+            .set_snapshot_hash(Bytes::from(snapshot.hash.clone()));
+        s
+    }
+}
+
+/// Offer Snapshot Result
+enum SnapshotOfferResult {
+    Unknown = 0, // Unknown result, abort all snapshot restoration
+    Accept = 1,  // Snapshot is accepted, start applying chunks.
+    #[allow(dead_code)]
+    Abort = 2, // Abort snapshot restoration, and don't try any other snapshots.
+    #[allow(dead_code)]
+    Reject = 3, // Reject this specific snapshot, try others.
+    #[allow(dead_code)]
+    RejectFormat = 4, // Reject all snapshots with this `format`, try others.
+    #[allow(dead_code)]
+    RejectSender = 5, // Reject all snapshots from all senders of this snapshot, try others.
+}
+
+/// Apply Snapshot Results
+pub enum ApplySnapshotResult {
+    /// Unknown result, abort all snapshot restoration
+    Unknown = 0,
+    /// Chunk successfully accepted
+    Accept = 1,
+    /// Abort all snapshot restoration
+    Abort = 2,
+    /// Retry chunk (combine with refetch and reject)
+    Retry = 3,
+    /// Retry snapshot (combine with refetch and reject)
+    RetrySnapshot = 4,
+    /// Reject this snapshot, try others
+    RejectSnapshot = 5,
+}
+
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -58,8 +109,9 @@ use crate::{
     comet_bft::{
         non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
     },
-    excecution_utils::authority_execution_utils::build_and_execute,
+    excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     metrics::AuthorityMetrics,
+    snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
     utils::{call_notify_pegin, call_notify_pegout},
     AuthorityConsensus, Storage,
 };
@@ -76,8 +128,63 @@ const VERIFY_REJECT: i32 = 2;
 // Version
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Snapshot Sync State Lock
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SnapshotSyncStateLock {
+    snapshot_height: u64,
+    snapshot_hash: Bytes,
+    snapshot_chunks: u64,
+    snapshot_format: u64,
+}
+
+impl SnapshotSyncStateLock {
+    /// Set snapshot height
+    pub fn set_snapshot_height(&mut self, snapshot_id: u64) -> &mut Self {
+        self.snapshot_height = snapshot_id;
+        self
+    }
+
+    /// Set snapshot hash
+    pub fn set_snapshot_hash(&mut self, snapshot_hash: Bytes) -> &mut Self {
+        self.snapshot_hash = snapshot_hash;
+        self
+    }
+
+    /// Set snapshot chunks
+    pub fn set_snapshot_chunks(&mut self, snapshot_chunks: u64) -> &mut Self {
+        self.snapshot_chunks = snapshot_chunks;
+        self
+    }
+
+    /// Set snapshot format
+    pub fn set_snapshot_format(&mut self, snapshot_format: u64) -> &mut Self {
+        self.snapshot_format = snapshot_format;
+        self
+    }
+
+    /// Get snapshot chunks
+    pub fn get_snapshot_height(&self) -> u64 {
+        self.snapshot_height
+    }
+
+    /// Get snapshot hash
+    pub fn get_snapshot_hash(&self) -> &[u8] {
+        &self.snapshot_hash
+    }
+
+    /// Get snapshot chunks
+    pub fn get_snapshot_chunks(&self) -> u64 {
+        self.snapshot_chunks
+    }
+
+    /// Get snapshot format
+    pub fn get_snapshot_format(&self) -> u64 {
+        self.snapshot_format
+    }
+}
+
 /// Block with execution context, trie updates and botanix peg data
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockWithContext {
     /// The sealed block with peg data
     pub sealed_block_with_peg: SealedBlockWithPeg,
@@ -88,7 +195,7 @@ pub struct BlockWithContext {
 }
 
 /// ABCI client builder
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
     bitcoin_checkpoint: BitcoinCheckpoint,
@@ -96,14 +203,24 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
     is_fed_node: bool,
     metrics: Arc<AuthorityMetrics>,
+    compressor: DataParser,
     task_executor: TaskExecutor,
     abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
+    snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
+    snapshot_format: u32,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
 where
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt
+        + StateProviderFactory
+        + Clone
+        + SnapshotReader
+        + SnapshotWriter
+        + CanonChainTracker
+        + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
 {
@@ -116,8 +233,11 @@ where
         is_fed_node: bool,
         metrics: Arc<AuthorityMetrics>,
         task_executor: TaskExecutor,
+        compressor: DataParser,
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+        snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
+        snapshot_format: u32,
     ) -> Self {
         Self {
             storage,
@@ -129,10 +249,14 @@ where
             task_executor,
             abci_driver_tx,
             provider_factory,
+            compressor,
+            snapshot_manager_state_lock,
+            snapshot_sync_state_lock: Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
+            snapshot_format,
         }
     }
 
-    /// Start the ABCI server
+    /// Starts the abci client server
     pub async fn start_server<Pool: TransactionPool + Clone + 'static>(
         &self,
         task_executor: &impl TaskSpawner,
@@ -151,8 +275,12 @@ where
             self.authority_consensus.clone(),
             self.is_fed_node,
             self.metrics.clone(),
+            self.compressor.clone(),
             self.task_executor.clone(),
             self.provider_factory.clone(),
+            self.snapshot_manager_state_lock.clone(),
+            self.snapshot_sync_state_lock.clone(),
+            self.snapshot_format,
         );
 
         let server_builder = ServerBuilder::default();
@@ -200,7 +328,7 @@ enum PayloadBuilderError {
     ParentBlockDoesNotExist,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
     validator: EthTransactionValidator<DB, EthPooledTransaction>,
@@ -215,11 +343,21 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     metrics: Arc<AuthorityMetrics>,
     task_executor: TaskExecutor,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    compressor: DataParser,
+    snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
+    snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
+    snapshot_format: u32,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
 where
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt
+        + StateProviderFactory
+        + Clone
+        + SnapshotReader
+        + SnapshotWriter
+        + CanonChainTracker
+        + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -235,8 +373,12 @@ where
         authority_consensus: AuthorityConsensus,
         is_fed_node: bool,
         metrics: Arc<AuthorityMetrics>,
+        compressor: DataParser,
         task_executor: TaskExecutor,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+        snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
+        snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
+        snapshot_format: u32,
     ) -> Self {
         Self {
             storage,
@@ -250,8 +392,12 @@ where
             authority_consensus,
             is_fed_node,
             metrics,
+            compressor,
             task_executor,
             provider_factory,
+            snapshot_manager_state_lock,
+            snapshot_sync_state_lock,
+            snapshot_format,
         }
     }
 
@@ -369,9 +515,48 @@ where
     }
 }
 
+impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
+where
+    DB: BlockReaderIdExt + StateProviderFactory + SnapshotReader + SnapshotWriter + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
+    BF: BitcoindFactory + Clone + Unpin + 'static,
+    Pool: TransactionPool + Clone + 'static,
+{
+    fn create_new_snapshot_sync(
+        &self,
+        block_id: BlockNumber,
+        snapshot_hash: B256,
+        total_chunks: u64,
+        format: u64,
+    ) -> Result<u64, SnapshotManagerError> {
+        let provider_rw = self.provider_factory.provider_rw()?;
+        let snapshot_sync_id =
+            provider_rw.create_new_snapshot_sync(block_id, snapshot_hash, total_chunks, format)?;
+        provider_rw.commit()?;
+        Ok(snapshot_sync_id)
+    }
+
+    fn update_snapshot_sync(
+        &self,
+        snapshot_sync_id: SnapshotSyncId,
+        updated_snapshot: SnapshotSync,
+    ) -> Result<(), SnapshotManagerError> {
+        let provider_rw = self.provider_factory.provider_rw()?;
+        provider_rw.update_snapshot_sync(snapshot_sync_id, updated_snapshot)?;
+        provider_rw.commit()?;
+        Ok(())
+    }
+}
+
 impl<EF, BF, DB, Pool> Application for ABCIClient<EF, BF, DB, Pool>
 where
-    DB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    DB: BlockReaderIdExt
+        + StateProviderFactory
+        + Clone
+        + SnapshotReader
+        + SnapshotWriter
+        + CanonChainTracker
+        + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -397,6 +582,439 @@ where
             last_block_height: latest_header.number as i64,
             last_block_app_hash: self.application_hash(&client),
         }
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#listsnapshots
+    fn list_snapshots(&self) -> ResponseListSnapshots {
+        info!("list_snapshots request");
+        let client = self.storage.client.clone();
+        match client.get_snapshots() {
+            Ok(snapshots) => {
+                let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read()
+                else {
+                    error!("Error getting a snapshot state lock");
+                    return ResponseListSnapshots { snapshots: vec![] };
+                };
+                // filter out the snapshot that is the same as the current block as we might not be
+                // ready having all the chunks yet
+                let resp = snapshots
+                    .into_iter()
+                    .filter(|s| s.height() != snapshot_manager_state_lock.get_block_id())
+                    .fold(ResponseListSnapshots { snapshots: vec![] }, |mut acc, snapshot| {
+                        acc.snapshots.push(Snapshot {
+                            height: snapshot.height(),
+                            format: self.snapshot_format,
+                            chunks: snapshot.chunk_ids().len() as u32,
+                            hash: snapshot.get_hash().to_vec().into(),
+                            metadata: prost::bytes::Bytes::new(),
+                        });
+                        acc
+                    });
+                drop(snapshot_manager_state_lock);
+                info!(
+                    "Returned snapshots for block heights {:?}",
+                    resp.snapshots.iter().map(|s| s.height).collect::<Vec<_>>()
+                );
+                return resp;
+            }
+            Err(e) => {
+                error!("Error getting snapshots from db: {:?}", e);
+                return ResponseListSnapshots { snapshots: vec![] };
+            }
+        }
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#offersnapshot
+    fn offer_snapshot(&self, request: RequestOfferSnapshot) -> ResponseOfferSnapshot {
+        info!("offer_snapshot request {:?}", request);
+        // some other node is offering us a snapshot - we need to validate here if we want to accept
+        // it
+        if request.app_hash.is_empty() {
+            warn!("Received empty app hash in offer_snapshot request, rejecting snapshot");
+            return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+        }
+
+        let client = self.storage.client.clone();
+        if self.application_hash(&client) == request.app_hash {
+            warn!("Application hash matches, snapshot must have already been applied, rejecting snapshot");
+            return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+        }
+
+        if let Some(snapshot) = request.snapshot {
+            if snapshot.format != self.snapshot_format {
+                warn!("Received snapshot format is not supported, rejecting snapshot");
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::RejectFormat as i32 };
+            }
+
+            if snapshot.chunks == 0 {
+                warn!("Received snapshot has no chunks, rejecting snapshot");
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+            }
+
+            if snapshot.hash == prost::bytes::Bytes::default() {
+                warn!("Received snapshot has no hash (empty bytes), rejecting snapshot");
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+            }
+
+            // read the lock and make sure we are not already syncing the snapshot we are being
+            // offered
+            if let Some(snapshot_sync_state_lock) = self.snapshot_sync_state_lock.as_ref() {
+                let snapshot_sync_state_lock =
+                    snapshot_sync_state_lock.read().expect("snapshot state sync locked");
+                // we are already syncing the this snapshot
+                if snapshot_sync_state_lock.eq(&SnapshotSyncStateLock::from(&snapshot)) {
+                    drop(snapshot_sync_state_lock);
+                    // since the lock is still on the currently accepted snapshot, we must return
+                    // accept
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Accept as i32 };
+                }
+            }
+
+            // check that we should not have the block at height already
+            if let Some(_) = client.block_by_id(BlockId::number(snapshot.height)).ok().flatten() {
+                warn!("Block at height {:?} already exists, rejecting snapshot", snapshot.height);
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+            }
+
+            // get the latest header
+            let latest_header =
+                client.latest_header().expect("should have latest").expect("should have header");
+
+            // check that the latest header is less than the snapshot height
+            if latest_header.header().number > snapshot.height {
+                warn!(
+                    "Latest header height {:?} is greater than snapshot height {:?}, rejecting snapshot",
+                    latest_header.header().number, snapshot.height
+                );
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+            }
+
+            // ensure that the last sync lock is less than the newly offered height
+            if let Some(snapshot_sync_state_lock) = self.snapshot_sync_state_lock.as_ref() {
+                let snapshot_sync_state_lock_height = snapshot_sync_state_lock
+                    .read()
+                    .expect("snapshot state sync locked")
+                    .get_snapshot_height();
+                if snapshot_sync_state_lock_height >= snapshot.height {
+                    warn!(
+                            "Offered Snapshot height {:?} is less than or equal to the last locked snapshot height {:?}, rejecting snapshot",
+                            snapshot.height, snapshot_sync_state_lock_height
+                        );
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                }
+            }
+
+            match self.create_new_snapshot_sync(
+                snapshot.height,
+                B256::new(snapshot.hash.as_ref().try_into().expect("slice with incorrect length")),
+                snapshot.chunks as u64,
+                snapshot.format as u64,
+            ) {
+                Ok(_snapshot_id) => {
+                    // update the rw lock here as we now want to sync against that offered snapshot
+                    if let Some(snapshot_sync_state_lock) = self.snapshot_sync_state_lock.as_ref() {
+                        let mut snapshot_sync_state_lock =
+                            snapshot_sync_state_lock.write().expect("snapshot state sync locked");
+                        snapshot_sync_state_lock
+                            .set_snapshot_height(snapshot.height)
+                            .set_snapshot_hash(Bytes::copy_from_slice(snapshot.hash.as_ref()))
+                            .set_snapshot_chunks(snapshot.chunks as u64)
+                            .set_snapshot_format(snapshot.format as u64);
+                        drop(snapshot_sync_state_lock);
+                    }
+                    // we have accepted the snapshot already, just re-accept it
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Accept as i32 };
+                }
+                Err(e) => {
+                    error!("error persisting new snapshot sync: {:?}", e);
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Unknown as i32 };
+                }
+            }
+        }
+
+        ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 }
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#loadsnapshotchunk
+    fn load_snapshot_chunk(&self, request: RequestLoadSnapshotChunk) -> ResponseLoadSnapshotChunk {
+        info!("load_snapshot_chunk request {:?}", request);
+        let client = self.storage.client.clone();
+
+        // check if the snapshot is already applied
+        let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read() else {
+            error!("Error getting a snapshot state lock");
+            return ResponseLoadSnapshotChunk::default();
+        };
+
+        let snapshot_manager_state_lock_block_id = snapshot_manager_state_lock.get_block_id();
+        drop(snapshot_manager_state_lock);
+
+        // check that we are not being asked to load the snapshot that we are currently syncing as
+        // it might not be ready yet
+        if snapshot_manager_state_lock_block_id == request.height {
+            warn!("Received snapshot height matches current block height, rejecting snapshot as it might not be ready yet");
+            return ResponseLoadSnapshotChunk::default();
+        }
+
+        match client.get_snapshot_id_by_block_id(request.height) {
+            Ok(Some(snapshot_id)) => {
+                // now take the entire snapshot data
+                match client.get_snapshot_by_id(snapshot_id) {
+                    Ok(Some(snapshot)) => {
+                        let mapped_request_chunk = request.chunk + 1;
+                        // check if the chunk id is found in the snapshot.
+                        // NOTE: we shift by 1 since all mdbx chunks start at 1 and cometbft
+                        // numeration starts at 0
+                        if !snapshot
+                            .chunk_ids()
+                            .iter()
+                            .any(|chunk_id| mapped_request_chunk as u64 == *chunk_id)
+                        {
+                            error!(
+                                "Chunk id {:?} in snapshot with id {:?} not found",
+                                mapped_request_chunk, snapshot_id
+                            );
+                            return ResponseLoadSnapshotChunk::default();
+                        }
+
+                        match client.get_chunk_by_id(mapped_request_chunk as u64) {
+                            Ok(Some(chunk)) => {
+                                let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
+                                let compressor = self.compressor.clone();
+
+                                self.task_executor.spawn_blocking(Box::pin(async move {
+                                    let mut blocks = Vec::new();
+                                    for chunk in chunk.chunk_data() {
+                                        let block_with_sender: BlockWithSenders =
+                                            compressor.decode(chunk.as_ref()).await.unwrap();
+                                        blocks.push(block_with_sender);
+                                    }
+                                    // TODO: handle the error
+                                    let serialized_blocks =
+                                        compressor.encode(&blocks).await.unwrap();
+                                    let _ = oneshot_tx.send(serialized_blocks);
+                                }));
+
+                                let serialized_blocks = oneshot_rx.blocking_recv().unwrap();
+
+                                let res = ResponseLoadSnapshotChunk {
+                                    chunk: prost::bytes::Bytes::copy_from_slice(
+                                        serialized_blocks.as_ref(),
+                                    ),
+                                };
+
+                                res
+                            }
+                            Ok(None) => {
+                                error!("Chunk with id {:?} not found", mapped_request_chunk);
+                                ResponseLoadSnapshotChunk::default()
+                            }
+                            Err(e) => {
+                                error!(
+                                    "DB error getting chunk with id: {:?}. Error = {:?}",
+                                    mapped_request_chunk, e
+                                );
+                                ResponseLoadSnapshotChunk::default()
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        error!("Snapshot with id {:?} not found", snapshot_id);
+                        ResponseLoadSnapshotChunk::default()
+                    }
+                    Err(e) => {
+                        error!(
+                            "DB error getting snapshot with id: {:?}. Error = {:?}",
+                            snapshot_id, e
+                        );
+                        ResponseLoadSnapshotChunk::default()
+                    }
+                }
+            }
+            Ok(None) => {
+                error!("Snapshot at height {:?} not found", request.height);
+                ResponseLoadSnapshotChunk::default()
+            }
+            Err(e) => {
+                error!(
+                    "DB error getting snapshot at height: {:?}. Error = {:?}",
+                    request.height, e
+                );
+                ResponseLoadSnapshotChunk::default()
+            }
+        }
+    }
+
+    /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#applysnapshotchunk
+    fn apply_snapshot_chunk(
+        &self,
+        request: RequestApplySnapshotChunk,
+    ) -> ResponseApplySnapshotChunk {
+        info!("apply_snapshot_chunk request, index: {:?}", request.index);
+        let client = self.storage.client.clone();
+
+        // get the last snapshot sync id - there should always be one provided the offer_snapshot
+        // has already run
+        let last_snapshot_sync_id = match client.get_last_snapshot_sync_id() {
+            Ok(Some(snapshot_sync_id)) => snapshot_sync_id,
+            Ok(None) => {
+                error!("No last snapshot sync found");
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+            Err(e) => {
+                error!("Error getting last snapshot sync: {:?}", e);
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+        };
+
+        // fetch the actual snapshot sync
+        let mut snapshot = match client.get_snapshot_sync_by_id(last_snapshot_sync_id) {
+            Ok(Some(snapshot)) => snapshot,
+            Ok(None) => {
+                error!("No snapshot sync found by id");
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+            Err(e) => {
+                error!("Error getting snapshot sync by id: {:?}", e);
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+        };
+
+        // check the snapshot sync is done in sequential manner
+        info!("last applied chunk index: {:?}", snapshot.last_applied_chunk_index());
+
+        // request index will be ahead `last_applied_chunk_index` by 1 except for the first chunk
+        if snapshot.last_applied_chunk_index().saturating_sub(1) > request.index as u64 {
+            error!("Last applied chunk index is not sequential with the incoming chunk index");
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        }
+
+        // set the last applied chunk index
+        snapshot.set_last_applied_chunk_index(request.index as u64);
+
+        // update the db
+        if let Err(e) = self.update_snapshot_sync(last_snapshot_sync_id, snapshot.clone()) {
+            error!(
+                "Error updating snapshot sync {:?} in the db. error = {:?}",
+                last_snapshot_sync_id, e
+            );
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        }
+
+        // decompress and decode the snapshot chunk (= n blocks) and apply it
+        let compressor = self.compressor.clone();
+        let (compressor_task_tx, compressor_task_rx) =
+            tokio::sync::oneshot::channel::<Vec<BlockWithSenders>>();
+        self.task_executor.spawn_blocking(Box::pin(async move {
+            let blocks_with_senders: Vec<BlockWithSenders> = compressor
+                .decode(request.chunk.as_ref())
+                .await
+                // TODO: handle the error
+                .expect("Failed to deserialize and decompress block with context");
+            let _ = compressor_task_tx.send(blocks_with_senders);
+        }));
+
+        // await the response from the compressor task
+        let blocks_with_senders = compressor_task_rx
+            .blocking_recv()
+            .expect("to receive confirmation from snapshot manager");
+
+        let exec_outcome = match batch_execute(
+            blocks_with_senders.clone(),
+            &self.provider_factory,
+            self.storage.executor_factory.clone(),
+        ) {
+            Ok(exec_outcome) => exec_outcome,
+            Err(e) => {
+                error!("Error executing blocks: {:?}", e);
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+        };
+
+        let provider = match self.provider_factory.provider_rw() {
+            Ok(provider) => provider,
+            Err(e) => {
+                error!("Error getting provider: {:?}", e);
+                return ResponseApplySnapshotChunk { ..Default::default() };
+            }
+        };
+
+        let hashed_state = exec_outcome.hash_state_slow();
+        let (_state_root, trie_updates) =
+            match StateRoot::overlay_root_with_updates(provider.tx_ref(), hashed_state.clone()) {
+                Ok((state_root, trie_updates)) => (state_root, trie_updates),
+                Err(e) => {
+                    error!("Error overlaying root with updates: {:?}", e);
+                    return ResponseApplySnapshotChunk { ..Default::default() };
+                }
+            };
+
+        // seal blocks
+        let sealed_blocks_with_senders =
+            blocks_with_senders.into_iter().map(|block| block.seal_slow()).collect::<Vec<_>>();
+
+        if let Err(e) = provider.append_blocks_with_state(
+            sealed_blocks_with_senders,
+            exec_outcome,
+            hashed_state.into_sorted(),
+            trie_updates,
+        ) {
+            error!(
+                "Error appending blocks with state {:?} in the db. error = {:?}",
+                last_snapshot_sync_id, e
+            );
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        }
+
+        if let Err(e) = provider.commit() {
+            error!(
+                "Error committing db after appending blocks with state {:?} in the db. error = {:?}",
+                last_snapshot_sync_id, e
+            );
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        };
+
+        return ResponseApplySnapshotChunk {
+            result: ApplySnapshotResult::Accept as i32,
+            refetch_chunks: vec![],
+            reject_senders: vec![],
+        };
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
@@ -784,11 +1402,12 @@ where
         let sealed_block_with_senders = sealed_block_with_peg_binding.block();
 
         // We want to explicitly panic if we cannot send the commit message
+        let cbft_block_hash = cbft_block_hash.clone();
         let (commit_tx, commit_rx) = std::sync::mpsc::channel::<()>();
         let driver_tx = self.driver_tx.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
             if let Err(e) = driver_tx
-                .send(ABCIDriverMessage::CommitBlock(sealed_block_with_context, commit_tx))
+                .send(ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)))
                 .await
             {
                 error!("Error sending commit block message: {:?}", e);
@@ -796,7 +1415,6 @@ where
         }));
         let _ = commit_rx.recv().expect("to receive commit block response");
 
-        let cbft_block_hash = cbft_block_hash.clone();
         info!("Block committed: {:?}", cbft_block_hash);
         self.metrics.commet_committed_blocks.increment(1);
 
@@ -814,9 +1432,10 @@ where
 }
 
 /// ABCI driver message
+#[derive(Debug)]
 pub enum ABCIDriverMessage {
     /// Finalize a block, message includes the sealed block and the CBFT block hash
-    CommitBlock(BlockWithContext, std::sync::mpsc::Sender<()>),
+    CommitBlock((BlockWithContext, std::sync::mpsc::Sender<()>)),
     /// Exit the driver
     Exit,
 }
@@ -859,7 +1478,7 @@ where
         loop {
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
-                    ABCIDriverMessage::CommitBlock(sealed_block_with_context, commit_tx) => {
+                    ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)) => {
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
@@ -944,7 +1563,7 @@ where
                                 error!("Error notifying pegouts: {:?}", e);
                             }
                         }
-                        commit_tx.send(()).unwrap();
+                        commit_tx.send(()).expect("to send");
                     }
                     ABCIDriverMessage::Exit => {
                         break;
@@ -952,6 +1571,7 @@ where
                 }
             }
         }
+
         Ok(())
     }
 }
@@ -991,7 +1611,7 @@ mod tests {
     use tempfile::tempdir;
     use tendermint_abci::Application;
     use tendermint_proto::google::protobuf::Timestamp;
-    use tokio::sync::RwLock;
+    use tokio::sync::RwLock as TokioRwLock;
 
     /// Build the db and the ABCI client
     fn abci_client_builder() -> ABCIClient<
@@ -1052,7 +1672,7 @@ mod tests {
             .with_head_timestamp(0)
             .kzg_settings(EnvKzgSettings::Default)
             .with_additional_tasks(1)
-            .build_with_tasks(client, task_executor.clone(), blob_store.clone());
+            .build_with_tasks(client.clone(), task_executor.clone(), blob_store.clone());
 
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
@@ -1067,7 +1687,7 @@ mod tests {
             nonce: 0,
         };
         let bitcoin_checkpoint: BitcoinCheckpoint =
-            Arc::new(RwLock::new(Some((bitcoin_header, 0))));
+            Arc::new(TokioRwLock::new(Some((bitcoin_header, 0))));
 
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
@@ -1082,8 +1702,12 @@ mod tests {
             AuthorityConsensus::new(spec),
             false,
             Arc::new(AuthorityMetrics::default()),
+            DataParser::default(),
             task_executor,
             factory,
+            Arc::new(RwLock::new(SnapshotManagerStateLock::default())),
+            Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
+            1,
         );
 
         abci_client
@@ -1299,6 +1923,27 @@ mod tests {
         // this should panic bc prevrandao isn't being set in the evm env during tests
         // but all the custom code is executed successfully up to `build_and_execute`
         let _response = abci_client.finalize_block(request);
+    }
+
+    #[test]
+    fn test_snapshot_sync_state_equality() {
+        let mut s1 = SnapshotSyncStateLock::default();
+        s1.set_snapshot_height(100)
+            .set_snapshot_chunks(30)
+            .set_snapshot_format(1)
+            .set_snapshot_hash(Bytes::from("hash".as_bytes()));
+
+        let mut s2 = SnapshotSyncStateLock::default();
+        s2.set_snapshot_height(100)
+            .set_snapshot_chunks(30)
+            .set_snapshot_format(1)
+            .set_snapshot_hash(Bytes::from("hash2".as_bytes()));
+
+        assert_ne!(s1, s2);
+
+        s2.set_snapshot_hash(Bytes::from("hash".as_bytes()));
+
+        assert_eq!(s1, s2);
     }
 
     // TODO: add tests for commit + abci driver

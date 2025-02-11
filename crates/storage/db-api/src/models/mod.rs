@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod accounts;
 pub mod blocks;
+pub mod chunks;
 pub mod client_version;
 pub mod integer_list;
 pub mod sharded_key;
@@ -20,6 +21,7 @@ pub mod storage_sharded_key;
 
 pub use accounts::*;
 pub use blocks::*;
+pub use chunks::*;
 pub use client_version::ClientVersion;
 pub use reth_db_models::{AccountBeforeTx, StoredBlockBodyIndices};
 pub use sharded_key::ShardedKey;
@@ -205,6 +207,9 @@ impl_compression_for_compact!(
     SealedHeader,
     Header,
     Account,
+    Snapshot,
+    SnapshotChunk,
+    SnapshotSync,
     Log,
     Receipt,
     TxType,
@@ -297,18 +302,3 @@ macro_rules! add_wrapper_struct {
 add_wrapper_struct!((U256, CompactU256));
 add_wrapper_struct!((u64, CompactU64));
 add_wrapper_struct!((ClientVersion, CompactClientVersion));
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use reth_primitives::{
-        Account, Header, Receipt, ReceiptWithBloom, SealedHeader, TxEip1559, TxEip2930, TxEip4844,
-        TxLegacy, Withdrawals,
-    };
-    use reth_prune_types::{PruneCheckpoint, PruneMode, PruneSegment};
-    use reth_stages_types::{
-        AccountHashingCheckpoint, CheckpointBlockRange, EntitiesCheckpoint, ExecutionCheckpoint,
-        HeadersCheckpoint, IndexHistoryCheckpoint, StageCheckpoint, StageUnitCheckpoint,
-        StorageHashingCheckpoint,
-    };
-}

@@ -7,6 +7,7 @@ use client::{
     GetAllUtxosResponse, GetPendingPegoutsResponse, GetTrackedTxsResponse, ResetWalletStateRequest,
 };
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{
     manager::{FrostCommand, ToFrostManager},
@@ -18,8 +19,8 @@ use tokio::sync::mpsc::error::SendError;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-    compressor::{Compressor, Error as CompressorError, ProstMessageSerdelizer},
     metrics::AuthorityMetrics,
+    prost_parser::{ProstError, ProstMessageSerdelizer},
     utils::UtxoMerkelRootError,
     Storage,
 };
@@ -43,8 +44,11 @@ pub enum WalletStateSyncError {
     /// Peer wallet state timeout
     PeerWalletStateTimeout,
     #[error("Failed to decompress utxo set data {0}")]
-    /// Compressor error
-    CompressorError(#[from] CompressorError),
+    /// Prost error
+    Prost(#[from] ProstError),
+    /// Data parser error
+    #[error("Data Parser Error: {0}")]
+    DataParser(#[from] DataParserError),
     #[error("Failed to generate utxo merkel root {0}")]
     /// Utxo merkel root error
     UtxoMerkelRootError(#[from] UtxoMerkelRootError),
@@ -60,13 +64,13 @@ pub trait WalletStateSync {
     async fn sync_wallet_state(&self) -> Result<(), WalletStateSyncError>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 /// Engine for synchronizing wallet state
 pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
     storage: Storage<EF, BF, DB>,
     btc_server: BtcServerClient,
     to_frost_manager: ToFrostMan,
-    compressor: Compressor,
+    compressor: DataParser,
     metrics: Arc<AuthorityMetrics>,
 }
 
@@ -83,7 +87,7 @@ where
         storage: Storage<EF, BF, DB>,
         btc_server: BtcServerClient,
         to_frost_manager: ToFrostMan,
-        compressor: Compressor,
+        compressor: DataParser,
         metrics: Arc<AuthorityMetrics>,
     ) -> Self {
         Self { storage, btc_server, to_frost_manager, compressor, metrics }
@@ -141,7 +145,7 @@ where
                             } else {
                                 let utxos_decompressed = self.compressor.decompress(&utxos_compressed).await.map_err(|e| {
                                     error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress utxos {:?}", e);
-                                    WalletStateSyncError::CompressorError(e)
+                                    WalletStateSyncError::DataParser(e)
                                 })?;
                                 ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(
                                     utxos_decompressed,
@@ -159,7 +163,7 @@ where
                             } else {
                                 let tracked_txs_decompressed = self.compressor.decompress(&tracked_txs_compressed).await.map_err(|e| {
                                     error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress tracked txs {:?}", e);
-                                    WalletStateSyncError::CompressorError(e)
+                                    WalletStateSyncError::DataParser(e)
                                 })?;
                                 ProstMessageSerdelizer::<GetTrackedTxsResponse>::deserialize(
                                     tracked_txs_decompressed,
@@ -177,7 +181,7 @@ where
                             } else {
                                 let pending_pegouts_decompressed = self.compressor.decompress(&pending_pegouts_compressed).await.map_err(|e| {
                                     error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress pending pegouts {:?}", e);
-                                    WalletStateSyncError::CompressorError(e)
+                                    WalletStateSyncError::DataParser(e)
                                 })?;
                                 ProstMessageSerdelizer::<GetPendingPegoutsResponse>::deserialize(
                                     pending_pegouts_decompressed,

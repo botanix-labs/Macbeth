@@ -15,6 +15,7 @@ use futures::TryFutureExt;
 use reth_authority_consensus::{
     comet_bft::abci::ABCIDriver,
     random_source_provider::RandomSourceProvider,
+    snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
@@ -23,7 +24,7 @@ use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_network_peers::pk2id;
 use reth_node_core::{
-    args::DatadirArgs,
+    args::{DatadirArgs, StateSyncArgs},
     cli::config::BtcServerConfig,
     version::{
         BUILD_PROFILE_NAME, CARGO_PKG_VERSION, VERGEN_BUILD_TIMESTAMP, VERGEN_CARGO_FEATURES,
@@ -165,6 +166,10 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[command(flatten)]
     pub network: NetworkArgs,
 
+    /// All state sync related arguments
+    #[command(flatten)]
+    pub state_sync: StateSyncArgs,
+
     /// All rpc related arguments
     #[command(flatten)]
     pub rpc: RpcServerArgs,
@@ -249,6 +254,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             abci_port,
             cometbft_rpc_port,
             cometbft_rpc_host,
+            state_sync,
         } = self;
 
         // Load reth config which is a bit different than cli config
@@ -277,12 +283,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             dev: Default::default(),
             pruning: Default::default(),
             builder: PayloadBuilderArgs::default(),
+            state_sync: state_sync.clone(),
         };
 
         let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
         // prioritize the bitcoind config path from cli args
         if let Some(bitcoind_config_path) = bitcoind_config_path {
-            // node_config.rpc.bitcoind = Some(bitcoind_config_path);
             let config =
                 confy::load_path::<BitcoindArgs>(&bitcoind_config_path).wrap_err_with(|| {
                     format!("Could not load config file {:?}", bitcoind_config_path)
@@ -728,34 +734,46 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_host(cometbft_rpc_host);
 
         // Build authority Consensus
-        let (frost_task, abci_client_builder) = match AuthorityConsensusBuilder::try_new(
-            Arc::clone(&chain_arc.clone()),
-            blockchain_db.clone(),
-            btc_server_factory.clone(),
-            bitcoin_block_header_clone.clone(),
-            secret_key,
-            network_handle.clone(),
-            network_client.clone(),
-            frost_handle,
-            executor.clone(),
-            frost_config,
-            payload_builder.clone(),
-            node_config.rpc.btc_network,
-            genesis_authorities.clone(),
-            authorities_socket_addresses,
-            executor_factory.clone(),
-            bitcoind_factory.clone(),
-            evm_config,
-            cometbft_rpc_factory,
-            RandomSourceProvider::new(),
-            driver_tx,
-            provider_factory.clone(),
-        ) {
-            Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
-            Err(e) => {
-                return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
-            }
-        };
+        let (frost_task, abci_client_builder, snapshot_manager) =
+            match AuthorityConsensusBuilder::try_new(
+                Arc::clone(&chain_arc.clone()),
+                blockchain_db.clone(),
+                btc_server_factory.clone(),
+                bitcoin_block_header_clone.clone(),
+                secret_key,
+                network_handle.clone(),
+                network_client.clone(),
+                frost_handle,
+                executor.clone(),
+                frost_config,
+                payload_builder.clone(),
+                node_config.rpc.btc_network,
+                genesis_authorities.clone(),
+                authorities_socket_addresses,
+                executor_factory.clone(),
+                bitcoind_factory.clone(),
+                evm_config,
+                cometbft_rpc_factory,
+                RandomSourceProvider::new(),
+                driver_tx,
+                node_config.clone().state_sync,
+                provider_factory.clone(),
+            ) {
+                Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
+                Err(e) => {
+                    return Err(eyre::eyre!("AuthorityConsensusBuilderError : {:?}", e));
+                }
+            };
+
+        executor.spawn_critical(
+            "Snapshot Manager",
+            Box::pin(async move {
+                if let Err(e) = snapshot_manager.expect("snapshot manager task exists").run().await
+                {
+                    error!(target: "reth::cli", "Snapshot Manager Error: {:?}", e);
+                }
+            }),
+        );
 
         // configure exxes manager
         let exex_manager = ExExManagerHandle::empty();
@@ -1219,7 +1237,7 @@ mod tests {
 
     #[test]
     fn parse_db_path() {
-        let cmd = PoaNodeCommand::try_parse_args_from([
+        let _cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--network-config-path",
             "my/path/to/reth.toml",

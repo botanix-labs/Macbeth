@@ -46,12 +46,13 @@ mod builder;
 pub mod comet_bft;
 
 pub use comet_bft::light_client::LightCBFTClientBuilder;
-mod compressor;
 mod dkg;
 mod excecution_utils;
 mod frost_task;
 mod healthcheck_task;
+mod prost_parser;
 mod signing;
+pub mod snapshot_manager;
 pub mod utils;
 pub mod wallet_state_sync;
 pub use builder::AuthorityConsensusBuilder;
@@ -65,7 +66,7 @@ pub const MAX_EDH_SIZE: usize = 93;
 
 use ethabi as _;
 use reth_cli_runner as _;
-use reth_db as _;
+use reth_db::{self as _};
 use reth_db_common as _;
 use reth_node_core as _;
 use tempfile as _;

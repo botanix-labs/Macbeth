@@ -42,6 +42,7 @@ macro_rules! raw_errln {
 }
 
 /// Signal handler installed for SIGSEGV
+#[allow(static_mut_refs)]
 extern "C" fn print_stack_trace(_: libc::c_int) {
     const MAX_FRAMES: usize = 256;
     // Reserve data segment so we don't have to malloc in a signal handler, which might fail

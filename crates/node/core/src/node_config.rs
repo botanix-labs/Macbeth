@@ -3,7 +3,7 @@
 use crate::{
     args::{
         DatabaseArgs, DatadirArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs,
-        PruningArgs, RpcServerArgs, TxPoolArgs,
+        PruningArgs, RpcServerArgs, StateSyncArgs, TxPoolArgs,
     },
     dirs::{ChainPath, DataDirPath},
     utils::get_single_header,
@@ -109,6 +109,9 @@ pub struct NodeConfig {
 
     /// All networking related arguments
     pub network: NetworkArgs,
+
+    /// All state sync related arguments
+    pub state_sync: StateSyncArgs,
 
     /// All rpc related arguments
     pub rpc: RpcServerArgs,
@@ -531,6 +534,7 @@ impl Default for NodeConfig {
             metrics: None,
             instance: 1,
             network: NetworkArgs::default(),
+            state_sync: StateSyncArgs::default(),
             rpc: RpcServerArgs::default(),
             txpool: TxPoolArgs::default(),
             builder: PayloadBuilderArgs::default(),

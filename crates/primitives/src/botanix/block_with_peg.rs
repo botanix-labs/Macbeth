@@ -1,6 +1,5 @@
-use crate::SealedBlockWithSenders;
-
 use super::peg_contract::{PeginData, PegoutWithId};
+use crate::SealedBlockWithSenders;
 
 /// Sealed block with pegin and pegout data
 #[derive(Debug, Clone, PartialEq, Eq)]

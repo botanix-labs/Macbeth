@@ -1,4 +1,6 @@
+use bitcoin::consensus::Encodable;
 use ethabi::ethereum_types::U256;
+use serde::Serializer;
 
 /// One satoshi expressed in wei.
 ///
@@ -46,6 +48,19 @@ pub trait AmountExt: Copy + From<bitcoin::Amount> + Into<bitcoin::Amount> {
     }
 }
 impl AmountExt for bitcoin::Amount {}
+
+/// Helper functions for serializing any Bitcoin encodable type
+pub fn serialize_bitcoin_encodable<T: Encodable, S>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut buffer = Vec::new();
+    value.consensus_encode(&mut buffer).map_err(serde::ser::Error::custom)?;
+    serializer.serialize_bytes(&buffer)
+}
 
 #[cfg(test)]
 mod test {

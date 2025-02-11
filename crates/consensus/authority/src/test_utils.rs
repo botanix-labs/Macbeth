@@ -1,3 +1,5 @@
+//! Common test utilities for the authority crate
+
 #[cfg(test)]
 mod test_utils {
     use crate::{dkg::DKGState, signing::SigningState};

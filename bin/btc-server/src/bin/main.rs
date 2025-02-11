@@ -1465,8 +1465,7 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         let state = ServerState::new(telemetry.clone()).await;
         // create the actix webserver
         let port = config.metrics_port.unwrap_or(7000);
-        let grpc_server_addr =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
+        let grpc_server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
         let grpc_server = create_web_server(state, grpc_server_addr)?;
         // get server handle
         let server_handle = grpc_server.handle();

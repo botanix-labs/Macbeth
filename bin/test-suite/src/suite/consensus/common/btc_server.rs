@@ -67,7 +67,11 @@ fn spawn_btc_server_process(
     let address = format!("0.0.0.0:{}", port);
     let http_port = (BTC_SERVER_HTTP_PORT + id).to_string();
 
-    let command = "./target/debug/btc-server";
+    let command = "target/debug/btc-server";
+    let binary_abs_path = working_directory.join(Path::new(command));
+    if !std::fs::exists(&binary_abs_path)? {
+        return Err(anyhow::anyhow!("btc-server binary not found at {}. Please compile it first before running the test-suite", binary_abs_path.display().to_string()));
+    }
     let args = vec![
         "--btc-network",
         "regtest",
@@ -94,7 +98,7 @@ fn spawn_btc_server_process(
         "--fall-back-fee-rate-sat-per-vbyte",
         "5",
     ];
-    
+
     Ok(SpawnedBtcServerProcess {
         child_process: spawn_child_process(Scope::BtcServer(id), command, args, working_directory)?,
         db_path,
@@ -111,9 +115,10 @@ pub fn spawn_n_btc_server_processes(
             .context("error creating tempdir")?
             .into_path()
             .join(format!("_{}", unix_timestamp().to_string()));
-        std::fs::create_dir_all(&temp_db_path).context("failed to create tempdir db subdir")?;
+        std::fs::create_dir_all(&temp_db_path)
+            .context("failed to create tempdir with db subdir")?;
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
-
+        std::fs::create_dir_all(&db_path).context("failed to create tempdir with db subdir")?;
         let port = BTC_SERVER_START_PORT + i;
         let child_process =
             spawn_btc_server_process(global_context.clone(), i, port, db_path.clone())?;

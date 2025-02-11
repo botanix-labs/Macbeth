@@ -18,15 +18,21 @@ use ethers::{
 };
 use reth::args::{FedMemberPubKey, FederationTomlConfig};
 use reth_chainspec::{create_botanix_config_with_genesis, BOTANIX_TESTNET};
+use reth_db::{
+    mdbx::{DatabaseArguments, MaxReadTransactionDuration},
+    models::ClientVersion,
+    open_db_read_only, DatabaseEnv,
+};
 use reth_network_peers::pk2id;
 use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     public_key_to_address, Address,
 };
+use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     io::Write,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
@@ -69,6 +75,7 @@ pub struct SpawnedPoaServerProcess {
     pub ws_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
+    pub provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
 }
 
 impl SpawnedPoaServerProcess {
@@ -128,12 +135,14 @@ pub struct FederationMemberTestConfig {
     pub sender: tokio::sync::broadcast::Sender<Notifications>,
     pub frost_min_signers: u16,
     pub frost_max_signers: u16,
+    pub num_snapshots_to_keep: u64,
     pub peer_id: PeerId,
     pub is_dkg_ready: bool,
     pub edh: Option<ExtraDataHeader>,
     pub test_signal_tx: Sender<TestSignal>,
     pub botanix_fee_recipient: String,
     pub botanix_eth_client: Option<BotanixEthClient>,
+    pub is_state_syncing: bool,
 }
 
 impl FederationMemberTestConfig {
@@ -148,6 +157,7 @@ impl FederationMemberTestConfig {
         bitcoin_server_url: String,
         frost_min_signers: u16,
         frost_max_signers: u16,
+        num_snapshots_to_keep: u64,
         peer_id: PeerId,
         rpc_port: u16,
         ws_port: u16,
@@ -155,6 +165,7 @@ impl FederationMemberTestConfig {
         abci_port: u16,
         test_signal_tx: Sender<TestSignal>,
         botanix_fee_recipient: String,
+        is_state_syncing: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
@@ -173,12 +184,14 @@ impl FederationMemberTestConfig {
             sender,
             frost_min_signers,
             frost_max_signers,
+            num_snapshots_to_keep,
             peer_id,
             is_dkg_ready: false,
             edh: None,
             test_signal_tx,
             botanix_fee_recipient,
             botanix_eth_client: None,
+            is_state_syncing,
         })
     }
 
@@ -294,14 +307,19 @@ impl FederationMemberTestConfig {
         let bitcoind_password = self.bitcoind_password.clone();
         let frost_min_signers = self.frost_min_signers.to_string();
         let frost_max_signers = self.frost_max_signers.to_string();
+        let num_snapshots_to_keep = self.num_snapshots_to_keep.to_string();
         let discovery_port = self.discovery_port.to_string();
         let abci_port = self.abci_port.to_string();
 
         // prepare run arguments
         let command = "./target/debug/reth";
-        // TODO(scott): make features flag dynamic
-        // it can be passed in via cli and does default to the feature below but
-        // needs to be passed down to this function
+        let binary_abs_path = working_directory.join(Path::new(command));
+        if !std::fs::exists(&binary_abs_path)? {
+            return Err(anyhow::anyhow!(
+                "reth binary not found at {}. Please compile it first before running the test-suite",
+                binary_abs_path.display().to_string()
+            ));
+        }
         let args = vec![
             "poa",
             "-vvv",
@@ -348,6 +366,10 @@ impl FederationMemberTestConfig {
             frost_min_signers.as_str(),
             "--frost.max_signers",
             frost_max_signers.as_str(),
+            "--sync.num_snapshots_to_keep",
+            num_snapshots_to_keep.as_str(),
+            "--sync.snapshot_message_format",
+            "2",
             "--port",
             discovery_port.as_str(),
             "--p2p-secret-key",
@@ -365,16 +387,44 @@ impl FederationMemberTestConfig {
             self.botanix_fee_recipient.clone(),
         );
 
+        let child_process =
+            spawn_child_process(Scope::PoaNode(self.index), command, args, working_directory)?;
+
+        // database provider
+        let db_args = DatabaseArguments::new(ClientVersion::default())
+            .with_exclusive(Some(false))
+            .with_log_level(Some(LogLevel::Debug))
+            .with_max_read_transaction_duration(Some(MaxReadTransactionDuration::Unbounded));
+        let node_config = BOTANIX_TESTNET.clone();
+        let db_dir = Path::new(&self.temp_path).join("db");
+        let static_files_dir = Path::new(&self.temp_path).join("static_files");
+
+        let db = loop {
+            match open_db_read_only(&db_dir, db_args.clone()) {
+                Ok(db) => {
+                    break db;
+                }
+                Err(_) => {
+                    std::thread::sleep(Duration::from_secs(1));
+                    continue;
+                }
+            }
+        };
+
+        let database = Arc::new(db);
+        let static_file_provider = StaticFileProvider::read_only(static_files_dir)?;
+        let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+            database,
+            node_config,
+            static_file_provider.clone(),
+        );
+
         Ok(SpawnedPoaServerProcess {
-            child_process: spawn_child_process(
-                Scope::PoaNode(self.index),
-                command,
-                args,
-                working_directory,
-            )?,
+            child_process,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
             ws_port: self.ws_port,
+            provider_factory,
         })
     }
 
@@ -467,22 +517,24 @@ impl FederationMemberTestConfig {
                     let tx_receipts = botanix_eth_client
                         .get_tx_receipts(BlockId::Number(BlockNumber::Number(block_number)))
                         .await
-                        .expect("Failed to get block receipts");
-                    // send a notification about a new block
-                    match rx_sender.send(Notifications::CanonState(
-                        CannonStateNofificationPayload {
-                            engine_index,
-                            ts: tokio::time::Instant::now(),
-                            tx_receipts,
-                            block,
-                        },
-                    )) {
-                        Ok(_) => {}
-                        // all receivers have been dropped temporarily here. Just sleep
-                        // and await new ones to be created
-                        Err(_) => {
-                            tokio::time::sleep(Duration::from_secs(1)).await;
-                            continue;
+                        .ok();
+                    if let Some(tx_receipts) = tx_receipts {
+                        // send a notification about a new block
+                        match rx_sender.send(Notifications::CanonState(
+                            CannonStateNofificationPayload {
+                                engine_index,
+                                ts: tokio::time::Instant::now(),
+                                tx_receipts,
+                                block,
+                            },
+                        )) {
+                            Ok(_) => {}
+                            // all receivers have been dropped temporarily here. Just sleep
+                            // and await new ones to be created
+                            Err(_) => {
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                continue;
+                            }
                         }
                     }
                 }
@@ -659,7 +711,7 @@ impl FederationMemberTestConfig {
     }
 }
 
-pub fn is_dkg_ready(federation_memebers: &HashMap<u16, FederationMemberTestConfig>) -> bool {
+pub fn is_dkg_ready(federation_memebers: &BTreeMap<u16, FederationMemberTestConfig>) -> bool {
     !federation_memebers.iter().any(|(_, member)| !member.is_dkg_ready())
 }
 
@@ -667,13 +719,13 @@ pub async fn create_poa_nodes(
     global_context: Arc<GlobalContext>,
     btc_server_processes: Option<&Vec<SpawnedBtcServerProcess>>,
 ) -> anyhow::Result<(
-    HashMap<u16, FederationMemberTestConfig>,
+    BTreeMap<u16, FederationMemberTestConfig>,
     tokio::sync::broadcast::Sender<Notifications>,
     Vec<PublicKey>,
 )> {
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
-    let mut poa_nodes: HashMap<u16, FederationMemberTestConfig> = HashMap::new();
+    let mut poa_nodes: BTreeMap<u16, FederationMemberTestConfig> = BTreeMap::new();
     let mut members_keypairs: Vec<(SecretKey, PublicKey, PeerId, Address)> = vec![];
 
     for _ in 0..global_context.fed_instances {
@@ -684,6 +736,7 @@ pub async fn create_poa_nodes(
         members_keypairs.push((secret_key, pk, peer_id, address));
     }
     let authorities = members_keypairs.iter().map(|(_, pk, _, _)| pk.clone()).collect::<Vec<_>>();
+    let poa_instances = global_context.fed_instances - global_context.syncing_instances;
 
     for member_index in 0..global_context.fed_instances {
         let port = btc_server_processes
@@ -707,13 +760,15 @@ pub async fn create_poa_nodes(
             format!("localhost:{}", port),
             global_context.min_signers,
             global_context.max_signers,
+            global_context.num_snapshots_to_keep,
             member_peerid,
             RPC_PORT_BASE + member_index,
             WS_PORT_BASE + member_index,
             DISCOVERY_PORT_BASE + member_index,
-            ABCI_PORT_BASE + 10000 * member_index,
+            ABCI_PORT_BASE + 1000 * member_index,
             test_signal_tx,
             global_context.botanix_fee_recipient.clone(),
+            member_index > poa_instances - 1,
         )
         .await?;
         poa_nodes.insert(member_index, fed_member_config);
