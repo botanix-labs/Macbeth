@@ -725,15 +725,14 @@ impl Suite for ConsensusIntegrationTestSuite {
             let spawned_bitcoind_process = bitcoind_node.spawn_service()?;
             tokio::time::sleep(Duration::from_secs(6)).await;
 
-            // await initialization
-            bitcoind_node.await_initialization().await?;
 
             let bitcoind_factory = BitcoindClientFactory::new(BitcoindConfig::new(
                 self.global_context.bitcoind_url.clone(),
                 self.global_context.bitcoind_user.clone(),
                 self.global_context.bitcoind_pass.clone(),
             ));
-            let _bitcoind_client = bitcoind_factory.build_and_connect()?;
+            let bitcoind_client = bitcoind_factory.build_and_connect()?;
+            bitcoind_node.setup_wallet(&bitcoind_client).await?;
 
             // update local context
             self.local_context.bitcoind_process = Some(spawned_bitcoind_process);

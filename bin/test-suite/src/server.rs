@@ -47,7 +47,6 @@ impl TestServer {
                 Ok(())
             },
             res = async {
-                    // TODO this will always be a vec of one element
                     let outcomes = test_suite.run(test_to_run).await;
                     // if any of them failed return error
                     if outcomes.iter().any(|outcome| outcome == &Outcome::Failed) {

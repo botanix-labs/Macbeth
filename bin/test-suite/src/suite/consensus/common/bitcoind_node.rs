@@ -1,7 +1,9 @@
-use super::{
-    create_temp_working_directory, kill_process_at_port, spawn_await_child_process, Scope,
+use super::{create_temp_working_directory, kill_process_at_port, Scope};
+use crate::{
+    context::GlobalContext,
+    suite::consensus::common::{events::BITCOIND_WALLET_NAME, spawn_child_process}, utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
-use crate::{context::GlobalContext, suite::consensus::common::spawn_child_process};
+use bitcoincore_rpc::RpcApi;
 use std::{fs, path::PathBuf, sync::Arc};
 use tokio::{
     process::Child,
@@ -105,43 +107,20 @@ impl BitcoindNodeConfig {
 }
 
 impl BitcoindNodeConfig {
-    pub async fn await_initialization(&self) -> anyhow::Result<()> {
-        let bitcoind_user = format!("-rpcuser={}", self.bitcoind_user);
-        let bitcoind_pwd = format!("-rpcpassword={}", self.bitcoind_password);
-
-        // create wallet
-        let command = "bitcoin-cli";
-        let args = vec![
-            "-chain=regtest",
-            &bitcoind_user,
-            &bitcoind_pwd,
-            "createwallet",
-            "botanix_integration_test_wallet",
-        ];
-        spawn_await_child_process(Scope::Bitcoind, command, args, &self.working_directory).await?;
-
-        // get wallet address
-        let command = "bitcoin-cli";
-        let args = vec!["-chain=regtest", &bitcoind_user, &bitcoind_pwd, "getnewaddress"];
-        let (_, stdout, _) =
-            spawn_await_child_process(Scope::Bitcoind, command, args, &self.working_directory)
-                .await?;
-        let wallet_address = stdout.trim();
-
-        // mine blocks
-        let command = "bitcoin-cli";
-        let args = vec![
-            "-chain=regtest",
-            &bitcoind_user,
-            &bitcoind_pwd,
-            "generatetoaddress",
-            "50",
-            &wallet_address,
-        ];
-        let (_, _, _) =
-            spawn_await_child_process(Scope::Bitcoind, command, args, &self.working_directory)
-                .await?;
-
+    pub async fn setup_wallet(&self, bitcoin_client: &impl RpcApi) -> anyhow::Result<()> {
+        match bitcoin_client.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None) {
+            // Load the wallet if it already exists
+            Err(e) => {
+                if e.to_string().contains("wallet already exists") {
+                    bitcoin_client.load_wallet(BITCOIND_WALLET_NAME)?;
+                } else {
+                    return Err(anyhow::anyhow!("Failed to create wallet: {}", e));
+                }
+            }
+            Ok(_) => {}
+        }
+        // Fund the wallet
+        generate_blocks(bitcoin_client, MIN_BLOCKS_COINBASE_MATURE).await;
         Ok(())
     }
 }

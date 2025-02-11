@@ -192,17 +192,6 @@ pub async fn test_many_inputs_signing(
 ) -> anyhow::Result<(), anyhow::Error> {
     let coordinator_index = 0;
     let bitcoind = suite.global_context.bitcoind_rpc();
-    // Load up the bitcoin wallet and generate some blocks
-    for wallet in bitcoind.list_wallets()? {
-        it_info_print!("#UNLOADING WALLET?", &wallet);
-        let _ = bitcoind.unload_wallet(Some(&wallet))?;
-    }
-    let create_res = bitcoind.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
-    if create_res.is_err() {
-        tracing::info!("Wallet already exists, loading wallet ...");
-        // wallet already exists, load wallet
-        let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
-    }
     generate_blocks(&bitcoind, MIN_BLOCKS_COINBASE_MATURE).await;
 
     let address = bitcoind.get_new_address(None, None)?.assume_checked();
