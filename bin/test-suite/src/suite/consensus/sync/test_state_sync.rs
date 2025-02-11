@@ -164,7 +164,7 @@ pub async fn test_state_sync(
         .cloned()
         .collect::<Vec<u16>>();
     it_info_print!("syncing instances", suite.global_context.syncing_instances);
-    // TOOD: export a method on local_context to get the length of non-syncing nodes
+    // TODO: export a method on local_context to get the length of non-syncing nodes
     let member_ids: Vec<u16> = member_ids
         [..member_ids.len().saturating_sub(suite.global_context.syncing_instances as usize)] // remove the syncing nodes
         .to_vec();
