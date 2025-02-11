@@ -4,7 +4,6 @@ use crate::{
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
-    wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::{
@@ -20,10 +19,8 @@ use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
     NetworkHandle,
 };
-use reth_network_p2p::{BodiesClient, HeadersClient};
 use reth_node_core::args::StateSyncArgs;
-use reth_node_ethereum::{EthEngineTypes, EthEvmConfig};
-use reth_payload_builder::PayloadBuilderHandle;
+use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
@@ -42,17 +39,15 @@ pub(crate) type BitcoinCheckpoint = Arc<TokioRwLock<Option<(bitcoin::block::Head
 
 /// Builder type for configuring the setup
 #[allow(dead_code)]
-pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Source> {
+pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_block_header: Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>,
     network_handle: NetworkHandle,
-    network_client: NetworkClient,
     frost_handle: Option<ToFrostMan>,
     task_executor: TaskExecutor,
     frost_config: Option<FrostConfig>,
-    payload_builder: PayloadBuilderHandle<EthEngineTypes>,
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
     random_source_provider: Source,
     metrics: Arc<AuthorityMetrics>,
@@ -71,11 +66,9 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<EF, BF, DB, ToFrostMan, NetworkClient, Source>
-    AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, NetworkClient, Source>
+impl<EF, BF, DB, ToFrostMan, Source> AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send,
-    NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     DB: BlockReaderIdExt
         + StateProviderFactory
         + Clone
@@ -84,7 +77,6 @@ where
         + CanonChainTracker
         + CanonStateSubscriptions
         + 'static,
-    NetworkClient: BodiesClient + HeadersClient + Unpin + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Source: RandomSource,
@@ -98,11 +90,9 @@ where
         bitcoin_block_header: BitcoinCheckpoint,
         sk: secp256k1::SecretKey,
         network_handle: NetworkHandle,
-        network_client: NetworkClient,
         frost_handle: Option<ToFrostMan>,
         task_executor: TaskExecutor,
         frost_config: Option<FrostConfig>,
-        payload_builder: PayloadBuilderHandle<EthEngineTypes>,
         btc_network: bitcoin::Network,
         genesis_authorities: Vec<secp256k1::PublicKey>,
         authority_socket_addresses: Vec<SocketAddr>,
@@ -188,11 +178,9 @@ where
             btc_server_factory,
             bitcoin_block_header,
             network_handle,
-            network_client,
             frost_handle,
             task_executor,
             frost_config,
-            payload_builder,
             cometbft_rpc_factory,
             random_source_provider,
             metrics: Arc::new(AuthorityMetrics::default()),
@@ -222,11 +210,9 @@ where
             storage,
             bitcoin_block_header,
             network_handle,
-            network_client: _,
             frost_handle,
             task_executor,
             frost_config,
-            payload_builder: _,
             cometbft_rpc_factory,
             random_source_provider,
             metrics,
@@ -253,22 +239,6 @@ where
             }
         }
         .await;
-
-        // TODO not used anywhere
-        let _wallet_sync = {
-            if let Some(btc_server) = &btc_server_client {
-                let wallet_state_sync_engine = WalletStateSyncEngine::new(
-                    storage.clone(),
-                    btc_server.clone(),
-                    frost_handle.clone().expect("Requires frost handle"),
-                    parser.clone(),
-                    Arc::clone(&metrics),
-                );
-                Some(wallet_state_sync_engine)
-            } else {
-                None
-            }
-        };
 
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
