@@ -21,7 +21,6 @@ use std::{
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use btcserverlib::extended_client::BtcServerExtendedApi;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
@@ -1458,31 +1457,23 @@ pub enum ABCIDriverMessage {
 /// * Sending pegins / pegouts to the btc server
 
 #[derive(Clone)]
-pub struct ABCIDriver<BtcServerClient, DatabaseRW> {
-    btc_server: Option<BtcServerClient>,
+pub struct ABCIDriver<DatabaseRW> {
     driver_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<ABCIDriverMessage>>>,
     database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
     blockchain_provider: BlockchainProvider2<DatabaseRW>,
 }
 
-impl<BtcServerClient, DatabaseRW> ABCIDriver<BtcServerClient, DatabaseRW>
+impl<DatabaseRW> ABCIDriver<DatabaseRW>
 where
     DatabaseRW: Database + Clone + Send + Sync + 'static,
-    BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
 {
     /// Create a new ABCI drivers
     pub fn new(
-        btc_server: Option<BtcServerClient>,
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
         database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
         blockchain_provider: BlockchainProvider2<DatabaseRW>,
     ) -> Self {
-        Self {
-            btc_server,
-            driver_rx: Arc::new(Mutex::new(driver_rx)),
-            database_provider,
-            blockchain_provider,
-        }
+        Self { driver_rx: Arc::new(Mutex::new(driver_rx)), database_provider, blockchain_provider }
     }
 
     /// Start the ABCI driver
@@ -1542,39 +1533,21 @@ where
                             None,
                         );
 
-                        self.blockchain_provider.canonical_in_memory_state().notify_canon_state(
-                            CanonStateNotification::Commit { new: Arc::new(chain) },
-                        );
-
                         let pegins = sealed_block_with_peg
                             .pegins()
                             .iter()
                             .flat_map(|p| p.meta.clone())
                             .collect::<Vec<_>>();
+                        let pegouts = sealed_block_with_peg.pegouts().to_vec();
 
-                        let pegouts = sealed_block_with_peg.pegouts();
+                        self.blockchain_provider.canonical_in_memory_state().notify_canon_state(
+                            CanonStateNotification::Commit {
+                                new: Arc::new(chain),
+                                pegins: Some(pegins),
+                                pegouts: Some(pegouts),
+                            },
+                        );
 
-                        if self.btc_server.is_some() {
-                            if let Err(e) = call_notify_pegin(
-                                self.btc_server.as_mut().expect("btc server to exist"),
-                                &pegins,
-                            )
-                            .await
-                            {
-                                error!("Error notifying pegins: {:?}", e);
-                            }
-
-                            // pegouts
-                            if let Err(e) = call_notify_pegout(
-                                self.btc_server.as_mut().expect("btc server to exist"),
-                                pegouts,
-                                block_height,
-                            )
-                            .await
-                            {
-                                error!("Error notifying pegouts: {:?}", e);
-                            }
-                        }
                         commit_tx.send(()).expect("to send");
                     }
                     ABCIDriverMessage::Exit => {
