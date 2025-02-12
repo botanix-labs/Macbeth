@@ -6,13 +6,16 @@ use crate::{
     prost_parser::{ProstError, ProstMessageSerdelizer},
     random_source_provider::RandomSource,
     signing::SigningStateMachine,
-    utils::{deserialize_frost_peer_id, validate_psbt_by_ids},
+    utils::{
+        deserialize_frost_peer_id, get_pending_pegouts_from_pegout_data, get_utxos_from_pegin_meta,
+        validate_psbt_by_ids,
+    },
     Storage,
 };
 
 use bitcoin::consensus::Encodable;
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
-use client::SyncTxIndexRequest;
+use client::ConsensusCheckpointRequest;
 use reth_chainspec::ChainSpec;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_network::{
@@ -307,8 +310,7 @@ where
             while let Ok(ref notification) = canon_state_notifs.try_recv() {
                 info!(target: "consensus::authority::frost_task::start_task", "canon state notification received for block number {:?}", notification.tip().number);
                 match notification {
-                    // TODO(scott): handle pegins/pegouts
-                    CanonStateNotification::Commit { new, pegins: _, pegouts: _ } => {
+                    CanonStateNotification::Commit { new, pegins, pegouts } => {
                         let tip = new.tip();
                         // TODO(armins) make this block of code more readable by removing all the
                         // matches
@@ -319,14 +321,26 @@ where
                                 continue;
                             }
                         };
+
+                        let pegins = pegins
+                            .as_ref()
+                            .map_or_else(Vec::new, |pegins| get_utxos_from_pegin_meta(&pegins));
+
+                        // convert pegouts into correct format
+                        let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {
+                            get_pending_pegouts_from_pegout_data(pegouts, tip.number)
+                        });
+
                         let cp_block_hash = edh.bitcoin_block_hash;
                         let mut block_hash_writer = vec![];
                         match cp_block_hash.consensus_encode(&mut block_hash_writer) {
                             Ok(_) => {
                                 match self
                                     .btc_server
-                                    .tx_index_new_checkpoint(SyncTxIndexRequest {
+                                    .new_consensus_checkpoint(ConsensusCheckpointRequest {
                                         checkpoint_block_hash: block_hash_writer,
+                                        pegins,
+                                        pending_pegouts,
                                     })
                                     .await
                                 {

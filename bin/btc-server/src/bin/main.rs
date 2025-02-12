@@ -488,83 +488,35 @@ where
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
-    async fn tx_index_new_checkpoint(
+    // unified interface to update btc-server and the pegout scheduler
+    // TODO(scott): add light block field on the request
+    async fn new_consensus_checkpoint(
         &self,
-        request: tonic::Request<rpc::SyncTxIndexRequest>,
+        request: tonic::Request<rpc::ConsensusCheckpointRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&request)?;
-        let inner = request.into_inner();
-        let reader = &mut inner.checkpoint_block_hash.as_slice();
+        let req = request.into_inner();
+
+        // sync the pegout scheduler to the given checkpoint
+        let reader = &mut req.checkpoint_block_hash.as_slice();
         let checkpoint = bitcoin::BlockHash::consensus_decode(reader).map_err(|e| {
             error!("Failed to parse checkpoint hash: {}", e);
             badarg!("Failed to parse checkpoint hash: {}", e)
         })?;
-
         self.sync_pegout_scheduler(checkpoint).await.to_status()?;
 
-        Ok(tonic::Response::new(rpc::Empty {}))
-    }
-
-    async fn get_signing_status(
-        &self,
-        req: tonic::Request<rpc::GetSigningStatusRequest>,
-    ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
-        self.validate_jwt(&req)?;
-        let req = req.into_inner();
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let signing_status = self.db.get_signing_status(&signing_session_id).to_status()?;
-
-        let res =
-            tonic::Response::new(rpc::GetSigningStatusResponse { status: signing_status.into() });
-
-        Ok(res)
-    }
-
-    async fn get_session_ids(
-        &self,
-        req: tonic::Request<rpc::GetSessionIdsRequest>,
-    ) -> Result<tonic::Response<rpc::GetSessionIdsResponse>, tonic::Status> {
-        self.validate_jwt(&req)?;
-        let req = req.into_inner();
-        let signing_session_ids = self.db.get_session_ids(req.max_results).to_status()?;
-
-        let res = tonic::Response::new(rpc::GetSessionIdsResponse {
-            data: signing_session_ids.into_iter().map(|s| s.to_vec()).collect(),
-        });
-
-        Ok(res)
-    }
-
-    /* Pegin Endpoints */
-    // Saves peg'd in UTXO
-    async fn notify_pegins(
-        &self,
-        req: tonic::Request<rpc::NotifyPeginsRequest>,
-    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.validate_jwt(&req)?;
-        let req = req.into_inner();
+        // process and store pegin utxos
         let utxos: Result<Vec<crate::database::Utxo>, _> =
-            req.utxos.into_iter().map(TryFrom::try_from).collect();
+            req.pegins.into_iter().map(TryFrom::try_from).collect();
         let utxos = utxos.map_err(|e| badarg!("Failed to parse utxos: {}", e))?;
         let utxo_refs: Vec<&crate::database::Utxo> = utxos.iter().collect();
 
         self.db.store_utxos(&utxo_refs).to_status()?;
         self.db.update_utxo_merkle_root().to_status()?;
         self.db.flush().to_status()?;
-
         info!("processed pegins.len(): {:?}", utxos.len());
 
-        Ok(tonic::Response::new(rpc::Empty {}))
-    }
-
-    async fn notify_pegouts(
-        &self,
-        req: tonic::Request<rpc::NotifyPegoutsRequest>,
-    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.validate_jwt(&req)?;
-        let req = req.into_inner();
-
-        // do not accept any pending pegouts when there are not available UTXOs and tracked inputs
+        // process and store pending pegout requests
         let (available_utxos, tracked_inputs) = get_available_utxos(&self.db).await.to_status()?;
         if available_utxos.is_empty() && tracked_inputs.is_empty() {
             error!("Received a pegout request when there are no utxos or pending transactions");
@@ -601,13 +553,41 @@ where
 
         let pegouts = pegouts?;
         let pegouts_refs: Vec<&PegoutRequest> = pegouts.iter().collect();
-
         self.db.store_pending_pegouts(&pegouts_refs).to_status()?;
         self.db.flush().to_status()?;
-
         info!("stored pegouts.len(): {:?}", pegouts.len());
 
         Ok(tonic::Response::new(rpc::Empty {}))
+    }
+
+    async fn get_signing_status(
+        &self,
+        req: tonic::Request<rpc::GetSigningStatusRequest>,
+    ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
+        let signing_status = self.db.get_signing_status(&signing_session_id).to_status()?;
+
+        let res =
+            tonic::Response::new(rpc::GetSigningStatusResponse { status: signing_status.into() });
+
+        Ok(res)
+    }
+
+    async fn get_session_ids(
+        &self,
+        req: tonic::Request<rpc::GetSessionIdsRequest>,
+    ) -> Result<tonic::Response<rpc::GetSessionIdsResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        let signing_session_ids = self.db.get_session_ids(req.max_results).to_status()?;
+
+        let res = tonic::Response::new(rpc::GetSessionIdsResponse {
+            data: signing_session_ids.into_iter().map(|s| s.to_vec()).collect(),
+        });
+
+        Ok(res)
     }
 
     /* Pegout Endpoints */

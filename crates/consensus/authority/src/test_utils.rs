@@ -11,9 +11,8 @@ mod test_utils {
         GetAllUtxosResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
         GetPendingPegoutsResponse, GetPublicKeyResponse, GetSessionIdsRequest,
         GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
-        GetTrackedTxsResponse, MakeTxRequest, NotifyPeginsRequest, NotifyPegoutsRequest,
-        ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage, SigningPackageRequest,
-        SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
+        GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest, ResetWalletStateRequest,
+        SigningPackage, SigningPackageRequest, ToSignRequest, WalletStateResponse,
     };
     use frost_secp256k1_tr::{
         keys::{
@@ -547,14 +546,6 @@ mod test_utils {
             })
         }
 
-        // Implement other required methods with default/empty implementations
-        fn notify_pegins<'a>(
-            &'a mut self,
-            _: NotifyPeginsRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<Empty, GrpcClientError>> + Send + 'a>> {
-            Box::pin(async move { unimplemented!("Not required for core DKG/signing tests") })
-        }
-
         fn get_gateway_address<'a>(
             &'a mut self,
             _: GetGatewayAddressRequest,
@@ -590,11 +581,12 @@ mod test_utils {
         > {
             unimplemented!("Not required for DKG/signing tests")
         }
-        fn notify_pegouts<'a>(
+
+        fn new_consensus_checkpoint<'a>(
             &'a mut self,
-            _: NotifyPegoutsRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<Empty, GrpcClientError>> + Send + 'a>> {
-            Box::pin(async move { unimplemented!("Not required for core DKG/signing tests") })
+            request: client::ConsensusCheckpointRequest,
+        ) -> futures_util::future::BoxFuture<'a, Result<Empty, GrpcClientError>> {
+            unimplemented!("Not required for tests")
         }
 
         fn get_wallet_state<'a>(
@@ -616,13 +608,6 @@ mod test_utils {
         fn health_check<'a>(
             &'a mut self,
             _: Empty,
-        ) -> Pin<Box<dyn Future<Output = Result<Empty, GrpcClientError>> + Send + 'a>> {
-            unimplemented!("Not required for DKG/signing tests")
-        }
-
-        fn tx_index_new_checkpoint<'a>(
-            &'a mut self,
-            request: SyncTxIndexRequest,
         ) -> Pin<Box<dyn Future<Output = Result<Empty, GrpcClientError>> + Send + 'a>> {
             unimplemented!("Not required for DKG/signing tests")
         }
