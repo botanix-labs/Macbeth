@@ -178,6 +178,7 @@ pub async fn make_tx(
         fee_rate,
         change_script,
     )?;
+
     // Sanity check that we created a valid PSBT
     // This should not fail
     validate_psbt(&psbt, NO_FLAGS, min_signers, db)?;

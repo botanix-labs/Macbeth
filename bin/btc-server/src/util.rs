@@ -487,6 +487,7 @@ mod tests {
     use std::time::SystemTime;
 
     use crate::{
+        database::version::UtxoVersion,
         frost_id,
         wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
     };
@@ -527,6 +528,7 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
 
         db.store_utxos(&[&utxo]).unwrap();
@@ -572,12 +574,14 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
 
         let utxo2 = database::Utxo {
             outpoint: tx.input[1].previous_output,
             output: psbt.inputs[1].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
         db.store_utxos(&[&utxo1, &utxo2]).unwrap();
         db.flush().unwrap();
@@ -624,12 +628,14 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
 
         let utxo2 = database::Utxo {
             outpoint: tx.input[1].previous_output,
             output: psbt.inputs[1].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
         db.store_utxos(&[&utxo1, &utxo2]).unwrap();
         db.flush().unwrap();
@@ -690,6 +696,7 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
 
         db.store_utxos(&[&utxo]).unwrap();
@@ -719,6 +726,7 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: Some(eth),
+            version: UtxoVersion::default() as u32,
         };
 
         db.store_utxos(&[&utxo]).unwrap();
@@ -755,6 +763,7 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
 
         psbt.inputs[0].witness_utxo = Some(TxOut {
@@ -788,6 +797,7 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
 
         db.store_utxos(&[&utxo]).unwrap();
@@ -862,6 +872,7 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
         let rng = &mut rand::thread_rng();
 
@@ -984,6 +995,7 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
@@ -997,6 +1009,7 @@ mod tests {
             outpoint: tx.input[0].previous_output,
             output: dup_psbt.inputs[0].witness_utxo.clone().unwrap(),
             eth_address: None,
+            version: UtxoVersion::default() as u32,
         };
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();

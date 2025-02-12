@@ -1837,6 +1837,7 @@ mod tests {
                 OutPoint::new(txid, vout),
                 TxOut { value: Amount::from_sat(value), script_pubkey: script.into() },
                 None,
+                None,
             );
             app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
         }
@@ -1866,6 +1867,7 @@ mod tests {
             let utxo = crate::database::Utxo::new(
                 dummy_tx.input[0].previous_output,
                 dummy_tx.output[0].clone(),
+                None,
                 None,
             );
 

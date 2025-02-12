@@ -1,4 +1,4 @@
-use bitcoin::psbt;
+use bitcoin::psbt::{self};
 use frost_secp256k1_tr as frost;
 use std::{array::TryFromSliceError, io};
 use thiserror::Error;
@@ -29,6 +29,8 @@ pub enum Error {
     OutputNotFound(usize),
     #[error("hash engine error {0}")]
     HashEngine(#[from] std::io::Error),
+    #[error("Invalid UTXO version number {0}")]
+    InvalidUTXOVersion(u32),
 }
 
 impl PartialEq for Error {

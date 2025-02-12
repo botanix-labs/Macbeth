@@ -8,10 +8,13 @@ use bitcoin_hashes::Hash;
 use frost_secp256k1_tr as frost;
 use thiserror::Error;
 
+use crate::database::version::UtxoVersion;
+
 // input keys
 const ETH_ADDRESS_KEY_TYPE: u8 = 1;
 const SIGNING_COMMITMENTS_KEY_TYPE: u8 = 2;
 const PARTIAL_SIGNATURE_KEY_TYPE: u8 = 3;
+const VERSION_TYPE: u8 = 4;
 
 // output keys
 const PEGOUT_ID_KEY_TYPE: u8 = 4;
@@ -33,6 +36,12 @@ lazy_static::lazy_static! {
         subtype: PEGOUT_ID_KEY_TYPE,
         key: Vec::new(),
     };
+
+    pub static ref VERSION_TYPE_KEY: ProprietaryKey = ProprietaryKey {
+        prefix: PROP_KEY_PREFIX.to_vec(),
+        subtype: VERSION_TYPE,
+        key: Vec::new(),
+    };
 }
 
 trait ProprietaryKeyExt: BorrowMut<ProprietaryKey> {
@@ -51,6 +60,25 @@ pub trait PsbtInputExt: BorrowMut<PsbtInput> {
     fn set_eth_address(&mut self, eth_address: EthAddress) {
         // Key stores no keydata, only the type value
         self.borrow_mut().proprietary.insert(ETH_ADDRESS_KEY.clone(), eth_address.to_vec());
+    }
+
+    /// Adds version information to PSBT inputs
+    fn add_version_to_psbt(&mut self, version: u32) {
+        self.borrow_mut()
+            .proprietary
+            .insert(VERSION_TYPE_KEY.clone(), (version).to_le_bytes().to_vec());
+    }
+
+    /// Gets the version of a UTXO from a PSBT input
+    fn get_version_from_psbt_input(&self) -> Option<UtxoVersion> {
+        self.borrow().proprietary.get(&VERSION_TYPE_KEY).and_then(|bytes| {
+            if bytes.len() == 4 {
+                let version = u32::from_le_bytes(bytes.as_slice().try_into().ok()?);
+                UtxoVersion::try_from(version).ok()
+            } else {
+                None
+            }
+        })
     }
 
     fn eth_address(&self) -> Option<EthAddress> {
@@ -261,6 +289,7 @@ pub(crate) struct InputDTO {
     pub outpoint: OutPoint,
     pub output: TxOut,
     pub eth_address: Option<[u8; 20]>,
+    pub version: UtxoVersion,
 }
 
 /// Create psbt with proprietary tweak fields
@@ -296,6 +325,7 @@ pub(crate) fn create_psbt(
         if let Some(eth_addr) = utxo.eth_address {
             psbt_input.set_eth_address(eth_addr);
         }
+        psbt_input.add_version_to_psbt(utxo.version as u32);
     }
 
     // add output meta
