@@ -1849,41 +1849,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notify_pegins_empty() {
-        let app = setup().await;
-        let req = tonic::Request::new(rpc::NotifyPeginsRequest { utxos: vec![] });
-        let _res = app.notify_pegins(req).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn notify_pegouts_empty() {
-        let app = setup().await;
-        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
-            .expect("valid key package");
-
-        // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
-
-        let pegout_id = create_random_pegout_id();
-        let spk = random_p2wpkh_script().as_bytes().to_vec();
-
-        let req = tonic::Request::new(rpc::NotifyPegoutsRequest {
-            pending_pegouts: vec![rpc::PendingPegout {
-                pegout_id: pegout_id.as_bytes().to_vec(),
-                spk: spk.clone(),
-                amount: 100_000, // sats
-                height: 1,
-            }],
-        });
-        let _res = app.notify_pegouts(req).await.unwrap();
-        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
-        assert_eq!(pending_pegouts.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn notify_pegouts() {
+    async fn new_consensus_checkpoint() {
         let app = setup().await;
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
@@ -1894,6 +1860,7 @@ mod tests {
         app.db.set_key_package(key_package.clone()).expect("set key package");
 
         // Add some pegin utxos
+        let mut pegins = vec![];
         for _ in 0..10 {
             let dummy_tx = create_tx(1, 1, None);
             let utxo = crate::database::Utxo::new(
@@ -1901,7 +1868,22 @@ mod tests {
                 dummy_tx.output[0].clone(),
                 None,
             );
-            app.db.store_utxos(&[&utxo]).expect("Failed to store UTXO");
+
+            // create pegins btc client can send
+            let tx_out = dummy_tx.output.get(utxo.outpoint.vout as usize).expect("valid vout");
+            let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+            let utxo = Utxo {
+                outpoint: Some(rpc::OutPoint {
+                    txid: bitcoin::consensus::serialize(&utxo.outpoint.txid),
+                    vout: utxo.outpoint.vout,
+                }),
+                output: Some(rpc::TxOut {
+                    script_pubkey: Some(rpc::ScriptBuf { script: serialized_script_pub_key }),
+                    value: tx_out.value.to_sat(),
+                }),
+                eth_address: hex::encode(&[0; 20]),
+            };
+            pegins.push(utxo);
         }
 
         // Lets add multiple pegouts
@@ -1917,10 +1899,27 @@ mod tests {
             });
         }
 
-        let req = tonic::Request::new(rpc::NotifyPegoutsRequest {
+        let req = tonic::Request::new(rpc::ConsensusCheckpointRequest {
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+            pegins: pegins.clone(),
             pending_pegouts: pending_pegouts.clone(),
         });
-        let _res = app.notify_pegouts(req).await.unwrap();
+        let _res = app.new_consensus_checkpoint(req).await.unwrap();
+
+        let pegins_res = app.db.get_all_utxos().expect("valid utxos");
+        assert!(pegins.len() == 10);
+        for pegin in pegins_res {
+            // find by txid
+            let original_pegin = pegins
+                .iter()
+                .find(|p| {
+                    let txid = Txid::from_slice(&p.outpoint.as_ref().unwrap().txid).unwrap();
+                    txid == pegin.outpoint.txid
+                })
+                .unwrap();
+            assert_eq!(pegin.output.value.to_sat(), original_pegin.output.clone().unwrap().value);
+            // TODO(Scott): check script_pubkey
+        }
 
         let pending_pegouts_res = app.db.get_pending_pegouts().expect("valid pending pegouts");
         assert_eq!(pending_pegouts_res.len(), 10);
