@@ -23,6 +23,15 @@ pub struct StateSyncArgs {
     /// Snapshot message format
     #[arg(default_value_t=SNAPSHOT_MESSAGE_FORMAT, long = "sync.snapshot_message_format", name = "sync.snapshot_message_format", value_name = "SNAPSHOT_MESSAGE_FORMAT")]
     pub snapshot_message_format: u32,
+
+    /// State sync enabled
+    #[arg(
+        default_value_t = true,
+        long = "sync.enable_state_sync",
+        name = "sync.enable_state_sync",
+        value_name = "ENABLE_STATE_SYNC"
+    )]
+    pub enable_state_sync: bool,
 }
 
 impl Default for StateSyncArgs {
@@ -30,6 +39,7 @@ impl Default for StateSyncArgs {
         Self {
             num_snapshots_to_keep: DEFAULT_NUM_SNAPSHOTS_TO_KEEP,
             snapshot_message_format: SNAPSHOT_MESSAGE_FORMAT,
+            enable_state_sync: true,
         }
     }
 }

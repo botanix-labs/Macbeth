@@ -103,6 +103,7 @@ pub struct SnapshotManager<EF, BF, DB> {
     snapshot_message_format: u32,
     state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_size_limits: SnapshotSizeLimits,
+    enable_state_sync: bool,
 }
 
 impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
@@ -123,6 +124,7 @@ where
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         snapshots_to_keep: u64,
         snapshot_message_format: u32,
+        enable_state_sync: bool,
         state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     ) -> Self {
         let snapshot_size_limits = match snapshot_message_format {
@@ -138,6 +140,7 @@ where
             snapshot_message_format,
             state_lock,
             snapshot_size_limits,
+            enable_state_sync,
         }
     }
 
@@ -248,6 +251,10 @@ where
         + 'static,
 {
     async fn run(&mut self) -> Result<(), SnapshotManagerError> {
+        if !self.enable_state_sync {
+            tracing::info!("Snapshot manager is disabled. Exiting...");
+            return Ok(());
+        }
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
         let mut canon_events = self.storage.client.subscribe_to_canonical_state();
 
