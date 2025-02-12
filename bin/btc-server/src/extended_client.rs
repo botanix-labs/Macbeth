@@ -1,13 +1,12 @@
 //! Extended bitcoin server client with authentication
 use alloy_rpc_types_engine::{Claims, JwtSecret};
 use client::{
-    BtcServerClient, DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest,
-    FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
+    BtcServerClient, ConsensusCheckpointRequest, DkgPayload, Empty, FinalizeSignerRequest,
+    FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
     GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
     GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
-    GetTrackedTxsResponse, MakeTxRequest, NotifyPeginsRequest, NotifyPegoutsRequest,
-    ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage, SigningPackageRequest,
-    SyncTxIndexRequest, ToSignRequest, WalletStateResponse,
+    GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest, ResetWalletStateRequest,
+    SigningPackage, SigningPackageRequest, ToSignRequest, WalletStateResponse,
 };
 use displaydoc::Display as DisplayDoc;
 use futures_util::future::BoxFuture;
@@ -51,14 +50,6 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
     fn update_jwt_secret(&mut self, jwt_secret: JwtSecret);
     fn generate_jwt_token(&mut self) -> Option<String>;
 
-    fn notify_pegins<'a>(
-        &'a mut self,
-        request: NotifyPeginsRequest,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn notify_pegouts<'a>(
-        &'a mut self,
-        request: NotifyPegoutsRequest,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
     fn get_gateway_address<'a>(
         &'a mut self,
         request: GetGatewayAddressRequest,
@@ -139,10 +130,6 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         &'a mut self,
         request: Empty,
     ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn tx_index_new_checkpoint<'a>(
-        &'a mut self,
-        request: SyncTxIndexRequest,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
     fn reset_all_utxos<'a>(
         &'a mut self,
         request: ResetAllUtxosRequest,
@@ -162,6 +149,10 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
     fn reset_wallet_state<'a>(
         &'a mut self,
         request: ResetWalletStateRequest,
+    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    fn new_consensus_checkpoint<'a>(
+        &'a mut self,
+        request: ConsensusCheckpointRequest,
     ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
 }
 
@@ -230,8 +221,6 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
         })
     }
 
-    generate_method!(notify_pegins, NotifyPeginsRequest, Empty);
-    generate_method!(notify_pegouts, NotifyPegoutsRequest, Empty);
     generate_method!(get_gateway_address, GetGatewayAddressRequest, GetGatewayAddressResponse);
     generate_method!(get_public_key, Empty, GetPublicKeyResponse);
     generate_method!(get_round1_dkg_package, Empty, DkgPayload);
@@ -252,12 +241,12 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     generate_method!(get_signing_status, GetSigningStatusRequest, GetSigningStatusResponse);
     generate_method!(get_session_ids, GetSessionIdsRequest, GetSessionIdsResponse);
     generate_method!(health_check, Empty, Empty);
-    generate_method!(tx_index_new_checkpoint, SyncTxIndexRequest, Empty);
     generate_method!(reset_all_utxos, ResetAllUtxosRequest, Empty);
     generate_method!(get_all_utxos, Empty, GetAllUtxosResponse);
     generate_method!(get_tracked_txs, Empty, GetTrackedTxsResponse);
     generate_method!(get_pending_pegouts, Empty, GetPendingPegoutsResponse);
     generate_method!(reset_wallet_state, ResetWalletStateRequest, Empty);
+    generate_method!(new_consensus_checkpoint, ConsensusCheckpointRequest, Empty);
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -111,7 +111,6 @@ use crate::{
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     metrics::AuthorityMetrics,
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
-    utils::{call_notify_pegin, call_notify_pegout},
     AuthorityConsensus, Storage,
 };
 

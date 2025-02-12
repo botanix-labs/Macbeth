@@ -11,10 +11,7 @@ use btcserverlib::{
     pegout_id::PegoutId,
     wallet::psbt::PsbtOutputExt,
 };
-use client::{
-    MakeTxRequest, NotifyPeginsRequest, NotifyPegoutsRequest, PendingPegout, ScriptBuf,
-    SigningPackage, TxOut, Utxo,
-};
+use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{
@@ -118,47 +115,29 @@ pub(crate) async fn get_psbt<BtcServerClient: BtcServerExtendedApi + Clone>(
     btc_server.get_psbt(req).await
 }
 
-pub(crate) async fn call_notify_pegin<BtcServerClient>(
-    btc_server: &mut BtcServerClient,
-    pegins: &[PeginMeta],
-) -> Result<(), GrpcClientError>
-where
-    BtcServerClient: BtcServerExtendedApi + Clone,
-{
+pub(crate) fn get_utxos_from_pegin_meta(pegins: &Vec<PeginMeta>) -> Vec<Utxo> {
     if pegins.is_empty() {
-        return Ok(());
+        return vec![];
     }
-    let utxos = pegins.iter().map(utxo_from_pegin_meta).collect();
-    let request = NotifyPeginsRequest { utxos };
-    btc_server.notify_pegins(request).await?;
-    info!(target: "consensus::authority", "notifying btc server about pegin utxos");
-    Ok(())
+    pegins.iter().map(utxo_from_pegin_meta).collect()
 }
 
-pub(crate) async fn call_notify_pegout<BtcServerClient>(
-    btc_server: &mut BtcServerClient,
-    pegouts: &[PegoutWithId],
+pub(crate) fn get_pending_pegouts_from_pegout_data(
+    pegouts: &Vec<PegoutWithId>,
     height: u64,
-) -> Result<(), GrpcClientError>
-where
-    BtcServerClient: BtcServerExtendedApi + Clone,
-{
+) -> Vec<PendingPegout> {
     if pegouts.is_empty() {
-        return Ok(());
+        return vec![];
     }
-    let mut reqs = Vec::new();
-
-    for pegout in pegouts {
-        reqs.push(PendingPegout {
+    pegouts
+        .iter()
+        .map(|pegout| PendingPegout {
             pegout_id: pegout.id.as_bytes().to_vec(),
             spk: pegout.data.destination.script_pubkey().to_bytes().to_vec(),
             amount: pegout.data.amount.to_sat(),
             height,
-        });
-    }
-    btc_server.notify_pegouts(NotifyPegoutsRequest { pending_pegouts: reqs }).await?;
-
-    Ok(())
+        })
+        .collect::<Vec<_>>()
 }
 
 fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {

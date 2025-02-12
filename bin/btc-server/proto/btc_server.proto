@@ -9,12 +9,6 @@ service BtcServer {
 
     rpc HealthCheck(Empty) returns (Empty) {}
 
-    rpc TxIndexNewCheckpoint(SyncTxIndexRequest) returns (Empty) {}
-
-    rpc NotifyPegins(NotifyPeginsRequest) returns (Empty) {}
-
-    rpc NotifyPegouts(NotifyPegoutsRequest) returns (Empty) {}
-
     rpc GetPendingPegouts(Empty) returns (GetPendingPegoutsResponse) {}
 
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
@@ -70,10 +64,8 @@ service BtcServer {
     rpc GetTrackedTxs(Empty) returns (GetTrackedTxsResponse) {}
 
     rpc ResetWalletState(ResetWalletStateRequest) returns (Empty) {}
-}
 
-message NotifyPegoutsRequest {
-    repeated PendingPegout pending_pegouts = 1;
+    rpc NewConsensusCheckpoint(ConsensusCheckpointRequest) returns (Empty) {}
 }
 
 message PendingPegout {
@@ -85,11 +77,6 @@ message PendingPegout {
     
 message GetPendingPegoutsResponse {
     repeated PendingPegout pending_pegouts = 1;
-}
-
-message SyncTxIndexRequest {
-    // The checkpoint of the best finalized Bitcoin block hash.
-    bytes checkpoint_block_hash = 1;
 }
 
 message FinalizeSignerRequest {
@@ -111,6 +98,15 @@ message ResetAllUtxosRequest {
 message ResetWalletStateRequest {
     repeated Utxo utxos = 1;
     repeated TrackedTx tracked_txs = 2;
+    repeated PendingPegout pending_pegouts = 3;
+}
+
+message ConsensusCheckpointRequest {
+    // The checkpoint of the best finalized Bitcoin block hash.
+    bytes checkpoint_block_hash = 1;
+    // Pegin transaction utxos
+    repeated Utxo pegins = 2;
+    // Pending pegout requests
     repeated PendingPegout pending_pegouts = 3;
 }
 
@@ -137,10 +133,6 @@ message Utxo {
 }
 
 message GetAllUtxosResponse {
-    repeated Utxo utxos = 1;
-}
-
-message NotifyPeginsRequest {
     repeated Utxo utxos = 1;
 }
 
