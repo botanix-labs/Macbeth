@@ -489,12 +489,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn validate_pegin_data() {
+    fn random_pk() -> secp256k1::PublicKey {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
+        secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng))
+    }
 
+    #[test]
+    fn validate_pegin_data() {
+        let pk = random_pk();
         let pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
@@ -505,10 +508,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid meta version: only accepting version 0")]
     fn validate_pegin_data_with_incorrect_version() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let pegin_data = pegin_data_setup(Some(1_u32), None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
@@ -518,10 +518,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "recent block hash mismatch")]
     fn validate_pegin_data_without_headers() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let pegin_data = pegin_data_setup(None, Some(Vec::new()), &pk);
         let header = create_header_metadata(None, &pk).header;
 
@@ -531,10 +528,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "recent block hash mismatch")]
     fn validate_pegin_data_with_incorrect_block_hash() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let pegin_data = pegin_data_setup(None, None, &pk);
         let header = create_header_metadata(Some(1_u32), &pk).header;
 
@@ -544,10 +538,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid merkle proof: inclusion")]
     fn validate_pegin_data_with_invalid_merkle_proof() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -563,10 +554,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid merkle proof: inclusion")]
     fn validate_pegin_data_with_invalid_outpoint() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -578,10 +566,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "merkle proof and block header mismatch")]
     fn validate_pegin_data_with_mismatched_merkle_root() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
 
         pegin_data.meta.first_mut().unwrap().block_headers[0].merkle_root =
@@ -594,10 +579,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "merkle proof and block header mismatch")]
     fn validate_pegin_data_with_same_txid_different_root() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -614,10 +596,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid tx or outpoint: txid")]
     fn validate_pegin_data_with_invalid_tx() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -629,10 +608,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid tx or outpoint: output idx")]
     fn validate_pegin_data_with_invalid_outpoint_vout() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -644,9 +620,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid script pubkey")]
     fn validate_pegin_data_with_invalid_script_pubkey() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
 
         pegin_data.meta.first_mut().unwrap().tx.output[0].script_pubkey = bitcoin::ScriptBuf::new();
@@ -672,10 +646,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid script pubkey")]
     fn validate_pegin_data_with_different_account() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -687,15 +658,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid script pubkey")]
     fn validate_pegin_data_with_different_pubkey() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
+        let pk = random_pk();
         let pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
-
-        let different_pk =
-            secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
+        let different_pk = random_pk();
 
         pegin_data.validate(&(header, 1_u32), &different_pk).unwrap();
     }
@@ -703,10 +669,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid block header sequence")]
     fn validate_pegin_data_with_invalid_block_sequence() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -729,10 +692,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid block header sequence")]
     fn validate_pegin_data_with_broken_block_chain_in_middle() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let first_header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -762,10 +722,7 @@ mod tests {
 
     #[test]
     fn validate_pegin_data_with_invalid_block_height() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
+        let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
 
@@ -779,9 +736,7 @@ mod tests {
 
     #[test]
     fn validate_coinbase_maturity() {
-        let secp = secp256k1::Secp256k1::new();
-        let mut rng = rand::thread_rng();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
+        let pk = random_pk();
         let destination_address = Address::random();
         let coinbase_tx_in = TxIn {
             previous_output: OutPoint::null(),
