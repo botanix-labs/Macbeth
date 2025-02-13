@@ -92,7 +92,7 @@ impl SigningState {
         matches!(self, SigningState::Finalized)
     }
 
-    #[warn(dead_code)]
+    #[allow(dead_code)]
     /// Returns true if the signing has failed
     pub(crate) fn has_failed(&self) -> bool {
         matches!(self, SigningState::Failed)
@@ -108,6 +108,7 @@ pub(crate) struct SigningSession {
     state: SigningState,
     /// The index of the session coordinator
     coordinator_index: u64,
+    #[allow(dead_code)]
     /// The original session payload
     original_psbt: Option<Vec<u8>>,
 }
@@ -206,6 +207,7 @@ where
         self.signing_states.write().await.remove(&session_id)
     }
 
+    #[allow(dead_code)]
     /// Check if the session id is in a failed state
     pub(crate) async fn is_failed_state(&self, session_id: &[u8; 32]) -> bool {
         self.signing_states

@@ -635,10 +635,10 @@ pub struct CanonicalStateUpdate<'a> {
     pub mined_transactions: Vec<B256>,
 }
 
-impl<'a> CanonicalStateUpdate<'a> {
+impl CanonicalStateUpdate<'_> {
     /// Returns the number of the tip block.
     pub fn number(&self) -> u64 {
-        self.new_tip.number
+        self.new_tip.as_ref().number
     }
 
     /// Returns the hash of the tip block.
@@ -648,7 +648,7 @@ impl<'a> CanonicalStateUpdate<'a> {
 
     /// Timestamp of the latest chain update
     pub fn timestamp(&self) -> u64 {
-        self.new_tip.timestamp
+        self.new_tip.as_ref().timestamp
     }
 
     /// Returns the block info for the tip block.

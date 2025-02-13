@@ -30,7 +30,7 @@ impl ExecutionPayloadValidator {
     /// Returns the chain spec used by the validator.
     #[inline]
     pub fn chain_spec(&self) -> &ChainSpec {
-        &self.chain_spec
+        self.chain_spec.as_ref()
     }
 
     /// Returns true if the Cancun hardfork is active at the given timestamp.

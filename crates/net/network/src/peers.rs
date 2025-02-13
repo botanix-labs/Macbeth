@@ -1084,7 +1084,7 @@ mod tests {
         peers: &'a mut PeersManager,
     }
 
-    impl<'a> Future for PeerActionFuture<'a> {
+    impl Future for PeerActionFuture<'_> {
         type Output = PeerAction;
 
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -1946,7 +1946,7 @@ mod tests {
         match a {
             Ok(_) => panic!(),
             Err(err) => match err {
-                InboundConnectionError::IpBanned {} => {
+                InboundConnectionError::IpBanned => {
                     assert_eq!(peer_manager.connection_info.num_pending_in, 0)
                 }
                 _ => unreachable!(),

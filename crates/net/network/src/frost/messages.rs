@@ -132,7 +132,7 @@ pub enum FrostProtoMessageId {
     Healthcheck = 0x0A,
     /// Round 1 Dkg request message
     Round1DkgRequest = 0x0B,
-    /// WalletState
+    /// `WalletState`
     WalletState = 0x0C,
 }
 

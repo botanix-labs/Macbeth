@@ -204,7 +204,7 @@ impl<'b, TX: DbTx> HistoricalStateProviderRef<'b, TX> {
     }
 }
 
-impl<'b, TX: DbTx> AccountReader for HistoricalStateProviderRef<'b, TX> {
+impl<TX: DbTx> AccountReader for HistoricalStateProviderRef<'_, TX> {
     /// Get basic account information.
     fn basic_account(&self, address: Address) -> ProviderResult<Option<Account>> {
         match self.account_history_lookup(address)? {
@@ -226,7 +226,7 @@ impl<'b, TX: DbTx> AccountReader for HistoricalStateProviderRef<'b, TX> {
     }
 }
 
-impl<'b, TX: DbTx> BlockHashReader for HistoricalStateProviderRef<'b, TX> {
+impl<TX: DbTx> BlockHashReader for HistoricalStateProviderRef<'_, TX> {
     /// Get block hash by number.
     fn block_hash(&self, number: u64) -> ProviderResult<Option<B256>> {
         self.static_file_provider.get_with_static_file_or_database(
@@ -255,14 +255,13 @@ impl<'b, TX: DbTx> BlockHashReader for HistoricalStateProviderRef<'b, TX> {
                             .map(|result| result.map(|(_, hash)| hash).map_err(Into::into))
                             .collect::<ProviderResult<Vec<_>>>()
                     })?
-                    .map_err(Into::into)
             },
             |_| true,
         )
     }
 }
 
-impl<'b, TX: DbTx> StateRootProvider for HistoricalStateProviderRef<'b, TX> {
+impl<TX: DbTx> StateRootProvider for HistoricalStateProviderRef<'_, TX> {
     fn hashed_state_root(&self, hashed_state: HashedPostState) -> ProviderResult<B256> {
         let mut revert_state = self.revert_state()?;
         revert_state.extend(hashed_state);
@@ -323,7 +322,7 @@ impl<'b, TX: DbTx> StateRootProvider for HistoricalStateProviderRef<'b, TX> {
     }
 }
 
-impl<'b, TX: DbTx> StateProofProvider for HistoricalStateProviderRef<'b, TX> {
+impl<TX: DbTx> StateProofProvider for HistoricalStateProviderRef<'_, TX> {
     /// Get account and storage proofs.
     fn hashed_proof(
         &self,
@@ -349,7 +348,7 @@ impl<'b, TX: DbTx> StateProofProvider for HistoricalStateProviderRef<'b, TX> {
     }
 }
 
-impl<'b, TX: DbTx> StateProvider for HistoricalStateProviderRef<'b, TX> {
+impl<TX: DbTx> StateProvider for HistoricalStateProviderRef<'_, TX> {
     /// Get storage.
     fn storage(
         &self,

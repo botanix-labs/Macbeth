@@ -99,15 +99,15 @@ impl PendingBlockEnvOrigin {
     /// header.
     pub fn build_target_hash(&self) -> B256 {
         match self {
-            Self::ActualPending(block) => block.parent_hash,
+            Self::ActualPending(block) => block.as_ref().parent_hash,
             Self::DerivedFromLatest(header) => header.hash(),
         }
     }
 
     /// Returns the header this pending block is based on.
-    pub fn header(&self) -> &SealedHeader {
+    pub const fn header(&self) -> &SealedHeader {
         match self {
-            Self::ActualPending(block) => &block.header,
+            Self::ActualPending(block) => &block.block.header,
             Self::DerivedFromLatest(header) => header,
         }
     }

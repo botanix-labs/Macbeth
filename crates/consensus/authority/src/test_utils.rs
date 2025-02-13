@@ -1,7 +1,7 @@
 //! Common test utilities for the authority crate
 
 #[cfg(test)]
-mod test_utils {
+mod authority_test_utils {
     use crate::{dkg::DKGState, signing::SigningState};
     use alloy_rpc_types_engine::JwtSecret;
     use anyhow::{Context, Error};
@@ -66,7 +66,7 @@ mod test_utils {
             let identifier = Identifier::derive(&i.to_le_bytes()).expect("can derive identifier");
             identifiers.push(identifier);
             let (round1_secret, round1_package) =
-                part1(identifier, num_participants, threshold, &mut OsRng)
+                part1(identifier, num_participants, threshold, OsRng)
                     .expect("can generate round1");
 
             round1_packages.insert(identifier, round1_package.clone());
@@ -582,10 +582,10 @@ mod test_utils {
             unimplemented!("Not required for DKG/signing tests")
         }
 
-        fn new_consensus_checkpoint<'a>(
-            &'a mut self,
+        fn new_consensus_checkpoint(
+            &mut self,
             request: client::ConsensusCheckpointRequest,
-        ) -> futures_util::future::BoxFuture<'a, Result<Empty, GrpcClientError>> {
+        ) -> futures_util::future::BoxFuture<'_, Result<Empty, GrpcClientError>> {
             unimplemented!("Not required for tests")
         }
 

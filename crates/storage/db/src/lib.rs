@@ -91,7 +91,7 @@ pub mod test_utils {
 
         /// Returns the path to the database.
         pub fn path(&self) -> &Path {
-            &self.path
+            self.path.as_ref()
         }
 
         /// Convert temp database into inner.

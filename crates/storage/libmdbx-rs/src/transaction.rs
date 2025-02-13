@@ -120,7 +120,7 @@ where
 
     /// Returns a raw pointer to the MDBX environment.
     pub fn env(&self) -> &Environment {
-        &self.inner.env
+        &self.inner.as_ref().env
     }
 
     /// Returns the transaction id.

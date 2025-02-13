@@ -551,7 +551,7 @@ pub(crate) struct PendingTransaction<T: TransactionOrdering> {
 impl<T: TransactionOrdering> PendingTransaction<T> {
     /// The next transaction of the sender: `nonce + 1`
     pub(crate) fn unlocks(&self) -> TransactionId {
-        self.transaction.transaction_id.descendant()
+        self.transaction.as_ref().transaction_id.descendant()
     }
 }
 

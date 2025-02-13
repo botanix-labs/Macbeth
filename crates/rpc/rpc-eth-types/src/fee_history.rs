@@ -51,7 +51,7 @@ impl FeeHistoryCache {
     /// How the cache is configured.
     #[inline]
     pub fn config(&self) -> &FeeHistoryCacheConfig {
-        &self.inner.config
+        &self.inner.as_ref().config
     }
 
     /// Returns the configured resolution for percentile approximation.
@@ -100,7 +100,7 @@ impl FeeHistoryCache {
             entries.pop_first();
         }
 
-        if entries.len() == 0 {
+        if entries.is_empty() {
             self.inner.upper_bound.store(0, SeqCst);
             self.inner.lower_bound.store(0, SeqCst);
             return

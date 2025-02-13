@@ -59,31 +59,31 @@ impl Environment {
     /// Returns true if the environment was opened as WRITEMAP.
     #[inline]
     pub fn is_write_map(&self) -> bool {
-        self.inner.env_kind.is_write_map()
+        self.inner.as_ref().env_kind.is_write_map()
     }
 
     /// Returns the kind of the environment.
     #[inline]
     pub fn env_kind(&self) -> EnvironmentKind {
-        self.inner.env_kind
+        self.inner.as_ref().env_kind
     }
 
     /// Returns true if the environment was opened in [`crate::Mode::ReadWrite`] mode.
     #[inline]
     pub fn is_read_write(&self) -> bool {
-        self.inner.env_kind.is_write_map()
+        self.inner.as_ref().env_kind.is_write_map()
     }
 
     /// Returns true if the environment was opened in [`crate::Mode::ReadOnly`] mode.
     #[inline]
     pub fn is_read_only(&self) -> bool {
-        !self.inner.env_kind.is_write_map()
+        !self.inner.as_ref().env_kind.is_write_map()
     }
 
     /// Returns the transaction manager.
     #[inline]
     pub(crate) fn txn_manager(&self) -> &TxnManager {
-        &self.inner.txn_manager
+        &self.inner.as_ref().txn_manager
     }
 
     /// Returns the number of timed out transactions that were not aborted by the user yet.
@@ -130,7 +130,7 @@ impl Environment {
     /// been dropped.
     #[inline]
     pub(crate) fn env_ptr(&self) -> *mut ffi::MDBX_env {
-        self.inner.env
+        self.inner.as_ref().env
     }
 
     /// Executes the given closure once

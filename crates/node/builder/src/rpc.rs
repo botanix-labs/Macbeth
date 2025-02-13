@@ -220,7 +220,7 @@ pub struct RpcContext<'a, Node: FullNodeComponents, EthApi> {
     pub auth_module: &'a mut AuthRpcModule,
 }
 
-impl<'a, Node: FullNodeComponents, EthApi> RpcContext<'a, Node, EthApi> {
+impl<Node: FullNodeComponents, EthApi> RpcContext<'_, Node, EthApi> {
     /// Returns the config of the node.
     pub const fn config(&self) -> &NodeConfig {
         self.config

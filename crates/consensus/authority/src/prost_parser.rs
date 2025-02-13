@@ -23,14 +23,14 @@ where
     /// Method to serialize
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, ProstError> {
         let mut buf = Vec::new();
-        self.0.encode(&mut buf).map_err(|e| ProstError::ProstEncode(e))?;
+        self.0.encode(&mut buf).map_err(ProstError::ProstEncode)?;
         Ok(buf)
     }
 
     /// Method to deserialize
     pub(crate) fn deserialize(buf: Vec<u8>) -> Result<T, ProstError> {
         //let x = Bytes::from(buf);
-        T::decode(Bytes::from(buf)).map_err(|e| ProstError::ProstDecode(e))
+        T::decode(Bytes::from(buf)).map_err(ProstError::ProstDecode)
     }
 }
 
@@ -107,7 +107,7 @@ mod test {
 
         // now decompress the prost message
         let prost_deserialized =
-            ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(prost_serialized.into())
+            ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(prost_serialized)
                 .unwrap();
         println!("Deserialized to bytes: {:?}", prost_deserialized);
 
@@ -170,7 +170,7 @@ mod test {
         );
 
         assert!(
-            prost_deserialized.utxos.len() > 0,
+            !prost_deserialized.utxos.is_empty(),
             "deserialized message length is greater than 0"
         );
 

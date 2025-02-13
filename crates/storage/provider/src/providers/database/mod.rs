@@ -80,7 +80,7 @@ impl<DB> ProviderFactory<DB> {
 
     /// Returns reference to the underlying database.
     pub fn db_ref(&self) -> &DB {
-        &self.db
+        self.db.as_ref()
     }
 
     #[cfg(any(test, feature = "test-utils"))]

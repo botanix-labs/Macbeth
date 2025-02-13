@@ -334,7 +334,7 @@ impl<R> LaunchContextWith<Attached<WithConfigs, R>> {
 
     /// Returns the chain identifier of the node.
     pub fn chain_id(&self) -> Chain {
-        self.node_config().chain.chain
+        self.node_config().chain.as_ref().chain
     }
 
     /// Returns true if the node is configured as --dev
@@ -395,7 +395,7 @@ where
         .with_static_files_metrics();
 
         let has_receipt_pruning =
-            self.toml_config().prune.as_ref().map_or(false, |a| a.has_receipts_pruning());
+            self.toml_config().prune.as_ref().is_some_and(|a| a.has_receipts_pruning());
 
         // Check for consistency between database and static files. If it fails, it unwinds to
         // the first block that's consistent between database and static files.

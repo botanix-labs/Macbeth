@@ -98,7 +98,7 @@ where
 
     /// Return a slice of all peers.
     pub fn peers(&self) -> &[Peer<C, Pool>] {
-        &self.peers
+        self.peers.as_ref()
     }
 
     /// Remove a peer from the [`Testnet`] and return it.
@@ -289,7 +289,7 @@ impl<C, Pool> TestnetHandle<C, Pool> {
 
     /// Returns the [`PeerHandle`]s of this [`Testnet`].
     pub fn peers(&self) -> &[PeerHandle<Pool>] {
-        &self.peers
+        self.peers.as_ref()
     }
 
     /// Connects all peers with each other.
@@ -607,9 +607,8 @@ impl NetworkEventStream {
     /// Awaits the next event for a session to be closed
     pub async fn next_session_closed(&mut self) -> Option<(PeerId, Option<DisconnectReason>)> {
         while let Some(ev) = self.inner.next().await {
-            match ev {
-                NetworkEvent::SessionClosed { peer_id, reason } => return Some((peer_id, reason)),
-                _ => continue,
+            if let NetworkEvent::SessionClosed { peer_id, reason } = ev {
+                return Some((peer_id, reason))
             }
         }
         None
@@ -618,9 +617,8 @@ impl NetworkEventStream {
     /// Awaits the next event for an established session
     pub async fn next_session_established(&mut self) -> Option<PeerId> {
         while let Some(ev) = self.inner.next().await {
-            match ev {
-                NetworkEvent::SessionEstablished { peer_id, .. } => return Some(peer_id),
-                _ => continue,
+            if let NetworkEvent::SessionEstablished { peer_id, .. } = ev {
+                return Some(peer_id)
             }
         }
         None
@@ -633,15 +631,12 @@ impl NetworkEventStream {
         }
         let mut peers = Vec::with_capacity(num);
         while let Some(ev) = self.inner.next().await {
-            match ev {
-                NetworkEvent::SessionEstablished { peer_id, .. } => {
-                    peers.push(peer_id);
-                    num -= 1;
-                    if num == 0 {
-                        return peers
-                    }
+            if let NetworkEvent::SessionEstablished { peer_id, .. } = ev {
+                peers.push(peer_id);
+                num -= 1;
+                if num == 0 {
+                    return peers
                 }
-                _ => continue,
             }
         }
         peers

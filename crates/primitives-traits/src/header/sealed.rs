@@ -52,6 +52,7 @@ impl SealedHeader {
         (self.header, self.hash)
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     /// Return the number hash tuple.
     pub fn num_hash(&self) -> BlockNumHash {
         BlockNumHash::new(self.number, self.hash)

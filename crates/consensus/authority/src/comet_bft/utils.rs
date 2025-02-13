@@ -50,7 +50,7 @@ mod tests {
         let signed_tx3 = TransactionSigned::decode_enveloped(&mut buf3.as_slice()).unwrap();
         let bytes3 = prost::bytes::Bytes::copy_from_slice(buf3.as_slice());
 
-        let vec_bytes = vec![bytes1, bytes2, bytes3];
+        let vec_bytes = [bytes1, bytes2, bytes3];
         let txs = transactions_signed_from_bytes(vec_bytes.iter().cloned()).unwrap();
 
         assert_eq!(txs.len(), 3);

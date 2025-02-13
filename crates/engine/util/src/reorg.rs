@@ -324,7 +324,7 @@ where
             tx_type: tx.tx_type(),
             success: exec_result.result.is_success(),
             cumulative_gas_used,
-            logs: exec_result.result.into_logs().into_iter().map(Into::into).collect(),
+            logs: exec_result.result.into_logs().into_iter().collect(),
             ..Default::default()
         }));
 

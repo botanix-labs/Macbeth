@@ -50,119 +50,119 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
     fn update_jwt_secret(&mut self, jwt_secret: JwtSecret);
     fn generate_jwt_token(&mut self) -> Option<String>;
 
-    fn get_gateway_address<'a>(
-        &'a mut self,
+    fn get_gateway_address(
+        &mut self,
         request: GetGatewayAddressRequest,
-    ) -> BoxFuture<'a, Result<GetGatewayAddressResponse, GrpcClientError>>;
-    fn get_public_key<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<GetGatewayAddressResponse, GrpcClientError>>;
+    fn get_public_key(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<GetPublicKeyResponse, GrpcClientError>>;
-    fn get_round1_dkg_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<GetPublicKeyResponse, GrpcClientError>>;
+    fn get_round1_dkg_package(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<DkgPayload, GrpcClientError>>;
-    fn get_round1_dkg_packages<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
+    fn get_round1_dkg_packages(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<DkgPayload, GrpcClientError>>;
-    fn new_round1_dkg_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
+    fn new_round1_dkg_package(
+        &mut self,
         request: DkgPayload,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn get_round2_dkg_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn get_round2_dkg_package(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<DkgPayload, GrpcClientError>>;
-    fn new_round2_dkg_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
+    fn new_round2_dkg_package(
+        &mut self,
         request: DkgPayload,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn get_round1_signing_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn get_round1_signing_package(
+        &mut self,
         request: SigningPackageRequest,
-    ) -> BoxFuture<'a, Result<SigningPackage, GrpcClientError>>;
-    fn get_round2_signing_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<SigningPackage, GrpcClientError>>;
+    fn get_round2_signing_package(
+        &mut self,
         request: SigningPackageRequest,
-    ) -> BoxFuture<'a, Result<SigningPackage, GrpcClientError>>;
-    fn new_round1_signing_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<SigningPackage, GrpcClientError>>;
+    fn new_round1_signing_package(
+        &mut self,
         request: SigningPackage,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn get_psbt<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn get_psbt(
+        &mut self,
         request: MakeTxRequest,
-    ) -> BoxFuture<'a, Result<SigningPackage, GrpcClientError>>;
-    fn get_to_sign_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<SigningPackage, GrpcClientError>>;
+    fn get_to_sign_package(
+        &mut self,
         request: ToSignRequest,
-    ) -> BoxFuture<'a, Result<SigningPackage, GrpcClientError>>;
-    fn new_round2_signing_package<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<SigningPackage, GrpcClientError>>;
+    fn new_round2_signing_package(
+        &mut self,
         request: SigningPackage,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn finalize_signing<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn finalize_signing(
+        &mut self,
         request: FinalizeSigningRequest,
-    ) -> BoxFuture<'a, Result<FinalizeSigningResponse, GrpcClientError>>;
-    fn signer_finalize<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<FinalizeSigningResponse, GrpcClientError>>;
+    fn signer_finalize(
+        &mut self,
         request: FinalizeSignerRequest,
-    ) -> BoxFuture<'a, Result<FinalizeSigningResponse, GrpcClientError>>;
-    fn get_wallet_state<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<FinalizeSigningResponse, GrpcClientError>>;
+    fn get_wallet_state(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<WalletStateResponse, GrpcClientError>>;
-    fn abort_signing<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<WalletStateResponse, GrpcClientError>>;
+    fn abort_signing(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn get_signing_status<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn get_signing_status(
+        &mut self,
         request: GetSigningStatusRequest,
-    ) -> BoxFuture<'a, Result<GetSigningStatusResponse, GrpcClientError>>;
-    fn get_session_ids<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<GetSigningStatusResponse, GrpcClientError>>;
+    fn get_session_ids(
+        &mut self,
         request: GetSessionIdsRequest,
-    ) -> BoxFuture<'a, Result<GetSessionIdsResponse, GrpcClientError>>;
-    fn health_check<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<GetSessionIdsResponse, GrpcClientError>>;
+    fn health_check(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn reset_all_utxos<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn reset_all_utxos(
+        &mut self,
         request: ResetAllUtxosRequest,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn get_all_utxos<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn get_all_utxos(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<GetAllUtxosResponse, GrpcClientError>>;
-    fn get_tracked_txs<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<GetAllUtxosResponse, GrpcClientError>>;
+    fn get_tracked_txs(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<GetTrackedTxsResponse, GrpcClientError>>;
-    fn get_pending_pegouts<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<GetTrackedTxsResponse, GrpcClientError>>;
+    fn get_pending_pegouts(
+        &mut self,
         request: Empty,
-    ) -> BoxFuture<'a, Result<GetPendingPegoutsResponse, GrpcClientError>>;
-    fn reset_wallet_state<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<GetPendingPegoutsResponse, GrpcClientError>>;
+    fn reset_wallet_state(
+        &mut self,
         request: ResetWalletStateRequest,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
-    fn new_consensus_checkpoint<'a>(
-        &'a mut self,
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn new_consensus_checkpoint(
+        &mut self,
         request: ConsensusCheckpointRequest,
-    ) -> BoxFuture<'a, Result<Empty, GrpcClientError>>;
+    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
 }
 
 /// Macro for generating grpc methods implementation
 macro_rules! generate_method {
     ($method_name:ident, $req_ty:ty, $resp_ty:ty) => {
-        fn $method_name<'a>(
-            &'a mut self,
+        fn $method_name(
+            &mut self,
             request: $req_ty,
-        ) -> BoxFuture<'a, Result<$resp_ty, GrpcClientError>> {
+        ) -> BoxFuture<'_, Result<$resp_ty, GrpcClientError>> {
             Box::pin(async move {
                 let mut req = tonic::Request::new(request);
 

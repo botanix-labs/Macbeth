@@ -324,7 +324,7 @@ where
 
                         let pegins = pegins
                             .as_ref()
-                            .map_or_else(Vec::new, |pegins| get_utxos_from_pegin_meta(&pegins));
+                            .map_or_else(Vec::new, |pegins| get_utxos_from_pegin_meta(pegins));
 
                         // convert pegouts into correct format
                         let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {
@@ -581,7 +581,7 @@ where
                         let signing_session_id = FixedBytes::from_slice(&signing_session_id);
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
-                                let psbt_res = match bitcoin::Psbt::deserialize(&psbt.as_slice()) {
+                                let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
                                     Ok(psbt) => psbt,
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Error deserializing psbt {:?}", e);
@@ -613,7 +613,7 @@ where
                                 }
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => {
-                                let psbt_res = match bitcoin::Psbt::deserialize(&psbt.as_slice()) {
+                                let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
                                     Ok(psbt) => psbt,
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error deserializing psbt {:?}", e);
@@ -645,7 +645,7 @@ where
                                 }
                             }
                             SigningEventResponseType::SignerRound2SigningPackage => {
-                                let psbt_res = match bitcoin::Psbt::deserialize(&psbt.as_slice()) {
+                                let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
                                     Ok(psbt) => psbt,
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Error deserializing psbt {:?}", e);
@@ -677,7 +677,7 @@ where
                                 }
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => {
-                                let psbt_res = match bitcoin::Psbt::deserialize(&psbt.as_slice()) {
+                                let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
                                     Ok(psbt) => psbt,
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error deserializing psbt {:?}", e);

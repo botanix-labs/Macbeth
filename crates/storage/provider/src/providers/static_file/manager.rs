@@ -186,7 +186,7 @@ impl StaticFileProvider {
                 let fixed_block_range = find_fixed_range(block_range.start());
                 let jar_provider = self
                     .get_segment_provider(segment, || Some(fixed_block_range), None)?
-                    .ok_or(ProviderError::MissingStaticFileBlock(segment, block_range.start()))?;
+                    .ok_or_else(|| ProviderError::MissingStaticFileBlock(segment, block_range.start()))?;
 
                 entries += jar_provider.rows();
 
@@ -224,7 +224,7 @@ impl StaticFileProvider {
             || self.get_segment_ranges_from_block(segment, block),
             path,
         )?
-        .ok_or_else(|| ProviderError::MissingStaticFileBlock(segment, block))
+        .ok_or(ProviderError::MissingStaticFileBlock(segment, block))
     }
 
     /// Gets the [`StaticFileJarProvider`] of the requested segment and transaction.
@@ -239,7 +239,7 @@ impl StaticFileProvider {
             || self.get_segment_ranges_from_transaction(segment, tx),
             path,
         )?
-        .ok_or_else(|| ProviderError::MissingStaticFileTx(segment, tx))
+        .ok_or(ProviderError::MissingStaticFileTx(segment, tx))
     }
 
     /// Gets the [`StaticFileJarProvider`] of the requested segment and block or transaction.
@@ -927,7 +927,7 @@ impl StaticFileProvider {
 
     /// Returns directory where `static_files` are located.
     pub fn directory(&self) -> &Path {
-        &self.path
+        self.path.as_ref()
     }
 
     /// Retrieves data from the database or static file, wherever it's available.
@@ -959,7 +959,7 @@ impl StaticFileProvider {
         };
 
         if static_file_upper_bound
-            .map_or(false, |static_file_upper_bound| static_file_upper_bound >= number)
+            .is_some_and(|static_file_upper_bound| static_file_upper_bound >= number)
         {
             return fetch_from_static_file(self)
         }
@@ -1020,7 +1020,7 @@ impl StaticFileProvider {
     #[cfg(any(test, feature = "test-utils"))]
     /// Returns `static_files` directory
     pub fn path(&self) -> &Path {
-        &self.path
+        self.path.as_ref()
     }
 }
 

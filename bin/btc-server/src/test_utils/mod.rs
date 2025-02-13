@@ -113,6 +113,12 @@ impl MockBitcoind {
     }
 }
 
+impl Default for MockBitcoind {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /* Some Test utils. Should probably be in a separate file */
 
 pub fn create_random_pegout_id() -> PegoutId {
@@ -157,16 +163,13 @@ pub fn eth_vector_to_fixed_bytes(eth: Vec<u8>) -> [u8; 20] {
 pub fn random_p2tr_keyspend_script() -> ScriptBuf {
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let key_pair = secp.generate_keypair(&mut OsRng);
-    let change_script = generate_taproot_change_scriptpubkey(&key_pair.1);
-    change_script
+    generate_taproot_change_scriptpubkey(&key_pair.1)
 }
 
 pub fn random_p2wpkh_script() -> ScriptBuf {
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let sk = bitcoin::PrivateKey::generate(NETWORK);
-    let spk = sk.public_key(&secp).p2wpkh_script_code().unwrap();
-
-    spk
+    sk.public_key(&secp).p2wpkh_script_code().unwrap()
 }
 
 pub fn trusted_dealer_setup(
@@ -223,7 +226,7 @@ pub fn create_block(txs: Vec<Transaction>, prev_hash: bitcoin::BlockHash) -> Blo
         script_sig: bitcoin::Script::builder()
             .push_opcode(bitcoin::opcodes::all::OP_PUSHBYTES_3)
             // This hardcodes the height of the block. Could change in the future
-            .push_slice(&[10u8; 3])
+            .push_slice([10u8; 3])
             .into_script(),
         sequence: bitcoin::Sequence::MAX,
         witness: bitcoin::Witness::default(),
@@ -236,7 +239,7 @@ pub fn create_block(txs: Vec<Transaction>, prev_hash: bitcoin::BlockHash) -> Blo
     };
     let mut txdata = vec![coinbase_tx];
     txdata.extend(txs);
-    let block = Block {
+    Block {
         header: Header {
             version: bitcoin::blockdata::block::Version::TWO,
             prev_blockhash: prev_hash,
@@ -246,9 +249,7 @@ pub fn create_block(txs: Vec<Transaction>, prev_hash: bitcoin::BlockHash) -> Blo
             nonce: 0,
         },
         txdata,
-    };
-
-    block
+    }
 }
 
 pub fn create_psbt(num_inputs: usize, num_outputs: usize, change: Option<TxOut>) -> Psbt {
@@ -278,7 +279,7 @@ pub fn get_change(db: &database::Db) -> TxOut {
         .to_secp_pk()
         .expect("valid secp pk");
     let change_script = crate::wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-    return TxOut { value: Amount::from_sat(500), script_pubkey: change_script };
+    TxOut { value: Amount::from_sat(500), script_pubkey: change_script }
 }
 
 pub fn store_pending_pegout(db: &database::Db) -> PegoutId {

@@ -76,13 +76,13 @@ impl SnapshotChunk {
     }
 
     /// Return the data of this chunk.
-    /// Each chunk is a [BlockWithSenders]
+    /// Each chunk is a [`BlockWithSenders`]
     pub fn chunk_data(&self) -> &[Bytes] {
-        &self.chunk_data
+        self.chunk_data.as_ref()
     }
 
     /// Return the ending block number of this chunk.
-    pub fn get_ending_block_number(&self) -> BlockNumber {
+    pub const fn get_ending_block_number(&self) -> BlockNumber {
         self.ending_block_number
     }
 }
@@ -106,8 +106,8 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Creates a new snapshot by given height and block_hash
-    pub fn new(id: u64, height: u64, block_hash: B256) -> Self {
+    /// Creates a new snapshot by given height and `block_hash`
+    pub const fn new(id: u64, height: u64, block_hash: B256) -> Self {
         Self { id, height, chunk_ids: Vec::new(), block_ids: Vec::new(), block_hash }
     }
 
@@ -204,12 +204,12 @@ impl Snapshot {
 
     /// Return the chunk ids.
     pub fn chunk_ids(&self) -> &[ChunkId] {
-        &self.chunk_ids
+        self.chunk_ids.as_ref()
     }
 
     /// Return the block ids.
     pub fn block_ids(&self) -> &[u64] {
-        &self.block_ids
+        self.block_ids.as_ref()
     }
 
     /// Return the hash of this snapshot block.
@@ -251,8 +251,8 @@ pub struct SnapshotSync {
 }
 
 impl SnapshotSync {
-    /// Creates a new snapshot sync by given height and block_hash
-    pub fn new(height: u64, snapshot_hash: B256, format: u64, total_chunks: u64) -> Self {
+    /// Creates a new snapshot sync by given height and `block_hash`
+    pub const fn new(height: u64, snapshot_hash: B256, format: u64, total_chunks: u64) -> Self {
         Self { height, total_chunks, last_applied_chunk_index: 0, snapshot_hash, format }
     }
 
@@ -266,7 +266,7 @@ impl SnapshotSync {
         self.total_chunks = total_chunks;
     }
 
-    /// Sets the last_applied_chunk_index.
+    /// Sets the `last_applied_chunk_index`.
     pub fn set_last_applied_chunk_index(&mut self, last_applied_chunk_index: u64) {
         self.last_applied_chunk_index = last_applied_chunk_index;
     }
@@ -286,7 +286,7 @@ impl SnapshotSync {
         self.total_chunks
     }
 
-    /// Return the last_applied_chunk_index.
+    /// Return the `last_applied_chunk_index`.
     pub const fn last_applied_chunk_index(&self) -> u64 {
         self.last_applied_chunk_index
     }

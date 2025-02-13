@@ -394,6 +394,19 @@ lint-other-targets:
 	--all-features \
 	-- -D warnings
 
+lint-clippy-checks:
+	cargo +nightly clippy \
+	-p reth-authority-consensus \
+	-p reth-network \
+	-p reth-primitives \
+	-p reth-rpc \
+	--lib \
+	--tests \
+	--benches \
+	--all-features \
+	--locked \
+	-- -D warnings
+
 lint-codespell: ensure-codespell
 	codespell --skip "*.json"
 

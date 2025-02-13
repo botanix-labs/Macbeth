@@ -330,12 +330,12 @@ where
                             if latest_chunk_size + serialized_block.len() >
                                 self.snapshot_size_limits.snapshot_chunk_size
                             {
-                                let new_chunk_id = self.create_new_chunk(
+                                
+                                self.create_new_chunk(
                                     last_snapshot_id,
                                     block_with_senders.number,
                                     serialized_block.clone(),
-                                )?;
-                                new_chunk_id
+                                )?
                             } else {
                                 // Existing chunk lets append to it
                                 self.append_to_chunk(
@@ -474,7 +474,7 @@ mod tests {
         assert!(snapshots_count == 1);
         let snapshots = client.get_snapshots().unwrap();
         assert!(snapshots.len() == 1);
-        let _snp = snapshots.iter().next().unwrap().clone();
+        let _snp = snapshots.first().unwrap().clone();
         assert!(snapshot_by_id.height() == 2);
 
         client.remove_snapshots(2..=2).unwrap();
@@ -621,9 +621,9 @@ mod tests {
         let client = provider_factory.provider_rw().unwrap();
 
         // insert a new snapshot sync
-        let mut id = client.create_new_snapshot_sync(1, B256::random(), 10, 1).unwrap();
-        id = client.create_new_snapshot_sync(2, B256::random(), 20, 1).unwrap();
-        id = client.create_new_snapshot_sync(3, B256::random(), 30, 1).unwrap();
+        client.create_new_snapshot_sync(1, B256::random(), 10, 1).unwrap();
+        client.create_new_snapshot_sync(2, B256::random(), 20, 1).unwrap();
+        let id = client.create_new_snapshot_sync(3, B256::random(), 30, 1).unwrap();
 
         let mut snapshot_sync_by_id = client.get_snapshot_sync_by_id(id).unwrap().unwrap();
         assert!(snapshot_sync_by_id.height() == 3);

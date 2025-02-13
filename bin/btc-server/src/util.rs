@@ -438,7 +438,7 @@ pub async fn get_available_utxos(
         })?;
     // Filter the ones that are still pending and conflict with pending txs.
     let tracked_inputs =
-        HashSet::from_iter(db.get_tracked_txs()?.iter().map(|tx| tx.inputs()).flatten());
+        HashSet::from_iter(db.get_tracked_txs()?.iter().flat_map(|tx| tx.inputs()));
     let available_utxos =
         utxos.into_iter().filter(|(p, _u)| !tracked_inputs.contains(p)).collect::<HashMap<_, _>>();
 
@@ -474,7 +474,7 @@ pub fn has_conflicting_input(db: &Db, psbt: &Psbt) -> Result<(), ConflictingInpu
         if has_matching_pegout {
             tx.inputs()
                 .any(|input| psbt_inputs.contains(&input))
-                .then(|| ()) // convert bool into an Option
+                .then_some(()) // convert bool into an Option
                 .ok_or(ConflictingInputError::NoConflictingInput)?;
         }
     }

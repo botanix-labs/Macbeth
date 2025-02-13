@@ -29,6 +29,10 @@ pub struct AuthorityMetrics {
     /// Number of finalzied signings
     pub(crate) finalized_signings: Counter,
 
+    #[allow(dead_code)]
+    /// Number of reset wallet states
+    pub(crate) reset_wallet_states: Counter,
+
     /// Number of commet finalzied blocks
     pub(crate) commet_finalzied_blocks: Counter,
 

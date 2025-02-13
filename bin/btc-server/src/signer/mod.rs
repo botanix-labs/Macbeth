@@ -104,7 +104,7 @@ pub async fn get_round2_signing_package(
     db: &Database,
     identifier: &Identifier,
     // Each nonce pair is commitment to a input of the tx
-    signing_nonces: &Vec<(SigningNonces, SigningCommitments)>,
+    signing_nonces: &[(SigningNonces, SigningCommitments)],
 ) -> Result<(), SigningRound2Error> {
     // Validate PSBT
     if cfg!(feature = "conflicting_input") {

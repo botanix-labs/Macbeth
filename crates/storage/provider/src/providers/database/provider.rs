@@ -257,7 +257,6 @@ where
         let first = list.iter().next().expect("List can't be empty");
         if first >= block_number {
             item = cursor.prev()?;
-            continue
         } else if block_number <= sharded_key.as_ref().highest_block_number {
             // Filter out all elements greater than block number.
             return Ok(list.iter().take_while(|i| *i < block_number).collect::<Vec<_>>())
@@ -297,7 +296,7 @@ impl<TX: DbTx> DatabaseProvider<TX> {
 
     /// Returns a reference to the [`ChainSpec`].
     pub fn chain_spec(&self) -> &ChainSpec {
-        &self.chain_spec
+        self.chain_spec.as_ref()
     }
 
     /// Disables long-lived read transaction safety guarantees for leaks prevention and
@@ -589,7 +588,7 @@ impl<TX: DbTx> DatabaseProvider<TX> {
                             // recover the sender from the transaction if not found
                             let sender = tx
                                 .recover_signer_unchecked()
-                                .ok_or_else(|| ProviderError::SenderRecoveryError)?;
+                                .ok_or(ProviderError::SenderRecoveryError)?;
                             senders.push(sender);
                         }
                         Some(sender) => senders.push(*sender),
@@ -1846,7 +1845,7 @@ impl<TX: DbTx> HeaderProvider for DatabaseProvider<TX> {
             StaticFileSegment::Headers,
             to_range(range),
             |static_file, range, _| static_file.headers_range(range),
-            |range, _| self.cursor_read_collect::<tables::Headers>(range).map_err(Into::into),
+            |range, _| self.cursor_read_collect::<tables::Headers>(range),
             |_| true,
         )
     }
@@ -1918,7 +1917,7 @@ impl<TX: DbTx> BlockHashReader for DatabaseProvider<TX> {
             start..end,
             |static_file, range, _| static_file.canonical_hashes_range(range.start, range.end),
             |range, _| {
-                self.cursor_read_collect::<tables::CanonicalHeaders>(range).map_err(Into::into)
+                self.cursor_read_collect::<tables::CanonicalHeaders>(range)
             },
             |_| true,
         )
@@ -2233,7 +2232,6 @@ impl<TX: DbTx> TransactionsProvider for DatabaseProvider<TX> {
         } else {
             Ok(None)
         }
-        .map(|tx| tx.map(Into::into))
     }
 
     fn transaction_by_hash_with_meta(
@@ -2347,7 +2345,7 @@ impl<TX: DbTx> TransactionsProvider for DatabaseProvider<TX> {
         &self,
         range: impl RangeBounds<TxNumber>,
     ) -> ProviderResult<Vec<Address>> {
-        self.cursor_read_collect::<tables::TransactionSenders>(range).map_err(Into::into)
+        self.cursor_read_collect::<tables::TransactionSenders>(range)
     }
 
     fn transaction_sender(&self, id: TxNumber) -> ProviderResult<Option<Address>> {
@@ -2395,7 +2393,7 @@ impl<TX: DbTx> ReceiptProvider for DatabaseProvider<TX> {
             StaticFileSegment::Receipts,
             to_range(range),
             |static_file, range, _| static_file.receipts_by_tx_range(range),
-            |range, _| self.cursor_read_collect::<tables::Receipts>(range).map_err(Into::into),
+            |range, _| self.cursor_read_collect::<tables::Receipts>(range),
             |_| true,
         )
     }
@@ -3723,7 +3721,7 @@ impl<TX: DbTx> SnapshotReader for DatabaseProvider<TX> {
             .walk(None)?
             .collect::<Result<HashMap<_, _>, _>>()?
             .values()
-            .map(|value| value.clone())
+            .cloned()
             .sorted_by_key(|s| s.height())
             .collect::<Vec<_>>())
     }
@@ -3837,8 +3835,8 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         format: u64,
     ) -> ProviderResult<SnapshotSyncId> {
         let last_snapshot_sync_id =
-            self.get_last_snapshot_sync_id()?.map(|snapshot_sync_id| snapshot_sync_id).unwrap_or(0);
-        let new_snapshot_sync_id = last_snapshot_sync_id + 1;
+            self.get_last_snapshot_sync_id()?;
+        let new_snapshot_sync_id = last_snapshot_sync_id.unwrap_or_default() + 1;
         let new_snapshot_sync = SnapshotSync::new(height, snapshot_hash, format, total_chunks);
         self.tx.put::<tables::SnapshotSyncs>(new_snapshot_sync_id, new_snapshot_sync)?;
         Ok(new_snapshot_sync_id)
@@ -3850,8 +3848,8 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         block_number: BlockNumber,
         chunk_data: Vec<u8>,
     ) -> ProviderResult<ChunkId> {
-        let last_chunk_id = self.get_last_chunk_id()?.map(|chunk_id| chunk_id).unwrap_or(0);
-        let new_chunk_id = last_chunk_id + 1;
+        let last_chunk_id = self.get_last_chunk_id()?;
+        let new_chunk_id = last_chunk_id.unwrap_or_default() + 1;
         let new_chunk = SnapshotChunk::new(snapshot_id, block_number, chunk_data);
         self.tx.put::<tables::Chunks>(new_chunk_id, new_chunk)?;
         self.tx.put::<tables::ChunkBlocks>(new_chunk_id, block_number)?;

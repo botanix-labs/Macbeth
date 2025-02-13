@@ -507,7 +507,7 @@ pub struct RpcModuleConfigBuilder {
 
 impl RpcModuleConfigBuilder {
     /// Configures a custom eth namespace config
-    pub fn eth(mut self, eth: EthConfig) -> Self {
+    pub const fn eth(mut self, eth: EthConfig) -> Self {
         self.eth = Some(eth);
         self
     }
@@ -1503,7 +1503,7 @@ impl TransportRpcModuleConfig {
     }
 
     /// Sets a custom [`RpcModuleConfig`] for the configured modules.
-    pub fn with_config(mut self, config: RpcModuleConfig) -> Self {
+    pub const fn with_config(mut self, config: RpcModuleConfig) -> Self {
         self.config = Some(config);
         self
     }

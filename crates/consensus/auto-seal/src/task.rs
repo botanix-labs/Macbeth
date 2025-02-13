@@ -173,8 +173,6 @@ where
                                             }
                                             ForkchoiceStatus::Syncing => {
                                                 debug!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
-                                                // wait for the next fork choice update
-                                                continue;
                                             }
                                         }
                                     }

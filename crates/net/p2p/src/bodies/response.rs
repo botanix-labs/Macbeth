@@ -29,14 +29,14 @@ impl BlockResponse {
 
     /// Return the block number
     pub fn block_number(&self) -> BlockNumber {
-        self.header().number
+        self.header().as_ref().number
     }
 
     /// Return the reference to the response header
     pub fn difficulty(&self) -> U256 {
         match self {
-            Self::Full(block) => block.difficulty,
-            Self::Empty(header) => header.difficulty,
+            Self::Full(block) => block.as_ref().difficulty,
+            Self::Empty(header) => header.as_ref().difficulty,
         }
     }
 }

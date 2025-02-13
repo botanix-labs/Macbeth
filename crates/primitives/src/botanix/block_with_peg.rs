@@ -29,11 +29,11 @@ impl SealedBlockWithPeg {
 
     /// Pegins
     pub fn pegins(&self) -> &[PeginData] {
-        &self.pegins
+        self.pegins.as_slice()
     }
 
     /// Pegouts
     pub fn pegouts(&self) -> &[PegoutWithId] {
-        &self.pegouts
+        self.pegouts.as_slice()
     }
 }
