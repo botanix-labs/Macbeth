@@ -49,7 +49,6 @@ pub use comet_bft::light_client::LightCBFTClientBuilder;
 mod dkg;
 mod excecution_utils;
 mod frost_task;
-mod healthcheck_task;
 mod prost_parser;
 mod signing;
 pub mod snapshot_manager;
