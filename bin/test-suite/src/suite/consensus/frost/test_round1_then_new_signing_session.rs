@@ -2,7 +2,10 @@ use std::str::FromStr;
 
 use crate::{
     suite::consensus::frost::test_signing::{do_signing, Pegin},
-    utils::MIN_BLOCKS_COINBASE_MATURE,
+    utils::{
+        get_checkpoint_block_hash, send_pegin_notification, send_pegout_notification,
+        MIN_BLOCKS_COINBASE_MATURE,
+    },
 };
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
@@ -17,10 +20,7 @@ use crate::{
     it_info_print,
     suite::consensus::{
         common::events::BITCOIND_WALLET_NAME,
-        frost::{
-            error::Error,
-            test_dkg::{do_dkg, send_pegin_notification, send_pegout_notification},
-        },
+        frost::{error::Error, test_dkg::do_dkg},
         ConsensusIntegrationTestSuite,
     },
     utils::generate_blocks,
@@ -169,6 +169,10 @@ pub async fn test_round1_then_new_signing_session(
         });
     }
 
+    // get the checkpoint blockhash
+    let bitcoind = suite.global_context.bitcoind_rpc();
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
     // get the aggregate pk from any of the clients
     // Here we are signing for a NUM_PEGINS inputs that are tweaked differently
 
@@ -181,6 +185,7 @@ pub async fn test_round1_then_new_signing_session(
             ot.txid.consensus_encode(&mut txid_bytes)?;
             send_pegin_notification(
                 c,
+                checkpoint_block_hash.clone(),
                 pegin.btc_address.clone(),
                 hex_encode(pegin.eth_address),
                 txid_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid txid"))?,
@@ -207,7 +212,15 @@ pub async fn test_round1_then_new_signing_session(
     let amount = bitcoin::Amount::from_sat(100_000);
     for c in clients.iter_mut() {
         // Each pegin is 100_000 satoshis, spending 100_000 should spend at least 2 inputs
-        send_pegout_notification(c, amount.to_sat(), 1, pegout_id, spk.clone()).await?;
+        send_pegout_notification(
+            c,
+            checkpoint_block_hash.clone(),
+            amount.to_sat(),
+            1,
+            pegout_id,
+            spk.clone(),
+        )
+        .await?;
     }
 
     // complete signing round 1 but not round 2

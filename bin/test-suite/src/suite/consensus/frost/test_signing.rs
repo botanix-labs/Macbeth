@@ -7,20 +7,19 @@ use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
 use reth_chainspec::BOTANIX_TESTNET;
-use serde::Deserialize;
 use tonic::transport::Channel;
 
 use crate::{
     it_info_print,
     suite::consensus::{
         common::events::BITCOIND_WALLET_NAME,
-        frost::{
-            error::Error,
-            test_dkg::{do_dkg, send_pegin_notification, send_pegout_notification},
-        },
+        frost::{error::Error, test_dkg::do_dkg},
         ConsensusIntegrationTestSuite,
     },
-    utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
+    utils::{
+        generate_blocks, get_checkpoint_block_hash, send_pegin_notification,
+        send_pegout_notification, MIN_BLOCKS_COINBASE_MATURE,
+    },
 };
 
 const NUM_PEGINS: usize = 5;
@@ -264,6 +263,10 @@ pub async fn test_many_inputs_signing(
         });
     }
 
+    // get the checkpoint blockhash
+    let bitcoind = suite.global_context.bitcoind_rpc();
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
     // get the aggregate pk from any of the clients
     // Here we are signing for a NUM_PEGINS inputs that are tweaked differently
 
@@ -276,6 +279,7 @@ pub async fn test_many_inputs_signing(
             ot.txid.consensus_encode(&mut txid_bytes)?;
             send_pegin_notification(
                 c,
+                checkpoint_block_hash.clone(),
                 pegin.btc_address.clone(),
                 hex_encode(pegin.eth_address),
                 txid_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid txid"))?,
@@ -311,7 +315,15 @@ pub async fn test_many_inputs_signing(
     let amount = bitcoin::Amount::from_sat(100_000);
     for c in clients.iter_mut() {
         // Each pegin is 100_000 satoshis, spending 100_000 should spend at least 2 inputs
-        send_pegout_notification(c, amount.to_sat(), 1, pegout_id, spk.clone()).await?;
+        send_pegout_notification(
+            c,
+            checkpoint_block_hash.clone(),
+            amount.to_sat(),
+            1,
+            pegout_id,
+            spk.clone(),
+        )
+        .await?;
     }
     let final_tx = do_signing(&mut clients, &bitcoind, &[1u8; 32]).await?;
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
@@ -346,11 +358,15 @@ pub async fn test_many_inputs_signing(
         pending_pegouts.push((pegout_id, amount, spk.clone(), pegout_id));
     }
 
+    // update the checkpoint blockhash
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
     // Lets settle multiple pegouts
     for c in clients.iter_mut() {
         for pending_pegout in pending_pegouts.iter() {
             send_pegout_notification(
                 c,
+                checkpoint_block_hash.clone(),
                 pending_pegout.1.to_sat(),
                 1,
                 pending_pegout.0,
@@ -386,25 +402,25 @@ pub async fn test_many_inputs_signing(
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
     all_clients_have_same_wallet_state(&mut clients).await?;
 
-    // Need to define a custom struct as breaking changes in bitcoin-core will cause the
-    // deserialization to fail
-    #[derive(Deserialize)]
-    struct BlockChainInfoRes {
-        blocks: u64,
-    }
+    // update the checkpoint blockhash
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
 
-    let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks -
-        (BOTANIX_TESTNET.parent_confirmation_depth as u64);
-    let deep_block_hash = bitcoind.get_block_hash(deep_tip).unwrap();
-
+    // sync tx index to checkpoint block hash
     for c in clients.iter_mut() {
-        let mut cbh = vec![];
-        deep_block_hash.consensus_encode(&mut cbh)?;
-        c.tx_index_new_checkpoint(tonic::Request::new(client::SyncTxIndexRequest {
-            checkpoint_block_hash: cbh,
-        }))
-        .await
-        .expect("valid checkpoint");
+        match c
+            .new_consensus_checkpoint(client::ConsensusCheckpointRequest {
+                checkpoint_block_hash: checkpoint_block_hash.clone(),
+                pegins: vec![],
+                pending_pegouts: vec![],
+            })
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                it_info_print!("Error: {:?}", e);
+                return Err(Error::ConsensusCheckpoint.into());
+            }
+        };
     }
 
     let utxos = clients[coordinator_index]
@@ -449,8 +465,19 @@ pub async fn test_many_inputs_signing(
     let pk = sk.public_key(&secp);
     let spk = pk.p2wpkh_script_code().expect("valid pk");
 
+    // update the checkpoint blockhash
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
     for c in clients.iter_mut() {
-        send_pegout_notification(c, rand_amount, 1, pegout_id, spk.clone()).await?;
+        send_pegout_notification(
+            c,
+            checkpoint_block_hash.clone(),
+            rand_amount,
+            1,
+            pegout_id,
+            spk.clone(),
+        )
+        .await?;
     }
 
     let final_tx = do_signing(&mut clients, &bitcoind, &[3u8; 32]).await?;
