@@ -39,24 +39,22 @@ jobs:
     #       env:
     #         RUSTFLAGS: -D warnings
 
-    # clippy:
-    #   name: clippy-checks
-    #   runs-on: ubuntu-latest
-    #   timeout-minutes: 30
-    #   steps:
-    #     - uses: actions/checkout@v4
-    #     - name: Install Protobuf Compiler
-    #       run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-    #     - uses: dtolnay/rust-toolchain@clippy
-    #     - uses: Swatinem/rust-cache@v2
-    #       with:
-    #         cache-on-failure: true
-    #         cache-all-crates: true
-    #     - run: cargo clippy --workspace --lib --tests --benches --all-features --locked
-    #       env:
-    #         RUSTFLAGS: -D warnings
-
-    # Commenting out for now, will re-enable after final upstream merge
+  clippy:
+    name: clippy-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+      - run: cargo clippy -p reth-authority-consensus -p reth-network -p reth-primitives -p reth-rpc --lib --tests --benches --all-features --locked
+        env:
+          RUSTFLAGS: -D warnings
 
   crate-checks:
     runs-on: ubuntu-latest
