@@ -357,7 +357,7 @@ impl Chain {
 #[derive(Debug)]
 pub struct DisplayBlocksChain<'a>(pub &'a BTreeMap<BlockNumber, SealedBlockWithSenders>);
 
-impl<'a> fmt::Display for DisplayBlocksChain<'a> {
+impl fmt::Display for DisplayBlocksChain<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut list = f.debug_list();
         let mut values = self.0.values().map(|block| block.num_hash());
@@ -378,7 +378,7 @@ pub struct ChainBlocks<'a> {
     blocks: Cow<'a, BTreeMap<BlockNumber, SealedBlockWithSenders>>,
 }
 
-impl<'a> ChainBlocks<'a> {
+impl ChainBlocks<'_> {
     /// Creates a consuming iterator over all blocks in the chain with increasing block number.
     ///
     /// Note: this always yields at least one block.
@@ -444,7 +444,7 @@ impl<'a> ChainBlocks<'a> {
     }
 }
 
-impl<'a> IntoIterator for ChainBlocks<'a> {
+impl IntoIterator for ChainBlocks<'_> {
     type Item = (BlockNumber, SealedBlockWithSenders);
     type IntoIter = std::collections::btree_map::IntoIter<BlockNumber, SealedBlockWithSenders>;
 

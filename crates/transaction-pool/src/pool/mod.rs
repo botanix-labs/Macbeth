@@ -954,7 +954,7 @@ impl<T: PoolTransaction> AddedPendingTransaction<T> {
 
     /// Returns if the transaction should be propagated.
     pub(crate) fn is_propagate_allowed(&self) -> bool {
-        self.transaction.propagate
+        self.transaction.as_ref().propagate
     }
 }
 
@@ -1045,7 +1045,7 @@ impl<T: PoolTransaction> AddedTransaction<T> {
     /// Returns the discarded transactions if there were any
     pub(crate) fn discarded_transactions(&self) -> Option<&[Arc<ValidPoolTransaction<T>>]> {
         match self {
-            Self::Pending(tx) => Some(&tx.discarded),
+            Self::Pending(tx) => Some(tx.discarded.as_ref()),
             Self::Parked { .. } => None,
         }
     }

@@ -640,7 +640,7 @@ impl ChainSpec {
                             return Some(block_num);
                         }
                     }
-                    ForkCondition::Block(_) | ForkCondition::Never => continue,
+                    ForkCondition::Block(_) | ForkCondition::Never => (),
                 }
             }
         }

@@ -197,7 +197,7 @@ pub struct TrieUpdatesSorted {
 impl TrieUpdatesSorted {
     /// Returns reference to updated account nodes.
     pub fn account_nodes_ref(&self) -> &[(Nibbles, BranchNodeCompact)] {
-        &self.account_nodes
+        self.account_nodes.as_ref()
     }
 
     /// Returns reference to removed account nodes.
@@ -227,7 +227,7 @@ impl StorageTrieUpdatesSorted {
 
     /// Returns reference to updated storage nodes.
     pub fn storage_nodes_ref(&self) -> &[(Nibbles, BranchNodeCompact)] {
-        &self.storage_nodes
+        self.storage_nodes.as_ref()
     }
 
     /// Returns reference to removed storage nodes.

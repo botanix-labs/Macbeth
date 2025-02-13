@@ -62,7 +62,7 @@ impl EthBuiltPayload {
 
     /// Returns the blob sidecars.
     pub fn sidecars(&self) -> &[BlobTransactionSidecar] {
-        &self.sidecars
+        self.sidecars.as_ref()
     }
 
     /// Adds sidecars to the payload.
@@ -81,7 +81,7 @@ impl BuiltPayload for EthBuiltPayload {
     }
 }
 
-impl<'a> BuiltPayload for &'a EthBuiltPayload {
+impl BuiltPayload for &'_ EthBuiltPayload {
     fn block(&self) -> &SealedBlock {
         (**self).block()
     }
@@ -123,7 +123,7 @@ impl From<EthBuiltPayload> for ExecutionPayloadEnvelopeV3 {
             // Spec:
             // <https://github.com/ethereum/execution-apis/blob/fe8e13c288c592ec154ce25c534e26cb7ce0530d/src/engine/cancun.md#specification-2>
             should_override_builder: false,
-            blobs_bundle: sidecars.into_iter().map(Into::into).collect::<Vec<_>>().into(),
+            blobs_bundle: sidecars.into_iter().collect::<Vec<_>>().into(),
         }
     }
 }
@@ -144,7 +144,7 @@ impl From<EthBuiltPayload> for ExecutionPayloadEnvelopeV4 {
             // Spec:
             // <https://github.com/ethereum/execution-apis/blob/fe8e13c288c592ec154ce25c534e26cb7ce0530d/src/engine/cancun.md#specification-2>
             should_override_builder: false,
-            blobs_bundle: sidecars.into_iter().map(Into::into).collect::<Vec<_>>().into(),
+            blobs_bundle: sidecars.into_iter().collect::<Vec<_>>().into(),
         }
     }
 }

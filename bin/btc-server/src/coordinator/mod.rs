@@ -110,8 +110,7 @@ pub async fn make_tx(
 
     let tracked_inputs = tracked_txs
         .iter()
-        .map(|tx| tx.inputs().collect::<Vec<OutPoint>>())
-        .flatten()
+        .flat_map(|tx| tx.inputs().collect::<Vec<OutPoint>>())
         .collect::<HashSet<OutPoint>>();
     // Filter utxos that are still pending and conflict with pending txs.
     let mut available_utxos = utxos
@@ -151,13 +150,13 @@ pub async fn make_tx(
             .iter()
             .map(|op| {
                 utxos
-                    .get(&op)
+                    .get(op)
                     .ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput)
-                    .and_then(|u: &Utxo| {
+                    .map(|u: &Utxo| {
                         // Conflicting utxos will be added to available utxos before finishing
                         // coin selection
-                        conflicting_utxos.insert(op.clone(), u.clone());
-                        Ok(u.clone())
+                        conflicting_utxos.insert(*op, u.clone());
+                        u.clone()
                     })
             })
             .collect();
@@ -168,7 +167,7 @@ pub async fn make_tx(
     // include conflicting utxos when selecting from available utxos
     // this is done after the coin selection result above to prevent duplicate utxos
     conflicting_utxos.iter().for_each(|(op, u)| {
-        available_utxos.insert(op.clone(), u.clone());
+        available_utxos.insert(*op, u.clone());
     });
 
     let psbt = coin_selection::coin_selection(
@@ -238,7 +237,7 @@ pub async fn finalize_signing(
             additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
         };
         let agg_sig = frost::aggregate_with_tweak(
-            &signing_package,
+            signing_package,
             &partial_sig,
             &pk_package,
             &signing_parameters,

@@ -13,6 +13,8 @@ use crate::FromEthApiError;
 
 use super::{LoadPendingBlock, LoadReceipt, SpawnBlocking};
 
+type BlockReceiptsLoadResult<E> = Result<Option<(SealedBlock, Arc<Vec<Receipt>>)>, E>;
+
 /// Block related functions for the [`EthApiServer`](crate::EthApiServer) trait in the
 /// `eth_` namespace.
 pub trait EthBlocks: LoadBlock {
@@ -144,7 +146,7 @@ pub trait EthBlocks: LoadBlock {
     fn load_block_and_receipts(
         &self,
         block_id: BlockId,
-    ) -> impl Future<Output = Result<Option<(SealedBlock, Arc<Vec<Receipt>>)>, Self::Error>> + Send
+    ) -> impl Future<Output = BlockReceiptsLoadResult<Self::Error>> + Send 
     where
         Self: LoadReceipt,
     {

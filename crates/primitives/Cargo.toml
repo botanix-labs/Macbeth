@@ -52,7 +52,6 @@ rayon = { workspace = true }
 
 # BTC wallet
 reth-btc-wallet = { workspace = true, optional = true }
-reth-chainspec = { workspace = true, optional = true }
 reth-codecs = { workspace = true, optional = true }
 reth-ethereum-forks = { workspace = true }
 # reth
@@ -99,7 +98,7 @@ asm-keccak = ["alloy-primitives/asm-keccak"]
 arbitrary = [
     "reth-primitives-traits/arbitrary",
     "revm-primitives/arbitrary",
-    "reth-chainspec?/arbitrary",
+    "reth-chainspec/arbitrary",
     "reth-ethereum-forks/arbitrary",
     "alloy-eips/arbitrary",
     "dep:arbitrary",

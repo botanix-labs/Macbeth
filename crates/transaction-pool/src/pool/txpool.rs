@@ -279,7 +279,7 @@ impl<T: TransactionOrdering> TxPool<T> {
                 // blob pool that are valid with the lower blob fee
                 if best_transactions_attributes
                     .blob_fee
-                    .map_or(false, |fee| fee < self.all_transactions.pending_fees.blob_fee as u64)
+                    .is_some_and(|fee| fee < self.all_transactions.pending_fees.blob_fee as u64)
                 {
                     let unlocked_by_blob_fee =
                         self.blob_pool.satisfy_attributes(best_transactions_attributes);

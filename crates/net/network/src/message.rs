@@ -49,7 +49,7 @@ pub struct NewBlockMessage {
 impl NewBlockMessage {
     /// Returns the block number of the block
     pub fn number(&self) -> u64 {
-        self.block.block.header.number
+        self.block.as_ref().block.header.number
     }
 }
 

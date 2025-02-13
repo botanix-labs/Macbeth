@@ -78,13 +78,13 @@ impl<'a, C: TrieCursor> InMemoryAccountTrieCursor<'a, C> {
         exact: bool,
     ) -> Result<Option<(Nibbles, BranchNodeCompact)>, DatabaseError> {
         let in_memory = self.in_memory_cursor.seek(&key);
-        if exact && in_memory.as_ref().map_or(false, |entry| entry.0 == key) {
+        if exact && in_memory.as_ref().is_some_and(|entry| entry.0 == key) {
             return Ok(in_memory)
         }
 
         // Reposition the cursor to the first greater or equal node that wasn't removed.
         let mut db_entry = self.cursor.seek(key.clone())?;
-        while db_entry.as_ref().map_or(false, |entry| self.removed_nodes.contains(&entry.0)) {
+        while db_entry.as_ref().is_some_and(|entry| self.removed_nodes.contains(&entry.0)) {
             db_entry = self.cursor.next()?;
         }
 
@@ -104,7 +104,7 @@ impl<'a, C: TrieCursor> InMemoryAccountTrieCursor<'a, C> {
         let mut db_entry = self.cursor.seek(last.clone())?;
         while db_entry
             .as_ref()
-            .map_or(false, |entry| entry.0 < last || self.removed_nodes.contains(&entry.0))
+            .is_some_and(|entry| entry.0 < last || self.removed_nodes.contains(&entry.0))
         {
             db_entry = self.cursor.next()?;
         }
@@ -114,7 +114,7 @@ impl<'a, C: TrieCursor> InMemoryAccountTrieCursor<'a, C> {
     }
 }
 
-impl<'a, C: TrieCursor> TrieCursor for InMemoryAccountTrieCursor<'a, C> {
+impl<C: TrieCursor> TrieCursor for InMemoryAccountTrieCursor<'_, C> {
     fn seek_exact(
         &mut self,
         key: Nibbles,
@@ -177,7 +177,7 @@ impl<'a, C> InMemoryStorageTrieCursor<'a, C> {
     fn new(hashed_address: B256, cursor: C, updates: Option<&'a StorageTrieUpdatesSorted>) -> Self {
         let in_memory_cursor = updates.map(|u| ForwardInMemoryCursor::new(&u.storage_nodes));
         let removed_nodes = updates.map(|u| &u.removed_nodes);
-        let storage_trie_cleared = updates.map_or(false, |u| u.is_deleted);
+        let storage_trie_cleared = updates.is_some_and(|u| u.is_deleted);
         Self {
             hashed_address,
             cursor,
@@ -189,7 +189,7 @@ impl<'a, C> InMemoryStorageTrieCursor<'a, C> {
     }
 }
 
-impl<'a, C: TrieCursor> InMemoryStorageTrieCursor<'a, C> {
+impl<C: TrieCursor> InMemoryStorageTrieCursor<'_, C> {
     fn seek_inner(
         &mut self,
         key: Nibbles,
@@ -197,15 +197,15 @@ impl<'a, C: TrieCursor> InMemoryStorageTrieCursor<'a, C> {
     ) -> Result<Option<(Nibbles, BranchNodeCompact)>, DatabaseError> {
         let in_memory = self.in_memory_cursor.as_mut().and_then(|c| c.seek(&key));
         if self.storage_trie_cleared ||
-            (exact && in_memory.as_ref().map_or(false, |entry| entry.0 == key))
+            (exact && in_memory.as_ref().is_some_and(|entry| entry.0 == key))
         {
             return Ok(in_memory.filter(|(nibbles, _)| !exact || nibbles == &key))
         }
 
         // Reposition the cursor to the first greater or equal node that wasn't removed.
         let mut db_entry = self.cursor.seek(key.clone())?;
-        while db_entry.as_ref().map_or(false, |entry| {
-            self.removed_nodes.as_ref().map_or(false, |r| r.contains(&entry.0))
+        while db_entry.as_ref().is_some_and(|entry| {
+            self.removed_nodes.as_ref().is_some_and(|r| r.contains(&entry.0))
         }) {
             db_entry = self.cursor.next()?;
         }
@@ -227,8 +227,8 @@ impl<'a, C: TrieCursor> InMemoryStorageTrieCursor<'a, C> {
 
         // Reposition the cursor to the first greater or equal node that wasn't removed.
         let mut db_entry = self.cursor.seek(last.clone())?;
-        while db_entry.as_ref().map_or(false, |entry| {
-            entry.0 < last || self.removed_nodes.as_ref().map_or(false, |r| r.contains(&entry.0))
+        while db_entry.as_ref().is_some_and(|entry| {
+            entry.0 < last || self.removed_nodes.as_ref().is_some_and(|r| r.contains(&entry.0))
         }) {
             db_entry = self.cursor.next()?;
         }
@@ -238,7 +238,7 @@ impl<'a, C: TrieCursor> InMemoryStorageTrieCursor<'a, C> {
     }
 }
 
-impl<'a, C: TrieCursor> TrieCursor for InMemoryStorageTrieCursor<'a, C> {
+impl<C: TrieCursor> TrieCursor for InMemoryStorageTrieCursor<'_, C> {
     fn seek_exact(
         &mut self,
         key: Nibbles,

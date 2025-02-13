@@ -510,7 +510,7 @@ impl<EvmConfig, DB, BF> EthBlockExecutor<EvmConfig, DB, BF> {
 
     #[inline]
     fn chain_spec(&self) -> &ChainSpec {
-        &self.executor.chain_spec
+        self.executor.chain_spec.as_ref()
     }
 
     /// Returns mutable reference to the state that wraps the underlying database.

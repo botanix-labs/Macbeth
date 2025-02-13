@@ -203,7 +203,7 @@ where
                             // unwind
                             let sealed_header = provider
                                 .sealed_header(block_number)?
-                                .ok_or(ProviderError::HeaderNotFound(block_number.into()))?;
+                                .ok_or_else(|| ProviderError::HeaderNotFound(block_number.into()))?;
                             Err(StageError::Block {
                                 block: Box::new(sealed_header),
                                 error: BlockErrorKind::Validation(

@@ -93,7 +93,7 @@ impl<DB: Database> Segment<DB> for Headers {
             pruned += entries_pruned;
         }
 
-        let done = last_pruned_block.map_or(false, |block| block == block_range_end);
+        let done = last_pruned_block.is_some_and(|block| block == block_range_end);
         let progress = PruneProgress::new(done, &limiter);
 
         Ok(SegmentOutput {
@@ -140,7 +140,7 @@ where
     }
 }
 
-impl<'a, DB> Iterator for HeaderTablesIter<'a, DB>
+impl<DB> Iterator for HeaderTablesIter<'_, DB>
 where
     DB: Database,
 {

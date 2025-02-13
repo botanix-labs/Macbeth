@@ -58,7 +58,7 @@ impl<Provider, Eth> DebugApi<Provider, Eth> {
 
     /// Access the underlying `Eth` API.
     pub fn eth_api(&self) -> &Eth {
-        &self.inner.eth_api
+        &self.inner.as_ref().eth_api
     }
 }
 

@@ -695,12 +695,12 @@ impl ExecutedBlock {
 
     /// Returns a reference to the executed block.
     pub fn block(&self) -> &SealedBlock {
-        &self.block
+        self.block.as_ref()
     }
 
     /// Returns a reference to the block's senders
     pub fn senders(&self) -> &Vec<Address> {
-        &self.senders
+        self.senders.as_ref()
     }
 
     /// Returns a [`SealedBlockWithSenders`]
@@ -712,17 +712,17 @@ impl ExecutedBlock {
 
     /// Returns a reference to the block's execution outcome
     pub fn execution_outcome(&self) -> &ExecutionOutcome {
-        &self.execution_output
+        self.execution_output.as_ref()
     }
 
     /// Returns a reference to the hashed state result of the execution outcome
     pub fn hashed_state(&self) -> &HashedPostState {
-        &self.hashed_state
+        self.hashed_state.as_ref()
     }
 
     /// Returns a reference to the trie updates for the block
     pub fn trie_updates(&self) -> &TrieUpdates {
-        &self.trie
+        self.trie.as_ref()
     }
 }
 

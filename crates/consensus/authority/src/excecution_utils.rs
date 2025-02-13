@@ -55,7 +55,7 @@ pub(crate) mod authority_execution_utils {
         // Construct block and header
         let header = build_header_template(
             &transactions,
-            &database_provider,
+            database_provider,
             bitcoin_checkpoint_block_hash,
             chain_spec.clone(),
             agg_pk,
@@ -76,7 +76,7 @@ pub(crate) mod authority_execution_utils {
         info!(target: "consensus::authority", "block_builder_address: {:?}", block_builder_address);
         let block_exec_output = execute(
             &block_with_senders,
-            &database_provider,
+            database_provider,
             Some(*block_builder_address),
             bitcoind_factory,
             bitcoin_network,
@@ -89,7 +89,7 @@ pub(crate) mod authority_execution_utils {
             &block_exec_output,
             block_exec_output.gas_used,
             *bitcoin_checkpoint_block_hash,
-            &database_provider,
+            database_provider,
             agg_pk,
         )?;
 

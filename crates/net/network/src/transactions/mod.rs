@@ -1391,7 +1391,7 @@ struct PropagateTransaction {
 
 impl PropagateTransaction {
     fn hash(&self) -> TxHash {
-        self.transaction.hash()
+        self.transaction.as_ref().hash()
     }
 
     /// Create a new instance from a pooled transaction
@@ -1863,7 +1863,7 @@ mod tests {
                         version,
                     })
                 }
-                NetworkEvent::PeerAdded(_peer_id) => continue,
+                NetworkEvent::PeerAdded(_peer_id) => (),
                 ev => {
                     error!("unexpected event {ev:?}")
                 }
@@ -1949,7 +1949,7 @@ mod tests {
                         version,
                     })
                 }
-                NetworkEvent::PeerAdded(_peer_id) => continue,
+                NetworkEvent::PeerAdded(_peer_id) => (),
                 ev => {
                     error!("unexpected event {ev:?}")
                 }
@@ -2033,7 +2033,7 @@ mod tests {
                         version,
                     })
                 }
-                NetworkEvent::PeerAdded(_peer_id) => continue,
+                NetworkEvent::PeerAdded(_peer_id) => (),
                 ev => {
                     error!("unexpected event {ev:?}")
                 }
@@ -2121,7 +2121,7 @@ mod tests {
                     status,
                     version,
                 }),
-                NetworkEvent::PeerAdded(_peer_id) => continue,
+                NetworkEvent::PeerAdded(_peer_id) => (),
                 ev => {
                     error!("unexpected event {ev:?}")
                 }

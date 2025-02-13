@@ -157,7 +157,7 @@ impl Header {
     ///
     /// Returns an error if the extradata size is larger than 100 KB.
     pub fn ensure_extradata_valid(&self) -> Result<(), HeaderError> {
-        if self.extra_data.len() > 100 * 1024 {
+        if self.extra_data.as_ref().len() > 100 * 1024 {
             return Err(HeaderError::LargeExtraData)
         }
         Ok(())
@@ -311,7 +311,7 @@ impl Header {
         mem::size_of::<Option<u64>>() + // blob gas used
         mem::size_of::<Option<u64>>() + // excess blob gas
         mem::size_of::<Option<B256>>() + // parent beacon block root
-        self.extra_data.len() // extra data
+        self.extra_data.as_ref().len() // extra data
     }
 
     fn header_payload_length(&self) -> usize {

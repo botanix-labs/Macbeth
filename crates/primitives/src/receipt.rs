@@ -308,7 +308,7 @@ impl<'a> ReceiptWithBloomRef<'a> {
     }
 }
 
-impl<'a> Encodable for ReceiptWithBloomRef<'a> {
+impl Encodable for ReceiptWithBloomRef<'_> {
     fn encode(&self, out: &mut dyn BufMut) {
         self.as_encoder().encode_inner(out, true)
     }
@@ -329,7 +329,7 @@ struct ReceiptWithBloomEncoder<'a> {
     receipt: &'a Receipt,
 }
 
-impl<'a> ReceiptWithBloomEncoder<'a> {
+impl ReceiptWithBloomEncoder<'_> {
     /// Returns the rlp header for the receipt payload.
     fn receipt_rlp_header(&self) -> alloy_rlp::Header {
         let mut rlp_head = alloy_rlp::Header { list: true, payload_length: 0 };
@@ -393,7 +393,7 @@ impl<'a> ReceiptWithBloomEncoder<'a> {
     }
 }
 
-impl<'a> Encodable for ReceiptWithBloomEncoder<'a> {
+impl Encodable for ReceiptWithBloomEncoder<'_> {
     fn encode(&self, out: &mut dyn BufMut) {
         self.encode_inner(out, true)
     }

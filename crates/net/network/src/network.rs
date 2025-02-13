@@ -83,16 +83,16 @@ impl NetworkHandle {
 
     /// Returns the [`PeerId`] used in the network.
     pub fn peer_id(&self) -> &PeerId {
-        &self.inner.local_peer_id
+        &self.inner.as_ref().local_peer_id
     }
 
     fn manager(&self) -> &UnboundedSender<NetworkHandleMessage> {
-        &self.inner.to_manager_tx
+        &self.inner.as_ref().to_manager_tx
     }
 
     /// Returns the mode of the network, either pow, or pos
     pub fn mode(&self) -> &NetworkMode {
-        &self.inner.network_mode
+        &self.inner.as_ref().network_mode
     }
 
     /// Sends a [`NetworkHandleMessage`] to the manager
@@ -172,12 +172,12 @@ impl NetworkHandle {
 
     /// Whether tx gossip is disabled
     pub fn tx_gossip_disabled(&self) -> bool {
-        self.inner.tx_gossip_disabled
+        self.inner.as_ref().tx_gossip_disabled
     }
 
     /// Returns the secret key used for authenticating sessions.
     pub fn secret_key(&self) -> &SecretKey {
-        &self.inner.secret_key
+        &self.inner.as_ref().secret_key
     }
 }
 

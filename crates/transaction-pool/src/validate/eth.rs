@@ -42,7 +42,7 @@ impl<Client, Tx> EthTransactionValidator<Client, Tx> {
 
     /// Returns the configured client
     pub fn client(&self) -> &Client {
-        &self.inner.client
+        &self.inner.as_ref().client
     }
 }
 
@@ -140,7 +140,7 @@ pub(crate) struct EthTransactionValidatorInner<Client, T> {
 impl<Client, Tx> EthTransactionValidatorInner<Client, Tx> {
     /// Returns the configured chain id
     pub(crate) fn chain_id(&self) -> u64 {
-        self.chain_spec.chain().id()
+        self.chain_spec.as_ref().chain().id()
     }
 }
 

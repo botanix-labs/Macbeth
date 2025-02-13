@@ -129,7 +129,7 @@ impl<V: Value> RawValue<V> {
 
     /// Returns the raw value as seen on the database.
     pub fn raw_value(&self) -> &[u8] {
-        &self.value
+        self.value.as_ref()
     }
 
     /// Consumes [`Self`] and returns the inner raw value.

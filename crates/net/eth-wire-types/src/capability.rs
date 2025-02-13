@@ -109,7 +109,7 @@ impl Capabilities {
     /// Returns all capabilities.
     #[inline]
     pub fn capabilities(&self) -> &[Capability] {
-        &self.inner
+        self.inner.as_ref()
     }
 
     /// Consumes the type and returns the all capabilities.

@@ -120,9 +120,9 @@ impl FrostManager {
         self.prune_closed_connections();
 
         // Filter out all peers that are not confirmed and have a closed channels
-        info!(target: "network::frost::all_authority_peers_connected", "Peers connections len: {:?}", self.peers_connections.len());
-        for (_peer_id, peer_data) in self.peers_connections.iter() {
-            for data in peer_data.iter() {
+        info!(target: "network::frost::all_authority_peers_connected", "Peers connections len: {:?}", self.peers_connections.values());
+        for peer_data in self.peers_connections.values() {
+            for data in peer_data {
                 info!(target: "network::frost::all_authority_peers_connected", "channel closed: {:?}", data.peer_commands_tx.is_closed());
             }
         }
@@ -141,7 +141,7 @@ impl FrostManager {
 
     fn prune_closed_connections(&mut self) {
         let mut pruned_peers_connections = self.peers_connections.clone();
-        for (peer_id, peer_data) in self.peers_connections.iter_mut() {
+        for (peer_id, peer_data) in &mut self.peers_connections {
             // Prune all connections that have a closed channels
             peer_data.retain(|data| !data.peer_commands_tx.is_closed());
 
@@ -164,7 +164,7 @@ impl FrostManager {
         // lets first prune all closed connections
         // For each peer there should only be one valid connection
         self.prune_closed_connections();
-        for (peer_id, peer_data) in self.peers_connections.iter() {
+        for (peer_id, peer_data) in &self.peers_connections {
             if let Some(peer_data) = peer_data.first() {
                 let resp =
                     HealthcheckResponse { sender: *self.network.peer_id(), receiver: *peer_id };
@@ -217,7 +217,7 @@ impl FrostManager {
                     .unzip();
 
                 let mut peers_connections = self.peers_connections.clone();
-                let peer_data = peers_connections.entry(peer_id).or_insert_with(Vec::new);
+                let peer_data = peers_connections.entry(peer_id).or_default();
                 peer_data.push(PeerData {
                     peer_id,
                     direction,

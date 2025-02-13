@@ -17,7 +17,7 @@ pub struct BundleStateDataRef<'a> {
     pub canonical_fork: ForkBlock,
 }
 
-impl<'a> ExecutionDataProvider for BundleStateDataRef<'a> {
+impl ExecutionDataProvider for BundleStateDataRef<'_> {
     fn execution_outcome(&self) -> &ExecutionOutcome {
         self.execution_outcome
     }
@@ -32,7 +32,7 @@ impl<'a> ExecutionDataProvider for BundleStateDataRef<'a> {
     }
 }
 
-impl<'a> BlockExecutionForkProvider for BundleStateDataRef<'a> {
+impl BlockExecutionForkProvider for BundleStateDataRef<'_> {
     fn canonical_fork(&self) -> ForkBlock {
         self.canonical_fork
     }

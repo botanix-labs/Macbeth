@@ -115,7 +115,7 @@ pub(crate) async fn get_psbt<BtcServerClient: BtcServerExtendedApi + Clone>(
     btc_server.get_psbt(req).await
 }
 
-pub(crate) fn get_utxos_from_pegin_meta(pegins: &Vec<PeginMeta>) -> Vec<Utxo> {
+pub(crate) fn get_utxos_from_pegin_meta(pegins: &[PeginMeta]) -> Vec<Utxo> {
     if pegins.is_empty() {
         return vec![];
     }
@@ -123,7 +123,7 @@ pub(crate) fn get_utxos_from_pegin_meta(pegins: &Vec<PeginMeta>) -> Vec<Utxo> {
 }
 
 pub(crate) fn get_pending_pegouts_from_pegout_data(
-    pegouts: &Vec<PegoutWithId>,
+    pegouts: &[PegoutWithId],
     height: u64,
 ) -> Vec<PendingPegout> {
     if pegouts.is_empty() {
@@ -809,8 +809,10 @@ mod tests {
         };
         let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).unwrap();
 
-        let mut input_1 = Input::default();
-        input_1.final_script_witness = Some(Witness::default());
+        let input_1 = Input {
+            final_script_witness: Some(Witness::default()),
+            ..Input::default()
+        };
         let input_2 = input_1.clone();
 
         let inputs = vec![input_1, input_2];

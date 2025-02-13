@@ -49,7 +49,7 @@ pub struct TraceApi<Provider, Eth> {
 impl<Provider, Eth> TraceApi<Provider, Eth> {
     /// The provider that can interact with the chain.
     pub fn provider(&self) -> &Provider {
-        &self.inner.provider
+        &self.inner.as_ref().provider
     }
 
     /// Create a new instance of the [`TraceApi`]
@@ -67,7 +67,7 @@ impl<Provider, Eth> TraceApi<Provider, Eth> {
 
     /// Access the underlying `Eth` API.
     pub fn eth_api(&self) -> &Eth {
-        &self.inner.eth_api
+        &self.inner.as_ref().eth_api
     }
 }
 

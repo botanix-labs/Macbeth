@@ -237,7 +237,7 @@ impl Transaction {
     /// Returns `None` if this transaction is not EIP-7702.
     pub fn authorization_list(&self) -> Option<&[SignedAuthorization]> {
         match self {
-            Self::Eip7702(tx) => Some(&tx.authorization_list),
+            Self::Eip7702(tx) => Some(tx.authorization_list.as_ref()),
             _ => None,
         }
     }

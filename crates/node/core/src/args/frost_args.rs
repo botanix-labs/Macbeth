@@ -11,7 +11,7 @@ pub(crate) const DEFAULT_MAX_SIGNERS: u16 = 2;
 #[clap(next_help_heading = "Frost")]
 pub struct FrostArgs {
     /// Coordinator
-
+    ///
     /// Min frost signers
     ///
     /// The minimum number required for frost signing.

@@ -59,7 +59,7 @@ impl TxLegacy {
         mem::size_of::<u64>() + // gas_limit
         self.to.size() + // to
         mem::size_of::<U256>() + // value
-        self.input.len() // input
+        self.input.as_ref().len() // input
     }
 
     /// Outputs the length of the transaction's fields, without a RLP header or length of the

@@ -22,7 +22,7 @@ pub struct RethApi<Provider> {
 impl<Provider> RethApi<Provider> {
     /// The provider that can interact with the chain.
     pub fn provider(&self) -> &Provider {
-        &self.inner.provider
+        &self.inner.as_ref().provider
     }
 
     /// Create a new instance of the [`RethApi`]

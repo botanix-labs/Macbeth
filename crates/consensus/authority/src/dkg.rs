@@ -131,6 +131,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     /// Returns the public key package
     pub(crate) fn get_public_key_package(&self) -> Option<secp256k1::PublicKey> {
         self.public_key_package

@@ -579,7 +579,7 @@ impl DataReader {
 
     /// Returns total size of data
     pub fn size(&self) -> usize {
-        self.data_mmap.len()
+        self.data_mmap.as_ref().len()
     }
 }
 

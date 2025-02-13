@@ -226,7 +226,7 @@ where
 
     /// Returns the wrapped pool.
     pub(crate) fn inner(&self) -> &PoolInner<V, T, S> {
-        &self.pool
+        self.pool.as_ref()
     }
 
     /// Get the config the pool was configured with.

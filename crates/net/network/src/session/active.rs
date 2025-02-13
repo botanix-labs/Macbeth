@@ -13,7 +13,7 @@ use std::{
 
 use futures::{stream::Fuse, SinkExt, StreamExt};
 use reth_eth_wire::{
-    errors::{EthHandshakeError, EthStreamError, P2PStreamError},
+    errors::{EthHandshakeError, EthStreamError},
     message::{EthBroadcastMessage, RequestPair},
     Capabilities, DisconnectP2P, DisconnectReason, EthMessage,
 };
@@ -388,7 +388,6 @@ impl ActiveSession {
         self.conn
             .inner_mut()
             .start_disconnect(reason)
-            .map_err(P2PStreamError::from)
             .map_err(Into::into)
     }
 
@@ -621,7 +620,6 @@ impl Future for ActiveSession {
                                     OnIncomingMessageOutcome::NoCapacity(msg) => {
                                         // failed to send due to lack of capacity
                                         this.pending_message_to_session = Some(msg);
-                                        continue 'receive
                                     }
                                 }
                             }

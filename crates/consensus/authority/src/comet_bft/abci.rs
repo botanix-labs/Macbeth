@@ -63,10 +63,10 @@ use tendermint_proto::{
 impl From<&Snapshot> for SnapshotSyncStateLock {
     fn from(snapshot: &Snapshot) -> Self {
         let mut s = SnapshotSyncStateLock::default();
-        s.set_snapshot_height(snapshot.height as u64)
+        s.set_snapshot_height(snapshot.height)
             .set_snapshot_chunks(snapshot.chunks as u64)
             .set_snapshot_format(snapshot.format as u64)
-            .set_snapshot_hash(Bytes::from(snapshot.hash.clone()));
+            .set_snapshot_hash(snapshot.hash.clone());
         s
     }
 }
@@ -408,14 +408,14 @@ where
         let chain_spec = self.storage.chain_spec.clone();
 
         let best_header =
-            client.latest_header()?.ok_or_else(|| PayloadBuilderError::LatestHeaderDoesNotExist)?;
+            client.latest_header()?.ok_or(PayloadBuilderError::LatestHeaderDoesNotExist)?;
         let best_block = BlockReaderIdExt::block_by_id(&client, BlockId::latest())?
-            .ok_or_else(|| PayloadBuilderError::LatestBlockDoesNotExist)?
+            .ok_or(PayloadBuilderError::LatestBlockDoesNotExist)?
             .seal(best_header.hash());
 
         let parent_block =
             BlockReaderIdExt::block_by_id(&client, BlockId::hash(best_header.parent_hash))?
-                .ok_or_else(|| PayloadBuilderError::ParentBlockDoesNotExist)?
+                .ok_or(PayloadBuilderError::ParentBlockDoesNotExist)?
                 .seal(best_header.parent_hash);
 
         let payload_attributes = PayloadAttributes {
@@ -613,11 +613,11 @@ where
                     "Returned snapshots for block heights {:?}",
                     resp.snapshots.iter().map(|s| s.height).collect::<Vec<_>>()
                 );
-                return resp;
+                resp
             }
             Err(e) => {
                 error!("Error getting snapshots from db: {:?}", e);
-                return ResponseListSnapshots { snapshots: vec![] };
+                ResponseListSnapshots { snapshots: vec![] }
             }
         }
     }
@@ -669,7 +669,7 @@ where
             }
 
             // check that we should not have the block at height already
-            if let Some(_) = client.block_by_id(BlockId::number(snapshot.height)).ok().flatten() {
+            if client.block_by_id(BlockId::number(snapshot.height)).ok().flatten().is_some() {
                 warn!("Block at height {:?} already exists, rejecting snapshot", snapshot.height);
                 return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
             }
@@ -1008,11 +1008,11 @@ where
             };
         };
 
-        return ResponseApplySnapshotChunk {
+        ResponseApplySnapshotChunk {
             result: ApplySnapshotResult::Accept as i32,
             refetch_chunks: vec![],
             reject_senders: vec![],
-        };
+        }
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
@@ -1263,7 +1263,7 @@ where
                 info!("Block built successfully, resulting block hash: {:?}", block_hash);
 
                 // validate block before caching
-                match self.validate_block(&block) {
+                match self.validate_block(block) {
                     ResponseProcessProposal { status: VERIFY_ACCEPTED } => {}
                     _ => {
                         return ResponseProcessProposal { status: VERIFY_REJECT };
@@ -1354,7 +1354,7 @@ where
         };
 
         if matches!(
-            self.validate_block(&block_with_context.sealed_block_with_peg.block()),
+            self.validate_block(block_with_context.sealed_block_with_peg.block()),
             ResponseProcessProposal { status: VERIFY_REJECT }
         ) {
             let err: String = format!(
@@ -1412,7 +1412,7 @@ where
         let sealed_block_with_senders = sealed_block_with_peg_binding.block();
 
         // We want to explicitly panic if we cannot send the commit message
-        let cbft_block_hash = cbft_block_hash.clone();
+        let cbft_block_hash = *cbft_block_hash;
         let (commit_tx, commit_rx) = std::sync::mpsc::channel::<()>();
         let driver_tx = self.driver_tx.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
@@ -1423,7 +1423,7 @@ where
                 error!("Error sending commit block message: {:?}", e);
             }
         }));
-        let _ = commit_rx.recv().expect("to receive commit block response");
+        commit_rx.recv().expect("to receive commit block response");
 
         info!("Block committed: {:?}", cbft_block_hash);
         self.metrics.commet_committed_blocks.increment(1);
@@ -1597,8 +1597,7 @@ mod tests {
     use tendermint_proto::google::protobuf::Timestamp;
     use tokio::sync::RwLock as TokioRwLock;
 
-    /// Build the db and the ABCI client
-    fn abci_client_builder() -> ABCIClient<
+    type ABCIClientType = ABCIClient<
         MockExecutorProvider,
         MockBitcoindFactory,
         BlockchainProvider2<Arc<reth_db::DatabaseEnv>>,
@@ -1612,7 +1611,10 @@ mod tests {
             reth_transaction_pool::CoinbaseTipOrdering<EthPooledTransaction>,
             InMemoryBlobStore,
         >,
-    > {
+    >;
+
+    /// Build the db and the ABCI client
+    fn abci_client_builder() -> ABCIClientType{
         let secp = secp256k1::Secp256k1::new();
         let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
@@ -1676,7 +1678,9 @@ mod tests {
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
         let (driver_tx, _driver_rx) = tokio::sync::mpsc::channel(100);
-        let abci_client = ABCIClient::new(
+        
+
+        ABCIClient::new(
             storage,
             validator.validator,
             transaction_pool,
@@ -1692,9 +1696,7 @@ mod tests {
             Arc::new(RwLock::new(SnapshotManagerStateLock::default())),
             Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
             1,
-        );
-
-        abci_client
+        )
     }
 
     #[test]
@@ -1827,14 +1829,13 @@ mod tests {
         signed_tx.encode_enveloped(&mut buf);
         let signed_tx_bytes = prost::bytes::Bytes::copy_from_slice(buf.as_slice());
 
-        let mut request = RequestProcessProposal::default();
-        request.txs = vec![ndd_bytes, signed_tx_bytes];
-
-        let proposer_address = prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice());
-        request.proposer_address = proposer_address;
-
-        request.time = Some(Timestamp::default());
-        request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
+        let request = RequestProcessProposal {
+            txs: vec![ndd_bytes, signed_tx_bytes],
+            proposer_address: prost::bytes::Bytes::copy_from_slice(Address::ZERO.0.as_slice()),
+            time: Some(Timestamp::default()),
+            hash: prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice()),
+            ..Default::default()
+        };
 
         let response = abci_client.process_proposal(request);
 

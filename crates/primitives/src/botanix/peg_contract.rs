@@ -83,7 +83,7 @@ impl PeginData {
 
             let encoded_pk = aggregate_pk.serialize();
             let vk = frost::VerifyingKey::deserialize(&encoded_pk)
-                .map_err(|e| PeginDataError::FrostError(e))?;
+                .map_err(PeginDataError::FrostError)?;
             let tpk = generate_tweaked_public_key(&vk, &self.account.into())
                 .map_err(|_e| PeginDataError::InvalidTweak())?;
             let gateway_script = generate_taproot_scriptpubkey(&tpk);
@@ -431,6 +431,7 @@ mod tests {
         };
 
         let outpoint = OutPoint { txid: tx.compute_txid(), vout: 0 };
+
         let txids = vec![
             // Another random txid
             Txid::from_str("4fccd63b48697a66ae4155b183f7595694354def0345ac4b950a5765a7b90526")
@@ -472,8 +473,8 @@ mod tests {
             outpoint: header_metadata.outpoint,
             address: destination_address,
             aggregate_publickey: *pk,
-            block_headers: if block_headers.is_some() {
-                block_headers.unwrap()
+            block_headers: if let Some(block_headers) = block_headers {
+                block_headers
             } else {
                 vec![header_metadata.header]
             },
@@ -540,7 +541,7 @@ mod tests {
     fn validate_pegin_data_with_invalid_merkle_proof() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         let different_txid = bitcoin::Txid::all_zeros();
         let different_txids = vec![different_txid];
@@ -556,7 +557,7 @@ mod tests {
     fn validate_pegin_data_with_invalid_outpoint() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         pegin_data.meta.first_mut().unwrap().outpoint.txid = bitcoin::Txid::all_zeros();
 
@@ -581,7 +582,7 @@ mod tests {
     fn validate_pegin_data_with_same_txid_different_root() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         let original_txid = pegin_data.meta.first().unwrap().outpoint.txid;
 
@@ -598,7 +599,7 @@ mod tests {
     fn validate_pegin_data_with_invalid_tx() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         pegin_data.meta.first_mut().unwrap().tx.version = bitcoin::transaction::Version(999);
 
@@ -610,7 +611,7 @@ mod tests {
     fn validate_pegin_data_with_invalid_outpoint_vout() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         pegin_data.meta.first_mut().unwrap().outpoint.vout = 2;
 
@@ -648,7 +649,7 @@ mod tests {
     fn validate_pegin_data_with_different_account() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         pegin_data.account = Address::with_last_byte(1);
 
@@ -660,7 +661,7 @@ mod tests {
     fn validate_pegin_data_with_different_pubkey() {
         let pk = random_pk();
         let pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
         let different_pk = random_pk();
 
         pegin_data.validate(&(header, 1_u32), &different_pk).unwrap();
@@ -671,7 +672,7 @@ mod tests {
     fn validate_pegin_data_with_invalid_block_sequence() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         let second_header = bitcoin::block::Header {
             version: header.version,
@@ -694,7 +695,7 @@ mod tests {
     fn validate_pegin_data_with_broken_block_chain_in_middle() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let first_header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let first_header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         let second_header = bitcoin::block::Header {
             version: first_header.version,
@@ -724,7 +725,7 @@ mod tests {
     fn validate_pegin_data_with_invalid_block_height() {
         let pk = random_pk();
         let mut pegin_data = pegin_data_setup(None, None, &pk);
-        let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap().clone();
+        let header = *pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         pegin_data.bitcoin_block_height = 999;
 
@@ -783,7 +784,7 @@ mod tests {
         let meta = PeginMeta {
             version: PEGIN_META_VERSION,
             merkle_proof: merkle_proof.clone(),
-            outpoint: outpoint.clone(),
+            outpoint,
             address: destination_address,
             aggregate_publickey: pk,
             block_headers: vec![header],
