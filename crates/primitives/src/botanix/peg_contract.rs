@@ -502,7 +502,7 @@ mod tests {
         let header = pegin_data.meta.first().unwrap().block_headers.first().unwrap();
 
         let aggregate_amount = pegin_data.validate(&(*header, 1_u32), &pk).expect("valid");
-        println!("aggregate amount {:?}", aggregate_amount);
+        assert_eq!(aggregate_amount, pegin_data.amount);
     }
 
     #[test]
