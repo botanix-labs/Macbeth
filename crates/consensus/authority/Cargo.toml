@@ -16,18 +16,12 @@ alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 bitcoin = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 
-# bytes
 bytes = "1.6.0"
 client = { path = "../../../bin/btc-server/client" }
 
 # CometBFT
 comet-bft-rpc = { workspace = true }
-
-# displaydoc
 displaydoc = "0.2"
-
-# ethabi
-ethabi = "18.0.0"
 
 # frost
 frost-secp256k1-tr = { workspace = true }
@@ -44,13 +38,11 @@ reth-btc-wallet = { workspace = true }
 # reth
 reth-chain-state = { workspace = true }
 reth-chainspec = { workspace = true }
-reth-cli-runner = { workspace = true }
 reth-consensus = { workspace = true }
 reth-consensus-common = { path = "../common" }
 reth-data-parser = { workspace = true }
 
 reth-db = { workspace = true }
-reth-db-common = { workspace = true }
 reth-ethereum-consensus = { workspace = true }
 reth-ethereum-payload-builder = { workspace = true }
 reth-evm = { workspace = true }
@@ -58,8 +50,6 @@ reth-evm-ethereum = { workspace = true }
 reth-execution-errors = { workspace = true }
 reth-metrics = { workspace = true, features = ["common"] }
 reth-network = { path = "../../net/network", features = ["serde"] }
-reth-network-api = { workspace = true }
-reth-network-p2p = { workspace = true }
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 reth-node-core = { workspace = true }
 reth-node-ethereum = { workspace = true }
@@ -78,10 +68,8 @@ schnellru = { workspace = true }
 
 ## Crypto
 secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
-serde = { version = "1.0", features = ["derive"] }
 
 serde_json = { workspace = true }
-tempfile = { workspace = true }
 
 # Tendermint
 tendermint-abci = { workspace = true }
@@ -102,6 +90,9 @@ uuid = { version = "1.8.0", features = ["v4"] }
 [dev-dependencies]
 anyhow = "1.0.75"
 bincode = "1.3.3"
+ethabi = "18.0.0"
 rand = "0.8.5"
-
+reth-cli-runner = { workspace = true }
+reth-db-common = { workspace = true }
 reth-evm = { workspace = true, features = ["test-utils"] }
+tempfile = { workspace = true }

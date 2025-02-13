@@ -62,13 +62,6 @@ pub mod test_utils;
 /// Max EDH size; for specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 93;
 
-use ethabi as _;
-use reth_cli_runner as _;
-use reth_db::{self as _};
-use reth_db_common as _;
-use reth_node_core as _;
-use tempfile as _;
-
 /// Ethereum authority consensus
 ///
 /// This consensus engine does basic checks as outlined in the execution specs.
