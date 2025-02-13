@@ -8,6 +8,7 @@ use bitcoin::{
         encode::{self as btcencode, Decodable},
         Encodable, ReadExt,
     },
+    constants::COINBASE_MATURITY,
     merkle_tree::PartialMerkleTree,
     TxOut,
 };
@@ -105,8 +106,7 @@ impl PeginData {
                 }
             }
 
-            // calculate how many blocks deep the user block is
-            // the user's block
+            // calculate pegin txs block depth
             let diff = pegin
                 .block_headers
                 .iter()
@@ -118,6 +118,11 @@ impl PeginData {
                    // height of the user block
             if bitcoin_commitment.1 - (diff as u32) != self.bitcoin_block_height {
                 return Err(PeginDataError::InvalidBitcoinBlockHeight);
+            }
+
+            // If any of the inputs are coinbase and the tx is not coinbase, return an error
+            if pegin.tx.is_coinbase() && (diff as u32) < COINBASE_MATURITY {
+                return Err(PeginDataError::Invalid("spending non-mature coinbase"));
             }
         }
 
@@ -425,12 +430,12 @@ mod tests {
             output: vec![tx_out],
         };
 
-        let outpoint = OutPoint { txid: tx.txid(), vout: 0 };
-
+        let outpoint = OutPoint { txid: tx.compute_txid(), vout: 0 };
         let txids = vec![
+            // Another random txid
             Txid::from_str("4fccd63b48697a66ae4155b183f7595694354def0345ac4b950a5765a7b90526")
                 .expect("valid txid"),
-            tx.txid(),
+            tx.compute_txid(),
         ];
         let mut tx_matches = vec![txids[1]];
         let mut vouts = vec![0];
@@ -458,12 +463,14 @@ mod tests {
         pk: &secp256k1::PublicKey,
     ) -> PeginData {
         let header_metadata = create_header_metadata(None, pk);
+        let destination_address =
+            Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
 
         let meta = PeginMeta {
             version: version.unwrap_or_default(),
             merkle_proof: header_metadata.merkle_proof,
             outpoint: header_metadata.outpoint,
-            address: Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap(),
+            address: destination_address,
             aggregate_publickey: *pk,
             block_headers: if block_headers.is_some() {
                 block_headers.unwrap()
@@ -474,7 +481,7 @@ mod tests {
         };
 
         PeginData {
-            account: Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap(),
+            account: destination_address,
             // 100 sats converted to wei
             amount: U256::from_str_radix("1000000000000", 10).unwrap(),
             bitcoin_block_height: 1_u32,
@@ -640,12 +647,11 @@ mod tests {
         let secp = secp256k1::Secp256k1::new();
         let mut rng = rand::thread_rng();
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
-
         let mut pegin_data = pegin_data_setup(None, None, &pk);
 
         pegin_data.meta.first_mut().unwrap().tx.output[0].script_pubkey = bitcoin::ScriptBuf::new();
 
-        let new_txid = pegin_data.meta.first().unwrap().tx.txid();
+        let new_txid = pegin_data.meta.first().unwrap().tx.compute_txid();
 
         let txids = vec![new_txid];
         let matches = vec![true];
@@ -769,5 +775,102 @@ mod tests {
             pegin_data.validate(&(header, 1_u32), &pk),
             Err(PeginDataError::InvalidBitcoinBlockHeight)
         ));
+    }
+
+    #[test]
+    fn validate_coinbase_maturity() {
+        let secp = secp256k1::Secp256k1::new();
+        let mut rng = rand::thread_rng();
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, &secp256k1::SecretKey::new(&mut rng));
+        let destination_address = Address::random();
+        let coinbase_tx_in = TxIn {
+            previous_output: OutPoint::null(),
+            sequence: bitcoin::Sequence::MAX,
+            script_sig: bitcoin::ScriptBuf::new(),
+            witness: Default::default(),
+        };
+
+        let pk_encoded = pk.serialize();
+        let vk = frost::VerifyingKey::deserialize(&pk_encoded).unwrap();
+        let tpk = generate_tweaked_public_key(&vk, &destination_address.into()).unwrap();
+        let gateway_script = generate_taproot_scriptpubkey(&tpk);
+
+        let tx_out = TxOut { value: Amount::from_sat(100), script_pubkey: gateway_script };
+        let tx: Transaction = Transaction {
+            version: bitcoin::transaction::Version(1_i32),
+            lock_time: LockTime::ZERO,
+            input: vec![coinbase_tx_in],
+            output: vec![tx_out],
+        };
+        let outpoint = OutPoint { txid: tx.compute_txid(), vout: 0 };
+        let txids = vec![
+            // Another random txid
+            Txid::from_str("4fccd63b48697a66ae4155b183f7595694354def0345ac4b950a5765a7b90526")
+                .expect("valid txid"),
+            tx.compute_txid(),
+        ];
+        let mut tx_matches = vec![txids[1]];
+        let mut vouts = vec![0];
+        let merkle_proof = {
+            let matches = vec![false, true];
+            PartialMerkleTree::from_txids(&txids, &matches)
+        };
+        let merkle_root = merkle_proof.extract_matches(&mut tx_matches, &mut vouts).unwrap();
+        let header = Header {
+            version: Version::default(),
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root,
+            time: 0_u32,
+            bits: CompactTarget::from_consensus(0),
+            nonce: 0_u32,
+        };
+
+        let meta = PeginMeta {
+            version: PEGIN_META_VERSION,
+            merkle_proof: merkle_proof.clone(),
+            outpoint: outpoint.clone(),
+            address: destination_address,
+            aggregate_publickey: pk,
+            block_headers: vec![header],
+            tx: tx.clone(),
+        };
+        let amount = U256::from_str_radix("1000000000000", 10).unwrap();
+
+        let pegin_data = PeginData {
+            account: destination_address,
+            amount,
+            bitcoin_block_height: 1_u32,
+            meta: vec![meta],
+        };
+
+        let res = pegin_data.validate(&(header, 1_u32), &pk).unwrap_err();
+        assert!(matches!(res, PeginDataError::Invalid("spending non-mature coinbase")));
+
+        // Create a chain of 100 blocks with the coinbase tx in the last 100 blocks
+        let mut headers = vec![header];
+        for i in 1..101 {
+            let mut header = create_header_metadata(None, &pk).header;
+            header.prev_blockhash = headers[i - 1].block_hash();
+            headers.push(header);
+        }
+        let meta = PeginMeta {
+            version: PEGIN_META_VERSION,
+            merkle_proof,
+            outpoint,
+            address: destination_address,
+            aggregate_publickey: pk,
+            block_headers: headers.clone(),
+            tx,
+        };
+
+        let pegin_data = PeginData {
+            account: destination_address,
+            amount,
+            bitcoin_block_height: 0_u32,
+            meta: vec![meta],
+        };
+
+        let res = pegin_data.validate(&(headers[100], 100_u32), &pk).unwrap();
+        assert_eq!(res, amount);
     }
 }
