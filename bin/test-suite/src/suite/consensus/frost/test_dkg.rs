@@ -1,7 +1,7 @@
 use super::error::Error;
-use crate::{it_error_print, suite::consensus::ConsensusIntegrationTestSuite};
-use bitcoin::{consensus::Encodable, Address, Amount};
-use btcserverlib::{frost_id, pegout_id::PegoutId};
+use crate::suite::consensus::ConsensusIntegrationTestSuite;
+
+use btcserverlib::frost_id;
 use client::{self, BtcServerClient};
 use frost_secp256k1_tr as frost;
 use std::{collections::BTreeMap, str::FromStr, vec};
@@ -135,94 +135,6 @@ pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<
                 .await
                 .map_err(Error::Request)?;
         }
-    }
-    Ok(())
-}
-
-// Uses random spk and pegout id
-pub async fn send_pegout_notification(
-    client: &mut client::BtcServerClient<Channel>,
-    amount: u64,
-    bitcoin_height: u64,
-    pegout_id: PegoutId,
-    spk: bitcoin::ScriptBuf,
-) -> Result<(), Error> {
-    let _ = client
-        .notify_pegouts(tonic::Request::new(client::NotifyPegoutsRequest {
-            pending_pegouts: vec![client::PendingPegout {
-                pegout_id: pegout_id.clone().as_bytes().to_vec(),
-                spk: spk.to_bytes().to_vec(),
-                amount,
-                height: bitcoin_height,
-            }],
-        }))
-        .await
-        .map_err(Error::PegoutNotification)?;
-    Ok(())
-}
-
-pub async fn send_pegin_notification(
-    client: &mut client::BtcServerClient<Channel>,
-    address: Address,
-    eth_address: String,
-    txid: [u8; 32],
-    vout: u32,
-    amount: u64,
-) -> Result<(), Error> {
-    let mut prev_out_bytes = Vec::new();
-    address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
-    let utxos = [client::Utxo {
-        output: Some(client::TxOut {
-            value: Amount::from_sat(amount).to_sat(),
-            script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
-        }),
-        outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout }),
-        eth_address,
-    }]
-    .to_vec();
-
-    let res =
-        client.notify_pegins(tonic::Request::new(client::NotifyPeginsRequest { utxos })).await;
-    if res.is_err() {
-        return Err(Error::PeginNotification);
-    }
-    Ok(())
-}
-
-pub async fn send_pegins_notifications(
-    client: &mut client::BtcServerClient<Channel>,
-    txids: Vec<Vec<u8>>,
-    eth_addresses: Vec<String>,
-    btc_addresses: Vec<Address>,
-    amounts: Vec<u64>,
-) -> Result<(), Error> {
-    assert_eq!(txids.len(), eth_addresses.len());
-    assert_eq!(txids.len(), btc_addresses.len());
-    assert_eq!(txids.len(), amounts.len());
-
-    let mut utxos = Vec::new();
-    for (i, txid) in txids.iter().enumerate() {
-        let eth_address = eth_addresses[i].clone();
-        let btc_address = btc_addresses[i].clone();
-        let amount = amounts[i];
-
-        let mut prev_out_bytes = Vec::new();
-        btc_address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
-        utxos.push(client::Utxo {
-            output: Some(client::TxOut {
-                value: Amount::from_sat(amount).to_sat(),
-                script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
-            }),
-            outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout: 1 }),
-            eth_address,
-        });
-    }
-
-    let res =
-        client.notify_pegins(tonic::Request::new(client::NotifyPeginsRequest { utxos })).await;
-    if res.is_err() {
-        it_error_print!("Pegin Error: {:?}", res.err());
-        return Err(Error::PeginNotification);
     }
     Ok(())
 }

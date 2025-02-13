@@ -1,12 +1,10 @@
 use std::{collections::HashSet, str::FromStr};
 
-use super::{
-    error::Error,
-    test_dkg::{do_dkg, send_pegin_notification},
-};
+use super::{error::Error, test_dkg::do_dkg};
 use crate::{
     it_info_print,
-    suite::consensus::{frost::test_dkg::send_pegins_notifications, ConsensusIntegrationTestSuite},
+    suite::consensus::ConsensusIntegrationTestSuite,
+    utils::{get_checkpoint_block_hash, send_pegin_notification, send_pegins_notifications},
 };
 use bitcoin::{hashes::Hash, Address};
 use hex::{self, encode as hex_encode};
@@ -60,15 +58,21 @@ pub async fn test_utxo_commitment(
         pegins.btc_addresses.push(btc_address);
     }
 
+    // get the checkpoint blockhash
+    // get the checkpoint blockhash
+    let bitcoind = suite.global_context.bitcoind_rpc();
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
     // Notify peg ins to all peers
     // signers will not sign if they cannot locate the UTXOs they are being requested to sign
     for c in clients.iter_mut() {
         for input in 0..NUM_UTXOS {
             let txid = pegins.txids.get(input).cloned().unwrap();
             let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
-            let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
-            let _ = send_pegin_notification(
+            let btc_address: Address = pegins.btc_addresses.get(input).cloned().unwrap();
+            send_pegin_notification(
                 c,
+                checkpoint_block_hash.clone(),
                 btc_address.clone(),
                 hex_encode(eth_address),
                 txid,
@@ -154,8 +158,9 @@ pub async fn test_utxo_commitment(
         let txid = pegins.txids.get(input).cloned().unwrap();
         let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
         let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
-        let _ = send_pegin_notification(
+        send_pegin_notification(
             &mut clients[0],
+            checkpoint_block_hash.clone(),
             btc_address.clone(),
             hex_encode(eth_address),
             txid,
@@ -202,8 +207,9 @@ pub async fn test_utxo_commitment(
     }
 
     for c in clients.iter_mut() {
-        let _ = send_pegins_notifications(
+        send_pegins_notifications(
             c,
+            checkpoint_block_hash.clone(),
             pegins.txids.iter().map(|a| a.to_vec()).collect(),
             pegins.eth_addresses.iter().map(hex::encode).collect(),
             pegins.btc_addresses.clone(),

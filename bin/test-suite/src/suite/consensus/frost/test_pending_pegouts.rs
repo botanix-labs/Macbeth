@@ -10,13 +10,13 @@ use crate::{
     it_info_print,
     suite::consensus::{
         common::events::BITCOIND_WALLET_NAME,
-        frost::{
-            error::Error,
-            test_dkg::{do_dkg, send_pegin_notification, send_pegout_notification},
-        },
+        frost::{error::Error, test_dkg::do_dkg},
         ConsensusIntegrationTestSuite,
     },
-    utils::generate_blocks,
+    utils::{
+        generate_blocks, get_checkpoint_block_hash, send_pegin_notification,
+        send_pegout_notification,
+    },
 };
 
 const INPUTS_TO_SPEND: usize = 2;
@@ -98,6 +98,10 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
         pegins.btc_addresses.push(btc_address);
     }
 
+    // get the checkpoint blockhash
+    let bitcoind = suite.global_context.bitcoind_rpc();
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
     // Notify peg ins to all peers
     // signers will not sign if they cannot locate the UTXOs they are being requested to sign
     for c in clients.iter_mut() {
@@ -107,6 +111,7 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
             let btc_address = pegins.btc_addresses.get(input).cloned().unwrap();
             send_pegin_notification(
                 c,
+                checkpoint_block_hash.clone(),
                 btc_address.clone(),
                 hex_encode(eth_address),
                 txid,
@@ -133,7 +138,15 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
         let pk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest).public_key(&secp);
         let spk = pk.p2wpkh_script_code().expect("valid pk");
 
-        send_pegout_notification(&mut clients[0], amount, height, pegout_id, spk.clone()).await?;
+        send_pegout_notification(
+            &mut clients[0],
+            checkpoint_block_hash.clone(),
+            amount,
+            height,
+            pegout_id,
+            spk.clone(),
+        )
+        .await?;
         pending_pegouts_sent.push((spk, pegout_id, amount, height));
     }
 

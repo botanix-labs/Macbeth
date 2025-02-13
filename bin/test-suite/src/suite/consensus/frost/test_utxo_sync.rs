@@ -1,6 +1,5 @@
 use bitcoin::Address;
 
-use bytes::Buf;
 use ethers::types::H256;
 use hex::{self, encode as hex_encode};
 use reth_primitives::extra_data_header::ExtraDataHeader;
@@ -11,9 +10,10 @@ use crate::{
     it_info_print,
     suite::consensus::{
         common::{events::SEND_AMOUNT, poa_node::Notifications},
-        frost::{test_dkg::send_pegins_notifications, test_utxo_commitment::Pegins},
+        frost::test_utxo_commitment::Pegins,
         ConsensusIntegrationTestSuite,
     },
+    utils::{get_checkpoint_block_hash, send_pegins_notifications},
 };
 
 #[allow(clippy::too_many_lines)]
@@ -54,9 +54,14 @@ pub async fn utxo_sync(
         pegins.btc_addresses.push(btc_address);
     }
 
-    for mut c in btc_server_clients.iter_mut() {
-        let _ = send_pegins_notifications(
-            &mut c,
+    // get the checkpoint blockhash
+    let bitcoind = suite.global_context.bitcoind_rpc();
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
+    for c in btc_server_clients.iter_mut() {
+        send_pegins_notifications(
+            c,
+            checkpoint_block_hash.clone(),
             pegins.txids.iter().map(|a| a.to_vec()).collect(),
             pegins.eth_addresses.iter().map(hex::encode).collect(),
             pegins.btc_addresses.clone(),

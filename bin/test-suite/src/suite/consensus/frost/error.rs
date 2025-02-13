@@ -22,4 +22,8 @@ pub enum Error {
     PeginNotification,
     /// Pegout Notification Error
     PegoutNotification(tonic::Status),
+    /// Consensus Checkpoint Error
+    ConsensusCheckpoint,
+    /// Consensus Encode Error
+    ConsensusEncode,
 }

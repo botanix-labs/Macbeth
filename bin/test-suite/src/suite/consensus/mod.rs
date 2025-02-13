@@ -47,7 +47,7 @@ use tonic::transport::Channel;
 use tracing::info;
 // scopes
 mod common;
-mod frost;
+pub mod frost;
 mod invalid_transactions;
 mod rpc_node;
 mod sync;
