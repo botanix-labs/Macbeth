@@ -43,6 +43,7 @@ use tracing::{error, warn};
 mod builder;
 /// Comet BFT abci and consensus driver
 pub mod comet_bft;
+mod snapshot_tracker;
 
 pub use comet_bft::light_client::LightCBFTClientBuilder;
 pub mod activation_manager;

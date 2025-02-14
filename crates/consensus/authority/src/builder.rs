@@ -280,15 +280,20 @@ where
             state_sync.snapshot_message_format,
         ));
 
-        let snapshot_manager = Some(SnapshotManager::new(
-            storage.clone(),
-            parser.clone(),
-            provider_factory,
-            state_sync.num_snapshots_to_keep,
-            state_sync.snapshot_message_format,
-            state_sync.enable_state_sync,
-            Arc::clone(&snapshot_manager_state_lock),
-        ));
+        let snapshot_manager = if state_sync.enable_state_sync {
+            Some(SnapshotManager::new(
+                storage.clone(),
+                parser.clone(),
+                provider_factory,
+                state_sync.num_snapshots_to_keep,
+                state_sync.snapshot_message_format,
+                state_sync.enable_historical_sync,
+                Arc::clone(&snapshot_manager_state_lock),
+                cometbft_rpc_factory.clone(),
+            ))
+        } else {
+            None
+        };
 
         (frost_task, abci_client_builder, snapshot_manager)
     }

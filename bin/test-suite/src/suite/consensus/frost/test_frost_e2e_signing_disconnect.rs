@@ -27,7 +27,7 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
-    utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
+    utils::generate_blocks,
 };
 
 pub async fn frost_e2e_failed_signing_disconnect(

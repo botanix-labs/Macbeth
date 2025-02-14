@@ -85,6 +85,11 @@ impl SnapshotChunk {
     pub const fn get_ending_block_number(&self) -> BlockNumber {
         self.ending_block_number
     }
+
+    /// Return the starting block number of this chunk.
+    pub const fn get_starting_block_number(&self) -> BlockNumber {
+        self.starting_block_number
+    }
 }
 
 /// Snapshot data structure
@@ -149,6 +154,11 @@ impl Snapshot {
     /// Get latest chunk id
     pub fn get_latest_chunk_id(&self) -> Option<ChunkId> {
         self.chunk_ids.last().copied()
+    }
+
+    /// Get oldest chunk id
+    pub fn get_oldest_chunk_id(&self) -> Option<ChunkId> {
+        self.chunk_ids.first().copied()
     }
 
     /// Adds a block ID to the snapshot if it doesn't already exist.

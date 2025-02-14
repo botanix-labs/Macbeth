@@ -756,15 +756,17 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 }
             };
 
-        executor.spawn_critical(
-            "Snapshot Manager",
-            Box::pin(async move {
-                if let Err(e) = snapshot_manager.expect("snapshot manager task exists").run().await
-                {
-                    error!(target: "reth::cli", "Snapshot Manager Error: {:?}", e);
-                }
-            }),
-        );
+        if let Some(mut snapshot_manager) = snapshot_manager {
+            tracing::info!("Snapshot manager is enabled.");
+            executor.spawn_critical(
+                "Snapshot Manager",
+                Box::pin(async move {
+                    if let Err(e) = snapshot_manager.run().await {
+                        error!(target: "reth::cli", "Snapshot Manager Error: {:?}", e);
+                    }
+                }),
+            );
+        }
 
         // configure exxes manager
         let exex_manager = ExExManagerHandle::empty();
