@@ -1058,7 +1058,7 @@ mod tests {
         let (_, signing_commits2_0) = frost::round1::commit(key_package2.signing_share(), rng);
         let (_, signing_commits2_1) = frost::round1::commit(key_package2.signing_share(), rng);
 
-        let tx = create_tx(num_inputs, 1, None);
+        let tx = create_tx(num_inputs, 1, None, false);
 
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments to the psbt for each input
@@ -1093,7 +1093,7 @@ mod tests {
         let sig_share2_1 =
             frost::round2::SignatureShare::deserialize(&[4u8; 32]).expect("valid sig share");
 
-        let tx = create_tx(num_inputs, 1, None);
+        let tx = create_tx(num_inputs, 1, None, false);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments to the psbt for each input
         psbt.inputs[0].set_partial_signature(frost_id!(1), &sig_share1_0);
@@ -1115,7 +1115,7 @@ mod tests {
 
     #[test]
     fn signing_package_conversion_should_fail_when_missing_signing_commitments() {
-        let tx = create_tx(1, 1, None);
+        let tx = create_tx(1, 1, None, false);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         psbt.inputs[0].witness_utxo =
             Some(TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() });
@@ -1154,7 +1154,7 @@ mod tests {
         ];
 
         // Set up the psbt
-        let tx = create_tx(num_inputs, 1, None);
+        let tx = create_tx(num_inputs, 1, None, false);
         let mut psbt = Psbt::from_unsigned_tx(tx.clone()).unwrap();
         // Add signing commitments and TxOut to the psbt for each input
         psbt.inputs[0].witness_utxo =
@@ -1282,7 +1282,7 @@ mod tests {
         let (db, _temp_dir) = setup_db();
 
         // create a tracked tx with a pegout request
-        let tx = create_tx(5, 2, None);
+        let tx = create_tx(5, 2, None, false);
         let pegout_id = create_random_pegout_id();
         let pegout_requests = vec![PegoutRequest {
             spk: tx.output[0].script_pubkey.clone(),
@@ -1315,7 +1315,7 @@ mod tests {
         let (db, _temp_dir) = setup_db();
 
         // create a tracked tx with a pegout request
-        let tx = create_tx(5, 2, None);
+        let tx = create_tx(5, 2, None, false);
         let pegout_id = create_random_pegout_id();
         let pegout_request = PegoutRequest {
             spk: tx.output[0].script_pubkey.clone(),
