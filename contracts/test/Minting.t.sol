@@ -47,7 +47,7 @@ contract MintingTest is Test {
 
         // mock metadata
         bytes memory metadata = bytes("0x00000000");
-        uint256 expectedMintAmount = 999999999999969695;
+        uint256 expectedMintAmount = 999999999999969496;
         emit Mint(destination, expectedMintAmount, bitcoinBlockHeight, metadata);
 
         minting.mint(destination, amount, bitcoinBlockHeight, metadata, refundAddress);
