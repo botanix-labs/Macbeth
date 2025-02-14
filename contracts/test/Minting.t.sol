@@ -54,13 +54,16 @@ contract MintingTest is Test {
     }
 
 
-    function testFailTxCostExceedsAmount() public payable {
-        // set gas price so txCost exceeds amount and call reverts
+    function testRevertWhenTxCostExceedsAmount() public payable {
+        // set gas price so txCost exceeds amount
         vm.txGasPrice(10000000000000000000000);
 
         bytes memory metadata = bytes("0x00000000");
+        
+        vm.expectRevert(); // Expect the transaction to revert
         minting.mint(destination, amount, bitcoinBlockHeight, metadata, refundAddress);
     }
+
    
     function testBurnDustRequire() public payable {
         bytes memory data = bytes("0x00000000");
@@ -69,10 +72,11 @@ contract MintingTest is Test {
         minting.burn{value: dustThreshold + 1}(destinationBytes, data);
     }
 
-    function testFailBurnDustRequire() public payable {
+    function testRevertWhenBurnDustRequire() public payable {
         bytes memory data = bytes("0x00000000");
         bytes memory destinationBytes = bytes("0x31C1ebB34954eEd948949320Ca8a61FAff80C98d");
 
+        vm.expectRevert(); // Expect the transaction to revert
         minting.burn{value: dustThreshold}(destinationBytes, data);
     }
 
