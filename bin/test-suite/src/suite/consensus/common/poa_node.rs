@@ -310,6 +310,8 @@ impl FederationMemberTestConfig {
         let num_snapshots_to_keep = self.num_snapshots_to_keep.to_string();
         let discovery_port = self.discovery_port.to_string();
         let abci_port = self.abci_port.to_string();
+        let enable_state_sync = self.is_state_syncing.to_string();
+        let enable_historical_sync = self.is_state_syncing.to_string();
 
         // prepare run arguments
         let command = "./target/debug/reth";
@@ -370,6 +372,10 @@ impl FederationMemberTestConfig {
             num_snapshots_to_keep.as_str(),
             "--sync.snapshot_message_format",
             "2",
+            "--sync.enable_state_sync",
+            enable_state_sync.as_str(),
+            "--sync.enable_historical_sync",
+            enable_historical_sync.as_str(),
             "--port",
             discovery_port.as_str(),
             "--p2p-secret-key",

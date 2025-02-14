@@ -32,6 +32,15 @@ pub struct StateSyncArgs {
         value_name = "ENABLE_STATE_SYNC"
     )]
     pub enable_state_sync: bool,
+
+    /// Historical state sync enabled
+    #[arg(
+        default_value_t = true,
+        long = "sync.enable_historical_sync",
+        name = "sync.enable_historical_sync",
+        value_name = "ENABLE_HISTORICAL_SYNC"
+    )]
+    pub enable_historical_sync: bool,
 }
 
 impl Default for StateSyncArgs {
@@ -40,6 +49,7 @@ impl Default for StateSyncArgs {
             num_snapshots_to_keep: DEFAULT_NUM_SNAPSHOTS_TO_KEEP,
             snapshot_message_format: SNAPSHOT_MESSAGE_FORMAT,
             enable_state_sync: true,
+            enable_historical_sync: true,
         }
     }
 }

@@ -12,7 +12,6 @@ use tonic::transport::Channel;
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::events::BITCOIND_WALLET_NAME,
         frost::{error::Error, test_dkg::do_dkg},
         ConsensusIntegrationTestSuite,
     },
