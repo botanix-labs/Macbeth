@@ -92,6 +92,7 @@ impl BitcoindNodeConfig {
             "-server=1",
             "-txindex=1",
             "-fallbackfee=0.00005",
+            "-persistmempool=0",
         ];
 
         Ok(SpawnedBitcoindProcess {
