@@ -16,24 +16,22 @@ use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btcserverlib::{
+    badarg,
     config::{Config, Error as ConfigError},
-    coordinator,
-    coordinator::error::CoordinatorError,
+    coordinator::{self, error::CoordinatorError},
     database,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
-    pegout_scheduler,
-    pegout_scheduler::PegoutRequest,
+    pegout_scheduler::{self, PegoutRequest},
     rpc,
     shutdown::{stop_signal, StopHandle},
-    signer,
-    signer::error::SigningRound1Error,
+    signer::{self, error::SigningRound1Error},
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
         get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, ParsingError,
     },
-    wallet,
     wallet::{
+        self,
         address::{generate_taproot_address, generate_tweaked_public_key},
         psbt::PsbtExt,
         util::VerifyingKeyExt,
@@ -58,12 +56,6 @@ use btcserverlib::{
 };
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
-
-macro_rules! badarg {
-    ($($arg:tt)*) => {{
-        tonic::Status::invalid_argument(format!($($arg)*))
-    }};
-}
 
 macro_rules! already_exists {
     ($($arg:tt)*) => {{
