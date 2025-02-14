@@ -557,6 +557,15 @@ impl Suite for ConsensusIntegrationTestSuite {
                 },
                 frost::test_round1_then_new_signing_session::test_round1_then_new_signing_session
             ),
+            "test_track_mempool" => run_test!(
+                self,
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
+                frost::test_track_mempool::test_track_mempool
+            ),
             _ => {
                 error!("Test {:?} not found", test_to_run.as_str());
                 return vec![];
