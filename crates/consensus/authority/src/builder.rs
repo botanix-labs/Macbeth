@@ -279,8 +279,6 @@ where
             state_sync.snapshot_message_format,
         ));
 
-        let snapshot_manager_state_lock =
-            Arc::new(RwLock::new(SnapshotManagerStateLock::default()));
         let snapshot_manager = Some(SnapshotManager::new(
             storage.clone(),
             parser.clone(),
