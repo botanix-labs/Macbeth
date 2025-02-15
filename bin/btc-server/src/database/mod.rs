@@ -19,8 +19,9 @@ use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
 
 pub mod error;
-
+pub mod version;
 pub use error::Error;
+use version::UtxoVersion;
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -55,11 +56,18 @@ pub struct Utxo {
     pub output: TxOut,
     /// If this is a pegin UTXO, the user's pegin address.
     pub eth_address: Option<[u8; 20]>,
+    /// The version of the UTXO.
+    pub version: u32,
 }
 
 impl Utxo {
-    pub fn new(outpoint: OutPoint, output: TxOut, eth_address: Option<[u8; 20]>) -> Self {
-        Utxo { outpoint, output, eth_address }
+    pub fn new(
+        outpoint: OutPoint,
+        output: TxOut,
+        eth_address: Option<[u8; 20]>,
+        version: Option<UtxoVersion>,
+    ) -> Self {
+        Utxo { outpoint, output, eth_address, version: version.unwrap_or(UtxoVersion::V1) as u32 }
     }
 }
 
@@ -760,6 +768,7 @@ impl TryFrom<RpcUtxo> for Utxo {
                     })?,
                 )
             },
+            Some(UtxoVersion::V1),
         ))
     }
 }
@@ -773,6 +782,7 @@ impl TryFrom<Utxo> for RpcUtxo {
             .script_pubkey
             .consensus_encode(&mut script_pk)
             .map_err(|_e| Error::RpcToDbMap("Failed to serialize scriptpubkey".to_string()))?;
+
         Ok(RpcUtxo {
             outpoint: Some(RpcOutPoint {
                 txid: AsRef::<[u8]>::as_ref(&item.outpoint.txid).to_vec(),
@@ -915,6 +925,7 @@ mod tests {
             OutPoint::new(tx.compute_txid(), 0),
             tx.output.get(0).expect("one output").clone(),
             Some([0; 20]),
+            None,
         );
         let rpc_utxo = RpcUtxo::try_from(utxo.clone()).unwrap();
         let utxo2 = Utxo::try_from(rpc_utxo).unwrap();
@@ -924,6 +935,7 @@ mod tests {
         let utxo = Utxo::new(
             OutPoint::new(tx.compute_txid(), 2),
             tx.output.get(0).expect("one output").clone(),
+            None,
             None,
         );
         let rpc_utxo = RpcUtxo::try_from(utxo.clone()).unwrap();
@@ -939,6 +951,7 @@ mod tests {
         let utxo = Utxo::new(
             OutPoint::new(tx.compute_txid(), 0),
             tx.output.get(0).expect("one output").clone(),
+            None,
             None,
         );
         db.store_utxo(&utxo).unwrap();
@@ -958,6 +971,7 @@ mod tests {
             let utxo = Utxo::new(
                 OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
+                None,
                 None,
             );
             utxos.push(utxo);
@@ -992,6 +1006,7 @@ mod tests {
                 OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
                 None,
+                None,
             );
             utxos.push(utxo);
         }
@@ -1016,6 +1031,7 @@ mod tests {
             let utxo = Utxo::new(
                 OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
+                None,
                 None,
             );
             utxos.push(utxo);
@@ -1048,6 +1064,7 @@ mod tests {
             let utxo = Utxo::new(
                 OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
+                None,
                 None,
             );
             utxos.push(utxo);
@@ -1082,6 +1099,7 @@ mod tests {
                 OutPoint::new(tx.compute_txid(), 0),
                 tx.output.get(0).expect("one output").clone(),
                 None,
+                None,
             );
             utxos.push(utxo);
         }
@@ -1102,6 +1120,7 @@ mod tests {
         let utxo = Utxo::new(
             OutPoint::new(tx.compute_txid(), 1),
             tx.output.get(0).expect("one output").clone(),
+            None,
             None,
         );
         db.store_utxo(&utxo).unwrap();

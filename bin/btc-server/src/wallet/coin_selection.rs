@@ -1,4 +1,4 @@
-use crate::wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT;
+use crate::{database::version::UtxoVersion, wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT};
 use bdk_wallet::coin_selection::{
     CoinSelectionAlgorithm, InsufficientFunds, OldestFirstCoinSelection,
 };
@@ -114,6 +114,7 @@ pub(crate) fn coin_selection(
             outpoint: s.outpoint,
             output: s.output.clone(),
             eth_address: s.eth_address,
+            version: UtxoVersion::try_from(s.version).ok().unwrap_or_default(),
         })
         .collect();
 
@@ -210,6 +211,7 @@ mod tests {
                 OutPoint::new(tx.input[i].previous_output.txid, i as u32),
                 // Each prevout has a value of 1000 sats
                 tx.output[0].clone(),
+                None,
                 None,
             );
             utxos.push(utxo.clone());

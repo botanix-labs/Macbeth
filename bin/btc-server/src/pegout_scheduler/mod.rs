@@ -527,10 +527,18 @@ impl PegoutScheduler {
                     warn!("Change output being tracked is not a p2tr: {:?}", output);
                     continue;
                 }
+                let utxo_version = self
+                    .db
+                    .get_utxo(outpoint)
+                    .ok()
+                    .flatten()
+                    .map(|utxo| utxo.version)
+                    .unwrap_or_default();
                 change_utxos.push(database::Utxo {
                     outpoint,
                     output: output.clone(),
                     eth_address: None,
+                    version: utxo_version,
                 });
             }
             self.db.store_utxos(change_utxos.iter().collect::<Vec<_>>().as_slice())?;
