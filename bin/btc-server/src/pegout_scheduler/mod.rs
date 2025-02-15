@@ -12,7 +12,6 @@ use std::{
 };
 
 use crate::{
-    badarg,
     pegout_id::PegoutId,
     telemetry::Telemetry,
     update_telemetry_error,
@@ -21,11 +20,7 @@ use crate::{
         util::{VerifyingKeyExt, VerifyingKeyExtError},
     },
 };
-use bitcoin::{
-    absolute::LockTime, transaction::Version, Amount, Block, BlockHash, OutPoint, ScriptBuf,
-    Sequence, Transaction, TxIn, TxOut, Txid, Witness,
-};
-use bitcoin_hashes::Hash;
+use bitcoin::{Amount, Block, BlockHash, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use bitcoincore_rpc::RpcApi;
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -106,115 +101,6 @@ impl Tx {
             let point = OutPoint::new(self.txid, *i as u32);
             let output = &self.tx.output[*i];
             (point, output)
-        })
-    }
-}
-
-impl TryFrom<rpc::TrackedTx> for Tx {
-    type Error = tonic::Status;
-
-    fn try_from(tx: rpc::TrackedTx) -> Result<Self, Self::Error> {
-        if let Err(e) = tx.validate() {
-            error!("Invalid tracked tx: {}", e);
-            badarg!("invalid tracked tx: {}", e);
-        }
-
-        let tx_prost = tx.tx.ok_or_else(|| {
-            error!("Missing tx in tracked tx");
-            badarg!("missing tx in tracked tx")
-        })?;
-
-        let tx_ins = tx_prost
-            .input
-            .into_iter()
-            .map(|tx_in| {
-                // validate tx_in optional fields contain valid values
-                // so the expect calls below are safe
-                if let Err(e) = tx_in.validate() {
-                    error!("Invalid tx input: {}", e);
-                    badarg!("invalid tx input: {}", e);
-                }
-                let previous_outpoint = tx_in.previous_outpoint.expect("valid previous outpoint");
-
-                TxIn {
-                    previous_output: OutPoint {
-                        txid: Txid::from_slice(&previous_outpoint.txid).expect("valid txid"),
-                        vout: previous_outpoint.vout,
-                    },
-                    script_sig: ScriptBuf::from_bytes(
-                        tx_in.script_sig.expect("valid script sig").script,
-                    ),
-                    sequence: Sequence::from_consensus(tx_in.sequence),
-                    witness: Witness::from_slice(&tx_in.witness),
-                }
-            })
-            .collect::<Vec<_>>();
-        let tx_outs = tx_prost
-            .output
-            .into_iter()
-            .map(|tx_out| {
-                // validate tx_out has a script_pubkey
-                // so the expect call below is safe
-                if let Err(e) = tx_out.validate() {
-                    error!("Invalid tx output: {}", e);
-                    badarg!("invalid tx output: {}", e);
-                }
-
-                TxOut {
-                    value: Amount::from_sat(tx_out.value),
-                    script_pubkey: ScriptBuf::from_bytes(
-                        tx_out.script_pubkey.expect("valid script pubkey").script,
-                    ),
-                }
-            })
-            .collect::<Vec<_>>();
-        let internal_tx = Transaction {
-            version: Version(tx_prost.version),
-            lock_time: LockTime::from_consensus(tx_prost.lock_time),
-            input: tx_ins,
-            output: tx_outs,
-        };
-        let pegout_requests = tx
-            .pegout_requests
-            .into_iter()
-            .map(|pegout| {
-                if let Err(_e) = PegoutId::from_bytes(&pegout.pegout_id) {
-                    error!("Could not deserialize pegout id");
-                    badarg!("invalid pegout id");
-                }
-
-                PegoutRequest {
-                    id: PegoutId::from_bytes(&pegout.pegout_id).expect("valid pegout id"),
-                    spk: ScriptBuf::from_bytes(pegout.spk),
-                    value: Amount::from_sat(pegout.amount),
-                    botanix_height: pegout.height,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        // validate Tx so expect calls are safe
-        if let Err(e) = Txid::from_slice(&tx.txid) {
-            error!("Invalid txid: {}", e);
-            badarg!("invalid txid: {}", e);
-        }
-        if tx.created.is_none() {
-            error!("Missing created timestamp");
-            badarg!("missing created timestamp");
-        }
-
-        Ok(Tx {
-            txid: Txid::from_slice(&tx.txid).expect("valid txid"),
-            // TODO: remove tx and pull it from bitcoind to reduce payload
-            tx: internal_tx,
-            pegout_idxs: tx.pegout_idxs.into_iter().map(|idx| idx as usize).collect(),
-            pegout_requests,
-            // TODO: remove change_idx and pull it from bitcoind to reduce payload
-            change_idxs: tx.change_idxs.into_iter().map(|idx| idx as usize).collect(),
-            created: SystemTime::UNIX_EPOCH +
-                Duration::new(
-                    tx.created.expect("timestamp to exist").seconds as u64,
-                    tx.created.expect("timestamp to exist").nanos as u32,
-                ),
         })
     }
 }
@@ -630,6 +516,11 @@ impl PegoutScheduler {
             .filter(|tx| tx.created < cp_time)
             .map(|tx| tx.txid)
             .collect::<Vec<_>>();
+        info!(
+            "Txids older than checkpoint: {:?}",
+            maybe_dropped_txs.iter().map(|t| t.to_string()).collect::<Vec<_>>()
+        );
+
         // Check if tx still exists
         for txid in maybe_dropped_txs {
             // TODO(scott): first check if tx is in the `finalized outputs` if we implement this
@@ -668,11 +559,13 @@ impl PegoutScheduler {
         checkpoint: BlockHash,
         telemetry: Option<Arc<Telemetry>>,
     ) -> Result<(), SyncError> {
+        let cp_result = bitcoind.get_block_header_info(&checkpoint).map_err(SyncError::Rpc)?;
+
         info!(
             "Syncing pegout scheduler: last={}:{}, cp={}:{}",
             print_safe!(bitcoind.get_block_header_info(&self.last_finalized).map(|r| r.height)),
             self.last_finalized,
-            print_safe!(bitcoind.get_block_header_info(&checkpoint).map(|r| r.height)),
+            cp_result.height,
             checkpoint,
         );
 
@@ -753,21 +646,25 @@ impl PegoutScheduler {
             }
         }
 
-        let last_info = bitcoind.get_block_header_info(&self.last_finalized);
-        let cp_info = bitcoind.get_block_header_info(&checkpoint);
-        if let (Ok(last), Ok(cp)) = (last_info, cp_info) {
-            if self.last_finalized == checkpoint {
-                info!("Checkpoint reached: {}", checkpoint);
-                return Ok(());
+        // handle txs that are still in the mempool, have been dropped or there was a reorg
+        // this must be done after `finalize_block` which updates the db and pegout scheduler state
+        self.track_mempool(bitcoind, cp_result)?;
+
+        if self.last_finalized == checkpoint {
+            info!("Checkpoint reached: {}", checkpoint);
+            Ok(())
+        } else {
+            let last_info = bitcoind.get_block_header_info(&self.last_finalized);
+            let cp_info = bitcoind.get_block_header_info(&checkpoint);
+            if let (Ok(last), Ok(cp)) = (last_info, cp_info) {
+                debug!(
+                    "Checkpoint not reached: last={:?}, checkpoint={:?}, tip={:?}",
+                    last, cp, tip
+                );
             }
-
-            debug!("Checkpoint not reached: last={:?}, checkpoint={:?}, tip={:?}", last, cp, tip);
-
-            // handle txs that are still in the mempool, have been dropped or there was a reorg
-            self.track_mempool(bitcoind, cp)?;
+            update_telemetry_error!(telemetry, SyncError::CheckPointNotReached);
+            Err(SyncError::CheckPointNotReached)
         }
-        update_telemetry_error!(telemetry, SyncError::CheckPointNotReached);
-        Err(SyncError::CheckPointNotReached)
     }
 }
 
