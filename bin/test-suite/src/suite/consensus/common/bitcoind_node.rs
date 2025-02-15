@@ -1,13 +1,17 @@
 use super::{create_temp_working_directory, kill_process_at_port, Scope};
 use crate::{
     context::GlobalContext,
-    suite::consensus::common::{events::BITCOIND_WALLET_NAME, spawn_child_process},
+    suite::consensus::{
+        common::{events::BITCOIND_WALLET_NAME, spawn_child_process},
+        ConsensusIntegrationTestSuite,
+    },
     utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
 use bitcoincore_rpc::RpcApi;
-use std::{fs, path::PathBuf, sync::Arc};
+use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
-    process::Child,
+    process::{Child, Command},
     sync::broadcast::{channel, Sender},
 };
 use url::Url;
@@ -47,6 +51,27 @@ impl SpawnedBitcoindProcess {
             .arg(format!("{pid}"))
             .output();
         kill_process_at_port(self.port);
+    }
+
+    pub async fn stop(&mut self, bitcoind_user: &str, bitcoind_password: &str) {
+        let datadir =
+            format!("-datadir={}", self.working_directory.join("data").display().to_string());
+
+        let status = Command::new("bitcoin-cli")
+            .arg("-regtest")
+            .arg(format!("-rpcuser={}", bitcoind_user))
+            .arg(format!("-rpcpassword={}", bitcoind_password))
+            .arg("-rpcport=18443")
+            .arg(datadir)
+            .arg("stop")
+            .status()
+            .await
+            .expect("to stop bitcoind");
+
+        if !status.success() {
+            error!("Failed to stop bitcoind: {:?}", status);
+            panic!("Failed to stop bitcoind");
+        }
     }
 }
 
@@ -105,6 +130,34 @@ impl BitcoindNodeConfig {
             port: 18443, // Note: using default port
             working_directory: self.working_directory.clone(),
         })
+    }
+
+    // this re-starts an existing stopped bitcoind instance and updates the local context
+    pub async fn re_start(&mut self, suite: &mut ConsensusIntegrationTestSuite) {
+        match self.spawn_service() {
+            Ok(bitcoind_process) => {
+                tokio::time::sleep(Duration::from_secs(6)).await;
+
+                let bitcoind_factory = BitcoindClientFactory::new(BitcoindConfig::new(
+                    suite.global_context.bitcoind_url.clone(),
+                    suite.global_context.bitcoind_user.clone(),
+                    suite.global_context.bitcoind_pass.clone(),
+                ));
+                let bitcoind_client =
+                    bitcoind_factory.build_and_connect().expect("to build and connect client");
+                bitcoind_client.load_wallet(BITCOIND_WALLET_NAME).expect("wallet exists");
+
+                // update local context
+                suite.local_context.bitcoind_process = Some(bitcoind_process);
+                suite.local_context.bitcoind_node = Some(self.clone());
+                // Note: this field is not currently used in any tests
+                suite.local_context.bitcoind_notification = None;
+            }
+            Err(e) => {
+                error!("Failed to re-start bitcoind: {:?}", e);
+                panic!();
+            }
+        };
     }
 }
 
