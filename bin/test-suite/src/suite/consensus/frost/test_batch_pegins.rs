@@ -19,10 +19,10 @@ use reth_primitives::Address;
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::events::{await_botanix_event, GatewayAddressResponse, BITCOIND_WALLET_NAME},
+        common::events::{await_botanix_event, GatewayAddressResponse},
         ConsensusIntegrationTestSuite,
     },
-    utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
+    utils::generate_blocks,
 };
 
 const NUM_PEGINS: u16 = 5;
@@ -35,19 +35,6 @@ pub async fn batch_pegins(
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
-
-    // Load up the bitcoin wallet and generate some blocks
-    for wallet in bitcoind_rpc.list_wallets().unwrap() {
-        it_info_print!("#UNLOADING WALLET?", &wallet);
-        let _ = bitcoind_rpc.unload_wallet(Some(&wallet));
-    }
-    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
-    if create_res.is_err() {
-        // wallet already exists, load wallet
-        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
-    }
-    // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    generate_blocks(&bitcoind_rpc, MIN_BLOCKS_COINBASE_MATURE).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let test_fed_members = suite

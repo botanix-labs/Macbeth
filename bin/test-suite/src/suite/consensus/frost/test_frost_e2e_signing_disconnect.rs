@@ -35,20 +35,6 @@ pub async fn frost_e2e_failed_signing_disconnect(
 ) -> anyhow::Result<(), super::error::Error> {
     let pegin_conf_depth = 6; //TODO(stevenroose) set this from chain constant?
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
-
-    // Load up the bitcoin wallet and generate some blocks
-    for wallet in bitcoind_rpc.list_wallets().unwrap() {
-        it_info_print!("#UNLOADING WALLET?", &wallet);
-        let _ = bitcoind_rpc.unload_wallet(Some(&wallet));
-    }
-    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
-    if create_res.is_err() {
-        // wallet already exists
-        // load wallet
-        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
-    }
-    // generate > 100 blocks so coinbase utxos can be spent from the wallet
-    generate_blocks(&bitcoind_rpc, MIN_BLOCKS_COINBASE_MATURE).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let test_fed_members = suite
