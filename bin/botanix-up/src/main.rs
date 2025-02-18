@@ -6,13 +6,20 @@ use crate::comet_node::{get_enode, TestSignal};
 use anyhow::{Context, Result as AnyResult};
 use clap::Parser;
 use cli::Cli;
+use reth_node_core::{
+    args::{FedMemberPubKey, FederationTomlConfig},
+    primitives::Address,
+};
+use secp256k1::SECP256K1;
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 use test_suite::suite::consensus::common::{
     comet_node::{self, updated_genesis_file, GenesisValidator, PrivValidator},
-    poa_node::ABCI_PORT_BASE,
+    poa_node::{ABCI_PORT_BASE, DISCOVERY_PORT_BASE},
+    MINTING_CONTRACT_BYTECODE,
 };
 use tokio::{self, sync::broadcast::channel};
 
@@ -29,7 +36,7 @@ async fn create_cometbft_nodes(num_nodes: u16, output_path: PathBuf) -> AnyResul
 
         let node_path = cometbft_path.join(format!("node-{}", i));
         std::fs::create_dir_all(&node_path)?;
-        let (exit_status, stdout, stderr) = comet_node::init_cometbft_node(i, &node_path).await?;
+        let (exit_status, _stdout, stderr) = comet_node::init_cometbft_node(i, &node_path).await?;
         if !exit_status.success() {
             return Err(anyhow::anyhow!(
                 "CometBFT node failed to initialize: {:?} {:?}",
@@ -100,6 +107,60 @@ async fn create_cometbft_nodes(num_nodes: u16, output_path: PathBuf) -> AnyResul
     Ok(())
 }
 
+async fn create_poa_nodes(num_nodes: u16, output_path: PathBuf) -> AnyResult<()> {
+    let random_fee_recipient = Address::random();
+    let poa_path = output_path.join("poa");
+    // Create the output directory
+    std::fs::create_dir_all(&poa_path)?;
+    let mut fed_pks = vec![];
+
+    for i in 0..num_nodes {
+        // Create data dir for the node
+        let node_path = poa_path.join(format!("node-{}", i));
+        std::fs::create_dir_all(&node_path)?;
+        // Create the secret key
+        let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let pk = sk.public_key(SECP256K1);
+
+        // Write the discovery secret key
+        let discovery_secret_path = Path::new(&node_path).join("discovery-secret");
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(discovery_secret_path.clone())
+            .context("discovery secret file cannot be created/opened")?;
+        let _ = file
+            .write_all(&sk.display_secret().to_string().as_bytes())
+            .context("error writing secret key to file")?;
+
+        let addrs = format!("127.0.0.1:{}", DISCOVERY_PORT_BASE + 1000 * i);
+        fed_pks.push(FedMemberPubKey { key: pk.to_string(), socket_addr: addrs });
+
+        // Lastly we need to create the jwt secret key
+        let jwt_secret_path = Path::new(&node_path).join("bjwt.hex");
+        let jwt_sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(jwt_secret_path.clone())
+            .context("jwt secret file cannot be created/opened")?;
+        let _ = file
+            .write_all(&jwt_sk.display_secret().to_string().as_bytes())
+            .context("error writing jwt secret key to file")?;
+    }
+
+    let federation_config = FederationTomlConfig {
+        federation_member_public_key: fed_pks,
+        botanix_fee_recipient: random_fee_recipient.to_string(),
+        minting_contract_bytecode: String::from(MINTING_CONTRACT_BYTECODE),
+    };
+
+    let federation_config_path = Path::new(&poa_path).join("federation.toml");
+    federation_config.write_to_path(&federation_config_path)?;
+
+    Ok(())
+}
+
 async fn inner_main() -> AnyResult<()> {
     let cli = Cli::parse();
     // Basic sanity checks
@@ -112,8 +173,8 @@ async fn inner_main() -> AnyResult<()> {
     // Create the output directory
     std::fs::create_dir_all(&output_path)?;
 
-    // Create the cometbft nodes
-    create_cometbft_nodes(cli.num_nodes, output_path).await?;
+    create_cometbft_nodes(cli.num_nodes, output_path.clone()).await?;
+    create_poa_nodes(cli.num_nodes, output_path.clone()).await?;
 
     // Create the output directory
     Ok(())
