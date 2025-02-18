@@ -2159,6 +2159,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-up"
+version = "1.0.5"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "rand 0.8.5",
+ "secp256k1 0.29.1",
+ "serde",
+ "serde_json",
+ "test-suite",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "boyer-moore-magiclen"
 version = "0.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
