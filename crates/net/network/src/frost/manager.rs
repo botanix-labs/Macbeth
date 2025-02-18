@@ -148,7 +148,7 @@ impl FrostManager {
     fn retrieve_peer_data(&mut self, peer_id: &PeerId) -> Option<PeerData> {
         let authority = self.authorities.get_mut(peer_id).expect("authority not found");
 
-        let mut to_remove = None;
+        let mut to_remove = vec![];
         let mut peer_data = None;
 
         // we retrieve any connection to the given peer in arbitrary order. This
@@ -156,7 +156,7 @@ impl FrostManager {
         // connection - which can happen if the event channel is choking and the
         // cleanup mechanism failed to trigger - the dead connection will be
         // removed. It's not expected that *all* dead connections are removed
-        // here, this will occur on a case-by-case basis over time.
+        // here.
         //
         // It's very unlikely that such a scenario actually ever happens in
         // practice.
@@ -170,7 +170,7 @@ impl FrostManager {
                     peer_id, idx
                 );
 
-                to_remove = Some(*idx);
+                to_remove.push(*idx);
 
                 // try next connection
                 continue;
@@ -186,14 +186,8 @@ impl FrostManager {
             break;
         }
 
-        // if a dead connection has been found, remove it.
-        if let Some(idx) = to_remove {
-            warn!(
-                target: "network::frost::retrieve_peer_data",
-                "Effectively removing dead connection, from peer with id {:?}, conn idx = {}",
-                peer_id, idx
-            );
-
+        // if dead connections have been found, remove them.
+        for idx in to_remove {
             self.peer_connections.remove(&idx);
             authority.connections.remove(&idx);
         }
