@@ -172,7 +172,7 @@ impl CometBftNodeConfig {
     }
 }
 
-async fn get_cometbft_version(
+pub async fn get_cometbft_version(
     index: u16,
     working_directory: &PathBuf,
 ) -> anyhow::Result<(ExitStatus, String, String)> {
@@ -185,7 +185,7 @@ async fn get_cometbft_version(
     Ok((exit_status, stdout, stderr))
 }
 
-async fn init_cometbft_node(
+pub async fn init_cometbft_node(
     index: u16,
     working_directory: &PathBuf,
 ) -> anyhow::Result<(ExitStatus, String, String)> {
@@ -199,7 +199,7 @@ async fn init_cometbft_node(
     Ok((exit_status, stdout, stderr))
 }
 
-async fn get_enode(
+pub async fn get_enode(
     index: u16,
     working_directory: &PathBuf,
 ) -> anyhow::Result<(ExitStatus, String, String)> {
@@ -213,7 +213,7 @@ async fn get_enode(
     Ok((exit_status, stdout, stderr))
 }
 
-fn updated_genesis_file(
+pub fn updated_genesis_file(
     working_directory: &PathBuf,
     all_validators: Vec<GenesisValidator>,
 ) -> anyhow::Result<()> {
@@ -263,7 +263,7 @@ fn updated_genesis_file(
     Ok(())
 }
 
-fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> {
+pub fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> {
     let config_file =
         Path::new(&cometbft_node.working_directory).join("config").join("config.toml");
     let mut toml: toml::Value = toml::from_str(&fs::read_to_string(&config_file)?)
