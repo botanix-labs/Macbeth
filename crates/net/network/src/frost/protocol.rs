@@ -300,76 +300,57 @@ impl Stream for FrostProtoConnection {
         // TODO(lamafab): should we shutdown the connection if the commands_rx is dropped?
         if let Poll::Ready(Some(cmd)) = commands_rx.poll_next_unpin(cx) {
             info!(target: "network::frost::protocol", "Received command: {:?}", cmd);
-            return match cmd {
+            let resp = match cmd {
                 // if I want to send a ping message, save the response channel to later (below)
                 // answer once the pong is received
                 FrostPeerCommand::PingMessage { msg: _, response } => {
                     this.pending_pong = Some(response);
-                    Poll::Ready(Some(FrostProtoMessage::ping_message(this.my_peer_id).encoded()))
+                    FrostProtoMessage::ping_message(this.my_peer_id)
                 }
                 FrostPeerCommand::PeerMessage(response) => match response {
                     PeerMessageResponse::Healthcheck(healthcheck_response) => {
                         let HealthcheckResponse { sender, receiver } = healthcheck_response;
                         let req = HealthcheckRequest::new(sender, receiver);
 
-                        Poll::Ready(Some(FrostProtoMessage::peer_health_message(req).encoded()))
+                        FrostProtoMessage::peer_health_message(req)
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {
                             DkgEventResponseType::DkgRound1Request => {
                                 let req = DkgRequest::new(data, identifier);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round1_dkg_request_message(req).encoded(),
-                                ))
+                                FrostProtoMessage::round1_dkg_request_message(req)
                             }
                             DkgEventResponseType::DkgRound1 => {
                                 let req = DkgRequest::new(data, identifier);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round1_dkg_message(req).encoded(),
-                                ))
+                                FrostProtoMessage::round1_dkg_message(req)
                             }
                             DkgEventResponseType::DkgRound2 => {
                                 let req = DkgRequest::new(data, identifier);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round2_dkg_message(req).encoded(),
-                                ))
+                                FrostProtoMessage::round2_dkg_message(req)
                             }
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
                         let SigningResponse { response_type, signing_session_id, psbt } =
                             signing_response;
+
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
                                 let req = SignRequest::new(signing_session_id, psbt);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round1_signer_package_message(req).encoded(),
-                                ))
+                                FrostProtoMessage::round1_signer_package_message(req)
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => {
                                 let req = SignRequest::new(signing_session_id, psbt);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round1_coordinator_signing_package_message(
-                                        req,
-                                    )
-                                    .encoded(),
-                                ))
+                                FrostProtoMessage::round1_coordinator_signing_package_message(req)
                             }
                             SigningEventResponseType::SignerRound2SigningPackage => {
                                 let req = SignRequest::new(signing_session_id, psbt);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round2_signer_package_message(req).encoded(),
-                                ))
+                                FrostProtoMessage::round2_signer_package_message(req)
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => {
                                 let req = SignRequest::new(signing_session_id, psbt);
-                                Poll::Ready(Some(
-                                    FrostProtoMessage::round2_coordinator_signing_package_message(
-                                        req,
-                                    )
-                                    .encoded(),
-                                ))
+                                FrostProtoMessage::round2_coordinator_signing_package_message(req)
                             }
                         }
                     }
@@ -377,10 +358,12 @@ impl Stream for FrostProtoConnection {
                         let WalletStateResponse { utxos, tracked_txs, pending_pegouts } =
                             wallet_state_response;
                         let req = WalletStateRequest::new(utxos, tracked_txs, pending_pegouts);
-                        Poll::Ready(Some(FrostProtoMessage::wallet_state_message(req).encoded()))
+                        FrostProtoMessage::wallet_state_message(req)
                     }
                 },
             };
+
+            return Poll::Ready(Some(resp.encoded()));
         }
 
         // before we even start processing the incoming messages from the other
@@ -404,8 +387,8 @@ impl Stream for FrostProtoConnection {
         loop {
             // poll the actual conn to peers for events from this other peer
             let Some(bytes) = ready!(this.conn_rx.poll_next_unpin(cx)) else {
-            return Poll::Ready(None);
-        };
+                return Poll::Ready(None);
+            };
 
             match FrostProtoMessage::decode_message(&mut &bytes[..]) {
                 Some(m) => {
@@ -428,111 +411,106 @@ impl Stream for FrostProtoConnection {
                 info!(target: "network::frost::protocol", "Received ping message from peer. Replying with pong...");
                 return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));
             }
-            FrostProtoMessageKind::Pong => {}
             FrostProtoMessageKind::PingMessage(_peer_id) => {
                 // answer with pong and my peer id
+                info!(target: "network::frost::protocol", "Received ping message from peer. Replying with pong...");
                 return Poll::Ready(Some(
                     FrostProtoMessage::pong_message(this.my_peer_id).encoded(),
                 ));
             }
-            // other peers answers with pong message with a peer id and authority index
-            FrostProtoMessageKind::PongMessage(_peer_id) => {
+            FrostProtoMessageKind::Pong => {
+                info!(target: "network::frost::protocol", "Received pong message from peer.");
                 if let Some(sender) = this.pending_pong.take() {
                     sender.send("Confirmed".to_string()).ok();
                 }
+                return Poll::Pending;
             }
-            FrostProtoMessageKind::Round1Dkg(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    response: PeerMessageResponse::Dkg(DkgResponse {
-                        response_type: DkgEventResponseType::DkgRound1,
-                        identifier: data.identifier,
-                        data: data.data,
-                    }),
-                    peer_id: this.peer_id,
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received Round1Dkg message. Error = {:?}", e);
+            // other peers answers with pong message with a peer id and authority index
+            FrostProtoMessageKind::PongMessage(_peer_id) => {
+                info!(target: "network::frost::protocol", "Received pong message from peer.");
+                if let Some(sender) = this.pending_pong.take() {
+                    sender.send("Confirmed".to_string()).ok();
                 }
+                return Poll::Pending;
             }
-            FrostProtoMessageKind::Round1DkgRequest(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    response: PeerMessageResponse::Dkg(DkgResponse {
-                        response_type: DkgEventResponseType::DkgRound1Request,
-                        identifier: data.identifier,
-                        data: data.data,
-                    }),
-                    peer_id: this.peer_id,
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received Round1DkgRequest message. Error = {:?}", e);
-                }
-            }
-            FrostProtoMessageKind::Round2Dkg(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    response: PeerMessageResponse::Dkg(DkgResponse {
-                        response_type: DkgEventResponseType::DkgRound2,
-                        identifier: data.identifier,
-                        data: data.data,
-                    }),
-                    peer_id: this.peer_id,
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received Round2Dkg message. Error = {:?}", e);
-                }
-            }
+            FrostProtoMessageKind::Healthcheck(data) => FrostProtocolEvent::PeerMessage {
+                peer_id: this.peer_id,
+                response: PeerMessageResponse::Healthcheck(HealthcheckResponse {
+                    receiver: data.receiver,
+                    sender: data.sender,
+                }),
+            },
+            FrostProtoMessageKind::Round1Dkg(data) => FrostProtocolEvent::PeerMessage {
+                response: PeerMessageResponse::Dkg(DkgResponse {
+                    response_type: DkgEventResponseType::DkgRound1,
+                    identifier: data.identifier,
+                    data: data.data,
+                }),
+                peer_id: this.peer_id,
+            },
+            FrostProtoMessageKind::Round1DkgRequest(data) => FrostProtocolEvent::PeerMessage {
+                response: PeerMessageResponse::Dkg(DkgResponse {
+                    response_type: DkgEventResponseType::DkgRound1Request,
+                    identifier: data.identifier,
+                    data: data.data,
+                }),
+                peer_id: this.peer_id,
+            },
+            FrostProtoMessageKind::Round2Dkg(data) => FrostProtocolEvent::PeerMessage {
+                response: PeerMessageResponse::Dkg(DkgResponse {
+                    response_type: DkgEventResponseType::DkgRound2,
+                    identifier: data.identifier,
+                    data: data.data,
+                }),
+                peer_id: this.peer_id,
+            },
             FrostProtoMessageKind::SignerRound1SigningPackage(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound1SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),
                     peer_id: this.peer_id,
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received SignerRound1SigningPackage message. Error = {:?}", e);
                 }
             }
             FrostProtoMessageKind::CoordinatorRound1SigningPackage(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),
                     peer_id: this.peer_id,
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received CoordinatorRound1SigningPackage message. Error = {:?}", e);
                 }
             }
             FrostProtoMessageKind::SignerRound2SigningPackage(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::SignerRound2SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),
                     peer_id: this.peer_id,
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received SignerRound2SigningPackage message. Error = {:?}", e);
                 }
             }
             FrostProtoMessageKind::CoordinatorRound2SigningPackage(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
+                FrostProtocolEvent::PeerMessage {
                     response: PeerMessageResponse::Signing(SigningResponse {
                         response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
                     }),
                     peer_id: this.peer_id,
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to forward received CoordinatorRound2SigningPackage message. Error = {:?}", e);
                 }
             }
-            FrostProtoMessageKind::WalletState(data) => {
-                let _ = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    response: PeerMessageResponse::WalletState(WalletStateResponse {
-                        utxos: data.utxos,
-                        tracked_txs: data.tracked_txs,
-                        pending_pegouts: data.pending_pegouts,
-                    }),
-                    peer_id: this.peer_id,
+            FrostProtoMessageKind::WalletState(data) => FrostProtocolEvent::PeerMessage {
+                response: PeerMessageResponse::WalletState(WalletStateResponse {
+                    utxos: data.utxos,
+                    tracked_txs: data.tracked_txs,
+                    pending_pegouts: data.pending_pegouts,
+                }),
+                peer_id: this.peer_id,
             },
         };
 
