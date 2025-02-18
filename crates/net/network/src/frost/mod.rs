@@ -206,17 +206,24 @@ impl fmt::Display for SigningEventResponseType {
 /// All events related to frost events emitted by the network.
 /// These are events that are emitted by the network to the frost manager.
 /// And most likely will be used to update the frost task state.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum FrostProtocolEvent {
     /// An emitted event once the connection is established
     ConnectionEstablished {
-        #[allow(dead_code)]
-        /// the connection direction - we connected to them, or they to us
-        direction: Direction,
         /// the other peer id
         peer_id: PeerId,
         /// the tx sender we send to the other peer to enable it to communicate with us
         peer_commands_tx: mpsc::UnboundedSender<FrostPeerCommand>,
+        #[allow(dead_code)]
+        /// the connection direction - we connected to them, or they to us
+        direction: Direction,
+        /// callback to send the assigned idx back to the initiator
+        sender: oneshot::Sender<u64>,
+    },
+    /// An emitted event once the connection is closed
+    ConnectionClosed {
+        /// the assigned idx of the connection
+        idx: u64,
     },
     /// An emitted event once a peer sends a message to another peer
     PeerMessage {

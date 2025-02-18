@@ -1,5 +1,5 @@
 #![allow(unreachable_pub)]
-use futures::{Stream, StreamExt};
+use futures::{FutureExt, Stream, StreamExt};
 use reth_eth_wire::{
     capability::SharedCapabilities, multiplex::ProtocolConnection, protocol::Protocol,
 };
@@ -11,8 +11,9 @@ use std::{
     pin::Pin,
     task::{ready, Context, Poll},
 };
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_util::sync::PollSender;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -36,7 +37,7 @@ pub struct FrostProtoHandler {
     pub my_peer_id: PeerId,
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
-    pub protocol_events_tx: broadcast::Sender<FrostProtocolEvent>,
+    pub protocol_events_tx: mpsc::Sender<FrostProtocolEvent>,
 }
 
 impl ProtocolHandler for FrostProtoHandler {
@@ -78,7 +79,7 @@ pub struct FrostConnectionHandler {
     my_peer_id: PeerId,
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
-    protocol_events_tx: broadcast::Sender<FrostProtocolEvent>,
+    protocol_events_tx: mpsc::Sender<FrostProtocolEvent>,
 }
 
 impl ConnectionHandler for FrostConnectionHandler {
@@ -112,31 +113,16 @@ impl ConnectionHandler for FrostConnectionHandler {
         conn: ProtocolConnection,
     ) -> Self::Connection {
         info!(target: "network::frost::protocol::into_connection", "Establishing connection with peer with id = {:?}, direction = {:?}", peer_id, direction);
-        // on every new connection to us, send over the cloned shared channel an Established event
-        // to the other side and a tx handle to send Command messages to us directly
-        let (remote_peer_tx, remote_peer_rx) = mpsc::unbounded_channel();
-        let connection_established_event = FrostProtocolEvent::ConnectionEstablished {
-            direction,
-            peer_id,
-            peer_commands_tx: remote_peer_tx,
-        };
 
-        if let Err(e) = self.protocol_events_tx.send(connection_established_event) {
-            error!(target: "network::frost::protocol::into_connection", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
-        }
-
-        let protocol_events_tx = self.protocol_events_tx.clone();
+        let protocol_events_tx = PollSender::new(self.protocol_events_tx.clone());
         // update connection state
         FrostProtoConnection {
             protocol_events_tx,
+            registration: RegistrationState::NotRegistered,
             conn_rx: conn,
-            // incoming - another peer is connecting with me (set the ping message to Some),
-            // outgoing - I am connecting with a peer
-            initial_ping: direction
-                .is_outgoing()
-                .then(|| FrostProtoMessage::ping_message(self.my_peer_id)),
-            // used to receive commands from me to send to the other peer
-            commands_rx: UnboundedReceiverStream::new(remote_peer_rx),
+            // Used to receive commands from me to be sent to the other peer.
+            // Initialized once the connection can be registered.
+            commands_rx: None,
             pending_pong: None, // when the conn. is just established, there is no pending pong
             my_peer_id: self.my_peer_id,
             peer_id,
@@ -150,11 +136,12 @@ impl ConnectionHandler for FrostConnectionHandler {
 pub struct FrostProtoConnection {
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
-    protocol_events_tx: broadcast::Sender<FrostProtocolEvent>,
+    protocol_events_tx: PollSender<FrostProtocolEvent>,
+    registration: RegistrationState,
     /// Channel to receive messages from other peers on the wire
     conn_rx: ProtocolConnection,
     /// Channel to receive commands from in the internal application to send to the other peers
-    commands_rx: UnboundedReceiverStream<FrostPeerCommand>,
+    commands_rx: Option<UnboundedReceiverStream<FrostPeerCommand>>,
     /// My peer id
     my_peer_id: PeerId,
     /// Remote peer id
@@ -162,14 +149,63 @@ pub struct FrostProtoConnection {
     /// direction of the connection
     #[allow(dead_code)]
     direction: Direction,
-    #[allow(dead_code)]
-    initial_ping: Option<FrostProtoMessage>,
     pending_pong: Option<oneshot::Sender<String>>,
+}
+
+#[derive(Debug)]
+// TODO(lamafab): implement a `Closed` variant?
+enum RegistrationState {
+    NotRegistered,
+    Pending {
+        remote_peer_rx: mpsc::UnboundedReceiver<FrostPeerCommand>,
+        callback_rx: oneshot::Receiver<u64>,
+    },
+    Registered(u64),
+}
+
+impl FrostProtoConnection {
+    fn reservation_guard(&mut self) -> SlotReservationGuard {
+        SlotReservationGuard { protocol_events_tx: self.protocol_events_tx.clone() }
+    }
+}
+
+/// Guard to ensure that the reserved slot in the events channel is released
+/// once dropped.
+struct SlotReservationGuard {
+    protocol_events_tx: PollSender<FrostProtocolEvent>,
+}
+
+impl Drop for SlotReservationGuard {
+    fn drop(&mut self) {
+        self.protocol_events_tx.abort_send();
+    }
 }
 
 impl Drop for FrostProtoConnection {
     fn drop(&mut self) {
         info!(target: "network::frost::protocol", "Dropping FrostProtoConnection for peer with id = {:?}", self.peer_id);
+
+        let RegistrationState::Registered(idx) = self.registration else {
+            // connection hasn't been registered yet
+            return;
+        };
+
+        let event = FrostProtocolEvent::ConnectionClosed { idx };
+
+        // try to let the FROST manager know about the connection termination so
+        // the cleanup can be triggered. This can fail if the event channel is
+        // full - the FROST manager does still have an implicit garbage
+        // collection mechanism that will remove the dead connection after a
+        // while.
+        let res = self
+            .protocol_events_tx
+            .get_ref()
+            .expect("poll sender closed unexpectedly")
+            .try_send(event);
+
+        if res.is_err() {
+            warn!(target: "network::frost::protocol", "Failed to notify FROST manager about connection drop for peer with id = {:?}, connection idx = {}", self.peer_id, idx);
+        }
     }
 }
 
@@ -179,14 +215,90 @@ impl Stream for FrostProtoConnection {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        // in case of outgoing (I am dialing this a peer), send him a pure PING message
-        // TODO there is no reason to have this initial ping and pong maybe we can just remove it
-        // if let Some(initial_ping) = this.initial_ping.take() {
-        //     return Poll::Ready(Some(initial_ping.encoded()));
-        // }
+        // on every new connection to us, we send an Established event to the FROST manager
+        // and a tx handle to send Command messages to us directly.
+        match &mut this.registration {
+            RegistrationState::NotRegistered => {
+                // reserve a slot for the connection registration event.
+                if let Err(e) = ready!(this.protocol_events_tx.poll_reserve(cx)) {
+                    // this error only occurs if the FROST manager has been dropped.
+                    error!(target: "network::frost::protocol", "Failed to reserve slot in the events channel: {:?}", e);
+                    return Poll::Ready(None);
+                }
+
+                let (remote_peer_tx, remote_peer_rx) = mpsc::unbounded_channel();
+                let (callback_tx, mut callback_rx) = oneshot::channel();
+
+                let connection_established_event = FrostProtocolEvent::ConnectionEstablished {
+                    direction: this.direction,
+                    peer_id: this.peer_id,
+                    peer_commands_tx: remote_peer_tx,
+                    sender: callback_tx,
+                };
+
+                if let Err(e) = this.protocol_events_tx.send_item(connection_established_event) {
+                    // this error only occurs if the FROST manager has been dropped.
+                    error!(target: "network::frost::protocol", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
+                    return Poll::Ready(None);
+                }
+
+                // Wait for the FROST manager to assign an idx to this connection.
+                match callback_rx.poll_unpin(cx) {
+                    Poll::Ready(Ok(idx)) => {
+                        // connection was registered immediately and
+                        // successfully (unlikely that actually happens in
+                        // practice)
+                        this.registration = RegistrationState::Registered(idx);
+                        this.commands_rx = Some(UnboundedReceiverStream::new(remote_peer_rx));
+                    }
+                    Poll::Ready(Err(e)) => {
+                        // this error only occurs if the FROST manager has been dropped.
+                        error!(target: "network::frost::protocol", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
+                        return Poll::Ready(None);
+                    }
+                    Poll::Pending => {
+                        // stage pending state, wait for callback to be resolved
+                        this.registration =
+                            RegistrationState::Pending { remote_peer_rx, callback_rx };
+                        return Poll::Pending;
+                    }
+                }
+            }
+            RegistrationState::Pending { .. } => {
+                // take ownership of data
+                let RegistrationState::Pending { remote_peer_rx, mut callback_rx } =
+                    std::mem::replace(&mut this.registration, RegistrationState::NotRegistered)
+                else {
+                    panic!("checked above")
+                };
+
+                match callback_rx.poll_unpin(cx) {
+                    Poll::Ready(Ok(idx)) => {
+                        // connection was registered successfully
+                        this.registration = RegistrationState::Registered(idx);
+                        this.commands_rx = Some(UnboundedReceiverStream::new(remote_peer_rx));
+                    }
+                    Poll::Ready(Err(e)) => {
+                        error!(target: "network::frost::protocol", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
+                        return Poll::Ready(None);
+                    }
+                    Poll::Pending => {
+                        // stage pending state, wait for callback to be resolved
+                        this.registration =
+                            RegistrationState::Pending { remote_peer_rx, callback_rx };
+
+                        return Poll::Pending;
+                    }
+                }
+            }
+            RegistrationState::Registered(_) => { /* connection is already registered */ }
+        }
+
+        let commands_rx = this.commands_rx.as_mut().expect("commands_rx is not initialized");
 
         // poll the commands sent by us to send to another peer
-        if let Poll::Ready(Some(cmd)) = this.commands_rx.poll_next_unpin(cx) {
+        // TODO(lamafab): should we shutdown the connection if the commands_rx is dropped?
+        if let Poll::Ready(Some(cmd)) = commands_rx.poll_next_unpin(cx) {
             info!(target: "network::frost::protocol", "Received command: {:?}", cmd);
             return match cmd {
                 // if I want to send a ping message, save the response channel to later (below)
@@ -271,35 +383,47 @@ impl Stream for FrostProtoConnection {
             };
         }
 
-        // poll the actual conn to peers for events from this other peer
-        let Some(msg) = ready!(this.conn_rx.poll_next_unpin(cx)) else {
+        // before we even start processing the incoming messages from the other
+        // peer, we first make sure that the FROST manager has enough capacity
+        // by reserving a slot in the bounded events channel.
+        //
+        // The Waker will be woken up once the event channel has enough capacity
+        // again.
+        if let Err(e) = ready!(this.protocol_events_tx.poll_reserve(cx)) {
+            // this error only occurs if the FROST manager has been dropped.
+            error!(target: "network::frost::protocol", "Failed to reserve slot in the events channel: {:?}", e);
+            return Poll::Ready(None);
+        }
+
+        // this drop guard releases the reserved slot automatically when this
+        // function returns (early), including for any pending states. This has
+        // no effect if a message actually gets sent to the FROST manager.
+        let _guard = this.reservation_guard();
+
+        let msg;
+        loop {
+            // poll the actual conn to peers for events from this other peer
+            let Some(bytes) = ready!(this.conn_rx.poll_next_unpin(cx)) else {
             return Poll::Ready(None);
         };
 
-        // if deserialization fails, skip
-        let Some(msg) = FrostProtoMessage::decode_message(&mut &msg[..]) else {
-            warn!(target: "network::frost::protocol", "Failed to decode frost protocol message");
-            return Poll::Ready(None);
-        };
-
-        // react on message type sent to us by another peer
-        // The frost manager will handle this req (often by forwarding it to another task) and
-        // the response will be sent on command_rx for us to send back to another
-        // peer
-        let protocol_events_tx = this.protocol_events_tx.clone();
-        info!(target: "network::frost::protocol", "Receivers count: {}", protocol_events_tx.receiver_count());
-        match msg.message {
-            FrostProtoMessageKind::Healthcheck(data) => {
-                if let Err(e) = protocol_events_tx.send(FrostProtocolEvent::PeerMessage {
-                    peer_id: this.peer_id,
-                    response: PeerMessageResponse::Healthcheck(HealthcheckResponse {
-                        receiver: data.receiver,
-                        sender: data.sender,
-                    }),
-                }) {
-                    error!(target: "network::frost::protocol", "Failed to send healthcheck message {:?}. Error = {:?}", data, e);
+            match FrostProtoMessage::decode_message(&mut &bytes[..]) {
+                Some(m) => {
+                    msg = m;
+                    break;
+                }
+                None => {
+                    warn!(target: "network::frost::protocol", "Failed to decode frost protocol message");
+                    // drop this invalid message and continue the loop to poll the conn again.
+                    continue;
                 }
             }
+        }
+
+        // The frost manager will handle this message (often by forwarding it to
+        // another task) and the response will be sent on command_rx for us to
+        // send back to another peer.
+        let protocol_event = match msg.message {
             FrostProtoMessageKind::Ping => {
                 info!(target: "network::frost::protocol", "Received ping message from peer. Replying with pong...");
                 return Poll::Ready(Some(FrostProtoMessage::pong().encoded()));
@@ -409,8 +533,13 @@ impl Stream for FrostProtoConnection {
                         pending_pegouts: data.pending_pegouts,
                     }),
                     peer_id: this.peer_id,
-                });
-            }
+            },
+        };
+
+        if let Err(e) = this.protocol_events_tx.send_item(protocol_event) {
+            // this error only occurs if the FROST manager has been dropped.
+            error!(target: "network::frost::protocol", "Failed to send protocol event: {:?}", e.to_string());
+            return Poll::Ready(None);
         }
 
         Poll::Pending
