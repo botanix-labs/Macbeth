@@ -46,7 +46,7 @@ use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::ReceiverStream;
 
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_btc_wallet::bitcoind::{
@@ -659,12 +659,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Frost sub protocol is only supported by federation nodes
         if is_fed_node {
-            let (protocol_events_tx, protocol_events_rx) = tokio::sync::broadcast::channel(10000);
+            let (protocol_events_tx, protocol_events_rx) = tokio::sync::mpsc::channel(10_000);
             let my_peer_id = pk2id(&secret_key.public_key(SECP256K1));
             let protocol_handler = FrostProtoHandler { my_peer_id, protocol_events_tx };
 
             network_cfg_builder = network_cfg_builder
-                .frost_protocol_events_rx(BroadcastStream::new(protocol_events_rx))
+                .frost_protocol_events_rx(ReceiverStream::new(protocol_events_rx))
                 .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
         }
 
