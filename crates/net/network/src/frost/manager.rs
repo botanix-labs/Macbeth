@@ -238,13 +238,21 @@ impl FrostManager {
                     peer_id, direction, peer_commands_tx
                 );
                 if !self.is_authority_peer(&peer_id) {
-                    info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
+                    info!(
+                        target: "network::frost::on_network_event",
+                        "Received FrostProtocolEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event",
+                        peer_id
+                    );
                     return;
                 }
 
                 // make sure we ignore our own connection
                 if *self.network.peer_id() == peer_id {
-                    info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from our own peer {:?}", peer_id);
+                    info!(
+                        target: "network::frost::on_network_event",
+                        "Received FrostProtocolEvent::ConnectionEstablished event from our own peer {:?}",
+                        peer_id
+                    );
                     return;
                 }
 
@@ -298,9 +306,18 @@ impl FrostManager {
                 debug_assert!(did_remove);
             }
             FrostProtocolEvent::PeerMessage { peer_id, response } => {
-                info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, response = {:?}", peer_id, response);
+                info!(
+                    target: "network::frost::on_network_event",
+                    "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, response = {:?}",
+                    peer_id, response
+                );
+
                 if !self.is_authority_peer(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage message from non-authority peer {:?}", peer_id);
+                    warn!(
+                        target: "network::frost::on_network_event",
+                        "Received FrostProtocolEvent::PeerMessage message from non-authority peer {:?}",
+                        peer_id
+                    );
                     return;
                 }
 
@@ -322,7 +339,11 @@ impl FrostManager {
                         frost_identifier: peer_data.frost_identifier,
                         message: response.clone(),
                     }) {
-                        error!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage event from peer with id {}, but could not forward it to task. Error: {:?}", peer_id, send_res);
+                        error!(
+                            target: "network::frost::on_network_event",
+                            "Received FrostProtocolEvent::PeerMessage event from peer with id {}, but could not forward it to task. Error: {:?}",
+                            peer_id, send_res
+                        );
                     }
                 }
             }
@@ -331,16 +352,16 @@ impl FrostManager {
 
     /// Handles a command received from a detached [`FrostHandle`]
     fn on_command(&mut self, cmd: FrostCommand) {
-        // lets first prune all closed connections
-        self.prune_closed_connections();
-
         match cmd {
             FrostCommand::CheckConnectedToAll(tx) => {
                 let all_connected = self.all_authority_peers_connected();
 
                 // reply to caller
-                if let Err(e) = tx.send(self.all_authority_peers_connected()) {
-                    error!(target: "network::frost::on_command", "Error replying to call on CheckConnectedToAll {:?}", e);
+                if let Err(e) = tx.send(all_connected) {
+                    error!(
+                        target: "network::frost::on_command",
+                        "Error replying to call on CheckConnectedToAll {:?}", e
+                    );
                 }
             }
             FrostCommand::GetAllConnectedPeers(tx) => {
@@ -354,7 +375,10 @@ impl FrostManager {
 
                 // reply to caller
                 if let Err(e) = tx.send(peer_connections) {
-                    error!(target: "network::frost::on_command", "Error replying to call on GetAllConnectedPeers {:?}", e);
+                    error!(
+                        target: "network::frost::on_command",
+                        "Error replying to call on GetAllConnectedPeers {:?}", e
+                    );
                 }
             }
             FrostCommand::GetPeerMessagesStream(tx) => {
@@ -362,10 +386,15 @@ impl FrostManager {
                 // receiver
                 let (task_forwarder_txs, frost_task_forwarder_rx) =
                     mpsc::unbounded_channel::<PeerMessageContext>();
+
                 self.task_forwarder_txs.push(task_forwarder_txs);
+
                 // reply to caller
                 if let Err(e) = tx.send(frost_task_forwarder_rx) {
-                    error!(target: "network::frost::on_command", "Error replying to call on GetPeerMessagesStream {:?}", e);
+                    error!(
+                        target: "network::frost::on_command",
+                        "Error replying to call on GetPeerMessagesStream {:?}", e
+                    );
                 }
             }
         }
