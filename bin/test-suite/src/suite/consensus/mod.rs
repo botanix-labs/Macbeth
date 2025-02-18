@@ -46,7 +46,7 @@ use std::{
 use tonic::transport::Channel;
 use tracing::info;
 // scopes
-mod common;
+pub mod common;
 pub mod frost;
 mod invalid_transactions;
 mod rpc_node;
