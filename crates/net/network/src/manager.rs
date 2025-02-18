@@ -578,13 +578,23 @@ impl NetworkManager {
     /// Handles a polled [`ProtocolEvent`]
     fn on_handle_frost_protocol_event(&self, protocol_event: FrostProtocolEvent) {
         match protocol_event {
-            FrostProtocolEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
+            FrostProtocolEvent::ConnectionEstablished {
+                direction,
+                peer_id,
+                peer_commands_tx,
+                sender,
+            } => {
                 info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionEstablished {:?} {:?} {:?}", direction, peer_id, peer_commands_tx);
                 self.notify_frost_manager(FrostProtocolEvent::ConnectionEstablished {
                     direction,
                     peer_id,
                     peer_commands_tx,
+                    sender,
                 });
+            }
+            FrostProtocolEvent::ConnectionClosed { idx } => {
+                info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionClosed for idx = {}", idx);
+                self.notify_frost_manager(FrostProtocolEvent::ConnectionClosed { idx });
             }
             FrostProtocolEvent::PeerMessage { peer_id, response } => {
                 self.notify_frost_manager(FrostProtocolEvent::PeerMessage { peer_id, response });
@@ -1043,9 +1053,7 @@ impl Future for NetworkManager {
                         return Poll::Ready(());
                     }
                     Poll::Ready(Some(event)) => {
-                        if let Ok(event) = event {
-                            frost_protocol_events.push(event);
-                        }
+                        frost_protocol_events.push(event);
                     }
                 };
             }
