@@ -267,54 +267,6 @@ impl FrostManager {
         self.prune_closed_connections();
 
         match cmd {
-            FrostCommand::GetWalletStateFromPeer => {
-                // choose a random peer
-                let random_authority_index =
-                    rand::thread_rng().gen_range(0..self.peers_connections.len() - 1);
-                let random_peer_id = self.peers_connections.keys().nth(random_authority_index);
-                match random_peer_id.and_then(|peer_id| self.peers_connections.get(peer_id)) {
-                    Some(peer_data) => {
-                        let peer_data = peer_data.first().expect("will always have one element");
-                        match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
-                            PeerMessageResponse::WalletState(WalletStateResponse {
-                                utxos: vec![],
-                                tracked_txs: vec![],
-                                pending_pegouts: vec![],
-                            }),
-                        )) {
-                            Ok(_) => {
-                                debug!(target: "network::frost::on_command", "UtxoSet sent to peer {:?}", peer_data.peer_id);
-                            }
-                            Err(e) => {
-                                error!(target: "network::frost::on_command", "Failed to send UtxoSet to peer {:?}, error: {:?}", peer_data.peer_id, e);
-                            }
-                        }
-                    }
-                    None => {
-                        warn!(target: "network::frost::on_command", "Could not find peer or a connection with random authority index {}", random_authority_index);
-                    }
-                }
-            }
-            FrostCommand::SendHealtcheckToPeers => {
-                self.send_healthcheck_to_peers();
-            }
-            FrostCommand::ReconnectPeers(disconnected_peers) => {
-                let peers_to_reconnect = disconnected_peers.len();
-                let mut reconnected_peers = 0;
-
-                for (disconnected_peer, peer_remote_addr) in disconnected_peers {
-                    if !self.peers_connections.contains_key(&disconnected_peer) {
-                        warn!(target: "network::frost::on_command", "Could not find peer amongst own peer connections {:?}", disconnected_peer);
-                        continue;
-                    }
-                    info!(target: "network::frost::on_command", "Reconnecting peer {:?} with remote address {:?} ...", disconnected_peer, peer_remote_addr.to_string());
-                    self.network.add_trusted_peer(disconnected_peer, peer_remote_addr);
-                    reconnected_peers += 1;
-                }
-                if reconnected_peers > 0 {
-                    info!(target: "network::frost::on_command", "Re-added/Reconnected {}/{} peers", reconnected_peers, peers_to_reconnect);
-                }
-            }
             FrostCommand::CheckConnectedToAll(tx) => {
                 // reply to caller
                 if let Err(e) = tx.send(self.all_authority_peers_connected()) {
@@ -394,18 +346,12 @@ impl Future for FrostManager {
 /// Commands the [`FrostManager`] listens for.
 #[derive(Debug)]
 pub enum FrostCommand {
-    /// sends healthcheck messages to all peers
-    SendHealtcheckToPeers,
-    /// Reconnect peers in case their connection got dropped
-    ReconnectPeers(Vec<(PeerId, SocketAddr)>),
     /// Check if connection to all federated peers is established
     CheckConnectedToAll(oneshot::Sender<bool>),
     /// Get the readily connected peers
     GetAllConnectedPeers(oneshot::Sender<HashMap<PeerId, PeerData>>),
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageContext>>),
-    /// Get wallet state from peer
-    GetWalletStateFromPeer,
 }
 
 /// Config type for initiating a [`FrostManager`] instance.
