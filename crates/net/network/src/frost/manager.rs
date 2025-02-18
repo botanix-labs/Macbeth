@@ -1,16 +1,10 @@
-use super::{
-    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PeerMessageResponse,
-    WalletStateResponse,
-};
+use super::{FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse};
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
-use rand::Rng;
-use reth_network_api::Peers;
 use reth_network_peers::PeerId;
 use std::{
-    collections::HashMap,
-    net::SocketAddr,
+    collections::{HashMap, HashSet},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -19,7 +13,7 @@ use tokio::sync::{
     oneshot,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 /// Trait for sending commands to the [`FrostManager`]
 /// Trait was created mainly for the convenience of mocking during testing
@@ -42,7 +36,7 @@ impl ToFrostManager for FrostHandle {
     }
 }
 
-/// Structure that stores all information about a connected peer
+/// Structure that contains a valid connection to the peer
 #[derive(Debug, Clone)]
 pub struct PeerData {
     /// peer id
@@ -50,6 +44,7 @@ pub struct PeerData {
     /// channel use for sending commands to the peer
     pub peer_commands_tx: UnboundedSender<FrostPeerCommand>,
     /// in or outgoing connection
+    // TODO(lamafab): this is not really used anywhere.
     pub direction: Direction,
     /// the frost identifier of the peer
     pub frost_identifier: frost::Identifier,
@@ -66,6 +61,28 @@ pub struct PeerMessageContext {
     pub message: PeerMessageResponse,
 }
 
+/// Context for an authority peer, containing all active connection Ids and the
+/// frost identifier.
+#[derive(Debug)]
+struct AuthorityContext {
+    connections: HashSet<ConnIdx>,
+    /// the frost identifier of the peer
+    frost_identifier: frost::Identifier,
+}
+
+type ConnIdx = u64;
+
+/// An active connection to a peer.
+#[derive(Debug)]
+struct Connection {
+    /// peer id
+    peer_id: PeerId,
+    /// channel use for sending commands to the peer
+    peer_commands_tx: UnboundedSender<FrostPeerCommand>,
+    /// in or outgoing connection
+    direction: Direction,
+}
+
 /// Frost Manager implementation
 #[derive(Debug)]
 pub struct FrostManager {
@@ -79,14 +96,13 @@ pub struct FrostManager {
     command_tx: mpsc::UnboundedSender<FrostCommand>,
     /// Receiver half of the command channel.
     command_rx: UnboundedReceiverStream<FrostCommand>,
-    /// All the connected peers.
-    peers_connections: HashMap<PeerId, Vec<PeerData>>,
+    connection_counter: ConnIdx,
     /// total authorities to connect to, including ourselves
-    authority_peerid: Vec<PeerId>,
+    authorities: HashMap<PeerId, AuthorityContext>,
+    /// All the connected peers.
+    peer_connections: HashMap<ConnIdx, Connection>,
     /// Forwards for message to the frost task
     task_forwarder_txs: Vec<mpsc::UnboundedSender<PeerMessageContext>>,
-    /// Frost configuration
-    config: FrostConfig,
 }
 
 impl FrostManager {
@@ -97,10 +113,19 @@ impl FrostManager {
         from_network: mpsc::UnboundedReceiver<FrostProtocolEvent>,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let authority_peerid = config
+        // Prepare the authorities with their respective FROST identifiers and
+        // connection trackers.
+        let authorities = config
             .authorities
             .iter()
-            .map(|pk| PeerId::from_slice(&pk.serialize_uncompressed()[1..]))
+            .enumerate()
+            .map(|(index, pk)| {
+                let frost_identifier = authority_index_to_frost_identifier(index as u16);
+                let peer_id = PeerId::from_slice(&pk.serialize_uncompressed()[1..]);
+                let authority = AuthorityContext { connections: HashSet::new(), frost_identifier };
+
+                (peer_id, authority)
+            })
             .collect();
 
         Self {
@@ -108,26 +133,86 @@ impl FrostManager {
             command_rx: UnboundedReceiverStream::new(command_rx),
             network,
             from_network: UnboundedReceiverStream::new(from_network),
-            peers_connections: HashMap::default(),
-            authority_peerid,
+            connection_counter: 0,
+            peer_connections: HashMap::default(),
+            authorities,
             task_forwarder_txs: Vec::new(),
-            config,
         }
     }
 
-    fn all_authority_peers_connected(&mut self) -> bool {
-        // lets first prune all closed connections
-        self.prune_closed_connections();
+    /// Retrieve an arbitrary active connection to the given peer.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the authority is not found.
+    fn retrieve_peer_data(&mut self, peer_id: &PeerId) -> Option<PeerData> {
+        let authority = self.authorities.get_mut(peer_id).expect("authority not found");
 
-        // Filter out all peers that are not confirmed and have a closed channels
-        info!(target: "network::frost::all_authority_peers_connected", "Peers connections len: {:?}", self.peers_connections.values());
-        for peer_data in self.peers_connections.values() {
-            for data in peer_data {
-                info!(target: "network::frost::all_authority_peers_connected", "channel closed: {:?}", data.peer_commands_tx.is_closed());
+        let mut to_remove = None;
+        let mut peer_data = None;
+
+        // we retrieve any connection to the given peer in arbitrary order. This
+        // also acts as implicit garbage collection; if we encounter a dead
+        // connection - which can happen if the event channel is choking and the
+        // cleanup mechanism failed to trigger - the dead connection will be
+        // removed. It's not expected that *all* dead connections are removed
+        // here, this will occur on a case-by-case basis over time.
+        //
+        // It's very unlikely that such a scenario actually ever happens in
+        // practice.
+        for idx in &authority.connections {
+            let conn = self.peer_connections.get_mut(idx).expect("registered idx not found");
+
+            if conn.peer_commands_tx.is_closed() {
+                warn!(
+                    target: "network::frost::retrieve_peer_data",
+                    "Dead connection detected and preparing for removal, from peer with id {:?}, conn idx = {}",
+                    peer_id, idx
+                );
+
+                to_remove = Some(*idx);
+
+                // try next connection
+                continue;
             }
+
+            peer_data = Some(PeerData {
+                peer_id: *peer_id,
+                peer_commands_tx: conn.peer_commands_tx.clone(),
+                direction: conn.direction,
+                frost_identifier: authority.frost_identifier,
+            });
+
+            break;
         }
 
-        self.peers_connections.len() == self.authority_peerid.len() - 1
+        // if a dead connection has been found, remove it.
+        if let Some(idx) = to_remove {
+            warn!(
+                target: "network::frost::retrieve_peer_data",
+                "Effectively removing dead connection, from peer with id {:?}, conn idx = {}",
+                peer_id, idx
+            );
+
+            self.peer_connections.remove(&idx);
+            authority.connections.remove(&idx);
+        }
+
+        peer_data
+    }
+
+    fn all_authority_peers_connected(&mut self) -> bool {
+        let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
+        // filter all peers with active connections
+        let connected =
+            peer_ids.iter().filter_map(|peer_id| self.retrieve_peer_data(peer_id)).count();
+
+        info!(
+            target: "network::frost::all_authority_peers_connected",
+            "Number of peer connections: {:?}", connected
+        );
+
+        connected == self.authorities.len() - 1
     }
 
     /// Returns a new [`FrostHandle`] that can send commands to this type.
@@ -136,60 +221,22 @@ impl FrostManager {
     }
 
     fn is_authority_peer(&self, peer_id: &PeerId) -> bool {
-        self.authority_peerid.contains(peer_id)
-    }
-
-    fn prune_closed_connections(&mut self) {
-        let mut pruned_peers_connections = self.peers_connections.clone();
-        for (peer_id, peer_data) in &mut self.peers_connections {
-            // Prune all connections that have a closed channels
-            peer_data.retain(|data| !data.peer_commands_tx.is_closed());
-
-            if peer_data.is_empty() {
-                warn!(target: "network::frost::prune_closed_connections", "Peer {:?} has no open channels, removing from peer connections", peer_id);
-                pruned_peers_connections.remove(peer_id);
-                // perhaps here we can try to reconnect to the peer?
-            }
-
-            if peer_data.len() > 1 {
-                // This should not happen, worth logging
-                warn!(target: "network::frost::prune_closed_connections", "Peer {:?} has multiple open channels, this should not happen", peer_id);
-            }
-        }
-
-        self.peers_connections = pruned_peers_connections;
-    }
-
-    fn send_healthcheck_to_peers(&mut self) {
-        // lets first prune all closed connections
-        // For each peer there should only be one valid connection
-        self.prune_closed_connections();
-        for (peer_id, peer_data) in &self.peers_connections {
-            if let Some(peer_data) = peer_data.first() {
-                let resp =
-                    HealthcheckResponse { sender: *self.network.peer_id(), receiver: *peer_id };
-                match peer_data
-                    .peer_commands_tx
-                    .send(FrostPeerCommand::PeerMessage(PeerMessageResponse::Healthcheck(resp)))
-                {
-                    Ok(_) => {
-                        debug!("Healthcheck sent to peer {:?}", peer_id,);
-                    }
-                    Err(e) => {
-                        error!("Failed to send healthcheck to peer {:?}, error: {:?}", peer_id, e);
-                    }
-                }
-            } else {
-                // This should not happen, worth logging
-                warn!(target: "network::frost::send_healthcheck_to_peers", "Peer {:?} has no open channels, skipping healthcheck", peer_id);
-            }
-        }
+        self.authorities.contains_key(peer_id)
     }
 
     fn on_network_event(&mut self, protocol_event: FrostProtocolEvent) {
         match protocol_event {
-            FrostProtocolEvent::ConnectionEstablished { direction, peer_id, peer_commands_tx } => {
-                info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}", peer_id, direction, peer_commands_tx);
+            FrostProtocolEvent::ConnectionEstablished {
+                direction,
+                peer_id,
+                peer_commands_tx,
+                sender,
+            } => {
+                info!(
+                    target: "network::frost::on_network_event",
+                    "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, direction = {:?}, connection channel = {:?}",
+                    peer_id, direction, peer_commands_tx
+                );
                 if !self.is_authority_peer(&peer_id) {
                     info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event", peer_id);
                     return;
@@ -202,33 +249,53 @@ impl FrostManager {
                 }
 
                 if peer_commands_tx.is_closed() {
-                    warn!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, but the connection channel is already closed", peer_id);
+                    warn!(
+                        target: "network::frost::on_network_event",
+                        "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, but the connection channel is already closed",
+                        peer_id
+                    );
                     return;
                 }
 
-                let (index, _) = self
-                    .config
+                // Assign a unique index to the connection and increment the counter.
+                // TODO: what if this maxes out?
+                let idx = self.connection_counter;
+                self.connection_counter = idx.saturating_add(1);
+
+                // send the assigned idx back to the initiator
+                if let Err(_) = sender.send(idx) {
+                    // the initiator already dropped...
+                    warn!(
+                        target: "network::frost::on_network_event",
+                        "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, but the connection channel is already closed",
+                        peer_id
+                    );
+                    return;
+                }
+
+                let conn = Connection { peer_id, peer_commands_tx, direction };
+
+                self.authorities.get_mut(&peer_id).expect("checked above").connections.insert(idx);
+                self.peer_connections.insert(idx, conn);
+            }
+            FrostProtocolEvent::ConnectionClosed { idx } => {
+                let Some(conn) = self.peer_connections.get(&idx) else {
+                    warn!(
+                        target: "network::frost::on_network_event",
+                        "Received FrostProtocolEvent::ConnectionClosed event from an unknown connection, idx = {}",
+                        idx
+                    );
+                    return;
+                };
+
+                let did_remove = self
                     .authorities
-                    .iter()
-                    .enumerate()
-                    .find(|(_, pk)| {
-                        peer_id == PeerId::from_slice(&pk.serialize_uncompressed()[1..])
-                    })
-                    .unzip();
+                    .get_mut(&conn.peer_id)
+                    .expect("authority not found")
+                    .connections
+                    .remove(&idx);
 
-                let mut peers_connections = self.peers_connections.clone();
-                let peer_data = peers_connections.entry(peer_id).or_default();
-                peer_data.push(PeerData {
-                    peer_id,
-                    direction,
-                    peer_commands_tx,
-                    frost_identifier: authority_index_to_frost_identifier(
-                        index.expect("index must exist, checked by is_authority_peer") as u16,
-                    ),
-                });
-
-                self.peers_connections.insert(peer_id, peer_data.clone());
-                self.prune_closed_connections();
+                debug_assert!(did_remove);
             }
             FrostProtocolEvent::PeerMessage { peer_id, response } => {
                 info!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, response = {:?}", peer_id, response);
@@ -240,13 +307,14 @@ impl FrostManager {
                 // Check if the peer is in the peer connections. i.e. we have a valid connection to
                 // the peer. it may be find to address this message on the
                 // application level, but then we cannot respond
-                if !self.peers_connections.contains_key(&peer_id) {
-                    warn!(target: "network::frost::on_network_event", "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, but the peer is not in the peer connections", peer_id);
+                let Some(peer_data) = self.retrieve_peer_data(&peer_id) else {
+                    warn!(
+                        target: "network::frost::on_network_event",
+                        "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, but the peer has no active connections",
+                        peer_id
+                    );
                     return;
-                }
-
-                let peer_data =
-                    self.peers_connections.get(&peer_id).unwrap().first().expect("checked above");
+                };
 
                 for task_forwarder in &self.task_forwarder_txs {
                     if let Err(send_res) = task_forwarder.send(PeerMessageContext {
@@ -268,20 +336,22 @@ impl FrostManager {
 
         match cmd {
             FrostCommand::CheckConnectedToAll(tx) => {
+                let all_connected = self.all_authority_peers_connected();
+
                 // reply to caller
                 if let Err(e) = tx.send(self.all_authority_peers_connected()) {
                     error!(target: "network::frost::on_command", "Error replying to call on CheckConnectedToAll {:?}", e);
                 }
             }
             FrostCommand::GetAllConnectedPeers(tx) => {
-                // Filter out all peers that are not confirmed and have a closed channels
-                let peer_connections = self
-                    .peers_connections
+                let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
+                let peer_connections: HashMap<PeerId, PeerData> = peer_ids
                     .iter()
-                    .map(|(peer_id, peer_data)| {
-                        (*peer_id, peer_data.first().expect("will always have one element").clone())
+                    .filter_map(|peer_id| {
+                        self.retrieve_peer_data(peer_id).map(|peer_data| (*peer_id, peer_data))
                     })
-                    .collect::<HashMap<_, _>>();
+                    .collect();
+
                 // reply to caller
                 if let Err(e) = tx.send(peer_connections) {
                     error!(target: "network::frost::on_command", "Error replying to call on GetAllConnectedPeers {:?}", e);
