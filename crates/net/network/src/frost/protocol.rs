@@ -545,3 +545,249 @@ impl Stream for FrostProtoConnection {
         Poll::Pending
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use futures::task::noop_waker;
+
+    use super::*;
+
+    #[test]
+    fn frost_proto_registration() {
+        let (protocol_events_tx, mut protocol_events_rx) = mpsc::channel(3);
+        let protocol_events_tx = PollSender::new(protocol_events_tx);
+
+        let (conn_tx, conn_rx) = mpsc::unbounded_channel();
+        let conn_rx = UnboundedReceiverStream::new(conn_rx);
+        let conn_rx = ProtocolConnection::from(conn_rx);
+
+        let direction = Direction::Incoming;
+
+        let mut conn = FrostProtoConnection {
+            protocol_events_tx,
+            registration: RegistrationState::NotRegistered,
+            conn_rx,
+            commands_rx: None,
+            my_peer_id: PeerId::new([0; 64]),
+            peer_id: PeerId::new([1; 64]),
+            direction,
+            pending_pong: None,
+        };
+
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        // Poll connection for the first time; it's pending as it needs to be registered first.
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        // Manager receives the connection established event.
+        let msg = protocol_events_rx.try_recv().unwrap();
+        let FrostProtocolEvent::ConnectionEstablished {
+            direction: _,
+            peer_id: _,
+            peer_commands_tx: _,
+            sender,
+        } = msg
+        else {
+            panic!()
+        };
+
+        // Manager assigns the connection idx
+        sender.send(0).unwrap();
+
+        // Send wire message to the connection (ping)
+        let wire_msg = FrostProtoMessage::ping().encoded();
+        conn_tx.send(wire_msg).unwrap();
+
+        // Connection receives wire message and generates a response (pong)
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Ready(Some(bytes)) = res else { panic!() };
+
+        let resp = FrostProtoMessage::decode_message(&mut &bytes[..]).unwrap();
+        assert_eq!(resp.message, FrostProtoMessageKind::Pong);
+
+        // Connection is pending
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+    }
+
+    #[test]
+    fn frost_proto_backlog() {
+        let (protocol_events_tx, mut protocol_events_rx) = mpsc::channel(3);
+        let protocol_events_tx = PollSender::new(protocol_events_tx);
+
+        let (conn_tx, conn_rx) = mpsc::unbounded_channel();
+        let conn_rx = UnboundedReceiverStream::new(conn_rx);
+        let conn_rx = ProtocolConnection::from(conn_rx);
+
+        let direction = Direction::Incoming;
+
+        let mut conn = FrostProtoConnection {
+            protocol_events_tx,
+            registration: RegistrationState::NotRegistered,
+            conn_rx,
+            commands_rx: None,
+            my_peer_id: PeerId::new([0; 64]),
+            peer_id: PeerId::new([1; 64]),
+            direction,
+            pending_pong: None,
+        };
+
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        // Send wire messages to the connection
+        for _ in 0..4 {
+            let wire_msg = FrostProtoMessage::ping().encoded();
+            conn_tx.send(wire_msg).unwrap();
+        }
+
+        // Poll connection for the first time; it's pending as it needs to be
+        // registered first.
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        // Manager receives the connection established event.
+        let msg = protocol_events_rx.try_recv().unwrap();
+        let FrostProtocolEvent::ConnectionEstablished {
+            direction: _,
+            peer_id: _,
+            peer_commands_tx: _,
+            sender,
+        } = msg
+        else {
+            panic!()
+        };
+
+        // Manager assigns the connection idx
+        sender.send(0).unwrap();
+
+        // Connection receives all wire messages and generates a response each (pong)
+        for _ in 0..4 {
+            let res = conn.poll_next_unpin(&mut cx);
+            let Poll::Ready(Some(bytes)) = res else { panic!() };
+            let resp = FrostProtoMessage::decode_message(&mut &bytes[..]).unwrap();
+            assert_eq!(resp.message, FrostProtoMessageKind::Pong);
+        }
+
+        // Connection is pending
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+    }
+
+    #[test]
+    fn frost_proto_backpressure() {
+        let (protocol_events_tx, mut protocol_events_rx) = mpsc::channel(3);
+        let protocol_events_tx = PollSender::new(protocol_events_tx);
+
+        let (conn_tx, conn_rx) = mpsc::unbounded_channel();
+        let conn_rx = UnboundedReceiverStream::new(conn_rx);
+        let conn_rx = ProtocolConnection::from(conn_rx);
+
+        let direction = Direction::Incoming;
+
+        let mut conn = FrostProtoConnection {
+            protocol_events_tx,
+            registration: RegistrationState::NotRegistered,
+            conn_rx,
+            commands_rx: None,
+            my_peer_id: PeerId::new([0; 64]),
+            peer_id: PeerId::new([1; 64]),
+            direction,
+            pending_pong: None,
+        };
+
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        let req =
+            HealthcheckRequest { sender: PeerId::new([0; 64]), receiver: PeerId::new([1; 64]) };
+
+        // Send wire messages to the connection that create events for the manager
+        for _ in 0..4 {
+            let wire_msg = FrostProtoMessage::peer_health_message(req.clone()).encoded();
+            conn_tx.send(wire_msg).unwrap();
+        }
+
+        // Poll connection for the first time; it's pending as it needs to be
+        // registered first.
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        // Manager receives the connection established event.
+        let msg = protocol_events_rx.try_recv().unwrap();
+        let FrostProtocolEvent::ConnectionEstablished {
+            direction: _,
+            peer_id: _,
+            peer_commands_tx: _,
+            sender,
+        } = msg
+        else {
+            panic!()
+        };
+
+        // Manager assigns the connection idx
+        sender.send(0).unwrap();
+
+        let event_queue = protocol_events_rx.len();
+        assert_eq!(event_queue, 0); // max=3
+
+        // Connection is pending; no response generated, but events were pushed
+        // to the queue for the manager
+        for _ in 0..3 {
+            let res = conn.poll_next_unpin(&mut cx);
+            let Poll::Pending = res else { panic!() };
+        }
+
+        // Event queue is now full
+        let event_queue = protocol_events_rx.len();
+        assert_eq!(event_queue, 3); // max=3
+
+        // Connection is pending
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        // Manager processes two events
+        for _ in 0..2 {
+            let event = protocol_events_rx.try_recv().unwrap();
+            let FrostProtocolEvent::PeerMessage { peer_id: _, response } = event else { panic!() };
+            let PeerMessageResponse::Healthcheck(_healthcheck_response) = response else {
+                panic!()
+            };
+        }
+
+        // We now have enough space for the last event
+        let event_queue = protocol_events_rx.len();
+        assert_eq!(event_queue, 1); // max=3
+
+        // Process the last message
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        let event_queue = protocol_events_rx.len();
+        assert_eq!(event_queue, 2); // max=3
+
+        // Manager processes the last two events
+        for _ in 0..2 {
+            let event = protocol_events_rx.try_recv().unwrap();
+            let FrostProtocolEvent::PeerMessage { peer_id: _, response } = event else { panic!() };
+            let PeerMessageResponse::Healthcheck(_healthcheck_response) = response else {
+                panic!()
+            };
+        }
+
+        // Event queue is now empty
+        let event_queue = protocol_events_rx.len();
+        assert_eq!(event_queue, 0); // max=3
+
+        // Connection is pending
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        assert!(protocol_events_rx.try_recv().is_err());
+    }
+}
