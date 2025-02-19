@@ -56,6 +56,7 @@ pub struct Utxo {
     pub output: TxOut,
     /// If this is a pegin UTXO, the user's pegin address.
     pub eth_address: Option<[u8; 20]>,
+    #[serde(default)]
     /// The version of the UTXO.
     pub version: u32,
 }
