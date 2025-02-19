@@ -164,7 +164,7 @@ enum RegistrationState {
 }
 
 impl FrostProtoConnection {
-    fn reservation_guard(&mut self) -> SlotReservationGuard {
+    fn reservation_guard(&self) -> SlotReservationGuard {
         SlotReservationGuard { protocol_events_tx: self.protocol_events_tx.clone() }
     }
 }
@@ -396,9 +396,10 @@ impl Stream for FrostProtoConnection {
                     break;
                 }
                 None => {
-                    warn!(target: "network::frost::protocol", "Failed to decode frost protocol message");
                     // drop this invalid message and continue the loop to poll the conn again.
-                    continue;
+                    warn!(target: "network::frost::protocol", "Failed to decode frost protocol message");
+
+                    /* continue... */
                 }
             }
         }
