@@ -2249,6 +2249,7 @@ dependencies = [
  "lazy_static",
  "log",
  "miniscript 12.3.0",
+ "once_cell",
  "parking_lot 0.12.3",
  "prometheus",
  "prost 0.13.5",
