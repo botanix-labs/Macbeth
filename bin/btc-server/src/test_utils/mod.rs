@@ -82,14 +82,14 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
         println!("call: {:?}, {:?}", method, params);
 
         let mut raw_args = Vec::new();
-        if params.len() > 0 {
+        if !params.is_empty() {
             raw_args = params
                 .iter()
                 .map(|a| {
                     let json_string = serde_json::to_string(a)?;
                     serde_json::value::RawValue::from_string(json_string)
                 })
-                .map(|a| a.map_err(|e| bitcoincore_rpc::Error::Json(e)))
+                .map(|a| a.map_err(bitcoincore_rpc::Error::Json))
                 .collect::<Result<Vec<_>, _>>()?;
         }
 
@@ -121,7 +121,8 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
             // used by test `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool`
             let error_txid =
                 String::from("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2");
-            if raw_args.len() > 0 && raw_args[0].get().to_string().trim_matches('\"') == error_txid
+            if !raw_args.is_empty() &&
+                raw_args[0].get().to_string().trim_matches('\"') == error_txid
             {
                 return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
                     "tx not in mempool",
