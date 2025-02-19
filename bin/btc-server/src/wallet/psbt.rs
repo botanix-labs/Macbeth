@@ -14,7 +14,7 @@ use crate::database::version::UtxoVersion;
 const ETH_ADDRESS_KEY_TYPE: u8 = 1;
 const SIGNING_COMMITMENTS_KEY_TYPE: u8 = 2;
 const PARTIAL_SIGNATURE_KEY_TYPE: u8 = 3;
-const VERSION_TYPE: u8 = 4;
+const UTXO_VERSION_TYPE: u8 = 4;
 
 // output keys
 const PEGOUT_ID_KEY_TYPE: u8 = 4;
@@ -37,9 +37,9 @@ lazy_static::lazy_static! {
         key: Vec::new(),
     };
 
-    pub static ref VERSION_TYPE_KEY: ProprietaryKey = ProprietaryKey {
+    pub static ref UTXO_VERSION_TYPE_KEY: ProprietaryKey = ProprietaryKey {
         prefix: PROP_KEY_PREFIX.to_vec(),
-        subtype: VERSION_TYPE,
+        subtype: UTXO_VERSION_TYPE,
         key: Vec::new(),
     };
 }
@@ -66,12 +66,12 @@ pub trait PsbtInputExt: BorrowMut<PsbtInput> {
     fn add_version_to_psbt(&mut self, version: u32) {
         self.borrow_mut()
             .proprietary
-            .insert(VERSION_TYPE_KEY.clone(), (version).to_le_bytes().to_vec());
+            .insert(UTXO_VERSION_TYPE_KEY.clone(), (version).to_le_bytes().to_vec());
     }
 
     /// Gets the version of a UTXO from a PSBT input
     fn get_version_from_psbt_input(&self) -> Option<UtxoVersion> {
-        self.borrow().proprietary.get(&VERSION_TYPE_KEY).and_then(|bytes| {
+        self.borrow().proprietary.get(&UTXO_VERSION_TYPE_KEY).and_then(|bytes| {
             if bytes.len() == 4 {
                 let version = u32::from_le_bytes(bytes.as_slice().try_into().ok()?);
                 UtxoVersion::try_from(version).ok()
