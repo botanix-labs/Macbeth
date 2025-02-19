@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq)]
 pub enum UtxoVersion {
-    /// Original version with basic spending conditions
+    /// Original version with taproot key spend path
     #[default]
-    V1 = 1,
+    V1 = 0,
 }
 
 impl TryFrom<u32> for UtxoVersion {
@@ -13,7 +13,7 @@ impl TryFrom<u32> for UtxoVersion {
 
     fn try_from(v: u32) -> Result<Self, Self::Error> {
         match v {
-            1 => Ok(UtxoVersion::V1),
+            0 => Ok(UtxoVersion::V1),
             _ => Err(Error::InvalidUTXOVersion(v)),
         }
     }
