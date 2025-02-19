@@ -265,7 +265,7 @@ impl FrostManager {
                 self.connection_counter = idx.saturating_add(1);
 
                 // send the assigned idx back to the initiator
-                if let Err(_) = sender.send(idx) {
+                if sender.send(idx).is_err() {
                     // the initiator already dropped...
                     warn!(
                         target: "network::frost::on_network_event",
