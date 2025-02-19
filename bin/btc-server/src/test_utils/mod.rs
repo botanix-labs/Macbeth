@@ -119,7 +119,7 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
         if method == "getmempoolentry" {
             // error case is triggered by a specific txid
             let error_txid =
-                String::from("d53a58333ad85286174bfd1818635f32c7d08232298ec38212007bde39e24bbe");
+                String::from("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2");
             if raw_args.len() > 0 && raw_args[0].get().to_string().trim_matches('\"') == error_txid
             {
                 return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
@@ -170,13 +170,6 @@ pub fn pegout_requests_from_tx(tx: &Transaction, pegout_idxs: &[usize]) -> Vec<P
     pegout_requests
 }
 
-pub fn random_txid() -> Txid {
-    let mut rng = thread_rng();
-    let mut txid = [0u8; 32];
-    rng.fill_bytes(&mut txid);
-    Txid::from_slice(&txid).unwrap()
-}
-
 pub fn setup_db() -> (database::Db, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let db = database::Db::open(temp_dir.path()).unwrap();
@@ -208,15 +201,6 @@ pub fn random_p2wpkh_script() -> ScriptBuf {
     sk.public_key(&secp).p2wpkh_script_code().unwrap()
 }
 
-pub fn deterministic_p2wpkh_script() -> ScriptBuf {
-    let secp = bitcoin::secp256k1::Secp256k1::new();
-    let sk = bitcoin::PrivateKey::from_wif("cV4G8b983VToX9qL5u82qKVNkVEMs3F3gSdf3s1ormG5S5vi2Gi6")
-        .unwrap();
-    let spk = sk.public_key(&secp).p2wpkh_script_code().unwrap();
-
-    spk
-}
-
 pub fn trusted_dealer_setup(
     min_signers: u16,
     max_signers: u16,
@@ -233,17 +217,8 @@ pub fn trusted_dealer_setup(
 }
 
 // Util function to create a btc tx with random inputs and outputs as defined by fn params
-pub fn create_tx(
-    num_inputs: usize,
-    num_outputs: usize,
-    change: Option<TxOut>,
-    deterministic: bool, /* sets specific txid and p2wpkh_script so tx.txid is
-                          * deterministic which is useful in tests */
-) -> Transaction {
-    let txid = match deterministic {
-        true => Txid::from_byte_array([13u8; 32]),
-        false => random_txid(),
-    };
+pub fn create_tx(num_inputs: usize, num_outputs: usize, change: Option<TxOut>) -> Transaction {
+    let txid = random_compute_txid();
 
     let mut inputs = vec![];
     for i in 0..num_inputs {
@@ -258,11 +233,8 @@ pub fn create_tx(
 
     let mut outputs = vec![];
     for _ in 0..num_outputs {
-        let script_pubkey = match deterministic {
-            true => deterministic_p2wpkh_script(),
-            false => random_p2wpkh_script(),
-        };
-        outputs.push(TxOut { value: Amount::from_sat(1000), script_pubkey: script_pubkey.clone() });
+        outputs
+            .push(TxOut { value: Amount::from_sat(1000), script_pubkey: random_p2wpkh_script() });
     }
 
     if let Some(change) = change {
@@ -310,7 +282,7 @@ pub fn create_block(txs: Vec<Transaction>, prev_hash: bitcoin::BlockHash) -> Blo
 }
 
 pub fn create_psbt(num_inputs: usize, num_outputs: usize, change: Option<TxOut>) -> Psbt {
-    let tx = create_tx(num_inputs, num_outputs, change, false);
+    let tx = create_tx(num_inputs, num_outputs, change);
 
     let weight = tx.weight();
     let fee = FEERATE * weight;

@@ -1855,7 +1855,7 @@ mod tests {
         // Add some pegin utxos
         let mut pegins = vec![];
         for _ in 0..10 {
-            let dummy_tx = create_tx(1, 1, None, false);
+            let dummy_tx = create_tx(1, 1, None);
             let utxo = crate::database::Utxo::new(
                 dummy_tx.input[0].previous_output,
                 dummy_tx.output[0].clone(),

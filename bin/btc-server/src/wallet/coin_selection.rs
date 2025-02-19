@@ -200,7 +200,7 @@ mod tests {
     fn should_take_fee_out_of_outputs() {
         let (db, _) = setup_db();
         // Add 15 utxos
-        let tx = create_tx(15, 1, None, false);
+        let tx = create_tx(15, 1, None);
         let change_script = random_p2tr_keyspend_script();
         let output_script = random_p2wpkh_script();
         let mut utxos = vec![];
