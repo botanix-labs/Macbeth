@@ -19,6 +19,9 @@ for test in "${tests_to_run[@]}"; do
     # kill all btc-servers that may be running from previous test runs
     killall btc-server || true
 
+    # kill all bitcoind instances that may be running from previous test runs
+    killall bitcoind || true
+
     # Call make
     make start-test-suite
     exit_codes+=("$?")

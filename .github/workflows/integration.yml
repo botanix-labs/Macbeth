@@ -64,6 +64,7 @@ jobs:
           chmod +x test_runner.sh
           bash test_runner.sh
           killall btc-server || true
+          killall bitcoind || true
           echo "e2e tests completed successfully!"
 
   integration-success:
