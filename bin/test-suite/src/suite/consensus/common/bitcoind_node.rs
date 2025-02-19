@@ -54,15 +54,11 @@ impl SpawnedBitcoindProcess {
     }
 
     pub async fn stop(&mut self, bitcoind_user: &str, bitcoind_password: &str) {
-        let datadir =
-            format!("-datadir={}", self.working_directory.join("data").display().to_string());
-
         let status = Command::new("bitcoin-cli")
             .arg("-regtest")
             .arg(format!("-rpcuser={}", bitcoind_user))
             .arg(format!("-rpcpassword={}", bitcoind_password))
             .arg("-rpcport=18443")
-            .arg(datadir)
             .arg("stop")
             .status()
             .await

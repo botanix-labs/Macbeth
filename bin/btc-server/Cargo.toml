@@ -79,3 +79,4 @@ tonic-build = "0.12.3"
 
 [dev-dependencies]
 test-log = "0.2.12"
+once_cell = { workspace = true }
