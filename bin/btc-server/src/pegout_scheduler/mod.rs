@@ -531,11 +531,13 @@ impl PegoutScheduler {
             let tx = self.txs.get(&txid).expect("tx should exist").clone();
             match bitcoind.get_mempool_entry(&txid) {
                 Ok(_) => {
-                    warn!("Tx {} still in the mempool", txid);
+                    warn!("Tx {} still in the mempool", &txid);
+                    // nothing else to do: eventually the tx will be confirmed or dropped
+                    continue;
                 }
                 Err(e) => {
                     // the tx has been dropped or there was a reorg
-                    warn!("Tx {} is not in the mempool and not included in a block: {}", txid, e);
+                    warn!("Tx {} is not in the mempool and not included in a block: {}", &txid, e);
                     self.un_track_tx(&txid)?;
                 }
             }
@@ -1203,7 +1205,7 @@ mod tests {
     }
 
     #[test]
-    fn track_mempool_should_add_back_pegout_when_still_in_mempool() {
+    fn track_mempool_should_not_add_back_pegout_when_still_in_mempool() {
         let db = setup_db().0;
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
@@ -1216,15 +1218,14 @@ mod tests {
             .get_block_header_info(&bitcoin::BlockHash::all_zeros())
             .expect("valid checkpoint");
         // increase time for checkpoint block so tracked tx is older
-        checkpoint.time = checkpoint.time + 5;
+        checkpoint.time += 5;
 
         let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
         assert!(result.is_ok());
 
         // assert the pegout was added to pending pegouts
         let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
-        assert_eq!(pending_pegouts.len(), 1);
-        assert_eq!(pending_pegouts[0], pegouts[0]);
+        assert_eq!(pending_pegouts.len(), 0);
     }
 
     #[test]
@@ -1243,7 +1244,7 @@ mod tests {
             .get_block_header_info(&bitcoin::BlockHash::all_zeros())
             .expect("valid checkpoint");
         // increase time for checkpoint block so tracked tx is older
-        checkpoint.time = checkpoint.time + 5;
+        checkpoint.time += 5;
 
         let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
         assert!(result.is_ok());
@@ -1251,6 +1252,7 @@ mod tests {
         // assert the pegout was added to pending pegouts
         let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
         assert_eq!(pending_pegouts.len(), 1);
+        assert_eq!(pending_pegouts[0], pegouts[0]);
 
         // assert there are no tracked txs
         assert_eq!(pegout_scheduler.txs.len(), 0);

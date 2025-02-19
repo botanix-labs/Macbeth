@@ -118,6 +118,7 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
         }
         if method == "getmempoolentry" {
             // error case is triggered by a specific txid
+            // used by test `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool`
             let error_txid =
                 String::from("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2");
             if raw_args.len() > 0 && raw_args[0].get().to_string().trim_matches('\"') == error_txid
