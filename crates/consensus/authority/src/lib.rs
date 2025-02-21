@@ -353,7 +353,7 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
         executor_factory: EF,
         client: DB,
     ) -> Self {
-        let storage_inner = StorageInner { aggregate_public_key };
+        let storage_inner = StorageInner { aggregate_public_key, is_block_syncing: false };
 
         Self {
             client,
@@ -389,6 +389,8 @@ pub(crate) struct StorageInner {
     /// The aggregate public key of the FROST threshold signature scheme
     /// Should get populated after DKG
     pub(crate) aggregate_public_key: Option<secp256k1::PublicKey>,
+    /// Suggests if we are currently syncing blocks
+    pub(crate) is_block_syncing: bool,
 }
 
 #[cfg(test)]

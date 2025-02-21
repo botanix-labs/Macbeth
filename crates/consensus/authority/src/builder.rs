@@ -255,6 +255,7 @@ where
                 parser.clone(),
                 random_source_provider,
                 Arc::clone(&metrics),
+                cometbft_rpc_factory.clone(),
             );
 
             frost_task = Some(task);

@@ -12,10 +12,10 @@ use crate::{
     },
     Storage,
 };
-
 use bitcoin::consensus::Encodable;
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::ConsensusCheckpointRequest;
+use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use reth_chainspec::ChainSpec;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_network::{
@@ -31,8 +31,20 @@ use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
+use tendermint_rpc::client::HttpClient;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::{debug, error, info, warn};
+
+#[derive(Debug, thiserror::Error)]
+/// Errors that can occur during synchronization.
+pub(crate) enum SyncError {
+    #[error("tendermint error")]
+    /// Error related to Tendermint.
+    Tendermint(#[from] tendermint::Error),
+    /// Error related to Tendermint RPC.
+    #[error("tendermint rpc error")]
+    TendermintRpc(#[from] tendermint_rpc::Error),
+}
 
 #[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
@@ -87,6 +99,8 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     btc_server: BtcServerClient,
     /// Authority Metrics
     metrics: Arc<AuthorityMetrics>,
+    /// cometbft light client provider
+    cbft_rpc_provider: HttpClient,
 }
 
 impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
@@ -111,6 +125,7 @@ where
         compressor: DataParser,
         random_source_provider: Source,
         metrics: Arc<AuthorityMetrics>,
+        cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
     ) -> Self {
         info!(target: "consensus::authority::frost_task::new", "Frost authority index: {}/{}", config.authority_index, config.authorities.len() - 1);
 
@@ -131,6 +146,9 @@ where
             metrics.clone(),
         );
 
+        let cbft_rpc_provider =
+            cometbft_rpc_factory.build_and_connect().expect("light client to connect");
+
         Self {
             network_handle,
             frost_handle,
@@ -141,7 +159,13 @@ where
             btc_server,
             compressor,
             metrics,
+            cbft_rpc_provider,
         }
+    }
+
+    async fn is_syncing(&self) -> Result<bool, SyncError> {
+        let status = self.cbft_rpc_provider.status().await?;
+        Ok(status.sync_info.catching_up)
     }
 
     async fn start_dkg(&mut self) {
@@ -295,6 +319,23 @@ where
         let mut canon_state_notifs = self.storage.client.subscribe_to_canonical_state();
 
         loop {
+            // get sync status
+            match self.is_syncing().await {
+                Ok(is_syncing) => {
+                    self.storage.inner.write().await.is_block_syncing = is_syncing;
+                    if is_syncing {
+                        info!(target: "consensus::authority::frost_task::start_task", "Node is syncing, pausing frost task...");
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        continue;
+                    }
+                }
+                Err(e) => {
+                    info!(target: "consensus::authority::frost_task::start_task", "Error getting block sync status {:?}", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            }
+
             let my_frost_id =
                 authority_index_to_frost_identifier(self.frost_config.authority_index as u16);
             let is_coordinator = self.dkg_state_machine.coordinator_identifier() == my_frost_id;

@@ -1290,6 +1290,7 @@ where
             request.height,
             request.txs.len()
         );
+
         debug!("finalize_block request: {:?}", request);
         let cbft_block_hash = FixedBytes::<32>::from_slice(request.hash.to_vec().as_slice());
         let mut block_cache_write = self.block_cache.write().expect("should get write lock");

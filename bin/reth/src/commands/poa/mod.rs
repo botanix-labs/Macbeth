@@ -788,7 +788,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // federation mode tasks
         // TODO  we should structure which tasks are spawned based on the node type using two
         // different structs
-
         if is_fed_node {
             executor.spawn_critical(
                 "Frost Task",
