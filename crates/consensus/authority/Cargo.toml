@@ -70,11 +70,13 @@ schnellru = { workspace = true }
 secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 
 serde_json = { workspace = true }
+tendermint = { version = "0.40.1", features = ["clock"] }
 
 # Tendermint
 tendermint-abci = { workspace = true }
 tendermint-light-client = { workspace = true }
 tendermint-proto = { workspace = true }
+tendermint-rpc = { workspace = true }
 
 ## thiserror
 thiserror = { workspace = true }
