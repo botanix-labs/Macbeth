@@ -542,6 +542,19 @@ impl PegoutScheduler {
                 }
             }
 
+            // sanity check that the tx is not on-chain and `fn sync_until`` hasn't handled it
+            let onchain_tx = bitcoind.get_raw_transaction(&txid, None);
+            if let Ok(onchain_tx) = onchain_tx {
+                // intentionally not erroring here because there's no action to take other than not
+                // adding it back to pending pegouts
+                warn!(
+                    "Tx {} is on-chain but not handled by sync_until: {:?}",
+                    &onchain_tx.compute_txid(),
+                    onchain_tx
+                );
+                continue;
+            }
+
             // add the tx back to pending pegouts so it can be retried
             // validate_psbt() will enforce the retry tx will have a conflicting input
             // so multiple outputs for the pegout are not created

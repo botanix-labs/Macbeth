@@ -133,6 +133,23 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
             return Ok(serde_json::from_str(&format!("{{\"size\": 250, \"weight\": 1000, \"time\": 1680000000, \"height\": 680000, \"descendantcount\": 2, \"descendantsize\": 500, \"ancestorcount\": 1, \"ancestorsize\": 250, \"wtxid\": \"{txid}\", \"fees\": {{\"base\": 1000, \"modified\": 1100, \"ancestor\": 1200, \"descendant\": 1300}}, \"depends\": [\"{txid}\"], \"spentby\": [\"{txid}\"], \"bip125-replaceable\": true, \"unbroadcast\": false}}",),
                 ).unwrap());
         }
+        if method == "getrawtransaction" {
+            // error case is triggered by a specific txid
+            // used by test `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool`
+            let error_txid =
+                String::from("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2");
+            if !raw_args.is_empty() &&
+                raw_args[0].get().to_string().trim_matches('\"') == error_txid
+            {
+                return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
+                    "tx does not exist",
+                )));
+            }
+
+            let txid = Txid::from_byte_array([0u8; 32]);
+            return Ok(serde_json::from_str(&format!("{{\"size\": 250, \"weight\": 1000, \"time\": 1680000000, \"height\": 680000, \"descendantcount\": 2, \"descendantsize\": 500, \"ancestorcount\": 1, \"ancestorsize\": 250, \"wtxid\": \"{txid}\", \"fees\": {{\"base\": 1000, \"modified\": 1100, \"ancestor\": 1200, \"descendant\": 1300}}, \"depends\": [\"{txid}\"], \"spentby\": [\"{txid}\"], \"bip125-replaceable\": true, \"unbroadcast\": false}}",),
+                ).unwrap());
+        }
 
         unimplemented!()
     }
