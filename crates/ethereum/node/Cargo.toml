@@ -33,6 +33,9 @@ reth-provider = { workspace = true }
 reth-rpc = { workspace = true }
 reth-tracing = { workspace = true }
 reth-transaction-pool = { workspace = true }
+reth-db = { workspace = true }
+reth-node-core = { workspace = true }
+reth-execution-errors = { workspace = true }
 
 [dev-dependencies]
 alloy-genesis = { workspace = true }

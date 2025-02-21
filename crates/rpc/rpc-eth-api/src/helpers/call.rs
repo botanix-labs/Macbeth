@@ -154,15 +154,14 @@ pub trait EthCall: Call + LoadPendingBlock {
                     let state_overrides = state_override.take();
                     let overrides = EvmOverrides::new(state_overrides, block_overrides.clone());
 
-                    let env = this
-                        .prepare_call_env(
-                            cfg.clone(),
-                            block_env.clone(),
-                            tx,
-                            gas_limit,
-                            &mut db,
-                            overrides,
-                        )?;
+                    let env = this.prepare_call_env(
+                        cfg.clone(),
+                        block_env.clone(),
+                        tx,
+                        gas_limit,
+                        &mut db,
+                        overrides,
+                    )?;
                     let (res, _) = this.transact(&mut db, env)?;
 
                     match ensure_success(res.result) {

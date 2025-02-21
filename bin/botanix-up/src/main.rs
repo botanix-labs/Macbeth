@@ -167,7 +167,8 @@ async fn inner_main() -> AnyResult<()> {
     cli.validate()?;
     let output_path = PathBuf::from(
         cli.output_path.unwrap_or(std::env::current_dir()?.to_str().unwrap().to_string()),
-    ).join("output");
+    )
+    .join("output");
     println!("Output path: {:?}", output_path);
 
     // Create the output directory

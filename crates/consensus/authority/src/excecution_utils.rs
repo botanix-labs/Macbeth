@@ -25,12 +25,15 @@ pub(crate) mod authority_execution_utils {
     use reth_revm::{database::StateProviderDatabase, db::State};
     use reth_trie::StateRoot;
     use reth_trie_db::DatabaseStateRoot;
+    use reth_db::DatabaseEnv;
+    use reth_provider::providers::{StaticFileProvider, BlockchainProvider2};
 
     use std::sync::Arc;
     use tendermint_proto::google::protobuf::Timestamp;
     use tracing::{info, trace};
 
     use crate::comet_bft::abci::BlockWithContext;
+    use reth_errors::RethError;
 
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
@@ -347,12 +350,32 @@ pub(crate) mod authority_execution_utils {
             .with_bundle_update()
             .build();
 
+        let data_dir = if let Some(dir) = reth_node_core::dirs::database_path() {
+            dir
+        } else {
+            return Err(BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(RethError::msg("Failed to get data directory")))));
+        };
+
+        let db_env = DatabaseEnv::open(
+            data_dir.as_path(),
+            reth_db::DatabaseEnvKind::RO,
+            reth_db::mdbx::DatabaseArguments::default()
+        ).map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(e))))?;
+        let blockchain_db = Arc::new(BlockchainProvider2::new(
+            ProviderFactory::new(
+                Arc::new(db_env),
+                chain_spec.clone(),
+                StaticFileProvider::default()
+            )
+        ).map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(e))))?) ;
+
         let executor = EthBlockExecutor::new(
             chain_spec,
             evm_config,
             db,
             bitcoind_factory.clone(),
             bitcoin_network,
+            blockchain_db
         );
         let input = BlockExecutionInput::new(block, U256::ZERO);
         let exec_results = executor.execute(input)?;

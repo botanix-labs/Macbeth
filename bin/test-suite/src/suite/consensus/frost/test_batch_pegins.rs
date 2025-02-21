@@ -9,7 +9,7 @@ use ethers::{
 
 use reth_primitives::botanix::{
     mint_validation::MINT_TOPIC,
-    peg_contract::{PeginData, PeginMeta},
+    peg_contract::{PeginData, PeginMeta, PeginMetaV0},
     utils::AmountExt,
 };
 
@@ -173,15 +173,17 @@ pub async fn batch_pegins(
 
         // create pegin meta
         let bitcoin_block_height = conf_block_info.height;
-        let meta = PeginMeta {
-            version: 0,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-            address: eth_account,
-            aggregate_publickey: agg_pk,
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt,
-            block_headers: headers.clone(),
-        };
+        let meta = PeginMeta::V0(
+            PeginMetaV0 {
+                version: 0,
+                outpoint: bitcoin::OutPoint::new(pegin_tx.txid(), vout as u32),
+                address: eth_account,
+                aggregate_publickey: agg_pk,
+                tx: pegin_tx.clone(),
+                merkle_proof: pmt,
+                block_headers: headers.clone(),
+            },
+        );
 
         // validate the pegin data first offchain before submitting
         let pegin_data = PeginData {
@@ -264,7 +266,7 @@ pub async fn batch_pegins(
         let utxo = utxos.iter().find(|utxo| {
             bitcoin::Txid::from_slice(utxo.outpoint.as_ref().unwrap().txid.as_slice())
                 .expect("valid txid") ==
-                pegin.meta[0].tx.compute_txid()
+                pegin.meta[0].tx().compute_txid()
         });
         assert!(utxo.is_some());
     }

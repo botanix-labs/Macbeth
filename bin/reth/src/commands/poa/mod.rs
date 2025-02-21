@@ -527,14 +527,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let sync_metrics_listener = reth_stages::MetricsListener::new(sync_metrics_rx);
         executor.spawn_critical("stages metrics listener task", sync_metrics_listener);
 
-        // Config executor factory
-        let evm_config = EthEvmConfig::default();
-        let executor_factory = EthExecutorProvider::new(
-            Arc::new(chain.clone()),
-            evm_config,
-            bitcoind_factory.clone(),
-            node_config.rpc.btc_network,
-        );
+
         // fetch the head block from the database
         let head = self.lookup_head(provider_factory.clone());
         let latest_sealed_header = provider_factory
@@ -545,7 +538,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         info!(target: "reth::cli", "Latest sealed header: {}", latest_sealed_header.number);
 
         // Authority consensus
-        let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
+        let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain.clone())));
         let state_provider = provider_factory.latest().expect("provider factory to exist");
         let blockchain_db =
             BlockchainProvider2::with_latest(provider_factory.clone(), latest_sealed_header)
@@ -554,6 +547,16 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(1);
         let mut abci_driver =
             ABCIDriver::new(driver_rx, provider_factory.clone(), blockchain_db.clone());
+
+        // Config executor factory
+        let evm_config = EthEvmConfig::default();
+        let executor_factory = EthExecutorProvider::new(
+            Arc::new(chain.clone()),
+            evm_config,
+            bitcoind_factory.clone(),
+            node_config.rpc.btc_network,
+            Arc::new(blockchain_db.clone()),
+        );
 
         // check Minting.sol deployed bytecode matches known bytecode
         info!(target: "reth::cli", "Checking minting contract bytecode");

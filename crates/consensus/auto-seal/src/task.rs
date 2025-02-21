@@ -164,18 +164,16 @@ where
                                 debug!(target: "consensus::auto", ?state, "Sent fork choice update");
 
                                 match rx.await.unwrap() {
-                                    Ok(fcu_response) => {
-                                        match fcu_response.forkchoice_status() {
-                                            ForkchoiceStatus::Valid => break,
-                                            ForkchoiceStatus::Invalid => {
-                                                error!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned invalid response");
-                                                return None;
-                                            }
-                                            ForkchoiceStatus::Syncing => {
-                                                debug!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
-                                            }
+                                    Ok(fcu_response) => match fcu_response.forkchoice_status() {
+                                        ForkchoiceStatus::Valid => break,
+                                        ForkchoiceStatus::Invalid => {
+                                            error!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned invalid response");
+                                            return None;
                                         }
-                                    }
+                                        ForkchoiceStatus::Syncing => {
+                                            debug!(target: "consensus::auto", ?fcu_response, "Forkchoice update returned SYNCING, waiting for VALID");
+                                        }
+                                    },
                                     Err(err) => {
                                         error!(target: "consensus::auto", %err, "Autoseal fork choice update failed");
                                         return None;

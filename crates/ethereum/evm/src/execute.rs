@@ -19,12 +19,10 @@ use reth_evm::{
     execute::{
         BatchExecutor, BlockExecutionError, BlockExecutionInput, BlockExecutionOutput,
         BlockExecutorProvider, BlockValidationError, Executor, ProviderError,
-    },
-    system_calls::{
+    }, system_calls::{
         apply_beacon_root_contract_call, apply_consolidation_requests_contract_call,
         apply_withdrawal_requests_contract_call,
-    },
-    ConfigureEvm,
+    }, ConfigureEvm
 };
 use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{
@@ -51,6 +49,9 @@ use revm_primitives::{
     BlockEnv, Bytes, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, EvmState, ExecutionResult,
     ResultAndState,
 };
+use reth_db::{DatabaseEnv};
+use reth_provider::{providers::{BlockchainProvider2, StaticFileProvider}, BlockReader};
+use reth_provider::ProviderFactory;
 
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
@@ -64,6 +65,7 @@ pub struct EthExecutorProvider<BF, EvmConfig = EthEvmConfig> {
     evm_config: EvmConfig,
     bitcoind_factory: BF,
     bitcoin_network: bitcoin::Network,
+    blockchain_db: Arc<BlockchainProvider2<Arc<DatabaseEnv>>>,
 }
 
 /// Create a noop executor provider with chain spec
@@ -71,10 +73,21 @@ pub fn create_noop_executor_provider(
     chain_spec: Arc<ChainSpec>,
 ) -> EthExecutorProvider<MockBitcoindFactory> {
     EthExecutorProvider::new(
-        chain_spec,
+        chain_spec.clone(),
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
         bitcoin::Network::Regtest,
+        Arc::new(BlockchainProvider2::new(
+            ProviderFactory::new(
+                Arc::new(DatabaseEnv::open(
+                    std::path::Path::new("/tmp/reth_db"),
+                    reth_db::DatabaseEnvKind::RO,
+                    reth_db::mdbx::DatabaseArguments::default()
+                ).expect("Failed to open database")),
+                chain_spec.clone(),
+                StaticFileProvider::default()
+            )
+        ).expect("Failed to create blockchain provider"))
     )
 }
 
@@ -84,8 +97,9 @@ impl<BF> EthExecutorProvider<BF> {
         chain_spec: Arc<ChainSpec>,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
+        blockchain_db: Arc<BlockchainProvider2<Arc<DatabaseEnv>>>,
     ) -> Self {
-        Self::new(chain_spec, Default::default(), bitcoind_factory, bitcoin_network)
+        Self::new(chain_spec, Default::default(), bitcoind_factory, bitcoin_network, blockchain_db)
     }
 }
 
@@ -96,8 +110,9 @@ impl<BF, EvmConfig> EthExecutorProvider<BF, EvmConfig> {
         evm_config: EvmConfig,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
+        blockchain_db: Arc<BlockchainProvider2<Arc<DatabaseEnv>>>,
     ) -> Self {
-        Self { chain_spec, evm_config, bitcoind_factory, bitcoin_network }
+        Self { chain_spec, evm_config, bitcoind_factory, bitcoin_network, blockchain_db }
     }
 }
 
@@ -116,6 +131,7 @@ where
             State::builder().with_database(db).with_bundle_update().without_state_clear().build(),
             self.bitcoind_factory.clone(),
             self.bitcoin_network,
+            self.blockchain_db.clone(),
         )
     }
 }
@@ -169,6 +185,8 @@ struct EthEvmExecutor<EvmConfig, BF> {
     bitcoind_factory: BF,
     /// The L1 bitcoin network
     bitcoin_network: bitcoin::Network,
+    /// Blockchain provider
+    blockchain_db: Arc<BlockchainProvider2<Arc<DatabaseEnv>>>,
 }
 
 impl<EvmConfig, BF> EthEvmExecutor<EvmConfig, BF>
@@ -192,6 +210,7 @@ where
         block: &BlockWithSenders,
         mut evm: Evm<'_, Ext, &mut State<DB>>,
         botanix_consensus_pkg: BotanixConsensusPackage,
+        provider: Arc<BlockchainProvider2<Arc<DatabaseEnv>>>,
     ) -> Result<EthExecuteOutput, BlockExecutionError>
     where
         DB: Database,
@@ -268,10 +287,11 @@ where
 
             let new_result = {
                 if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
-                    match Self::botanix_mint_contract_checks(
+                    match self.botanix_mint_contract_checks(
                         &result,
                         &botanix_consensus_pkg,
                         transaction.hash,
+                        provider.clone(),
                     ) {
                         Ok((new_pegins, new_pegouts)) => {
                             pegins.extend(new_pegins);
@@ -410,9 +430,11 @@ where
 
     /// Performs additional checks on mint contract transactions.
     fn botanix_mint_contract_checks(
+        &self,
         result: &ExecutionResult,
         botanix_consensus_pkg: &BotanixConsensusPackage,
         tx_hash: TxHash,
+        provider: Arc<BlockchainProvider2<Arc<DatabaseEnv>>>,
     ) -> Result<(Vec<PeginData>, Vec<PegoutWithId>), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
@@ -426,7 +448,38 @@ where
                 Some(p) => p,
             };
 
-            let bitcoin_checkpoint = consensus_pkg.bitcoin_checkpoint;
+            // Get the reference block hash from the pegin metadata. 
+            // This is used to avoid the growing list of headers in the pegin metadata
+            // by using a bitcoin checkpoint that is close to the pegin block height. 
+            // The reference block hash is only provided for version v1.
+            let mut bitcoin_checkpoint = consensus_pkg.bitcoin_checkpoint;
+            for meta in pegin_data.clone().meta {
+                match (meta.version(), meta.ref_block_hash()) {
+                    (1, None) => return Err(MintContractError::InvalidPeginData {
+                            error: format!("Reference block hash cannot be found"),
+                            revert_address: pegin_data.account,
+                            revert_amount: pegin_data.amount,
+                        }),
+                    (1, Some(hash)) => {
+                        if let Some(block) = provider.find_block_by_hash(hash, reth_provider::BlockSource::Any).map_err(|_| MintContractError::InvalidPeginData {
+                            error: format!("Reference block hash not found"),
+                            revert_address: pegin_data.account,
+                            revert_amount: pegin_data.amount,
+                        })? {
+                            let header = block.header;
+                            let package = header.botanix_consensus_package(self.bitcoin_network, self.bitcoind_factory.clone()).map_err(|_| MintContractError::InvalidPeginData {
+                                error: format!("Failed to get botanix consensus package"),
+                                revert_address: pegin_data.account,
+                                revert_amount: pegin_data.amount,
+                            })?;
+                            bitcoin_checkpoint = package.bitcoin_checkpoint;
+                        }
+                        break;
+                    },
+                    _ => break,
+                }
+            }
+            
             // the pegin height must be equal or less than the required block depth (checkpoint)
             if pegin_data.bitcoin_block_height > bitcoin_checkpoint.1 {
                 return Err(MintContractError::InvalidPeginData {
@@ -501,9 +554,10 @@ impl<EvmConfig, DB, BF> EthBlockExecutor<EvmConfig, DB, BF> {
         state: State<DB>,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
+        blockchain_db: Arc<BlockchainProvider2<Arc<DatabaseEnv>>>,
     ) -> Self {
         Self {
-            executor: EthEvmExecutor { chain_spec, evm_config, bitcoind_factory, bitcoin_network },
+            executor: EthEvmExecutor { chain_spec, evm_config, bitcoind_factory, bitcoin_network, blockchain_db },
             state,
         }
     }
@@ -580,7 +634,7 @@ where
         let env = self.evm_env_for_block(&block.header, total_difficulty);
         let output: EthExecuteOutput = {
             let evm = self.executor.evm_config.evm_with_env(&mut self.state, env);
-            self.executor.execute_state_transitions(block, evm, botanix_consensus_pkg)
+            self.executor.execute_state_transitions(block, evm, botanix_consensus_pkg, self.executor.blockchain_db.clone())
         }?;
 
         // 3. apply post execution changes

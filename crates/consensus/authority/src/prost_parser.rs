@@ -107,8 +107,7 @@ mod test {
 
         // now decompress the prost message
         let prost_deserialized =
-            ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(prost_serialized)
-                .unwrap();
+            ProstMessageSerdelizer::<GetAllUtxosResponse>::deserialize(prost_serialized).unwrap();
         println!("Deserialized to bytes: {:?}", prost_deserialized);
 
         assert!(prost_utxos == prost_deserialized);

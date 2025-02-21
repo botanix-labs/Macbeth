@@ -34,6 +34,8 @@ reth-execution-types = { workspace = true }
 reth-primitives = { workspace = true, features = ["reth-codec", "secp256k1"] }
 reth-prune-types = { workspace = true }
 reth-revm = { workspace = true }
+reth-db = { workspace = true }
+reth-provider = { workspace = true }
 
 # Ethereum
 revm-primitives = { workspace = true }

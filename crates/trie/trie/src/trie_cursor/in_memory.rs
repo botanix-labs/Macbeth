@@ -204,9 +204,10 @@ impl<C: TrieCursor> InMemoryStorageTrieCursor<'_, C> {
 
         // Reposition the cursor to the first greater or equal node that wasn't removed.
         let mut db_entry = self.cursor.seek(key.clone())?;
-        while db_entry.as_ref().is_some_and(|entry| {
-            self.removed_nodes.as_ref().is_some_and(|r| r.contains(&entry.0))
-        }) {
+        while db_entry
+            .as_ref()
+            .is_some_and(|entry| self.removed_nodes.as_ref().is_some_and(|r| r.contains(&entry.0)))
+        {
             db_entry = self.cursor.next()?;
         }
 
