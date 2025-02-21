@@ -28,6 +28,9 @@ use thiserror::Error;
 
 use crate::{database, rpc};
 
+pub const TX_NOT_FOUND_BITCOIND_ERROR: &str = "no such mempool or blockchain transaction";
+pub const TX_NOT_IN_MEMPOOL_BITCOIND_ERROR: &str = "transaction not in mempool";
+
 macro_rules! print_safe {
     ($e:expr) => {
         $e.map(|v| v.to_string()).unwrap_or("ERR".to_owned())
@@ -516,7 +519,7 @@ impl PegoutScheduler {
             .filter(|tx| tx.created < cp_time)
             .map(|tx| tx.txid)
             .collect::<Vec<_>>();
-        info!(
+        debug!(
             "Txids older than checkpoint: {:?}",
             maybe_dropped_txs.iter().map(|t| t.to_string()).collect::<Vec<_>>()
         );
@@ -536,6 +539,12 @@ impl PegoutScheduler {
                     continue;
                 }
                 Err(e) => {
+                    // check error message to confirm the tx is not in the mempool
+                    if !e.to_string().to_lowercase().contains(TX_NOT_IN_MEMPOOL_BITCOIND_ERROR) {
+                        warn!("Error checking mempool for tx {}: {}", &txid, e);
+                        continue;
+                    }
+
                     // the tx has been dropped or there was a reorg
                     warn!("Tx {} is not in the mempool and not included in a block: {}", &txid, e);
                     self.un_track_tx(&txid)?;
