@@ -3,7 +3,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::wallet::{address::generate_taproot_change_scriptpubkey, util::VerifyingKeyExt};
+use crate::{
+    pegout_scheduler::{TX_NOT_FOUND_BITCOIND_ERROR, TX_NOT_IN_MEMPOOL_BITCOIND_ERROR},
+    wallet::{address::generate_taproot_change_scriptpubkey, util::VerifyingKeyExt},
+};
 use bitcoin::{
     absolute::LockTime, block::Header, blockdata::transaction::TxOut, hashes::Hash, psbt::Psbt,
     Amount, Block, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid,
@@ -125,7 +128,7 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
                 raw_args[0].get().to_string().trim_matches('\"') == error_txid
             {
                 return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
-                    "tx not in mempool",
+                    TX_NOT_IN_MEMPOOL_BITCOIND_ERROR,
                 )));
             }
 
@@ -142,7 +145,7 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
                 raw_args[0].get().to_string().trim_matches('\"') == error_txid
             {
                 return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
-                    "tx does not exist",
+                    TX_NOT_FOUND_BITCOIND_ERROR,
                 )));
             }
 
