@@ -420,10 +420,7 @@ mod tests {
     #[test]
     fn should_skip_over_genesis() {
         let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
-        let header = Header {
-            number: 0,
-            ..Default::default()
-        };
+        let header = Header { number: 0, ..Default::default() };
         let authority_signers = vec![];
         // Just use the first key as the dummy agg key
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
@@ -467,10 +464,7 @@ mod tests {
         let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-        let header = Header {
-            number: 1,
-            ..Default::default()
-        };
+        let header = Header { number: 1, ..Default::default() };
 
         let result = consensus.validate_extra_data_header(&header, &authority_signers, None);
         assert!(result.is_err());
@@ -491,11 +485,7 @@ mod tests {
 
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-        let header = Header {
-            number: 1,
-            extra_data: Bytes::from([0; 64]),
-            ..Default::default()
-        };
+        let header = Header { number: 1, extra_data: Bytes::from([0; 64]), ..Default::default() };
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
@@ -515,11 +505,8 @@ mod tests {
 
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-        let header = Header {
-            number: 1,
-            extra_data: Bytes::from(edh.serialize()),
-            ..Default::default()
-        };
+        let header =
+            Header { number: 1, extra_data: Bytes::from(edh.serialize()), ..Default::default() };
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&dummy_agg_key));
@@ -535,17 +522,12 @@ mod tests {
     fn should_not_accept_edh_with_exact_nums_point() {
         let consensus = AuthorityConsensus::new(Arc::new(BOTANIX_TESTNET.as_ref().to_owned()));
         // By default edh will use the nums point
-        let edh = ExtraDataHeader {
-            aggregated_public_key: nums_secp256k1_pk(),
-            ..Default::default()
-        };
+        let edh =
+            ExtraDataHeader { aggregated_public_key: nums_secp256k1_pk(), ..Default::default() };
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-        let header = Header {
-            number: 1,
-            extra_data: Bytes::from(edh.serialize()),
-            ..Default::default()
-        };
+        let header =
+            Header { number: 1, extra_data: Bytes::from(edh.serialize()), ..Default::default() };
 
         let result = consensus.validate_extra_data_header(
             &header,
@@ -577,11 +559,8 @@ mod tests {
 
         let sk1 = secp256k1::SecretKey::from_str(SK1).unwrap();
         let authority_signers = vec![sk1.public_key(secp256k1::SECP256K1)];
-        let header = Header {
-            number: 1,
-            extra_data: Bytes::from(edh.serialize()),
-            ..Default::default()
-        };
+        let header =
+            Header { number: 1, extra_data: Bytes::from(edh.serialize()), ..Default::default() };
 
         let result =
             consensus.validate_extra_data_header(&header, &authority_signers, Some(&different_pk));

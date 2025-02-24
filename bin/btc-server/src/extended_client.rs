@@ -114,10 +114,7 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         &mut self,
         request: Empty,
     ) -> BoxFuture<'_, Result<WalletStateResponse, GrpcClientError>>;
-    fn abort_signing(
-        &mut self,
-        request: Empty,
-    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn abort_signing(&mut self, request: Empty) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
     fn get_signing_status(
         &mut self,
         request: GetSigningStatusRequest,
@@ -126,10 +123,7 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         &mut self,
         request: GetSessionIdsRequest,
     ) -> BoxFuture<'_, Result<GetSessionIdsResponse, GrpcClientError>>;
-    fn health_check(
-        &mut self,
-        request: Empty,
-    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn health_check(&mut self, request: Empty) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
     fn reset_all_utxos(
         &mut self,
         request: ResetAllUtxosRequest,

@@ -70,10 +70,8 @@ pub(crate) fn coin_selection(
         }
     };
 
-    let coin_select = bdk_wallet::coin_selection::BranchAndBoundCoinSelection::new(
-        0,
-        OldestFirstCoinSelection,
-    );
+    let coin_select =
+        bdk_wallet::coin_selection::BranchAndBoundCoinSelection::new(0, OldestFirstCoinSelection);
     let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
 
     let mut rng = rand::thread_rng();
@@ -132,9 +130,9 @@ pub(crate) fn coin_selection(
             ch.value += absolute_fee;
             Some(ch)
         } else if absolute_fee > TAPROOT_OUTPUT_DUST_THRESHOLD {
-                Some(TxOut { script_pubkey: change_script.clone(), value: absolute_fee })
+            Some(TxOut { script_pubkey: change_script.clone(), value: absolute_fee })
         } else {
-                None
+            None
         }
     };
 

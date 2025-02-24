@@ -65,14 +65,12 @@ impl<TX: DbTx> BlockHashReader for LatestStateProviderRef<'_, TX> {
             start..end,
             |static_file, range, _| static_file.canonical_hashes_range(range.start, range.end),
             |range, _| {
-                self.tx
-                    .cursor_read::<tables::CanonicalHeaders>()
-                    .map(|mut cursor| {
-                        cursor
-                            .walk_range(range)?
-                            .map(|result| result.map(|(_, hash)| hash).map_err(Into::into))
-                            .collect::<ProviderResult<Vec<_>>>()
-                    })?
+                self.tx.cursor_read::<tables::CanonicalHeaders>().map(|mut cursor| {
+                    cursor
+                        .walk_range(range)?
+                        .map(|result| result.map(|(_, hash)| hash).map_err(Into::into))
+                        .collect::<ProviderResult<Vec<_>>>()
+                })?
             },
             |_| true,
         )
