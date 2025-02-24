@@ -137,6 +137,7 @@ pub struct FrostProtoConnection {
     /// Channel to send protocol events to the manager (Conn established/confirmed), peer message
     /// command
     protocol_events_tx: PollSender<FrostProtocolEvent>,
+    /// Connection registration state.
     registration: RegistrationState,
     /// Channel to receive messages from other peers on the wire
     conn_rx: ProtocolConnection,
@@ -153,7 +154,6 @@ pub struct FrostProtoConnection {
 }
 
 #[derive(Debug)]
-// TODO(lamafab): implement a `Closed` variant?
 enum RegistrationState {
     NotRegistered,
     Pending {
@@ -739,7 +739,7 @@ mod tests {
             };
         }
 
-        // We now have enough space for the last event
+        // We now have enough space for the last two events
         let event_queue = protocol_events_rx.len();
         assert_eq!(event_queue, 1); // max=3
 

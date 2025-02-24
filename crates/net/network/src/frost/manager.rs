@@ -96,6 +96,7 @@ pub struct FrostManager {
     command_tx: mpsc::UnboundedSender<FrostCommand>,
     /// Receiver half of the command channel.
     command_rx: UnboundedReceiverStream<FrostCommand>,
+    /// Counter for connection indices.
     connection_counter: ConnIdx,
     /// total authorities to connect to, including ourselves
     authorities: HashMap<PeerId, AuthorityContext>,

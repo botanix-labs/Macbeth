@@ -391,6 +391,8 @@ impl Stream for ProtocolConnection {
     }
 }
 
+// NOTE: This primarily exists for testing purposes in
+// `crates/net/network/src/frost/protocol.rs`
 impl From<UnboundedReceiverStream<BytesMut>> for ProtocolConnection {
     fn from(from_wire: UnboundedReceiverStream<BytesMut>) -> Self {
         Self { from_wire }
