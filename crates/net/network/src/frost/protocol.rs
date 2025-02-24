@@ -148,7 +148,6 @@ pub struct FrostProtoConnection {
     /// Remote peer id
     peer_id: PeerId,
     /// direction of the connection
-    #[allow(dead_code)]
     direction: Direction,
     pending_pong: Option<oneshot::Sender<String>>,
 }
