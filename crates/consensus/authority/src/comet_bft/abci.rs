@@ -1614,7 +1614,7 @@ mod tests {
     >;
 
     /// Build the db and the ABCI client
-    fn abci_client_builder() -> ABCIClientType{
+    fn abci_client_builder() -> ABCIClientType {
         let secp = secp256k1::Secp256k1::new();
         let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
@@ -1678,7 +1678,6 @@ mod tests {
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
         let (driver_tx, _driver_rx) = tokio::sync::mpsc::channel(100);
-        
 
         ABCIClient::new(
             storage,

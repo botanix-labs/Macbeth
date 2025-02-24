@@ -809,10 +809,7 @@ mod tests {
         };
         let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).unwrap();
 
-        let input_1 = Input {
-            final_script_witness: Some(Witness::default()),
-            ..Input::default()
-        };
+        let input_1 = Input { final_script_witness: Some(Witness::default()), ..Input::default() };
         let input_2 = input_1.clone();
 
         let inputs = vec![input_1, input_2];

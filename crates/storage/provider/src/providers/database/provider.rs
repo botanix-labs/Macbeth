@@ -1916,9 +1916,7 @@ impl<TX: DbTx> BlockHashReader for DatabaseProvider<TX> {
             StaticFileSegment::Headers,
             start..end,
             |static_file, range, _| static_file.canonical_hashes_range(range.start, range.end),
-            |range, _| {
-                self.cursor_read_collect::<tables::CanonicalHeaders>(range)
-            },
+            |range, _| self.cursor_read_collect::<tables::CanonicalHeaders>(range),
             |_| true,
         )
     }
@@ -3834,8 +3832,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         total_chunks: u64,
         format: u64,
     ) -> ProviderResult<SnapshotSyncId> {
-        let last_snapshot_sync_id =
-            self.get_last_snapshot_sync_id()?;
+        let last_snapshot_sync_id = self.get_last_snapshot_sync_id()?;
         let new_snapshot_sync_id = last_snapshot_sync_id.unwrap_or_default() + 1;
         let new_snapshot_sync = SnapshotSync::new(height, snapshot_hash, format, total_chunks);
         self.tx.put::<tables::SnapshotSyncs>(new_snapshot_sync_id, new_snapshot_sync)?;

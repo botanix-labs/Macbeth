@@ -201,9 +201,10 @@ where
 
                             // fetch the sealed header so we can use it in the sender recovery
                             // unwind
-                            let sealed_header = provider
-                                .sealed_header(block_number)?
-                                .ok_or_else(|| ProviderError::HeaderNotFound(block_number.into()))?;
+                            let sealed_header =
+                                provider.sealed_header(block_number)?.ok_or_else(|| {
+                                    ProviderError::HeaderNotFound(block_number.into())
+                                })?;
                             Err(StageError::Block {
                                 block: Box::new(sealed_header),
                                 error: BlockErrorKind::Validation(

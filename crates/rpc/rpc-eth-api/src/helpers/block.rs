@@ -146,7 +146,7 @@ pub trait EthBlocks: LoadBlock {
     fn load_block_and_receipts(
         &self,
         block_id: BlockId,
-    ) -> impl Future<Output = BlockReceiptsLoadResult<Self::Error>> + Send 
+    ) -> impl Future<Output = BlockReceiptsLoadResult<Self::Error>> + Send
     where
         Self: LoadReceipt,
     {

@@ -149,15 +149,14 @@ pub async fn make_tx(
         conflicting_inputs = matching_tracked_inputs
             .iter()
             .map(|op| {
-                utxos
-                    .get(op)
-                    .ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput)
-                    .map(|u: &Utxo| {
+                utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
+                    |u: &Utxo| {
                         // Conflicting utxos will be added to available utxos before finishing
                         // coin selection
                         conflicting_utxos.insert(*op, u.clone());
                         u.clone()
-                    })
+                    },
+                )
             })
             .collect();
     }

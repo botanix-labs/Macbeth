@@ -78,5 +78,5 @@ prost-build = "0.13.3"
 tonic-build = "0.12.3"
 
 [dev-dependencies]
-test-log = "0.2.12"
 once_cell = { workspace = true }
+test-log = "0.2.12"

@@ -66,8 +66,7 @@ mod authority_test_utils {
             let identifier = Identifier::derive(&i.to_le_bytes()).expect("can derive identifier");
             identifiers.push(identifier);
             let (round1_secret, round1_package) =
-                part1(identifier, num_participants, threshold, OsRng)
-                    .expect("can generate round1");
+                part1(identifier, num_participants, threshold, OsRng).expect("can generate round1");
 
             round1_packages.insert(identifier, round1_package.clone());
             round1_secrets.push((identifier, round1_secret));

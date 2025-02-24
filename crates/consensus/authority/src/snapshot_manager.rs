@@ -330,7 +330,6 @@ where
                             if latest_chunk_size + serialized_block.len() >
                                 self.snapshot_size_limits.snapshot_chunk_size
                             {
-                                
                                 self.create_new_chunk(
                                     last_snapshot_id,
                                     block_with_senders.number,
