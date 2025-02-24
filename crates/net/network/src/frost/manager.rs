@@ -261,9 +261,11 @@ impl FrostManager {
                 }
 
                 // Assign a unique index to the connection and increment the counter.
-                // TODO: what if this maxes out?
+                //
+                // NOTE: if this ever reaches 2^64-1, which is very unlikely,
+                // we just wrap around and start the counter at 0 again.
                 let idx = self.connection_counter;
-                self.connection_counter = idx.saturating_add(1);
+                self.connection_counter = idx.wrapping_add(1);
 
                 // send the assigned idx back to the initiator
                 if sender.send(idx).is_err() {
