@@ -214,7 +214,6 @@ pub enum FrostProtocolEvent {
         peer_id: PeerId,
         /// the tx sender we send to the other peer to enable it to communicate with us
         peer_commands_tx: mpsc::UnboundedSender<FrostPeerCommand>,
-        #[allow(dead_code)]
         /// the connection direction - we connected to them, or they to us
         direction: Direction,
         /// callback to send the assigned idx back to the initiator
