@@ -142,12 +142,8 @@ impl FrostManager {
     }
 
     /// Retrieve an arbitrary active connection to the given peer.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if the authority is not found.
     fn retrieve_peer_data(&mut self, peer_id: &PeerId) -> Option<PeerData> {
-        let authority = self.authorities.get_mut(peer_id).expect("authority not found");
+        let authority = self.authorities.get_mut(peer_id)?;
 
         let mut to_remove = vec![];
         let mut peer_data = None;
