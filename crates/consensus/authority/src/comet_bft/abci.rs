@@ -1353,6 +1353,18 @@ where
             }
         };
 
+        // Rpc node needs to store aggregate public key from block height 1
+        let block_height = block_with_context.sealed_block_with_peg.block().number;
+        let sealed_block_with_peg_binding = block_with_context.sealed_block_with_peg.clone();
+        let sealed_block_with_senders = sealed_block_with_peg_binding.block();
+        if !self.is_fed_node && block_height == 1 {
+            let edh =
+                sealed_block_with_senders.deserialize_extra_data_header().expect("edh to exist");
+
+            let mut storage = self.storage.inner.blocking_write();
+            storage.aggregate_public_key = Some(edh.aggregated_public_key);
+        }
+
         if matches!(
             self.validate_block(block_with_context.sealed_block_with_peg.block()),
             ResponseProcessProposal { status: VERIFY_REJECT }
@@ -1407,9 +1419,6 @@ where
 
         // need to clone since `sealed_block_with_context` is behind a lock
         let sealed_block_with_context = sealed_block_with_context.clone();
-        let block_height = sealed_block_with_context.sealed_block_with_peg.block().number;
-        let sealed_block_with_peg_binding = sealed_block_with_context.sealed_block_with_peg.clone();
-        let sealed_block_with_senders = sealed_block_with_peg_binding.block();
 
         // We want to explicitly panic if we cannot send the commit message
         let cbft_block_hash = *cbft_block_hash;
@@ -1427,15 +1436,6 @@ where
 
         info!("Block committed: {:?}", cbft_block_hash);
         self.metrics.commet_committed_blocks.increment(1);
-
-        // Rpc node needs to store aggregate public key from block height 1
-        if !self.is_fed_node && block_height == 1 {
-            let edh =
-                sealed_block_with_senders.deserialize_extra_data_header().expect("edh to exist");
-
-            let mut storage = self.storage.inner.blocking_write();
-            storage.aggregate_public_key = Some(edh.aggregated_public_key);
-        }
 
         ResponseCommit::default()
     }
