@@ -1236,6 +1236,16 @@ where
 
         let this = self.get_mut();
 
+        // Ensure periodic wake-up in case of starvation
+        // TODO(should not be used in mainnet): the root cause for starvation needs to be determined
+        // Temporary fix: this future is sometimes starved and
+        // never polled again This means pending txs are never gossiped to peers.
+        let waker = cx.waker().clone();
+        tokio::task::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            waker.wake_by_ref();
+        });
+
         // All streams are polled until their corresponding budget is exhausted, then we manually
         // yield back control to tokio. See `NetworkManager` for more context on the design
         // pattern.
