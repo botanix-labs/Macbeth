@@ -257,6 +257,7 @@ pub trait EngineEthApi {
         &self,
         number: BlockNumberOrTag,
         full: bool,
+        include_extra_data_header: Option<bool>,
     ) -> RpcResult<Option<RichBlock>>;
 
     /// Sends signed transaction, returning its hash.

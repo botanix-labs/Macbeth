@@ -183,7 +183,7 @@ where
     EthApiClient::transaction_count(client, address, None).await.unwrap();
     EthApiClient::storage_at(client, address, U256::default().into(), None).await.unwrap();
     EthApiClient::block_by_hash(client, hash, false).await.unwrap();
-    EthApiClient::block_by_number(client, block_number, false).await.unwrap();
+    EthApiClient::block_by_number(client, block_number, false, None).await.unwrap();
     EthApiClient::block_transaction_count_by_number(client, block_number).await.unwrap();
     EthApiClient::block_transaction_count_by_hash(client, hash).await.unwrap();
     EthApiClient::block_uncles_count_by_hash(client, hash).await.unwrap();

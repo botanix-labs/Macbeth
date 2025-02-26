@@ -24,6 +24,7 @@ auto_impl = { workspace = true }
 bitcoin = { workspace = true }
 dyn-clone = { workspace = true }
 futures = { workspace = true }
+serde_json = { workspace = true }
 
 # rpc
 jsonrpsee = { workspace = true, features = ["server", "macros"] }

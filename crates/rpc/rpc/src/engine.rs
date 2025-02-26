@@ -86,8 +86,9 @@ where
         &self,
         number: BlockNumberOrTag,
         full: bool,
+        include_extra_data_header: Option<bool>,
     ) -> Result<Option<RichBlock>> {
-        self.eth.block_by_number(number, full).instrument(engine_span!()).await
+        self.eth.block_by_number(number, full, include_extra_data_header).instrument(engine_span!()).await
     }
 
     /// Handler for: `eth_sendRawTransaction`

@@ -8,7 +8,7 @@ use crate::helpers::{
 use alloy_dyn_abi::TypedData;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_primitives::{
-    transaction::AccessListResult, Address, BlockId, BlockNumberOrTag, Bytes, B256, B64, U256, U64,
+    extra_data_header::ExtraDataHeader, transaction::AccessListResult, Address, BlockId, BlockNumberOrTag, Bytes, B256, B64, U256, U64
 };
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_rpc_types::{
@@ -67,6 +67,7 @@ pub trait EthApi {
         &self,
         number: BlockNumberOrTag,
         full: bool,
+        include_extra_data_header: Option<bool>,
     ) -> RpcResult<Option<RichBlock>>;
 
     /// Returns the number of transactions in a block from a block matching the given block hash.
@@ -414,9 +415,25 @@ where
         &self,
         number: BlockNumberOrTag,
         full: bool,
+        include_extra_data_header: Option<bool>,
     ) -> RpcResult<Option<RichBlock>> {
         trace!(target: "rpc::eth", ?number, ?full, "Serving eth_getBlockByNumber");
-        Ok(EthBlocks::rpc_block(self, number.into(), full).await?)
+        let mut block = EthBlocks::rpc_block(self, number.into(), full).await?;
+
+        if let Some(ref mut rich_block) = block {
+            if include_extra_data_header.is_some_and(|v| v) {
+                // Add the header JSON to extra_info
+                let mut extra_data_header = ExtraDataHeader::deserialize(&mut rich_block.header.extra_data.0.to_vec().as_slice())
+                    .map_err(|e| internal_rpc_err(format!("Failed to deserialize extra data header: {}", e)))?;
+                let extra_data_header_json = serde_json::to_value(&mut extra_data_header)
+                    .map_err(|e| internal_rpc_err(format!("Failed to serialize header: {}", e)))?;
+                rich_block.extra_info.insert("extraDataHeader".to_string(), extra_data_header_json);
+            }
+
+            return Ok(Some(rich_block.clone()));
+        }
+
+        Ok(block)
     }
 
     /// Handler for: `eth_getGatewayAddress`

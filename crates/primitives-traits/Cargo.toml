@@ -18,6 +18,7 @@ alloy-genesis = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-rlp = { workspace = true }
 alloy-rpc-types-eth = { workspace = true, optional = true }
+reth-rpc-types = { workspace = true }
 
 # arbitrary utils
 arbitrary = { workspace = true, features = ["derive"], optional = true }
