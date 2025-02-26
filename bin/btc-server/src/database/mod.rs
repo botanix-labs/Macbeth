@@ -10,7 +10,7 @@ use bitcoin::{
     consensus::encode::Encodable,
     hashes::{sha256, Hash},
     psbt::Psbt,
-    Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
+    Amount, BlockHash, FeeRate, OutPoint, ScriptBuf, TxOut, Txid,
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
@@ -22,6 +22,8 @@ pub mod error;
 pub mod version;
 pub use error::Error;
 use version::UtxoVersion;
+
+const MAX_PENDING_PEGOUTS: usize = 10_000;
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -698,6 +700,93 @@ impl Db {
             ret.push(tx);
         }
         Ok(ret)
+    }
+
+    /// Get all economically viable pegouts based on the given fee rate,
+    /// returning the pegouts with their corresponding individual fee estimates.
+    ///
+    /// Each pegout's fee is calculated considering:
+    ///   1. The output's own size in vbytes
+    ///   2. A fair portion of transaction overhead
+    ///   3. A generous estimate for input costs, assuming one input per pegout
+    ///
+    /// Pegouts where the value is less than the estimated fee are filtered out,
+    /// but remain in the database until they either become viable or get pruned.
+    pub fn cord_pending_pegouts(
+        &self,
+        fee_rate: FeeRate,
+    ) -> Result<Vec<(pegout_scheduler::PegoutRequest, Amount)>, Error> {
+        let pegouts = self.get_pending_pegouts()?;
+
+        if pegouts.len() == 0 {
+            return Ok(vec![]);
+        }
+
+        // NOTE(lamafab): We use a simple and conservative fee estimation model
+        // here. Ideally, this should be intertwined with the actual UTXO
+        // maintenance and input selection mechanism in the long run.
+
+        // Base transaction overhead distributed across the pegout batch size.
+        // We assume that most/all pegouts will be selected.
+        const VB_TX_OVERHEAD: u64 = 10; // version + locktime + varint counts
+        let avg_header_vb = (VB_TX_OVERHEAD / (pegouts.len() as u64)).max(1);
+
+        // Assuming one input per pegout. In practice, inputs can be shared
+        // across outputs.
+        const VB_INPUT_OVERHEAD: u64 = 68; // ~P2WPKH input
+
+        let mut pegouts = pegouts
+            .into_iter()
+            .map(|pegout| {
+                // Output size in vbytes
+                let output_vb = pegout.txout().weight().to_vbytes_ceil();
+
+                // Total vbytes allocated to this pegout
+                let total_vb = avg_header_vb + VB_INPUT_OVERHEAD + output_vb;
+
+                // Calculate estimated fee for individual pegout
+                let fee = fee_rate.fee_vb(total_vb).unwrap();
+
+                (pegout, fee)
+            })
+            .collect::<Vec<(pegout_scheduler::PegoutRequest, Amount)>>();
+
+        // We only process pegouts that are economically viable.
+        pegouts.retain(|(pegout, fee)| &pegout.value >= fee);
+
+        Ok(pegouts)
+    }
+
+    /// Prune pending pegouts once [`MAX_PENDING_PEGOUTS`] is reached. Pegouts
+    /// with higher values are retained.
+    pub fn prune_pending_pegouts(&self) -> Result<(), Error> {
+        self.do_prune_pending_pegouts(MAX_PENDING_PEGOUTS)
+    }
+
+    /// Prune pending pegouts once `retain_amt` is reached. Pegouts
+    /// with higher values are retained.
+    fn do_prune_pending_pegouts(&self, retain_amt: usize) -> Result<(), Error> {
+        // sled doc:
+        // > Beware: performs a full O(n) scan under the hood.
+        let pegout_count = self.pending_pegouts.iter().count();
+
+        if pegout_count <= retain_amt {
+            return Ok(());
+        }
+
+        let mut pegouts = self.get_pending_pegouts()?;
+
+        // Sort descending by value.
+        pegouts.sort_by(|a, b| b.value.cmp(&a.value));
+
+        // Only once the number of pegouts exceeds the limit, we start removing
+        // the ones with the lowest value.
+        let to_remove = pegouts.split_off(retain_amt);
+        for pegout in to_remove {
+            self.pending_pegouts.remove(pegout.id.as_bytes())?;
+        }
+
+        Ok(())
     }
 
     /// Removes pending pegouts from the database.
