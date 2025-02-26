@@ -119,6 +119,7 @@ pub async fn make_tx(
             .iter()
             .flat_map(|tx| tx.pegout_requests.iter().map(|p| p.id))
             .collect::<HashSet<_>>();
+
         println!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
 
         // Collect all pegout ids being retried.
@@ -134,6 +135,7 @@ pub async fn make_tx(
             .filter(|tx| tx.pegout_requests.iter().any(|p| matching_pegouts_ids.contains(&&p.id)))
             .map(|tx| tx.inputs().next().ok_or_else(|| CoordinatorError::NoConflictingInputs))
             .collect();
+
         let matching_tracked_inputs = matching_tracked_inputs?;
 
         // get the utxo for each matching tracked input

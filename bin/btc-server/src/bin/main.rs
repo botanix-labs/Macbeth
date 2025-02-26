@@ -961,6 +961,7 @@ where
         let fee_res = self
             .bitcoind_client
             .estimate_smart_fee(1, Some(bitcoincore_rpc::json::EstimateMode::Conservative));
+
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
             if let Some(f) = fee.fee_rate {
@@ -987,6 +988,7 @@ where
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
         }
+
         let outputs = pending_pegouts
             .iter()
             .map(|p| (TxOut { value: p.value, script_pubkey: p.spk.clone() }, p.id))
