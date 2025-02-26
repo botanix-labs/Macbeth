@@ -6,6 +6,7 @@ use bitcoin::{
     hashes::Hash,
 };
 use revm_primitives::Address;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The version of the extra data header
@@ -19,7 +20,7 @@ pub const CHAIN_VERSION: u32 = 0;
 /// bitcoin_block_hash ... )` This sighash excludes the authority signature field.
 /// Use `encode_into_without_signature` to serialize the extradata header with out the signature
 /// field Note: the order of the struct properties is important for serialization/deserialization
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExtraDataHeader {
     /// The version of the extra data header
     pub version: u32,

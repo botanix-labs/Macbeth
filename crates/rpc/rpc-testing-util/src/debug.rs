@@ -101,7 +101,7 @@ where
     {
         let block = match block.into() {
             BlockId::Hash(hash) => self.block_by_hash(hash.block_hash, false).await,
-            BlockId::Number(tag) => self.block_by_number(tag, false).await,
+            BlockId::Number(tag) => self.block_by_number(tag, false, None).await,
         }?
         .ok_or_else(|| RpcError::Custom("block not found".to_string()))?;
         let hashes = block.transactions.hashes().map(|tx| (tx, opts.clone())).collect::<Vec<_>>();

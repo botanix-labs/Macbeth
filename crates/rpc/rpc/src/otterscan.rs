@@ -155,7 +155,7 @@ where
 
     /// Handler for `ots_getBlockDetails`
     async fn get_block_details(&self, block_number: u64) -> RpcResult<BlockDetails> {
-        let block = self.eth.block_by_number(block_number.into(), true);
+        let block = self.eth.block_by_number(block_number.into(), true, None);
         let receipts = self.eth.block_receipts(block_number.into());
         let (block, receipts) = futures::try_join!(block, receipts)?;
         self.block_details(block, receipts)
@@ -177,7 +177,7 @@ where
         page_size: usize,
     ) -> RpcResult<OtsBlockTransactions> {
         // retrieve full block and its receipts
-        let block = self.eth.block_by_number(block_number.into(), true);
+        let block = self.eth.block_by_number(block_number.into(), true, None);
         let receipts = self.eth.block_receipts(block_number.into());
         let (block, receipts) = futures::try_join!(block, receipts)?;
 
@@ -299,7 +299,7 @@ where
         .await?;
 
         let Some(BlockTransactions::Full(transactions)) =
-            self.eth.block_by_number(num.into(), true).await?.map(|block| block.inner.transactions)
+            self.eth.block_by_number(num.into(), true, None).await?.map(|block| block.inner.transactions)
         else {
             return Err(EthApiError::UnknownBlockNumber.into());
         };

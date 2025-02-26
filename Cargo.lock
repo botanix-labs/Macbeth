@@ -10158,6 +10158,7 @@ dependencies = [
  "proptest-arbitrary-interop",
  "rand 0.8.5",
  "reth-codecs",
+ "reth-rpc-types",
  "revm-primitives",
  "roaring",
  "secp256k1 0.29.1",
@@ -10471,6 +10472,7 @@ dependencies = [
  "revm-inspectors",
  "revm-primitives",
  "secp256k1 0.29.1",
+ "serde_json",
  "tokio",
  "tracing",
 ]
