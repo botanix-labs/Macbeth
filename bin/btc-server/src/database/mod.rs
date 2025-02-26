@@ -1009,6 +1009,96 @@ mod tests {
     }
 
     #[test]
+    fn can_prune_pegouts_by_count() {
+        let (db, _temp_dir) = setup_db();
+
+        // create a 10 random pegouts
+        for i in 0..10 {
+            let pegout_id = PegoutId::new([i as u8; 32], 0);
+            let req = pegout_scheduler::PegoutRequest {
+                id: pegout_id,
+                spk: random_p2wpkh_script(),
+                value: Amount::from_sat(10_000 * (i as u64 + 1)),
+                botanix_height: 1,
+            };
+            db.store_pending_pegout(&req).unwrap();
+        }
+
+        // Retain ten pegouts (all).
+        db.do_prune_pending_pegouts(10).unwrap();
+        let pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pegouts.len(), 10);
+        assert_eq!(pegouts[0].value, Amount::from_sat(10_000));
+        assert_eq!(pegouts[9].value, Amount::from_sat(100_000));
+
+        // Retain four pegouts.
+        db.do_prune_pending_pegouts(4).unwrap();
+        let pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pegouts.len(), 4);
+        assert_eq!(pegouts[0].value, Amount::from_sat(70_000));
+        assert_eq!(pegouts[3].value, Amount::from_sat(100_000));
+
+        // Retain zero pegouts (none).
+        db.do_prune_pending_pegouts(0).unwrap();
+        let pegouts = db.get_pending_pegouts().unwrap();
+        assert!(pegouts.is_empty());
+    }
+
+    #[test]
+    fn can_coordinate_pegout_efficiency() {
+        let (db, _temp_dir) = setup_db();
+
+        let txouts = [
+            TxOut {
+                value: Amount::from_sat(1_000),
+                script_pubkey: ScriptBuf::from_bytes(vec![0; 20]),
+            },
+            TxOut {
+                value: Amount::from_sat(1_000),
+                script_pubkey: ScriptBuf::from_bytes(vec![0; 30]),
+            },
+            TxOut {
+                value: Amount::from_sat(1_000),
+                script_pubkey: ScriptBuf::from_bytes(vec![0; 40]),
+            },
+        ];
+
+        for i in 0..3 {
+            let pegout_id = PegoutId::new([i as u8; 32], 0);
+            let req = pegout_scheduler::PegoutRequest {
+                id: pegout_id,
+                spk: txouts[i].script_pubkey.clone(),
+                value: txouts[i].value,
+                botanix_height: 1,
+            };
+            db.store_pending_pegout(&req).unwrap();
+        }
+
+        // Fee is low, all pegouts can be processed.
+        let fee_rate = FeeRate::from_sat_per_vb_unchecked(1);
+        let pegouts = db.cord_pending_pegouts(fee_rate).unwrap();
+        assert_eq!(pegouts.len(), 3);
+        assert_eq!(pegouts[0].0.spk, txouts[0].script_pubkey);
+        assert_eq!(pegouts[0].1, Amount::from_sat(100)); // est. fee for pegout
+        assert_eq!(pegouts[1].0.spk, txouts[1].script_pubkey);
+        assert_eq!(pegouts[1].1, Amount::from_sat(110)); // est. fee for pegout
+        assert_eq!(pegouts[2].0.spk, txouts[2].script_pubkey);
+        assert_eq!(pegouts[2].1, Amount::from_sat(120)); // est. fee for pegout
+
+        // Fee is medium, only the first pegout can be processed.
+        let fee_rate = FeeRate::from_sat_per_vb_unchecked(10);
+        let pegouts = db.cord_pending_pegouts(fee_rate).unwrap();
+        assert_eq!(pegouts.len(), 1);
+        assert_eq!(pegouts[0].0.spk, txouts[0].script_pubkey);
+        assert_eq!(pegouts[0].1, Amount::from_sat(1_000)); // est. fee for pegout
+
+        // Fee is high, no pegouts can be processed.
+        let fee_rate = FeeRate::from_sat_per_vb_unchecked(20);
+        let pegouts = db.cord_pending_pegouts(fee_rate).unwrap();
+        assert!(pegouts.is_empty());
+    }
+
+    #[test]
     fn from_db_utxo_to_rpc_utxo() {
         let tx = create_tx(1, 1, None);
         let utxo = Utxo::new(
