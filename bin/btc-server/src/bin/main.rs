@@ -546,6 +546,7 @@ where
         let pegouts = pegouts?;
         let pegouts_refs: Vec<&PegoutRequest> = pegouts.iter().collect();
         self.db.store_pending_pegouts(&pegouts_refs).to_status()?;
+        self.db.prune_pending_pegouts().to_status()?;
         self.db.flush().to_status()?;
         info!("stored pegouts.len(): {:?}", pegouts.len());
 
@@ -968,7 +969,21 @@ where
         }
 
         debug!("Cord Fee rate: {:?}", fee_rate);
-        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+
+        // Get pending pegouts that are economically viable. Net-negative
+        // pegouts are kept in the db and might be viable in the future, but
+        // might be pruned earlier if the number of pending pegouts exceeds a
+        // certain threshold.
+        //
+        // See `crate::database::Db::prune_pending_pegouts`.
+        let pending_pegouts = self
+            .db
+            .cord_pending_pegouts(fee_rate)
+            .to_status()?
+            .into_iter()
+            .map(|(pegout, _fee)| pegout)
+            .collect::<Vec<pegout_scheduler::PegoutRequest>>();
+
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
         }
