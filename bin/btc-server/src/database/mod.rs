@@ -718,7 +718,7 @@ impl Db {
     ) -> Result<Vec<(pegout_scheduler::PegoutRequest, Amount)>, Error> {
         let pegouts = self.get_pending_pegouts()?;
 
-        if pegouts.len() == 0 {
+        if pegouts.is_empty() {
             return Ok(vec![]);
         }
 
