@@ -267,67 +267,6 @@ impl NodeConfig {
         Ok(max_block)
     }
 
-    // /// Create the [NetworkConfig] for the node
-    // #[allow(clippy::too_many_arguments)]
-    // pub fn network_config<C>(
-    //     &self,
-    //     config: &Config,
-    //     client: C,
-    //     executor: TaskExecutor,
-    //     head: Head,
-    //     data_dir: &ChainPath<DataDirPath>,
-    //     block_import: Option<Box<dyn BlockImport>>,
-    //     frost_config: Option<FrostConfig>,
-    // ) -> eyre::Result<NetworkConfig<C>> {
-    //     info!(target: "reth::cli", "Connecting to P2P network");
-    //     let secret_key = self.network_secret(data_dir)?;
-    //     let default_peers_path = data_dir.known_peers_path();
-    //     Ok(self.load_network_config(
-    //         config,
-    //         client,
-    //         executor,
-    //         head,
-    //         secret_key,
-    //         default_peers_path,
-    //         block_import,
-    //         frost_config,
-    //     ))
-    // }
-
-    // /// Create the [NetworkBuilder].
-    // ///
-    // /// This only configures it and does not spawn it.
-    // #[allow(clippy::too_many_arguments)]
-    // pub async fn build_network<C>(
-    //     &self,
-    //     config: &Config,
-    //     client: C,
-    //     executor: TaskExecutor,
-    //     head: Head,
-    //     data_dir: &ChainPath<DataDirPath>,
-    //     block_import: Option<Box<dyn BlockImport>>,
-    //     frost_config: Option<FrostConfig>,
-    // ) -> eyre::Result<NetworkBuilder<C, (), ()>>
-    // where
-    //     C: BlockNumReader,
-    // {
-    //     info!(target: "reth::cli", "Connecting to P2P network");
-    //     let secret_key = self.network_secret(data_dir)?;
-    //     let default_peers_path = data_dir.known_peers_path();
-    //     let network_config = self.load_network_config(
-    //         config,
-    //         client,
-    //         executor.clone(),
-    //         head,
-    //         secret_key,
-    //         default_peers_path.clone(),
-    //         block_import,
-    //         frost_config,
-    //     );
-    //     let builder = NetworkManager::builder(network_config).await?;
-    //     Ok(builder)
-    // }
-
     /// Loads '`EnvKzgSettings::Default`'
     pub const fn kzg_settings(&self) -> eyre::Result<EnvKzgSettings> {
         Ok(EnvKzgSettings::Default)
@@ -415,67 +354,6 @@ impl NodeConfig {
             }
         }
     }
-
-    // /// Builds the [NetworkConfig] with the given [ProviderFactory].
-    // #[allow(clippy::too_many_arguments)]
-    // pub fn load_network_config<C>(
-    //     &self,
-    //     config: &Config,
-    //     client: C,
-    //     executor: TaskExecutor,
-    //     head: Head,
-    //     secret_key: SecretKey,
-    //     default_peers_path: PathBuf,
-    //     block_import: Option<Box<dyn BlockImport>>,
-    //     frost_config: Option<FrostConfig>,
-    // ) -> NetworkConfig<C> {
-    //     let mut cfg_builder = self
-    //         .network
-    //         .network_config(config, self.chain.clone(), secret_key, default_peers_path)
-    //         .with_task_executor(Box::new(executor))
-    //         .set_head(head)
-    //         .listener_addr(SocketAddr::new(
-    //             self.network.addr,
-    //             // set discovery port based on instance number
-    //             self.network.port + self.instance - 1,
-    //         ))
-    //         .discovery_addr(SocketAddr::new(
-    //             self.network.discovery.addr,
-    //             // set discovery port based on instance number
-    //             self.network.discovery.port + self.instance - 1,
-    //         ));
-
-    //     // Botanix specific network configurations
-    //     if let Some(block_import) = block_import {
-    //         cfg_builder =
-    //             cfg_builder.block_import(block_import).network_mode(NetworkMode::Authority);
-    //     }
-
-    //     // Frost specific network configurations
-    //     if frost_config.is_some() {
-    //         cfg_builder =
-    //             cfg_builder.frost_config(frost_config).network_mode(NetworkMode::Authority);
-    //     }
-
-    //     let config = cfg_builder.build(client);
-    //     if !self.network.discovery.enable_discv5_discovery {
-    //         return config;
-    //     }
-    //     // work around since discv5 config builder can't be integrated into network config
-    // builder     // due to unsatisfied trait bounds
-    //     config.discovery_v5_with_config_builder(|builder| {
-    //         let DiscoveryArgs { discv5_addr, discv5_port, .. } = self.network.discovery;
-    //         builder
-    //             .discv5_config(
-    //                 discv5::ConfigBuilder::new(ListenConfig::from(Into::<SocketAddr>::into((
-    //                     discv5_addr,
-    //                     discv5_port + self.instance - 1,
-    //                 ))))
-    //                 .build(),
-    //             )
-    //             .build()
-    //     })
-    // }
 
     /// Change rpc port numbers based on the instance number, using the inner
     /// [`RpcServerArgs::adjust_instance_ports`] method.
