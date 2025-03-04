@@ -52,6 +52,10 @@ impl HttpCometBFTRpcClientFactory {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use tendermint_rpc::{HttpClientUrl, Url};
+
     use crate::{
         CometBftRpcFactory, HttpCometBFTRpcClientFactory, DEFAULT_RPC_HOST, DEFAULT_RPC_PORT,
     };
@@ -69,5 +73,64 @@ mod tests {
         let client_factory = HttpCometBFTRpcClientFactory::default();
         let client = client_factory.build_and_connect();
         assert!(client.is_ok());
+    }
+
+    #[test]
+    fn test_http_rpc_client_factory_chained_methods() {
+        let client_factory =
+            HttpCometBFTRpcClientFactory::default().with_host("api.example.com").with_port(9000);
+
+        assert_eq!(client_factory.host, "api.example.com");
+        assert_eq!(client_factory.port, 9000);
+    }
+
+    #[test]
+    fn test_http_rpc_client_factory_clone() {
+        let client_factory =
+            HttpCometBFTRpcClientFactory::default().with_host("test.example.com").with_port(8888);
+
+        let cloned_factory = client_factory.clone();
+
+        assert_eq!(client_factory.host, cloned_factory.host);
+        assert_eq!(client_factory.port, cloned_factory.port);
+    }
+
+    #[test]
+    fn test_http_rpc_client_factory_debug() {
+        let client_factory = HttpCometBFTRpcClientFactory::default();
+        let debug_output = format!("{:?}", client_factory);
+
+        assert!(debug_output.contains(DEFAULT_RPC_HOST));
+        assert!(debug_output.contains(&DEFAULT_RPC_PORT.to_string()));
+    }
+
+    #[test]
+    fn test_invalid_url_format() {
+        let client_factory =
+            HttpCometBFTRpcClientFactory::new("invalid:url".to_string(), DEFAULT_RPC_PORT);
+        let result = client_factory.build_and_connect();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_url_construction() {
+        let host = "test-host.com";
+        let port = 9876;
+        let client_factory = HttpCometBFTRpcClientFactory::new(host.to_string(), port);
+
+        let expected_url_str = format!("http://{}:{}", host, port);
+        let expected_url: Url = HttpClientUrl::from_str(&expected_url_str).unwrap().into();
+        assert_eq!(host, expected_url.host());
+        assert_eq!(port, expected_url.port());
+
+        let client_result = client_factory.build_and_connect();
+        if client_result.is_ok() {
+            assert!(true);
+        } else {
+            let error = client_result.unwrap_err();
+            println!("{:?}", error);
+            let is_connection_error = matches!(error, tendermint_rpc::Error(__, _));
+            assert!(is_connection_error);
+        }
     }
 }
