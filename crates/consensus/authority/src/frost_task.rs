@@ -331,8 +331,14 @@ where
                 }
                 Err(e) => {
                     info!(target: "consensus::authority::frost_task::start_task", "Error getting block sync status {:?}", e);
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    continue;
+
+                    // TODO: the comet nodes in the test-suite don't have their rpc servers
+                    // available at this point. Test-suite needs to be refactored to handle this
+                    // REMOVE this check once test-suite is refactored
+                    if !e.to_string().to_lowercase().contains("tendermint rpc error") {
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        continue;
+                    }
                 }
             }
 

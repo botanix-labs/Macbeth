@@ -310,6 +310,7 @@ impl FederationMemberTestConfig {
         let num_snapshots_to_keep = self.num_snapshots_to_keep.to_string();
         let discovery_port = self.discovery_port.to_string();
         let abci_port = self.abci_port.to_string();
+        let cometbft_rpc_port = (self.abci_port - 1).to_string();
 
         // prepare run arguments
         let command = "./target/debug/reth";
@@ -376,6 +377,8 @@ impl FederationMemberTestConfig {
             discovery_secret_path.to_str().context("discovery secret path to exist")?,
             "--abci-port",
             abci_port.as_str(),
+            "--cometbft-rpc-port",
+            cometbft_rpc_port.as_str(),
         ];
 
         // use botanix chain spec
