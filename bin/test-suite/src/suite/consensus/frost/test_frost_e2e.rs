@@ -9,7 +9,7 @@ use ethers::{
 };
 use reth_primitives::botanix::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta, PegoutData},
+    peg_contract::{PeginData, PeginMeta, PegoutData, PeginMetaV0},
     utils::AmountExt,
 };
 
@@ -140,18 +140,20 @@ pub async fn frost_e2e_stable(
 
     // create pegin meta
     let bitcoin_block_height = conf_block_info.height;
-    let meta = PeginMeta {
-        version: 0,
-        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-        address: eth_account,
-        aggregate_publickey: secp256k1::PublicKey::from_str(
-            gateway_address_response.aggregate_public_key.as_str(),
-        )
-        .expect("valid public key"),
-        tx: pegin_tx.clone(),
-        merkle_proof: pmt,
-        block_headers: headers,
-    };
+    let meta = PeginMeta::V0(
+        PeginMetaV0 {
+            version: 0,
+            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+            address: eth_account,
+            aggregate_publickey: secp256k1::PublicKey::from_str(
+                gateway_address_response.aggregate_public_key.as_str(),
+            )
+            .expect("valid public key"),
+            tx: pegin_tx.clone(),
+            merkle_proof: pmt,
+            block_headers: headers,
+        }
+    );
 
     // validate the pegin data first offchain before submitting
     let pegin_data = PeginData {
@@ -178,7 +180,7 @@ pub async fn frost_e2e_stable(
     // send the pegin transactions to all fed members
     it_info_print!(
         "Sending pegin tx: block headers=",
-        meta.block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
+        meta.block_headers().iter().map(|h| h.block_hash()).collect::<Vec<_>>()
     );
     let serialized_pegin_meta = meta.serialize().unwrap();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));

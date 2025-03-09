@@ -353,6 +353,7 @@ pub(crate) mod authority_execution_utils {
             db,
             bitcoind_factory.clone(),
             bitcoin_network,
+            database_provider.clone(),
         );
         let input = BlockExecutionInput::new(block, U256::ZERO);
         let exec_results = executor.execute(input)?;
