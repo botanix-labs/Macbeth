@@ -3,9 +3,14 @@ use std::{str::FromStr, time::Duration};
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid};
 use bitcoincore_rpc::RpcApi;
 use ethers::{prelude::Provider, providers::Http};
-use reth_primitives::botanix::{peg_contract::PeginMeta, utils::AmountExt};
-
-use reth_primitives::Address;
+use reth_primitives::{
+    botanix::{
+        peg_contract::{PeginMeta, PeginMetaV0, PeginMetaV1, PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1},
+        utils::AmountExt,
+    },
+    Address,
+    B256,
+};
 
 use crate::{
     it_info_print,
@@ -131,18 +136,20 @@ pub async fn invalid_pegin(
 
     // create invalid pegin meta with empty headers list
     let bitcoin_block_height = conf_block_info.height;
-    let meta = PeginMeta {
-        version: 0,
-        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-        address: eth_account.clone(),
-        aggregate_publickey: secp256k1::PublicKey::from_str(
-            gateway_address_response.aggregate_public_key.as_str(),
-        )
-        .expect("valid public key"),
-        tx: pegin_tx.clone(),
-        merkle_proof: pmt,
-        block_headers: vec![],
-    };
+    let meta = PeginMeta::V0(
+        PeginMetaV0 {
+            version: PEGIN_META_VERSION_V0,
+            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+            address: eth_account.clone(),
+            aggregate_publickey: secp256k1::PublicKey::from_str(
+                gateway_address_response.aggregate_public_key.as_str(),
+            )
+            .expect("valid public key"),
+            tx: pegin_tx.clone(),
+            merkle_proof: pmt,
+            block_headers: vec![],
+        }
+    );
 
     // send the pegin transactions to all fed members
     let serialized_pegin_meta = meta.serialize().unwrap();
@@ -205,18 +212,20 @@ pub async fn invalid_pegin(
     let pmt = PartialMerkleTree::from_txids(&[txid], &[true]);
 
     let bitcoin_block_height = conf_block_info.height;
-    let meta = PeginMeta {
-        version: 0,
-        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-        address: eth_account.clone(),
-        aggregate_publickey: secp256k1::PublicKey::from_str(
-            gateway_address_response.aggregate_public_key.as_str(),
-        )
-        .expect("valid public key"),
-        tx: pegin_tx.clone(),
-        merkle_proof: pmt,
-        block_headers: headers,
-    };
+    let meta = PeginMeta::V0(
+        PeginMetaV0 {
+            version: PEGIN_META_VERSION_V0,
+            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+            address: eth_account.clone(),
+            aggregate_publickey: secp256k1::PublicKey::from_str(
+                gateway_address_response.aggregate_public_key.as_str(),
+            )
+            .expect("valid public key"),
+            tx: pegin_tx.clone(),
+            merkle_proof: pmt.clone(),
+            block_headers: headers.clone(),
+        }
+    );
 
     // send the pegin transactions to all fed members
     let serialized_pegin_meta = meta.serialize().unwrap();
@@ -270,5 +279,57 @@ pub async fn invalid_pegin(
 
     assert!(nonce_after > nonce_before);
 
+    // create invalid pegin meta with invalid reference hash for v1
+    let meta = PeginMeta::V1(PeginMetaV1 {
+        inner: PeginMetaV0 {
+            version: PEGIN_META_VERSION_V1,
+            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+            address: eth_account.clone(),
+            aggregate_publickey: secp256k1::PublicKey::from_str(
+                gateway_address_response.aggregate_public_key.as_str(),
+            )
+            .expect("valid public key"),
+            tx: pegin_tx.clone(),
+            merkle_proof: pmt,
+            block_headers: headers,
+        },
+        ref_block_hash: B256::from_slice(&[0; 32]),
+    });
+
+    let serialized_pegin_meta = meta.serialize().unwrap();
+    let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
+
+    // pegin address balance before pegin
+    let pegin_address_initial_balance =
+        botanix_eth_client.get_botanix_balance(eth_pegin_address).await.unwrap();
+    it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
+
+    // nonce before pegin
+    let sender_address = botanix_eth_client.get_sender_address();
+    let nonce_before = botanix_eth_client.get_nonce(sender_address.clone()).await.unwrap();
+    it_info_print!("Nonce before pegin", nonce_before);
+
+    it_info_print!("Sending invalid v1 pegin with invalid reference hash");
+    let tx_receipt = botanix_eth_client
+        .mint(
+            eth_destination.clone(),
+            amount,
+            bitcoin_block_height as u32,
+            metadata,
+            ethers::core::types::Address::random(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(tx_receipt.status.unwrap().is_zero());
+
+    let pegin_address_final_balance =
+        botanix_eth_client.get_botanix_balance(eth_pegin_address).await.unwrap();
+    assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
+
+    let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();
+    assert!(nonce_after > nonce_before);
+    
     Ok(())
 }

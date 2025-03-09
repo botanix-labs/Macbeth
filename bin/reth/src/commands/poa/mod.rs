@@ -534,7 +534,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             evm_config,
             bitcoind_factory.clone(),
             node_config.rpc.btc_network,
+            provider_factory.clone(),
         );
+
         // fetch the head block from the database
         let head = self.lookup_head(provider_factory.clone());
         let latest_sealed_header = provider_factory
@@ -995,7 +997,7 @@ pub struct PoaNodeComponents<P> {
     pub evm_config: EthEvmConfig,
     #[allow(dead_code)]
     /// evm executor factory
-    pub executor: EthExecutorProvider<BitcoindClientFactory>,
+    pub executor: EthExecutorProvider<BitcoindClientFactory, Arc<DatabaseEnv>>,
     /// network handle
     pub network: NetworkHandle,
     #[allow(dead_code)]
@@ -1014,7 +1016,7 @@ where
     pub(crate) const fn new(
         pool: P,
         evm_config: EthEvmConfig,
-        executor: EthExecutorProvider<BitcoindClientFactory>,
+        executor: EthExecutorProvider<BitcoindClientFactory, Arc<DatabaseEnv>>,
         network: NetworkHandle,
         provider: BlockchainProvider2<Arc<DatabaseEnv>>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,

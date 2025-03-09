@@ -10,6 +10,7 @@ use reth_btc_wallet::{
     test_utils::MockBitcoindFactory,
 };
 use reth_chainspec::ChainSpec;
+use reth_db::DatabaseEnv;
 use reth_ethereum_engine_primitives::{
     EthBuiltPayload, EthPayloadAttributes, EthPayloadBuilderAttributes,
 };
@@ -25,13 +26,17 @@ use reth_node_builder::{
     BuilderContext, ConfigureEvm, Node, PayloadBuilderConfig, PayloadTypes,
 };
 use reth_payload_builder::{PayloadBuilderHandle, PayloadBuilderService};
-use reth_provider::CanonStateSubscriptions;
 use reth_rpc::EthApi;
 use reth_tracing::tracing::{debug, info};
 use reth_transaction_pool::{
     blobstore::DiskFileBlobStore, EthTransactionPool, TransactionPool,
     TransactionValidationTaskExecutor,
 };
+use reth_provider::{
+    providers::{ProviderFactory, StaticFileProvider},
+    CanonStateSubscriptions
+};
+use reth_execution_errors::{BlockExecutionError, InternalBlockExecutionError};
 
 use crate::{EthEngineTypes, EthEvmConfig};
 
@@ -112,7 +117,7 @@ where
     Node: FullNodeTypes<ChainSpec = ChainSpec>,
 {
     type EVM = EthEvmConfig;
-    type Executor = EthExecutorProvider<MockBitcoindFactory, Self::EVM>;
+    type Executor = EthExecutorProvider<MockBitcoindFactory, Arc<DatabaseEnv>, Self::EVM>;
 
     async fn build_evm(
         self,
@@ -122,9 +127,24 @@ where
         let evm_config = EthEvmConfig::default();
         let mock_bitcoind_factory = MockBitcoindFactory::new(BitcoindConfig::default());
         let regtest = bitcoin::Network::Regtest;
-        let executor =
-            EthExecutorProvider::new(chain_spec, evm_config, mock_bitcoind_factory, regtest);
+        let data_dir = if let Some(dir) = reth_node_core::dirs::database_path() {
+            dir
+        } else {
+            return Err(eyre::eyre!("Failed to get data directory"));
+        };
+        let db = Arc::new(DatabaseEnv::open(
+            data_dir.as_path(),
+            reth_db::DatabaseEnvKind::RO,
+            reth_db::mdbx::DatabaseArguments::default()
+        ).map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(e))))?);
 
+        let provider_factory = ProviderFactory::new(
+            db,
+            ctx.chain_spec(),
+            StaticFileProvider::default(),
+        );
+        let executor = EthExecutorProvider::new(chain_spec, evm_config, mock_bitcoind_factory, regtest, provider_factory);
+        
         Ok((evm_config, executor))
     }
 }

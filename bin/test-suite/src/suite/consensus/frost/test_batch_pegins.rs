@@ -7,14 +7,21 @@ use ethers::{
     providers::{Http, PendingTransaction},
 };
 
-use reth_primitives::botanix::{
-    mint_validation::MINT_TOPIC,
-    peg_contract::{PeginData, PeginMeta},
-    utils::AmountExt,
+use reth_primitives::{
+    botanix::{
+        mint_validation::MINT_TOPIC,
+        peg_contract::{PeginData, PeginMeta, PeginMetaV0, PeginMetaV1},
+        utils::AmountExt,
+    },
+    B256,
 };
 
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::Address;
+use reth_primitives::{
+    Address,
+    botanix::peg_contract::{PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1
+    }
+};
 
 use crate::{
     it_info_print,
@@ -25,7 +32,44 @@ use crate::{
     utils::generate_blocks,
 };
 
-const NUM_PEGINS: u16 = 5;
+const NUM_PEGINS_PER_VERSION: u16 = 3;
+const NUM_PEGINS: u16 = NUM_PEGINS_PER_VERSION * 2;
+
+fn create_pegin_meta(
+    version: u32,
+    pegin_tx: &bitcoin::Transaction,
+    vout: usize,
+    eth_account: Address,
+    agg_pk: secp256k1::PublicKey,
+    pmt: PartialMerkleTree,
+    headers: Vec<bitcoin::block::Header>,
+    reference_hash: Option<B256>,
+) -> PeginMeta {
+    match version {
+        PEGIN_META_VERSION_V0 => PeginMeta::V0(PeginMetaV0 {
+            version: PEGIN_META_VERSION_V0,
+            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+            address: eth_account,
+            aggregate_publickey: agg_pk,
+            tx: pegin_tx.clone(),
+            merkle_proof: pmt,
+            block_headers: headers,
+        }),
+        PEGIN_META_VERSION_V1 => PeginMeta::V1(PeginMetaV1 {
+            inner: PeginMetaV0 {
+                version: PEGIN_META_VERSION_V1,
+                outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+                address: eth_account,
+                aggregate_publickey: agg_pk,
+                tx: pegin_tx.clone(),
+                merkle_proof: pmt,
+                block_headers: headers,
+            },
+            ref_block_hash: reference_hash.unwrap(),
+        }),
+        _ => panic!("unsupported version"),
+    }
+}
 
 /// The purpose of this test is to test many pegins at once
 #[allow(clippy::too_many_lines)]
@@ -173,15 +217,23 @@ pub async fn batch_pegins(
 
         // create pegin meta
         let bitcoin_block_height = conf_block_info.height;
-        let meta = PeginMeta {
-            version: 0,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-            address: eth_account,
-            aggregate_publickey: agg_pk,
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt,
-            block_headers: headers.clone(),
+        let version = if pegins.len() < NUM_PEGINS_PER_VERSION as usize { 0 } else { 1 };
+        let reference_hash = if version == PEGIN_META_VERSION_V1 {
+            Some(B256::from_slice(&checkpoint.0.block_hash().to_byte_array()))
+        } else {
+            None
         };
+
+        let meta = create_pegin_meta(
+            version,
+            &pegin_tx,
+            vout,
+            eth_account,
+            agg_pk,
+            pmt,
+            headers.clone(),
+            reference_hash,
+        );
 
         // validate the pegin data first offchain before submitting
         let pegin_data = PeginData {
@@ -264,7 +316,7 @@ pub async fn batch_pegins(
         let utxo = utxos.iter().find(|utxo| {
             bitcoin::Txid::from_slice(utxo.outpoint.as_ref().unwrap().txid.as_slice())
                 .expect("valid txid") ==
-                pegin.meta[0].tx.compute_txid()
+                pegin.meta[0].tx().compute_txid()
         });
         assert!(utxo.is_some());
     }
