@@ -707,7 +707,6 @@ impl Db {
         max: usize,
     ) -> Result<Vec<pegout_scheduler::PegoutRequest>, Error> {
         let mut pegouts = self.get_pending_pegouts()?;
-        // Always sort by timestamp
         pegouts.sort_by(|a, b| a.botanix_height.cmp(&b.botanix_height));
 
         if pegouts.len() < max {
@@ -855,15 +854,15 @@ mod tests {
     }
 
     #[test]
-    fn can_coordinate_pending_pegouts_on_timestamp() {
+    fn can_coordinate_pending_pegouts_based_on_height() {
         let (db, _temp_dir) = setup_db();
 
-        // Create pegouts with the appropriate timestamps in reverse order;
+        // Create pegouts with the appropriate height in reverse order;
         // pegout with id 0 is the newest, while Id 9 is the oldest.
         //
         // NOTE: We specifically reverse the order of botanix heights so we can
         // verify that the returned pegouts are sorted accordingly based on
-        // timestamp, not Id.
+        // height, not Id.
         for i in 0..10 {
             let pegout_id = PegoutId::new([i as u8; 32], 0);
             let req = pegout_scheduler::PegoutRequest {
@@ -892,7 +891,7 @@ mod tests {
             assert_eq!(pegouts[i].botanix_height, 50 - id as u64);
         }
 
-        // Coordinate 50 pegouts (only 10 available). Still sorted by timestamp.
+        // Coordinate 50 pegouts (only 10 available). Still sorted by height.
         let pegouts = db.coord_pending_pegouts(50).unwrap();
         assert_eq!(pegouts.len(), 10);
 
