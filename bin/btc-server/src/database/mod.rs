@@ -966,7 +966,7 @@ mod tests {
     fn can_remove_pending_pegout() {
         let (db, _temp_dir) = setup_db();
 
-        // create a 10 random pegouts
+        // create 10 random pegouts
         for i in 0..10 {
             let pegout_id = PegoutId::new([i as u8; 32], 0);
             let req = pegout_scheduler::PegoutRequest {

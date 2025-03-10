@@ -544,6 +544,7 @@ where
                         e
                     )
                 })?;
+
                 Ok(PegoutRequest {
                     id: PegoutId::from_bytes(&p.pegout_id).map_err(|_| {
                         error!("Failed to parse pegout id: {:?}", p.pegout_id);
@@ -989,6 +990,7 @@ where
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
         }
+
         let outputs = pending_pegouts
             .iter()
             .map(|p| (TxOut { value: p.value, script_pubkey: p.spk.clone() }, p.id))
@@ -1902,6 +1904,7 @@ mod tests {
         for _ in 0..10 {
             let pegout_id = create_random_pegout_id();
             let spk = random_p2wpkh_script();
+
             pending_pegouts.push(rpc::PendingPegout {
                 pegout_id: pegout_id.as_bytes().to_vec(),
                 spk: spk.clone().as_bytes().to_vec(),
