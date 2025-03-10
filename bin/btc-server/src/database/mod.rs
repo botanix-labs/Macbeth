@@ -700,6 +700,23 @@ impl Db {
         Ok(ret)
     }
 
+    /// Returns up to `max` pending pegouts, sorted by age in ascending order.
+    /// Respectively, the oldest pegouts come first.
+    pub fn coord_pending_pegouts(
+        &self,
+        max: usize,
+    ) -> Result<Vec<pegout_scheduler::PegoutRequest>, Error> {
+        let mut pegouts = self.get_pending_pegouts()?;
+        // Always sort by timestamp
+        pegouts.sort_by(|a, b| a.botanix_height.cmp(&b.botanix_height));
+
+        if pegouts.len() < max {
+            return Ok(pegouts)
+        }
+
+        Ok(pegouts.into_iter().take(max).collect())
+    }
+
     /// Removes pending pegouts from the database.
     pub fn remove_pending_pegout(&self, pegout_ids: &[PegoutId]) -> Result<(), Error> {
         for pegout_id in pegout_ids.iter() {
@@ -835,6 +852,57 @@ mod tests {
         assert_eq!(pegout_req.spk, req.spk);
         assert_eq!(pegout_req.value, req.value);
         assert_eq!(pegout_req.botanix_height, req.botanix_height);
+    }
+
+    #[test]
+    fn can_coordinate_pending_pegouts_on_timestamp() {
+        let (db, _temp_dir) = setup_db();
+
+        // Create pegouts with the appropriate timestamps in reverse order;
+        // pegout with id 0 is the newest, while Id 9 is the oldest.
+        //
+        // NOTE: We specifically reverse the order of botanix heights so we can
+        // verify that the returned pegouts are sorted accordingly based on
+        // timestamp, not Id.
+        for i in 0..10 {
+            let pegout_id = PegoutId::new([i as u8; 32], 0);
+            let req = pegout_scheduler::PegoutRequest {
+                id: pegout_id,
+                spk: random_p2wpkh_script(),
+                value: Amount::from_sat(100_000),
+                botanix_height: 50 - i,
+            };
+            db.store_pending_pegout(&req).unwrap();
+        }
+
+        // Coordinate zero pegouts.
+        let pegouts = db.coord_pending_pegouts(0).unwrap();
+        assert!(pegouts.is_empty());
+
+        // Coordinate 4 pegouts which are sorted from oldest to newest; pegout
+        // with Id 9 comes first, followed by Id 8, etc.
+        let pegouts = db.coord_pending_pegouts(4).unwrap();
+        assert_eq!(pegouts.len(), 4);
+
+        for i in 0..4 {
+            let id = 9 - i;
+
+            let pegout_id = PegoutId::new([id as u8; 32], 0);
+            assert_eq!(pegouts[i].id, pegout_id);
+            assert_eq!(pegouts[i].botanix_height, 50 - id as u64);
+        }
+
+        // Coordinate 50 pegouts (only 10 available). Still sorted by timestamp.
+        let pegouts = db.coord_pending_pegouts(50).unwrap();
+        assert_eq!(pegouts.len(), 10);
+
+        for i in 0..10 {
+            let id = 9 - i;
+
+            let pegout_id = PegoutId::new([id as u8; 32], 0);
+            assert_eq!(pegouts[i].id, pegout_id);
+            assert_eq!(pegouts[i].botanix_height, 50 - id as u64);
+        }
     }
 
     #[test]
