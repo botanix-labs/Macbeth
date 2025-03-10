@@ -57,6 +57,19 @@ use btcserverlib::{
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
+/// The upper bound on pegouts in a single transaction. We use a _reasonable_
+/// number based on the following properties:
+///
+/// * Bitcoin's upper bound on a transaction is 100kb
+/// * 32 bytes required for an output (ie. pegout)
+/// * 110 bytes required for an input
+/// * We assume each output has an input
+///   * In practice, it's more likely that an individual input will map to multiple smaller outputs.
+///     But a larger output could also consume multiple inputs.
+///
+/// With a pegout bound of 500, we can conclude: (32 + 110) * 500 = 71_000
+const UPPER_PEGOUT_BOUND: usize = 500;
+
 macro_rules! already_exists {
     ($($arg:tt)*) => {{
         tonic::Status::already_exists(format!($($arg)*))
@@ -968,7 +981,11 @@ where
         }
 
         debug!("Cord Fee rate: {:?}", fee_rate);
-        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+
+        // Select up to `UPPER_PEGOUT_BOUND` pegouts, sorted by age in ascending
+        // order. Respectively, the oldest pegouts come first.
+        let pending_pegouts = self.db.coord_pending_pegouts(UPPER_PEGOUT_BOUND).to_status()?;
+
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
         }
