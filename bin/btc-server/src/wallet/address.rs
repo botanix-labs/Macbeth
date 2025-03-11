@@ -1,7 +1,36 @@
-use bitcoin::{key::TweakedPublicKey, secp256k1::PublicKey, Address, Network, ScriptBuf};
+use bitcoin::{
+    key::TweakedPublicKey,
+    opcodes::{
+        self,
+        all::{OP_CHECKSIG, OP_CHECKSIGADD, OP_EQUAL},
+    },
+    secp256k1::PublicKey,
+    Address, Network, ScriptBuf,
+};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 
 use crate::wallet::util::{VerifyingKeyExt, VerifyingKeyExtError};
+
+pub fn generate_ssp_script(pks: Vec<bitcoin::PublicKey>) -> ScriptBuf {
+    assert_eq!(pks.len(), 3);
+    let threshold = 2;
+    // Lets sort the pks
+    let mut pks = pks;
+    pks.sort_by(|a, b| a.cmp(b));
+
+    let script = ScriptBuf::builder()
+        .push_key(&pks[0])
+        .push_opcode(OP_CHECKSIG)
+        .push_key(&pks[1])
+        .push_opcode(OP_CHECKSIGADD)
+        .push_key(&pks[2])
+        .push_opcode(OP_CHECKSIGADD)
+        .push_int(threshold)
+        .push_opcode(OP_EQUAL)
+        .into_script();
+
+    script
+}
 
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
