@@ -1,12 +1,12 @@
+use std::str::FromStr;
+
 use bitcoin::{
     key::TweakedPublicKey,
-    opcodes::{
-        self,
-        all::{OP_CHECKSIG, OP_CHECKSIGADD, OP_EQUAL},
-    },
+    opcodes::all::{OP_CHECKSIG, OP_CHECKSIGADD, OP_EQUAL},
     secp256k1::PublicKey,
-    Address, Network, ScriptBuf,
+    Address, Network, ScriptBuf, TapNodeHash,
 };
+use bitcoin_hashes::Hash;
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 
 use crate::wallet::util::{VerifyingKeyExt, VerifyingKeyExtError};
@@ -32,6 +32,9 @@ pub fn generate_ssp_script(pks: Vec<bitcoin::PublicKey>) -> ScriptBuf {
     script
 }
 
+// TODO fill this out
+pub(crate) const SSP_MERKLE_ROOT: &str = "";
+
 pub trait EthAddress {
     fn as_slice(&self) -> &[u8];
 }
@@ -42,12 +45,20 @@ impl EthAddress for Vec<u8> {
     }
 }
 
+pub(crate) fn taproot_merkle_root() -> TapNodeHash {
+    assert!(!SSP_MERKLE_ROOT.is_empty());
+    let merkle_root = TapNodeHash::from_str(SSP_MERKLE_ROOT).expect("Valid merkle root");
+
+    merkle_root
+}
+
 pub fn generate_tweaked_public_key(
     verifying_key: &frost::VerifyingKey,
     eth_address: &[u8; 20],
 ) -> Result<PublicKey, VerifyingKeyExtError> {
+    let merkle_root = taproot_merkle_root();
     let signing_parameters = SigningParameters {
-        tapscript_merkle_root: None,
+        tapscript_merkle_root: Some(merkle_root.to_byte_array().to_vec()),
         additional_tweak: Some(eth_address.as_slice().to_vec()),
     };
     let tweaked_pk = verifying_key.tweak(&signing_parameters).to_secp_pk()?;
@@ -68,14 +79,13 @@ pub fn generate_taproot_address(tweaked_public_key: &PublicKey, network: Network
 }
 
 pub fn generate_taproot_change_scriptpubkey(public_key: &PublicKey) -> ScriptBuf {
-    // This is commented out for now b/c the frost library only supports empty merkel root
-    // let taproot_spend_info =
-    //     generate_taproot_spend_info(secp, public_key).expect("Valid spend info");
-
     // TODO: secp context should be a global variable or passed down
     let secp = bitcoin::secp256k1::Secp256k1::new();
-
-    bitcoin::ScriptBuf::new_p2tr(&secp, public_key.x_only_public_key().0, None)
+    bitcoin::ScriptBuf::new_p2tr(
+        &secp,
+        public_key.x_only_public_key().0,
+        Some(taproot_merkle_root()),
+    )
 }
 
 #[cfg(test)]

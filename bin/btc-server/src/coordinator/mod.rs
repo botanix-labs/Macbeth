@@ -1,3 +1,4 @@
+use bitcoin_hashes::Hash;
 use log::{debug, error, info};
 
 use crate::{
@@ -7,14 +8,16 @@ use crate::{
     pegout_scheduler::Tx,
     util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     wallet::{
+        address::{taproot_merkle_root, SSP_MERKLE_ROOT},
         coin_selection,
         psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
     },
 };
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TapNodeHash, TxOut};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use std::{
     collections::{HashMap, HashSet},
+    str::FromStr,
     time::Instant,
 };
 
@@ -217,6 +220,7 @@ pub async fn finalize_signing(
     signing_session_id: &[u8; 32],
     db: &Db,
 ) -> Result<Psbt, CoordinatorError> {
+    let merkle_root_tweak = taproot_merkle_root().to_byte_array().to_vec();
     // Lock here to prevent a make_tx that uses utxos that will be removed
     let mut psbt = db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
 
@@ -232,7 +236,7 @@ pub async fn finalize_signing(
         let partial_sig = psbt_input.all_partial_signatures();
         let eth_address_tweak = psbt_input.eth_address();
         let signing_parameters = SigningParameters {
-            tapscript_merkle_root: None,
+            tapscript_merkle_root: Some(merkle_root_tweak.clone()),
             additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
         };
         let agg_sig = frost::aggregate_with_tweak(

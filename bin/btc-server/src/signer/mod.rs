@@ -1,5 +1,12 @@
-use crate::wallet::psbt::{PsbtExt, PsbtInputExt};
-use bitcoin::psbt::Psbt;
+use std::str::FromStr;
+
+use crate::wallet::{
+    address::{taproot_merkle_root, SSP_MERKLE_ROOT},
+    psbt::{PsbtExt, PsbtInputExt},
+};
+use actix_web::http::header::q;
+use bitcoin::{psbt::Psbt, TapNodeHash};
+use bitcoin_hashes::Hash;
 use error::{SigningRound1Error, SigningRound2Error};
 use frost_secp256k1_tr::{
     self as frost,
@@ -106,6 +113,7 @@ pub async fn get_round2_signing_package(
     // Each nonce pair is commitment to a input of the tx
     signing_nonces: &[(SigningNonces, SigningCommitments)],
 ) -> Result<(), SigningRound2Error> {
+    let merkle_root_tweak = taproot_merkle_root().to_byte_array().to_vec();
     // Validate PSBT
     if cfg!(feature = "conflicting_input") {
         validate_psbt(psbt, ROUND1, min_signers, db)?;
@@ -149,7 +157,7 @@ pub async fn get_round2_signing_package(
         // TODO this will need to be revisited when we add tapleaves as all signatures will need
         // to tweak with the merkel root
         let signing_parameters = SigningParameters {
-            tapscript_merkle_root: None,
+            tapscript_merkle_root: Some(merkle_root_tweak.clone()),
             additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
         };
         let sig = frost::round2::sign_with_tweak(
