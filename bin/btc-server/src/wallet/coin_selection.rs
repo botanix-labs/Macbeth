@@ -34,7 +34,7 @@ impl PartialEq for CoinSelectionError {
 }
 
 /// Coin selection
-pub(crate) fn coin_selection(
+pub fn coin_selection(
     available_utxos: HashMap<OutPoint, Utxo>,
     required_utxos: HashMap<OutPoint, Utxo>,
     outputs: Vec<(TxOut, PegoutId)>,

@@ -1,11 +1,9 @@
-use std::str::FromStr;
-
 use crate::wallet::{
-    address::{taproot_merkle_root, SSP_MERKLE_ROOT},
+    address::taproot_merkle_root,
     psbt::{PsbtExt, PsbtInputExt},
+    util::VerifyingKeyExt,
 };
-use actix_web::http::header::q;
-use bitcoin::{psbt::Psbt, TapNodeHash};
+use bitcoin::psbt::Psbt;
 use bitcoin_hashes::Hash;
 use error::{SigningRound1Error, SigningRound2Error};
 use frost_secp256k1_tr::{
@@ -113,7 +111,9 @@ pub async fn get_round2_signing_package(
     // Each nonce pair is commitment to a input of the tx
     signing_nonces: &[(SigningNonces, SigningCommitments)],
 ) -> Result<(), SigningRound2Error> {
-    let merkle_root_tweak = taproot_merkle_root().to_byte_array().to_vec();
+    let pk_package = db.get_public_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
+    let agg_pk = bitcoin::PublicKey::new(pk_package.verifying_key().to_secp_pk().unwrap());
+    let merkle_root_tweak = taproot_merkle_root(agg_pk).to_byte_array().to_vec();
     // Validate PSBT
     if cfg!(feature = "conflicting_input") {
         validate_psbt(psbt, ROUND1, min_signers, db)?;

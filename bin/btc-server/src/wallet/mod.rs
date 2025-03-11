@@ -1,5 +1,5 @@
 pub mod address;
-pub(crate) mod coin_selection;
+pub mod coin_selection;
 pub mod psbt;
 pub mod util;
 

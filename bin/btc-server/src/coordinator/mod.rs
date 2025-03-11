@@ -8,16 +8,16 @@ use crate::{
     pegout_scheduler::Tx,
     util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     wallet::{
-        address::{taproot_merkle_root, SSP_MERKLE_ROOT},
+        address::taproot_merkle_root,
         coin_selection,
         psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
+        util::VerifyingKeyExt,
     },
 };
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TapNodeHash, TxOut};
+use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use std::{
     collections::{HashMap, HashSet},
-    str::FromStr,
     time::Instant,
 };
 
@@ -220,7 +220,6 @@ pub async fn finalize_signing(
     signing_session_id: &[u8; 32],
     db: &Db,
 ) -> Result<Psbt, CoordinatorError> {
-    let merkle_root_tweak = taproot_merkle_root().to_byte_array().to_vec();
     // Lock here to prevent a make_tx that uses utxos that will be removed
     let mut psbt = db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
 
@@ -228,6 +227,8 @@ pub async fn finalize_signing(
     // Get signing packages for this signing session
     let signing_packages =
         psbt.signing_packages().map_err(CoordinatorError::PsbtToSigningPackageConversionError)?;
+    let agg_pk = bitcoin::PublicKey::new(pk_package.verifying_key().to_secp_pk()?);
+    let merkle_root_tweak = taproot_merkle_root(agg_pk).to_byte_array().to_vec();
 
     for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
         let signing_package = signing_packages

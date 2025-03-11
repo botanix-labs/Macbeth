@@ -2,7 +2,7 @@ use std::{borrow::BorrowMut, collections::BTreeMap};
 
 use bitcoin::{
     psbt::{raw::ProprietaryKey, Input as PsbtInput, Output as PsbtOutput, Psbt},
-    OutPoint, TapSighash, TapSighashType, TxOut,
+    OutPoint, TapLeafHash, TapSighash, TapSighashType, TxOut,
 };
 use bitcoin_hashes::Hash;
 use frost_secp256k1_tr as frost;
@@ -361,6 +361,28 @@ pub(crate) fn calculate_sighash(
     let sighash = sighashcache.taproot_key_spend_signature_hash(
         input_index,
         &bitcoin::sighash::Prevouts::All(&prevouts),
+        TapSighashType::All,
+    )?;
+
+    Ok(sighash)
+}
+
+/// Calculate the sign has for a taproot script spend
+pub fn calculate_scriptpath_sighash(
+    psbt: &Psbt,
+    input_index: usize,
+    leaf_hash: TapLeafHash,
+) -> Result<TapSighash, CalculateSighashError> {
+    let mut sighashcache = bitcoin::sighash::SighashCache::new(&psbt.unsigned_tx);
+    let prevouts = psbt
+        .inputs
+        .iter()
+        .map(|i| i.witness_utxo.as_ref().ok_or(CalculateSighashError::MissingWitnessUtxo))
+        .collect::<Result<Vec<_>, CalculateSighashError>>()?;
+    let sighash = sighashcache.taproot_script_spend_signature_hash(
+        input_index,
+        &bitcoin::sighash::Prevouts::All(&prevouts),
+        leaf_hash,
         TapSighashType::All,
     )?;
 
