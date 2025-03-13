@@ -1097,68 +1097,72 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#checktx
     fn check_tx(&self, request: RequestCheckTx) -> ResponseCheckTx {
         info!("check_tx request: {:?}", request);
-        // We are ignore type for now
-        // One of CheckTx_New or CheckTx_Recheck. CheckTx_New is the default and means that a full
-        // check of the tranasaction is required. CheckTx_Recheck types are used when the mempool is
-        // initiating a normal recheck of a transaction.
-        let _type = request.r#type;
-        let _tx_bytes = request.tx.clone();
-        let hex = match hex::decode(request.tx.clone()) {
-            Ok(hex) => hex, // Proceed with the decoded hex if successful
-            Err(err) => {
-                return ResponseCheckTx {
-                    code: 1,
-                    log: format!("Failed to decode transaction: {}", err),
-                    ..Default::default()
-                };
-            }
-        };
+        // We are explicitly rejecting transactions that are received from the comet network
+        // we expect txs to the submitted to the Reth mempool via Reth RPC, not via the ABCI
+        // interface
+        return ResponseCheckTx { code: ERROR, ..Default::default() };
+        // // We are ignore type for now
+        // // One of CheckTx_New or CheckTx_Recheck. CheckTx_New is the default and means that a
+        // full // check of the tranasaction is required. CheckTx_Recheck types are used
+        // when the mempool is // initiating a normal recheck of a transaction.
+        // let _type = request.r#type;
+        // let _tx_bytes = request.tx.clone();
+        // let hex = match hex::decode(request.tx.clone()) {
+        //     Ok(hex) => hex, // Proceed with the decoded hex if successful
+        //     Err(err) => {
+        //         return ResponseCheckTx {
+        //             code: 1,
+        //             log: format!("Failed to decode transaction: {}", err),
+        //             ..Default::default()
+        //         };
+        //     }
+        // };
 
-        let mut error = (SUCCESS, "Ok");
-        match TransactionSigned::decode_enveloped(&mut hex.as_slice()) {
-            Ok(tx) => {
-                if let Ok(tx_ec_recover) = tx.try_into_ecrecovered() {
-                    let length = tx_ec_recover.length_without_header();
-                    let pool_tx = EthPooledTransaction::new(tx_ec_recover, length);
+        // let mut error = (SUCCESS, "Ok");
+        // match TransactionSigned::decode_enveloped(&mut hex.as_slice()) {
+        //     Ok(tx) => {
+        //         if let Ok(tx_ec_recover) = tx.try_into_ecrecovered() {
+        //             let length = tx_ec_recover.length_without_header();
+        //             let pool_tx = EthPooledTransaction::new(tx_ec_recover, length);
 
-                    let res = self.validator.validate_one(
-                        reth_transaction_pool::TransactionOrigin::External,
-                        pool_tx.clone(),
-                    );
+        //             let res = self.validator.validate_one(
+        //                 reth_transaction_pool::TransactionOrigin::External,
+        //                 pool_tx.clone(),
+        //             );
 
-                    match res {
-                        reth_transaction_pool::TransactionValidationOutcome::Valid {
-                            balance: _,
-                            state_nonce: _,
-                            transaction: _,
-                            propagate: _,
-                        } => {} // Do nothing
-                        reth_transaction_pool::TransactionValidationOutcome::Invalid(_, e) => {
-                            error!("Txinvalid: Error validating transaction: {:?}", e);
-                            error = (ERROR, "Error occurred while validating transaction");
-                        }
-                        reth_transaction_pool::TransactionValidationOutcome::Error(_, e) => {
-                            error!("TxError: Error validating transaction: {:?}", e);
-                            error = (ERROR, "Error occurred while validating transaction");
-                        }
-                    }
-                } else {
-                    error = (ERROR, "Error recovering tx signer. Invalid signature");
-                }
-            }
-            Err(e) => {
-                error!("Error decoding transaction: {:?}", e);
-                error = (ERROR, "Error decoding transaction");
-            }
-        }
+        //             match res {
+        //                 reth_transaction_pool::TransactionValidationOutcome::Valid {
+        //                     balance: _,
+        //                     state_nonce: _,
+        //                     transaction: _,
+        //                     propagate: _,
+        //                 } => {} // Do nothing
+        //                 reth_transaction_pool::TransactionValidationOutcome::Invalid(_, e) => {
+        //                     error!("Txinvalid: Error validating transaction: {:?}", e);
+        //                     error = (ERROR, "Error occurred while validating transaction");
+        //                 }
+        //                 reth_transaction_pool::TransactionValidationOutcome::Error(_, e) => {
+        //                     error!("TxError: Error validating transaction: {:?}", e);
+        //                     error = (ERROR, "Error occurred while validating transaction");
+        //                 }
+        //             }
+        //         } else {
+        //             error = (ERROR, "Error recovering tx signer. Invalid signature");
+        //         }
+        //     }
+        //     Err(e) => {
+        //         error!("Error decoding transaction: {:?}", e);
+        //         error = (ERROR, "Error decoding transaction");
+        //     }
+        // }
 
-        self.metrics.commet_checked_txs.increment(1);
-        ResponseCheckTx {
-            code: error.0,
-            log: error.1.to_string(),
-            info: error.1.to_string(),
-            ..Default::default()
-        }
+        // self.metrics.commet_checked_txs.increment(1);
+        // ResponseCheckTx {
+        //     code: error.0,
+        //     log: error.1.to_string(),
+        //     info: error.1.to_string(),
+        //     ..Default::default()
+        // }
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
