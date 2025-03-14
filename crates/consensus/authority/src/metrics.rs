@@ -93,7 +93,6 @@ mod tests {
             metrics.commet_finalzied_blocks.increment(3);
             metrics.commet_committed_blocks.increment(1);
             metrics.commet_prepared_proposals.increment(5);
-            metrics.commet_checked_txs.increment(10);
             metrics.commet_processed_proposals.increment(4);
 
             let snapshots = recorder.snapshotter().snapshot();
@@ -122,7 +121,6 @@ mod tests {
                 ("authority.commet_finalzied_blocks", 3),
                 ("authority.commet_committed_blocks", 1),
                 ("authority.commet_prepared_proposals", 5),
-                ("authority.commet_checked_txs", 10),
                 ("authority.commet_processed_proposals", 4),
             ];
 
