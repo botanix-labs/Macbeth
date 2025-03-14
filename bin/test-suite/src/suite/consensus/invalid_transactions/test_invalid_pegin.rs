@@ -145,7 +145,7 @@ pub async fn invalid_pegin(
     };
 
     // send the pegin transactions to all fed members
-    let serialized_pegin_meta = meta.serialize();
+    let serialized_pegin_meta = meta.serialize().unwrap();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
     let botanix_eth_client = mint_contract_instances
         .first()
@@ -219,7 +219,7 @@ pub async fn invalid_pegin(
     };
 
     // send the pegin transactions to all fed members
-    let serialized_pegin_meta = meta.serialize();
+    let serialized_pegin_meta = meta.serialize().unwrap();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
     let botanix_eth_client = mint_contract_instances
         .first()

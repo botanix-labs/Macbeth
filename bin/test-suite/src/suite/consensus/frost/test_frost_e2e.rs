@@ -180,7 +180,7 @@ pub async fn frost_e2e_stable(
         "Sending pegin tx: block headers=",
         meta.block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
     );
-    let serialized_pegin_meta = meta.serialize();
+    let serialized_pegin_meta = meta.serialize().unwrap();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
     let mint_contract = mint_contract_instances
         .first()

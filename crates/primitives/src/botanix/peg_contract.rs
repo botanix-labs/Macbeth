@@ -350,7 +350,7 @@ mod tests {
             },
         };
 
-        let serialized = pegin_metadata.serialize();
+        let serialized = pegin_metadata.serialize().unwrap();
         let (deserialized, size) = PeginMeta::deserialize(&serialized).unwrap();
         assert_eq!(pegin_metadata.version, deserialized.version);
         assert_eq!(pegin_metadata.outpoint, deserialized.outpoint);

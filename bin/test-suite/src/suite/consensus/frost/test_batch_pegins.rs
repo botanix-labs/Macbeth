@@ -207,7 +207,7 @@ pub async fn batch_pegins(
     let mut nonce = provider.nonce().await;
     for (_, pegin) in pegins.iter().enumerate() {
         // There is only one pegin that needs to be serialized
-        let serialized_pegin_meta = pegin.meta[0].serialize();
+        let serialized_pegin_meta = pegin.meta[0].serialize().unwrap();
         let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
         let tx_hash = provider
             .non_confirmed_mint(
