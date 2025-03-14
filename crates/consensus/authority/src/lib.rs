@@ -28,15 +28,14 @@ use reth_consensus_common::{
     },
 };
 
+use metrics_util as _;
 use reth_ethereum_consensus::validate_block_post_execution;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
     constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},
     header_ext::HeaderExt,
-    Address, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH, U256,
+    Address, BlockWithSenders, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH, U256,
 };
-
-use reth_primitives::BlockWithSenders;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
