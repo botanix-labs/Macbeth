@@ -243,7 +243,7 @@ impl From<bitcoin::io::Error> for PeginDataError {
     fn from(err: bitcoin::io::Error) -> Self {
         // `bitcoin::io::Error` is converted to
         // `bitcoin::consensus::encode::Error::Io(_)`
-        PeginDataError::InvalidFormat(err.into())
+        Self::InvalidFormat(err.into())
     }
 }
 
