@@ -154,20 +154,20 @@ pub struct PeginMeta {
 
 impl PeginMeta {
     /// Serialize a pegin meta
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Result<Vec<u8>, PeginDataError> {
         let mut bytes = Vec::new();
-        self.version.consensus_encode(&mut bytes).unwrap();
-        self.outpoint.consensus_encode(&mut bytes).unwrap();
+        self.version.consensus_encode(&mut bytes)?;
+        self.outpoint.consensus_encode(&mut bytes)?;
         bytes.extend_from_slice(self.address.0.as_slice());
         bytes.extend_from_slice(&self.aggregate_publickey.serialize());
-        btcencode::VarInt(self.block_headers.len() as u64).consensus_encode(&mut bytes).unwrap();
+        btcencode::VarInt(self.block_headers.len() as u64).consensus_encode(&mut bytes)?;
         for header in &self.block_headers {
-            header.consensus_encode(&mut bytes).unwrap();
+            header.consensus_encode(&mut bytes)?;
         }
-        self.merkle_proof.consensus_encode(&mut bytes).unwrap();
-        self.tx.consensus_encode(&mut bytes).unwrap();
+        self.merkle_proof.consensus_encode(&mut bytes)?;
+        self.tx.consensus_encode(&mut bytes)?;
 
-        bytes
+        Ok(bytes)
     }
 
     /// Deserialize a pegin meta
