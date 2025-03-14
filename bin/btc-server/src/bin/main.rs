@@ -771,7 +771,7 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    Some(signing_session_id.clone()),
+                    Some(signing_session_id),
                     &SigningRound1Error::AlreadyInSigningSession.to_string(),
                 );
             }
@@ -787,7 +787,7 @@ where
             &self.identifier,
         )
         .await
-        .map_err(|e| SigningError::Round1(e))
+        .map_err(SigningError::Round1)
         .to_status()?;
 
         // Save signing nonces in memory
@@ -842,7 +842,7 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    Some(signing_session_id.clone()),
+                    Some(signing_session_id),
                     &e.to_string(),
                 );
             }

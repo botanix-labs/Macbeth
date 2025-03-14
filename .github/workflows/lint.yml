@@ -48,11 +48,15 @@ jobs:
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@clippy
+        with:
+          components: rustfmt, clippy
+          toolchain: 1.85.0
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
           cache-all-crates: true
-      - run: cargo clippy -p reth-authority-consensus -p reth-network -p reth-primitives -p reth-rpc --lib --tests --benches --all-features --locked
+      - run: cargo clippy -p reth-authority-consensus -p reth-network -p reth-primitives -p reth-rpc --lib
+          --tests --benches --all-features --locked
         env:
           RUSTFLAGS: -D warnings
 

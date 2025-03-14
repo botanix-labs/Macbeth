@@ -50,9 +50,7 @@ async fn inner_main() -> Result<(), WalletError> {
                         "Secret key path must be provided via CLI or config".to_string(),
                     )
                 })?;
-            let bal = handle_get_balance(&secret_key_path, provider_url, chain_id)
-                .await
-                .map_err(WalletError::from)?;
+            let bal = handle_get_balance(&secret_key_path, provider_url, chain_id).await?;
             println!("Balance: {:?}", bal);
         }
         Commands::SweepBalance(sweep_balance) => {
@@ -84,8 +82,7 @@ async fn inner_main() -> Result<(), WalletError> {
                 provider_url,
                 &receiver_address.to_string(),
             )
-            .await
-            .map_err(WalletError::from)?;
+            .await?;
 
             println!("Sweep successful: {:?}", sweep);
         }
@@ -97,9 +94,7 @@ async fn inner_main() -> Result<(), WalletError> {
             if tx_hash.is_empty() {
                 return Err(WalletError::CustomError("Tx hash cannot be an empty".to_string()));
             }
-            let tx_info = handle_get_transaction_info(&tx_hash, provider_url, chain_id)
-                .await
-                .map_err(WalletError::from)?;
+            let tx_info = handle_get_transaction_info(&tx_hash, provider_url, chain_id).await?;
 
             println!("Transaction info: {:?}", tx_info);
         }

@@ -281,7 +281,7 @@ where
             !response.pending_pegouts.is_empty()
     }
 
-    pub async fn start_task(&mut self) {
+    pub async fn start_task(&mut self, mut abci_started_rx: tokio::sync::oneshot::Receiver<()>) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
         if let Err(e) =
@@ -318,21 +318,28 @@ where
         }
         let mut canon_state_notifs = self.storage.client.subscribe_to_canonical_state();
 
+        let mut abci_started = false;
         loop {
-            // get sync status
-            match self.is_syncing().await {
-                Ok(is_syncing) => {
-                    self.storage.inner.write().await.is_block_syncing = is_syncing;
-                    if is_syncing {
-                        info!(target: "consensus::authority::frost_task::start_task", "Node is syncing, pausing frost task...");
+            // check if abci has started
+            if abci_started_rx.try_recv().is_ok() {
+                abci_started = true;
+            }
+            if abci_started {
+                // get sync status
+                match self.is_syncing().await {
+                    Ok(is_syncing) => {
+                        self.storage.inner.write().await.is_block_syncing = is_syncing;
+                        if is_syncing {
+                            info!(target: "consensus::authority::frost_task::start_task", "Node is syncing, pausing frost task...");
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        info!(target: "consensus::authority::frost_task::start_task", "Error getting block sync status {:?}", e);
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         continue;
                     }
-                }
-                Err(e) => {
-                    info!(target: "consensus::authority::frost_task::start_task", "Error getting block sync status {:?}", e);
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    continue;
                 }
             }
 

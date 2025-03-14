@@ -298,8 +298,11 @@ where
         })
         .await?;
 
-        let Some(BlockTransactions::Full(transactions)) =
-            self.eth.block_by_number(num.into(), true, None).await?.map(|block| block.inner.transactions)
+        let Some(BlockTransactions::Full(transactions)) = self
+            .eth
+            .block_by_number(num.into(), true, None)
+            .await?
+            .map(|block| block.inner.transactions)
         else {
             return Err(EthApiError::UnknownBlockNumber.into());
         };

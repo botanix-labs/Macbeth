@@ -42,18 +42,18 @@ pub enum WalletError {
 }
 
 impl From<io::Error> for WalletError {
-    fn from(err: io::Error) -> WalletError {
-        WalletError::IoError(err.to_string())
+    fn from(err: io::Error) -> Self {
+        Self::IoError(err.to_string())
     }
 }
 
 impl From<ProviderError> for WalletError {
-    fn from(err: ProviderError) -> WalletError {
-        WalletError::RpcError(err.to_string())
+    fn from(err: ProviderError) -> Self {
+        Self::RpcError(err.to_string())
     }
 }
 impl From<&str> for WalletError {
-    fn from(message: &str) -> WalletError {
-        WalletError::CustomError(message.to_string())
+    fn from(message: &str) -> Self {
+        Self::CustomError(message.to_string())
     }
 }

@@ -28,9 +28,9 @@ lazy_static! {
 // Psbt validation flags
 pub(crate) const NO_FLAGS: u8 = 0u8;
 pub(crate) const ROUND1: u8 = 1u8;
-pub(crate) const ROUND1_TRANSITION: u8 = 1u8 << 1 | ROUND1;
-pub(crate) const ROUND2: u8 = 1u8 << 2 | ROUND1_TRANSITION;
-pub(crate) const ROUND2_TRANSITION: u8 = 1u8 << 3 | ROUND1_TRANSITION;
+pub(crate) const ROUND1_TRANSITION: u8 = (1u8 << 1) | ROUND1;
+pub(crate) const ROUND2: u8 = (1u8 << 2) | ROUND1_TRANSITION;
+pub(crate) const ROUND2_TRANSITION: u8 = (1u8 << 3) | ROUND1_TRANSITION;
 
 pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     let sats = btc_per_kb.to_sat();
