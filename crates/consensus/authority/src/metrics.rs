@@ -42,9 +42,6 @@ pub struct AuthorityMetrics {
     /// Number of commet prepared proposals
     pub(crate) commet_prepared_proposals: Counter,
 
-    /// Number of commet checked txs
-    pub(crate) commet_checked_txs: Counter,
-
     /// Number of commet processd\ed proposals
     pub(crate) commet_processed_proposals: Counter,
 }

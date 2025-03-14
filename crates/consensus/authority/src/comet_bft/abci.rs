@@ -33,7 +33,7 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, BlockWithSenders, SealedBlock, TransactionSigned, B256,
+    BlockNumber, BlockWithSenders, SealedBlock, B256,
 };
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
@@ -42,7 +42,7 @@ use reth_provider::{
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
-use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
+use reth_transaction_pool::TransactionPool;
 use schnellru::{ByLength, LruMap};
 
 use tendermint_abci::{Application, ServerBuilder};
@@ -258,14 +258,12 @@ where
     pub async fn start_server<Pool: TransactionPool + Clone + 'static>(
         &self,
         task_executor: &impl TaskSpawner,
-        validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
         abci_host: String,
         abci_port: u16,
     ) -> Result<(), tendermint_abci::Error> {
         let app = ABCIClient::new(
             self.storage.clone(),
-            validator,
             tx_pool,
             self.bitcoin_checkpoint.clone(),
             self.abci_driver_tx.clone(),
@@ -329,7 +327,6 @@ enum PayloadBuilderError {
 #[derive(Clone)]
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
-    validator: EthTransactionValidator<DB, EthPooledTransaction>,
     pool: Pool,
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, BlockWithContext>>>,
@@ -363,7 +360,6 @@ where
     #[allow(clippy::too_many_arguments)]
     fn new(
         storage: Storage<EF, BF, DB>,
-        validator: EthTransactionValidator<DB, EthPooledTransaction>,
         pool: Pool,
         bitcoin_checkpoint: BitcoinCheckpoint,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
@@ -380,7 +376,6 @@ where
     ) -> Self {
         Self {
             storage,
-            validator,
             pool,
             bitcoin_checkpoint,
             // Saving the last 5 blocks that were proposed
@@ -1097,68 +1092,72 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#checktx
     fn check_tx(&self, request: RequestCheckTx) -> ResponseCheckTx {
         info!("check_tx request: {:?}", request);
-        // We are ignore type for now
-        // One of CheckTx_New or CheckTx_Recheck. CheckTx_New is the default and means that a full
-        // check of the tranasaction is required. CheckTx_Recheck types are used when the mempool is
-        // initiating a normal recheck of a transaction.
-        let _type = request.r#type;
-        let _tx_bytes = request.tx.clone();
-        let hex = match hex::decode(request.tx.clone()) {
-            Ok(hex) => hex, // Proceed with the decoded hex if successful
-            Err(err) => {
-                return ResponseCheckTx {
-                    code: 1,
-                    log: format!("Failed to decode transaction: {}", err),
-                    ..Default::default()
-                };
-            }
-        };
+        // We are explicitly rejecting transactions that are received from the comet network
+        // we expect txs to the submitted to the Reth mempool via Reth RPC, not via the ABCI
+        // interface
+        ResponseCheckTx { code: ERROR, ..Default::default() }
+        // // We are ignore type for now
+        // // One of CheckTx_New or CheckTx_Recheck. CheckTx_New is the default and means that a
+        // full // check of the tranasaction is required. CheckTx_Recheck types are used
+        // when the mempool is // initiating a normal recheck of a transaction.
+        // let _type = request.r#type;
+        // let _tx_bytes = request.tx.clone();
+        // let hex = match hex::decode(request.tx.clone()) {
+        //     Ok(hex) => hex, // Proceed with the decoded hex if successful
+        //     Err(err) => {
+        //         return ResponseCheckTx {
+        //             code: 1,
+        //             log: format!("Failed to decode transaction: {}", err),
+        //             ..Default::default()
+        //         };
+        //     }
+        // };
 
-        let mut error = (SUCCESS, "Ok");
-        match TransactionSigned::decode_enveloped(&mut hex.as_slice()) {
-            Ok(tx) => {
-                if let Ok(tx_ec_recover) = tx.try_into_ecrecovered() {
-                    let length = tx_ec_recover.length_without_header();
-                    let pool_tx = EthPooledTransaction::new(tx_ec_recover, length);
+        // let mut error = (SUCCESS, "Ok");
+        // match TransactionSigned::decode_enveloped(&mut hex.as_slice()) {
+        //     Ok(tx) => {
+        //         if let Ok(tx_ec_recover) = tx.try_into_ecrecovered() {
+        //             let length = tx_ec_recover.length_without_header();
+        //             let pool_tx = EthPooledTransaction::new(tx_ec_recover, length);
 
-                    let res = self.validator.validate_one(
-                        reth_transaction_pool::TransactionOrigin::External,
-                        pool_tx.clone(),
-                    );
+        //             let res = self.validator.validate_one(
+        //                 reth_transaction_pool::TransactionOrigin::External,
+        //                 pool_tx.clone(),
+        //             );
 
-                    match res {
-                        reth_transaction_pool::TransactionValidationOutcome::Valid {
-                            balance: _,
-                            state_nonce: _,
-                            transaction: _,
-                            propagate: _,
-                        } => {} // Do nothing
-                        reth_transaction_pool::TransactionValidationOutcome::Invalid(_, e) => {
-                            error!("Txinvalid: Error validating transaction: {:?}", e);
-                            error = (ERROR, "Error occurred while validating transaction");
-                        }
-                        reth_transaction_pool::TransactionValidationOutcome::Error(_, e) => {
-                            error!("TxError: Error validating transaction: {:?}", e);
-                            error = (ERROR, "Error occurred while validating transaction");
-                        }
-                    }
-                } else {
-                    error = (ERROR, "Error recovering tx signer. Invalid signature");
-                }
-            }
-            Err(e) => {
-                error!("Error decoding transaction: {:?}", e);
-                error = (ERROR, "Error decoding transaction");
-            }
-        }
+        //             match res {
+        //                 reth_transaction_pool::TransactionValidationOutcome::Valid {
+        //                     balance: _,
+        //                     state_nonce: _,
+        //                     transaction: _,
+        //                     propagate: _,
+        //                 } => {} // Do nothing
+        //                 reth_transaction_pool::TransactionValidationOutcome::Invalid(_, e) => {
+        //                     error!("Txinvalid: Error validating transaction: {:?}", e);
+        //                     error = (ERROR, "Error occurred while validating transaction");
+        //                 }
+        //                 reth_transaction_pool::TransactionValidationOutcome::Error(_, e) => {
+        //                     error!("TxError: Error validating transaction: {:?}", e);
+        //                     error = (ERROR, "Error occurred while validating transaction");
+        //                 }
+        //             }
+        //         } else {
+        //             error = (ERROR, "Error recovering tx signer. Invalid signature");
+        //         }
+        //     }
+        //     Err(e) => {
+        //         error!("Error decoding transaction: {:?}", e);
+        //         error = (ERROR, "Error decoding transaction");
+        //     }
+        // }
 
-        self.metrics.commet_checked_txs.increment(1);
-        ResponseCheckTx {
-            code: error.0,
-            log: error.1.to_string(),
-            info: error.1.to_string(),
-            ..Default::default()
-        }
+        // self.metrics.commet_checked_txs.increment(1);
+        // ResponseCheckTx {
+        //     code: error.0,
+        //     log: error.1.to_string(),
+        //     info: error.1.to_string(),
+        //     ..Default::default()
+        // }
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
@@ -1589,8 +1588,9 @@ mod tests {
     use reth_revm::primitives::EnvKzgSettings;
     use reth_tasks::TaskManager;
     use reth_transaction_pool::{
-        blobstore::InMemoryBlobStore, test_utils::TransactionGenerator, Pool as RethPool,
-        TransactionOrigin, TransactionPool, TransactionValidationTaskExecutor,
+        blobstore::InMemoryBlobStore, test_utils::TransactionGenerator, EthPooledTransaction,
+        EthTransactionValidator, Pool as RethPool, TransactionOrigin, TransactionPool,
+        TransactionValidationTaskExecutor,
     };
     use std::path::Path;
     use tempfile::tempdir;
@@ -1682,7 +1682,6 @@ mod tests {
 
         ABCIClient::new(
             storage,
-            validator.validator,
             transaction_pool,
             bitcoin_checkpoint,
             driver_tx,
