@@ -33,7 +33,7 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, BlockWithSenders, SealedBlock, TransactionSigned, B256,
+    BlockNumber, BlockWithSenders, SealedBlock, B256,
 };
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
@@ -42,7 +42,7 @@ use reth_provider::{
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
 use reth_tasks::{TaskExecutor, TaskSpawner};
-use reth_transaction_pool::{EthPooledTransaction, EthTransactionValidator, TransactionPool};
+use reth_transaction_pool::TransactionPool;
 use schnellru::{ByLength, LruMap};
 
 use tendermint_abci::{Application, ServerBuilder};
@@ -258,14 +258,12 @@ where
     pub async fn start_server<Pool: TransactionPool + Clone + 'static>(
         &self,
         task_executor: &impl TaskSpawner,
-        validator: EthTransactionValidator<DB, EthPooledTransaction>,
         tx_pool: Pool,
         abci_host: String,
         abci_port: u16,
     ) -> Result<(), tendermint_abci::Error> {
         let app = ABCIClient::new(
             self.storage.clone(),
-            validator,
             tx_pool,
             self.bitcoin_checkpoint.clone(),
             self.abci_driver_tx.clone(),
@@ -329,7 +327,6 @@ enum PayloadBuilderError {
 #[derive(Clone)]
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
-    validator: EthTransactionValidator<DB, EthPooledTransaction>,
     pool: Pool,
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, BlockWithContext>>>,
@@ -363,7 +360,6 @@ where
     #[allow(clippy::too_many_arguments)]
     fn new(
         storage: Storage<EF, BF, DB>,
-        validator: EthTransactionValidator<DB, EthPooledTransaction>,
         pool: Pool,
         bitcoin_checkpoint: BitcoinCheckpoint,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
@@ -380,7 +376,6 @@ where
     ) -> Self {
         Self {
             storage,
-            validator,
             pool,
             bitcoin_checkpoint,
             // Saving the last 5 blocks that were proposed
@@ -1100,7 +1095,7 @@ where
         // We are explicitly rejecting transactions that are received from the comet network
         // we expect txs to the submitted to the Reth mempool via Reth RPC, not via the ABCI
         // interface
-        return ResponseCheckTx { code: ERROR, ..Default::default() };
+        ResponseCheckTx { code: ERROR, ..Default::default() }
         // // We are ignore type for now
         // // One of CheckTx_New or CheckTx_Recheck. CheckTx_New is the default and means that a
         // full // check of the tranasaction is required. CheckTx_Recheck types are used
@@ -1593,8 +1588,9 @@ mod tests {
     use reth_revm::primitives::EnvKzgSettings;
     use reth_tasks::TaskManager;
     use reth_transaction_pool::{
-        blobstore::InMemoryBlobStore, test_utils::TransactionGenerator, Pool as RethPool,
-        TransactionOrigin, TransactionPool, TransactionValidationTaskExecutor,
+        blobstore::InMemoryBlobStore, test_utils::TransactionGenerator, EthPooledTransaction,
+        EthTransactionValidator, Pool as RethPool, TransactionOrigin, TransactionPool,
+        TransactionValidationTaskExecutor,
     };
     use std::path::Path;
     use tempfile::tempdir;
@@ -1686,7 +1682,6 @@ mod tests {
 
         ABCIClient::new(
             storage,
-            validator.validator,
             transaction_pool,
             bitcoin_checkpoint,
             driver_tx,

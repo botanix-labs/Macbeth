@@ -799,13 +799,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         }
 
         // NOTE: the node will block here until DKG has completed
-        let eth_tx_validator = validator.validator.clone();
         let abci_client_builder = abci_client_builder.expect("abci client builder exists");
         let fut = || async {
             abci_client_builder
                 .start_server(
                     &executor.clone(),
-                    eth_tx_validator.clone(),
                     transaction_pool.clone(),
                     abci_host.to_string(),
                     *abci_port,
