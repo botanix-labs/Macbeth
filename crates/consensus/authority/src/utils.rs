@@ -497,7 +497,14 @@ mod tests {
         TxNumber, TxType, B256, U256,
     };
     use reth_provider::ProviderResult;
-    use std::{ops::RangeBounds, str::FromStr};
+    use std::{
+        ops::RangeBounds,
+        str::FromStr,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    };
 
     use super::*;
 
@@ -999,5 +1006,294 @@ mod tests {
         let result =
             validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
         assert!(result.is_ok());
+    }
+
+    #[derive(Debug)]
+    struct TestError(String);
+
+    impl std::fmt::Display for TestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Test error: {}", self.0)
+        }
+    }
+
+    impl std::error::Error for TestError {}
+
+    #[tokio::test]
+    async fn test_retry_exec_success_first_try() {
+        let result = retry_exec(
+            "test_success",
+            || async { Ok::<_, TestError>(42) },
+            3,
+            Duration::from_millis(10),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_retry_exec_success_after_retries() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let result = retry_exec(
+            "test_retry_then_success",
+            move || {
+                let counter = counter_clone.clone();
+                async move {
+                    let current = counter.fetch_add(1, Ordering::SeqCst);
+                    if current < 2 {
+                        Err(TestError(format!("Simulated failure #{}", current)))
+                    } else {
+                        Ok(current + 1)
+                    }
+                }
+            },
+            5,
+            Duration::from_millis(10),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3);
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_retry_exec_exhausts_retries() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let result = retry_exec(
+            "test_max_retries",
+            move || {
+                let counter = counter_clone.clone();
+                async move {
+                    let current = counter.fetch_add(1, Ordering::SeqCst);
+                    Err::<(), _>(TestError(format!("Always fails {}", current)))
+                }
+            },
+            2,
+            Duration::from_millis(10),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_retry_exec_respects_delay() {
+        let start = std::time::Instant::now();
+        let delay = Duration::from_millis(50);
+
+        let result = retry_exec(
+            "test_delays",
+            || async { Err::<(), _>(TestError("Always fails".to_string())) },
+            2,
+            delay,
+        )
+        .await;
+
+        let elapsed = start.elapsed();
+        assert!(result.is_err());
+        assert!(elapsed >= delay * 2);
+    }
+
+    #[tokio::test]
+    async fn test_retry_future_success_first_try() {
+        let result =
+            retry_future(|| async { Ok::<_, TestError>(42) }, 3, Duration::from_millis(10)).await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_retry_future_success_after_retries() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let result = retry_future(
+            move || {
+                let counter = counter_clone.clone();
+                async move {
+                    let current = counter.fetch_add(1, Ordering::SeqCst);
+                    if current < 2 {
+                        Err(TestError(format!("Simulated failure #{}", current)))
+                    } else {
+                        Ok(current + 1)
+                    }
+                }
+            },
+            5,
+            Duration::from_millis(10),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3);
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_retry_future_exhausts_retries() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let result = retry_future(
+            move || {
+                let counter = counter_clone.clone();
+                async move {
+                    let current = counter.fetch_add(1, Ordering::SeqCst);
+                    Err::<(), _>(TestError(format!("Always fails {}", current)))
+                }
+            },
+            2,
+            Duration::from_millis(10),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_retry_future_respects_delay() {
+        let start = std::time::Instant::now();
+        let delay = Duration::from_millis(50);
+
+        let result = retry_future(
+            || async { Err::<(), _>(TestError("Always fails".to_string())) },
+            2,
+            delay,
+        )
+        .await;
+
+        let elapsed = start.elapsed();
+        assert!(result.is_err());
+        assert!(elapsed >= delay * 2);
+    }
+
+    #[tokio::test]
+    async fn test_retry_future_with_mutable_closure() {
+        let mut counter = 0;
+
+        let result = retry_future(
+            move || {
+                counter += 1;
+                async move {
+                    if counter < 3 {
+                        Err(TestError(format!("Not yet at desired count {}", counter)))
+                    } else {
+                        Ok(counter)
+                    }
+                }
+            },
+            5,
+            Duration::from_millis(10),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_retry_timeouts() {
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            retry_future(
+                move || async {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    Ok::<_, TestError>(42)
+                },
+                2,
+                Duration::from_millis(10),
+            ),
+        )
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_frost_peer_id_too_short() {
+        let too_short = vec![0; 31]; // only 31 bytes
+        let result = deserialize_frost_peer_id(too_short);
+        assert!(result.is_err(), "Should reject too short peer ID");
+
+        match result {
+            Err(FrostParseError::InvalidFrostPeerId) => {}
+            _ => panic!("Wrong error returned for too short peer ID"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_frost_peer_id_too_long() {
+        let too_long = vec![0; 33]; // 33 bytes
+        let result = deserialize_frost_peer_id(too_long);
+        assert!(result.is_err(), "Should reject too long peer ID");
+
+        match result {
+            Err(FrostParseError::InvalidFrostPeerId) => {}
+            _ => panic!("Wrong error returned for too long peer ID"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_frost_peer_id_invalid_format() {
+        let invalid_format = vec![0; 32];
+        let result = deserialize_frost_peer_id(invalid_format);
+        match result {
+            Ok(_) => {}
+            Err(FrostParseError::InvalidFrostPeerId) => {}
+            Err(_) => panic!("Wrong error returned for invalid format"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_legitimate_frost_peer_id() {
+        // Valid peer ID, len = 32
+        let valid_id: Vec<u8> = vec![
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
+            0x1D, 0x1E, 0x1F, 0x20,
+        ];
+        let result = deserialize_frost_peer_id(valid_id);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_signing_session_id_valid() {
+        let valid_data = vec![42; 32]; // all bytes set to 42
+        let fixed_bytes = FixedBytes::<32>::new(valid_data.try_into().unwrap());
+
+        let result = parse_signing_session_id(&fixed_bytes);
+        assert!(result.is_ok(), "Should parse valid session ID");
+
+        let session_id_array = result.unwrap();
+        assert_eq!(session_id_array.len(), 32, "Resulting array should be 32 bytes");
+        assert!(session_id_array.iter().all(|&b| b == 42), "All bytes should be 42");
+    }
+
+    #[test]
+    fn test_parse_signing_session_id_different_values() {
+        let mut data = vec![0; 32];
+        for i in 0..32 {
+            data[i] = i as u8;
+        }
+
+        let fixed_bytes = FixedBytes::<32>::new(data.try_into().unwrap());
+
+        let result = parse_signing_session_id(&fixed_bytes);
+        assert!(result.is_ok(), "Should parse valid session ID with pattern");
+
+        let session_id_array = result.unwrap();
+        for i in 0..32 {
+            assert_eq!(session_id_array[i], i as u8, "Byte at position {} should match", i);
+        }
     }
 }

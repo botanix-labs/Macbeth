@@ -30,6 +30,7 @@ futures-util = { workspace = true }
 
 hex = "0.4.3"
 metrics = { workspace = true }
+metrics-util = { workspace = true }
 prost = "0.13.3"
 reth-basic-payload-builder = { workspace = true }
 
