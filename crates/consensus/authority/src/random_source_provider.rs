@@ -32,18 +32,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_random_source_provider_new() {
-        let _provider = RandomSourceProvider::new();
-        assert!(true);
-    }
-
-    #[test]
-    fn test_random_source_provider_default() {
-        let _provider = RandomSourceProvider::default();
-        assert!(true);
-    }
-
-    #[test]
     fn test_random_source_provider_debug() {
         let provider = RandomSourceProvider::new();
         let debug_output = format!("{:?}", provider);

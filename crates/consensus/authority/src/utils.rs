@@ -1282,8 +1282,8 @@ mod tests {
     #[test]
     fn test_parse_signing_session_id_different_values() {
         let mut data = vec![0; 32];
-        for i in 0..32 {
-            data[i] = i as u8;
+        for (i, item) in data.iter_mut().enumerate().take(32) {
+            *item = i as u8;
         }
 
         let fixed_bytes = FixedBytes::<32>::new(data.try_into().unwrap());
@@ -1292,8 +1292,8 @@ mod tests {
         assert!(result.is_ok(), "Should parse valid session ID with pattern");
 
         let session_id_array = result.unwrap();
-        for i in 0..32 {
-            assert_eq!(session_id_array[i], i as u8, "Byte at position {} should match", i);
+        for (index, &byte) in session_id_array.iter().enumerate() {
+            assert_eq!(byte, index as u8, "Byte at position {} should match", index);
         }
     }
 }

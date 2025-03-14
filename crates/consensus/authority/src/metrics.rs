@@ -76,6 +76,7 @@ mod tests {
     };
 
     #[test]
+    #[allow(clippy::mutable_key_type)]
     fn test_authority_metrics_operations() {
         let recorder = DebuggingRecorder::new();
 
@@ -167,7 +168,7 @@ mod tests {
     fn test_duration_metered_exec_accumulation() {
         let mut accumulated_duration = Duration::from_secs(0);
 
-        let _ = duration_metered_exec!(
+        duration_metered_exec!(
             {
                 std::thread::sleep(Duration::from_millis(10));
             },
@@ -181,7 +182,7 @@ mod tests {
             first_measurement
         );
 
-        let _ = duration_metered_exec!(
+        duration_metered_exec!(
             {
                 std::thread::sleep(Duration::from_millis(15));
             },
@@ -220,7 +221,7 @@ mod tests {
     fn test_duration_metered_exec_with_existing_duration() {
         let mut accumulated_duration = Duration::from_millis(100);
 
-        let _ = duration_metered_exec!(
+        duration_metered_exec!(
             {
                 std::thread::sleep(Duration::from_millis(10));
             },
