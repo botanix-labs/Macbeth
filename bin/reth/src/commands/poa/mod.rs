@@ -724,6 +724,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_host(cometbft_rpc_host);
 
         // Build authority Consensus
+        let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
         let (frost_task, abci_client_builder, snapshot_manager) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
@@ -792,7 +793,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             executor.spawn_critical(
                 "Frost Task",
                 Box::pin(async move {
-                    frost_task.expect("frost task exists").start_task().await;
+                    frost_task.expect("frost task exists").start_task(abci_started_rx).await;
                 }),
             );
         }
@@ -888,6 +889,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
             launch_rpc.await?
         };
+        abci_started_tx.send(()).expect("abci started tx");
 
         let (tx, rx) = oneshot::channel();
         executor.spawn_critical(

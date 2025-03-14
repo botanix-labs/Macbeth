@@ -8,7 +8,8 @@ use crate::helpers::{
 use alloy_dyn_abi::TypedData;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_primitives::{
-    extra_data_header::ExtraDataHeader, transaction::AccessListResult, Address, BlockId, BlockNumberOrTag, Bytes, B256, B64, U256, U64
+    extra_data_header::ExtraDataHeader, transaction::AccessListResult, Address, BlockId,
+    BlockNumberOrTag, Bytes, B256, B64, U256, U64,
 };
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_rpc_types::{
@@ -423,8 +424,12 @@ where
         if let Some(ref mut rich_block) = block {
             if include_extra_data_header.is_some_and(|v| v) {
                 // Add the header JSON to extra_info
-                let mut extra_data_header = ExtraDataHeader::deserialize(&mut rich_block.header.extra_data.0.to_vec().as_slice())
-                    .map_err(|e| internal_rpc_err(format!("Failed to deserialize extra data header: {}", e)))?;
+                let mut extra_data_header = ExtraDataHeader::deserialize(
+                    &mut rich_block.header.extra_data.0.to_vec().as_slice(),
+                )
+                .map_err(|e| {
+                    internal_rpc_err(format!("Failed to deserialize extra data header: {}", e))
+                })?;
                 let extra_data_header_json = serde_json::to_value(&mut extra_data_header)
                     .map_err(|e| internal_rpc_err(format!("Failed to serialize header: {}", e)))?;
                 rich_block.extra_info.insert("extraDataHeader".to_string(), extra_data_header_json);

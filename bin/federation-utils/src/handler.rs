@@ -3,7 +3,7 @@ use crate::{
     config::{get_default_config_path, Config},
     errors::WalletError,
 };
-use base64::decode;
+use base64::Engine;
 use ethers::{prelude::*, types::Transaction};
 use hex::encode as hex_encode;
 use k256::{ecdsa::SigningKey as Secp256k1SigningKey, elliptic_curve::generic_array::GenericArray};
@@ -159,7 +159,9 @@ fn deserialize_secret_key(seceret_path: &str) -> Result<String, WalletError> {
     }
     match parsed_key.priv_key.key_type.as_str() {
         "tendermint/PrivKeySecp256k1" => {
-            let priv_key_bytes = decode(&parsed_key.priv_key.value)
+            let engine = base64::engine::general_purpose::STANDARD;
+            let priv_key_bytes = engine
+                .decode(&parsed_key.priv_key.value)
                 .map_err(|e| WalletError::CustomError(format!("Base64 decode error: {:?}", e)))?;
 
             // Ensure the key is exactly 32 bytes

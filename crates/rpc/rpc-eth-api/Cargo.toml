@@ -24,7 +24,6 @@ auto_impl = { workspace = true }
 bitcoin = { workspace = true }
 dyn-clone = { workspace = true }
 futures = { workspace = true }
-serde_json = { workspace = true }
 
 # rpc
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
@@ -49,6 +48,7 @@ revm = { workspace = true }
 revm-inspectors = { workspace = true }
 revm-primitives = { workspace = true, features = ["dev"] }
 secp256k1 = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

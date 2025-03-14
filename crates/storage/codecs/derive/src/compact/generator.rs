@@ -141,32 +141,30 @@ fn generate_from_compact(fields: &FieldList, ident: &Ident, is_zstd: bool) -> To
     // If the type has compression support, then check the `__zstd` flag. Otherwise, use the default
     // code branch. However, even if it's a type with compression support, not all values are
     // to be compressed (thus the zstd flag). Ideally only the bigger ones.
-    is_zstd
-        .then(|| {
-            let decompressor = format_ident!("{}_DECOMPRESSOR", ident.to_string().to_uppercase());
-            quote! {
-                if flags.__zstd() != 0 {
-                    #decompressor.with(|decompressor| {
-                        let decompressor = &mut decompressor.borrow_mut();
-                        let decompressed = decompressor.decompress(buf);
-                        let mut original_buf = buf;
+    if is_zstd {
+        let decompressor = format_ident!("{}_DECOMPRESSOR", ident.to_string().to_uppercase());
+        quote! {
+            if flags.__zstd() != 0 {
+                #decompressor.with(|decompressor| {
+                    let decompressor = &mut decompressor.borrow_mut();
+                    let decompressed = decompressor.decompress(buf);
+                    let mut original_buf = buf;
 
-                        let mut buf: &[u8] = decompressed;
-                        #(#lines)*
-                        (obj, original_buf)
-                    })
-                } else {
+                    let mut buf: &[u8] = decompressed;
                     #(#lines)*
-                    (obj, buf)
-                }
-            }
-        })
-        .unwrap_or_else(|| {
-            quote! {
+                    (obj, original_buf)
+                })
+            } else {
                 #(#lines)*
                 (obj, buf)
             }
-        })
+        }
+    } else {
+        quote! {
+            #(#lines)*
+            (obj, buf)
+        }
+    }
 }
 
 /// Generates code to implement the `Compact` trait method `from_compact`.
