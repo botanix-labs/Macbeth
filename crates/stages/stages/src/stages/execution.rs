@@ -657,7 +657,7 @@ mod tests {
     use assert_matches::assert_matches;
     use reth_btc_wallet::test_utils::MockBitcoindFactory;
     use reth_chainspec::ChainSpecBuilder;
-    use reth_db::{DatabaseEnv, test_utils::TempDatabase};
+    use reth_db::{test_utils::TempDatabase, DatabaseEnv};
     use reth_db_api::{models::AccountBeforeTx, transaction::DbTxMut};
     use reth_evm_ethereum::{create_noop_executor_provider, execute::EthExecutorProvider};
     use reth_execution_errors::BlockValidationError;
@@ -673,7 +673,9 @@ mod tests {
     use reth_stages_api::StageUnitCheckpoint;
     use std::collections::BTreeMap;
 
-    fn stage() -> ExecutionStage<EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>>> {
+    fn stage(
+    ) -> ExecutionStage<EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>>>
+    {
         let executor_provider = create_noop_executor_provider(Arc::new(
             ChainSpecBuilder::mainnet().berlin_activated().build(),
         ));

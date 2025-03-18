@@ -141,20 +141,18 @@ pub async fn frost_e2e_failed_signing_disconnect(
 
     // create pegin meta
     let bitcoin_block_height = conf_block_info.height;
-    let meta = PeginMeta::V0(
-        PeginMetaV0 {
-            version: PEGIN_META_VERSION_V0,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-            address: eth_account,
-            aggregate_publickey: secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .expect("valid public key"),
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt,
-            block_headers: headers,
-        }
-    );
+    let meta = PeginMeta::V0(PeginMetaV0 {
+        version: PEGIN_META_VERSION_V0,
+        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+        address: eth_account,
+        aggregate_publickey: secp256k1::PublicKey::from_str(
+            gateway_address_response.aggregate_public_key.as_str(),
+        )
+        .expect("valid public key"),
+        tx: pegin_tx.clone(),
+        merkle_proof: pmt,
+        block_headers: headers,
+    });
 
     // send the pegin transactions to all fed members
     it_info_print!(

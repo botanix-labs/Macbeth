@@ -5,11 +5,12 @@ use bitcoincore_rpc::RpcApi;
 use ethers::{prelude::Provider, providers::Http};
 use reth_primitives::{
     botanix::{
-        peg_contract::{PeginMeta, PeginMetaV0, PeginMetaV1, PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1},
+        peg_contract::{
+            PeginMeta, PeginMetaV0, PeginMetaV1, PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1,
+        },
         utils::AmountExt,
     },
-    Address,
-    B256,
+    Address, B256,
 };
 
 use crate::{
@@ -136,20 +137,18 @@ pub async fn invalid_pegin(
 
     // create invalid pegin meta with empty headers list
     let bitcoin_block_height = conf_block_info.height;
-    let meta = PeginMeta::V0(
-        PeginMetaV0 {
-            version: PEGIN_META_VERSION_V0,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-            address: eth_account.clone(),
-            aggregate_publickey: secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .expect("valid public key"),
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt,
-            block_headers: vec![],
-        }
-    );
+    let meta = PeginMeta::V0(PeginMetaV0 {
+        version: PEGIN_META_VERSION_V0,
+        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+        address: eth_account.clone(),
+        aggregate_publickey: secp256k1::PublicKey::from_str(
+            gateway_address_response.aggregate_public_key.as_str(),
+        )
+        .expect("valid public key"),
+        tx: pegin_tx.clone(),
+        merkle_proof: pmt,
+        block_headers: vec![],
+    });
 
     // send the pegin transactions to all fed members
     let serialized_pegin_meta = meta.serialize().unwrap();
@@ -212,20 +211,18 @@ pub async fn invalid_pegin(
     let pmt = PartialMerkleTree::from_txids(&[txid], &[true]);
 
     let bitcoin_block_height = conf_block_info.height;
-    let meta = PeginMeta::V0(
-        PeginMetaV0 {
-            version: PEGIN_META_VERSION_V0,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-            address: eth_account.clone(),
-            aggregate_publickey: secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .expect("valid public key"),
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt.clone(),
-            block_headers: headers.clone(),
-        }
-    );
+    let meta = PeginMeta::V0(PeginMetaV0 {
+        version: PEGIN_META_VERSION_V0,
+        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+        address: eth_account.clone(),
+        aggregate_publickey: secp256k1::PublicKey::from_str(
+            gateway_address_response.aggregate_public_key.as_str(),
+        )
+        .expect("valid public key"),
+        tx: pegin_tx.clone(),
+        merkle_proof: pmt.clone(),
+        block_headers: headers.clone(),
+    });
 
     // send the pegin transactions to all fed members
     let serialized_pegin_meta = meta.serialize().unwrap();
@@ -330,6 +327,6 @@ pub async fn invalid_pegin(
 
     let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();
     assert!(nonce_after > nonce_before);
-    
+
     Ok(())
 }

@@ -18,9 +18,8 @@ use reth_primitives::{
 
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::{
+    botanix::peg_contract::{PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1},
     Address,
-    botanix::peg_contract::{PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1
-    }
 };
 
 use crate::{
