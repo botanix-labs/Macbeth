@@ -15,6 +15,7 @@ use reth_ethereum_engine_primitives::{
     EthBuiltPayload, EthPayloadAttributes, EthPayloadBuilderAttributes,
 };
 use reth_evm_ethereum::execute::EthExecutorProvider;
+use reth_execution_errors::{BlockExecutionError, InternalBlockExecutionError};
 use reth_network::NetworkHandle;
 use reth_node_api::{FullNodeComponents, NodeAddOns};
 use reth_node_builder::{
@@ -26,17 +27,16 @@ use reth_node_builder::{
     BuilderContext, ConfigureEvm, Node, PayloadBuilderConfig, PayloadTypes,
 };
 use reth_payload_builder::{PayloadBuilderHandle, PayloadBuilderService};
+use reth_provider::{
+    providers::{ProviderFactory, StaticFileProvider},
+    CanonStateSubscriptions,
+};
 use reth_rpc::EthApi;
 use reth_tracing::tracing::{debug, info};
 use reth_transaction_pool::{
     blobstore::DiskFileBlobStore, EthTransactionPool, TransactionPool,
     TransactionValidationTaskExecutor,
 };
-use reth_provider::{
-    providers::{ProviderFactory, StaticFileProvider},
-    CanonStateSubscriptions
-};
-use reth_execution_errors::{BlockExecutionError, InternalBlockExecutionError};
 
 use crate::{EthEngineTypes, EthEvmConfig};
 
@@ -132,19 +132,27 @@ where
         } else {
             return Err(eyre::eyre!("Failed to get data directory"));
         };
-        let db = Arc::new(DatabaseEnv::open(
-            data_dir.as_path(),
-            reth_db::DatabaseEnvKind::RO,
-            reth_db::mdbx::DatabaseArguments::default()
-        ).map_err(|e| BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(e))))?);
-
-        let provider_factory = ProviderFactory::new(
-            db,
-            ctx.chain_spec(),
-            StaticFileProvider::default(),
+        let db = Arc::new(
+            DatabaseEnv::open(
+                data_dir.as_path(),
+                reth_db::DatabaseEnvKind::RO,
+                reth_db::mdbx::DatabaseArguments::default(),
+            )
+            .map_err(|e| {
+                BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(e)))
+            })?,
         );
-        let executor = EthExecutorProvider::new(chain_spec, evm_config, mock_bitcoind_factory, regtest, provider_factory);
-        
+
+        let provider_factory =
+            ProviderFactory::new(db, ctx.chain_spec(), StaticFileProvider::default());
+        let executor = EthExecutorProvider::new(
+            chain_spec,
+            evm_config,
+            mock_bitcoind_factory,
+            regtest,
+            provider_factory,
+        );
+
         Ok((evm_config, executor))
     }
 }

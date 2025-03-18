@@ -14,6 +14,7 @@ use reth_btc_wallet::{
     test_utils::MockBitcoindFactory,
 };
 use reth_chainspec::{ChainSpec, EthereumHardforks};
+use reth_db::{test_utils::TempDatabase, DatabaseEnv};
 use reth_ethereum_consensus::validate_block_post_execution;
 use reth_evm::{
     execute::{
@@ -39,6 +40,7 @@ use reth_primitives::{
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
     U256,
 };
+use reth_provider::{test_utils::create_test_provider_factory, BlockReader, ProviderFactory};
 use reth_prune_types::PruneModes;
 use reth_revm::{
     batch::BlockBatchRecord,
@@ -51,9 +53,6 @@ use revm_primitives::{
     BlockEnv, Bytes, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, EvmState, ExecutionResult,
     ResultAndState,
 };
-use reth_db::{test_utils::TempDatabase, DatabaseEnv};
-use reth_provider::{test_utils::create_test_provider_factory, BlockReader};
-use reth_provider::ProviderFactory;
 
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
@@ -79,7 +78,7 @@ pub fn create_noop_executor_provider(
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
         bitcoin::Network::Regtest,
-        create_test_provider_factory()
+        create_test_provider_factory(),
     )
 }
 
@@ -443,34 +442,44 @@ where
                 Some(p) => p,
             };
 
-            // Get the reference block hash from the pegin metadata. 
+            // Get the reference block hash from the pegin metadata.
             // This is used to avoid the growing list of headers in the pegin metadata
-            // by using a bitcoin checkpoint that is close to the pegin block height. 
+            // by using a bitcoin checkpoint that is close to the pegin block height.
             // The reference block hash is only provided for version v1.
             let mut bitcoin_checkpoint = consensus_pkg.bitcoin_checkpoint;
             for meta in pegin_data.clone().meta {
                 match (meta.version(), meta.ref_block_hash()) {
-                    (1, None) => return Err(MintContractError::InvalidPeginData {
+                    (1, None) => {
+                        return Err(MintContractError::InvalidPeginData {
                             error: "Reference block hash cannot be found".to_string(),
                             revert_address: pegin_data.account,
                             revert_amount: pegin_data.amount,
-                        }),
+                        })
+                    }
                     (1, Some(hash)) => {
-                        if let Some(block) = provider.find_block_by_hash(hash, reth_provider::BlockSource::Any).map_err(|_| MintContractError::InvalidPeginData {
-                            error: "Reference block hash not found".to_string(),
-                            revert_address: pegin_data.account,
-                            revert_amount: pegin_data.amount,
-                        })? {
-                            let header = block.header;
-                            let package = header.botanix_consensus_package(self.bitcoin_network, self.bitcoind_factory.clone()).map_err(|_| MintContractError::InvalidPeginData {
-                                error: "Failed to get botanix consensus package".to_string(),
+                        if let Some(block) = provider
+                            .find_block_by_hash(hash, reth_provider::BlockSource::Any)
+                            .map_err(|_| MintContractError::InvalidPeginData {
+                                error: "Reference block hash not found".to_string(),
                                 revert_address: pegin_data.account,
                                 revert_amount: pegin_data.amount,
-                            })?;
+                            })?
+                        {
+                            let header = block.header;
+                            let package = header
+                                .botanix_consensus_package(
+                                    self.bitcoin_network,
+                                    self.bitcoind_factory.clone(),
+                                )
+                                .map_err(|_| MintContractError::InvalidPeginData {
+                                    error: "Failed to get botanix consensus package".to_string(),
+                                    revert_address: pegin_data.account,
+                                    revert_amount: pegin_data.amount,
+                                })?;
                             bitcoin_checkpoint = package.bitcoin_checkpoint;
                         }
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
 
@@ -551,7 +560,13 @@ impl<EvmConfig, DB, BF, RethDB> EthBlockExecutor<EvmConfig, DB, BF, RethDB> {
         provider: ProviderFactory<RethDB>,
     ) -> Self {
         Self {
-            executor: EthEvmExecutor { chain_spec, evm_config, bitcoind_factory, bitcoin_network, provider },
+            executor: EthEvmExecutor {
+                chain_spec,
+                evm_config,
+                bitcoind_factory,
+                bitcoin_network,
+                provider,
+            },
             state,
         }
     }
@@ -629,7 +644,12 @@ where
         let env = self.evm_env_for_block(&block.header, total_difficulty);
         let output: EthExecuteOutput = {
             let evm = self.executor.evm_config.evm_with_env(&mut self.state, env);
-            self.executor.execute_state_transitions(block, evm, botanix_consensus_pkg, self.executor.provider.clone())
+            self.executor.execute_state_transitions(
+                block,
+                evm,
+                botanix_consensus_pkg,
+                self.executor.provider.clone(),
+            )
         }?;
 
         // 3. apply post execution changes
@@ -871,7 +891,8 @@ mod tests {
 
     fn executor_provider(
         chain_spec: Arc<ChainSpec>,
-    ) -> EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>, EthEvmConfig> {
+    ) -> EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>, EthEvmConfig>
+    {
         create_noop_executor_provider(chain_spec)
     }
 

@@ -155,6 +155,28 @@ impl Botanix {
         &self.botanix_rpc_config
     }
 
+    /// Function calls "`get_aggregate_public_key`"
+    pub async fn get_aggregate_public_key(
+        &self,
+        provider: &impl BlockReaderIdExt,
+    ) -> std::result::Result<secp256k1::PublicKey, GatewayAddressRPCError> {
+        let latest_header = provider
+            .latest_header()
+            .map_err(|_| GatewayAddressRPCError::FailedToGetLatestHeader)?
+            .ok_or(GatewayAddressRPCError::FailedToGetLatestHeader)?;
+
+        if latest_header.number == 0 {
+            return Err(GatewayAddressRPCError::GenesisBlock);
+        }
+
+        let agg_pk = latest_header
+            .deserialize_extra_data_header()
+            .map_err(|_| GatewayAddressRPCError::FailedToGetLatestHeader)?
+            .aggregated_public_key;
+
+        Ok(agg_pk)
+    }
+
     /// Function calls `btc_server` to get "aggregated public key" and generated taproot gateway
     /// address
     pub async fn get_gateway_address(

@@ -22,6 +22,7 @@ use reth_rpc_types::{
     TransactionRequest, Work,
 };
 
+use secp256k1::PublicKey;
 use tracing::trace;
 
 /// Helper trait, unifies functionality that must be supported to implement all RPC methods for
@@ -53,6 +54,10 @@ pub trait EthApi {
     /// Returns the number of most recent block.
     #[method(name = "blockNumber")]
     fn block_number(&self) -> RpcResult<U256>;
+
+    /// Returns the frost aggregated public key.
+    #[method(name = "aggregatePublicKey")]
+    async fn aggregate_public_key(&self) -> RpcResult<PublicKey>;
 
     /// Returns the chain ID of the current network.
     #[method(name = "chainId")]
@@ -397,6 +402,13 @@ where
         Ok(U256::from(
             EthApiSpec::chain_info(self).with_message("failed to read chain info")?.best_number,
         ))
+    }
+
+    /// Handler for: `eth_aggregatePublicKey`
+    async fn aggregate_public_key(&self) -> RpcResult<PublicKey> {
+        trace!(target: "rpc::eth", "Serving eth_aggregatePublicKey");
+        let provider = EthBotanixApi::provider(self);
+        Ok(EthBotanixApi::get_aggregate_public_key(self, &provider).await?)
     }
 
     /// Handler for: `eth_chainId`
