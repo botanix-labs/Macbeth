@@ -19,6 +19,21 @@ pub trait EthBotanixApi: EthApiTypes {
     /// Returns a handle to the botanix provider
     fn botanix_provider(&self) -> &Botanix;
 
+    /// Returns an aggregate public key from Frost
+    fn get_aggregate_public_key(
+        &self,
+        provider: &impl BlockReaderIdExt,
+    ) -> impl Future<Output = Result<secp256k1::PublicKey, Self::Error>> + Send {
+        async move {
+            let aggregate_public_key = self
+                .botanix_provider()
+                .get_aggregate_public_key(provider)
+                .await
+                .map_err(|_| EthApiError::GetAggregatePublicKey)?;
+            Ok(aggregate_public_key)
+        }
+    }
+
     /// Retrieves the gateway address for deposits
     fn get_gateway_address(
         &self,

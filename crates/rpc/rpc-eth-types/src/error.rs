@@ -77,6 +77,9 @@ pub enum EthApiError {
     /// Error when getting the btc fee from the btc-server
     #[error("error getting the btc fee")]
     GetBtcFee,
+    /// Error when getting the aggregate public key from Frost
+    #[error("error getting aggregate public key")]
+    GetAggregatePublicKey,
     /// Rpc invalid transaction error
     #[error(transparent)]
     InvalidTransaction(#[from] RpcInvalidTransactionError),
@@ -176,7 +179,11 @@ impl From<EthApiError> for jsonrpsee_types::error::ErrorObject<'static> {
             EthApiError::TransactionNotFound |
             EthApiError::EvmCustom(_) |
             EthApiError::EvmPrecompile(_) |
-            EthApiError::InvalidRewardPercentiles => internal_rpc_err(error.to_string()),
+            EthApiError::InvalidRewardPercentiles |
+            EthApiError::GatewayAddress |
+            EthApiError::GetMerkleProof |
+            EthApiError::GetBtcFee |
+            EthApiError::GetAggregatePublicKey => internal_rpc_err(error.to_string()),
             EthApiError::UnknownBlockNumber | EthApiError::UnknownBlockOrTxIndex => {
                 rpc_error_with_code(EthRpcErrorCode::ResourceNotFound.code(), error.to_string())
             }
@@ -196,9 +203,6 @@ impl From<EthApiError> for jsonrpsee_types::error::ErrorObject<'static> {
             err @ EthApiError::TransactionInputError(_) => invalid_params_rpc_err(err.to_string()),
             EthApiError::Other(err) => err.to_rpc_error(),
             EthApiError::MuxTracerError(msg) => internal_rpc_err(msg.to_string()),
-            EthApiError::GatewayAddress | EthApiError::GetMerkleProof | EthApiError::GetBtcFee => {
-                internal_rpc_err(error.to_string())
-            }
         }
     }
 }

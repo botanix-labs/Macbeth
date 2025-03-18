@@ -27,15 +27,15 @@ ethers = "2.0.9"
 reth-btc-wallet = { workspace = true }
 # Reth
 reth-chainspec = { workspace = true }
+reth-db = { workspace = true, features = ["test-utils"] }
 reth-ethereum-consensus = { workspace = true }
 reth-ethereum-forks = { workspace = true }
 reth-evm = { workspace = true }
 reth-execution-types = { workspace = true }
 reth-primitives = { workspace = true, features = ["reth-codec", "secp256k1"] }
+reth-provider = { workspace = true, features = ["test-utils"] }
 reth-prune-types = { workspace = true }
 reth-revm = { workspace = true }
-reth-db = { workspace = true, features = ["test-utils"] }
-reth-provider = { workspace = true, features = ["test-utils"] }
 
 # Ethereum
 revm-primitives = { workspace = true }
