@@ -9,7 +9,7 @@ use ethers::{
 };
 use reth_primitives::botanix::{
     mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
+    peg_contract::{PeginData, PeginMeta, PeginMetaTrait, PegoutData, PEGIN_META_VERSION_V0},
     utils::AmountExt,
 };
 
@@ -140,25 +140,24 @@ pub async fn frost_e2e_stable(
 
     // create pegin meta
     let bitcoin_block_height = conf_block_info.height;
-    let meta = PeginMeta::V0(PeginMetaV0 {
-        version: 0,
-        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-        address: eth_account,
-        aggregate_publickey: secp256k1::PublicKey::from_str(
-            gateway_address_response.aggregate_public_key.as_str(),
-        )
-        .expect("valid public key"),
-        tx: pegin_tx.clone(),
-        merkle_proof: pmt,
-        block_headers: headers,
-    });
+    let meta = vec![PeginMeta {
+            version: PEGIN_META_VERSION_V0,
+            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+            address: eth_account,
+            aggregate_public_key: secp256k1::PublicKey::from_str(
+                gateway_address_response.aggregate_public_key.as_str(),
+            )
+            .expect("valid public key"),
+            tx: pegin_tx.clone(),
+            merkle_proof: pmt,
+            block_headers: headers,
+        }];
 
     // validate the pegin data first offchain before submitting
     let pegin_data = PeginData {
         account: Address::from_slice(eth_destination.as_bytes()),
         amount,
         bitcoin_block_height: bitcoin_block_height as u32,
-        meta: vec![meta.clone()],
     };
     let checkpoint = {
         let tip = bitcoind_rpc.get_block_count().unwrap();
@@ -166,11 +165,12 @@ pub async fn frost_e2e_stable(
         let hash = bitcoind_rpc.get_block_hash(height).unwrap();
         (bitcoind_rpc.get_block_header(&hash).unwrap(), height as u32)
     };
-    pegin_data
+    meta[0]
         .validate(
             &checkpoint,
             &secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
                 .unwrap(),
+            pegin_data
         )
         .expect("pegin data should be valid!");
     it_info_print!("Pegindata successfully validated");
@@ -178,9 +178,9 @@ pub async fn frost_e2e_stable(
     // send the pegin transactions to all fed members
     it_info_print!(
         "Sending pegin tx: block headers=",
-        meta.block_headers().iter().map(|h| h.block_hash()).collect::<Vec<_>>()
+        meta[0].block_headers.iter().map(|h| h.block_hash()).collect::<Vec<_>>()
     );
-    let serialized_pegin_meta = meta.serialize().unwrap();
+    let serialized_pegin_meta = meta[0].serialize().unwrap();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
     let mint_contract = mint_contract_instances
         .first()

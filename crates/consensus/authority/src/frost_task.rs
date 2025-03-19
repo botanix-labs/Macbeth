@@ -372,7 +372,7 @@ where
 
                         let pegins = pegins
                             .as_ref()
-                            .map_or_else(Vec::new, |pegins| get_utxos_from_pegin_meta(pegins));
+                            .map_or_else(Vec::new, |pegins| get_utxos_from_pegin_meta(pegins.to_vec()));
 
                         // convert pegouts into correct format
                         let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {

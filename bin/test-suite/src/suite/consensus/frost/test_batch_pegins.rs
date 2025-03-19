@@ -10,7 +10,7 @@ use ethers::{
 use reth_primitives::{
     botanix::{
         mint_validation::MINT_TOPIC,
-        peg_contract::{PeginData, PeginMeta, PeginMetaV0, PeginMetaV1},
+        peg_contract::{PeginData, PeginMeta, PeginMetaV1, PeginMetaTrait},
         utils::AmountExt,
     },
     B256,
@@ -43,29 +43,35 @@ fn create_pegin_meta(
     pmt: PartialMerkleTree,
     headers: Vec<bitcoin::block::Header>,
     reference_hash: Option<B256>,
-) -> PeginMeta {
+) -> Box<dyn PeginMetaTrait> {
     match version {
-        PEGIN_META_VERSION_V0 => PeginMeta::V0(PeginMetaV0 {
-            version: PEGIN_META_VERSION_V0,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
-            address: eth_account,
-            aggregate_publickey: agg_pk,
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt,
-            block_headers: headers,
-        }),
-        PEGIN_META_VERSION_V1 => PeginMeta::V1(PeginMetaV1 {
-            inner: PeginMetaV0 {
-                version: PEGIN_META_VERSION_V1,
+        PEGIN_META_VERSION_V0 => {
+            let meta = PeginMeta {
+                version: PEGIN_META_VERSION_V0,
                 outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
                 address: eth_account,
-                aggregate_publickey: agg_pk,
+                aggregate_public_key: agg_pk,
                 tx: pegin_tx.clone(),
                 merkle_proof: pmt,
                 block_headers: headers,
-            },
-            ref_block_hash: reference_hash.unwrap(),
-        }),
+            };
+            Box::new(meta) as Box<dyn PeginMetaTrait>
+        },
+        PEGIN_META_VERSION_V1 => {
+            let meta = PeginMetaV1 {
+                inner: PeginMeta {
+                    version: PEGIN_META_VERSION_V1,
+                    outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout as u32),
+                    address: eth_account,
+                    aggregate_public_key: agg_pk,
+                    tx: pegin_tx.clone(),
+                    merkle_proof: pmt,
+                    block_headers: headers,
+                },
+                ref_block_hash: reference_hash.unwrap(),
+            };
+            Box::new(meta) as Box<dyn PeginMetaTrait>
+        },
         _ => panic!("unsupported version"),
     }
 }
@@ -223,7 +229,7 @@ pub async fn batch_pegins(
             None
         };
 
-        let meta = create_pegin_meta(
+        let meta = vec![create_pegin_meta(
             version,
             &pegin_tx,
             vout,
@@ -232,18 +238,17 @@ pub async fn batch_pegins(
             pmt,
             headers.clone(),
             reference_hash,
-        );
+        )];
 
         // validate the pegin data first offchain before submitting
         let pegin_data = PeginData {
             account: Address::from_slice(eth_address.as_bytes()),
             amount,
             bitcoin_block_height: bitcoin_block_height as u32,
-            meta: vec![meta.clone()],
         };
 
-        pegin_data.validate(&checkpoint, &agg_pk).expect("pegin data should be valid!");
-        pegins.push(pegin_data);
+        meta[0].validate(&checkpoint, &agg_pk, pegin_data.clone()).expect("pegin data should be valid!");
+        pegins.push((pegin_data, meta));
     }
 
     // mint all the pegins
@@ -258,13 +263,13 @@ pub async fn batch_pegins(
     let mut nonce = provider.nonce().await;
     for (_, pegin) in pegins.iter().enumerate() {
         // There is only one pegin that needs to be serialized
-        let serialized_pegin_meta = pegin.meta[0].serialize().unwrap();
+        let serialized_pegin_meta = pegin.1[0].serialize().unwrap();
         let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
         let tx_hash = provider
             .non_confirmed_mint(
-                ethers::core::types::Address::from_slice(pegin.account.as_slice()),
-                pegin.amount,
-                pegin.bitcoin_block_height,
+                ethers::core::types::Address::from_slice(pegin.0.account.as_ref()),
+                pegin.0.amount,
+                pegin.0.bitcoin_block_height,
                 metadata,
                 refund_address,
                 nonce,
@@ -295,7 +300,7 @@ pub async fn batch_pegins(
     tokio::time::sleep(Duration::from_secs(5)).await;
     // Ensure each eth address has a non zero balance
     for (_, pegin) in pegins.iter().enumerate() {
-        let eth_address_balance = provider.get_botanix_balance(pegin.account).await;
+        let eth_address_balance = provider.get_botanix_balance(pegin.0.account).await;
         assert!(!eth_address_balance.expect("get balance").is_zero());
     }
 
@@ -315,7 +320,7 @@ pub async fn batch_pegins(
         let utxo = utxos.iter().find(|utxo| {
             bitcoin::Txid::from_slice(utxo.outpoint.as_ref().unwrap().txid.as_slice())
                 .expect("valid txid") ==
-                pegin.meta[0].tx().compute_txid()
+                pegin.1[0].as_any().downcast_ref::<PeginMeta>().unwrap().tx.compute_txid()
         });
         assert!(utxo.is_some());
     }

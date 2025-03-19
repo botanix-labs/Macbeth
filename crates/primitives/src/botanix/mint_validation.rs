@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::{
     botanix::{
-        peg_contract::{PeginData, PeginDataError, PeginMeta, PegoutData, PegoutDataError},
+        peg_contract::{PeginData, PeginDataError, PegoutData, PegoutDataError, PeginMetaTrait, deserialize_meta},
         utils::AmountExt,
     },
     keccak256, Address, B256,
@@ -22,6 +22,9 @@ lazy_static::lazy_static! {
     /// address of the mint contract
     pub static ref MINT_CONTRACT_ADDRESS: Address = Address::from_str("0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78").unwrap();
 }
+
+/// Data returned from a mint event, containing optional pegin data and metadata
+pub type MintEventData = (Option<PeginData>, Option<Vec<Box<dyn PeginMetaTrait>>>);
 
 /// Two types of events that can be emitted by the mint contract.
 #[derive(Debug)]
@@ -138,21 +141,21 @@ fn topic_to_address(t: B256) -> Option<Address> {
 /// returns [Ok(None)] if it's not a [Mint] event.
 pub fn try_parse_mint_event(
     log: &revm_primitives::Log,
-) -> Result<Option<PeginData>, ParseMintEventError> {
+) -> Result<MintEventData, ParseMintEventError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
         info!("Log address is not mint contract address");
-        return Ok(None);
+        return Ok((None, None));
     }
 
     let topics = log.topics();
     if topics.is_empty() {
         // NB I don't think this is possible but just be safe.
         info!("Log has no topics");
-        return Ok(None);
+        return Ok((None, None));
     }
     if topics[0] != *MINT_TOPIC {
         info!("Log topic is not mint topic");
-        return Ok(None);
+        return Ok((None, None));
     }
 
     // So we have a mint event
@@ -197,23 +200,21 @@ pub fn try_parse_mint_event(
         let mut proofs = Vec::new();
         let mut offset = 0;
         while offset < meta_bytes.len() {
-            let (proof, proof_size) =
-                PeginMeta::deserialize(&meta_bytes[offset..]).map_err(|e| {
-                    let err = ParseMintEventError::InvalidPeginData {
-                        error: e,
-                        revert_address: destination,
-                        revert_amount: amount,
-                    };
-                    error!("Failed to parse pegin meta: {:?}", err);
-                    err
-                })?;
+            let (proof, proof_size) = deserialize_meta(&meta_bytes[offset..]).map_err(|e| {
+                ParseMintEventError::InvalidPeginData {
+                    error: e,
+                    revert_address: destination,
+                    revert_amount: amount,
+                }
+            })?;
+                
             proofs.push(proof);
             offset += proof_size;
         }
         proofs
     };
 
-    Ok(Some(PeginData { account: destination, amount, bitcoin_block_height, meta }))
+    Ok((Some(PeginData { account: destination, amount, bitcoin_block_height}), Some(meta)))
 }
 
 /// Parse the given log for a [Burn] event.
@@ -291,6 +292,7 @@ mod test {
     use revm_primitives::{hex, Bytes, Log, LogData};
 
     use super::*;
+    use crate::botanix::peg_contract::deserialize_meta;
 
     #[test]
     fn mint_topic() {
@@ -330,7 +332,7 @@ mod test {
         assert_eq!(nonce, 1000u64);
 
         let meta_bytes = decoded_params.get(2).unwrap().clone().into_bytes().unwrap();
-        let meta = PeginMeta::deserialize(meta_bytes.as_slice());
+        let meta = deserialize_meta(meta_bytes.as_slice());
         assert!(meta.is_ok());
     }
 

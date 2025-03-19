@@ -1,4 +1,4 @@
-use super::peg_contract::{PeginData, PegoutWithId};
+use super::peg_contract::{EssentialPeginData, PeginData, PegoutWithId};
 use crate::SealedBlockWithSenders;
 
 /// Sealed block with pegin and pegout data
@@ -7,7 +7,7 @@ pub struct SealedBlockWithPeg {
     /// Sealed block with senders
     block: SealedBlockWithSenders,
     /// Pegins
-    pegins: Vec<PeginData>,
+    pegins: Vec<(PeginData, Vec<EssentialPeginData>)>,
     /// Pegouts
     pegouts: Vec<PegoutWithId>,
 }
@@ -16,7 +16,7 @@ impl SealedBlockWithPeg {
     /// Create a new `SealedBlockWithPeg`
     pub const fn new(
         block: SealedBlockWithSenders,
-        pegins: Vec<PeginData>,
+        pegins: Vec<(PeginData, Vec<EssentialPeginData>)>,
         pegouts: Vec<PegoutWithId>,
     ) -> Self {
         Self { block, pegins, pegouts }
@@ -28,7 +28,7 @@ impl SealedBlockWithPeg {
     }
 
     /// Pegins
-    pub fn pegins(&self) -> &[PeginData] {
+    pub fn pegins(&self) -> &[(PeginData, Vec<EssentialPeginData>)] {
         self.pegins.as_slice()
     }
 

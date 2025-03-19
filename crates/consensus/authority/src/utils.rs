@@ -17,7 +17,7 @@ use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{
     botanix::{
         mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
-        peg_contract::{PeginMeta, PegoutData, PegoutWithId},
+        peg_contract::{EssentialPeginData, PegoutData, PegoutWithId},
     },
     constants::EPOCH_LENGTH,
     Bloom, BloomInput,
@@ -115,11 +115,11 @@ pub(crate) async fn get_psbt<BtcServerClient: BtcServerExtendedApi + Clone>(
     btc_server.get_psbt(req).await
 }
 
-pub(crate) fn get_utxos_from_pegin_meta(pegins: &[PeginMeta]) -> Vec<Utxo> {
+pub(crate) fn get_utxos_from_pegin_meta(pegins: Vec<EssentialPeginData>) -> Vec<Utxo> {
     if pegins.is_empty() {
         return vec![];
     }
-    pegins.iter().map(utxo_from_pegin_meta).collect()
+    pegins.iter().map(|pegin_meta| utxo_from_pegin_meta(pegin_meta.clone())).collect()
 }
 
 pub(crate) fn get_pending_pegouts_from_pegout_data(
@@ -140,20 +140,21 @@ pub(crate) fn get_pending_pegouts_from_pegout_data(
         .collect::<Vec<_>>()
 }
 
-fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
-    let tx_out =
-        pegin_meta.tx().output.get(pegin_meta.outpoint().vout as usize).expect("valid vout");
+fn utxo_from_pegin_meta(pegin_meta: EssentialPeginData) -> Utxo {
+
+    let pegin_tx = pegin_meta.tx;
+    let tx_out = pegin_tx.output.get(pegin_meta.outpoint.vout as usize).expect("valid vout");
     let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
     Utxo {
         outpoint: Some(client::OutPoint {
-            txid: bitcoin::consensus::serialize(&pegin_meta.outpoint().txid),
-            vout: pegin_meta.outpoint().vout,
+            txid: bitcoin::consensus::serialize(&pegin_meta.outpoint.txid),
+            vout: pegin_meta.outpoint.vout,
         }),
         output: Some(TxOut {
             script_pubkey: Some(ScriptBuf { script: serialized_script_pub_key }),
             value: tx_out.value.to_sat(),
         }),
-        eth_address: hex::encode(pegin_meta.address()),
+        eth_address: hex::encode(pegin_meta.address),
     }
 }
 

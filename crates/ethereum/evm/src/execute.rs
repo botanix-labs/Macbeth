@@ -34,7 +34,7 @@ use reth_primitives::{
         mint_validation::{
             try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
         },
-        peg_contract::{PeginData, PegoutWithId},
+        peg_contract::{EssentialPeginData, PeginData, PeginMeta, PeginMetaV1, PegoutWithId},
     },
     header_ext::HeaderExt,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
@@ -58,6 +58,9 @@ use revm_primitives::{
 use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 #[cfg(feature = "std")]
 use std::sync::Arc;
+
+/// Result type for mint contract checks, containing validated pegin and pegout data
+pub type MintContractCheckResult = (Vec<(PeginData, Vec<EssentialPeginData>)>, Vec<PegoutWithId>);
 
 /// Provides executors to execute regular ethereum blocks
 #[derive(Debug, Clone)]
@@ -163,7 +166,7 @@ struct EthExecuteOutput {
     requests: Vec<Request>,
     gas_used: u64,
     total_block_fees: u128,
-    pegins: Vec<PeginData>,
+    pegins: Vec<(PeginData, Vec<EssentialPeginData>)>,
     pegouts: Vec<PegoutWithId>,
 }
 
@@ -237,8 +240,8 @@ where
         let mut receipts = Vec::with_capacity(block.body.len());
 
         for (sender, transaction) in block.transactions_with_sender() {
-            // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
-            // must be no greater than the block’s gasLimit.
+            // The sum of the transaction's gas limit, Tg, and the gas utilized in this block prior,
+            // must be no greater than the block's gasLimit.
             let block_available_gas = block.header.gas_limit - cumulative_gas_used;
             if transaction.gas_limit() > block_available_gas {
                 return Err(BlockValidationError::TransactionGasLimitMoreThanAvailableBlockGas {
@@ -429,7 +432,7 @@ where
         botanix_consensus_pkg: &BotanixConsensusPackage,
         tx_hash: TxHash,
         provider: ProviderFactory<RethDB>,
-    ) -> Result<(Vec<PeginData>, Vec<PegoutWithId>), MintContractError> {
+    ) -> Result<MintContractCheckResult, MintContractError> {
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
 
@@ -437,9 +440,9 @@ where
         let mut pegins = vec![];
         let mut pegouts = vec![];
         for log in result.logs() {
-            let pegin_data = match try_parse_mint_event(log)? {
-                None => continue,
-                Some(p) => p,
+            let (pegin_data, pegin_meta) = match try_parse_mint_event(log)? {
+                (Some(p),Some(m)) => (p, m),
+                _ => continue,
             };
 
             // Get the reference block hash from the pegin metadata.
@@ -447,40 +450,43 @@ where
             // by using a bitcoin checkpoint that is close to the pegin block height.
             // The reference block hash is only provided for version v1.
             let mut bitcoin_checkpoint = consensus_pkg.bitcoin_checkpoint;
-            for meta in pegin_data.clone().meta {
-                match (meta.version(), meta.ref_block_hash()) {
-                    (1, None) => {
+            for meta in &pegin_meta {
+                bitcoin_checkpoint = if meta.as_any().downcast_ref::<PeginMeta>().is_some() {
+                    consensus_pkg.bitcoin_checkpoint
+                } else if let Some(meta_v1) = meta.as_any().downcast_ref::<PeginMetaV1>() {
+                    if let Some(block) = provider
+                        .find_block_by_hash(meta_v1.ref_block_hash, reth_provider::BlockSource::Any)
+                        .map_err(|_| MintContractError::InvalidPeginData {
+                            error: "Reference block hash not found".to_string(),
+                            revert_address: pegin_data.account,
+                            revert_amount: pegin_data.amount,
+                        })? {
+                        let header = block.header;
+                        let package = header
+                            .botanix_consensus_package(
+                                self.bitcoin_network,
+                                self.bitcoind_factory.clone(),
+                            )
+                            .map_err(|_| MintContractError::InvalidPeginData {
+                                error: "Failed to get botanix consensus package".to_string(),
+                                revert_address: pegin_data.account,
+                                revert_amount: pegin_data.amount,
+                            })?;
+                        package.bitcoin_checkpoint
+                    } else {
                         return Err(MintContractError::InvalidPeginData {
-                            error: "Reference block hash cannot be found".to_string(),
+                            error: "Reference block cannot be found".to_string(),
                             revert_address: pegin_data.account,
                             revert_amount: pegin_data.amount,
                         })
                     }
-                    (1, Some(hash)) => {
-                        if let Some(block) = provider
-                            .find_block_by_hash(hash, reth_provider::BlockSource::Any)
-                            .map_err(|_| MintContractError::InvalidPeginData {
-                                error: "Reference block hash not found".to_string(),
-                                revert_address: pegin_data.account,
-                                revert_amount: pegin_data.amount,
-                            })?
-                        {
-                            let header = block.header;
-                            let package = header
-                                .botanix_consensus_package(
-                                    self.bitcoin_network,
-                                    self.bitcoind_factory.clone(),
-                                )
-                                .map_err(|_| MintContractError::InvalidPeginData {
-                                    error: "Failed to get botanix consensus package".to_string(),
-                                    revert_address: pegin_data.account,
-                                    revert_amount: pegin_data.amount,
-                                })?;
-                            bitcoin_checkpoint = package.bitcoin_checkpoint;
-                        }
-                    }
-                    _ => {}
-                }
+                } else {
+                    return Err(MintContractError::InvalidPeginData {
+                        error: "Invalid meta".to_string(),
+                        revert_address: pegin_data.account,
+                        revert_amount: pegin_data.amount,
+                    })
+                };
             }
 
             // the pegin height must be equal or less than the required block depth (checkpoint)
@@ -495,30 +501,37 @@ where
                 });
             }
             let aggregate_public_key = consensus_pkg.aggregate_public_key;
-            match pegin_data.validate(&bitcoin_checkpoint, &aggregate_public_key) {
-                Ok(aggregate_value) => {
-                    if pegin_data.amount >= aggregate_value {
+            let mut aggregate_value = ethers::types::U256::from_str_radix("0", 10).expect("valid amount");
+            let mut pegin_meta_essential = vec![];
+            for meta in &pegin_meta {
+                match meta.validate(&bitcoin_checkpoint, &aggregate_public_key, pegin_data.clone() ) {
+                    Ok(value) => {
+                        aggregate_value += value;
+                    },
+                    Err(e) => {
                         return Err(MintContractError::InvalidPeginData {
-                            error: format!(
-                                "pegin amount should be less than aggregate value: \
-                                    pegin aggregate value: {}; pegin amount: {}",
-                                aggregate_value, pegin_data.amount,
-                            ),
+                            error: format!("pegin validation failed: {}", e),
                             revert_address: pegin_data.account,
                             revert_amount: pegin_data.amount,
                         });
-                    }
+                    },
                 }
-                Err(e) => {
-                    return Err(MintContractError::InvalidPeginData {
-                        error: format!("pegin validation failed: {}", e),
-                        revert_address: pegin_data.account,
-                        revert_amount: pegin_data.amount,
-                    });
-                }
+                pegin_meta_essential.push(meta.to_essential());
+            };
+
+            if pegin_data.amount >= aggregate_value {
+                return Err(MintContractError::InvalidPeginData {
+                    error: format!(
+                        "pegin amount should be less than aggregate value: \
+                            pegin aggregate value: {}; pegin amount: {}",
+                        aggregate_value, pegin_data.amount,
+                    ),
+                    revert_address: pegin_data.account,
+                    revert_amount: pegin_data.amount,
+                });
             }
 
-            pegins.push(pegin_data);
+            pegins.push((pegin_data, pegin_meta_essential));
         }
 
         // Check pegouts

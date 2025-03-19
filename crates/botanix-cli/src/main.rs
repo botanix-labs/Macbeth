@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use reth_primitives::botanix::peg_contract::PeginMeta;
+use reth_primitives::botanix::peg_contract::deserialize_meta;
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -25,7 +25,7 @@ fn inner_main() -> Result<(), anyhow::Error> {
         App::PeginProof(cmd) => match cmd {
             PeginProof::Inspect { proof } => {
                 let bytes = hex::decode(&proof).context("invalid hex")?;
-                let meta = PeginMeta::deserialize(&bytes).context("invalid proof format")?;
+                let meta = deserialize_meta(&bytes).context("Invalid proof format");
                 println!("{:#?}", meta);
             }
         },
@@ -44,7 +44,6 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use clap::CommandFactory;
-    use reth_primitives::botanix::peg_contract::PeginMeta;
     use std::{ffi::OsString, str::FromStr};
 
     // Helper function to parse command line arguments

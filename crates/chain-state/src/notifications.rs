@@ -4,7 +4,7 @@ use auto_impl::auto_impl;
 use derive_more::{Deref, DerefMut};
 use reth_execution_types::{BlockReceipts, Chain};
 use reth_primitives::{
-    botanix::peg_contract::{PeginMeta, PegoutWithId},
+    botanix::peg_contract::{EssentialPeginData, PegoutWithId},
     SealedBlockWithSenders, SealedHeader,
 };
 use std::{
@@ -77,7 +77,7 @@ pub enum CanonStateNotification {
         /// The newly added chain segment.
         new: Arc<Chain>,
         /// Pegins
-        pegins: Option<Vec<PeginMeta>>,
+        pegins: Option<Vec<EssentialPeginData>>,
         /// Pegouts
         pegouts: Option<Vec<PegoutWithId>>,
     },

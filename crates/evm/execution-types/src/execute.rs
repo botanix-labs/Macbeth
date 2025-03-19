@@ -1,5 +1,5 @@
 use reth_primitives::{
-    botanix::peg_contract::{PeginData, PegoutWithId},
+    botanix::peg_contract::{EssentialPeginData, PeginData, PegoutWithId},
     Request, U256,
 };
 use revm::db::BundleState;
@@ -44,7 +44,7 @@ pub struct BlockExecutionOutput<T> {
     /// Total block fees
     pub total_block_fees: u128,
     /// Pegins
-    pub pegins: Vec<PeginData>,
+    pub pegins: Vec<(PeginData, Vec<EssentialPeginData>)>,
     /// Pegouts
     pub pegouts: Vec<PegoutWithId>,
 }

@@ -1535,7 +1535,7 @@ where
                         let pegins = sealed_block_with_peg
                             .pegins()
                             .iter()
-                            .flat_map(|p| p.meta.clone())
+                            .flat_map(|(_, meta)| meta.clone())
                             .collect::<Vec<_>>();
                         let pegouts = sealed_block_with_peg.pegouts().to_vec();
 
