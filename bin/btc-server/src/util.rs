@@ -215,7 +215,6 @@ impl PartialEq for ValidatePSBTError {
 /// required signers. `ROUND2`: Checks if there are enough round 2 partial signatures. Ensuring we
 /// never add more than a quorum of signers `ROUND2_TRANSITION`: Validates partial signatures during
 /// the transition to round 2, ensuring signers match and Frost IDs align.
-#[allow(clippy::result_large_err)]
 pub fn validate_psbt(
     psbt: &Psbt,
     flags: u8,
@@ -375,7 +374,6 @@ pub enum ValidateOutputsError {
 
 /// Check all pending pegouts are being settled in this tx
 /// and additional outputs are change outputs
-#[allow(clippy::result_large_err)]
 pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
     // check aggregated public key exists
     let public_key_package =

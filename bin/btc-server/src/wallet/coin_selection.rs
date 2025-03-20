@@ -34,7 +34,6 @@ impl PartialEq for CoinSelectionError {
 }
 
 /// Coin selection
-#[allow(clippy::result_large_err)]
 pub(crate) fn coin_selection(
     available_utxos: HashMap<OutPoint, Utxo>,
     required_utxos: HashMap<OutPoint, Utxo>,
