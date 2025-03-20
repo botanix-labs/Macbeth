@@ -10337,6 +10337,7 @@ dependencies = [
  "reth-trie",
  "reth-trie-db",
  "revm",
+ "secp256k1 0.29.1",
  "strum 0.26.3",
  "tempfile",
  "tokio",
