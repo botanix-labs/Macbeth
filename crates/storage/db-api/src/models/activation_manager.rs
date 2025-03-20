@@ -95,11 +95,11 @@ pub struct MinorVersion(pub u16);
 
 #[test]
 fn runtime_version_ordering() {
-    let v0_0 = RuntimeVersion::from(0, 0);
-    let v0_1 = RuntimeVersion::from(0, 1);
-    let v0_10 = RuntimeVersion::from(0, 10);
-    let v1_0 = RuntimeVersion::from(1, 0);
-    let v2_0 = RuntimeVersion::from(2, 0);
+    let v0_0 = RuntimeVersion::new(0, 0);
+    let v0_1 = RuntimeVersion::new(0, 1);
+    let v0_10 = RuntimeVersion::new(0, 10);
+    let v1_0 = RuntimeVersion::new(1, 0);
+    let v2_0 = RuntimeVersion::new(2, 0);
 
     assert_eq!(v0_0, v0_0);
     assert_eq!(v0_1, v0_1);
