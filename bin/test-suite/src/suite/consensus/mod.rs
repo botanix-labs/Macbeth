@@ -566,6 +566,19 @@ impl Suite for ConsensusIntegrationTestSuite {
                 },
                 frost::test_track_mempool::test_track_mempool
             ),
+            "test_pegin_versions" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_pegin_versions::test_pegin_versions
+                )
+            }
             _ => {
                 error!("Test {:?} not found", test_to_run.as_str());
                 return vec![];

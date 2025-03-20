@@ -80,3 +80,42 @@ pub struct GatewayAddressResponse {
     pub aggregate_public_key: String,
     pub eth_address: String,
 }
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ExtraDataHeader {
+    pub aggregated_public_key: String,
+    pub bitcoin_block_hash: String,
+    pub block_producer_address: String,
+    pub chain_version: u64,
+    pub version: u64,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockWithEDH {
+    pub base_fee_per_gas: String,
+    pub blob_gas_used: String,
+    pub difficulty: String,
+    pub excess_blob_gas: String,
+    pub extra_data: String,
+    pub extra_data_header: ExtraDataHeader,
+    pub gas_limit: String,
+    pub gas_used: String,
+    pub hash: String,
+    pub logs_bloom: String,
+    pub miner: String,
+    pub mix_hash: String,
+    pub nonce: String,
+    pub number: String,
+    pub parent_beacon_block_root: String,
+    pub parent_hash: String,
+    pub receipts_root: String,
+    pub sha3_uncles: String,
+    pub size: String,
+    pub state_root: String,
+    pub timestamp: String,
+    pub total_difficulty: String,
+    pub transactions: Vec<String>,
+    pub transactions_root: String,
+    pub uncles: Vec<String>,
+}
