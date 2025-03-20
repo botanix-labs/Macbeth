@@ -23,7 +23,6 @@ pub mod error;
 #[allow(dead_code)]
 const MIN_RELAY_FEE_RATE_SAT_VB: u64 = 1;
 
-#[allow(clippy::result_large_err)]
 pub fn add_round1_signing(
     signing_session_id: &[u8; 32],
     frost_id: frost::Identifier,
@@ -57,7 +56,6 @@ pub fn add_round1_signing(
     Ok(())
 }
 
-#[allow(clippy::result_large_err)]
 pub fn add_round2_signing(
     signing_session_id: &[u8; 32],
     frost_id: frost::Identifier,
@@ -189,7 +187,6 @@ pub async fn make_tx(
 /// If no Err is return the original psbt served to this function is good to go out to the
 /// signers nothing needs to be added to it as the signers all provided their signing
 /// commitments already and the coordinator just need to verify them
-#[allow(clippy::result_large_err)]
 pub fn get_to_sign(
     signing_session_id: &[u8; 32],
     db: &Db,

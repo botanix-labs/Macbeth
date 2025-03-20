@@ -302,8 +302,7 @@ impl ActiveSession {
     /// Send a message back to the [`SessionManager`](super::SessionManager).
     ///
     /// Returns the message if the bounded channel is currently unable to handle this message.
-    #[allow(clippy::result_large_err)]
-    fn try_emit_broadcast(&self, message: PeerMessage) -> Result<(), ActiveSessionMessage> {
+    fn try_emit_broadcast(&self, message: PeerMessage) -> Result<(), Box<ActiveSessionMessage>> {
         let Some(sender) = self.to_session_manager.inner().get_ref() else { return Ok(()) };
 
         match sender
@@ -317,7 +316,7 @@ impl ActiveSession {
                     "no capacity for incoming broadcast",
                 );
                 match err {
-                    TrySendError::Full(msg) => Err(msg),
+                    TrySendError::Full(msg) => Err(Box::new(msg)),
                     TrySendError::Closed(_) => Ok(()),
                 }
             }
@@ -328,8 +327,7 @@ impl ActiveSession {
     /// covering both broadcasts and incoming requests.
     ///
     /// Returns the message if the bounded channel is currently unable to handle this message.
-    #[allow(clippy::result_large_err)]
-    fn try_emit_request(&self, message: PeerMessage) -> Result<(), ActiveSessionMessage> {
+    fn try_emit_request(&self, message: PeerMessage) -> Result<(), Box<ActiveSessionMessage>> {
         let Some(sender) = self.to_session_manager.inner().get_ref() else { return Ok(()) };
 
         match sender
@@ -343,7 +341,7 @@ impl ActiveSession {
                     "no capacity for incoming request",
                 );
                 match err {
-                    TrySendError::Full(msg) => Err(msg),
+                    TrySendError::Full(msg) => Err(Box::new(msg)),
                     TrySendError::Closed(_) => {
                         // Note: this would mean the `SessionManager` was dropped, which is already
                         // handled by checking if the command receiver channel has been closed.
@@ -705,6 +703,12 @@ enum OnIncomingMessageOutcome {
     BadMessage { error: EthStreamError, message: EthMessage },
     /// Currently no capacity to handle the message
     NoCapacity(ActiveSessionMessage),
+}
+
+impl From<Result<(), Box<ActiveSessionMessage>>> for OnIncomingMessageOutcome {
+    fn from(res: Result<(), Box<ActiveSessionMessage>>) -> Self {
+        res.map_err(|e| *e).into()
+    }
 }
 
 impl From<Result<(), ActiveSessionMessage>> for OnIncomingMessageOutcome {
