@@ -30,8 +30,7 @@ use crate::{
     utils::generate_blocks,
 };
 
-#[allow(clippy::too_many_lines)]
-pub async fn test_pegin_versions(
+pub async fn test_pegin_v1(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;

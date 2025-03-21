@@ -566,7 +566,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 },
                 frost::test_track_mempool::test_track_mempool
             ),
-            "test_pegin_versions" => {
+            "test_pegin_v1" => {
                 run_test!(
                     self,
                     CreateTestConfig {
@@ -576,7 +576,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                         create_cometbft_nodes: true,
                         ..Default::default()
                     },
-                    frost::test_pegin_versions::test_pegin_versions
+                    frost::test_pegin_v1::test_pegin_v1
                 )
             }
             _ => {
