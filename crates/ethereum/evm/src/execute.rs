@@ -447,7 +447,7 @@ where
             // by using a bitcoin checkpoint that is close to the pegin block height.
             // The reference block hash is only provided for version v1.
             let mut bitcoin_checkpoint = consensus_pkg.bitcoin_checkpoint;
-            for meta in pegin_data.clone().meta {
+            let (version, ref_block_hash) = if let Some(meta) = pegin_data.meta.first() {
                 match (meta.version(), meta.ref_block_hash()) {
                     (1, None) => {
                         return Err(MintContractError::InvalidPeginData {
@@ -479,7 +479,39 @@ where
                             bitcoin_checkpoint = package.bitcoin_checkpoint;
                         }
                     }
+                    (0, Some(_)) => {
+                        return Err(MintContractError::InvalidPeginData {
+                            error: "Not expecting reference block hash in proof version 0".to_string(),
+                            revert_address: pegin_data.account,
+                            revert_amount: pegin_data.amount,
+                        })
+                    },
                     _ => {}
+                };
+                (meta.version(), meta.ref_block_hash())
+            } else {
+                return Err(MintContractError::InvalidPeginData {
+                    error: "No proofs found in pegin data".to_string(),
+                    revert_address: pegin_data.account,
+                    revert_amount: pegin_data.amount,
+                })
+            };
+
+            for meta in &pegin_data.meta {
+                if meta.version() != version {
+                    return Err(MintContractError::InvalidPeginData {
+                        error: "Proofs have mismatching versions".to_string(),
+                        revert_address: pegin_data.account,
+                        revert_amount: pegin_data.amount,
+                    })
+                }
+
+                if meta.ref_block_hash() != ref_block_hash {
+                    return Err(MintContractError::InvalidPeginData {
+                        error: "Proofs have mismatching reference block hashes".to_string(),
+                        revert_address: pegin_data.account,
+                        revert_amount: pegin_data.amount,
+                    })
                 }
             }
 
