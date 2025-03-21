@@ -1,10 +1,16 @@
-use crate::{it_info_print, suite::consensus::frost::error::Error};
+use crate::{
+    it_info_print,
+    suite::consensus::{common::events::GatewayAddressResponse, frost::error::Error},
+};
 use bitcoin::{consensus::Encodable, hash_types::BlockHash, Address, Amount};
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::pegout_id::PegoutId;
+use ethers::providers::{JsonRpcClient, Provider, ProviderError};
 use reth_chainspec::BOTANIX_TESTNET;
+use reth_primitives::Address as EthAddress;
 use serde::Deserialize;
 use std::time::Duration;
+use tokio::time::sleep;
 use tonic::transport::Channel;
 
 pub const MIN_BLOCKS_COINBASE_MATURE: u32 = 101;
@@ -150,8 +156,8 @@ pub struct BlockChainInfoRes {
 }
 
 pub fn get_checkpoint_block_hash(bitcoind: &impl RpcApi) -> Result<Vec<u8>, Error> {
-    let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks -
-        (BOTANIX_TESTNET.parent_confirmation_depth as u64);
+    let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks
+        - (BOTANIX_TESTNET.parent_confirmation_depth as u64);
     let deep_block_hash = bitcoind.get_block_hash(deep_tip).unwrap();
     let mut checkpoint_block_hash = vec![];
     if let Err(e) = deep_block_hash.consensus_encode(&mut checkpoint_block_hash) {
@@ -160,4 +166,40 @@ pub fn get_checkpoint_block_hash(bitcoind: &impl RpcApi) -> Result<Vec<u8>, Erro
     };
 
     Ok(checkpoint_block_hash)
+}
+
+// TODO: determine root cause for this call sometimes failing and remove the retry logic
+pub async fn get_gateway_address_with_retry<P>(
+    provider: Provider<P>,
+    destination: EthAddress,
+    max_retries: u32,
+) -> anyhow::Result<GatewayAddressResponse, Error>
+where
+    P: JsonRpcClient,
+{
+    let mut gateway_address_response: Result<GatewayAddressResponse, ProviderError> =
+        Err(ProviderError::UnsupportedRPC);
+    for attempt in 0..max_retries {
+        gateway_address_response = provider
+            .request::<Vec<String>, GatewayAddressResponse>(
+                "eth_getGatewayAddress",
+                vec![hex::encode(destination.0)],
+            )
+            .await;
+
+        match &gateway_address_response {
+            Ok(_) => {
+                break;
+            }
+            Err(e) => {
+                it_info_print!("gatewayaddress call failed: {:?}", e);
+
+                if attempt < max_retries - 1 {
+                    sleep(Duration::from_millis((500 * (attempt + 1)).into())).await;
+                }
+            }
+        }
+    }
+
+    gateway_address_response.map_err(|_| Error::GatewayAddressNotAvailable)
 }

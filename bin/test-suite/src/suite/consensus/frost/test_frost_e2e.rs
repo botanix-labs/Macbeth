@@ -4,7 +4,7 @@ use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
 use ethers::{
     prelude::Provider,
-    providers::{Http, Middleware, ProviderError},
+    providers::{Http, Middleware},
     types::NameOrAddress,
 };
 use reth_primitives::botanix::{
@@ -15,15 +15,11 @@ use reth_primitives::botanix::{
 
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;
-use tokio::time::sleep;
 
 use crate::{
     it_info_print,
-    suite::consensus::{
-        common::events::{await_botanix_event, GatewayAddressResponse},
-        ConsensusIntegrationTestSuite,
-    },
-    utils::generate_blocks,
+    suite::consensus::{common::events::await_botanix_event, ConsensusIntegrationTestSuite},
+    utils::{generate_blocks, get_gateway_address_with_retry},
 };
 
 #[allow(clippy::too_many_lines)]
@@ -65,36 +61,8 @@ pub async fn frost_e2e_stable(
     .expect("could not instantiate HTTP Provider");
 
     // get gateway address
-    // TODO: determine root cause for this call sometimes failing and remove the retry logic
-    let max_retries = 3;
-    let mut gateway_address_response: Result<GatewayAddressResponse, ProviderError> =
-        Err(ProviderError::UnsupportedRPC);
-    for attempt in 0..max_retries {
-        gateway_address_response = provider
-            .request::<Vec<String>, GatewayAddressResponse>(
-                "eth_getGatewayAddress",
-                vec![hex::encode(eth_destination.0)],
-            )
-            .await;
-
-        match &gateway_address_response {
-            Ok(_) => {
-                break;
-            }
-            Err(e) => {
-                it_info_print!("gatewayaddress call failed: {:?}", e);
-
-                if attempt < max_retries - 1 {
-                    sleep(Duration::from_millis(500 * (attempt + 1))).await;
-                }
-            }
-        }
-    }
-    if gateway_address_response.is_err() {
-        panic!("Failed to get gateway address after {} attempts", max_retries);
-    }
-
-    let gateway_address_response = gateway_address_response.expect("gateway address response");
+    let gateway_address_response =
+        get_gateway_address_with_retry(provider.clone(), eth_destination.0.into(), 3).await?;
     it_info_print!("Gateway Address Response", gateway_address_response);
 
     // print balance
