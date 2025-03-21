@@ -40,7 +40,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -67,7 +67,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false, // not finalized yet
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -94,7 +94,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: true, // IS met!
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -122,7 +122,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: true,
-                aye_approvals_req: false, // IS NOT met!
+                aye_approval_req: false, // IS NOT met!
                 block_height_req: true,
             },
         )

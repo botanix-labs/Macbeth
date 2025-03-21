@@ -41,7 +41,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -68,7 +68,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false, // not finalized yet
-                aye_approvals_req: false, // not finalized yet
+                aye_approval_req: false,  // not finalized yet
                 block_height_req: false,
             },
         )
@@ -95,7 +95,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: true, // IS met!
-                aye_approvals_req: true, // IS met!
+                aye_approval_req: true,  // IS met!
                 block_height_req: false,
             },
         )
@@ -123,7 +123,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: true, // IS met!
-                aye_approvals_req: true, // IS met!
+                aye_approval_req: true,  // IS met!
                 block_height_req: true,  // IS met!
             },
         )

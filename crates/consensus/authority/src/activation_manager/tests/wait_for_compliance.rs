@@ -42,7 +42,7 @@ fn activation_manager_wait_for_compliance() {
             ConditionList {
                 compliant_req: false,
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -71,7 +71,7 @@ fn activation_manager_wait_for_compliance() {
                 // NOTE: signaling validators simply use `u64::MAX` as the
                 // approval_rate.
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -100,7 +100,7 @@ fn activation_manager_wait_for_compliance() {
                 // NOTE: signaling validators simply use `u64::MAX` as the
                 // approval_rate.
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -137,8 +137,8 @@ fn activation_manager_wait_for_compliance() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false,
-                aye_approvals_req: true, // IS met!
-                block_height_req: true,  // IS met!
+                aye_approval_req: true, // IS met!
+                block_height_req: true, // IS met!
             },
         )
         .expectations(
@@ -164,7 +164,7 @@ fn activation_manager_wait_for_compliance() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false, // not finalized yet
-                aye_approvals_req: true,
+                aye_approval_req: true,
                 block_height_req: true,
             },
         )
@@ -191,7 +191,7 @@ fn activation_manager_wait_for_compliance() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: true, // IS met!
-                aye_approvals_req: true, // IS met!
+                aye_approval_req: true,  // IS met!
                 block_height_req: true,
             },
         )

@@ -236,7 +236,7 @@ pub struct ConditionList {
     compliant_req: bool,
 
     /// Whether the quorum approval rate for Aye votes has been reached
-    aye_approvals_req: bool,
+    aye_approval_req: bool,
 
     /// Whether the quorum approval rate for compliant validators has been reached
     comp_approval_req: bool,
@@ -252,7 +252,7 @@ impl ConditionList {
     /// that the network is ready to activate the upgrade.
     pub fn all_passing(&self) -> bool {
         self.compliant_req &&
-            self.aye_approvals_req &&
+            self.aye_approval_req &&
             self.comp_approval_req &&
             self.block_height_req
     }
@@ -730,7 +730,7 @@ where
 
         let list = ConditionList {
             compliant_req: upgrade.is_compliant,
-            aye_approvals_req: aye_approval >= upgrade.quorum,
+            aye_approval_req: aye_approval >= upgrade.quorum,
             comp_approval_req: comp_approval >= upgrade.quorum,
             block_height_req: block_height >= upgrade.target_height,
         };

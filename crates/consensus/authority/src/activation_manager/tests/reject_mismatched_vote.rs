@@ -41,7 +41,7 @@ fn activation_manager_reject_mismatched_vote() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -79,7 +79,7 @@ fn activation_manager_reject_mismatched_vote() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -117,7 +117,7 @@ fn activation_manager_reject_mismatched_vote() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: false,
             },
         )
@@ -157,7 +157,7 @@ fn activation_manager_reject_mismatched_vote() {
             ConditionList {
                 compliant_req: true,
                 comp_approval_req: false,
-                aye_approvals_req: false,
+                aye_approval_req: false,
                 block_height_req: true, // IS met!
             },
         )
