@@ -1,10 +1,10 @@
 use std::{str::FromStr, time::Duration};
 
-use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
+use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
 use ethers::{
     prelude::Provider,
-    providers::{Http, Middleware, ProviderError},
+    providers::{Http, Middleware},
     types::NameOrAddress,
 };
 use reth_primitives::{
@@ -19,7 +19,6 @@ use reth_primitives::{
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;
 use serde_json::json;
-use tokio::time::sleep;
 
 use crate::{
     it_info_print,
@@ -27,7 +26,7 @@ use crate::{
         common::events::{await_botanix_event, BlockWithEDH, GatewayAddressResponse},
         ConsensusIntegrationTestSuite,
     },
-    utils::generate_blocks,
+    utils::{generate_blocks, get_gateway_address_with_retry},
 };
 
 pub async fn test_pegin_v1(
@@ -68,36 +67,8 @@ pub async fn test_pegin_v1(
     .expect("could not instantiate HTTP Provider");
 
     // get gateway address
-    // TODO: determine root cause for this call sometimes failing and remove the retry logic
-    let max_retries = 3;
-    let mut gateway_address_response: Result<GatewayAddressResponse, ProviderError> =
-        Err(ProviderError::UnsupportedRPC);
-    for attempt in 0..max_retries {
-        gateway_address_response = provider
-            .request::<Vec<String>, GatewayAddressResponse>(
-                "eth_getGatewayAddress",
-                vec![hex::encode(eth_destination.0)],
-            )
-            .await;
-
-        match &gateway_address_response {
-            Ok(_) => {
-                break;
-            }
-            Err(e) => {
-                it_info_print!("gatewayaddress call failed: {:?}", e);
-
-                if attempt < max_retries - 1 {
-                    sleep(Duration::from_millis(500 * (attempt + 1))).await;
-                }
-            }
-        }
-    }
-    if gateway_address_response.is_err() {
-        panic!("Failed to get gateway address after {} attempts", max_retries);
-    }
-
-    let gateway_address_response = gateway_address_response.expect("gateway address response");
+    let gateway_address_response =
+        get_gateway_address_with_retry(provider.clone(), eth_destination.0.into(), 3).await?;
     it_info_print!("Gateway Address Response", gateway_address_response);
 
     // print balance
@@ -112,9 +83,7 @@ pub async fn test_pegin_v1(
         .send_to_address(&btc_address, Amount::ONE_BTC, None, None, Some(true), None, Some(1), None)
         .expect("valid send");
     // Generate some blocks to confirm it
-    // Generating more than the confirmation depth since we want to test pegin v1 and make
-    // it obvious that we don't need to pass headers up to the tip
-    generate_blocks(&bitcoind_rpc, 1 + pegin_conf_depth + 5).await;
+    generate_blocks(&bitcoind_rpc, 1 + pegin_conf_depth).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // retrieve the transaction
@@ -151,34 +120,16 @@ pub async fn test_pegin_v1(
         bitcoin::BlockHash::from_str(btc_checkpoint.as_str()).expect("valid hash");
     it_info_print!("BTC checkpoint hash:", btc_checkpoint_hash);
 
-    // get block headers
     // get the block hash of the block with the confirmed pegin tx
     let conf_hash = tx_res.info.blockhash.expect("pegin confirmed");
     let checkpoint_block_height =
         bitcoind_rpc.get_block_info(&btc_checkpoint_hash).expect("valid block info").height;
     let checkpoint_header =
         bitcoind_rpc.get_block_header(&btc_checkpoint_hash).expect("valid header");
-    // collect all the headers all the way up to the btc checkpoint.
-    let mut headers = vec![];
-    let mut cursor = checkpoint_header;
-    let mut stopgap = 200; // just to make sure we don't infinite loop until genesis
-    loop {
-        stopgap -= 1;
-        if stopgap == 0 || cursor.prev_blockhash == bitcoin::BlockHash::all_zeros() {
-            panic!("confirmation block not found...");
-        }
-
-        headers.push(cursor);
-        if cursor.block_hash() == conf_hash {
-            break;
-        }
-        cursor = bitcoind_rpc.get_block_header(&cursor.prev_blockhash).unwrap();
-    }
-    headers.reverse();
-    it_info_print!("Number of pegin_headers:", headers.len());
 
     let conf_block_info = bitcoind_rpc.get_block_info(&conf_hash).expect("valid block info");
     it_info_print!("Block info", conf_block_info);
+
     let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[false, true]);
 
     // create pegin meta
@@ -194,7 +145,7 @@ pub async fn test_pegin_v1(
             .expect("valid public key"),
             tx: pegin_tx.clone(),
             merkle_proof: pmt,
-            block_headers: headers,
+            block_headers: vec![checkpoint_header],
         },
         ref_block_hash: FixedBytes::<32>::from_str(&latest_block_hash.as_str())
             .expect("valid hash"),

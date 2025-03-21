@@ -26,4 +26,6 @@ pub enum Error {
     ConsensusCheckpoint,
     /// Consensus Encode Error
     ConsensusEncode,
+    /// Gateway Address not available
+    GatewayAddressNotAvailable,
 }
