@@ -50,7 +50,7 @@ fn activation_manager_vote_expiration() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_block();
@@ -77,7 +77,7 @@ fn activation_manager_vote_expiration() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         .build_block();
@@ -104,7 +104,7 @@ fn activation_manager_vote_expiration() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 100,
-                compliance_approval_rate: 100,
+                comp_approval_rate: 100,
             },
         )
         .build_block();
@@ -134,7 +134,7 @@ fn activation_manager_vote_expiration() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 100,
-                compliance_approval_rate: 100,
+                comp_approval_rate: 100,
             },
         )
         .build_blocks_until(12);
@@ -163,7 +163,7 @@ fn activation_manager_vote_expiration() {
                 finalize_pass: true,
                 // NOTE: Bob's vote expired!
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         .build_block();
@@ -192,7 +192,7 @@ fn activation_manager_vote_expiration() {
                 finalize_pass: true,
                 // NOTE: Eve's vote expired!
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_block();
@@ -219,7 +219,7 @@ fn activation_manager_vote_expiration() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_blocks_until(20);
@@ -247,7 +247,7 @@ fn activation_manager_vote_expiration() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_blocks_until(31);

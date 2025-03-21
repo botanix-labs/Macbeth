@@ -50,7 +50,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_block();
@@ -77,7 +77,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         .build_block();
@@ -104,7 +104,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 100,
+                comp_approval_rate: 100,
             },
         )
         .build_block();
@@ -132,7 +132,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 100,
+                comp_approval_rate: 100,
             },
         )
         .build_blocks_until(21);

@@ -51,7 +51,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_block();
@@ -78,7 +78,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         .build_block();
@@ -105,7 +105,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 100,
-                compliance_approval_rate: 100,
+                comp_approval_rate: 100,
             },
         )
         .build_block();
@@ -134,7 +134,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 finalize_pass: true,
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_block();
@@ -165,7 +165,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 process_pass: false, // Reject!
                 finalize_pass: true, // Accept
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         // Eve (producer) accepts the outdated block.
@@ -175,7 +175,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_blocks_until(21);
@@ -195,7 +195,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         // Eve REJECTS the upgraded blocks, both during the backing and
@@ -207,7 +207,7 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 process_pass: false,  // Reject!
                 finalize_pass: false, // Reject!
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_blocks_until(41);

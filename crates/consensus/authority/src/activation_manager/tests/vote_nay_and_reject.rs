@@ -60,7 +60,7 @@ fn activation_manager_vote_nay_and_reject() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_block();
@@ -97,7 +97,7 @@ fn activation_manager_vote_nay_and_reject() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         .build_block();
@@ -136,7 +136,7 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: true,
                 // NOTE: Eve: votes Nay and rejects.
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         .build_block();
@@ -178,7 +178,7 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: true,
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         // Eve REJECTS the upgrade.
@@ -189,7 +189,7 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: false, // Reject!
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_block();
@@ -209,7 +209,7 @@ fn activation_manager_vote_nay_and_reject() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         // Eve REJECTS the upgrade.
@@ -219,7 +219,7 @@ fn activation_manager_vote_nay_and_reject() {
                 process_pass: false,  // Reject!
                 finalize_pass: false, // Reject!
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_blocks_until(21);

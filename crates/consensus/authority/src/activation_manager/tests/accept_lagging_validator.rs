@@ -53,7 +53,7 @@ fn activation_manager_accept_lagging_validator() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         // Eve is not configured.
@@ -83,7 +83,7 @@ fn activation_manager_accept_lagging_validator() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         .expectations_empty(&[EVE])
@@ -114,7 +114,7 @@ fn activation_manager_accept_lagging_validator() {
                 finalize_pass: true,
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         // Eve is not configured.
@@ -153,7 +153,7 @@ fn activation_manager_accept_lagging_validator() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         // Eve REJECTS the upgrade during the backing phase, but ACCEPTS it
@@ -164,7 +164,7 @@ fn activation_manager_accept_lagging_validator() {
                 process_pass: false, // Reject!
                 finalize_pass: true, // Accept
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_block();
@@ -186,7 +186,7 @@ fn activation_manager_accept_lagging_validator() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_blocks_until(21);

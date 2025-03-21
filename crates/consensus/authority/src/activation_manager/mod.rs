@@ -251,10 +251,7 @@ impl ConditionList {
     /// Returns true only when all conditions are satisfied, indicating
     /// that the network is ready to activate the upgrade.
     pub fn all_passing(&self) -> bool {
-        self.comp_req &&
-            self.aye_approval_req &&
-            self.comp_approval_req &&
-            self.block_height_req
+        self.comp_req && self.aye_approval_req && self.comp_approval_req && self.block_height_req
     }
 }
 

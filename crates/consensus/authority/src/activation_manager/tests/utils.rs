@@ -277,7 +277,7 @@ pub(super) struct Expectations {
     /// The expected percentage (0-100) of Aye votes
     pub(super) aye_approval_rate: usize,
     /// The expected percentage (0-100) of compliant validators
-    pub(super) compliance_approval_rate: usize,
+    pub(super) comp_approval_rate: usize,
 }
 
 /// Fixture for testing the block proposal and validation flow.
@@ -510,10 +510,7 @@ impl ProposingTestFixture<'_> {
             assert!(votes >= self.i.min_validator_count, "voter count does not meet minimum");
 
             assert_eq!(ayes, expect.aye_approval_rate, "ayes approval_rate mismatch");
-            assert_eq!(
-                compliance, expect.compliance_approval_rate,
-                "compliant approval_rate mismatch"
-            );
+            assert_eq!(compliance, expect.comp_approval_rate, "compliant approval_rate mismatch");
         }
 
         self.i.block_height += 1;

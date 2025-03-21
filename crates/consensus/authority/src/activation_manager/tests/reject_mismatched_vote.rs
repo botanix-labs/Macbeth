@@ -52,7 +52,7 @@ fn activation_manager_reject_mismatched_vote() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         // Eve does not count Alices' vote (different version).
@@ -62,7 +62,7 @@ fn activation_manager_reject_mismatched_vote() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_block();
@@ -90,7 +90,7 @@ fn activation_manager_reject_mismatched_vote() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         // Eve does not count Bobs' vote (different version).
@@ -100,7 +100,7 @@ fn activation_manager_reject_mismatched_vote() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 0,
-                compliance_approval_rate: 0,
+                comp_approval_rate: 0,
             },
         )
         .build_block();
@@ -128,7 +128,7 @@ fn activation_manager_reject_mismatched_vote() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         // Eve counts his own vote
@@ -138,7 +138,7 @@ fn activation_manager_reject_mismatched_vote() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_block();
@@ -167,7 +167,7 @@ fn activation_manager_reject_mismatched_vote() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 67,
-                compliance_approval_rate: 67,
+                comp_approval_rate: 67,
             },
         )
         .expectations(
@@ -176,7 +176,7 @@ fn activation_manager_reject_mismatched_vote() {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
-                compliance_approval_rate: 34,
+                comp_approval_rate: 34,
             },
         )
         .build_blocks_until(21);
