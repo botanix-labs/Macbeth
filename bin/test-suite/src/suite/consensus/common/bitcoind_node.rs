@@ -160,15 +160,21 @@ impl BitcoindNodeConfig {
 impl BitcoindNodeConfig {
     pub async fn setup_wallet(&self, bitcoin_client: &impl RpcApi) -> anyhow::Result<()> {
         match bitcoin_client.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None) {
-            // Load the wallet if it already exists
+            Ok(res) => {
+                tracing::info!("Created wallet: {BITCOIND_WALLET_NAME} with result {res:?}");
+            }
             Err(e) => {
-                if e.to_string().contains("wallet already exists") {
-                    bitcoin_client.load_wallet(BITCOIND_WALLET_NAME)?;
+                let err_msg = e.to_string();
+                // Load the wallet if it already exists
+                if err_msg.contains("already exists") || err_msg.contains("already loaded") {
+                    tracing::info!("Wallet {BITCOIND_WALLET_NAME} already loaded or existing");
                 } else {
-                    return Err(anyhow::anyhow!("Failed to create wallet: {}", e));
+                    tracing::info!("Loading wallet {BITCOIND_WALLET_NAME} ...");
+                    bitcoin_client
+                        .load_wallet(BITCOIND_WALLET_NAME)
+                        .map_err(|e| anyhow::anyhow!("Failed to create wallet: {}", e))?;
                 }
             }
-            Ok(_) => {}
         }
         // Fund the wallet
         generate_blocks(bitcoin_client, MIN_BLOCKS_COINBASE_MATURE).await;
