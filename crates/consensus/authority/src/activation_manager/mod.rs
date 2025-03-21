@@ -233,7 +233,7 @@ struct NetworkUpgrade {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConditionList {
     /// Whether the validator is compliant with the upgrade
-    compliant_req: bool,
+    comp_req: bool,
 
     /// Whether the quorum approval rate for Aye votes has been reached
     aye_approval_req: bool,
@@ -251,7 +251,7 @@ impl ConditionList {
     /// Returns true only when all conditions are satisfied, indicating
     /// that the network is ready to activate the upgrade.
     pub fn all_passing(&self) -> bool {
-        self.compliant_req &&
+        self.comp_req &&
             self.aye_approval_req &&
             self.comp_approval_req &&
             self.block_height_req
@@ -729,7 +729,7 @@ where
         debug_assert!(total_votes >= upgrade.min_validator_count);
 
         let list = ConditionList {
-            compliant_req: upgrade.is_compliant,
+            comp_req: upgrade.is_compliant,
             aye_approval_req: aye_approval >= upgrade.quorum,
             comp_approval_req: comp_approval >= upgrade.quorum,
             block_height_req: block_height >= upgrade.target_height,

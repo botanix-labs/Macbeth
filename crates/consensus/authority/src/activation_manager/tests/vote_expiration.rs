@@ -38,7 +38,7 @@ fn activation_manager_vote_expiration() {
         .upgrade_conditions(
             &[ALICE, BOB, EVE],
             ConditionList {
-                compliant_req: true,
+                comp_req: true,
                 comp_approval_req: false,
                 aye_approval_req: false,
                 block_height_req: false,
@@ -65,7 +65,7 @@ fn activation_manager_vote_expiration() {
         .upgrade_conditions(
             &[ALICE, BOB, EVE],
             ConditionList {
-                compliant_req: true,
+                comp_req: true,
                 comp_approval_req: false, // not finalized yet
                 aye_approval_req: false,  // not finalized yet
                 block_height_req: false,
@@ -92,7 +92,7 @@ fn activation_manager_vote_expiration() {
         .upgrade_conditions(
             &[ALICE, BOB, EVE],
             ConditionList {
-                compliant_req: true,
+                comp_req: true,
                 comp_approval_req: true, // IS met!
                 aye_approval_req: true,  // IS met!
                 block_height_req: false,
@@ -122,7 +122,7 @@ fn activation_manager_vote_expiration() {
         .upgrade_conditions(
             &[ALICE, BOB, EVE],
             ConditionList {
-                compliant_req: true,
+                comp_req: true,
                 comp_approval_req: true, // IS met!
                 aye_approval_req: true,  // IS met!
                 block_height_req: false, // IS NOT met!
@@ -150,7 +150,7 @@ fn activation_manager_vote_expiration() {
         .upgrade_conditions(
             &[ALICE, BOB, EVE],
             ConditionList {
-                compliant_req: true,
+                comp_req: true,
                 comp_approval_req: true,
                 aye_approval_req: true,
                 block_height_req: false,
@@ -179,7 +179,7 @@ fn activation_manager_vote_expiration() {
         .upgrade_conditions(
             &[ALICE, BOB, EVE],
             ConditionList {
-                compliant_req: true,
+                comp_req: true,
                 comp_approval_req: true, // not finalized yet
                 aye_approval_req: true,  // not finalized yet
                 block_height_req: false,
@@ -207,7 +207,7 @@ fn activation_manager_vote_expiration() {
         .upgrade_conditions(
             &[ALICE, BOB, EVE],
             ConditionList {
-                compliant_req: true,
+                comp_req: true,
                 comp_approval_req: false, // IS NOT me!
                 aye_approval_req: false,  // IS NOT met!
                 block_height_req: false,  // IS NOT met!
@@ -235,7 +235,7 @@ fn activation_manager_vote_expiration() {
         .upgrade_conditions(
             &[ALICE, BOB, EVE],
             ConditionList {
-                compliant_req: true,
+                comp_req: true,
                 comp_approval_req: false,
                 aye_approval_req: false,
                 block_height_req: true, // IS met!
