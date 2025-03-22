@@ -28,4 +28,6 @@ pub enum Error {
     ConsensusEncode,
     /// Gateway Address not available
     GatewayAddressNotAvailable,
+    /// Frost Signing Error
+    FrostSigningFailed,
 }

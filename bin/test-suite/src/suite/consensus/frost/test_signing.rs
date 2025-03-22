@@ -12,7 +12,6 @@ use tonic::transport::Channel;
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::events::BITCOIND_WALLET_NAME,
         frost::{error::Error, test_dkg::do_dkg},
         ConsensusIntegrationTestSuite,
     },
@@ -163,6 +162,28 @@ pub async fn do_signing(
     Ok(final_tx)
 }
 
+/// Try signing up to max_retries
+async fn try_signing(
+    clients: &mut Vec<BtcServerClient<Channel>>,
+    bitcoind: &bitcoincore_rpc::Client,
+    signing_session_id: &[u8; 32],
+    max_retries: u32,
+) -> anyhow::Result<bitcoin::Transaction, anyhow::Error> {
+    let mut attempts = 0;
+
+    while attempts < max_retries {
+        match do_signing(clients, bitcoind, signing_session_id).await {
+            Ok(tx) => return Ok(tx),
+            Err(e) => {
+                it_info_print!("Error signing: {:?}", e);
+                attempts += 1;
+            }
+        }
+    }
+
+    Err(Error::FrostSigningFailed.into())
+}
+
 /// Assert that all clients have the same UTXO set
 pub async fn all_clients_have_same_wallet_state(
     clients: &mut Vec<BtcServerClient<Channel>>,
@@ -303,6 +324,7 @@ pub async fn test_many_inputs_signing(
     let spk = pk.p2wpkh_script_code().expect("valid pk");
 
     // Calling do_signing should fail as we have no pending pegouts
+    let max_retries = 3;
     let err_res = do_signing(&mut clients, &bitcoind, &[0u8; 32])
         .await
         .err()
@@ -325,7 +347,7 @@ pub async fn test_many_inputs_signing(
         )
         .await?;
     }
-    let final_tx = do_signing(&mut clients, &bitcoind, &[1u8; 32]).await?;
+    let final_tx = try_signing(&mut clients, &bitcoind, &[1u8; 32], max_retries).await?;
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
 
     // Lets make sure it was broadcasted
@@ -376,7 +398,7 @@ pub async fn test_many_inputs_signing(
         }
     }
 
-    let final_tx = do_signing(&mut clients, &bitcoind, &[2u8; 32]).await?;
+    let final_tx = try_signing(&mut clients, &bitcoind, &[2u8; 32], max_retries).await?;
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
     let tx_res = bitcoind.get_raw_transaction(&final_tx.compute_txid(), None).expect("valid tx");
 
@@ -480,7 +502,7 @@ pub async fn test_many_inputs_signing(
         .await?;
     }
 
-    let final_tx = do_signing(&mut clients, &bitcoind, &[3u8; 32]).await?;
+    let final_tx = try_signing(&mut clients, &bitcoind, &[3u8; 32], max_retries).await?;
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
     it_info_print!("final_tx: {:?}", final_tx);
 
