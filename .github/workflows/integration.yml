@@ -20,7 +20,7 @@ concurrency:
 jobs:
   e2e:
     name: test / e2e
-    runs-on: 
+    runs-on:
       group: macbeth
     env:
       RUST_BACKTRACE: 1
@@ -36,7 +36,7 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
-      - name: Install killall 
+      - name: Install killall
         run: sudo apt-get install psmisc
 
       - uses: Swatinem/rust-cache@v2
@@ -57,15 +57,109 @@ jobs:
           cargo build --bin reth && \
           echo "Poa node compiled successfully!"
 
-      - name: Run e2e tests
+      # Define individual steps for each test
+      - name: Run dkg_flow
         run: |
-          set -e
-          set -o pipefail
-          chmod +x test_runner.sh
-          bash test_runner.sh
+          export TEST_TO_RUN="dkg_flow"
+          make start-test-suite
           killall btc-server || true
           killall bitcoind || true
-          echo "e2e tests completed successfully!"
+
+      - name: Run utxo_commitment
+        run: |
+          export TEST_TO_RUN="utxo_commitment"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run signing_flow
+        run: |
+          export TEST_TO_RUN="signing_flow"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run test_mempool_gossip
+        run: |
+          export TEST_TO_RUN="test_mempool_gossip"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run utxo_sync
+        run: |
+          export TEST_TO_RUN="utxo_sync"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run state_sync
+        run: |
+          export TEST_TO_RUN="state_sync"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run frost_e2e_stable
+        run: |
+          export TEST_TO_RUN="frost_e2e_stable"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run test_pegin_v1
+        run: |
+          export TEST_TO_RUN="test_pegin_v1"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run invalid_pegin
+        run: |
+          export TEST_TO_RUN="invalid_pegin"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run invalid_pegout
+        run: |
+          export TEST_TO_RUN="invalid_pegout"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run block_builder
+        run: |
+          export TEST_TO_RUN="block_builder"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run test_conflicting_input
+        run: |
+          export TEST_TO_RUN="test_conflicting_input"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run test_round1_then_new_signing_session
+        run: |
+          export TEST_TO_RUN="test_round1_then_new_signing_session"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run test_track_mempool
+        run: |
+          export TEST_TO_RUN="test_track_mempool"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      # ✅ Final success step if all tests pass
+      - name: All tests passed!
+        if: success()
+        run: echo "✅ All tests completed successfully!"
 
   integration-success:
     name: integration success
