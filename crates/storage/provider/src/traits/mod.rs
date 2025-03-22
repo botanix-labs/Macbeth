@@ -9,6 +9,9 @@ pub use reth_evm::provider::EvmEnvProvider;
 mod block;
 pub use block::*;
 
+mod activation_manager;
+pub use activation_manager::ActivationManagerReaderWriter;
+
 mod snapshot;
 pub use snapshot::*;
 

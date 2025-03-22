@@ -45,6 +45,7 @@ mod builder;
 pub mod comet_bft;
 
 pub use comet_bft::light_client::LightCBFTClientBuilder;
+pub mod activation_manager;
 mod dkg;
 mod excecution_utils;
 mod frost_task;

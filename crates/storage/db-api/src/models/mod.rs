@@ -12,6 +12,7 @@ use reth_trie_common::{StoredNibbles, StoredNibblesSubKey, *};
 use serde::{Deserialize, Serialize};
 
 pub mod accounts;
+pub mod activation_manager;
 pub mod blocks;
 pub mod chunks;
 pub mod client_version;
@@ -20,6 +21,7 @@ pub mod sharded_key;
 pub mod storage_sharded_key;
 
 pub use accounts::*;
+pub use activation_manager::{RuntimeVersion, Vote};
 pub use blocks::*;
 pub use chunks::*;
 pub use client_version::ClientVersion;
