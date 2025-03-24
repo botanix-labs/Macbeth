@@ -59,7 +59,7 @@ pub async fn test_mempool_gossip(
                 tx_hashes_set.insert(canon_state_notification.engine_index);
             }
             let syncing_instances = suite.global_context.syncing_instances as usize;
-            if tx_hashes_set.len() == test_fed_members.len() - syncing_instances {
+            if tx_hashes_set.len() == (test_fed_members.len() - syncing_instances) {
                 return Ok(());
             }
         }
