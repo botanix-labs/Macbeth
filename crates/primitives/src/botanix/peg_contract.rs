@@ -28,6 +28,12 @@ pub const PEGIN_META_VERSION_V0: u32 = 0;
 pub const PEGIN_META_VERSION_V1: u32 = 1;
 const _PEGOUT_META_VERSION: u32 = 0;
 
+/// Standard bitcoin header size
+const BITCOIN_HEADER_SIZE: usize = Header::SIZE; // 80 bytes
+
+/// Bitcoin's difficulty adjustment period, a reasonable maximum
+const MAX_BITCOIN_BLOCK_HEADERS: u64 = 2016;
+
 /// Pegin data structure
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeginData {
@@ -208,12 +214,23 @@ impl PeginMetaV0 {
                 },
                 block_headers: {
                     let len = btcencode::VarInt::consensus_decode(&mut bytes)?.0;
-                    let mut ret = Vec::with_capacity(len as usize);
-                    for _ in 0..len {
-                        ret.push(Decodable::consensus_decode(&mut bytes)?);
+
+                    if len > MAX_BITCOIN_BLOCK_HEADERS {
+                        return Err(PeginDataError::TooManyBlockHeaders(len));
                     }
 
-                    ret
+                    if len as usize > bytes.len() / BITCOIN_HEADER_SIZE {
+                        return Err(PeginDataError::InvalidLength {
+                            claimed: len,
+                            remaining_bytes: bytes.len(),
+                        });
+                    }
+                    let mut block_headers = Vec::with_capacity(len as usize);
+                    for _ in 0..len {
+                        block_headers.push(Decodable::consensus_decode(&mut bytes)?);
+                    }
+
+                    block_headers
                 },
                 merkle_proof: PartialMerkleTree::consensus_decode(&mut bytes)?,
                 tx: Decodable::consensus_decode(&mut bytes)?,
@@ -401,6 +418,18 @@ pub enum PeginDataError {
     /// Frost related error
     #[error("frost error {0}")]
     FrostError(frost::Error),
+    /// Claimed length of block headers is greater than what could fit in the remaining bytes of
+    /// the message.
+    #[error("invalid bitcoin block header. Claimed = {claimed}, remaining = {remaining_bytes}")]
+    InvalidLength {
+        /// the number of block headers claimed in the message
+        claimed: u64,
+        /// the actual number of bytes remaining in the message
+        remaining_bytes: usize,
+    },
+    /// Error when the number of block headers exceeds the maximum allowable limit.
+    #[error("too many bitcoin block headers {0}")]
+    TooManyBlockHeaders(u64),
 }
 
 impl From<bitcoin::io::Error> for PeginDataError {
