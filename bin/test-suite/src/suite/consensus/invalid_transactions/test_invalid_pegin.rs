@@ -366,7 +366,7 @@ pub async fn invalid_pegin(
         let nonce_before = botanix_eth_client.get_nonce(sender_address.clone()).await.unwrap();
         it_info_print!("Nonce before pegin", nonce_before);
 
-        // send the pegin transactions to all fed members
+        // attempt to mint the invalid pegin
         let tx_receipt = botanix_eth_client
             .mint(
                 eth_destination.clone(),
