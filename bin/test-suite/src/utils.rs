@@ -1,6 +1,9 @@
 use crate::{
     it_info_print,
-    suite::consensus::{common::events::GatewayAddressResponse, frost::error::Error},
+    suite::consensus::{
+        common::{botanix_client::BotanixEthClient, events::GatewayAddressResponse},
+        frost::error::Error,
+    },
 };
 use bitcoin::{consensus::Encodable, hash_types::BlockHash, Address, Amount};
 use bitcoincore_rpc::RpcApi;
@@ -156,8 +159,8 @@ pub struct BlockChainInfoRes {
 }
 
 pub fn get_checkpoint_block_hash(bitcoind: &impl RpcApi) -> Result<Vec<u8>, Error> {
-    let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks -
-        (BOTANIX_TESTNET.parent_confirmation_depth as u64);
+    let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks
+        - (BOTANIX_TESTNET.parent_confirmation_depth as u64);
     let deep_block_hash = bitcoind.get_block_hash(deep_tip).unwrap();
     let mut checkpoint_block_hash = vec![];
     if let Err(e) = deep_block_hash.consensus_encode(&mut checkpoint_block_hash) {
@@ -202,4 +205,19 @@ where
     }
 
     gateway_address_response.map_err(|_| Error::GatewayAddressNotAvailable)
+}
+
+/// Waits until the genesis block exists.
+pub async fn wait_until_genesis_block_exists(client: &BotanixEthClient) -> Result<(), Error> {
+    while client
+        .get_latest_block()
+        .await
+        .map_err(|_| Error::LatestBlockDoesNotExist)?
+        .number
+        .ok_or(Error::LatestBlockDoesNotExist)?
+        == 0.into()
+    {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    Ok(())
 }
