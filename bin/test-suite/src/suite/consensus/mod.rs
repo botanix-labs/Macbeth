@@ -7,6 +7,7 @@ use crate::{
         btc_server::{spawn_n_btc_server_processes, SpawnedBtcServerProcess},
         events::await_dkg,
     },
+    utils::wait_until_genesis_block_exists,
 };
 use anyhow::Context;
 use async_trait::async_trait;
@@ -31,6 +32,7 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
+use reth::rpc::api::clients;
 use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_db::DatabaseEnv;
 use reth_provider::ProviderFactory;
@@ -865,6 +867,7 @@ impl Suite for ConsensusIntegrationTestSuite {
 
         // =================== POA NODES ================== //
         let mut poa_botanix_clients = vec![];
+        let mut client: Option<BotanixEthClient> = None;
         if create_test_config.create_poa_nodes {
             // then generate test fed members poa nodes
             let (mut poa_nodes, tx, edh_authorities_list) = create_poa_nodes(
@@ -938,6 +941,8 @@ impl Suite for ConsensusIntegrationTestSuite {
             assert_eq!(keys.len(), 1);
 
             // update local context
+            // save the first client for later use
+            client = Some(poa_botanix_clients[0].clone());
             self.local_context.poa_processes = Some(spawned_poa_processes);
             self.local_context.poa_nodes = Some(poa_nodes);
             self.local_context.poa_notification = Some(tx);
@@ -1008,6 +1013,11 @@ impl Suite for ConsensusIntegrationTestSuite {
             self.local_context.rpc_nodes = Some(rpc_nodes);
             self.local_context.rpc_notification = Some(tx);
             self.local_context.rpc_eth_providers = Some(rpc_botanix_clients);
+        }
+
+        // wait until the genesis block is created before starting tests that require it
+        if client.is_some() {
+            wait_until_genesis_block_exists(&client.expect("client to exist")).await?
         }
 
         Ok(())
