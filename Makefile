@@ -58,7 +58,7 @@ install: ## Build and install the reth binary under `~/.cargo/bin`.
 .PHONY: install-btc-server
 install-btc-server: ## Build and install the btc-server binary under `~/.cargo/bin`.
 	cargo install --path bin/btc-server --bin btc-server --force --locked \
-		--features $(FEATURES)" \
+		--features "$(FEATURES)" \
 		--profile "$(PROFILE)" \
 		$(CARGO_INSTALL_EXTRA_FLAGS)
 
