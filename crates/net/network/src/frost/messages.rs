@@ -74,10 +74,6 @@ impl SignRequest {
 pub struct WalletStateRequest {
     /// The version of the request message
     pub version: u16,
-    /// utxos
-    pub utxos: Vec<u8>,
-    /// tracked transactions
-    pub tracked_txs: Vec<u8>,
     /// pending pegouts
     pub pending_pegouts: Vec<u8>,
 }
@@ -87,11 +83,7 @@ impl fmt::Display for WalletStateRequest {
         write!(
             f,
             "WalletStateRequest:\n\
-            - UTXOs: {} bytes\n\
-            - Tracked Transactions: {} bytes\n\
             - Pending Pegouts: {} bytes",
-            self.utxos.len(),
-            self.tracked_txs.len(),
             self.pending_pegouts.len()
         )
     }
@@ -99,8 +91,8 @@ impl fmt::Display for WalletStateRequest {
 
 impl WalletStateRequest {
     /// Constructs a new wallet state request using a data payload.
-    pub const fn new(utxos: Vec<u8>, tracked_txs: Vec<u8>, pending_pegouts: Vec<u8>) -> Self {
-        Self { version: WALLET_STATE_MESSAGE_VERSION as u16, utxos, tracked_txs, pending_pegouts }
+    pub const fn new(pending_pegouts: Vec<u8>) -> Self {
+        Self { version: WALLET_STATE_MESSAGE_VERSION as u16, pending_pegouts }
     }
 }
 
@@ -340,14 +332,6 @@ impl FrostProtoMessage {
                 buf.put_slice(receiver_bytes); // Receiver bytes
             }
             FrostProtoMessageKind::WalletState(resource) => {
-                // serialize the utxos
-                buf.put_u64_le(resource.utxos.len() as u64); // Use u64 to support larger utxos sizes
-                buf.put_slice(&resource.utxos);
-
-                // serialize the tracked txs
-                buf.put_u64_le(resource.tracked_txs.len() as u64); // Use u64 to support larger tracked txs sizes
-                buf.put_slice(&resource.tracked_txs);
-
                 // serialize the pending pegouts
                 buf.put_u64_le(resource.pending_pegouts.len() as u64); // Use u64 to support larger pending pegouts sizes
                 buf.put_slice(&resource.pending_pegouts);
@@ -535,29 +519,13 @@ impl FrostProtoMessage {
                 FrostProtoMessageKind::Healthcheck(HealthcheckRequest { sender, receiver })
             }
             FrostProtoMessageId::WalletState => {
-                // utxos
-                let utxos_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
-                buf.advance(8);
-                let utxos = buf[..utxos_len].to_vec();
-                buf.advance(utxos_len);
-
-                // tracked txs
-                let tracked_txs_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
-                buf.advance(8);
-                let tracked_txs = buf[..tracked_txs_len].to_vec();
-                buf.advance(tracked_txs_len);
-
                 // pending pegouts
                 let pending_pegouts_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
                 buf.advance(8);
                 let pending_pegouts = buf[..pending_pegouts_len].to_vec();
                 buf.advance(pending_pegouts_len);
 
-                FrostProtoMessageKind::WalletState(WalletStateRequest::new(
-                    utxos,
-                    tracked_txs,
-                    pending_pegouts,
-                ))
+                FrostProtoMessageKind::WalletState(WalletStateRequest::new(pending_pegouts))
             }
         };
         Some(Self { message_type, message })
@@ -705,19 +673,12 @@ mod tests {
 
     #[test]
     fn test_wallet_state_encode_decode() {
-        let utxos = "utxos".to_owned();
-        let tracked_txs = "tracked_txs".to_owned();
         let pending_pegouts = "pending_pegouts".to_owned();
-
-        let utxos_bytes = utxos.bytes().collect_vec();
-        let tracked_txs_bytes = tracked_txs.bytes().collect_vec();
         let pending_pegouts_bytes = pending_pegouts.bytes().collect_vec();
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::WalletState,
             message: FrostProtoMessageKind::WalletState(WalletStateRequest::new(
-                utxos_bytes,
-                tracked_txs_bytes,
                 pending_pegouts_bytes,
             )),
         };
@@ -732,13 +693,8 @@ mod tests {
 
         // Verify that the decoded message matches the original message
         if let FrostProtoMessageKind::WalletState(wallet_state_request) = decoded_message.message {
-            let decoded_utxos = String::from_utf8(wallet_state_request.utxos).unwrap();
-            let decoded_tracked_txs = String::from_utf8(wallet_state_request.tracked_txs).unwrap();
             let decoded_pending_pegouts =
                 String::from_utf8(wallet_state_request.pending_pegouts).unwrap();
-
-            assert_eq!(decoded_utxos, utxos, "utxos does not match");
-            assert_eq!(decoded_tracked_txs, tracked_txs, "tracked_txs does not match");
             assert_eq!(decoded_pending_pegouts, pending_pegouts, "pending_pegouts does not match");
         } else {
             panic!("Decoded message is not a WalletState Message");

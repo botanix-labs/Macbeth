@@ -695,39 +695,22 @@ where
 
     async fn reset_wallet_state(
         &self,
-        _req: tonic::Request<rpc::ResetWalletStateRequest>,
+        req: tonic::Request<rpc::ResetWalletStateRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        panic!("not used yet");
-        // self.validate_jwt(&req)?;
-        // let req = req.into_inner();
-        // info!("Received reset wallet state request");
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received reset wallet state request");
 
-        // // handle utxos
-        // let utxos: Result<Vec<crate::database::Utxo>, _> =
-        //     req.utxos.into_iter().map(TryFrom::try_from).collect();
-        // let utxos = utxos.to_status()?;
-        // let utxo_refs: Vec<&crate::database::Utxo> = utxos.iter().collect();
-        // self.db.reset_utxos(&utxo_refs).to_status()?;
-
-        // // handle tracked txs
-        // let tracked_txs = req
-        //     .tracked_txs
-        //     .into_iter()
-        //     .map(TryFrom::try_from)
-        //     .collect::<Result<Vec<crate::pegout_scheduler::Tx>, _>>()
-        //     .map_err(|e| internal!("Failed to convert tracked tx: {}", e))?;
-        // let tracked_txs_refs: Vec<&crate::pegout_scheduler::Tx> = tracked_txs.iter().collect();
-        // self.db.reset_tracked_txs(&tracked_txs_refs).to_status()?;
-
-        // // handle pending pegouts
-        // let pending_pegouts = req
-        //     .pending_pegouts
-        //     .into_iter()
-        //     .map(TryFrom::try_from)
-        //     .collect::<Result<Vec<PegoutRequest>, _>>()
-        //     .map_err(|e| internal!("Failed to convert pending pegout: {}", e))?;
-        // let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
-        // self.db.reset_pending_pegouts(&pending_pegouts_refs).to_status()?;
+        // handle pending pegouts
+        let pending_pegouts = req
+            .pending_pegouts
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<PegoutRequest>, _>>()
+            .map_err(|e| internal!("Failed to convert pending pegout: {}", e))?;
+        let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
+        self.db.reset_pending_pegouts(&pending_pegouts_refs).to_status()?;
+        Ok(tonic::Response::new(rpc::Empty {}))
     }
 
     /* Signer Endpoints */

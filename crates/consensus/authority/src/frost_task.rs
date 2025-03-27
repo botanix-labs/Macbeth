@@ -191,62 +191,6 @@ where
         }
     }
 
-    async fn get_serialized_compressed_utxo_set(
-        &mut self,
-    ) -> Result<Vec<u8>, UtxoSetSyncSerializationError> {
-        let prost_utxos = self.btc_server.get_all_utxos(client::Empty {}).await.map_err(|e| {
-            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got grpc error {:?}", e);
-            UtxoSetSyncSerializationError::Grpc(e)
-        })?;
-
-        if prost_utxos.utxos.is_empty() {
-            warn!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Received empty utxos from btc server");
-            return Ok(vec![]);
-        }
-
-        // serialize the prost message
-        let prost_message_wrapper = ProstMessageSerdelizer(prost_utxos);
-        let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
-            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got prost error {:?}", e);
-            UtxoSetSyncSerializationError::Prost(e)
-        })?;
-
-        // now compress the prost message
-        let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
-            error!(target: "consensus::authority::utxo_syncer::get_utxo_set", "Got prost error {:?}", e);
-            UtxoSetSyncSerializationError::DataParser(e)
-        })?;
-        Ok(prost_serialized_compressed)
-    }
-
-    async fn get_serialized_compressed_tracked_txs(
-        &mut self,
-    ) -> Result<Vec<u8>, TrackedTxSyncSerializationError> {
-        let prost_tracked_txs = self.btc_server.get_tracked_txs(client::Empty {}).await.map_err(|e| {
-            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got grpc error {:?}", e);
-            TrackedTxSyncSerializationError::Grpc(e)
-        })?;
-
-        if prost_tracked_txs.tracked_txs.is_empty() {
-            warn!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Received empty tracked txs from btc server");
-            return Ok(vec![]);
-        }
-
-        // serialize the prost message
-        let prost_message_wrapper = ProstMessageSerdelizer(prost_tracked_txs);
-        let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
-            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got prost error {:?}", e);
-            TrackedTxSyncSerializationError::Prost(e)
-        })?;
-
-        // now compress the prost message
-        let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
-            error!(target: "consensus::authority::tracked_tx_syncer::get_tracked_txs", "Got prost error {:?}", e);
-            TrackedTxSyncSerializationError::DataParser(e)
-        })?;
-        Ok(prost_serialized_compressed)
-    }
-
     async fn get_serialized_compressed_pending_pegouts(
         &mut self,
     ) -> Result<Vec<u8>, PendingPegoutsSyncSerializationError> {
@@ -276,9 +220,7 @@ where
     }
 
     fn has_wallet_state(response: &WalletStateResponse) -> bool {
-        !response.utxos.is_empty() ||
-            !response.tracked_txs.is_empty() ||
-            !response.pending_pegouts.is_empty()
+        !response.pending_pegouts.is_empty()
     }
 
     pub async fn start_task(&mut self, mut abci_started_rx: tokio::sync::oneshot::Receiver<()>) {
@@ -502,39 +444,6 @@ where
                             all_peers_handle.get(&peer_id).expect("peer handle to exist");
 
                         // Note its important we do not respond to this message if we are syncing
-                        // ourselves This should be checked above
-                        let serialized_compressed_utxo_set = match self
-                            .get_serialized_compressed_utxo_set()
-                            .await
-                        {
-                            Ok(serialized_compressed_utxo_set) => serialized_compressed_utxo_set,
-                            Err(e) => {
-                                error!(target: "consensus::authority::utxo_syncer::start_task", "Error getting serialized compressed utxo set: {:?}", e);
-                                continue;
-                            }
-                        };
-                        if serialized_compressed_utxo_set.is_empty() {
-                            warn!(target: "consensus::authority::utxo_syncer::start_task", "Received empty utxo set from database");
-                            continue;
-                        }
-
-                        let serialized_compressed_tracked_txs = match self
-                            .get_serialized_compressed_tracked_txs()
-                            .await
-                        {
-                            Ok(serialized_compressed_tracked_txs) => {
-                                serialized_compressed_tracked_txs
-                            }
-                            Err(e) => {
-                                error!(target: "consensus::authority::tracked_tx_syncer::start_task", "Error getting serialized compressed tracked txs: {:?}", e);
-                                continue;
-                            }
-                        };
-                        if serialized_compressed_tracked_txs.is_empty() {
-                            warn!(target: "consensus::authority::tracked_tx_syncer::start_task", "Received empty tracked txs from database");
-                            continue;
-                        }
-
                         let serialized_compressed_pending_pegouts = match self
                             .get_serialized_compressed_pending_pegouts()
                             .await
@@ -553,8 +462,6 @@ where
                         }
 
                         // update response with data
-                        response.utxos = serialized_compressed_utxo_set;
-                        response.tracked_txs = serialized_compressed_tracked_txs;
                         response.pending_pegouts = serialized_compressed_pending_pegouts;
 
                         info!(target: "consensus::authority::wallet_syncer::start_task", "Sending wallet state to peer {:?}", peer_id);

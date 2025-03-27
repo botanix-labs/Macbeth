@@ -4,6 +4,7 @@ use crate::{
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
+    wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::{
@@ -199,6 +200,7 @@ where
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
         Option<SnapshotManager<EF, BF, DB>>,
+        Option<WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>>,
     )
     where
         BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
@@ -239,6 +241,19 @@ where
             }
         }
         .await;
+
+        let wallet_sync = {
+            if let Some(btc_server) = &btc_server_client {
+                let wallet_state_sync_engine = WalletStateSyncEngine::new(
+                    storage.clone(),
+                    btc_server.clone(),
+                    frost_handle.clone().expect("Requires frost handle"),
+                );
+                Some(wallet_state_sync_engine)
+            } else {
+                None
+            }
+        };
 
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
@@ -290,6 +305,6 @@ where
             Arc::clone(&snapshot_manager_state_lock),
         ));
 
-        (frost_task, abci_client_builder, snapshot_manager)
+        (frost_task, abci_client_builder, snapshot_manager, wallet_sync)
     }
 }

@@ -96,9 +96,7 @@ message ResetAllUtxosRequest {
 }
 
 message ResetWalletStateRequest {
-    repeated Utxo utxos = 1;
-    repeated TrackedTx tracked_txs = 2;
-    repeated PendingPegout pending_pegouts = 3;
+    repeated PendingPegout pending_pegouts = 1;
 }
 
 message ConsensusCheckpointRequest {

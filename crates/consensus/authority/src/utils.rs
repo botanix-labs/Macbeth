@@ -319,7 +319,7 @@ pub(crate) fn generate_signing_session_id(
 /// Repersents an error related to utxo operations
 #[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
-pub enum UtxoMerkelRootError {
+pub(crate) enum UtxoMerkelRootError {
     #[error("Unparsable tx id")]
     /// Unparsable tx id
     UnparsableTxId,

@@ -17,6 +17,7 @@ use reth_authority_consensus::{
     random_source_provider::RandomSourceProvider,
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
+    wallet_state_sync::WalletStateSync,
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_cli_util::{get_secret_key, parse_socket_address};
@@ -727,7 +728,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
-        let (frost_task, abci_client_builder, snapshot_manager) =
+        let (frost_task, abci_client_builder, snapshot_manager, wallet_sync) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
                 blockchain_db.clone(),
@@ -765,6 +766,17 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 }
             }),
         );
+
+        if let Some(wallet_sync) = wallet_sync {
+            executor.spawn_critical(
+                "Wallet Sync",
+                Box::pin(async move {
+                    if let Err(e) = wallet_sync.sync_wallet_state().await {
+                        error!(target: "reth::cli", "Wallet Sync Error: {:?}", e);
+                    }
+                }),
+            );
+        }
 
         // configure exxes manager
         let exex_manager = ExExManagerHandle::empty();

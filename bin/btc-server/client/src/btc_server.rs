@@ -40,10 +40,6 @@ pub struct ResetAllUtxosRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetWalletStateRequest {
     #[prost(message, repeated, tag = "1")]
-    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
-    #[prost(message, repeated, tag = "2")]
-    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
-    #[prost(message, repeated, tag = "3")]
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

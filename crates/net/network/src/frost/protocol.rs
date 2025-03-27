@@ -354,9 +354,8 @@ impl Stream for FrostProtoConnection {
                         }
                     }
                     PeerMessageResponse::WalletState(wallet_state_response) => {
-                        let WalletStateResponse { utxos, tracked_txs, pending_pegouts } =
-                            wallet_state_response;
-                        let req = WalletStateRequest::new(utxos, tracked_txs, pending_pegouts);
+                        let WalletStateResponse { pending_pegouts } = wallet_state_response;
+                        let req = WalletStateRequest::new(pending_pegouts);
                         FrostProtoMessage::wallet_state_message(req)
                     }
                 },
@@ -506,8 +505,6 @@ impl Stream for FrostProtoConnection {
             }
             FrostProtoMessageKind::WalletState(data) => FrostProtocolEvent::PeerMessage {
                 response: PeerMessageResponse::WalletState(WalletStateResponse {
-                    utxos: data.utxos,
-                    tracked_txs: data.tracked_txs,
                     pending_pegouts: data.pending_pegouts,
                 }),
                 peer_id: this.peer_id,

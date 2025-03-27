@@ -32,7 +32,7 @@ impl fmt::Display for PeerMessageResponse {
         match self {
             Self::Dkg(response) => write!(f, "DKG Response: {}", response),
             Self::Signing(response) => write!(f, "Signing Response: {}", response),
-            Self::WalletState(response) => write!(f, "Wallet state Response: {}", response),
+            Self::WalletState(response) => write!(f, "Wallet State Response: {}", response),
             Self::Healthcheck(response) => {
                 write!(f, "Health Response: {:?}", response)
             }
@@ -76,11 +76,7 @@ impl fmt::Display for UtxoSetResponse {
 /// Response structure for internal communication
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WalletStateResponse {
-    /// Serialized utxos
-    pub utxos: Vec<u8>,
-    /// Serialized tracked transactions
-    pub tracked_txs: Vec<u8>,
-    /// Serialized pending pegouts  
+    /// Serialized pending pegouts
     pub pending_pegouts: Vec<u8>,
 }
 
@@ -89,11 +85,7 @@ impl fmt::Display for WalletStateResponse {
         write!(
             f,
             "WalletStateResponse:\n\
-            - UTXOs: {} bytes\n\
-            - Tracked Transactions: {} bytes\n\
             - Pending Pegouts: {} bytes",
-            self.utxos.len(),
-            self.tracked_txs.len(),
             self.pending_pegouts.len()
         )
     }

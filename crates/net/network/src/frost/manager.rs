@@ -1,4 +1,4 @@
-use super::{FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse};
+use super::{FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse, WalletStateResponse};
 use crate::{session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
@@ -390,6 +390,38 @@ impl FrostManager {
                     );
                 }
             }
+            FrostCommand::GetWalletStateFromPeer => {
+                let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
+                // filter all peers with active connections
+                let connected_peers =
+                    peer_ids.iter().filter_map(|peer_id| self.retrieve_peer_data(peer_id));
+
+                for peer in connected_peers {
+                    match peer.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
+                        PeerMessageResponse::WalletState(WalletStateResponse {
+                            pending_pegouts: vec![],
+                        }),
+                    )) {
+                        Ok(_) => {
+                            tracing::debug!(
+                                target: "network::frost::on_command",
+                                "Request for pending pegouts sent to peer {:?}", peer.peer_id
+                            );
+                        }
+                        Err(e) => {
+                            error!(target: "network::frost::on_command", "Failed to send pending pegouts request to peer {:?}, error: {:?}", peer.peer_id, e);
+                        }
+                    }
+                }
+
+                // reply to caller
+                // if let Err(e) = tx.send(peer_connections) {
+                //     error!(
+                //         target: "network::frost::on_command",
+                //         "Error replying to call on GetAllConnectedPeers {:?}", e
+                //     );
+                // }
+            }
         }
     }
 }
@@ -444,6 +476,8 @@ pub enum FrostCommand {
     GetAllConnectedPeers(oneshot::Sender<HashMap<PeerId, PeerData>>),
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageContext>>),
+    /// Get pending pegouts state from peer
+    GetWalletStateFromPeer,
 }
 
 /// Config type for initiating a [`FrostManager`] instance.
