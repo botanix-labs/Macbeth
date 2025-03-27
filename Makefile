@@ -55,9 +55,9 @@ install: ## Build and install the reth binary under `~/.cargo/bin`.
 		--profile "$(PROFILE)" \
 		$(CARGO_INSTALL_EXTRA_FLAGS)
 
-.PHONY: install-op
-install-op: ## Build and install the op-reth binary under `~/.cargo/bin`.
-	cargo install --path bin/reth --bin op-reth --force --locked \
+.PHONY: install-btc-server
+install-btc-server: ## Build and install the btc-server binary under `~/.cargo/bin`.
+	cargo install --path bin/btc-server --bin btc-server --force --locked \
 		--features $(FEATURES)" \
 		--profile "$(PROFILE)" \
 		$(CARGO_INSTALL_EXTRA_FLAGS)
@@ -109,9 +109,10 @@ build-%:
 	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
 		cross build --bin reth --target $* --features "$(FEATURES)" --profile "$(PROFILE)"
 
-op-build-%:
+
+build-btc-server-%:
 	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
-		cross build --bin op-reth --target $* --features $(FEATURES)" --profile "$(PROFILE)"
+		cross build --bin btc-server --target $* --features $(FEATURES)" --profile "$(PROFILE)"
 
 # Unfortunately we can't easily use cross to build for Darwin because of licensing issues.
 # If we wanted to, we would need to build a custom Docker image with the SDK available.
@@ -123,10 +124,10 @@ build-x86_64-apple-darwin:
 	$(MAKE) build-native-x86_64-apple-darwin
 build-aarch64-apple-darwin:
 	$(MAKE) build-native-aarch64-apple-darwin
-op-build-x86_64-apple-darwin:
-	$(MAKE) op-build-native-x86_64-apple-darwin
-op-build-aarch64-apple-darwin:
-	$(MAKE) op-build-native-aarch64-apple-darwin
+build-btc-server-x86_64-apple-darwin:
+	$(MAKE) build-btc-server-native-x86_64-apple-darwin
+build-btc-server-aarch64-apple-darwin:
+	$(MAKE) build-btc-server-native-aarch64-apple-darwin
 
 # Create a `.tar.gz` containing a binary for a specific target.
 define tarball_release_binary

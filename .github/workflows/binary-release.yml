@@ -1,0 +1,113 @@
+name: Binary Release
+
+on:
+  push:
+    tags:
+      - v*
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  extract-version:
+    name: extract version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        run: echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})" >> $GITHUB_OUTPUT
+        id: extract_version
+    outputs:
+      VERSION: ${{ steps.extract_version.outputs.VERSION }}
+  
+  build:
+    name: build release
+    runs-on: ${{ matrix.configs.os }}
+    needs: extract-version
+    strategy:
+      matrix:
+        configs:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            profile: maxperf
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04
+            profile: maxperf
+          - target: x86_64-apple-darwin
+            os: macos-13
+            profile: maxperf
+          - target: aarch64-apple-darwin
+            os: macos-14
+            profile: maxperf
+          - target: x86_64-pc-windows-gnu
+            os: ubuntu-24.04
+            profile: maxperf
+        build:
+          - command: build
+            binary: reth
+          - command: build-btc-server
+            binary: btc-server
+    steps:
+        - uses: actions/checkout@v4
+        - uses: rui314/setup-mold@v1
+        - uses: dtolnay/rust-toolchain@stable
+          with:
+            target: ${{ matrix.configs.target }}
+        - name: Install cross main
+          id: cross_main
+          run: |
+            cargo install cross --git https://github.com/cross-rs/cross
+        - uses: Swatinem/rust-cache@v2
+          with:
+            cache-on-failure: true
+        - name: Apple M1 setup
+          if: matrix.configs.target == 'aarch64-apple-darwin'
+          run: |
+            echo "SDKROOT=$(xcrun -sdk macosx --show-sdk-path)" >> $GITHUB_ENV
+            echo "MACOSX_DEPLOYMENT_TARGET=$(xcrun -sdk macosx --show-sdk-platform-version)" >> $GITHUB_ENV
+        - name: Build Reth Binary
+          run: make PROFILE=${{ matrix.configs.profile }} ${{ matrix.build.command }}-${{ matrix.configs.target }}
+        - name: Build Bitcoin Server
+          run: make PROFILE=${{ matrix.configs.profile }} ${{ matrix.build.command }}-${{ matrix.configs.target }}
+        - name: Move Binary to Artifacts
+          run: |
+            mkdir -p artifacts
+            [[ "${{ matrix.configs.target }}" == *windows* ]] && ext=".exe"
+            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/${{ matrix.build.binary }}${ext}" ./artifacts
+
+        - name: gcloud auth
+          id: 'auth'
+          uses: google-github-actions/auth@v2
+          with: 
+            workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+            service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+        
+        - name: gcloud setup
+          uses: google-github-actions/setup-gcloud@v2
+          with:
+            project_id: botanix-391913
+
+        - name: Sign Binary with GCP KMS
+          run: |
+            cd artifacts
+            tar -cvf ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
+            gcloud kms asymmetric-sign \
+                --version=1 \
+                --key=projects/botanix-391913/locations/global/keyRings/botanix-keyring/cryptoKeys/botanix-artifact-registry-key/cryptoKeyVersions/1 \
+                --keyring=projects/botanix-391913/locations/global/keyRings/botanix-keyring \
+                --location=global \
+                --input-file=./${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz \
+                --signature-file=./${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz.sig
+            mv *tar.gz* ..
+            
+        - name: Upload Artifacts
+          uses: actions/upload-artifact@v4
+          with:
+            name: ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz
+            path: ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz
+
+        - name: Upload Signature
+          uses: actions/upload-artifact@v4
+          with:
+            name: ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz.sig
+            path: ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz.sig
+            
