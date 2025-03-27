@@ -78,7 +78,7 @@ use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
 use reth_provider::{
     providers::{BlockchainProvider2, StaticFileProvider},
     BlockHashReader, CanonStateSubscriptions, HeaderProvider, ProviderFactory,
-    StageCheckpointReader,
+    StageCheckpointReader, DatabaseProviderFactory
 };
 use reth_rpc::EthApi;
 use reth_static_file::StaticFileProducer;
@@ -534,7 +534,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             evm_config,
             bitcoind_factory.clone(),
             node_config.rpc.btc_network,
-            provider_factory.clone(),
+            Arc::new(provider_factory.database_provider_ro()?),
         );
 
         // fetch the head block from the database

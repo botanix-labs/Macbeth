@@ -20,7 +20,8 @@ pub(crate) mod authority_execution_utils {
     };
     use reth_provider::{
         BlockExecutionInput, BlockExecutionOutput, BlockHashReader, BlockNumReader,
-        ExecutionOutcome, HeaderProvider, ProviderFactory,
+        DatabaseProviderFactory, DatabaseProviderRO, ExecutionOutcome,
+        HeaderProvider, ProviderFactory
     };
     use reth_revm::{database::StateProviderDatabase, db::State};
     use reth_trie::StateRoot;
@@ -342,18 +343,20 @@ pub(crate) mod authority_execution_utils {
         let provider =
             database_provider.provider()?.state_provider_by_block_number(block.number - 1)?;
 
+        let blockchain_provider: DatabaseProviderRO<DB> = database_provider.database_provider_ro()?;
+
         let db = State::builder()
             .with_database_boxed(Box::new(StateProviderDatabase::new(provider)))
             .with_bundle_update()
             .build();
 
-        let executor = EthBlockExecutor::new(
+        let executor = EthBlockExecutor::<EthEvmConfig, _, BF, DB>::new(
             chain_spec,
             evm_config,
             db,
             bitcoind_factory.clone(),
             bitcoin_network,
-            database_provider.clone(),
+            Arc::new(blockchain_provider),
         );
         let input = BlockExecutionInput::new(block, U256::ZERO);
         let exec_results = executor.execute(input)?;
