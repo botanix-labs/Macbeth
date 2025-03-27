@@ -128,12 +128,10 @@ pub enum FrostProtoMessageId {
     SignerRound2SigningPackage = 0x08,
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage = 0x09,
-    /// Healthcheck
-    Healthcheck = 0x0A,
     /// Round 1 Dkg request message
-    Round1DkgRequest = 0x0B,
+    Round1DkgRequest = 0x0A,
     /// `WalletState`
-    WalletState = 0x0C,
+    WalletState = 0x0B,
 }
 
 /// Enum defining the frost message kind
@@ -161,8 +159,6 @@ pub enum FrostProtoMessageKind {
     SignerRound2SigningPackage(SignRequest),
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage(SignRequest),
-    /// Health
-    Healthcheck(HealthcheckRequest),
     /// Wallet state message
     WalletState(WalletStateRequest),
 }
@@ -276,14 +272,6 @@ impl FrostProtoMessage {
         }
     }
 
-    /// Peer healthcheck
-    pub const fn peer_health_message(resource: HealthcheckRequest) -> Self {
-        Self {
-            message_type: FrostProtoMessageId::Healthcheck,
-            message: FrostProtoMessageKind::Healthcheck(resource),
-        }
-    }
-
     /// Creates a new `TestProtoMessage` with the given message ID and payload.
     /// Creates a new Frost protocol with the given message ID and payload.
     pub fn encoded(&self) -> BytesMut {
@@ -328,17 +316,6 @@ impl FrostProtoMessage {
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
             }
-            FrostProtoMessageKind::Healthcheck(resource) => {
-                // Serialize the sender
-                let sender_bytes = resource.sender.as_slice();
-                buf.put_u16_le(sender_bytes.len() as u16); // Length of the sender
-                buf.put_slice(sender_bytes); // Sender bytes
-
-                // Serialize the receiver
-                let receiver_bytes = resource.receiver.as_slice();
-                buf.put_u16_le(receiver_bytes.len() as u16); // Length of the receiver
-                buf.put_slice(receiver_bytes); // Receiver bytes
-            }
             FrostProtoMessageKind::WalletState(resource) => {
                 // serialize the utxos
                 buf.put_u64_le(resource.utxos.len() as u64); // Use u64 to support larger utxos sizes
@@ -374,9 +351,8 @@ impl FrostProtoMessage {
             0x07 => FrostProtoMessageId::CoordinatorRound1SigningPackage,
             0x08 => FrostProtoMessageId::SignerRound2SigningPackage,
             0x09 => FrostProtoMessageId::CoordinatorRound2SigningPackage,
-            0x0A => FrostProtoMessageId::Healthcheck,
-            0x0B => FrostProtoMessageId::Round1DkgRequest,
-            0x0C => FrostProtoMessageId::WalletState,
+            0x0A => FrostProtoMessageId::Round1DkgRequest,
+            0x0B => FrostProtoMessageId::WalletState,
             _ => return None,
         };
         let message = match message_type {
@@ -517,23 +493,6 @@ impl FrostProtoMessage {
                     psbt,
                 ))
             }
-            FrostProtoMessageId::Healthcheck => {
-                // Deserialize the sender
-                let sender_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
-                buf.advance(2);
-                let sender_bytes = &buf[..sender_len];
-                let sender = PeerId::from_slice(sender_bytes); // Assuming from_slice can never fail
-                buf.advance(sender_len);
-
-                // Deserialize the receiver
-                let receiver_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
-                buf.advance(2);
-                let receiver_bytes = &buf[..receiver_len];
-                let receiver = PeerId::from_slice(receiver_bytes); // Assuming from_slice can never fail
-                buf.advance(receiver_len);
-
-                FrostProtoMessageKind::Healthcheck(HealthcheckRequest { sender, receiver })
-            }
             FrostProtoMessageId::WalletState => {
                 // utxos
                 let utxos_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
@@ -566,11 +525,11 @@ impl FrostProtoMessage {
 
 #[cfg(test)]
 mod tests {
+    use super::WalletStateRequest;
     #[allow(unused_imports)]
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest,
     };
-    use super::{HealthcheckRequest, WalletStateRequest};
     use itertools::Itertools;
     #[allow(unused_imports)]
     use reth_primitives::SealedBlock;
@@ -667,39 +626,6 @@ mod tests {
             assert_eq!(decoded_peer_id, peer_id, "PeerId does not match");
         } else {
             panic!("Decoded message is not a PongMessage");
-        }
-    }
-
-    #[test]
-    fn test_healtcheck_message_encode_decode() {
-        let sender_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
-        let receiver_peer_id = PeerId::from_str("6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0").unwrap();
-
-        let message = FrostProtoMessage {
-            message_type: FrostProtoMessageId::Healthcheck,
-            message: FrostProtoMessageKind::Healthcheck(HealthcheckRequest::new(
-                sender_peer_id,
-                receiver_peer_id,
-            )),
-        };
-
-        // Encode the message
-        let encoded_bytes = message.encoded();
-
-        // Simulate receiving the encoded bytes and decoding them
-        let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
-        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
-            .expect("Failed to decode HealthcheckMessage");
-
-        // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::Healthcheck(healthcheck_request) = decoded_message.message {
-            assert_eq!(healthcheck_request.sender, sender_peer_id, "sender_peer_id does not match");
-            assert_eq!(
-                healthcheck_request.receiver, receiver_peer_id,
-                "receiver_peer_id does not match"
-            );
-        } else {
-            panic!("Decoded message is not a Healthcheck Message");
         }
     }
 

@@ -20,8 +20,8 @@ pub(crate) mod authority_execution_utils {
     };
     use reth_provider::{
         BlockExecutionInput, BlockExecutionOutput, BlockHashReader, BlockNumReader,
-        DatabaseProviderFactory, DatabaseProviderRO, ExecutionOutcome,
-        HeaderProvider, ProviderFactory
+        DatabaseProviderFactory, DatabaseProviderRO, ExecutionOutcome, HeaderProvider,
+        ProviderFactory,
     };
     use reth_revm::{database::StateProviderDatabase, db::State};
     use reth_trie::StateRoot;
@@ -343,7 +343,8 @@ pub(crate) mod authority_execution_utils {
         let provider =
             database_provider.provider()?.state_provider_by_block_number(block.number - 1)?;
 
-        let blockchain_provider: DatabaseProviderRO<DB> = database_provider.database_provider_ro()?;
+        let blockchain_provider: DatabaseProviderRO<DB> =
+            database_provider.database_provider_ro()?;
 
         let db = State::builder()
             .with_database_boxed(Box::new(StateProviderDatabase::new(provider)))
