@@ -1,11 +1,7 @@
 use std::{str::FromStr, time::Duration};
 
 use bitcoin::{
-    blockdata::block::Header,
-    hashes::Hash,
-    merkle_tree::PartialMerkleTree,
-    Amount,
-    Txid
+    blockdata::block::Header, hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid,
 };
 use bitcoincore_rpc::RpcApi;
 use ethers::{prelude::Provider, providers::Http};
@@ -16,13 +12,16 @@ use reth_primitives::{
         },
         utils::AmountExt,
     },
-    revm_primitives::{FixedBytes, Address, B256}
+    revm_primitives::{Address, FixedBytes, B256},
 };
 use serde_json::json;
 
 use crate::{
     it_info_print,
-    suite::consensus::{common::events::{BlockWithEDH, GatewayAddressResponse}, ConsensusIntegrationTestSuite},
+    suite::consensus::{
+        common::events::{BlockWithEDH, GatewayAddressResponse},
+        ConsensusIntegrationTestSuite,
+    },
     utils::generate_blocks,
 };
 
@@ -54,7 +53,7 @@ async fn generate_invalid_pegin_metas(
     invalid_pegin_meta_cases.push((empty_headers_meta, "Empty headers list"));
 
     // Create invalid pegin meta with invalid merkle proof
-    let invalid_pmt = PartialMerkleTree::from_txids(&[Txid::all_zeros()], &[true]); 
+    let invalid_pmt = PartialMerkleTree::from_txids(&[Txid::all_zeros()], &[true]);
     let invalid_pmt_meta = vec![PeginMeta::V0(PeginMetaV0 {
         version: PEGIN_META_VERSION_V0,
         outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
@@ -96,8 +95,8 @@ async fn generate_invalid_pegin_metas(
         .await;
     let latest_block_with_edh = latest_block_with_edh.expect("valid block with edh");
     let latest_block_hash = latest_block_with_edh.hash;
-    let ref_block_hash = FixedBytes::<32>::from_str(&latest_block_hash.as_str())
-            .expect("valid hash");
+    let ref_block_hash =
+        FixedBytes::<32>::from_str(&latest_block_hash.as_str()).expect("valid hash");
     let meta_v1_with_incorrect_version = vec![PeginMeta::V1(PeginMetaV1 {
         inner: PeginMetaV0 {
             version: PEGIN_META_VERSION_V0,
@@ -113,7 +112,8 @@ async fn generate_invalid_pegin_metas(
         },
         ref_block_hash,
     })];
-    invalid_pegin_meta_cases.push((meta_v1_with_incorrect_version, "V1 with incorrect version (V0)"));
+    invalid_pegin_meta_cases
+        .push((meta_v1_with_incorrect_version, "V1 with incorrect version (V0)"));
 
     // Create invalid pegin meta v0 with incorrect version
     let meta_v0_with_incorrect_version = vec![PeginMeta::V0(PeginMetaV0 {
@@ -128,24 +128,13 @@ async fn generate_invalid_pegin_metas(
         merkle_proof: pmt.clone(),
         block_headers: headers.clone(),
     })];
-    invalid_pegin_meta_cases.push((meta_v0_with_incorrect_version, "V0 with incorrect version (V1)"));
+    invalid_pegin_meta_cases
+        .push((meta_v0_with_incorrect_version, "V0 with incorrect version (V1)"));
 
     // Create invalid pegin meta with proofs having mixed versions
-    let mixed_versions_meta = vec![PeginMeta::V0(PeginMetaV0 {
-        version: PEGIN_META_VERSION_V0,
-        outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
-        address: eth_account.clone(),
-        aggregate_publickey: secp256k1::PublicKey::from_str(
-            gateway_address_response.aggregate_public_key.as_str(),
-        )
-        .expect("valid public key"),
-        tx: pegin_tx.clone(),
-        merkle_proof: pmt.clone(),
-        block_headers: headers.clone(),
-    }),
-    PeginMeta::V1(PeginMetaV1 {
-        inner: PeginMetaV0 {
-            version: PEGIN_META_VERSION_V1,
+    let mixed_versions_meta = vec![
+        PeginMeta::V0(PeginMetaV0 {
+            version: PEGIN_META_VERSION_V0,
             outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
             address: eth_account.clone(),
             aggregate_publickey: secp256k1::PublicKey::from_str(
@@ -155,10 +144,25 @@ async fn generate_invalid_pegin_metas(
             tx: pegin_tx.clone(),
             merkle_proof: pmt.clone(),
             block_headers: headers.clone(),
-        },
-        ref_block_hash,
-    })];
-    invalid_pegin_meta_cases.push((mixed_versions_meta, "Mixed versions (V0 and V1) in same vector"));
+        }),
+        PeginMeta::V1(PeginMetaV1 {
+            inner: PeginMetaV0 {
+                version: PEGIN_META_VERSION_V1,
+                outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
+                address: eth_account.clone(),
+                aggregate_publickey: secp256k1::PublicKey::from_str(
+                    gateway_address_response.aggregate_public_key.as_str(),
+                )
+                .expect("valid public key"),
+                tx: pegin_tx.clone(),
+                merkle_proof: pmt.clone(),
+                block_headers: headers.clone(),
+            },
+            ref_block_hash,
+        }),
+    ];
+    invalid_pegin_meta_cases
+        .push((mixed_versions_meta, "Mixed versions (V0 and V1) in same vector"));
 
     // Create invalid pegin meta with v1 proofs having mixed ref block hashes
     let first_block_with_edh = provider
@@ -169,39 +173,42 @@ async fn generate_invalid_pegin_metas(
         .await;
     let first_block_with_edh = first_block_with_edh.expect("valid block with edh");
     let first_block_hash = first_block_with_edh.hash;
-    let ref_block_hash_first = FixedBytes::<32>::from_str(&first_block_hash.as_str())
-            .expect("valid hash");
-    let mixed_ref_block_hashes_meta = vec![PeginMeta::V1(PeginMetaV1 {
-        inner: PeginMetaV0 {
-            version: PEGIN_META_VERSION_V1,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
-            address: eth_account.clone(),
-            aggregate_publickey: secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .expect("valid public key"),
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt.clone(),
-            block_headers: headers.clone(),
-        },
-        ref_block_hash,
-    }),
-    PeginMeta::V1(PeginMetaV1 {
-        inner: PeginMetaV0 {
-            version: PEGIN_META_VERSION_V1,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
-            address: eth_account.clone(),
-            aggregate_publickey: secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .expect("valid public key"),
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt.clone(),
-            block_headers: headers.clone(),
-        },
-        ref_block_hash: ref_block_hash_first,
-    })];
-    invalid_pegin_meta_cases.push((mixed_ref_block_hashes_meta, "V1 proofs with mismatched reference block hashes"));
+    let ref_block_hash_first =
+        FixedBytes::<32>::from_str(&first_block_hash.as_str()).expect("valid hash");
+    let mixed_ref_block_hashes_meta = vec![
+        PeginMeta::V1(PeginMetaV1 {
+            inner: PeginMetaV0 {
+                version: PEGIN_META_VERSION_V1,
+                outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
+                address: eth_account.clone(),
+                aggregate_publickey: secp256k1::PublicKey::from_str(
+                    gateway_address_response.aggregate_public_key.as_str(),
+                )
+                .expect("valid public key"),
+                tx: pegin_tx.clone(),
+                merkle_proof: pmt.clone(),
+                block_headers: headers.clone(),
+            },
+            ref_block_hash,
+        }),
+        PeginMeta::V1(PeginMetaV1 {
+            inner: PeginMetaV0 {
+                version: PEGIN_META_VERSION_V1,
+                outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
+                address: eth_account.clone(),
+                aggregate_publickey: secp256k1::PublicKey::from_str(
+                    gateway_address_response.aggregate_public_key.as_str(),
+                )
+                .expect("valid public key"),
+                tx: pegin_tx.clone(),
+                merkle_proof: pmt.clone(),
+                block_headers: headers.clone(),
+            },
+            ref_block_hash: ref_block_hash_first,
+        }),
+    ];
+    invalid_pegin_meta_cases
+        .push((mixed_ref_block_hashes_meta, "V1 proofs with mismatched reference block hashes"));
 
     invalid_pegin_meta_cases
 }
@@ -324,7 +331,7 @@ pub async fn invalid_pegin(
 
     let bitcoin_block_height = conf_block_info.height;
 
-    // Generate invalid pegin metas 
+    // Generate invalid pegin metas
     let invalid_pegin_metas = generate_invalid_pegin_metas(
         pegin_tx,
         vout as u32,
@@ -332,7 +339,7 @@ pub async fn invalid_pegin(
         eth_account,
         pmt,
         headers,
-        provider
+        provider,
     )
     .await;
 
@@ -356,8 +363,10 @@ pub async fn invalid_pegin(
         // pegin address balance before pegin
         let eth_pegin_address = eth_account.to_string();
         it_info_print!("Pegin address", eth_pegin_address);
-        let addr = reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
-        let pegin_address_initial_balance = botanix_eth_client.get_botanix_balance(addr).await.unwrap();
+        let addr =
+            reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
+        let pegin_address_initial_balance =
+            botanix_eth_client.get_botanix_balance(addr).await.unwrap();
         it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
 
         // nonce before pegin
@@ -384,7 +393,8 @@ pub async fn invalid_pegin(
         assert!(tx_receipt.status.unwrap().is_zero());
 
         // pegin address balance after pegin
-        let pegin_address_final_balance = botanix_eth_client.get_botanix_balance(addr).await.unwrap();
+        let pegin_address_final_balance =
+            botanix_eth_client.get_botanix_balance(addr).await.unwrap();
         it_info_print!("Final pegin address balance", pegin_address_final_balance);
 
         assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);

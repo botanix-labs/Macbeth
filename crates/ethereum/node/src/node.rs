@@ -29,8 +29,7 @@ use reth_node_builder::{
 use reth_payload_builder::{PayloadBuilderHandle, PayloadBuilderService};
 use reth_provider::{
     providers::{ProviderFactory, StaticFileProvider},
-    CanonStateSubscriptions,
-    DatabaseProviderFactory,
+    CanonStateSubscriptions, DatabaseProviderFactory,
 };
 use reth_rpc::EthApi;
 use reth_tracing::tracing::{debug, info};

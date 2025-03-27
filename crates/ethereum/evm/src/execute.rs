@@ -40,7 +40,10 @@ use reth_primitives::{
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
     U256,
 };
-use reth_provider::{test_utils::create_test_provider_factory, BlockReader, DatabaseProviderRO, DatabaseProviderFactory};
+use reth_provider::{
+    test_utils::create_test_provider_factory, BlockReader, DatabaseProviderFactory,
+    DatabaseProviderRO,
+};
 use reth_prune_types::PruneModes;
 use reth_revm::{
     batch::BlockBatchRecord,
@@ -61,8 +64,8 @@ use std::sync::Arc;
 
 /// Provides executors to execute regular ethereum blocks
 #[derive(Debug, Clone)]
-pub struct EthExecutorProvider<BF, RethDB, EvmConfig = EthEvmConfig> 
-where 
+pub struct EthExecutorProvider<BF, RethDB, EvmConfig = EthEvmConfig>
+where
     RethDB: reth_db::Database,
 {
     chain_spec: Arc<ChainSpec>,
@@ -85,8 +88,8 @@ pub fn create_noop_executor_provider(
     )
 }
 
-impl<BF, RethDB> EthExecutorProvider<BF, RethDB> 
-where 
+impl<BF, RethDB> EthExecutorProvider<BF, RethDB>
+where
     RethDB: reth_db::Database,
 {
     /// Creates a new default ethereum executor provider.
@@ -100,8 +103,8 @@ where
     }
 }
 
-impl<BF, RethDB, EvmConfig> EthExecutorProvider<BF, RethDB, EvmConfig> 
-where 
+impl<BF, RethDB, EvmConfig> EthExecutorProvider<BF, RethDB, EvmConfig>
+where
     RethDB: reth_db::Database,
 {
     /// Creates a new executor provider.
@@ -178,8 +181,8 @@ struct EthExecuteOutput {
 
 /// Helper container type for EVM with chain spec.
 #[derive(Debug, Clone)]
-struct EthEvmExecutor<EvmConfig, BF, RethDB> 
-where 
+struct EthEvmExecutor<EvmConfig, BF, RethDB>
+where
     RethDB: reth_db::Database,
 {
     /// The chainspec
@@ -493,11 +496,12 @@ where
                     }
                     (0, Some(_)) => {
                         return Err(MintContractError::InvalidPeginData {
-                            error: "Not expecting reference block hash in proof version 0".to_string(),
+                            error: "Not expecting reference block hash in proof version 0"
+                                .to_string(),
                             revert_address: pegin_data.account,
                             revert_amount: pegin_data.amount,
                         })
-                    },
+                    }
                     _ => {}
                 };
                 (meta.version(), meta.ref_block_hash())
@@ -587,7 +591,7 @@ where
 /// - Execute the block.
 #[derive(Debug)]
 pub struct EthBlockExecutor<EvmConfig, DB, BF, RethDB>
-where 
+where
     RethDB: reth_db::Database,
 {
     /// Chain specific evm config that's used to execute a block.
@@ -597,7 +601,7 @@ where
 }
 
 impl<EvmConfig, DB, BF, RethDB> EthBlockExecutor<EvmConfig, DB, BF, RethDB>
-where 
+where
     RethDB: reth_db::Database,
 {
     /// Creates a new Ethereum block executor.
@@ -799,7 +803,7 @@ where
 /// State changes are tracked until the executor is finalized.
 #[derive(Debug)]
 pub struct EthBatchExecutor<EvmConfig, DB, BF, RethDB>
-where 
+where
     RethDB: reth_db::Database,
 {
     /// The executor used to execute single blocks
@@ -811,7 +815,7 @@ where
 }
 
 impl<EvmConfig, DB, BF, RethDB> EthBatchExecutor<EvmConfig, DB, BF, RethDB>
-where 
+where
     RethDB: reth_db::Database,
 {
     /// Returns mutable reference to the state that wraps the underlying database.

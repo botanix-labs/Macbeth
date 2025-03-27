@@ -64,10 +64,10 @@ impl PeginData {
                     "invalid meta version: only accepting version 0 or 1",
                 ));
             };
-            
+
             let pegin = match pegin {
                 PeginMeta::V0(meta) => meta,
-                PeginMeta::V1(meta) => &meta.inner
+                PeginMeta::V1(meta) => &meta.inner,
             };
 
             // pegin block headers list should contain the commitment header
@@ -519,12 +519,9 @@ mod tests {
             tx: header_metadata.tx,
         };
         match meta_v0.version {
-            PEGIN_META_VERSION_V1 => PeginMeta::V1(
-                PeginMetaV1 {
-                    inner: meta_v0,
-                    ref_block_hash: B256::random(),
-                }
-            ),
+            PEGIN_META_VERSION_V1 => {
+                PeginMeta::V1(PeginMetaV1 { inner: meta_v0, ref_block_hash: B256::random() })
+            }
             _ => PeginMeta::V0(meta_v0),
         }
     }
@@ -536,13 +533,8 @@ mod tests {
         let destination_address =
             Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
 
-        let pegin_metadata = create_test_pegin_meta(
-            Some(0_u32),
-            None,
-            &pk,
-            header_metadata,
-            destination_address,
-        );
+        let pegin_metadata =
+            create_test_pegin_meta(Some(0_u32), None, &pk, header_metadata, destination_address);
 
         let serialized = pegin_metadata.serialize().unwrap();
         let (deserialized, size) = PeginMetaV0::deserialize(&serialized).unwrap();
@@ -566,26 +558,15 @@ mod tests {
         let destination_address =
             Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
 
-        let pegin_metadata = create_test_pegin_meta(
-            Some(1_u32),
-            None,
-            &pk,
-            header_metadata,
-            destination_address,
-        );
+        let pegin_metadata =
+            create_test_pegin_meta(Some(1_u32), None, &pk, header_metadata, destination_address);
         let serialized = pegin_metadata.serialize().unwrap();
         let (deserialized, size) = PeginMetaV1::deserialize(&serialized).unwrap();
         assert_eq!(pegin_metadata.version(), deserialized.inner.version);
         assert_eq!(pegin_metadata.outpoint(), &deserialized.inner.outpoint);
         assert_eq!(pegin_metadata.address(), deserialized.inner.address);
-        assert_eq!(
-            pegin_metadata.aggregate_publickey(),
-            deserialized.inner.aggregate_publickey
-        );
-        assert_eq!(
-            pegin_metadata.block_headers().len(),
-            deserialized.inner.block_headers.len()
-        );
+        assert_eq!(pegin_metadata.aggregate_publickey(), deserialized.inner.aggregate_publickey);
+        assert_eq!(pegin_metadata.block_headers().len(), deserialized.inner.block_headers.len());
         assert_eq!(pegin_metadata.tx(), &deserialized.inner.tx);
         assert_eq!(
             pegin_metadata.merkle_proof().num_transactions(),
@@ -735,7 +716,13 @@ mod tests {
         let destination_address =
             Address::from_str("0xa65812bac44dadb79c3e4930dbd98d5a75376b2a").unwrap();
 
-        let meta = create_test_pegin_meta(version, block_headers, pk, header_metadata, destination_address);
+        let meta = create_test_pegin_meta(
+            version,
+            block_headers,
+            pk,
+            header_metadata,
+            destination_address,
+        );
 
         PeginData {
             account: destination_address,

@@ -569,10 +569,6 @@ where
 
                         continue;
                     }
-                    PeerMessageResponse::Healthcheck(_) => {
-                        // Nothing to do for healthcheck related messages.
-                        continue;
-                    }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         let frost_identifier = match deserialize_frost_peer_id(identifier) {

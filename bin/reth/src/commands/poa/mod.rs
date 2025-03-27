@@ -77,8 +77,8 @@ use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
 use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
 use reth_provider::{
     providers::{BlockchainProvider2, StaticFileProvider},
-    BlockHashReader, CanonStateSubscriptions, HeaderProvider, ProviderFactory,
-    StageCheckpointReader, DatabaseProviderFactory
+    BlockHashReader, CanonStateSubscriptions, DatabaseProviderFactory, HeaderProvider,
+    ProviderFactory, StageCheckpointReader,
 };
 use reth_rpc::EthApi;
 use reth_static_file::StaticFileProducer;
