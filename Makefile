@@ -111,8 +111,7 @@ build-%:
 
 
 build-btc-server-%:
-	RUSTFLAGS="-C link-arg=-lgcc -Clink-arg=-static-libgcc" \
-		cross build --bin btc-server --target $* --features $(FEATURES)" --profile "$(PROFILE)"
+		cross build --package btc-server --bin btc-server --target $* --release"
 
 # Unfortunately we can't easily use cross to build for Darwin because of licensing issues.
 # If we wanted to, we would need to build a custom Docker image with the SDK available.

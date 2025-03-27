@@ -21,8 +21,12 @@ jobs:
   
   build:
     name: build release
-    runs-on: ${{ matrix.configs.os }}
+    runs-on: 
+      group: macbeth
     needs: extract-version
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       matrix:
         configs:
@@ -47,23 +51,35 @@ jobs:
           id: cross_main
           run: |
             cargo install cross --git https://github.com/cross-rs/cross
+
+        - name: Install protoc
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+
         - uses: Swatinem/rust-cache@v2
           with:
             cache-on-failure: true
         - name: Build Reth Binary
-          run: make PROFILE=${{ matrix.configs.profile }} ${{ matrix.build.command }}-${{ matrix.configs.target }}
-        - name: Build Bitcoin Server
-          run: make PROFILE=${{ matrix.configs.profile }} ${{ matrix.build.command }}-${{ matrix.configs.target }}
+          run: make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
+
+        - name: Build Bitcoin Server Binary
+          run: |
+            cross build --package btc-server --bin btc-server --target ${{ matrix.configs.target }} --release
+
         - name: Move Binary to Artifacts
           run: |
             mkdir -p artifacts
             [[ "${{ matrix.configs.target }}" == *windows* ]] && ext=".exe"
-            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/${{ matrix.build.binary }}${ext}" ./artifacts
+            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts
+            mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts
+
 
         - name: gcloud auth
           id: 'auth'
           uses: google-github-actions/auth@v2
           with: 
+            project_id: botanix-391913
             workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
             service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
         
@@ -72,28 +88,22 @@ jobs:
           with:
             project_id: botanix-391913
 
-        - name: Sign Binary with GCP KMS
+        - name: Create sha256sum
           run: |
             cd artifacts
-            tar -cvf ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
-            gcloud kms asymmetric-sign \
-                --version=1 \
-                --key=projects/botanix-391913/locations/global/keyRings/botanix-keyring/cryptoKeys/botanix-artifact-registry-key/cryptoKeyVersions/1 \
-                --keyring=projects/botanix-391913/locations/global/keyRings/botanix-keyring \
-                --location=global \
-                --input-file=./${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz \
-                --signature-file=./${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz.sig
-            mv *tar.gz* ..
+            tar -cvf ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
+            sha256sum ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz > ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+            mv ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum ..
             
         - name: Upload Artifacts
           uses: actions/upload-artifact@v4
           with:
-            name: ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz
-            path: ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz
+            name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
+            path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
 
         - name: Upload Signature
           uses: actions/upload-artifact@v4
           with:
-            name: ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz.sig
-            path: ${{ matrix.build.binary }}-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.configs.target }}.tar.gz.sig
+            name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+            path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
             
