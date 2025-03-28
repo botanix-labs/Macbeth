@@ -43,7 +43,6 @@ use tracing::{error, warn};
 mod builder;
 /// Comet BFT abci and consensus driver
 pub mod comet_bft;
-mod snapshot_tracker;
 
 pub use comet_bft::light_client::LightCBFTClientBuilder;
 pub mod activation_manager;
@@ -91,8 +90,9 @@ impl AuthorityConsensus {
         // Determine the parent gas limit, considering elasticity multiplier on the London fork.
         let parent_gas_limit =
             if self.chain_spec.fork(EthereumHardfork::London).transitions_at_block(header.number) {
-                parent.gas_limit *
-                    self.chain_spec
+                parent.gas_limit
+                    * self
+                        .chain_spec
                         .base_fee_params_at_timestamp(header.timestamp)
                         .elasticity_multiplier as u64
             } else {
