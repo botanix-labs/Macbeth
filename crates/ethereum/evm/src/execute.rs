@@ -40,7 +40,10 @@ use reth_primitives::{
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
     U256,
 };
-use reth_provider::{test_utils::create_test_provider_factory, BlockReader, ProviderFactory};
+use reth_provider::{
+    test_utils::create_test_provider_factory, BlockReader, DatabaseProviderFactory,
+    DatabaseProviderRO,
+};
 use reth_prune_types::PruneModes;
 use reth_revm::{
     batch::BlockBatchRecord,
@@ -61,12 +64,15 @@ use std::sync::Arc;
 
 /// Provides executors to execute regular ethereum blocks
 #[derive(Debug, Clone)]
-pub struct EthExecutorProvider<BF, RethDB, EvmConfig = EthEvmConfig> {
+pub struct EthExecutorProvider<BF, RethDB, EvmConfig = EthEvmConfig>
+where
+    RethDB: reth_db::Database,
+{
     chain_spec: Arc<ChainSpec>,
     evm_config: EvmConfig,
     bitcoind_factory: BF,
     bitcoin_network: bitcoin::Network,
-    provider: ProviderFactory<RethDB>,
+    provider: Arc<DatabaseProviderRO<RethDB>>,
 }
 
 /// Create a noop executor provider with chain spec
@@ -78,30 +84,36 @@ pub fn create_noop_executor_provider(
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
         bitcoin::Network::Regtest,
-        create_test_provider_factory(),
+        Arc::new(create_test_provider_factory().database_provider_ro().unwrap()),
     )
 }
 
-impl<BF, RethDB> EthExecutorProvider<BF, RethDB> {
+impl<BF, RethDB> EthExecutorProvider<BF, RethDB>
+where
+    RethDB: reth_db::Database,
+{
     /// Creates a new default ethereum executor provider.
     pub fn ethereum(
         chain_spec: Arc<ChainSpec>,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
-        provider: ProviderFactory<RethDB>,
+        provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
         Self::new(chain_spec, Default::default(), bitcoind_factory, bitcoin_network, provider)
     }
 }
 
-impl<BF, RethDB, EvmConfig> EthExecutorProvider<BF, RethDB, EvmConfig> {
+impl<BF, RethDB, EvmConfig> EthExecutorProvider<BF, RethDB, EvmConfig>
+where
+    RethDB: reth_db::Database,
+{
     /// Creates a new executor provider.
     pub const fn new(
         chain_spec: Arc<ChainSpec>,
         evm_config: EvmConfig,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
-        provider: ProviderFactory<RethDB>,
+        provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
         Self { chain_spec, evm_config, bitcoind_factory, bitcoin_network, provider }
     }
@@ -110,8 +122,8 @@ impl<BF, RethDB, EvmConfig> EthExecutorProvider<BF, RethDB, EvmConfig> {
 impl<BF, RethDB, EvmConfig> EthExecutorProvider<BF, RethDB, EvmConfig>
 where
     BF: BitcoindFactory + Clone + Unpin + 'static,
-    RethDB: reth_db::Database,
     EvmConfig: ConfigureEvm,
+    RethDB: reth_db::Database,
 {
     fn eth_executor<DB>(&self, db: DB) -> EthBlockExecutor<EvmConfig, DB, BF, RethDB>
     where
@@ -169,7 +181,10 @@ struct EthExecuteOutput {
 
 /// Helper container type for EVM with chain spec.
 #[derive(Debug, Clone)]
-struct EthEvmExecutor<EvmConfig, BF, RethDB> {
+struct EthEvmExecutor<EvmConfig, BF, RethDB>
+where
+    RethDB: reth_db::Database,
+{
     /// The chainspec
     chain_spec: Arc<ChainSpec>,
     /// How to create an EVM.
@@ -179,7 +194,7 @@ struct EthEvmExecutor<EvmConfig, BF, RethDB> {
     /// The L1 bitcoin network
     bitcoin_network: bitcoin::Network,
     /// Blockchain provider
-    provider: ProviderFactory<RethDB>,
+    provider: Arc<DatabaseProviderRO<RethDB>>,
 }
 
 impl<EvmConfig, BF, RethDB> EthEvmExecutor<EvmConfig, BF, RethDB>
@@ -204,7 +219,7 @@ where
         block: &BlockWithSenders,
         mut evm: Evm<'_, Ext, &mut State<DB>>,
         botanix_consensus_pkg: BotanixConsensusPackage,
-        provider: ProviderFactory<RethDB>,
+        provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Result<EthExecuteOutput, BlockExecutionError>
     where
         DB: Database,
@@ -428,7 +443,7 @@ where
         result: &ExecutionResult,
         botanix_consensus_pkg: &BotanixConsensusPackage,
         tx_hash: TxHash,
-        provider: ProviderFactory<RethDB>,
+        provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Result<(Vec<PeginData>, Vec<PegoutWithId>), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
@@ -447,7 +462,7 @@ where
             // by using a bitcoin checkpoint that is close to the pegin block height.
             // The reference block hash is only provided for version v1.
             let mut bitcoin_checkpoint = consensus_pkg.bitcoin_checkpoint;
-            for meta in pegin_data.clone().meta {
+            let (version, ref_block_hash) = if let Some(meta) = pegin_data.meta.first() {
                 match (meta.version(), meta.ref_block_hash()) {
                     (1, None) => {
                         return Err(MintContractError::InvalidPeginData {
@@ -479,7 +494,40 @@ where
                             bitcoin_checkpoint = package.bitcoin_checkpoint;
                         }
                     }
+                    (0, Some(_)) => {
+                        return Err(MintContractError::InvalidPeginData {
+                            error: "Not expecting reference block hash in proof version 0"
+                                .to_string(),
+                            revert_address: pegin_data.account,
+                            revert_amount: pegin_data.amount,
+                        })
+                    }
                     _ => {}
+                };
+                (meta.version(), meta.ref_block_hash())
+            } else {
+                return Err(MintContractError::InvalidPeginData {
+                    error: "No proofs found in pegin data".to_string(),
+                    revert_address: pegin_data.account,
+                    revert_amount: pegin_data.amount,
+                })
+            };
+
+            for meta in &pegin_data.meta {
+                if meta.version() != version {
+                    return Err(MintContractError::InvalidPeginData {
+                        error: "Proofs have mismatching versions".to_string(),
+                        revert_address: pegin_data.account,
+                        revert_amount: pegin_data.amount,
+                    })
+                }
+
+                if meta.ref_block_hash() != ref_block_hash {
+                    return Err(MintContractError::InvalidPeginData {
+                        error: "Proofs have mismatching reference block hashes".to_string(),
+                        revert_address: pegin_data.account,
+                        revert_amount: pegin_data.amount,
+                    })
                 }
             }
 
@@ -542,14 +590,20 @@ where
 /// - Create a new instance of the executor.
 /// - Execute the block.
 #[derive(Debug)]
-pub struct EthBlockExecutor<EvmConfig, DB, BF, RethDB> {
+pub struct EthBlockExecutor<EvmConfig, DB, BF, RethDB>
+where
+    RethDB: reth_db::Database,
+{
     /// Chain specific evm config that's used to execute a block.
     executor: EthEvmExecutor<EvmConfig, BF, RethDB>,
     /// The state to use for execution
     state: State<DB>,
 }
 
-impl<EvmConfig, DB, BF, RethDB> EthBlockExecutor<EvmConfig, DB, BF, RethDB> {
+impl<EvmConfig, DB, BF, RethDB> EthBlockExecutor<EvmConfig, DB, BF, RethDB>
+where
+    RethDB: reth_db::Database,
+{
     /// Creates a new Ethereum block executor.
     pub const fn new(
         chain_spec: Arc<ChainSpec>,
@@ -557,7 +611,7 @@ impl<EvmConfig, DB, BF, RethDB> EthBlockExecutor<EvmConfig, DB, BF, RethDB> {
         state: State<DB>,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
-        provider: ProviderFactory<RethDB>,
+        provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
         Self {
             executor: EthEvmExecutor {
@@ -748,7 +802,10 @@ where
 ///
 /// State changes are tracked until the executor is finalized.
 #[derive(Debug)]
-pub struct EthBatchExecutor<EvmConfig, DB, BF, RethDB> {
+pub struct EthBatchExecutor<EvmConfig, DB, BF, RethDB>
+where
+    RethDB: reth_db::Database,
+{
     /// The executor used to execute single blocks
     ///
     /// All state changes are committed to the [State].
@@ -757,7 +814,10 @@ pub struct EthBatchExecutor<EvmConfig, DB, BF, RethDB> {
     batch_record: BlockBatchRecord,
 }
 
-impl<EvmConfig, DB, BF, RethDB> EthBatchExecutor<EvmConfig, DB, BF, RethDB> {
+impl<EvmConfig, DB, BF, RethDB> EthBatchExecutor<EvmConfig, DB, BF, RethDB>
+where
+    RethDB: reth_db::Database,
+{
     /// Returns mutable reference to the state that wraps the underlying database.
     #[allow(unused)]
     fn state_mut(&mut self) -> &mut State<DB> {

@@ -23,8 +23,6 @@ pub enum PeerMessageResponse {
     Signing(SigningResponse),
     /// Wallet state response
     WalletState(WalletStateResponse),
-    /// Healtcheck response
-    Healthcheck(HealthcheckResponse),
 }
 
 impl fmt::Display for PeerMessageResponse {
@@ -33,9 +31,6 @@ impl fmt::Display for PeerMessageResponse {
             Self::Dkg(response) => write!(f, "DKG Response: {}", response),
             Self::Signing(response) => write!(f, "Signing Response: {}", response),
             Self::WalletState(response) => write!(f, "Wallet State Response: {}", response),
-            Self::Healthcheck(response) => {
-                write!(f, "Health Response: {:?}", response)
-            }
         }
     }
 }
@@ -88,21 +83,6 @@ impl fmt::Display for WalletStateResponse {
             - Pending Pegouts: {} bytes",
             self.pending_pegouts.len()
         )
-    }
-}
-
-/// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct HealthcheckResponse {
-    /// the ping requester
-    pub sender: PeerId,
-    /// pinged peer
-    pub receiver: PeerId,
-}
-
-impl fmt::Display for HealthcheckResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Sender: {}, Receiver: {}", self.sender, self.receiver,)
     }
 }
 

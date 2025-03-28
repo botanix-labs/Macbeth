@@ -60,16 +60,6 @@ pub(crate) enum UtxoSetSyncSerializationError {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum TrackedTxSyncSerializationError {
-    #[error("Received a grpc client error {0}")]
-    Grpc(GrpcClientError),
-    #[error("prost error {0}")]
-    Prost(ProstError),
-    #[error("data parser error {0}")]
-    DataParser(DataParserError),
-}
-
-#[derive(Debug, thiserror::Error)]
 pub(crate) enum PendingPegoutsSyncSerializationError {
     #[error("Received a grpc client error {0}")]
     Grpc(GrpcClientError),
@@ -474,10 +464,6 @@ where
                             continue;
                         }
 
-                        continue;
-                    }
-                    PeerMessageResponse::Healthcheck(_) => {
-                        // Nothing to do for healthcheck related messages.
                         continue;
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {

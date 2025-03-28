@@ -1,6 +1,9 @@
 use crate::{
     it_info_print,
-    suite::consensus::{common::events::GatewayAddressResponse, frost::error::Error},
+    suite::consensus::{
+        common::{botanix_client::BotanixEthClient, events::GatewayAddressResponse},
+        frost::error::Error,
+    },
 };
 use bitcoin::{consensus::Encodable, hash_types::BlockHash, Address, Amount};
 use bitcoincore_rpc::RpcApi;
@@ -202,4 +205,19 @@ where
     }
 
     gateway_address_response.map_err(|_| Error::GatewayAddressNotAvailable)
+}
+
+/// Waits until the genesis block exists.
+pub async fn wait_until_genesis_block_exists(client: &BotanixEthClient) -> Result<(), Error> {
+    while client
+        .get_latest_block()
+        .await
+        .map_err(|_| Error::LatestBlockDoesNotExist)?
+        .number
+        .ok_or(Error::LatestBlockDoesNotExist)? ==
+        0.into()
+    {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    Ok(())
 }

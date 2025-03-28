@@ -69,7 +69,7 @@ pub enum AuthorityConsensusBuilderError {
 // ===== impl AuthorityConsensusBuilder =====
 impl<EF, BF, DB, ToFrostMan, Source> AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source>
 where
-    ToFrostMan: ToFrostManager + Clone + 'static + Send,
+    ToFrostMan: ToFrostManager + Clone + 'static + Send + Sync,
     DB: BlockReaderIdExt
         + StateProviderFactory
         + Clone
@@ -248,6 +248,7 @@ where
                     storage.clone(),
                     btc_server.clone(),
                     frost_handle.clone().expect("Requires frost handle"),
+                    task_executor.clone(),
                 );
                 Some(wallet_state_sync_engine)
             } else {

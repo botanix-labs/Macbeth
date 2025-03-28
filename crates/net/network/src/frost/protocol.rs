@@ -26,8 +26,8 @@ use crate::{
 };
 
 use super::{
-    messages::{FrostProtoMessage, FrostProtoMessageKind, HealthcheckRequest, SignRequest},
-    FrostPeerCommand, FrostProtocolEvent, HealthcheckResponse, PeerMessageResponse,
+    messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest},
+    FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse,
 };
 
 /// Frost Protocol Handler
@@ -307,12 +307,6 @@ impl Stream for FrostProtoConnection {
                     FrostProtoMessage::ping_message(this.my_peer_id)
                 }
                 FrostPeerCommand::PeerMessage(response) => match response {
-                    PeerMessageResponse::Healthcheck(healthcheck_response) => {
-                        let HealthcheckResponse { sender, receiver } = healthcheck_response;
-                        let req = HealthcheckRequest::new(sender, receiver);
-
-                        FrostProtoMessage::peer_health_message(req)
-                    }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { response_type, identifier, data } = dkg_response;
                         match response_type {
@@ -432,13 +426,6 @@ impl Stream for FrostProtoConnection {
                 }
                 return Poll::Pending;
             }
-            FrostProtoMessageKind::Healthcheck(data) => FrostProtocolEvent::PeerMessage {
-                peer_id: this.peer_id,
-                response: PeerMessageResponse::Healthcheck(HealthcheckResponse {
-                    receiver: data.receiver,
-                    sender: data.sender,
-                }),
-            },
             FrostProtoMessageKind::Round1Dkg(data) => FrostProtocolEvent::PeerMessage {
                 response: PeerMessageResponse::Dkg(DkgResponse {
                     response_type: DkgEventResponseType::DkgRound1,
@@ -679,12 +666,11 @@ mod tests {
         let waker = noop_waker();
         let mut cx = Context::from_waker(&waker);
 
-        let req =
-            HealthcheckRequest { sender: PeerId::new([0; 64]), receiver: PeerId::new([1; 64]) };
+        let req = WalletStateRequest { version: 1, pending_pegouts: vec![1, 2, 3] };
 
         // Send wire messages to the connection that create events for the manager
         for _ in 0..4 {
-            let wire_msg = FrostProtoMessage::peer_health_message(req.clone()).encoded();
+            let wire_msg = FrostProtoMessage::wallet_state_message(req.clone()).encoded();
             conn_tx.send(wire_msg).unwrap();
         }
 
@@ -730,9 +716,7 @@ mod tests {
         for _ in 0..2 {
             let event = protocol_events_rx.try_recv().unwrap();
             let FrostProtocolEvent::PeerMessage { peer_id: _, response } = event else { panic!() };
-            let PeerMessageResponse::Healthcheck(_healthcheck_response) = response else {
-                panic!()
-            };
+            let PeerMessageResponse::WalletState(_response) = response else { panic!() };
         }
 
         // We now have enough space for the last two events
@@ -750,9 +734,7 @@ mod tests {
         for _ in 0..2 {
             let event = protocol_events_rx.try_recv().unwrap();
             let FrostProtocolEvent::PeerMessage { peer_id: _, response } = event else { panic!() };
-            let PeerMessageResponse::Healthcheck(_healthcheck_response) = response else {
-                panic!()
-            };
+            let PeerMessageResponse::WalletState(_response) = response else { panic!() };
         }
 
         // Event queue is now empty

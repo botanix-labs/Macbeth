@@ -29,7 +29,7 @@ use reth_node_builder::{
 use reth_payload_builder::{PayloadBuilderHandle, PayloadBuilderService};
 use reth_provider::{
     providers::{ProviderFactory, StaticFileProvider},
-    CanonStateSubscriptions,
+    CanonStateSubscriptions, DatabaseProviderFactory,
 };
 use reth_rpc::EthApi;
 use reth_tracing::tracing::{debug, info};
@@ -150,7 +150,7 @@ where
             evm_config,
             mock_bitcoind_factory,
             regtest,
-            provider_factory,
+            Arc::new(provider_factory.database_provider_ro()?),
         );
 
         Ok((evm_config, executor))
