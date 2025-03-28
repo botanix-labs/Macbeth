@@ -1,7 +1,6 @@
 //! Snapshot manager is responsible for persisting snapshot chunks to disk
-use std::sync::{Arc, RwLock};
-
 use crate::Storage;
+use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_db::{
@@ -14,6 +13,7 @@ use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
     ProviderFactory, SnapshotReader, SnapshotWriter,
 };
+use std::sync::{Arc, RwLock};
 use tracing::{debug, error, info, trace, warn};
 
 // TODO(armins) this is defined in reth-node-core, we should move it to reth-consensus-authority but
@@ -49,6 +49,7 @@ pub const SNAPSHOT_SIZE_LIMITS_PROD: SnapshotSizeLimits = SnapshotSizeLimits {
 pub struct SnapshotManagerStateLock {
     snapshot_id: SnapshotId,
     block_id: BlockNumber,
+    is_syncing_history: bool,
 }
 
 impl SnapshotManagerStateLock {
@@ -73,6 +74,17 @@ impl SnapshotManagerStateLock {
     pub fn get_block_id(&self) -> u64 {
         self.block_id
     }
+
+    /// Set historical sync
+    pub fn set_is_syncing_history(&mut self, is_syncing_history: bool) -> &mut Self {
+        self.is_syncing_history = is_syncing_history;
+        self
+    }
+
+    /// Check if syncing historically
+    pub fn is_syncing_history(&self) -> bool {
+        self.is_syncing_history
+    }
 }
 
 /// Snapshot manager error
@@ -84,6 +96,9 @@ pub enum SnapshotManagerError {
     /// Error related to the data parser
     #[error("Data parser error: {0}")]
     DataParser(#[from] DataParserError),
+    /// Tendermint error
+    #[error("Tendermint rpc error: {0}")]
+    Tendermint(tendermint_rpc::Error),
 }
 
 /// Snapshot manager monitoring trait
@@ -104,6 +119,8 @@ pub struct SnapshotManager<EF, BF, DB> {
     state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_size_limits: SnapshotSizeLimits,
     enable_state_sync: bool,
+    enable_historical_sync: bool,
+    cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
 }
 
 impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
@@ -125,7 +142,9 @@ where
         snapshots_to_keep: u64,
         snapshot_message_format: u32,
         enable_state_sync: bool,
+        enable_historical_sync: bool,
         state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
+        cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
     ) -> Self {
         let snapshot_size_limits = match snapshot_message_format {
             SNAPSHOT_MESSAGE_FORMAT => SNAPSHOT_SIZE_LIMITS_PROD,
@@ -141,6 +160,8 @@ where
             state_lock,
             snapshot_size_limits,
             enable_state_sync,
+            enable_historical_sync,
+            cometbft_rpc_factory,
         }
     }
 
@@ -256,6 +277,28 @@ where
             return Ok(());
         }
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
+
+        // setup clients
+        let block_client = Arc::new(self.storage.client.clone());
+        let comet_rpc_client = match self.cometbft_rpc_factory.build_and_connect() {
+            Ok(client) => client,
+            Err(e) => {
+                error!(target: "consensus::authority::snapshot_manager::run", "Failed to connect to comet light client {:?}", e);
+                return Err(SnapshotManagerError::Tendermint(e));
+            }
+        };
+
+        let latest_block_height: u64 = comet_rpc_client
+            .latest_block()
+            .await
+            .ok()
+            .map(|b| {
+                error!(target: "consensus::authority::snapshot_manager::run", "Failed to get latest block from cometbft {:?}", b);
+                b.block.header.height.into()
+            })
+            .unwrap_or_default();
+        info!(target: "consensus::authority::snapshot_manager::run", "Latest comet block height {:?}", latest_block_height);
+
         let mut canon_events = self.storage.client.subscribe_to_canonical_state();
 
         while let Ok(canon_event) = canon_events.recv().await {

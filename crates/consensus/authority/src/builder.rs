@@ -287,6 +287,7 @@ where
                 provider_factory,
                 state_sync.num_snapshots_to_keep,
                 state_sync.snapshot_message_format,
+                state_sync.enable_state_sync,
                 state_sync.enable_historical_sync,
                 Arc::clone(&snapshot_manager_state_lock),
                 cometbft_rpc_factory.clone(),
