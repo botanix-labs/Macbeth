@@ -40,10 +40,24 @@ pub async fn invalid_pegout(
         botanix_eth_client.get_nonce(botanix_eth_client.get_sender_address()).await.unwrap();
     it_info_print!("Nonce before pegout: ", nonce_before);
 
-    // use empty pegout data
-    let pegout_data = ethers::core::types::Bytes::new();
-    let pegout_amount = Amount::from_btc(0.5).unwrap();
+    // Lets also test that when pegouts fail, the reverted amount
+    // is the actual burned amount. For this we need the burned amount
+    // to be different from the pegout amount. 
+    let burned_amount = Amount::from_btc(0.1).unwrap();   // the "true" burned amount
+    let pegout_amount = Amount::from_btc(0.5).unwrap();  
+
+    // Craft pegout_data such that it encodes the small burned amount.
+    let encoded_amount = ethers::abi::Token::Uint(
+        ethers::types::U256::from(burned_amount.to_wei().as_u64()),
+    );
+    let encoded_destination = ethers::abi::Token::String("invalid_pegout_destination".to_string());
+    let encoded_version = ethers::abi::Token::Bytes(vec![0]);
+    let pegout_data = ethers::core::types::Bytes::from(
+        ethers::abi::encode(&[encoded_amount, encoded_destination, encoded_version])
+    );
+    
     it_info_print!("Pegout amount: ", pegout_amount.to_wei());
+    it_info_print!("Burned amount: ", burned_amount.to_wei());
     let tx_receipt = botanix_eth_client
         .burn(invalid_pegout_destination, pegout_data, pegout_amount.to_wei())
         .await

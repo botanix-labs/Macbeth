@@ -34,7 +34,7 @@ use reth_primitives::{
         mint_validation::{
             try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
         },
-        peg_contract::{PeginData, PegoutWithId},
+        peg_contract::{PeginData, PegoutDataError, PegoutWithId},
     },
     header_ext::HeaderExt,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
@@ -290,7 +290,6 @@ where
             cumulative_gas_used += result.gas_used();
 
             // ***** Botanix specific checks ******
-            let pegout_amount = transaction.value();
             let mut pegins = vec![];
             let mut pegouts = vec![];
 
@@ -322,10 +321,10 @@ where
                                     revert_amount,
                                     &mut state,
                                 ),
-                                MintContractError::InvalidPegoutData(_) => {
+                                MintContractError::InvalidPegoutData(PegoutDataError::Invalid(_, amount)) => {
                                     Self::increment_balance_by_address(
                                         *sender,
-                                        EthersU256::from_little_endian(pegout_amount.as_le_slice()),
+                                        amount,
                                         &mut state,
                                     );
                                 }
