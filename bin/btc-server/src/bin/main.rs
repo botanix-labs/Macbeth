@@ -1723,8 +1723,8 @@ mod tests {
         let app = setup().await;
         let req = tonic::Request::new(rpc::Empty {});
         let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::Internal);
-        assert_eq!(res.message(), "internal error: Frost error: Incorrect number of packages.");
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
     }
 
     #[tokio::test]
@@ -1748,16 +1748,23 @@ mod tests {
 
         let req = tonic::Request::new(rpc::Empty {});
         let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::Internal);
-        assert_eq!(res.message(), "internal error: Frost error: Incorrect number of packages.");
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
 
-        // Lets add the round 1 dkg for the first two participants
+        // Lets add the round 1 dkg for the first participant
         let req = tonic::Request::new(rpc::DkgPayload {
             identifier: frost_id!(1).serialize().to_vec(),
             payload: round1_dkgs[1].clone().1.serialize().unwrap().to_vec(),
         });
         app.new_round1_dkg_package(req).await.unwrap();
 
+        // Insufficient round 1 dkg packages, require `max_signers - 1`
+        let req = tonic::Request::new(rpc::Empty {});
+        let res = app.get_round2_dkg_package(req).await.unwrap_err();
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
+
+        // Lets add the round 1 dkg for the second participant
         let req = tonic::Request::new(rpc::DkgPayload {
             identifier: frost_id!(2).serialize().to_vec(),
             payload: round1_dkgs[2].clone().1.serialize().unwrap().to_vec(),
