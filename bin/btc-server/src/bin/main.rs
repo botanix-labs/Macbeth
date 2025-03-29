@@ -1287,9 +1287,13 @@ where
         match self.frost_round1_dkg.lock().await.clone() {
             Some(round1_dkg) => {
                 // Retrieve round 1 packages from peers
-                // Here we don't check we have enough that should be done by the frost lib
-                // So we just propagate the error
                 let round1_packages = self.db.get_round1_dkg_packages().to_status()?;
+
+                // We only continue with part 2 if and only if ALL participants have
+                // submitted their round 1 packages
+                if (round1_packages.len() as u16) < self.max_signers - 1 {
+                    return Err(badarg!("not all participants have submitted their round 1 packages yet"));
+                }
 
                 let (round2_secret_package, round2_packages) =
                     frost::keys::dkg::part2(round1_dkg.0.clone(), &round1_packages).to_status()?;
