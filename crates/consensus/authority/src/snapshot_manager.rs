@@ -145,6 +145,7 @@ where
         + 'static,
 {
     /// Constructor
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
         compressor: DataParser,
@@ -337,7 +338,7 @@ where
 
         // create the historical blocks stream
         let mut historical_blocks_stream = match missing_blocks {
-            val if val == 0 => futures::stream::empty::<Option<BlockWithSenders>>().boxed(),
+            0 => futures::stream::empty::<Option<BlockWithSenders>>().boxed(),
             val if val > 0 && self.enable_historical_sync => {
                 info!(target: "consensus::authority::snapshot_manager::run", "Missing blocks detected, starting historical sync");
                 // mark the state lock as syncing history
@@ -466,7 +467,7 @@ where
             }
             None => {
                 info!(target: "consensus::authority::snapshot_manager::run", "no last snapshot height. Creating a new snapshot at height {}...", block.number); // create a new snapshot
-                self.create_new_snapshot(&block)?
+                self.create_new_snapshot(block)?
             }
         };
         info!("Last_snapshot_id: {:?}", last_snapshot_id);
@@ -486,7 +487,7 @@ where
         {
             info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.snapshot_size_limits.snapshot_max_size, latest_snapshot_size, serialized_block.len());
             // create a new snapshot
-            last_snapshot_id = self.create_new_snapshot(&block)?;
+            last_snapshot_id = self.create_new_snapshot(block)?;
             info!("Created last_snapshot_id: {:?}", last_snapshot_id);
         }
         info!("Snapshots count: {:?}", self.get_snapshots_count()?);
