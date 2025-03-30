@@ -4,12 +4,20 @@ on:
   push:
     tags:
       - v*
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: 'latest'
+      engineer:
+        description: 'Engineer to release'
+        required: true
+        default: 'botanix'
 
 jobs:
   extract-version:
+    if: github.event_name != 'workflow_dispatch'
     name: extract version
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +31,6 @@ jobs:
     name: build release
     runs-on: 
       group: macbeth
-    needs: extract-version
     permissions:
       contents: read
       id-token: write
@@ -106,4 +113,20 @@ jobs:
           with:
             name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
             path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
-            
+
+        - name: Upload Binary to GCP Artifact Storage
+          run: | 
+            VERSION="${{ github.event.inputs.version || github.ref_name }}"
+            gcloud storage cp ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/
+            gcloud storage cp ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/
+
+            # Set Content-Type and Cache-Control headers
+            gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+            gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
+
+            echo "Binary uploaded to:"
+            echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz"
+            echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum"
+
+
+  
