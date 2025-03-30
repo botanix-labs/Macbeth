@@ -1,6 +1,7 @@
 //! Snapshot manager is responsible for persisting snapshot chunks to disk
 use crate::Storage;
 use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use futures::StreamExt;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_db::{
@@ -11,9 +12,15 @@ use reth_evm::execute::BlockExecutorProvider;
 use reth_primitives::{BlockNumber, BlockWithSenders};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
-    ProviderFactory, SnapshotReader, SnapshotWriter,
+    ProviderFactory, SnapshotReader, SnapshotWriter, TransactionVariant,
 };
-use std::sync::{Arc, RwLock};
+use reth_rpc_types::BlockId;
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
+use tendermint_rpc::HttpClient;
+use tokio::time::sleep;
 use tracing::{debug, error, info, trace, warn};
 
 // TODO(armins) this is defined in reth-node-core, we should move it to reth-consensus-authority but
@@ -96,6 +103,9 @@ pub enum SnapshotManagerError {
     /// Error related to the data parser
     #[error("Data parser error: {0}")]
     DataParser(#[from] DataParserError),
+    /// Invalid block height for snapshot
+    #[error("Invalid block height for snapshot")]
+    InvalidBlockHeightForSnapshot(),
     /// Tendermint error
     #[error("Tendermint rpc error: {0}")]
     Tendermint(tendermint_rpc::Error),
@@ -258,6 +268,30 @@ where
     ) -> Result<(), SnapshotManagerError> {
         Ok(self.provider_factory.provider_rw()?.append_to_chunk(chunk_id, block_number, data)?)
     }
+
+    /// Get latest persisted block height
+    fn get_latest_persisted_block_height(
+        &self,
+    ) -> Result<Option<BlockNumber>, SnapshotManagerError> {
+        if let Some((snapshot_id, _block_number)) =
+            self.provider_factory.provider()?.get_last_snapshot_height()?
+        {
+            if let Some(latest_snapshot_chunk_id) = self
+                .provider_factory
+                .provider()?
+                .get_snapshot_by_id(snapshot_id)?
+                .and_then(|s| s.get_latest_chunk_id())
+            {
+                return self
+                    .provider_factory
+                    .provider()?
+                    .get_chunk_by_id(latest_snapshot_chunk_id)
+                    .map(|sc| sc.map(|c| c.get_ending_block_number()))
+                    .map_err(SnapshotManagerError::Provider);
+            }
+        }
+        Ok(None)
+    }
 }
 
 impl<EF, BF, DB> SnapshotRunnable for SnapshotManager<EF, BF, DB>
@@ -288,140 +322,103 @@ where
             }
         };
 
-        let latest_block_height: u64 = comet_rpc_client
-            .latest_block()
-            .await
-            .ok()
-            .map(|b| {
-                error!(target: "consensus::authority::snapshot_manager::run", "Failed to get latest block from cometbft {:?}", b);
-                b.block.header.height.into()
-            })
-            .unwrap_or_default();
+        let latest_block_height = get_latest_comet_block_height(&comet_rpc_client).await;
         info!(target: "consensus::authority::snapshot_manager::run", "Latest comet block height {:?}", latest_block_height);
 
-        let mut canon_events = self.storage.client.subscribe_to_canonical_state();
+        // get the latest persisted snapshot block height
+        let latest_persisted_block_height =
+            self.get_latest_persisted_block_height()?.unwrap_or_default();
+        info!(target: "consensus::authority::snapshot_manager::run", "Latest persisted block height {}", latest_persisted_block_height);
 
+        // start from the next block after the latest persisted block height
+        let starting_block = latest_persisted_block_height + 1;
+        let missing_blocks = latest_block_height.saturating_sub(starting_block);
+        info!(target: "consensus::authority::snapshot_manager::run", "Missing blocks {}", missing_blocks);
+
+        // create the historical blocks stream
+        let mut historical_blocks_stream = match missing_blocks {
+            val if val == 0 => futures::stream::empty::<Option<BlockWithSenders>>().boxed(),
+            val if val > 0 && self.enable_historical_sync => {
+                info!(target: "consensus::authority::snapshot_manager::run", "Missing blocks detected, starting historical sync");
+                // mark the state lock as syncing history
+                let mut state_lock = self.state_lock.write().expect("snapshot state sync locked");
+                state_lock.set_is_syncing_history(true);
+                drop(state_lock);
+
+                // create a stream of missing blocks
+                let historical_stream = futures::stream::iter(starting_block..=latest_block_height)
+                    .map(|block_number| {
+                        block_client
+                            .block_with_senders_by_id(
+                                BlockId::Number(block_number.into()),
+                                TransactionVariant::WithHash,
+                            )
+                            .ok()
+                            .flatten()
+                    })
+                    .boxed();
+
+                historical_stream
+            }
+            _ => {
+                warn!(target: "consensus::authority::snapshot_manager::run", "Missing blocks detected but historical sync is disabled!");
+
+                let mut state_lock = self.state_lock.write().expect("snapshot state sync locked");
+                state_lock.set_is_syncing_history(false);
+                drop(state_lock);
+
+                // allow a gap in snapshots and start syncing live blocks by returning an empty stream
+                futures::stream::empty::<Option<BlockWithSenders>>().boxed()
+            }
+        };
+
+        if missing_blocks > 0 {
+            info!(target: "consensus::authority::snapshot_manager::run", "Starting historical sync from block {} to block {}", starting_block, latest_block_height);
+            loop {
+                match historical_blocks_stream.next().await {
+                    Some(Some(historical_block_with_senders)) => {
+                        info!(target: "consensus::authority::snapshot_manager::run", "Received block number {} with senders from historical stream", historical_block_with_senders.number);
+
+                        if let Err(e) = self.process_block(&historical_block_with_senders).await {
+                            error!(target: "consensus::authority::snapshot_manager::run",
+                                      "Failed to process historical block {:?}: {:?}", historical_block_with_senders.number, e);
+                            continue;
+                        }
+                    }
+                    Some(None) => {
+                        info!(target: "consensus::authority::snapshot_manager::run", "No block found in historical stream");
+                        continue;
+                    }
+                    _ => {
+                        // Stream is complete
+                        info!(target: "consensus::authority::snapshot_manager::run", "Historical sync completed.");
+                        let mut state_lock =
+                            self.state_lock.write().expect("snapshot state sync locked");
+                        state_lock.set_is_syncing_history(false);
+                        drop(state_lock);
+                        break;
+                    }
+                }
+            }
+        }
+
+        info!(target: "consensus::authority::snapshot_manager::run", "Starting live sync");
+        let mut canon_events = self.storage.client.subscribe_to_canonical_state();
         while let Ok(canon_event) = canon_events.recv().await {
             debug!(target: "consensus::authority::snapshot_manager::run", "received canon event {:?}", canon_event);
 
             match canon_event {
                 CanonStateNotification::Commit { new, .. } => {
-                    // All canonical chains events right now have a single block
-                    // TODO: costly clone. Can we avoid this?
                     let block_with_senders = new.first().clone().unseal();
-                    // first attempt to serialize and compress the sealed block
-                    let serialized_block = self.compressor.encode(&block_with_senders).await.map_err(|e| {
-                            error!(target:"consensus::authority::snapshot_manager", "Failed to serialize and compress sealed block {:?}", e);
-                            SnapshotManagerError::DataParser(e)
-                    })?;
-                    if serialized_block.is_empty() {
-                        error!(target: "consensus::authority::snapshot_manager::run", "serialized_block is empty");
+                    debug!(target: "consensus::authority::snapshot_manager::run", "Processing live block {:?}", block_with_senders.number);
+
+                    if let Err(e) = self.process_block(&block_with_senders).await {
+                        error!(target: "consensus::authority::snapshot_manager::run",
+                                          "Failed to process live block {}: {:?}", block_with_senders.number, e);
                         continue;
                     }
 
-                    // check the block height vs. the last snapshot height
-                    let mut last_snapshot_id = match self.get_last_snapshot_height()? {
-                        Some((last_snapshot_id, last_snapshot_height)) => {
-                            if block_with_senders.number < last_snapshot_height {
-                                warn!(target: "consensus::authority::snapshot_manager::run", "block number {} is less than last snapshot height {}", block_with_senders.number, last_snapshot_height);
-                                continue;
-                            }
-                            last_snapshot_id
-                        }
-                        None => {
-                            info!(target: "consensus::authority::snapshot_manager::run", "no last snapshot height. Creating a new snapshot at height {}...", block_with_senders.number); // create a new snapshot
-                            self.create_new_snapshot(&block_with_senders)?
-                        }
-                    };
-                    info!("Last_snapshot_id: {:?}", last_snapshot_id);
-
-                    // now check the latest snapshot size
-                    let latest_snapshot_size = self.get_snapshot_size(last_snapshot_id)?;
-                    info!(
-                        "Latest_snapshot_size. Serialized block size: {:?}, Latest snapshot size: {:?}",
-                        serialized_block.len(),
-                        latest_snapshot_size
-                    );
-
-                    // Check if there is enough space in the latest snapshot
-                    debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
-                    if latest_snapshot_size + serialized_block.len()
-                        > self.snapshot_size_limits.snapshot_max_size
-                    {
-                        info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.snapshot_size_limits.snapshot_max_size, latest_snapshot_size, serialized_block.len());
-                        // create a new snapshot
-                        last_snapshot_id = self.create_new_snapshot(&block_with_senders)?;
-                        info!("Created last_snapshot_id: {:?}", last_snapshot_id);
-                    }
-                    info!("Snapshots count: {:?}", self.get_snapshots_count()?);
-
-                    // update the snapshot state lock
-                    let mut state_lock =
-                        self.state_lock.write().expect("snapshot state sync locked");
-                    state_lock
-                        .set_snapshot_id(last_snapshot_id)
-                        .set_block_number(block_with_senders.number);
-                    drop(state_lock);
-
-                    let snapshot =
-                        self.get_snapshot_by_id(last_snapshot_id)?.expect("checked above");
-                    let chunk_id = match snapshot.get_latest_chunk_id() {
-                        Some(chunk_id) => {
-                            // Check if there is enough space in the latest chunk
-                            let latest_chunk_size =
-                                self.provider_factory.provider()?.get_chunk_size(chunk_id)?;
-                            if latest_chunk_size + serialized_block.len()
-                                > self.snapshot_size_limits.snapshot_chunk_size
-                            {
-                                self.create_new_chunk(
-                                    last_snapshot_id,
-                                    block_with_senders.number,
-                                    serialized_block.clone(),
-                                )?
-                            } else {
-                                // Existing chunk lets append to it
-                                self.append_to_chunk(
-                                    chunk_id,
-                                    block_with_senders.number,
-                                    serialized_block,
-                                )?;
-                                chunk_id
-                            }
-                        }
-                        None => self.create_new_chunk(
-                            last_snapshot_id,
-                            block_with_senders.number,
-                            serialized_block,
-                        )?,
-                    };
-
-                    info!(
-                        "Updating snapshot. Last snapshot id: {:?}, block number: {:?}, chunk id: {:?}",
-                        last_snapshot_id, block_with_senders.number, chunk_id
-                    );
-                    self.update_snapshot(last_snapshot_id, block_with_senders.number, chunk_id)?;
-                    self.insert_block_snapshot_id_mapping(
-                        block_with_senders.number,
-                        last_snapshot_id,
-                    )?;
-
-                    // check if we need to delete older snapshots (Retention policy)
-                    if self.get_snapshots_count()? > self.snapshots_to_keep as usize {
-                        let oldest_snapshot_height = self
-                            .provider_factory
-                            .get_first_snapshot_height()?
-                            .map(|(_snapshot_id, snapshot_height)| snapshot_height)
-                            .unwrap_or_default();
-                        let state_lock =
-                            self.state_lock.read().expect("snapshot state sync locked");
-                        let locked_block_height = state_lock.block_id;
-                        drop(state_lock);
-                        // make sure we are not deleting the height we are just syncing with
-                        if locked_block_height == oldest_snapshot_height {
-                            info!(target: "consensus::authority::snapshot_manager::run", "Removing oldest snapshot at height {}", oldest_snapshot_height);
-                            self.remove_oldest_snapshot()?;
-                        }
-                    }
+                    self.apply_retention_policy()?;
                 }
                 CanonStateNotification::Reorg { old: _old, new: _new } => {
                     warn!(target: "consensus::authority::snapshot_manager::run", "reorg detected, this should not happen");
@@ -431,6 +428,132 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
+where
+    BF: BitcoindFactory + Clone + 'static,
+    EF: BlockExecutorProvider + Clone + 'static,
+    DB: BlockReaderIdExt
+        + SnapshotWriter
+        + SnapshotReader
+        + CanonStateSubscriptions
+        + Clone
+        + 'static,
+{
+    /// Process a single block and update snapshots accordingly
+    async fn process_block(&self, block: &BlockWithSenders) -> Result<(), SnapshotManagerError> {
+        // Serialize block
+        let serialized_block = self.compressor.encode(block).await.map_err(|e| {
+            error!(target: "consensus::authority::snapshot_manager",
+                   "Failed to serialize block: {:?}", e);
+            SnapshotManagerError::DataParser(e)
+        })?;
+
+        if serialized_block.is_empty() {
+            return Ok(());
+        }
+
+        // check the block height vs. the last snapshot height
+        let mut last_snapshot_id = match self.get_last_snapshot_height()? {
+            Some((last_snapshot_id, last_snapshot_height)) => {
+                if block.number < last_snapshot_height {
+                    error!(target: "consensus::authority::snapshot_manager::run", "block number {} is less than last snapshot height {}", block.number, last_snapshot_height);
+                    return Err(SnapshotManagerError::InvalidBlockHeightForSnapshot());
+                }
+                last_snapshot_id
+            }
+            None => {
+                info!(target: "consensus::authority::snapshot_manager::run", "no last snapshot height. Creating a new snapshot at height {}...", block.number); // create a new snapshot
+                self.create_new_snapshot(&block)?
+            }
+        };
+        info!("Last_snapshot_id: {:?}", last_snapshot_id);
+
+        // now check the latest snapshot size
+        let latest_snapshot_size = self.get_snapshot_size(last_snapshot_id)?;
+        info!(
+            "Latest_snapshot_size. Serialized block size: {:?}, Latest snapshot size: {:?}",
+            serialized_block.len(),
+            latest_snapshot_size
+        );
+
+        // Check if there is enough space in the latest snapshot
+        debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
+        if latest_snapshot_size + serialized_block.len()
+            > self.snapshot_size_limits.snapshot_max_size
+        {
+            info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.snapshot_size_limits.snapshot_max_size, latest_snapshot_size, serialized_block.len());
+            // create a new snapshot
+            last_snapshot_id = self.create_new_snapshot(&block)?;
+            info!("Created last_snapshot_id: {:?}", last_snapshot_id);
+        }
+        info!("Snapshots count: {:?}", self.get_snapshots_count()?);
+
+        // update the snapshot state lock
+        let mut state_lock = self.state_lock.write().expect("snapshot state sync locked");
+        state_lock.set_snapshot_id(last_snapshot_id).set_block_number(block.number);
+        drop(state_lock);
+
+        let snapshot = self.get_snapshot_by_id(last_snapshot_id)?.expect("checked above");
+        let chunk_id = match snapshot.get_latest_chunk_id() {
+            Some(chunk_id) => {
+                // Check if there is enough space in the latest chunk
+                let latest_chunk_size =
+                    self.provider_factory.provider()?.get_chunk_size(chunk_id)?;
+                if latest_chunk_size + serialized_block.len()
+                    > self.snapshot_size_limits.snapshot_chunk_size
+                {
+                    self.create_new_chunk(last_snapshot_id, block.number, serialized_block.clone())?
+                } else {
+                    // Existing chunk lets append to it
+                    self.append_to_chunk(chunk_id, block.number, serialized_block)?;
+                    chunk_id
+                }
+            }
+            None => self.create_new_chunk(last_snapshot_id, block.number, serialized_block)?,
+        };
+
+        info!(
+            "Updating snapshot. Last snapshot id: {:?}, block number: {:?}, chunk id: {:?}",
+            last_snapshot_id, block.number, chunk_id
+        );
+        self.update_snapshot(last_snapshot_id, block.number, chunk_id)?;
+        self.insert_block_snapshot_id_mapping(block.number, last_snapshot_id)?;
+
+        Ok(())
+    }
+
+    /// Apply retention policy for snapshots
+    fn apply_retention_policy(&self) -> Result<(), SnapshotManagerError> {
+        if !self.state_lock.read().expect("snapshot state sync locked").is_syncing_history()
+            && self.get_snapshots_count()? > self.snapshots_to_keep as usize
+        {
+            if let Some((_, oldest_height)) = self.provider_factory.get_first_snapshot_height()? {
+                let state_lock = self.state_lock.read().expect("snapshot state sync locked");
+                if state_lock.block_id != oldest_height {
+                    info!(target: "consensus::authority::snapshot_manager",
+                          "Removing oldest snapshot at height {}", oldest_height);
+                    self.remove_oldest_snapshot()?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Gets latest cometbft block height with retry if rpc server isn't available yet
+async fn get_latest_comet_block_height(comet_rpc_client: &HttpClient) -> u64 {
+    loop {
+        match comet_rpc_client.latest_block().await {
+            Ok(res) => return res.block.header.height.value(),
+            Err(_e) => {
+                warn!("RPC server not ready yet, retrying in 2 seconds...");
+                sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        }
     }
 }
 

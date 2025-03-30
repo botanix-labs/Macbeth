@@ -188,7 +188,7 @@ pub async fn test_state_sync(
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     };
-    it_info_print!("All nodes have produced at a snapshot");
+    it_info_print!("All nodes have produced a snapshot");
     it_info_print!("Expected sync height", expected_sync_height);
 
     // start the syncing cometbft node
