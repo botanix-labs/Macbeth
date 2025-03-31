@@ -91,14 +91,17 @@ pub async fn make_tx(
     min_signers: u16,
     tracked_txs: Vec<Tx>,
 ) -> Result<Psbt, CoordinatorError> {
-    // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate
-    // let mut fee_rate = fee_rate;
-    // let mut fee_rate = FeeRate::from_sat_per_vb_unchecked()
-    // let min_relay_fee_rate = FeeRate::from_sat_per_vb_unchecked(MIN_RELAY_FEE_RATE_SAT_VB);
-    // if fee_rate < min_relay_fee_rate {
-    //     fee_rate = min_relay_fee_rate;
-    // }
+    let mut fee_rate = FeeRate::from_sat_per_vb_unchecked(fee_rate.into());
+    info!("fee_rate = {}", fee_rate);
+    let min_relay_fee_rate = FeeRate::from_sat_per_vb_unchecked(MIN_RELAY_FEE_RATE_SAT_VB);
+    if fee_rate < min_relay_fee_rate {
+        info!(
+            "Fee rate {} is below minimum rate {}. Using minimum relay fee rate.",
+            fee_rate, min_relay_fee_rate
+        );
+        fee_rate = min_relay_fee_rate;
+    }
 
     // collect all database utxos in a hashmap
     let utxos: HashMap<OutPoint, Utxo> =
