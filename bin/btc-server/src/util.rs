@@ -12,7 +12,7 @@ use bitcoin::{
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
 use log::info;
-use std::{cmp::min, collections::{HashMap, HashSet}};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     database::{self, Db, Utxo},
@@ -392,7 +392,8 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     let public_key_package =
         db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
 
-    let pending_pegouts = db.get_pending_pegouts()?;
+    // use coord_pending_pegouts since this is what the coordinator uses when creating the psbt
+    let pending_pegouts = db.coord_pending_pegouts(UPPER_PEGOUT_BOUND)?;
     let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
     let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
@@ -413,12 +414,10 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         return Err(ValidateOutputsError::DuplicateOutputs);
     }
 
-    // only enforce up to max number of pegouts
-    for pegout_id in
-        pending_pegout_ids.iter().take(min(pending_pegout_ids.len(), UPPER_PEGOUT_BOUND))
-    {
-        if !psbt_pegout_ids.contains(pegout_id) {
-            return Err(ValidateOutputsError::MissingPsbtPegout(*pegout_id));
+    // check psbt pegout exists in pending pegouts list
+    for psbt_pegout_id in psbt_pegout_ids.iter() {
+        if !pending_pegout_ids.contains(psbt_pegout_id) {
+            return Err(ValidateOutputsError::MissingPsbtPegout(*psbt_pegout_id));
         }
     }
 
@@ -614,9 +613,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
-            psbt.unsigned_tx.output.len() as u64 +
-            100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
+            / psbt.unsigned_tx.output.len() as u64
+            + 100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
