@@ -12,7 +12,7 @@ use bitcoin::{
 use frost_secp256k1_tr as frost;
 use lazy_static::lazy_static;
 use log::info;
-use std::collections::{HashMap, HashSet};
+use std::{cmp::min, collections::{HashMap, HashSet}};
 
 use crate::{
     database::{self, Db, Utxo},
@@ -31,6 +31,19 @@ pub(crate) const ROUND1: u8 = 1u8;
 pub(crate) const ROUND1_TRANSITION: u8 = (1u8 << 1) | ROUND1;
 pub(crate) const ROUND2: u8 = (1u8 << 2) | ROUND1_TRANSITION;
 pub(crate) const ROUND2_TRANSITION: u8 = (1u8 << 3) | ROUND1_TRANSITION;
+
+/// The upper bound on pegouts in a single transaction. We use a _reasonable_
+/// number based on the following properties:
+///
+/// * Bitcoin's upper bound on a transaction is 100kb
+/// * 32 bytes required for an output (ie. pegout)
+/// * 110 bytes required for an input
+/// * We assume each output has an input
+///   * In practice, it's more likely that an individual input will map to multiple smaller outputs.
+///     But a larger output could also consume multiple inputs.
+///
+/// With a pegout bound of 500, we can conclude: (32 + 110) * 500 = 71_000
+pub const UPPER_PEGOUT_BOUND: usize = 500;
 
 pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     let sats = btc_per_kb.to_sat();
@@ -400,7 +413,10 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         return Err(ValidateOutputsError::DuplicateOutputs);
     }
 
-    for pegout_id in pending_pegout_ids.iter() {
+    // only enforce up to max number of pegouts
+    for pegout_id in
+        pending_pegout_ids.iter().take(min(pending_pegout_ids.len(), UPPER_PEGOUT_BOUND))
+    {
         if !psbt_pegout_ids.contains(pegout_id) {
             return Err(ValidateOutputsError::MissingPsbtPegout(*pegout_id));
         }
