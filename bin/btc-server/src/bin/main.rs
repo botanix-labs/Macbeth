@@ -1287,9 +1287,13 @@ where
         match self.frost_round1_dkg.lock().await.clone() {
             Some(round1_dkg) => {
                 // Retrieve round 1 packages from peers
-                // Here we don't check we have enough that should be done by the frost lib
-                // So we just propagate the error
                 let round1_packages = self.db.get_round1_dkg_packages().to_status()?;
+
+                // We only continue with part 2 if and only if ALL participants have
+                // submitted their round 1 packages
+                if (round1_packages.len() as u16) < self.max_signers - 1 {
+                    return Err(badarg!("not all participants have submitted their round 1 packages yet"));
+                }
 
                 let (round2_secret_package, round2_packages) =
                     frost::keys::dkg::part2(round1_dkg.0.clone(), &round1_packages).to_status()?;
@@ -1719,8 +1723,8 @@ mod tests {
         let app = setup().await;
         let req = tonic::Request::new(rpc::Empty {});
         let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::Internal);
-        assert_eq!(res.message(), "internal error: Frost error: Incorrect number of packages.");
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
     }
 
     #[tokio::test]
@@ -1744,16 +1748,23 @@ mod tests {
 
         let req = tonic::Request::new(rpc::Empty {});
         let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::Internal);
-        assert_eq!(res.message(), "internal error: Frost error: Incorrect number of packages.");
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
 
-        // Lets add the round 1 dkg for the first two participants
+        // Lets add the round 1 dkg for the first participant
         let req = tonic::Request::new(rpc::DkgPayload {
             identifier: frost_id!(1).serialize().to_vec(),
             payload: round1_dkgs[1].clone().1.serialize().unwrap().to_vec(),
         });
         app.new_round1_dkg_package(req).await.unwrap();
 
+        // Insufficient round 1 dkg packages, require `max_signers - 1`
+        let req = tonic::Request::new(rpc::Empty {});
+        let res = app.get_round2_dkg_package(req).await.unwrap_err();
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
+
+        // Lets add the round 1 dkg for the second participant
         let req = tonic::Request::new(rpc::DkgPayload {
             identifier: frost_id!(2).serialize().to_vec(),
             payload: round1_dkgs[2].clone().1.serialize().unwrap().to_vec(),
