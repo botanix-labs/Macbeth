@@ -454,6 +454,7 @@ impl PegoutScheduler {
         }
         for txid in &block.relevant_txs {
             self.txs.remove(txid);
+            self.db.remove_tracked_tx(txid)?;
         }
 
         self.last_finalized = block.hash;
