@@ -47,6 +47,7 @@ extern crate tracing;
 pub mod config;
 pub mod context;
 pub mod macros;
+pub mod mint_attack_contract_abi;
 pub mod minting;
 pub mod server;
 pub mod shutdown;
