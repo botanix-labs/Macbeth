@@ -248,7 +248,7 @@ pub fn validate_psbt(
         return Err(ValidatePSBTError::NoOutputs);
     }
 
-    validate_outputs(psbt, db)?;
+    validate_outputs(psbt, db, flags & ROUND2 == ROUND2)?;
 
     // Sanity fee checks
     let fee = match psbt.fee() {
@@ -387,7 +387,11 @@ pub enum ValidateOutputsError {
 
 /// Check all pending pegouts are being settled in this tx
 /// and additional outputs are change outputs
-pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
+pub(crate) fn validate_outputs(
+    psbt: &Psbt,
+    db: &database::Db,
+    is_round_2: bool,
+) -> Result<(), ValidateOutputsError> {
     // check aggregated public key exists
     let public_key_package =
         db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
@@ -415,9 +419,13 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     }
 
     // check psbt pegout exists in pending pegouts list
-    for psbt_pegout_id in psbt_pegout_ids.iter() {
-        if !pending_pegout_ids.contains(psbt_pegout_id) {
-            return Err(ValidateOutputsError::MissingPsbtPegout(*psbt_pegout_id));
+    // if round 2 flag, then we are at the end of the round and signers have already cleared the pending pegouts included
+    // in the psbt and tracked the tx
+    if !is_round_2 {
+        for psbt_pegout_id in psbt_pegout_ids.iter() {
+            if !pending_pegout_ids.contains(psbt_pegout_id) {
+                return Err(ValidateOutputsError::MissingPsbtPegout(*psbt_pegout_id));
+            }
         }
     }
 

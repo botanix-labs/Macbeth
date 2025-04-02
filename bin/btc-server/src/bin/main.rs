@@ -29,7 +29,7 @@ use btcserverlib::{
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
         get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, ParsingError,
-        UPPER_PEGOUT_BOUND
+        UPPER_PEGOUT_BOUND,
     },
     wallet::{
         self,
@@ -849,6 +849,7 @@ where
 
         // We just signed for all pending pegouts lets start tracking them
         if cfg!(feature = "conflicting_input") {
+            info!("get_round2_signing_package: removing pending pegouts");
             let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
             let pending_pegout_ids =
                 pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
@@ -912,7 +913,7 @@ where
 
         // If the coordinator participated in signing they have already tracked the tx
         // however, if the coordinator did not participate in signing they need to track the
-        // tx now
+        // tx now.
         let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
         let pegout_ids = psbt
             .pegout_ids()
@@ -1191,8 +1192,8 @@ where
             .as_ref()
             .ok_or(DKGError::MissingRound1DkgPayload)
             .to_status()?
-            .1 ==
-            dkg_round1
+            .1
+            == dkg_round1
         {
             return Err(badarg!("Cannot add own round1 dkg package"));
         }
@@ -1280,7 +1281,9 @@ where
                 // We only continue with part 2 if and only if ALL participants have
                 // submitted their round 1 packages
                 if (round1_packages.len() as u16) < self.max_signers - 1 {
-                    return Err(badarg!("not all participants have submitted their round 1 packages yet"));
+                    return Err(badarg!(
+                        "not all participants have submitted their round 1 packages yet"
+                    ));
                 }
 
                 let (round2_secret_package, round2_packages) =
