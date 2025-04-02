@@ -1,4 +1,6 @@
-use crate::{it_info_print, minting::Minting as MintContract};
+use crate::{
+    it_info_print, mint_attack_contract_abi::MintAttackContract, minting::Minting as MintContract,
+};
 use anyhow::Context;
 use displaydoc::Display as DisplayDoc;
 use ethers::{
@@ -35,6 +37,7 @@ pub enum Error {
 #[derive(Clone, Debug)]
 pub struct BotanixEthClient {
     mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
+    mint_attack_contract: MintAttackContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
     http_client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
     ws_provider: Provider<Ws>,
 }
@@ -45,6 +48,7 @@ impl BotanixEthClient {
         ws_port: u16,
         sender_secret_key: &str,
         mint_contract_address: EtherAddress,
+        mint_attack_contract_address: EtherAddress,
     ) -> anyhow::Result<Self> {
         // Connect to the network
         let http_url = format!("http://127.0.0.1:{}", rpc_port);
@@ -76,7 +80,10 @@ impl BotanixEthClient {
         // create a mint contract
         let mint_contract = MintContract::new(mint_contract_address, Arc::new(http_client.clone()));
 
-        Ok(Self { mint_contract, http_client, ws_provider })
+        let mint_attack_contract =
+            MintAttackContract::new(mint_attack_contract_address, Arc::new(http_client.clone()));
+
+        Ok(Self { mint_contract, mint_attack_contract, http_client, ws_provider })
     }
 
     pub fn http_client(&self) -> &SignerMiddleware<Provider<Http>, Wallet<SigningKey>> {

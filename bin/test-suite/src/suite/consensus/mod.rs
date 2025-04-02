@@ -1,8 +1,14 @@
-use self::common::botanix_client::BotanixEthClient;
+use self::common::{
+    botanix_client::BotanixEthClient, poa_node::RPC_PORT_BASE, PREFUNDED_ACCOUNT_SECRET_KEY,
+};
 use super::{Outcome, Suite};
 use crate::{
     context::GlobalContext,
-    it_info_print, it_warn_print, run_test,
+    it_info_print, it_warn_print,
+    mint_attack_contract_abi::{
+        mint_attack_contract, MINTATTACKCONTRACT_ABI, MINTATTACKCONTRACT_BYTECODE,
+    },
+    run_test,
     suite::consensus::common::{
         btc_server::{spawn_n_btc_server_processes, SpawnedBtcServerProcess},
         events::await_dkg,
@@ -32,8 +38,21 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
+use ethers::{
+    contract::ContractFactory,
+    core::k256::ecdsa::SigningKey,
+    core::types::Address as EtherAddress,
+    middleware::SignerMiddleware,
+    providers::{
+        ConnectionDetails, Http, Middleware, PeerInfo, Provider, ProviderError, StreamExt, Ws,
+    },
+    signers::{LocalWallet, Signer, Wallet},
+    types::{Bytes, U256},
+};
+use hex::FromHex;
 use reth::rpc::api::clients;
 use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use reth_chainspec::BOTANIX_TESTNET;
 use reth_db::DatabaseEnv;
 use reth_provider::ProviderFactory;
 use reth_tracing::tracing::error;
@@ -894,12 +913,43 @@ impl Suite for ConsensusIntegrationTestSuite {
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
 
+            // =================== Deploy Mint Attack Contract ================== //
+            // TODO: getting collision error when deploying the contract
+            // need to figure out why
+            //
+            let mut mint_attack_contract_address: EtherAddress = EtherAddress::zero();
+            // deploy the mint attack contract
+            let abi = &*MINTATTACKCONTRACT_ABI;
+            let abi = abi.clone();
+            let http_client = get_http_client().await?;
+            let contract_factory = ContractFactory::new(
+                abi,
+                MINTATTACKCONTRACT_BYTECODE.clone(),
+                http_client.clone().into(),
+            );
+            let mint_attack_contract =
+                contract_factory.deploy(()).expect("deployment tx").send().await.map_err(|e| {
+                    it_info_print!("Failed to deploy mint attack contract: ", e);
+                    anyhow::anyhow!("Failed to deploy mint attack contract")
+                })?;
+
+            it_info_print!(
+                "Mint attack contract deployed at address: {}",
+                mint_attack_contract_address
+            );
+            mint_attack_contract_address = mint_attack_contract.address();
             // loop over the poa nodes and wait until they become initialized so the eth clients can
             // connect with them
             for (index, poa_node) in poa_nodes.iter_mut() {
                 // create botanix client and await initialization
                 let botanix_eth_client = loop {
-                    match create_botanix_eth_client(poa_node.rpc_port, poa_node.ws_port).await {
+                    match create_botanix_eth_client(
+                        poa_node.rpc_port,
+                        poa_node.ws_port,
+                        mint_attack_contract_address,
+                    )
+                    .await
+                    {
                         Ok(client) => {
                             it_info_print!(
                                 "Botanix client for poa member {} just connected!",
@@ -982,7 +1032,13 @@ impl Suite for ConsensusIntegrationTestSuite {
             for (index, rpc_node) in rpc_nodes.iter_mut() {
                 // create botanix client and await initialization
                 let botanix_eth_client = loop {
-                    match create_botanix_eth_client(rpc_node.rpc_port, rpc_node.ws_port).await {
+                    match create_botanix_eth_client(
+                        rpc_node.rpc_port,
+                        rpc_node.ws_port,
+                        EtherAddress::zero(),
+                    )
+                    .await
+                    {
                         Ok(client) => {
                             it_info_print!(
                                 "Botanix client for rpc member {} just connected!",
@@ -1052,5 +1108,35 @@ impl ConsensusIntegrationTestSuite {
                 authorities: vec![],
             },
         }
+    }
+}
+
+async fn get_http_client() -> anyhow::Result<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>> {
+    loop {
+        let http_url = format!("http://127.0.0.1:{}", RPC_PORT_BASE);
+        let http_provider = match Provider::<Http>::try_from(&http_url) {
+            Ok(provider) => provider,
+            Err(e) => {
+                it_warn_print!("Failed to create http provider: ", e);
+                continue;
+            }
+        };
+        it_info_print!("Connected to http URL: ", http_url);
+
+        // get chain id
+        let chain_id =
+            http_provider.get_chainid().await.context("chain id failed to be obtained")?;
+        assert!(U256::from(BOTANIX_TESTNET.chain().id()) == chain_id, "expected same chain id");
+
+        // create a local wallet
+        let wallet: LocalWallet = PREFUNDED_ACCOUNT_SECRET_KEY
+            .parse::<LocalWallet>()
+            .context("failed to parse sender secret key")?
+            .with_chain_id(chain_id.as_u64());
+
+        // connect the wallet to the provider
+        let http_client = SignerMiddleware::new(http_provider.clone(), wallet);
+
+        break Ok(http_client);
     }
 }
