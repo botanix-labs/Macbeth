@@ -583,11 +583,17 @@ where
         let client = self.storage.client.clone();
         match client.get_snapshots() {
             Ok(snapshots) => {
+                // ensure no historical sync is ongoing
                 let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read()
                 else {
                     error!("Error getting a snapshot state lock");
                     return ResponseListSnapshots { snapshots: vec![] };
                 };
+                if snapshot_manager_state_lock.is_syncing_history() {
+                    drop(snapshot_manager_state_lock);
+                    info!("Historical syncing ongoing. No snapshots available yet ...");
+                    return ResponseListSnapshots { snapshots: vec![] };
+                }
                 // filter out the snapshot that is the same as the current block as we might not be
                 // ready having all the chunks yet
                 let resp = snapshots
@@ -620,6 +626,18 @@ where
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#offersnapshot
     fn offer_snapshot(&self, request: RequestOfferSnapshot) -> ResponseOfferSnapshot {
         info!("offer_snapshot request {:?}", request);
+
+        // ensure no historical sync is ongoing
+        let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read() else {
+            error!("Error getting a snapshot state lock");
+            return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+        };
+        if snapshot_manager_state_lock.is_syncing_history() {
+            drop(snapshot_manager_state_lock);
+            info!("Historical syncing ongoing. No snapshots available yet ...");
+            return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+        }
+
         // some other node is offering us a snapshot - we need to validate here if we want to accept
         // it
         if request.app_hash.is_empty() {
@@ -731,14 +749,21 @@ where
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#loadsnapshotchunk
     fn load_snapshot_chunk(&self, request: RequestLoadSnapshotChunk) -> ResponseLoadSnapshotChunk {
         info!("load_snapshot_chunk request {:?}", request);
-        let client = self.storage.client.clone();
 
-        // check if the snapshot is already applied
+        // ensure no historical sync is ongoing
         let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read() else {
             error!("Error getting a snapshot state lock");
             return ResponseLoadSnapshotChunk::default();
         };
+        if snapshot_manager_state_lock.is_syncing_history() {
+            drop(snapshot_manager_state_lock);
+            info!("Historical syncing ongoing. No snapshots available yet ...");
+            return ResponseLoadSnapshotChunk::default();
+        }
 
+        let client = self.storage.client.clone();
+
+        // check if the snapshot is already applied
         let snapshot_manager_state_lock_block_id = snapshot_manager_state_lock.get_block_id();
         drop(snapshot_manager_state_lock);
 
@@ -844,6 +869,26 @@ where
         request: RequestApplySnapshotChunk,
     ) -> ResponseApplySnapshotChunk {
         info!("apply_snapshot_chunk request, index: {:?}", request.index);
+
+        // ensure no historical sync is ongoing
+        let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read() else {
+            error!("Error getting a snapshot state lock");
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        };
+        if snapshot_manager_state_lock.is_syncing_history() {
+            drop(snapshot_manager_state_lock);
+            info!("Historical syncing ongoing. No snapshots available yet ...");
+            return ResponseApplySnapshotChunk {
+                result: ApplySnapshotResult::RetrySnapshot as i32,
+                refetch_chunks: vec![],
+                reject_senders: vec![],
+            };
+        }
+
         let client = self.storage.client.clone();
 
         // get the last snapshot sync id - there should always be one provided the offer_snapshot

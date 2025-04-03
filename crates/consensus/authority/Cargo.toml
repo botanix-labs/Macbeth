@@ -25,6 +25,7 @@ displaydoc = "0.2"
 
 # frost
 frost-secp256k1-tr = { workspace = true }
+futures = { workspace = true }
 # async
 futures-util = { workspace = true }
 

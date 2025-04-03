@@ -1,0 +1,132 @@
+name: Binary Release
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: 'latest'
+      engineer:
+        description: 'Engineer to release'
+        required: true
+        default: 'botanix'
+
+jobs:
+  extract-version:
+    if: github.event_name != 'workflow_dispatch'
+    name: extract version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        run: echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})" >> $GITHUB_OUTPUT
+        id: extract_version
+    outputs:
+      VERSION: ${{ steps.extract_version.outputs.VERSION }}
+  
+  build:
+    name: build release
+    runs-on: 
+      group: macbeth
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        configs:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            profile: maxperf
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04
+            profile: maxperf
+        build:
+          - command: build
+            binary: reth
+          - command: build-btc-server
+            binary: btc-server
+    steps:
+        - uses: actions/checkout@v4
+        - uses: rui314/setup-mold@v1
+        - uses: dtolnay/rust-toolchain@stable
+          with:
+            target: ${{ matrix.configs.target }}
+        - name: Install cross main
+          id: cross_main
+          run: |
+            cargo install cross --git https://github.com/cross-rs/cross
+
+        - name: Install protoc
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+
+        - uses: Swatinem/rust-cache@v2
+          with:
+            cache-on-failure: true
+        - name: Build Reth Binary
+          run: make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
+
+        - name: Build Bitcoin Server Binary
+          run: |
+            cross build --package btc-server --bin btc-server --target ${{ matrix.configs.target }} --release
+
+        - name: Move Binary to Artifacts
+          run: |
+            mkdir -p artifacts
+            [[ "${{ matrix.configs.target }}" == *windows* ]] && ext=".exe"
+            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts
+            mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts
+
+
+        - name: gcloud auth
+          id: 'auth'
+          uses: google-github-actions/auth@v2
+          with: 
+            project_id: botanix-391913
+            workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+            service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+        
+        - name: gcloud setup
+          uses: google-github-actions/setup-gcloud@v2
+          with:
+            project_id: botanix-391913
+
+        - name: Create sha256sum
+          run: |
+            cd artifacts
+            tar -cvf ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
+            sha256sum ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz > ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+            mv ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum ..
+            
+        - name: Upload Artifacts
+          uses: actions/upload-artifact@v4
+          with:
+            name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
+            path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
+
+        - name: Upload Signature
+          uses: actions/upload-artifact@v4
+          with:
+            name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+            path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+
+        - name: Upload Binary to GCP Artifact Storage
+          run: | 
+            VERSION="${{ github.event.inputs.version || github.ref_name }}"
+            gcloud storage cp ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/
+            gcloud storage cp ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/
+
+            # Set Content-Type and Cache-Control headers
+            gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+            gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
+
+            echo "Binary uploaded to:"
+            echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz"
+            echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum"
+
+
+  

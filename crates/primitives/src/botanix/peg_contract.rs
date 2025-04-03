@@ -393,13 +393,13 @@ impl PeginMeta {
 #[derive(Debug, Error)]
 pub enum PeginDataError {
     /// Invalid data format
-    #[error("invalid data format")]
+    #[error("invalid data format: {0}")]
     InvalidFormat(#[from] btcencode::Error),
     /// Invalid pegin proof
-    #[error("invalid pegin proof")]
+    #[error("invalid pegin proof: {0}")]
     Invalid(&'static str),
     /// Invalid public key format
-    #[error("invalid public key format")]
+    #[error("invalid public key format: {0}")]
     InvalidPublicKey(secp256k1::Error),
     /// Invalid bitcoin block height
     #[error("invalid bitcoin block height")]

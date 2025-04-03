@@ -8518,6 +8518,7 @@ dependencies = [
  "displaydoc",
  "ethabi",
  "frost-secp256k1-tr",
+ "futures",
  "futures-util",
  "hex",
  "metrics",

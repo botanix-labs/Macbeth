@@ -32,6 +32,19 @@ pub(crate) const ROUND1_TRANSITION: u8 = (1u8 << 1) | ROUND1;
 pub(crate) const ROUND2: u8 = (1u8 << 2) | ROUND1_TRANSITION;
 pub(crate) const ROUND2_TRANSITION: u8 = (1u8 << 3) | ROUND1_TRANSITION;
 
+/// The upper bound on pegouts in a single transaction. We use a _reasonable_
+/// number based on the following properties:
+///
+/// * Bitcoin's upper bound on a transaction is 100kb
+/// * 32 bytes required for an output (ie. pegout)
+/// * 110 bytes required for an input
+/// * We assume each output has an input
+///   * In practice, it's more likely that an individual input will map to multiple smaller outputs.
+///     But a larger output could also consume multiple inputs.
+///
+/// With a pegout bound of 500, we can conclude: (32 + 110) * 500 = 71_000
+pub const UPPER_PEGOUT_BOUND: usize = 500;
+
 pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     let sats = btc_per_kb.to_sat();
     info!("fee rate sats: {:?}", sats);
@@ -235,7 +248,7 @@ pub fn validate_psbt(
         return Err(ValidatePSBTError::NoOutputs);
     }
 
-    validate_outputs(psbt, db)?;
+    validate_outputs(psbt, db, flags & ROUND2 == ROUND2)?;
 
     // Sanity fee checks
     let fee = match psbt.fee() {
@@ -374,12 +387,17 @@ pub enum ValidateOutputsError {
 
 /// Check all pending pegouts are being settled in this tx
 /// and additional outputs are change outputs
-pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
+pub(crate) fn validate_outputs(
+    psbt: &Psbt,
+    db: &database::Db,
+    is_round_2: bool,
+) -> Result<(), ValidateOutputsError> {
     // check aggregated public key exists
     let public_key_package =
         db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
 
-    let pending_pegouts = db.get_pending_pegouts()?;
+    // use coord_pending_pegouts since this is what the coordinator uses when creating the psbt
+    let pending_pegouts = db.coord_pending_pegouts(UPPER_PEGOUT_BOUND)?;
     let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
     let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
@@ -400,9 +418,14 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         return Err(ValidateOutputsError::DuplicateOutputs);
     }
 
-    for pegout_id in pending_pegout_ids.iter() {
-        if !psbt_pegout_ids.contains(pegout_id) {
-            return Err(ValidateOutputsError::MissingPsbtPegout(*pegout_id));
+    // check psbt pegout exists in pending pegouts list
+    // if round 2 flag, then we are at the end of the round and signers have already cleared the
+    // pending pegouts included in the psbt and tracked the tx
+    if !is_round_2 {
+        for psbt_pegout_id in psbt_pegout_ids.iter() {
+            if !pending_pegout_ids.contains(psbt_pegout_id) {
+                return Err(ValidateOutputsError::MissingPsbtPegout(*psbt_pegout_id));
+            }
         }
     }
 

@@ -29,6 +29,7 @@ use btcserverlib::{
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
         get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, ParsingError,
+        UPPER_PEGOUT_BOUND,
     },
     wallet::{
         self,
@@ -56,19 +57,6 @@ use btcserverlib::{
 };
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
-
-/// The upper bound on pegouts in a single transaction. We use a _reasonable_
-/// number based on the following properties:
-///
-/// * Bitcoin's upper bound on a transaction is 100kb
-/// * 32 bytes required for an output (ie. pegout)
-/// * 110 bytes required for an input
-/// * We assume each output has an input
-///   * In practice, it's more likely that an individual input will map to multiple smaller outputs.
-///     But a larger output could also consume multiple inputs.
-///
-/// With a pegout bound of 500, we can conclude: (32 + 110) * 500 = 71_000
-const UPPER_PEGOUT_BOUND: usize = 500;
 
 macro_rules! already_exists {
     ($($arg:tt)*) => {{
@@ -844,6 +832,7 @@ where
 
         // We just signed for all pending pegouts lets start tracking them
         if cfg!(feature = "conflicting_input") {
+            info!("get_round2_signing_package: removing pending pegouts");
             let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
             let pending_pegout_ids =
                 pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
@@ -907,7 +896,7 @@ where
 
         // If the coordinator participated in signing they have already tracked the tx
         // however, if the coordinator did not participate in signing they need to track the
-        // tx now
+        // tx now.
         let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
         let pegout_ids = psbt
             .pegout_ids()
@@ -1270,9 +1259,15 @@ where
         match self.frost_round1_dkg.lock().await.clone() {
             Some(round1_dkg) => {
                 // Retrieve round 1 packages from peers
-                // Here we don't check we have enough that should be done by the frost lib
-                // So we just propagate the error
                 let round1_packages = self.db.get_round1_dkg_packages().to_status()?;
+
+                // We only continue with part 2 if and only if ALL participants have
+                // submitted their round 1 packages
+                if (round1_packages.len() as u16) < self.max_signers - 1 {
+                    return Err(badarg!(
+                        "not all participants have submitted their round 1 packages yet"
+                    ));
+                }
 
                 let (round2_secret_package, round2_packages) =
                     frost::keys::dkg::part2(round1_dkg.0.clone(), &round1_packages).to_status()?;
@@ -1702,8 +1697,8 @@ mod tests {
         let app = setup().await;
         let req = tonic::Request::new(rpc::Empty {});
         let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::Internal);
-        assert_eq!(res.message(), "internal error: Frost error: Incorrect number of packages.");
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
     }
 
     #[tokio::test]
@@ -1727,16 +1722,23 @@ mod tests {
 
         let req = tonic::Request::new(rpc::Empty {});
         let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::Internal);
-        assert_eq!(res.message(), "internal error: Frost error: Incorrect number of packages.");
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
 
-        // Lets add the round 1 dkg for the first two participants
+        // Lets add the round 1 dkg for the first participant
         let req = tonic::Request::new(rpc::DkgPayload {
             identifier: frost_id!(1).serialize().to_vec(),
             payload: round1_dkgs[1].clone().1.serialize().unwrap().to_vec(),
         });
         app.new_round1_dkg_package(req).await.unwrap();
 
+        // Insufficient round 1 dkg packages, require `max_signers - 1`
+        let req = tonic::Request::new(rpc::Empty {});
+        let res = app.get_round2_dkg_package(req).await.unwrap_err();
+        assert_eq!(res.code(), tonic::Code::InvalidArgument);
+        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
+
+        // Lets add the round 1 dkg for the second participant
         let req = tonic::Request::new(rpc::DkgPayload {
             identifier: frost_id!(2).serialize().to_vec(),
             payload: round1_dkgs[2].clone().1.serialize().unwrap().to_vec(),
