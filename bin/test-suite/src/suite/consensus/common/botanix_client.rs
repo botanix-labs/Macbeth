@@ -1,10 +1,16 @@
+use crate::suite::consensus::common::poa_node::RPC_PORT_BASE;
 use crate::{
-    it_info_print, mint_attack_contract_abi::MintAttackContract, minting::Minting as MintContract,
+    it_info_print,
+    mint_attack_contract_abi::{
+        MintAttackContract, MINTATTACKCONTRACT_ABI, MINTATTACKCONTRACT_BYTECODE,
+    },
+    minting::Minting as MintContract,
 };
 use anyhow::Context;
 use displaydoc::Display as DisplayDoc;
 use ethers::{
-    contract::ContractError,
+    abi::Address as AbiAddress,
+    contract::{ContractError, ContractFactory},
     core::{
         k256::ecdsa::SigningKey,
         types::{Address as EtherAddress, Block as EthBlock, BlockNumber},
@@ -32,12 +38,15 @@ pub enum Error {
     Provider(ProviderError),
     /// Signer middleware error: `{0}`
     SignerMiddleware(SignerMiddlewareError<Provider<Http>, Wallet<SigningKey>>),
+    /// Mint attack contract does not exist
+    MintAttackContractNotFound,
 }
 
 #[derive(Clone, Debug)]
 pub struct BotanixEthClient {
     mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
-    mint_attack_contract: MintAttackContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
+    mint_attack_contract:
+        Option<MintAttackContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>>,
     http_client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
     ws_provider: Provider<Ws>,
 }
@@ -48,7 +57,6 @@ impl BotanixEthClient {
         ws_port: u16,
         sender_secret_key: &str,
         mint_contract_address: EtherAddress,
-        mint_attack_contract_address: EtherAddress,
     ) -> anyhow::Result<Self> {
         // Connect to the network
         let http_url = format!("http://127.0.0.1:{}", rpc_port);
@@ -80,10 +88,7 @@ impl BotanixEthClient {
         // create a mint contract
         let mint_contract = MintContract::new(mint_contract_address, Arc::new(http_client.clone()));
 
-        let mint_attack_contract =
-            MintAttackContract::new(mint_attack_contract_address, Arc::new(http_client.clone()));
-
-        Ok(Self { mint_contract, mint_attack_contract, http_client, ws_provider })
+        Ok(Self { mint_contract, mint_attack_contract: None, http_client, ws_provider })
     }
 
     pub fn http_client(&self) -> &SignerMiddleware<Provider<Http>, Wallet<SigningKey>> {
@@ -190,6 +195,37 @@ impl BotanixEthClient {
         let tx_receipt = self
             .mint_contract
             .burn(destination, data)
+            .gas_price(gas_price)
+            .value(value)
+            .send()
+            .await
+            .map_err(Error::Contract)?
+            .await
+            .map_err(Error::Provider)?;
+        Ok(tx_receipt)
+    }
+
+    /// Burn attack
+    /// This contract calls Minting.sol > burn() with an invalid pegout and half the pegout amount sent by tx.origin (sender).
+    /// The attack tries to get refunded the original amount instead of the halved amount that is actually burned.
+    /// This would mint free BTC.
+    pub async fn burn_attack(
+        &self,
+        destination: ethers::core::types::Bytes,
+        data: ethers::core::types::Bytes,
+        value: U256,
+    ) -> Result<Option<TransactionReceipt>, Error> {
+        if self.mint_attack_contract.is_none() {
+            return Err(Error::MintAttackContractNotFound);
+        }
+
+        let gas_price = self.http_client.get_gas_price().await.ok().unwrap_or_default();
+
+        let tx_receipt = self
+            .mint_attack_contract
+            .as_ref()
+            .expect("mint attack contract exists")
+            .pass_through_burn(destination, data)
             .gas_price(gas_price)
             .value(value)
             .send()
@@ -386,5 +422,54 @@ impl BotanixEthClient {
             .expect("block exists");
 
         Ok(latest_block)
+    }
+
+    pub fn set_mint_attack_contract(&mut self, address: AbiAddress) {
+        let mint_attack_contract =
+            MintAttackContract::new(address, Arc::new(self.http_client.clone()));
+        self.mint_attack_contract = Some(mint_attack_contract);
+    }
+
+    pub async fn deploy_mint_attack_contract(
+        &self,
+        deployer: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
+    ) -> Result<AbiAddress, Error> {
+        let abi = &*MINTATTACKCONTRACT_ABI;
+        let abi = abi.clone();
+
+        let contract_factory =
+            ContractFactory::new(abi, MINTATTACKCONTRACT_BYTECODE.clone(), deployer.into());
+
+        let mint_attack_contract = contract_factory
+            .deploy(())
+            .expect("deployment tx")
+            .send()
+            .await
+            .map_err(|e| {
+                it_info_print!("Failed to deploy mint attack contract: ", e);
+                Error::Contract(e)
+            })
+            .expect("mint attack contract to be deployed");
+
+        let mint_attack_contract_address = mint_attack_contract.address();
+        it_info_print!("Mint attack contract deployed at address:", mint_attack_contract_address);
+
+        Ok(mint_attack_contract_address.0.into())
+    }
+
+    pub fn get_contract_deployer(
+        &self,
+    ) -> Result<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>, Error> {
+        // Generate a random wallet (and its corresponding secret key)
+        let http_url = format!("http://127.0.0.1:{}", RPC_PORT_BASE);
+        let http_provider =
+            Provider::<Http>::try_from(&http_url).expect("To create botanix provider");
+
+        let wallet =
+            LocalWallet::new(&mut rand::thread_rng()).with_chain_id(BOTANIX_TESTNET.chain().id());
+
+        let client = SignerMiddleware::new(http_provider.clone(), wallet);
+
+        Ok(client)
     }
 }
