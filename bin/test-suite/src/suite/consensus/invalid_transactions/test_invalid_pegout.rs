@@ -1,7 +1,19 @@
+use assert_matches::assert_matches;
+
 use bitcoin::Amount;
-use reth_primitives::botanix::utils::AmountExt;
+use ethers::types::Bytes as EthersBytes;
+use ethers::types::H256;
+use reth_primitives::botanix::mint_validation::ParseBurnEventError;
+use reth_primitives::botanix::peg_contract::PegoutDataError;
+use reth_primitives::Bytes as RethBytes;
+use reth_primitives::{
+    botanix::{mint_validation::try_parse_burn_event, utils::AmountExt},
+    Log, B256,
+};
 
 use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
+
+pub const SEND_AMOUNT: u64 = 1; // = 1 ether
 
 #[allow(clippy::too_many_lines)]
 pub async fn invalid_pegout(
@@ -14,13 +26,32 @@ pub async fn invalid_pegout(
 
     // Generate and send pegout tx
     // invalid bitcoin address
-    let botanix_eth_client = test_fed_members
+    let mut botanix_eth_client = test_fed_members
         .get(&0)
         .cloned()
         .unwrap()
         .botanix_eth_client
         .clone()
         .expect("Botanix Client must be initialized");
+
+    // create contract deployer to avoid any nonce issues during contract deployment
+    let contract_deployer =
+        botanix_eth_client.get_contract_deployer().expect("To get contract deployer");
+
+    // Fund the contract deployer
+    let _tx_receipt = botanix_eth_client
+        .send_eoa(contract_deployer.address(), SEND_AMOUNT)
+        .await
+        .expect("To send eoa")
+        .expect("To get tx receipt");
+
+    // Deploy attack contract
+    let attack_contract_address = botanix_eth_client
+        .deploy_mint_attack_contract(contract_deployer)
+        .await
+        .expect("To deploy attack contract");
+    botanix_eth_client.set_mint_attack_contract(attack_contract_address);
+
     let invalid_pegout_destination = ethers::core::types::Bytes::from(
         "invalid_pegout_destination".to_string().as_bytes().to_vec(),
     );
@@ -40,32 +71,31 @@ pub async fn invalid_pegout(
         botanix_eth_client.get_nonce(botanix_eth_client.get_sender_address()).await.unwrap();
     it_info_print!("Nonce before pegout: ", nonce_before);
 
-    // Lets also test that when pegouts fail, the reverted amount
-    // is the actual burned amount. For this we need the burned amount
-    // to be different from the pegout amount. 
-    let burned_amount = Amount::from_btc(0.1).unwrap();   // the "true" burned amount
-    let pegout_amount = Amount::from_btc(0.5).unwrap();  
-
-    // Craft pegout_data such that it encodes the small burned amount.
-    let encoded_amount = ethers::abi::Token::Uint(
-        ethers::types::U256::from(burned_amount.to_wei().as_u64()),
-    );
-    let encoded_destination = ethers::abi::Token::String("invalid_pegout_destination".to_string());
-    let encoded_version = ethers::abi::Token::Bytes(vec![0]);
-    let pegout_data = ethers::core::types::Bytes::from(
-        ethers::abi::encode(&[encoded_amount, encoded_destination, encoded_version])
-    );
-    
+    // use empty pegout data
+    let pegout_data = ethers::core::types::Bytes::new();
+    let pegout_amount = Amount::from_btc(0.5).unwrap();
+    let expected_amount = (pegout_amount / 2).to_wei();
     it_info_print!("Pegout amount: ", pegout_amount.to_wei());
-    it_info_print!("Burned amount: ", burned_amount.to_wei());
+
+    // send to attack contract which halfs the pegout amount
+    // 0.5 BTC -> 0.25 BTC: trying to get refunded 0.5 instead of 0.25 that is burned
     let tx_receipt = botanix_eth_client
-        .burn(invalid_pegout_destination, pegout_data, pegout_amount.to_wei())
+        .burn_attack(invalid_pegout_destination, pegout_data, pegout_amount.to_wei())
         .await
         .unwrap()
         .unwrap();
-    it_info_print!("Pegout Tx Receipt: ", tx_receipt);
 
-    assert!(tx_receipt.status.unwrap().is_zero());
+    it_info_print!("Pegout Tx Receipt: ", tx_receipt);
+    // Parse the logs to confirm expected failure and amount
+    let ethers_log = tx_receipt.logs[0].clone();
+    let topics = convert_topics(ethers_log.topics.clone());
+    let log =
+        Log::new(ethers_log.address.0.into(), topics, RethBytes::from(ethers_log.data.clone().0))
+            .expect("To get log");
+    let result = try_parse_burn_event(&log, bitcoin::Network::Regtest);
+    assert_matches!(result, Err(ParseBurnEventError::InvalidPegoutData(PegoutDataError::Invalid("invalid metadata length", amt))) if amt == expected_amount);
+
+    it_info_print!("Parsed Pegout data: ", result);
 
     // sender address balance after pegout
     let sender_address_final_balance = botanix_eth_client
@@ -90,4 +120,9 @@ pub async fn invalid_pegout(
     assert!(nonce_after > nonce_before);
 
     Ok(())
+}
+
+/// Converts ethers topics to reth topics
+fn convert_topics(h256_vec: Vec<H256>) -> Vec<B256> {
+    h256_vec.into_iter().map(|h| B256::from(h.to_fixed_bytes())).collect()
 }

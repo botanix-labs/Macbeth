@@ -215,7 +215,6 @@ pub fn spawn_child_process_internal(
 pub async fn create_botanix_eth_client(
     rpc_port: u16,
     ws_port: u16,
-    mint_attack_contract_address: EtherAddress,
 ) -> anyhow::Result<BotanixEthClient> {
     let mint_contract_address: EtherAddress =
         MINT_CONTRACT_ADDRESS.parse().context("Must be a valid ethereum address")?;
@@ -224,7 +223,6 @@ pub async fn create_botanix_eth_client(
         ws_port,
         PREFUNDED_ACCOUNT_SECRET_KEY,
         mint_contract_address,
-        mint_attack_contract_address,
     )
     .await?)
 }

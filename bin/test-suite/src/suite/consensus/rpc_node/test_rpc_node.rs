@@ -75,7 +75,6 @@ pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Res
         rpc_node.ws_port,
         PREFUNDED_ACCOUNT_SECRET_KEY,
         ethers::core::types::Address::random(),
-        ethers::core::types::Address::random(),
     )
     .await
     .context("Failed to create rpc botanix client")?;
