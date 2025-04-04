@@ -73,8 +73,8 @@ impl fmt::Display for UtxoSetResponse {
 pub struct WalletStateResponse {
     /// uuid of the state sync request
     pub uuid: String,
-    /// Serialized pegout ids
-    pub finalized_pegout_ids: Vec<Vec<u8>>,
+    /// Serialized and compressed pegout ids
+    pub finalized_pegout_ids: Vec<u8>,
 }
 
 impl fmt::Display for WalletStateResponse {

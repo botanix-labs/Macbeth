@@ -8,11 +8,12 @@ mod authority_test_utils {
     use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
     use client::{
         DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest, FinalizeSigningResponse,
-        GetAllUtxosResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
-        GetPendingPegoutsResponse, GetPublicKeyResponse, GetSessionIdsRequest,
-        GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
-        GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest, ResetWalletStateRequest,
-        SigningPackage, SigningPackageRequest, ToSignRequest, WalletStateResponse,
+        GetAllUtxosResponse, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
+        GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
+        GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
+        GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest,
+        ResetWalletStateRequest, SigningPackage, SigningPackageRequest, ToSignRequest,
+        WalletStateResponse,
     };
     use frost_secp256k1_tr::{
         keys::{
@@ -649,6 +650,19 @@ mod authority_test_utils {
             &'a mut self,
             _: ResetWalletStateRequest,
         ) -> Pin<Box<dyn Future<Output = Result<Empty, GrpcClientError>> + Send + 'a>> {
+            unimplemented!("Not required for DKG/signing tests")
+        }
+
+        fn get_finalized_pegout_ids<'a>(
+            &'a mut self,
+            _: Empty,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<GetFinalizedPegoutIdsResponse, GrpcClientError>>
+                    + Send
+                    + 'a,
+            >,
+        > {
             unimplemented!("Not required for DKG/signing tests")
         }
     }

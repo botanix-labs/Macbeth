@@ -671,7 +671,7 @@ mod tests {
         let req = WalletStateRequest {
             version: 1,
             uuid: "uuid-1".to_string(),
-            finalized_pegout_ids: vec![vec![1, 2, 3]],
+            finalized_pegout_ids: vec![1, 2, 3],
         };
 
         // Send wire messages to the connection that create events for the manager

@@ -45,7 +45,7 @@ pub struct ResetAllUtxosRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetWalletStateRequest {
     #[prost(bytes = "vec", repeated, tag = "1")]
-    pub finalzied_pegout_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    pub finalized_pegout_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConsensusCheckpointRequest {

@@ -390,7 +390,7 @@ impl FrostManager {
                     );
                 }
             }
-            FrostCommand::GetWalletStateFromPeer => {
+            FrostCommand::GetWalletStateFromPeer(uuid) => {
                 let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
                 // filter all peers with active connections
                 let connected_peers =
@@ -399,7 +399,7 @@ impl FrostManager {
                 for peer in connected_peers {
                     match peer.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
                         PeerMessageResponse::WalletState(WalletStateResponse {
-                            uuid: "xxxx".to_string(), // TODO
+                            uuid: uuid.to_string(),
                             finalized_pegout_ids: vec![],
                         }),
                     )) {
@@ -478,7 +478,7 @@ pub enum FrostCommand {
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageContext>>),
     /// Get pending pegouts state from peer
-    GetWalletStateFromPeer,
+    GetWalletStateFromPeer(uuid::Uuid),
 }
 
 /// Config type for initiating a [`FrostManager`] instance.

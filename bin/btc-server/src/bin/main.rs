@@ -707,7 +707,7 @@ where
 
         // handle finalized pegout ids
         let finalzied_pegout_ids = req
-            .finalzied_pegout_ids
+            .finalized_pegout_ids
             .into_iter()
             .map(|v| PegoutId::from_bytes(&v))
             .collect::<Result<Vec<PegoutId>, _>>()

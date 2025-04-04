@@ -1,7 +1,7 @@
 //! Wallet state sync module
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
-use client::{GetPendingPegoutsResponse, ResetWalletStateRequest};
+use client::{GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as CompressorError, SerializationType};
 use reth_evm::execute::BlockExecutorProvider;
@@ -128,34 +128,34 @@ where
                             // process the utxos
                             debug!(target: "consensus::authority::sync_wallet_state", "Received wallet state from peer {:?}", wallet_state);
 
-                            // process the pending pegouts
-                            let pending_pegouts_compressed = wallet_state.pending_pegouts;
-                            let pending_pegouts = {
-                                if pending_pegouts_compressed.is_empty() {
-                                    warn!(target: "consensus::authority::sync_wallet_state", "Peer sent empty pending pegouts");
+                            // process the finalized pegout ids
+                            let finalized_pegout_ids_compressed = wallet_state.finalized_pegout_ids;
+                            let finalized_pegout_ids = {
+                                if finalized_pegout_ids_compressed.is_empty() {
+                                    warn!(target: "consensus::authority::sync_wallet_state", "Peer sent empty finalized pegout ids");
                                     continue;
                                 } else {
-                                    let Ok(pending_pegouts_decompressed) = data_parser.decompress(&pending_pegouts_compressed).await.map_err(|e| {
-                                        error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress pending pegouts {:?}", e);
+                                    let Ok(finalized_pegout_ids_decompressed) = data_parser.decompress(&finalized_pegout_ids_compressed).await.map_err(|e| {
+                                        error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress finalized pegout ids {:?}", e);
                                         WalletStateSyncError::CompressorError(e)
                                     }) else {
-                                        tracing::error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress pending pegouts");
+                                        tracing::error!(target: "consensus::authority::sync_wallet_state", "Failed to decompress finalized pegout ids");
                                         continue;
                                     };
-                                    let Ok(pending_pegouts_decompressed) = ProstMessageSerdelizer::<GetPendingPegoutsResponse>::deserialize(
-                                        pending_pegouts_decompressed,
+                                    let Ok(finalized_pegout_ids_decompressed) = ProstMessageSerdelizer::<GetFinalizedPegoutIdsResponse>::deserialize(
+                                        finalized_pegout_ids_decompressed,
                                     ) else {
                                         error!(target: "consensus::authority::sync_wallet_state", "Failed to deserialize pending pegouts");
                                         continue;
                                     };
-                                    pending_pegouts_decompressed.pending_pegouts
+                                    finalized_pegout_ids_decompressed.ids
                                 }
                             };
 
                             // Report to btc server to reset the wallet state
                             if let Err(e) = btc_server
                                 .reset_wallet_state(ResetWalletStateRequest {
-                                    pending_pegouts: pending_pegouts.clone(),
+                                    finalized_pegout_ids
                                 })
                                 .await {
                                     error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to reset wallet state");
@@ -180,8 +180,10 @@ where
                         continue;
                     }
                     // Request the wallet state from all peers for poa epoch blocks only
-                    if let Err(e) =
-                        self.to_frost_manager.send_command(FrostCommand::GetWalletStateFromPeer)
+                    let uuid = uuid::Uuid::new_v4();
+                    if let Err(e) = self
+                        .to_frost_manager
+                        .send_command(FrostCommand::GetWalletStateFromPeer(uuid))
                     {
                         error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to send get wallet state command to frost manager");
                     }

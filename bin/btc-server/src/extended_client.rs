@@ -2,11 +2,12 @@
 use alloy_rpc_types_engine::{Claims, JwtSecret};
 use client::{
     BtcServerClient, ConsensusCheckpointRequest, DkgPayload, Empty, FinalizeSignerRequest,
-    FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
-    GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
-    GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
-    GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest, ResetWalletStateRequest,
-    SigningPackage, SigningPackageRequest, ToSignRequest, WalletStateResponse,
+    FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
+    GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest, GetGatewayAddressResponse,
+    GetPendingPegoutsResponse, GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse,
+    GetSigningStatusRequest, GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest,
+    ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage, SigningPackageRequest,
+    ToSignRequest, WalletStateResponse,
 };
 use displaydoc::Display as DisplayDoc;
 use futures_util::future::BoxFuture;
@@ -148,6 +149,10 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         &mut self,
         request: ConsensusCheckpointRequest,
     ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn get_finalized_pegout_ids(
+        &mut self,
+        request: Empty,
+    ) -> BoxFuture<'_, Result<GetFinalizedPegoutIdsResponse, GrpcClientError>>;
 }
 
 /// Macro for generating grpc methods implementation
@@ -241,6 +246,7 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     generate_method!(get_pending_pegouts, Empty, GetPendingPegoutsResponse);
     generate_method!(reset_wallet_state, ResetWalletStateRequest, Empty);
     generate_method!(new_consensus_checkpoint, ConsensusCheckpointRequest, Empty);
+    generate_method!(get_finalized_pegout_ids, Empty, GetFinalizedPegoutIdsResponse);
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

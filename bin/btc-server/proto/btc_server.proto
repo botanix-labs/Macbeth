@@ -102,7 +102,7 @@ message ResetAllUtxosRequest {
 }
 
 message ResetWalletStateRequest {
-    repeated bytes finalzied_pegout_ids = 1;
+    repeated bytes finalized_pegout_ids = 1;
 }
 
 message ConsensusCheckpointRequest {
