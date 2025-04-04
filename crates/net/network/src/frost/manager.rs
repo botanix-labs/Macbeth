@@ -399,17 +399,18 @@ impl FrostManager {
                 for peer in connected_peers {
                     match peer.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
                         PeerMessageResponse::WalletState(WalletStateResponse {
-                            pending_pegouts: vec![],
+                            uuid: "xxxx".to_string(), // TODO
+                            finalized_pegout_ids: vec![],
                         }),
                     )) {
                         Ok(_) => {
                             tracing::debug!(
                                 target: "network::frost::on_command",
-                                "Request for pending pegouts sent to peer {:?}", peer.peer_id
+                                "Request for finalized pegout ids sent to peer {:?}", peer.peer_id
                             );
                         }
                         Err(e) => {
-                            error!(target: "network::frost::on_command", "Failed to send pending pegouts request to peer {:?}, error: {:?}", peer.peer_id, e);
+                            error!(target: "network::frost::on_command", "Failed to send finalized pegout ids request to peer {:?}, error: {:?}", peer.peer_id, e);
                         }
                     }
                 }

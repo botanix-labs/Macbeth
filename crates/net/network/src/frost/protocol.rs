@@ -348,8 +348,9 @@ impl Stream for FrostProtoConnection {
                         }
                     }
                     PeerMessageResponse::WalletState(wallet_state_response) => {
-                        let WalletStateResponse { pending_pegouts } = wallet_state_response;
-                        let req = WalletStateRequest::new(pending_pegouts);
+                        let WalletStateResponse { uuid, finalized_pegout_ids } =
+                            wallet_state_response;
+                        let req = WalletStateRequest::new(&uuid, finalized_pegout_ids);
                         FrostProtoMessage::wallet_state_message(req)
                     }
                 },
@@ -492,7 +493,8 @@ impl Stream for FrostProtoConnection {
             }
             FrostProtoMessageKind::WalletState(data) => FrostProtocolEvent::PeerMessage {
                 response: PeerMessageResponse::WalletState(WalletStateResponse {
-                    pending_pegouts: data.pending_pegouts,
+                    uuid: data.uuid,
+                    finalized_pegout_ids: data.finalized_pegout_ids,
                 }),
                 peer_id: this.peer_id,
             },
@@ -666,7 +668,11 @@ mod tests {
         let waker = noop_waker();
         let mut cx = Context::from_waker(&waker);
 
-        let req = WalletStateRequest { version: 1, pending_pegouts: vec![1, 2, 3] };
+        let req = WalletStateRequest {
+            version: 1,
+            uuid: "uuid-1".to_string(),
+            finalized_pegout_ids: vec![vec![1, 2, 3]],
+        };
 
         // Send wire messages to the connection that create events for the manager
         for _ in 0..4 {

@@ -72,10 +72,12 @@ impl SignRequest {
 /// A structured wallet state message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WalletStateRequest {
+    /// uuid of the state sync request
+    pub uuid: String,
     /// The version of the request message
     pub version: u16,
-    /// pending pegouts
-    pub pending_pegouts: Vec<u8>,
+    /// finalized pegout ids
+    pub finalized_pegout_ids: Vec<Vec<u8>>,
 }
 
 impl fmt::Display for WalletStateRequest {
@@ -83,16 +85,20 @@ impl fmt::Display for WalletStateRequest {
         write!(
             f,
             "WalletStateRequest:\n\
-            - Pending Pegouts: {} bytes",
-            self.pending_pegouts.len()
+            - Pegout Ids: {} bytes",
+            self.finalized_pegout_ids.len()
         )
     }
 }
 
 impl WalletStateRequest {
     /// Constructs a new wallet state request using a data payload.
-    pub const fn new(pending_pegouts: Vec<u8>) -> Self {
-        Self { version: WALLET_STATE_MESSAGE_VERSION as u16, pending_pegouts }
+    pub fn new(uuid: &str, finalized_pegout_ids: Vec<Vec<u8>>) -> Self {
+        Self {
+            version: WALLET_STATE_MESSAGE_VERSION as u16,
+            finalized_pegout_ids,
+            uuid: uuid.to_string(),
+        }
     }
 }
 
@@ -309,9 +315,21 @@ impl FrostProtoMessage {
                 buf.put_slice(&resource.psbt);
             }
             FrostProtoMessageKind::WalletState(resource) => {
-                // serialize the pending pegouts
-                buf.put_u64_le(resource.pending_pegouts.len() as u64); // Use u64 to support larger pending pegouts sizes
-                buf.put_slice(&resource.pending_pegouts);
+                // uuid
+                buf.put_u32_le(resource.uuid.len() as u32);
+                buf.put_slice(resource.uuid.as_bytes());
+
+                // version
+                buf.put_u16_le(resource.version);
+
+                // finalized_pegout_ids - first put the length of the vector
+                buf.put_u32_le(resource.finalized_pegout_ids.len() as u32);
+
+                // then encode each pegout_id in the vector
+                for pegout_id in &resource.finalized_pegout_ids {
+                    buf.put_u32_le(pegout_id.len() as u32);
+                    buf.put_slice(pegout_id);
+                }
             }
         }
         buf
@@ -478,13 +496,44 @@ impl FrostProtoMessage {
                 ))
             }
             FrostProtoMessageId::WalletState => {
-                // pending pegouts
-                let pending_pegouts_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
-                buf.advance(8);
-                let pending_pegouts = buf[..pending_pegouts_len].to_vec();
-                buf.advance(pending_pegouts_len);
+                // Decode uuid
+                let uuid_len = u32::from_le_bytes(
+                    buf[..4].try_into().expect("Buffer underflow for uuid length"),
+                ) as usize;
+                buf.advance(4);
+                let uuid =
+                    String::from_utf8(buf[..uuid_len].to_vec()).expect("Invalid UTF-8 in uuid");
+                buf.advance(uuid_len);
 
-                FrostProtoMessageKind::WalletState(WalletStateRequest::new(pending_pegouts))
+                // Decode version
+                let version =
+                    u16::from_le_bytes(buf[..2].try_into().expect("Buffer underflow for version"));
+                buf.advance(2);
+
+                // Decode finalized_pegout_ids
+                let pegout_ids_count = u32::from_le_bytes(
+                    buf[..4].try_into().expect("Buffer underflow for pegout ids count"),
+                ) as usize;
+                buf.advance(4);
+
+                let mut finalized_pegout_ids = Vec::with_capacity(pegout_ids_count);
+                for _ in 0..pegout_ids_count {
+                    let id_len = u32::from_le_bytes(
+                        buf[..4].try_into().expect("Buffer underflow for pegout id length"),
+                    ) as usize;
+                    buf.advance(4);
+
+                    let pegout_id = buf[..id_len].to_vec();
+                    buf.advance(id_len);
+
+                    finalized_pegout_ids.push(pegout_id);
+                }
+
+                FrostProtoMessageKind::WalletState(WalletStateRequest {
+                    uuid,
+                    version,
+                    finalized_pegout_ids,
+                })
             }
         };
         Some(Self { message_type, message })
@@ -599,14 +648,15 @@ mod tests {
 
     #[test]
     fn test_wallet_state_encode_decode() {
-        let pending_pegouts = "pending_pegouts".to_owned();
-        let pending_pegouts_bytes = pending_pegouts.bytes().collect_vec();
+        let uuid = "550e8400-e29b-41d4-a716-446655440000".to_string();
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::WalletState,
-            message: FrostProtoMessageKind::WalletState(WalletStateRequest::new(
-                pending_pegouts_bytes,
-            )),
+            message: FrostProtoMessageKind::WalletState(WalletStateRequest {
+                uuid,
+                version: 1,
+                finalized_pegout_ids: vec![vec![1, 2, 3], vec![4, 5, 6]],
+            }),
         };
 
         // Encode the message
@@ -619,9 +669,26 @@ mod tests {
 
         // Verify that the decoded message matches the original message
         if let FrostProtoMessageKind::WalletState(wallet_state_request) = decoded_message.message {
-            let decoded_pending_pegouts =
-                String::from_utf8(wallet_state_request.pending_pegouts).unwrap();
-            assert_eq!(decoded_pending_pegouts, pending_pegouts, "pending_pegouts does not match");
+            assert_eq!(
+                wallet_state_request.uuid, "550e8400-e29b-41d4-a716-446655440000",
+                "uuid does not match"
+            );
+            assert_eq!(wallet_state_request.version, 1, "version does not match");
+            assert_eq!(
+                wallet_state_request.finalized_pegout_ids.len(),
+                2,
+                "finalized_pegout_ids length does not match"
+            );
+            assert_eq!(
+                wallet_state_request.finalized_pegout_ids[0],
+                vec![1, 2, 3],
+                "first pegout id does not match"
+            );
+            assert_eq!(
+                wallet_state_request.finalized_pegout_ids[1],
+                vec![4, 5, 6],
+                "second pegout id does not match"
+            );
         } else {
             panic!("Decoded message is not a WalletState Message");
         }

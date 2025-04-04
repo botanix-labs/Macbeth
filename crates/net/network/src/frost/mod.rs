@@ -71,8 +71,10 @@ impl fmt::Display for UtxoSetResponse {
 /// Response structure for internal communication
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WalletStateResponse {
-    /// Serialized pending pegouts
-    pub pending_pegouts: Vec<u8>,
+    /// uuid of the state sync request
+    pub uuid: String,
+    /// Serialized pegout ids
+    pub finalized_pegout_ids: Vec<Vec<u8>>,
 }
 
 impl fmt::Display for WalletStateResponse {
@@ -80,8 +82,9 @@ impl fmt::Display for WalletStateResponse {
         write!(
             f,
             "WalletStateResponse:\n\
-            - Pending Pegouts: {} bytes",
-            self.pending_pegouts.len()
+            - Finalized Pegout Ids: {} bytes, uuid = {}",
+            self.finalized_pegout_ids.len(),
+            &self.uuid
         )
     }
 }
