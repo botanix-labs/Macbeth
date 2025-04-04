@@ -48,6 +48,9 @@ const KEY_PEGOUTMGR_TIP: &[u8; 12] = b"pegoutmgrtip";
 /// sled tree for pending pegout requests
 const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
 
+/// sled tree for finalized pegout ids
+const TREE_FINALIZED_PEGOUT_IDS: &[u8; 18] = b"finalizedpegoutids";
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
     // This is skipped during serialization because the db key is the outpoint so its redundant.
@@ -106,6 +109,9 @@ pub struct Db {
     /// Indexed by txid.
     tracked_txs: sled::Tree,
 
+    /// Finalized PegoutIds
+    finalized_pegout_ids: sled::Tree,
+
     /// A tree of pending pegout requests, serialized as the [pegouts::PegoutRequest] format.
     ///
     /// Indexed by the [PegoutRequest::id] inspector.
@@ -122,6 +128,7 @@ impl Db {
             psbt: db.open_tree(TREE_PSBT)?,
             tracked_txs: db.open_tree(TREE_TRACKED_TXS)?,
             pending_pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
+            finalized_pegout_ids: db.open_tree(TREE_FINALIZED_PEGOUT_IDS)?,
             db,
         })
     }
@@ -134,6 +141,7 @@ impl Db {
         self.psbt.flush()?;
         self.tracked_txs.flush()?;
         self.pending_pegouts.flush()?;
+        self.finalized_pegout_ids.flush()?;
         Ok(())
     }
 
@@ -688,7 +696,7 @@ impl Db {
             .get(id.as_bytes())?
             .map(|b| ciborium::de::from_reader(b.as_ref()).expect("corrupt db: pending pegout")))
     }
-
+    // -----------------------------------
     /// Get all pending pegouts
     pub fn get_pending_pegouts(&self) -> Result<Vec<pegout_scheduler::PegoutRequest>, Error> {
         let mut ret = Vec::new();
@@ -738,6 +746,83 @@ impl Db {
     pub fn clear_pending_pegouts(&self) -> Result<(), Error> {
         Ok(self.pending_pegouts.clear()?)
     }
+
+    // --------------NEW---------------------
+
+    /// Get all finalized pegout ids
+    /// Returns a vector of pegout requests that have been finalized.
+    pub fn get_finalized_pegout_ids(&self) -> Result<Vec<PegoutId>, Error> {
+        let mut ret = Vec::new();
+        for res in self.finalized_pegout_ids.iter() {
+            let (_k, v) = res?;
+            let tx = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: pending tx");
+            ret.push(tx);
+        }
+        Ok(ret)
+    }
+
+    /// Removes finalized pegout ids from the database.
+    pub fn remove_finalized_pegout_ids(
+        &self,
+        finalized_pegout_ids: &[PegoutId],
+    ) -> Result<(), Error> {
+        for pegout_id in finalized_pegout_ids.iter() {
+            self.finalized_pegout_ids.remove(&pegout_id.as_bytes()[..])?;
+        }
+        Ok(())
+    }
+
+    /// Clears all finalized pegout ids from the database.
+    pub fn clear_finalized_pegout_ids(&self) -> Result<(), Error> {
+        Ok(self.finalized_pegout_ids.clear()?)
+    }
+
+    /// Resets all finalzied pegout txs, and re-adding the functions arguments back in
+    pub fn reset_finalized_pegout_ids(
+        &self,
+        finalized_pegout_ids: &[&PegoutId],
+    ) -> Result<(), Error> {
+        self.clear_finalized_pegout_ids()?;
+        self.store_finalized_pegout_ids(finalized_pegout_ids)?;
+        Ok(())
+    }
+
+    /// Store a list of finalized pegout ids
+    pub fn store_finalized_pegout_ids(
+        &self,
+        finalized_pegout_ids: &[&PegoutId],
+    ) -> Result<(), Error> {
+        match finalized_pegout_ids.len() {
+            0 => Ok(()),
+            1 => self
+                .store_finalized_pegout_ids(&[finalized_pegout_ids.first().expect("to have tx")]),
+            _ => self.store_finalized_pegout_ids_atomically(finalized_pegout_ids),
+        }
+    }
+
+    /// Store a list of finalized pegout ids atomically
+    pub fn store_finalized_pegout_ids_atomically(
+        &self,
+        pegout_ids_requests: &[&PegoutId],
+    ) -> Result<(), Error> {
+        self.finalized_pegout_ids
+            .transaction(|database_tx| {
+                for req in pegout_ids_requests.iter() {
+                    if database_tx.get(req.as_bytes())?.is_none() {
+                        let mut bytes = Vec::new();
+                        ciborium::into_writer(req, &mut bytes)
+                            .map_err(Error::CiboriumWrite)
+                            .expect("Ciborium error");
+                        database_tx.insert(req.as_bytes().to_vec(), &bytes[..])?;
+                    }
+                }
+                Ok::<(), ConflictableTransactionError>(())
+            })
+            .map_err(|e: TransactionError<_>| Error::Transaction(e.to_string()))?;
+        Ok(())
+    }
+
+    // ----------------------------
 
     /// Resets all tracked txs, and re-adding the functions arguments back in
     pub fn reset_tracked_txs(&self, tracked_txs: &[&pegout_scheduler::Tx]) -> Result<(), Error> {

@@ -16,6 +16,11 @@ pub struct GetPendingPegoutsResponse {
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetFinalizedPegoutIdsResponse {
+    #[prost(bytes = "vec", repeated, tag = "1")]
+    pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizeSignerRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub psbt: ::prost::alloc::vec::Vec<u8>,
@@ -39,8 +44,8 @@ pub struct ResetAllUtxosRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetWalletStateRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
+    #[prost(bytes = "vec", repeated, tag = "1")]
+    pub finalzied_pegout_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConsensusCheckpointRequest {
@@ -289,6 +294,13 @@ pub mod btc_server_server {
             request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::GetPendingPegoutsResponse>,
+            tonic::Status,
+        >;
+        async fn get_finalized_pegout_ids(
+            &self,
+            request: tonic::Request<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetFinalizedPegoutIdsResponse>,
             tonic::Status,
         >;
         async fn get_gateway_address(
@@ -568,6 +580,50 @@ pub mod btc_server_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetPendingPegoutsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/GetFinalizedPegoutIds" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetFinalizedPegoutIdsSvc<T: BtcServer>(pub Arc<T>);
+                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    for GetFinalizedPegoutIdsSvc<T> {
+                        type Response = super::GetFinalizedPegoutIdsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::Empty>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as BtcServer>::get_finalized_pegout_ids(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetFinalizedPegoutIdsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -608,6 +608,22 @@ where
         Ok(res)
     }
 
+    /// Returns all finalized pegout ids
+    async fn get_finalized_pegout_ids(
+        &self,
+        req: tonic::Request<rpc::Empty>,
+    ) -> Result<tonic::Response<rpc::GetFinalizedPegoutIdsResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let finalized_pegout_ids = self.db.get_finalized_pegout_ids().to_status()?;
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_pending_pegouts(finalized_pegout_ids.len() as i64);
+        }
+        let res = tonic::Response::new(rpc::GetFinalizedPegoutIdsResponse {
+            ids: finalized_pegout_ids.into_iter().map(|p| p.as_bytes().to_vec()).collect(),
+        });
+        Ok(res)
+    }
+
     /* Wallet State Endpoints */
     /// Resets all utxos in the database
     async fn reset_all_utxos(
@@ -689,15 +705,15 @@ where
         let req = req.into_inner();
         info!("Received reset wallet state request");
 
-        // handle pending pegouts
-        let pending_pegouts = req
-            .pending_pegouts
+        // handle finalized pegout ids
+        let finalzied_pegout_ids = req
+            .finalzied_pegout_ids
             .into_iter()
-            .map(TryFrom::try_from)
-            .collect::<Result<Vec<PegoutRequest>, _>>()
-            .map_err(|e| internal!("Failed to convert pending pegout: {}", e))?;
-        let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
-        self.db.reset_pending_pegouts(&pending_pegouts_refs).to_status()?;
+            .map(|v| PegoutId::from_bytes(&v))
+            .collect::<Result<Vec<PegoutId>, _>>()
+            .map_err(|_| internal!("Failed to convert finalized pegout ids"))?;
+        let pegout_refs: Vec<&PegoutId> = finalzied_pegout_ids.iter().collect();
+        self.db.reset_finalized_pegout_ids(&pegout_refs).to_status()?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
