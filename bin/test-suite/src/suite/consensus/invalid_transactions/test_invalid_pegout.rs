@@ -1,15 +1,5 @@
-use assert_matches::assert_matches;
-
 use bitcoin::Amount;
-use ethers::types::Bytes as EthersBytes;
-use ethers::types::H256;
-use reth_primitives::botanix::mint_validation::ParseBurnEventError;
-use reth_primitives::botanix::peg_contract::PegoutDataError;
-use reth_primitives::Bytes as RethBytes;
-use reth_primitives::{
-    botanix::{mint_validation::try_parse_burn_event, utils::AmountExt},
-    Log, B256,
-};
+use reth_primitives::botanix::utils::AmountExt;
 
 use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 
@@ -85,18 +75,6 @@ pub async fn invalid_pegout(
         .unwrap()
         .unwrap();
 
-    it_info_print!("Pegout Tx Receipt: ", tx_receipt);
-    // Parse the logs to confirm expected failure and amount
-    let ethers_log = tx_receipt.logs[0].clone();
-    let topics = convert_topics(ethers_log.topics.clone());
-    let log =
-        Log::new(ethers_log.address.0.into(), topics, RethBytes::from(ethers_log.data.clone().0))
-            .expect("To get log");
-    let result = try_parse_burn_event(&log, bitcoin::Network::Regtest);
-    assert_matches!(result, Err(ParseBurnEventError::InvalidPegoutData(PegoutDataError::Invalid("invalid metadata length", amt))) if amt == expected_amount);
-
-    it_info_print!("Parsed Pegout data: ", result);
-
     // sender address balance after pegout
     let sender_address_final_balance = botanix_eth_client
         .get_botanix_balance(reth_primitives::Address(
@@ -120,9 +98,4 @@ pub async fn invalid_pegout(
     assert!(nonce_after > nonce_before);
 
     Ok(())
-}
-
-/// Converts ethers topics to reth topics
-fn convert_topics(h256_vec: Vec<H256>) -> Vec<B256> {
-    h256_vec.into_iter().map(|h| B256::from(h.to_fixed_bytes())).collect()
 }

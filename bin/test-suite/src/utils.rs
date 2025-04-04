@@ -8,9 +8,12 @@ use crate::{
 use bitcoin::{consensus::Encodable, hash_types::BlockHash, Address, Amount};
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::pegout_id::PegoutId;
-use ethers::providers::{JsonRpcClient, Provider, ProviderError};
+use ethers::{
+    providers::{JsonRpcClient, Provider, ProviderError},
+    types::H256,
+};
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::Address as EthAddress;
+use reth_primitives::{Address as EthAddress, B256};
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -159,8 +162,8 @@ pub struct BlockChainInfoRes {
 }
 
 pub fn get_checkpoint_block_hash(bitcoind: &impl RpcApi) -> Result<Vec<u8>, Error> {
-    let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks -
-        (BOTANIX_TESTNET.parent_confirmation_depth as u64);
+    let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks
+        - (BOTANIX_TESTNET.parent_confirmation_depth as u64);
     let deep_block_hash = bitcoind.get_block_hash(deep_tip).unwrap();
     let mut checkpoint_block_hash = vec![];
     if let Err(e) = deep_block_hash.consensus_encode(&mut checkpoint_block_hash) {
@@ -214,10 +217,25 @@ pub async fn wait_until_genesis_block_exists(client: &BotanixEthClient) -> Resul
         .await
         .map_err(|_| Error::LatestBlockDoesNotExist)?
         .number
-        .ok_or(Error::LatestBlockDoesNotExist)? ==
-        0.into()
+        .ok_or(Error::LatestBlockDoesNotExist)?
+        == 0.into()
     {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
     Ok(())
+}
+
+/// Converts ethers topics to reth topics
+///
+/// # Example
+///
+/// let ethers_log = tx_receipt.logs[0].clone();
+/// let topics = convert_topics(ethers_log.topics.clone());
+/// let log = Log::new(
+///     ethers_log.address.0.into(),
+///     topics,
+///     RethBytes::from(ethers_log.data.clone().0)
+/// ).expect("To get log");
+fn convert_topics(h256_vec: Vec<H256>) -> Vec<B256> {
+    h256_vec.into_iter().map(|h| B256::from(h.to_fixed_bytes())).collect()
 }
