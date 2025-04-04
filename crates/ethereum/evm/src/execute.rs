@@ -294,7 +294,7 @@ where
             let mut pegouts = vec![];
 
             let new_result = {
-                if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
+                if result.is_success() {
                     match self.botanix_mint_contract_checks(
                         &result,
                         &botanix_consensus_pkg,
@@ -321,12 +321,11 @@ where
                                     revert_amount,
                                     &mut state,
                                 ),
-                                MintContractError::InvalidPegoutData(PegoutDataError::Invalid(_, amount)) => {
-                                    Self::increment_balance_by_address(
-                                        *sender,
-                                        amount,
-                                        &mut state,
-                                    );
+                                MintContractError::InvalidPegoutData(PegoutDataError::Invalid(
+                                    _,
+                                    amount,
+                                )) => {
+                                    Self::increment_balance_by_address(*sender, amount, &mut state);
                                 }
                                 MintContractError::InvalidLog { .. } => {
                                     // This means we could not parse what was emitted from the mint
@@ -509,7 +508,7 @@ where
                     error: "No proofs found in pegin data".to_string(),
                     revert_address: pegin_data.account,
                     revert_amount: pegin_data.amount,
-                })
+                });
             };
 
             for meta in &pegin_data.meta {
@@ -518,7 +517,7 @@ where
                         error: "Proofs have mismatching versions".to_string(),
                         revert_address: pegin_data.account,
                         revert_amount: pegin_data.amount,
-                    })
+                    });
                 }
 
                 if meta.ref_block_hash() != ref_block_hash {
@@ -526,7 +525,7 @@ where
                         error: "Proofs have mismatching reference block hashes".to_string(),
                         revert_address: pegin_data.account,
                         revert_amount: pegin_data.amount,
-                    })
+                    });
                 }
             }
 
