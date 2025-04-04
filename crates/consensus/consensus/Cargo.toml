@@ -17,6 +17,7 @@ auto_impl = { workspace = true }
 derive_more = { workspace = true }
 # reth
 reth-primitives = { workspace = true }
+reth-storage-errors = { workspace = true }
 
 secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 
