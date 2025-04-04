@@ -31,9 +31,7 @@ use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{
     botanix::{
         consensus_package::BotanixConsensusPackage,
-        mint_validation::{
-            try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
-        },
+        mint_validation::{try_parse_burn_event, try_parse_mint_event, MintContractError},
         peg_contract::{PeginData, PegoutDataError, PegoutWithId},
     },
     header_ext::HeaderExt,
