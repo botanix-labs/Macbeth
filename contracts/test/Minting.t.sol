@@ -17,7 +17,7 @@ contract MintingTest is Test {
     event Mint(
         address indexed account,
         uint256 amount,
-        uint32 bitcoinBlockHeight,
+        uint64 combinedHeights,
         bytes metadata
     );
 
@@ -47,8 +47,9 @@ contract MintingTest is Test {
 
         // mock metadata
         bytes memory metadata = bytes("0x00000000");
-        uint256 expectedMintAmount = 999999999999969496;
-        emit Mint(destination, expectedMintAmount, bitcoinBlockHeight, metadata);
+        uint256 expectedMintAmount = 999999999999969259;
+        uint64 combinedHeights = (uint64(bitcoinBlockHeight) << 32) | uint64(0);
+        emit Mint(destination, expectedMintAmount, combinedHeights, metadata);
 
         minting.mint(destination, amount, bitcoinBlockHeight, metadata, refundAddress);
     }

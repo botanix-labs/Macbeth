@@ -6,6 +6,6 @@ fn main() {
         .expect("Error reading mint contract json abi")
         .generate()
         .expect("Error generating mint contract rust definitions")
-        .write_to_file("./src/mint_contract_abi.rs")
+        .write_to_file("./src/minting.rs")
         .expect("Error writing mint contract rust file");
 }

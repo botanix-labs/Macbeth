@@ -239,6 +239,7 @@ pub async fn batch_pegins(
             account: Address::from_slice(eth_address.as_bytes()),
             amount,
             bitcoin_block_height: bitcoin_block_height as u32,
+            previous_bitcoin_block_height: (bitcoin_block_height - 1) as u32,
             meta: vec![meta.clone()],
         };
 

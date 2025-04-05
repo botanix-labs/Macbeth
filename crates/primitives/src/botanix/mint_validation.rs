@@ -16,7 +16,7 @@ use tracing::{error, info};
 
 lazy_static::lazy_static! {
     /// hash of the mint topic as it appears in the log
-    pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint32,bytes)");
+    pub static ref MINT_TOPIC: B256 = keccak256("Mint(address,uint256,uint64,bytes)");
     /// hash of the burn topic as it appears in the log
     pub static ref BURN_TOPIC: B256 = keccak256("Burn(address,uint256,bytes,bytes)");
     /// address of the mint contract
@@ -60,6 +60,8 @@ pub enum ParseMintEventError {
         revert_address: Address,
         /// Amount of the pegin to be reverted
         revert_amount: ethers::types::U256,
+        /// Bitcoin block height the pegin was confirmed in
+        revert_bitcoin_block_height: u32,
     },
 }
 
@@ -94,6 +96,8 @@ pub enum MintContractError {
         revert_address: Address,
         /// Amount of the pegin to be reverted
         revert_amount: ethers::types::U256,
+        /// Previous bitcoin block height the pegin was confirmed in
+        revert_bitcoin_block_height: u32,
     },
     /// Invalid pegout metadata
     #[error("invalid pegout metadata")]
@@ -106,8 +110,8 @@ impl From<ParseMintEventError> for MintContractError {
             ParseMintEventError::InvalidLog(e) => {
                 Self::InvalidLog { event: "Mint", error: e.into() }
             }
-            ParseMintEventError::InvalidPeginData { error, revert_address, revert_amount } => {
-                Self::InvalidPeginData { error: error.to_string(), revert_address, revert_amount }
+            ParseMintEventError::InvalidPeginData { error, revert_address, revert_amount, revert_bitcoin_block_height } => {
+                Self::InvalidPeginData { error: error.to_string(), revert_address, revert_amount, revert_bitcoin_block_height }
             }
         }
     }
@@ -166,7 +170,7 @@ pub fn try_parse_mint_event(
     let params = decode(
         &[
             ethers::abi::param_type::ParamType::Uint(256_usize),
-            ethers::abi::param_type::ParamType::Uint(32_usize),
+            ethers::abi::param_type::ParamType::Uint(64_usize),
             ethers::abi::param_type::ParamType::Bytes,
         ],
         &log.data.data,
@@ -182,11 +186,14 @@ pub fn try_parse_mint_event(
         .into_uint()
         .ok_or(ParseMintEventError::InvalidLog("invalid mint amount params"))?;
 
-    let bitcoin_block_height = params[1]
+    let combined_block_heights = params[1]
         .clone()
         .into_uint()
         .ok_or(ParseMintEventError::InvalidLog("parsing bitcoin block height param"))?
-        .as_u32();
+        .as_u64();
+
+    let bitcoin_block_height = (combined_block_heights >> 32) as u32;
+    let previous_bitcoin_block_height = (combined_block_heights & 0xFFFFFFFF) as u32;
 
     let meta_bytes = params[2]
         .clone()
@@ -203,6 +210,7 @@ pub fn try_parse_mint_event(
                         error: e,
                         revert_address: destination,
                         revert_amount: amount,
+                        revert_bitcoin_block_height: previous_bitcoin_block_height,
                     };
                     error!("Failed to parse pegin meta: {:?}", err);
                     err
@@ -213,7 +221,7 @@ pub fn try_parse_mint_event(
         proofs
     };
 
-    Ok(Some(PeginData { account: destination, amount, bitcoin_block_height, meta }))
+    Ok(Some(PeginData { account: destination, amount, bitcoin_block_height, previous_bitcoin_block_height, meta }))
 }
 
 /// Parse the given log for a [Burn] event.
@@ -295,7 +303,7 @@ mod test {
     #[test]
     fn mint_topic() {
         let topic =
-            B256::from_str("0x922344dc04648c0ce028ecdf9b2c9eed9a6794dbb47b777b54b0cfe069f128aa")
+            B256::from_str("0x9de7365c663dc09a824437fcfe283fde0349736c62570a07a36e47f9a5dcaf0f")
                 .unwrap();
         assert_eq!(topic, *MINT_TOPIC);
     }

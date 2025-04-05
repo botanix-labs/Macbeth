@@ -17,9 +17,7 @@ use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;
 
 use crate::{
-    it_info_print,
-    suite::consensus::{common::events::await_botanix_event, ConsensusIntegrationTestSuite},
-    utils::{generate_blocks, get_gateway_address_with_retry},
+    it_info_print, suite::consensus::{common::events::await_botanix_event, ConsensusIntegrationTestSuite}, utils::{generate_blocks, get_gateway_address_with_retry}
 };
 
 #[allow(clippy::too_many_lines)]
@@ -144,13 +142,22 @@ pub async fn frost_e2e_stable(
         block_headers: headers,
     });
 
+    let mint_contract = mint_contract_instances
+        .first()
+        .cloned()
+        .unwrap()
+        .expect("Botanix Client must be initialized");
+
     // validate the pegin data first offchain before submitting
     let pegin_data = PeginData {
         account: Address::from_slice(eth_destination.as_bytes()),
         amount,
         bitcoin_block_height: bitcoin_block_height as u32,
+        previous_bitcoin_block_height: mint_contract.mint_contract.pegin_bitcoin_block_height(eth_destination).await.unwrap(),
         meta: vec![meta.clone()],
     };
+    it_info_print!("Pegin data: ", pegin_data);
+    assert!(pegin_data.bitcoin_block_height > pegin_data.previous_bitcoin_block_height);
     let checkpoint = {
         let tip = bitcoind_rpc.get_block_count().unwrap();
         let height = tip - pegin_conf_depth as u64;
@@ -173,11 +180,6 @@ pub async fn frost_e2e_stable(
     );
     let serialized_pegin_meta = meta.serialize().unwrap();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
-    let mint_contract = mint_contract_instances
-        .first()
-        .cloned()
-        .unwrap()
-        .expect("Botanix Client must be initialized");
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
     let tx_receipt = mint_contract
         .mint(

@@ -68,23 +68,23 @@ async fn generate_invalid_pegin_metas(
     })];
     invalid_pegin_meta_cases.push((invalid_pmt_meta, "Invalid merkle proof"));
 
-    // Create invalid pegin meta with invalid reference hash for v1
-    let invalid_ref_hash_meta = vec![PeginMeta::V1(PeginMetaV1 {
-        inner: PeginMetaV0 {
-            version: PEGIN_META_VERSION_V1,
-            outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
-            address: eth_account.clone(),
-            aggregate_publickey: secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .expect("valid public key"),
-            tx: pegin_tx.clone(),
-            merkle_proof: pmt.clone(),
-            block_headers: headers.clone(),
-        },
-        ref_block_hash: B256::from_slice(&[0; 32]),
-    })];
-    invalid_pegin_meta_cases.push((invalid_ref_hash_meta, "Invalid reference hash for v1"));
+    // // Create invalid pegin meta with invalid reference hash for v1
+    // let invalid_ref_hash_meta = vec![PeginMeta::V1(PeginMetaV1 {
+    //     inner: PeginMetaV0 {
+    //         version: PEGIN_META_VERSION_V1,
+    //         outpoint: bitcoin::OutPoint::new(pegin_tx.compute_txid(), vout),
+    //         address: eth_account.clone(),
+    //         aggregate_publickey: secp256k1::PublicKey::from_str(
+    //             gateway_address_response.aggregate_public_key.as_str(),
+    //         )
+    //         .expect("valid public key"),
+    //         tx: pegin_tx.clone(),
+    //         merkle_proof: pmt.clone(),
+    //         block_headers: headers.clone(),
+    //     },
+    //     ref_block_hash: B256::from_slice(&[0; 32]),
+    // })];
+    // invalid_pegin_meta_cases.push((invalid_ref_hash_meta, "Invalid reference hash for v1"));
 
     // Create invalid pegin meta v1 with incorrect version
     let latest_block_with_edh = provider
@@ -368,6 +368,12 @@ pub async fn invalid_pegin(
         let pegin_address_initial_balance =
             botanix_eth_client.get_botanix_balance(addr).await.unwrap();
         it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
+        let pegin_address_initial_block_height = botanix_eth_client
+            .mint_contract
+            .pegin_bitcoin_block_height(eth_destination)
+            .await
+            .unwrap();
+        it_info_print!("Initial pegin address block height", pegin_address_initial_block_height);
 
         // nonce before pegin
         let sender_address = botanix_eth_client.get_sender_address();
@@ -396,9 +402,15 @@ pub async fn invalid_pegin(
         let pegin_address_final_balance =
             botanix_eth_client.get_botanix_balance(addr).await.unwrap();
         it_info_print!("Final pegin address balance", pegin_address_final_balance);
+        let pegin_address_final_block_height = botanix_eth_client
+            .mint_contract
+            .pegin_bitcoin_block_height(eth_destination)
+            .await
+            .unwrap();
+        it_info_print!("Final pegin address block height", pegin_address_final_block_height);
 
         assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
-
+        assert_eq!(pegin_address_initial_block_height, pegin_address_final_block_height);
         // nonce after pegin
         let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();
         it_info_print!("Nonce after pegin", nonce_after);

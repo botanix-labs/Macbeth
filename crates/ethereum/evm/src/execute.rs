@@ -37,6 +37,7 @@ use reth_primitives::{
         peg_contract::{PeginData, PegoutWithId},
     },
     header_ext::HeaderExt,
+    keccak256,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
     U256,
 };
@@ -54,7 +55,7 @@ use reth_revm::{
 use revm_primitives::{
     db::{Database, DatabaseCommit},
     BlockEnv, Bytes, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, EvmState, ExecutionResult,
-    ResultAndState,
+    ResultAndState, EvmStorageSlot,
 };
 
 #[cfg(not(feature = "std"))]
@@ -252,8 +253,8 @@ where
         let mut receipts = Vec::with_capacity(block.body.len());
 
         for (sender, transaction) in block.transactions_with_sender() {
-            // The sum of the transaction’s gas limit, Tg, and the gas utilized in this block prior,
-            // must be no greater than the block’s gasLimit.
+            // The sum of the transaction's gas limit, Tg, and the gas utilized in this block prior,
+            // must be no greater than the block's gasLimit.
             let block_available_gas = block.header.gas_limit - cumulative_gas_used;
             if transaction.gas_limit() > block_available_gas {
                 return Err(BlockValidationError::TransactionGasLimitMoreThanAvailableBlockGas {
@@ -316,12 +317,20 @@ where
                                 MintContractError::InvalidPeginData {
                                     revert_address,
                                     revert_amount,
+                                    revert_bitcoin_block_height,
                                     ..
-                                } => Self::decrement_balance_by_address(
-                                    revert_address,
-                                    revert_amount,
-                                    &mut state,
-                                ),
+                                } => {
+                                        Self::decrement_balance_by_address(
+                                            revert_address,
+                                            revert_amount,
+                                            &mut state,
+                                        );
+                                        Self::revert_bitcoin_block_height(
+                                            revert_address,
+                                            revert_bitcoin_block_height,
+                                            &mut state,
+                                        );
+                                    },
                                 MintContractError::InvalidPegoutData(_) => {
                                     Self::increment_balance_by_address(
                                         *sender,
@@ -437,6 +446,37 @@ where
         state.insert(address, account);
     }
 
+    /// Revert the bitcoin block height for an account to its previous value
+    fn revert_bitcoin_block_height(address: Address, previous_height: u32, state: &mut EvmState) {
+        // This is where the contract stores the peginBitcoinBlockHeight mapping
+        // We need to compute the storage slot for this address in the mapping
+        let contract_address = *MINT_CONTRACT_ADDRESS;
+        let mint_contract = state.get(&contract_address).expect("Mint contract to exist").clone();
+        
+        // Need to properly pad address to 32 bytes (left-padded)
+        let mut padded_address = [0u8; 32];
+        padded_address[12..].copy_from_slice(address.as_slice());
+
+        // Mapping slot needs to be properly encoded as 32 bytes
+        let mut padded_slot = [0u8; 32];
+        padded_slot[28..].copy_from_slice(&previous_height.to_be_bytes());
+
+        // Now calculate keccak256(abi.encode(key, slot))
+        let storage_key_bytes = keccak256([&padded_address[..], &padded_slot[..]].concat());
+        
+        // Update the storage value at this slot with the previous height
+        let mut storage = mint_contract.storage.clone();
+        let slot_key = revm_primitives::alloy_primitives::Uint::from_be_bytes(storage_key_bytes.into());
+        storage.insert(slot_key, EvmStorageSlot::new(U256::from(previous_height)));
+        
+        // Update the contract state
+        let mut updated_contract = mint_contract;
+        updated_contract.storage = storage;
+        state.insert(contract_address, updated_contract);
+        
+        info!("Reverted bitcoin block height for address {:?} to {:?}", address, previous_height);
+    }
+
     /// Performs additional checks on mint contract transactions.
     fn botanix_mint_contract_checks(
         &self,
@@ -469,6 +509,7 @@ where
                             error: "Reference block hash cannot be found".to_string(),
                             revert_address: pegin_data.account,
                             revert_amount: pegin_data.amount,
+                            revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                         })
                     }
                     (1, Some(hash)) => {
@@ -478,6 +519,7 @@ where
                                 error: "Reference block hash not found".to_string(),
                                 revert_address: pegin_data.account,
                                 revert_amount: pegin_data.amount,
+                                revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                             })?
                         {
                             let header = block.header;
@@ -490,6 +532,7 @@ where
                                     error: "Failed to get botanix consensus package".to_string(),
                                     revert_address: pegin_data.account,
                                     revert_amount: pegin_data.amount,
+                                    revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                                 })?;
                             bitcoin_checkpoint = package.bitcoin_checkpoint;
                         }
@@ -500,6 +543,7 @@ where
                                 .to_string(),
                             revert_address: pegin_data.account,
                             revert_amount: pegin_data.amount,
+                            revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                         })
                     }
                     _ => {}
@@ -510,6 +554,7 @@ where
                     error: "No proofs found in pegin data".to_string(),
                     revert_address: pegin_data.account,
                     revert_amount: pegin_data.amount,
+                    revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                 })
             };
 
@@ -519,6 +564,7 @@ where
                         error: "Proofs have mismatching versions".to_string(),
                         revert_address: pegin_data.account,
                         revert_amount: pegin_data.amount,
+                        revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                     })
                 }
 
@@ -527,6 +573,7 @@ where
                         error: "Proofs have mismatching reference block hashes".to_string(),
                         revert_address: pegin_data.account,
                         revert_amount: pegin_data.amount,
+                        revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                     })
                 }
             }
@@ -540,6 +587,7 @@ where
                     ),
                     revert_address: pegin_data.account,
                     revert_amount: pegin_data.amount,
+                    revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                 });
             }
             let aggregate_public_key = consensus_pkg.aggregate_public_key;
@@ -554,7 +602,8 @@ where
                             ),
                             revert_address: pegin_data.account,
                             revert_amount: pegin_data.amount,
-                        });
+                            revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
+                            });
                     }
                 }
                 Err(e) => {
@@ -562,6 +611,7 @@ where
                         error: format!("pegin validation failed: {}", e),
                         revert_address: pegin_data.account,
                         revert_amount: pegin_data.amount,
+                        revert_bitcoin_block_height: pegin_data.previous_bitcoin_block_height,
                     });
                 }
             }

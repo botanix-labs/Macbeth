@@ -43,6 +43,8 @@ pub struct PeginData {
     pub amount: U256,
     /// Bitcoin block height the pegin is confirmed in
     pub bitcoin_block_height: u32,
+    /// Previous bitcoin block height the pegin was confirmed in
+    pub previous_bitcoin_block_height: u32,
     /// Pegin metadata
     pub meta: Vec<PeginMeta>,
 }
@@ -729,6 +731,7 @@ mod tests {
             // 100 sats converted to wei
             amount: U256::from_str_radix("1000000000000", 10).unwrap(),
             bitcoin_block_height: 1_u32,
+            previous_bitcoin_block_height: 0_u32,
             meta: vec![meta],
         }
     }
@@ -1095,6 +1098,7 @@ mod tests {
             account: destination_address,
             amount,
             bitcoin_block_height: 1_u32,
+            previous_bitcoin_block_height: 0_u32,
             meta: vec![PeginMeta::V0(meta)],
         };
 
@@ -1123,6 +1127,7 @@ mod tests {
             account: destination_address,
             amount,
             bitcoin_block_height: 0_u32,
+            previous_bitcoin_block_height: 0_u32,
             meta: vec![PeginMeta::V0(meta)],
         };
 

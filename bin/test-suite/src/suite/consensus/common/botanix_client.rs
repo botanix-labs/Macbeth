@@ -1,4 +1,4 @@
-use crate::{it_info_print, minting::Minting as MintContract};
+use crate::{it_info_print, minting::mint_contract::MintContract};
 use anyhow::Context;
 use displaydoc::Display as DisplayDoc;
 use ethers::{
@@ -16,7 +16,7 @@ use ethers::{
     utils,
 };
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::Address;
+use reth_primitives::{Address, keccak256};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
@@ -34,7 +34,7 @@ pub enum Error {
 
 #[derive(Clone, Debug)]
 pub struct BotanixEthClient {
-    mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
+    pub mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
     http_client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
     ws_provider: Provider<Ws>,
 }
@@ -379,5 +379,14 @@ impl BotanixEthClient {
             .expect("block exists");
 
         Ok(latest_block)
+    }
+
+    pub async fn get_pegin_bitcoin_block_height(&self, address: EtherAddress) -> Result<U256, Error> {
+        let slot_key = keccak256([&address.0.as_slice()[..], &[2]].concat());
+        let storage_key = H256::from_slice(slot_key.as_ref());
+        let storage_value = self.http_client.get_storage_at(address, storage_key, None)
+            .await.map_err(Error::SignerMiddleware)?;
+        let height = U256::from_big_endian(storage_value.as_bytes());
+        Ok(height)
     }
 }

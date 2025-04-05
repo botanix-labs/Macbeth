@@ -151,11 +151,14 @@ pub async fn test_pegin_v1(
             .expect("valid hash"),
     });
 
+    let client = clients.first().cloned().unwrap().expect("Botanix Client must be initialized");
+
     // validate the pegin data first offchain before submitting
     let pegin_data = PeginData {
         account: Address::from_slice(eth_destination.as_bytes()),
         amount,
         bitcoin_block_height: bitcoin_block_height as u32,
+        previous_bitcoin_block_height: client.mint_contract.pegin_bitcoin_block_height(eth_destination).await.unwrap(),
         meta: vec![meta.clone()],
     };
     let checkpoint = { (checkpoint_header, checkpoint_block_height as u32) };
@@ -176,7 +179,6 @@ pub async fn test_pegin_v1(
     let serialized_pegin_meta = meta.serialize().unwrap();
     it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
     let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
-    let client = clients.first().cloned().unwrap().expect("Botanix Client must be initialized");
     let tx_receipt = client
         .mint(
             eth_destination.clone(),

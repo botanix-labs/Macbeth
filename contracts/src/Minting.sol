@@ -31,7 +31,7 @@ contract Minting {
     event Mint(
         address indexed account,
         uint256 amount,
-        uint32 bitcoinBlockHeight,
+        uint64 combinedHeights,
         bytes metadata
     );
 
@@ -50,6 +50,9 @@ contract Minting {
         address refundAddress
     ) public {
         uint256 gasStart = gasleft();
+
+        // Store previous block height for event emission and potential reversion
+        uint32 prevBitcoinBlockHeight = peginBitcoinBlockHeight[destination];
 
         // Check that the user bitcoin block height is increasing.
         require(
@@ -83,7 +86,8 @@ contract Minting {
         (bool successRefund, ) = payable(refundAddress).call{value: txCost}("");
         require(successRefund, "Refund to refundAddress failed");
 
-        emit Mint(destination, amount, bitcoinBlockHeight, metadata);
+        uint64 combinedHeights = (uint64(bitcoinBlockHeight) << 32) | uint64(prevBitcoinBlockHeight);
+        emit Mint(destination, amount, combinedHeights, metadata);
     }
 
     /// Burn coins by sending money to this function.
