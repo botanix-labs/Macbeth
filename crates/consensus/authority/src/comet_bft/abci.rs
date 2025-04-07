@@ -1110,18 +1110,28 @@ where
                     } => {
                         let block = payload.block();
                         // These are bytes of [SignedTransaction]
-                        let mut txs: Vec<_> = block
+                        let txs: Vec<_> = block
                             .raw_transactions()
                             .iter()
                             .map(|tx| prost::bytes::Bytes::copy_from_slice(tx))
                             .collect::<_>();
-                        info!("prepare_proposal number of txs: {:?}", txs.len());
-
+                        let txs_len = txs.len();
+                        info!("prepare_proposal number of txs: {:?}", txs_len);
+                        let mut filtered_txs = txs
+                            .into_iter()
+                            .filter(|tx| (tx.len() as i64) < request.max_tx_bytes)
+                            .collect::<Vec<_>>();
+                        warn!("{:?}/{:?} txs violated the max_tx_bytes size and got excluded from the prepared proposal", (txs_len - filtered_txs.len()), txs_len);
+                        // check that the non-deterministic data is not larger than the max tx bytes
+                        if non_deterministic_data_bytes.len() as i64 > request.max_tx_bytes {
+                            error!("Non-deterministic data size: {:?} exceeds the max tx bytes allowed size {:?}", non_deterministic_data_bytes.len(), request.max_tx_bytes);
+                            return ResponsePrepareProposal { ..Default::default() };
+                        }
                         // insert non-deterministic data tx at index 0 so historical sync will pass
                         // verification
-                        txs.insert(0, non_deterministic_data_bytes);
+                        filtered_txs.insert(0, non_deterministic_data_bytes);
                         self.metrics.commet_prepared_proposals.increment(1);
-                        ResponsePrepareProposal { txs }
+                        ResponsePrepareProposal { txs: filtered_txs }
                     }
                 }
             }
