@@ -184,6 +184,30 @@ impl BotanixEthClient {
         Ok(tx_receipt)
     }
 
+    pub async fn mint_attack(
+        &self,
+        destination: EtherAddress,
+        amount: ethers::core::types::U256,
+        bitcoin_block_height: u32,
+        metadata: ethers::core::types::Bytes,
+        refund_address: EtherAddress,
+    ) -> Result<Option<TransactionReceipt>, Error> {
+        let gas_price = self.http_client.get_gas_price().await.ok().unwrap_or_default();
+
+        let tx_receipt = self
+            .mint_attack_contract.as_ref()
+            .expect("mint attack contract exists")
+            .pass_through_mint(destination, amount, bitcoin_block_height, metadata, refund_address)
+            .gas_price(gas_price)
+            .gas(U256::from(1_000_000))
+            .send()
+            .await
+            .map_err(Error::Contract)?
+            .await
+            .map_err(Error::Provider)?;
+        Ok(tx_receipt)
+    }
+
     pub async fn burn(
         &self,
         destination: ethers::core::types::Bytes,
