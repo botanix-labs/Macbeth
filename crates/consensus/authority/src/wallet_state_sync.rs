@@ -125,7 +125,7 @@ where
                         if let PeerMessageResponse::WalletState(wallet_state) =
                             peer_message_context.message
                         {
-                            // process the utxos
+                            // process the wallet state
                             debug!(target: "consensus::authority::sync_wallet_state", "Received wallet state from peer {:?}", wallet_state);
 
                             // process the finalized pegout ids

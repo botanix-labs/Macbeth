@@ -375,6 +375,8 @@ pub enum ValidateOutputsError {
     InvalidPegoutId,
     #[error("missing psbt pegout {0}")]
     MissingPsbtPegout(PegoutId),
+    #[error("found already finalzied psbt pegouts in db {0:?}")]
+    AlreadyFinalizedPegouts(Vec<PegoutId>),
     #[error("expecting only one change output")]
     ExpectingOnlyOneChangeOutput,
     #[error("invalid change output")]
@@ -416,6 +418,21 @@ pub(crate) fn validate_outputs(
     let unique_pegout_ids: HashSet<PegoutId> = psbt_pegout_ids.iter().cloned().collect();
     if unique_pegout_ids.len() != psbt_pegout_ids.len() {
         return Err(ValidateOutputsError::DuplicateOutputs);
+    }
+
+    // check that the psbt doesn't have any PegoutIds in the finalized pegouts list
+    let finalized_pegout_ids = db.get_finalized_pegout_ids()?;
+    let pegout_ids_in_finalized_list = unique_pegout_ids
+        .iter()
+        .filter_map(|&pid| {
+            finalized_pegout_ids
+                .iter()
+                .find(|&&finalized_pegout_id| finalized_pegout_id == pid)
+                .cloned()
+        })
+        .collect::<Vec<_>>();
+    if pegout_ids_in_finalized_list.len() > 0 {
+        return Err(ValidateOutputsError::AlreadyFinalizedPegouts(pegout_ids_in_finalized_list));
     }
 
     // check psbt pegout exists in pending pegouts list

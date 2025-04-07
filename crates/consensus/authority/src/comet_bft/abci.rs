@@ -1444,7 +1444,7 @@ where
         }
 
         let block_hash = block_with_context.sealed_block_with_peg.block().hash();
-        self.metrics.commet_finalzied_blocks.increment(1);
+        self.metrics.commet_finalized_blocks.increment(1);
         ResponseFinalizeBlock {
             events: vec![],
             tx_results: exec_results,

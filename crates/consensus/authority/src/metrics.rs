@@ -26,15 +26,15 @@ pub struct AuthorityMetrics {
     /// Number of received round2 signing packages
     pub(crate) received_round2_signing_packages: Counter,
 
-    /// Number of finalzied signings
+    /// Number of finalized signings
     pub(crate) finalized_signings: Counter,
 
     #[allow(dead_code)]
     /// Number of reset wallet states
     pub(crate) reset_wallet_states: Counter,
 
-    /// Number of commet finalzied blocks
-    pub(crate) commet_finalzied_blocks: Counter,
+    /// Number of commet finalized blocks
+    pub(crate) commet_finalized_blocks: Counter,
 
     /// Number of commet committed blocks
     pub(crate) commet_committed_blocks: Counter,
@@ -90,7 +90,7 @@ mod tests {
             metrics.received_round2_signing_packages.increment(6);
             metrics.finalized_signings.increment(1);
             metrics.reset_wallet_states.increment(2);
-            metrics.commet_finalzied_blocks.increment(3);
+            metrics.commet_finalized_blocks.increment(3);
             metrics.commet_committed_blocks.increment(1);
             metrics.commet_prepared_proposals.increment(5);
             metrics.commet_processed_proposals.increment(4);
@@ -118,7 +118,7 @@ mod tests {
                 ("authority.received_round2_signing_packages", 6),
                 ("authority.finalized_signings", 1),
                 ("authority.reset_wallet_states", 2),
-                ("authority.commet_finalzied_blocks", 3),
+                ("authority.commet_finalized_blocks", 3),
                 ("authority.commet_committed_blocks", 1),
                 ("authority.commet_prepared_proposals", 5),
                 ("authority.commet_processed_proposals", 4),

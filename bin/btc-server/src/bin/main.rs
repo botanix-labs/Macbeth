@@ -706,13 +706,13 @@ where
         info!("Received reset wallet state request");
 
         // handle finalized pegout ids
-        let finalzied_pegout_ids = req
+        let finalized_pegout_ids = req
             .finalized_pegout_ids
             .into_iter()
             .map(|v| PegoutId::from_bytes(&v))
             .collect::<Result<Vec<PegoutId>, _>>()
             .map_err(|_| internal!("Failed to convert finalized pegout ids"))?;
-        let pegout_refs: Vec<&PegoutId> = finalzied_pegout_ids.iter().collect();
+        let pegout_refs: Vec<&PegoutId> = finalized_pegout_ids.iter().collect();
         self.db.reset_finalized_pegout_ids(&pegout_refs).to_status()?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }

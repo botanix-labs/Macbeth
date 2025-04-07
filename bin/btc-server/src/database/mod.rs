@@ -747,8 +747,6 @@ impl Db {
         Ok(self.pending_pegouts.clear()?)
     }
 
-    // --------------NEW---------------------
-
     /// Get all finalized pegout ids
     /// Returns a vector of pegout requests that have been finalized.
     pub fn get_finalized_pegout_ids(&self) -> Result<Vec<PegoutId>, Error> {
@@ -777,7 +775,7 @@ impl Db {
         Ok(self.finalized_pegout_ids.clear()?)
     }
 
-    /// Resets all finalzied pegout txs, and re-adding the functions arguments back in
+    /// Resets all finalized pegout txs, and re-adding the functions arguments back in
     pub fn reset_finalized_pegout_ids(
         &self,
         finalized_pegout_ids: &[&PegoutId],
@@ -821,8 +819,6 @@ impl Db {
             .map_err(|e: TransactionError<_>| Error::Transaction(e.to_string()))?;
         Ok(())
     }
-
-    // ----------------------------
 
     /// Resets all tracked txs, and re-adding the functions arguments back in
     pub fn reset_tracked_txs(&self, tracked_txs: &[&pegout_scheduler::Tx]) -> Result<(), Error> {
