@@ -274,22 +274,10 @@ where
     fn get_latest_persisted_block_height(
         &self,
     ) -> Result<Option<BlockNumber>, SnapshotManagerError> {
-        if let Some((snapshot_id, _block_number)) =
+        if let Some((_snapshot_id, block_number)) =
             self.provider_factory.provider()?.get_last_snapshot_height()?
         {
-            if let Some(latest_snapshot_chunk_id) = self
-                .provider_factory
-                .provider()?
-                .get_snapshot_by_id(snapshot_id)?
-                .and_then(|s| s.get_latest_chunk_id())
-            {
-                return self
-                    .provider_factory
-                    .provider()?
-                    .get_chunk_by_id(latest_snapshot_chunk_id)
-                    .map(|sc| sc.map(|c| c.get_ending_block_number()))
-                    .map_err(SnapshotManagerError::Provider);
-            }
+            return Ok(Some(block_number.into()));
         }
         Ok(None)
     }
