@@ -445,9 +445,10 @@ where
         }
 
         // check the block height vs. the last snapshot height
+        let mut state_lock = self.state_lock.write().expect("snapshot state sync locked");
         let mut last_snapshot_id = match self.get_last_snapshot_height()? {
             Some((last_snapshot_id, last_snapshot_height)) => {
-                if block.number < last_snapshot_height {
+                if !state_lock.is_syncing_history() && block.number < last_snapshot_height {
                     error!(target: "consensus::authority::snapshot_manager::run", "block number {} is less than last snapshot height {}", block.number, last_snapshot_height);
                     return Err(SnapshotManagerError::InvalidBlockHeightForSnapshot());
                 }
@@ -481,7 +482,6 @@ where
         info!("Snapshots count: {:?}", self.get_snapshots_count()?);
 
         // update the snapshot state lock
-        let mut state_lock = self.state_lock.write().expect("snapshot state sync locked");
         state_lock.set_snapshot_id(last_snapshot_id).set_block_number(block.number);
         drop(state_lock);
 
