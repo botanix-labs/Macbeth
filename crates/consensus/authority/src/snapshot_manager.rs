@@ -277,7 +277,7 @@ where
         if let Some((_snapshot_id, block_number)) =
             self.provider_factory.provider()?.get_last_snapshot_height()?
         {
-            return Ok(Some(block_number.into()));
+            return Ok(Some(block_number));
         }
         Ok(None)
     }
