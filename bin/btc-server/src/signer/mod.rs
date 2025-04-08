@@ -70,9 +70,7 @@ pub async fn get_round1_signing_package(
     // }
 
     // Validate PSBT
-    if cfg!(feature = "conflicting_input") {
-        validate_psbt(psbt, ROUND1, min_signers, db)?;
-    }
+    validate_psbt(psbt, ROUND1, min_signers, db)?;
 
     let num_inputs = psbt.inputs.len();
 
@@ -106,10 +104,7 @@ pub async fn get_round2_signing_package(
     // Each nonce pair is commitment to a input of the tx
     signing_nonces: &[(SigningNonces, SigningCommitments)],
 ) -> Result<(), SigningRound2Error> {
-    // Validate PSBT
-    if cfg!(feature = "conflicting_input") {
-        validate_psbt(psbt, ROUND1, min_signers, db)?;
-    }
+    validate_psbt(psbt, ROUND1, min_signers, db)?;
 
     let tx = psbt.clone().extract_tx()?;
     let num_inputs = tx.input.len();

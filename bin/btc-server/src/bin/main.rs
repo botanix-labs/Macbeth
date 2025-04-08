@@ -848,17 +848,14 @@ where
         let signed_tx = psbt.extract_tx().expect("just checked in get_round2_signing_package");
 
         // We just signed for all pending pegouts lets start tracking them
-        if cfg!(feature = "conflicting_input") {
-            info!("get_round2_signing_package: removing pending pegouts");
-            let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
-            let pending_pegout_ids =
-                pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
-            self.add_tracked_tx(signed_tx.clone(), &pending_pegouts, SystemTime::now())
-                .await
-                .to_status()?;
-            self.db.remove_pending_pegout(&pending_pegout_ids).to_status()?;
-            self.db.flush().to_status()?;
-        }
+        info!("get_round2_signing_package: removing pending pegouts");
+        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+        let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
+        self.add_tracked_tx(signed_tx.clone(), &pending_pegouts, SystemTime::now())
+            .await
+            .to_status()?;
+        self.db.remove_pending_pegout(&pending_pegout_ids).to_status()?;
+        self.db.flush().to_status()?;
 
         let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),

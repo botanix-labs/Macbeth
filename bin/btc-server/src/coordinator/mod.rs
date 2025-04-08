@@ -123,43 +123,41 @@ pub async fn make_tx(
     // that honors each pegout
     let mut conflicting_inputs: Result<Vec<Utxo>, CoordinatorError> = Ok(vec![]);
     let mut conflicting_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
-    if cfg!(feature = "conflicting_input") {
-        let tracked_pegout_request_ids = tracked_txs
-            .iter()
-            .flat_map(|tx| tx.pegout_requests.iter().map(|p| p.id))
-            .collect::<HashSet<_>>();
-        println!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
+    let tracked_pegout_request_ids = tracked_txs
+        .iter()
+        .flat_map(|tx| tx.pegout_requests.iter().map(|p| p.id))
+        .collect::<HashSet<_>>();
+    println!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
 
-        // Collect all pegout ids being retried.
-        let matching_pegouts_ids: Vec<&PegoutId> = outputs
-            .iter()
-            .filter(|(_, pegout_id)| tracked_pegout_request_ids.contains(pegout_id))
-            .map(|(_, pegout_id)| pegout_id)
-            .collect();
+    // Collect all pegout ids being retried.
+    let matching_pegouts_ids: Vec<&PegoutId> = outputs
+        .iter()
+        .filter(|(_, pegout_id)| tracked_pegout_request_ids.contains(pegout_id))
+        .map(|(_, pegout_id)| pegout_id)
+        .collect();
 
-        // get a tracked input for each matching pegout
-        let matching_tracked_inputs: Result<Vec<OutPoint>, CoordinatorError> = tracked_txs
-            .iter()
-            .filter(|tx| tx.pegout_requests.iter().any(|p| matching_pegouts_ids.contains(&&p.id)))
-            .map(|tx| tx.inputs().next().ok_or_else(|| CoordinatorError::NoConflictingInputs))
-            .collect();
-        let matching_tracked_inputs = matching_tracked_inputs?;
+    // get a tracked input for each matching pegout
+    let matching_tracked_inputs: Result<Vec<OutPoint>, CoordinatorError> = tracked_txs
+        .iter()
+        .filter(|tx| tx.pegout_requests.iter().any(|p| matching_pegouts_ids.contains(&&p.id)))
+        .map(|tx| tx.inputs().next().ok_or_else(|| CoordinatorError::NoConflictingInputs))
+        .collect();
+    let matching_tracked_inputs = matching_tracked_inputs?;
 
-        // get the utxo for each matching tracked input
-        conflicting_inputs = matching_tracked_inputs
-            .iter()
-            .map(|op| {
-                utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
-                    |u: &Utxo| {
-                        // Conflicting utxos will be added to available utxos before finishing
-                        // coin selection
-                        conflicting_utxos.insert(*op, u.clone());
-                        u.clone()
-                    },
-                )
-            })
-            .collect();
-    }
+    // get the utxo for each matching tracked input
+    conflicting_inputs = matching_tracked_inputs
+        .iter()
+        .map(|op| {
+            utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
+                |u: &Utxo| {
+                    // Conflicting utxos will be added to available utxos before finishing
+                    // coin selection
+                    conflicting_utxos.insert(*op, u.clone());
+                    u.clone()
+                },
+            )
+        })
+        .collect();
 
     let _ = conflicting_inputs?;
 

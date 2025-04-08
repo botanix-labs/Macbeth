@@ -241,9 +241,7 @@ pub fn validate_psbt(
     }
 
     // Validate psbt contains conflicting input if retrying a pegout
-    if cfg!(feature = "conflicting_input") {
-        has_conflicting_input(db, psbt)?;
-    }
+    has_conflicting_input(db, psbt)?;
 
     if psbt.outputs.is_empty() {
         return Err(ValidatePSBTError::NoOutputs);
