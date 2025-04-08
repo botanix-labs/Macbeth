@@ -1,3 +1,4 @@
+use crate::suite::consensus::common::events::SEND_AMOUNT;
 use std::{str::FromStr, time::Duration};
 
 use bitcoin::{
@@ -343,6 +344,30 @@ pub async fn invalid_pegin(
     )
     .await;
 
+    let mut botanix_eth_client = mint_contract_instances
+        .first()
+        .cloned()
+        .unwrap()
+        .expect("Botanix Client must be initialized");
+
+    // create contract deployer to avoid any nonce issues during contract deployment
+    let contract_deployer =
+        botanix_eth_client.get_contract_deployer().expect("To get contract deployer");
+
+    // Fund the contract deployer
+    let _tx_receipt = botanix_eth_client
+        .send_eoa(contract_deployer.address(), SEND_AMOUNT)
+        .await
+        .expect("To send eoa")
+        .expect("To get tx receipt");
+
+    // Deploy attack contract
+    let attack_contract_address = botanix_eth_client
+        .deploy_mint_attack_contract(contract_deployer)
+        .await
+        .expect("To deploy attack contract");
+    botanix_eth_client.set_mint_attack_contract(attack_contract_address);
+
     for (invalid_pegin_meta, description) in invalid_pegin_metas {
         it_info_print!("Invalid pegin meta: {}", description);
         let mut serialized_pegin_meta = Vec::new();
@@ -353,11 +378,6 @@ pub async fn invalid_pegin(
         it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
 
         // send the pegin transactions to all fed members
-        let botanix_eth_client = mint_contract_instances
-            .first()
-            .cloned()
-            .unwrap()
-            .expect("Botanix Client must be initialized");
         let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
 
         // pegin address balance before pegin
@@ -376,8 +396,10 @@ pub async fn invalid_pegin(
         it_info_print!("Nonce before pegin", nonce_before);
 
         // attempt to mint the invalid pegin
+        // call mint attack contract so we test internal calls to Minting.sol
+        // and not just top level (EOA) calls
         let tx_receipt = botanix_eth_client
-            .mint(
+            .mint_attack(
                 eth_destination.clone(),
                 amount,
                 bitcoin_block_height as u32,

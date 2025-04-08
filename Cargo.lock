@@ -12914,6 +12914,7 @@ dependencies = [
  "anyhow",
  "argh",
  "askama",
+ "assert_matches",
  "async-trait",
  "base64 0.22.1",
  "bitcoin 0.32.5",
