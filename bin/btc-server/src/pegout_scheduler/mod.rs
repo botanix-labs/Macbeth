@@ -445,7 +445,18 @@ impl PegoutScheduler {
             self.db.remove_tracked_tx(&input.txid)?;
             // Remove local copy
             if let Some(tx) = self.txs.remove(&input.txid) {
-                info!("Dropping tx that conflicts with finalized tx: {:?}", tx);
+                info!("Dropped tx that conflicts with finalized tx: {:?}", tx);
+                let deeply_confirmed_pegout_ids = tx
+                    .pegout_requests
+                    .iter()
+                    .map(|pegout_request| pegout_request.id)
+                    .collect::<Vec<PegoutId>>();
+                info!(
+                    "Storing {:?} deeply confirmed tx pegout ids",
+                    deeply_confirmed_pegout_ids.len()
+                );
+                let refs: Vec<&PegoutId> = deeply_confirmed_pegout_ids.iter().collect();
+                self.db.store_finalized_pegout_ids_atomically(&refs)?;
             }
             // Those inputs are no longer worth tracking
             // And no longer spendable, we can safely remove them

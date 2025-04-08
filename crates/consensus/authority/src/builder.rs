@@ -249,6 +249,7 @@ where
                     btc_server.clone(),
                     frost_handle.clone().expect("Requires frost handle"),
                     task_executor.clone(),
+                    frost_config.clone().expect("frost config exists"),
                 );
                 Some(wallet_state_sync_engine)
             } else {

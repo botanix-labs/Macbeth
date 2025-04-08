@@ -69,10 +69,10 @@ impl SignRequest {
     }
 }
 
-/// A structured wallet state message
+/// A structured wallet state sync request message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WalletStateRequest {
-    /// uuid of the state sync request
+    /// uuid of the wallet state sync request
     pub uuid: String,
     /// The version of the request message
     pub version: u16,

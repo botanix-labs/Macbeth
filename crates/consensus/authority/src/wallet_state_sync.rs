@@ -1,4 +1,9 @@
 //! Wallet state sync module
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
+
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::{GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
@@ -6,16 +11,18 @@ use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as CompressorError, SerializationType};
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{
-    manager::{FrostCommand, ToFrostManager},
+    manager::{FrostCommand, FrostConfig, ToFrostManager},
     PeerMessageResponse,
 };
+use reth_network_peers::PeerId;
 use reth_primitives::extra_data_header::ExtraDataHeaderDeserializeError;
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
 };
 use reth_tasks::TaskExecutor;
-use tokio::sync::mpsc::error::SendError;
+use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, info, trace, warn};
+use uuid::Uuid;
 
 use crate::{prost_parser::ProstMessageSerdelizer, Storage};
 
@@ -58,6 +65,8 @@ pub trait WalletStateSync {
     async fn sync_wallet_state(&self) -> Result<(), WalletStateSyncError>;
 }
 
+type WalletStateSyncResponseCycle = Arc<RwLock<Option<(Uuid, HashMap<PeerId, Vec<Vec<u8>>>)>>>;
+
 #[derive(Clone)]
 /// Engine for synchronizing wallet state
 pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
@@ -66,6 +75,8 @@ pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
     to_frost_manager: ToFrostMan,
     data_parser: DataParser,
     task_executor: TaskExecutor,
+    frost_config: FrostConfig,
+    current_response_cycle: WalletStateSyncResponseCycle,
 }
 
 impl<EF, BF, DB, ToFrostMan, BtcServerClient>
@@ -82,10 +93,19 @@ where
         btc_server: BtcServerClient,
         to_frost_manager: ToFrostMan,
         task_executor: TaskExecutor,
+        frost_config: FrostConfig,
     ) -> Self {
         let data_parser =
             DataParser::default().with_serialization_type(SerializationType::Postcard);
-        Self { storage, btc_server, to_frost_manager, data_parser, task_executor }
+        Self {
+            storage,
+            btc_server,
+            to_frost_manager,
+            data_parser,
+            task_executor,
+            frost_config,
+            current_response_cycle: Default::default(),
+        }
     }
 }
 
@@ -110,6 +130,8 @@ where
         let mut peer_messages_rx = peer_messages_rx.await.expect("peer messages rx to be open");
 
         let data_parser = self.data_parser.clone();
+        let frost_config = self.frost_config.clone();
+        let current_response_cycle = self.current_response_cycle.clone();
         let mut canon_events = self.storage.client.subscribe_to_canonical_state();
 
         self.task_executor.clone().spawn(async move {
@@ -118,13 +140,21 @@ where
                 match peer_messages_rx.recv().await {
                     Some(peer_message_context) => {
                         info!(target: "consensus::authority::sync_wallet_state", "Received wallet state from peer {:?}", peer_message_context.peer_id);
-
                         // Note: we ignore empty messages bc they are peer requests for wallet state
                         // which are handled by the frost task or are malicious/faulty requests
                         // that would cause the btc-server to wipe its state
                         if let PeerMessageResponse::WalletState(wallet_state) =
                             peer_message_context.message
                         {
+                            // try parsing the uuid
+                            let request_uuid = match Uuid::parse_str(&wallet_state.uuid) {
+                                Ok(uuid) => uuid,
+                                Err(e) => {
+                                    error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to parse uuid from peer message");
+                                    continue;
+                                }
+                            };
+
                             // process the wallet state
                             debug!(target: "consensus::authority::sync_wallet_state", "Received wallet state from peer {:?}", wallet_state);
 
@@ -152,15 +182,42 @@ where
                                 }
                             };
 
-                            // Report to btc server to reset the wallet state
-                            if let Err(e) = btc_server
-                                .reset_wallet_state(ResetWalletStateRequest {
-                                    finalized_pegout_ids
-                                })
-                                .await {
-                                    error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to reset wallet state");
+                            // update the sync responses map with the received wallet state (considering only good states towards liveness)
+                            let mut current_response_cycle = current_response_cycle.write().await;
+                            match current_response_cycle.as_mut() {
+                                Some((uuid, peers)) => {
+                                    if *uuid != request_uuid {
+                                        warn!(target: "consensus::authority::sync_wallet_state", "Received wallet state with different uuid, ignoring");
+                                        continue;
+                                    }
+                                    peers.insert(peer_message_context.peer_id, finalized_pegout_ids);
+
+                                    if peers.len() as u16 >= frost_config.min_signers {
+                                        // consenses the finalized pegout ids
+                                        let mut condensed_finalized_pegout_ids = HashSet::new();
+                                        for peer_finalized_peer_ids in peers.values_mut() {
+                                            let peer_finalized_ids = peer_finalized_peer_ids.iter()
+                                            .cloned()
+                                            .collect::<HashSet<_>>();
+                                            condensed_finalized_pegout_ids.extend(peer_finalized_ids);
+                                        }
+
+                                        // Report to btc server to resync the wallet state
+                                        if let Err(e) = btc_server
+                                            .reset_wallet_state(ResetWalletStateRequest {
+                                                finalized_pegout_ids: condensed_finalized_pegout_ids.into_iter().collect(),
+                                            })
+                                            .await {
+                                                error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to reset wallet state");
+                                                continue;
+                                            }
+                                    }
+                                },
+                                None => {
+                                    warn!(target: "consensus::authority::sync_wallet_state", "No current response cycle, ignoring wallet state");
                                     continue;
                                 }
+                            }
                         }
                     }
                     None => {
@@ -171,6 +228,7 @@ where
             }
         });
 
+        let current_response_cycle = self.current_response_cycle.clone();
         while let Ok(canon_event) = canon_events.recv().await {
             debug!(target: "consensus::authority::snapshot_manager::run", "received canon event {:?}", canon_event);
             match canon_event {
@@ -187,6 +245,8 @@ where
                     {
                         error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to send get wallet state command to frost manager");
                     }
+                    // start the current response cycle
+                    current_response_cycle.write().await.replace((uuid, HashMap::new()));
                 }
                 CanonStateNotification::Reorg { old: _old, new: _new } => {
                     warn!(target: "consensus::authority::snapshot_manager::run", "reorg detected, this should not happen");

@@ -431,7 +431,7 @@ pub(crate) fn validate_outputs(
                 .cloned()
         })
         .collect::<Vec<_>>();
-    if pegout_ids_in_finalized_list.len() > 0 {
+    if !pegout_ids_in_finalized_list.is_empty() {
         return Err(ValidateOutputsError::AlreadyFinalizedPegouts(pegout_ids_in_finalized_list));
     }
 
