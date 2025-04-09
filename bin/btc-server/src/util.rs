@@ -259,15 +259,6 @@ pub fn validate_psbt(
         },
     };
 
-    let tx = psbt.clone().extract_tx()?;
-    for input in tx.input.iter() {
-        // Check if input exists in db
-        let db_utxo = db.get_utxo(input.previous_output)?;
-        if db_utxo.is_none() {
-            return Err(ValidatePSBTError::UtxoNotFound);
-        }
-    }
-
     let total_outputs_amount =
         psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
             total.checked_add(output.value).unwrap_or_default()
