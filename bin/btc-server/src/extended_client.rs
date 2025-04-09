@@ -152,16 +152,57 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
     fn get_finalized_pegout_ids(
         &mut self,
         request: Empty,
-    ) -> BoxFuture<'_, Result<GetFinalizedPegoutIdsResponse, GrpcClientError>>;
+    ) -> BoxFuture<
+        '_,
+        Result<
+            impl tonic::codegen::tokio_stream::Stream<
+                    Item = Result<GetFinalizedPegoutIdsResponse, tonic::Status>,
+                > + Send
+                + 'static,
+            GrpcClientError,
+        >,
+    >;
 }
 
-/// Macro for generating grpc methods implementation
+/// Macros for generating grpc methods implementation
 macro_rules! generate_method {
     ($method_name:ident, $req_ty:ty, $resp_ty:ty) => {
         fn $method_name(
             &mut self,
             request: $req_ty,
         ) -> BoxFuture<'_, Result<$resp_ty, GrpcClientError>> {
+            Box::pin(async move {
+                let mut req = tonic::Request::new(request);
+
+                if let Some(jwt_auth_token) = self.generate_jwt_token() {
+                    let jwt_auth_token = MetadataValue::from_bytes(jwt_auth_token.as_bytes());
+                    let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+                    req.metadata_mut().insert_bin(key, jwt_auth_token);
+                }
+
+                match self.client.$method_name(req).await {
+                    Ok(response) => Ok(response.into_inner()),
+                    Err(status) => Err(GrpcClientError::Call(status)),
+                }
+            })
+        }
+    };
+}
+
+macro_rules! generate_stream_method {
+    ($method_name:ident, $req_ty:ty, $resp_ty:ty) => {
+        fn $method_name(
+            &mut self,
+            request: $req_ty,
+        ) -> BoxFuture<
+            '_,
+            Result<
+                impl tonic::codegen::tokio_stream::Stream<Item = Result<$resp_ty, tonic::Status>>
+                    + Send
+                    + 'static,
+                GrpcClientError,
+            >,
+        > {
             Box::pin(async move {
                 let mut req = tonic::Request::new(request);
 
@@ -246,7 +287,7 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     generate_method!(get_pending_pegouts, Empty, GetPendingPegoutsResponse);
     generate_method!(reset_wallet_state, ResetWalletStateRequest, Empty);
     generate_method!(new_consensus_checkpoint, ConsensusCheckpointRequest, Empty);
-    generate_method!(get_finalized_pegout_ids, Empty, GetFinalizedPegoutIdsResponse);
+    generate_stream_method!(get_finalized_pegout_ids, Empty, GetFinalizedPegoutIdsResponse);
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

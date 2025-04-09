@@ -412,7 +412,9 @@ pub mod btc_server_client {
             &mut self,
             request: impl tonic::IntoRequest<super::Empty>,
         ) -> std::result::Result<
-            tonic::Response<super::GetFinalizedPegoutIdsResponse>,
+            tonic::Response<
+                tonic::codec::Streaming<super::GetFinalizedPegoutIdsResponse>,
+            >,
             tonic::Status,
         > {
             self.inner
@@ -432,7 +434,7 @@ pub mod btc_server_client {
                 .insert(
                     GrpcMethod::new("btc_server.BtcServer", "GetFinalizedPegoutIds"),
                 );
-            self.inner.unary(req, path, codec).await
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn get_gateway_address(
             &mut self,

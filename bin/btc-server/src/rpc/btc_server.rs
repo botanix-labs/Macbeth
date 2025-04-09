@@ -296,11 +296,20 @@ pub mod btc_server_server {
             tonic::Response<super::GetPendingPegoutsResponse>,
             tonic::Status,
         >;
+        /// Server streaming response type for the GetFinalizedPegoutIds method.
+        type GetFinalizedPegoutIdsStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<
+                    super::GetFinalizedPegoutIdsResponse,
+                    tonic::Status,
+                >,
+            >
+            + std::marker::Send
+            + 'static;
         async fn get_finalized_pegout_ids(
             &self,
             request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
-            tonic::Response<super::GetFinalizedPegoutIdsResponse>,
+            tonic::Response<Self::GetFinalizedPegoutIdsStream>,
             tonic::Status,
         >;
         async fn get_gateway_address(
@@ -598,11 +607,14 @@ pub mod btc_server_server {
                 "/btc_server.BtcServer/GetFinalizedPegoutIds" => {
                     #[allow(non_camel_case_types)]
                     struct GetFinalizedPegoutIdsSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::ServerStreamingService<super::Empty>
                     for GetFinalizedPegoutIdsSvc<T> {
                         type Response = super::GetFinalizedPegoutIdsResponse;
+                        type ResponseStream = T::GetFinalizedPegoutIdsStream;
                         type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
+                            tonic::Response<Self::ResponseStream>,
                             tonic::Status,
                         >;
                         fn call(
@@ -634,7 +646,7 @@ pub mod btc_server_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.unary(method, req).await;
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
