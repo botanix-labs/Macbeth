@@ -569,6 +569,8 @@ where
     Pool: TransactionPool + Clone + 'static,
 {
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
+    // We will panic! if there's an error since there's no way to recover from an application
+    // hash mismatch error other than a manual rollback of the db to a healthy state.
     fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
         info!("init_chain request: {:?}", _request);
         let client = self.storage.client.clone();
@@ -1629,6 +1631,10 @@ where
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#commit
+    /// We will always panic! if there's an error bc that means the block hasn't
+    /// been successfully committed to the database. There is no way to recover from
+    /// an application hash mismatch other than a manual rollback of the db to a healthy state.
+    /// If we don't panic this is what will happen.
     fn commit(&self) -> ResponseCommit {
         info!("commit request received");
         let candidate_blocks = match self.block_cache.write() {
@@ -1643,8 +1649,7 @@ where
                 (cbft_block_hash, sealed_block_with_context)
             }
             None => {
-                error!("Error getting block from cache");
-                return ResponseCommit::default();
+                panic!("Error getting block from cache");
             }
         };
 
@@ -1660,12 +1665,11 @@ where
                 .send(ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)))
                 .await
             {
-                error!("Error sending commit block message: {:?}", e);
+                panic!("Error sending commit block message: {:?}", e);
             }
         }));
         if let Err(e) = commit_rx.recv() {
-            error!("Error receiving commit block response {e:?}");
-            return ResponseCommit::default();
+            panic!("Error receiving commit block response {e:?}");
         }
 
         info!("Block committed: {:?}", cbft_block_hash);
