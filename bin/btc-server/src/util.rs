@@ -325,11 +325,11 @@ pub fn validate_psbt(
     let tx = psbt.clone().extract_tx()?;
     for (index, psbt_input) in psbt.inputs.iter().enumerate() {
         if flags & ROUND1 == ROUND1 {
-            // validate utxo exists in DB
             let outpoint = tx.input[index].previous_output;
             let utxo = db.get_utxo(outpoint).expect("valid utxo");
+            // signer's don't enforce utxo exists but will do checks if it does
             if utxo.is_none() {
-                return Err(ValidatePSBTError::UtxoNotFound);
+                return Ok(());
             }
             // If the utxo has a eth tweak check the right one is presented in the psbt
             let eth_tweak = utxo.clone().expect("valid utxo").eth_address;
