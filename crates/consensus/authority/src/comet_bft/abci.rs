@@ -1124,8 +1124,8 @@ where
                         warn!("{:?}/{:?} txs violated the max_tx_bytes size and got excluded from the prepared proposal", (txs_len - filtered_txs.len()), txs_len);
                         // check that the non-deterministic data is not larger than the max tx bytes
                         if non_deterministic_data_bytes.len() as i64 > request.max_tx_bytes {
-                            error!("Non-deterministic data size: {:?} exceeds the max tx bytes allowed size {:?}", non_deterministic_data_bytes.len(), request.max_tx_bytes);
-                            return ResponsePrepareProposal { ..Default::default() };
+                            // We should panic bc there is a critical bug and there should be a chain halt.
+                            panic!("Non-deterministic data size: {:?} exceeds the max tx bytes allowed size {:?}", non_deterministic_data_bytes.len(), request.max_tx_bytes);
                         }
                         // insert non-deterministic data tx at index 0 so historical sync will pass
                         // verification
