@@ -1,10 +1,10 @@
-use crate::suite::consensus::common::poa_node::RPC_PORT_BASE;
 use crate::{
     it_info_print,
     mint_attack_contract_abi::{
         MintAttackContract, MINTATTACKCONTRACT_ABI, MINTATTACKCONTRACT_BYTECODE,
     },
     minting::Minting as MintContract,
+    suite::consensus::common::poa_node::RPC_PORT_BASE,
 };
 use anyhow::Context;
 use displaydoc::Display as DisplayDoc;
@@ -195,7 +195,8 @@ impl BotanixEthClient {
         let gas_price = self.http_client.get_gas_price().await.ok().unwrap_or_default();
 
         let tx_receipt = self
-            .mint_attack_contract.as_ref()
+            .mint_attack_contract
+            .as_ref()
             .expect("mint attack contract exists")
             .pass_through_mint(destination, amount, bitcoin_block_height, metadata, refund_address)
             .gas_price(gas_price)
@@ -230,9 +231,9 @@ impl BotanixEthClient {
     }
 
     /// Burn attack
-    /// This contract calls Minting.sol > burn() with an invalid pegout and half the pegout amount sent by tx.origin (sender).
-    /// The attack tries to get refunded the original amount instead of the halved amount that is actually burned.
-    /// This would mint free BTC.
+    /// This contract calls Minting.sol > burn() with an invalid pegout and half the pegout amount
+    /// sent by tx.origin (sender). The attack tries to get refunded the original amount instead
+    /// of the halved amount that is actually burned. This would mint free BTC.
     pub async fn burn_attack(
         &self,
         destination: ethers::core::types::Bytes,

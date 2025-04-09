@@ -356,7 +356,8 @@ where
                 state_lock.set_is_syncing_history(false);
                 drop(state_lock);
 
-                // allow a gap in snapshots and start syncing live blocks by returning an empty stream
+                // allow a gap in snapshots and start syncing live blocks by returning an empty
+                // stream
                 futures::stream::empty::<Option<BlockWithSenders>>().boxed()
             }
         };
@@ -471,8 +472,8 @@ where
 
         // Check if there is enough space in the latest snapshot
         debug!(target: "consensus::authority::snapshot_manager::run", "Snapshot size: {}", latest_snapshot_size);
-        if latest_snapshot_size + serialized_block.len()
-            > self.snapshot_size_limits.snapshot_max_size
+        if latest_snapshot_size + serialized_block.len() >
+            self.snapshot_size_limits.snapshot_max_size
         {
             info!(target: "consensus::authority::snapshot_manager::run", "Snapshot size exceeds limit of {} bytes. Current size: {}, Attempted: {}", self.snapshot_size_limits.snapshot_max_size, latest_snapshot_size, serialized_block.len());
             // create a new snapshot
@@ -491,8 +492,8 @@ where
                 // Check if there is enough space in the latest chunk
                 let latest_chunk_size =
                     self.provider_factory.provider()?.get_chunk_size(chunk_id)?;
-                if latest_chunk_size + serialized_block.len()
-                    > self.snapshot_size_limits.snapshot_chunk_size
+                if latest_chunk_size + serialized_block.len() >
+                    self.snapshot_size_limits.snapshot_chunk_size
                 {
                     self.create_new_chunk(last_snapshot_id, block.number, serialized_block.clone())?
                 } else {
@@ -516,8 +517,8 @@ where
 
     /// Apply retention policy for snapshots
     fn apply_retention_policy(&self) -> Result<(), SnapshotManagerError> {
-        if !self.state_lock.read().expect("snapshot state sync locked").is_syncing_history()
-            && self.get_snapshots_count()? > self.snapshots_to_keep as usize
+        if !self.state_lock.read().expect("snapshot state sync locked").is_syncing_history() &&
+            self.get_snapshots_count()? > self.snapshots_to_keep as usize
         {
             if let Some((_, oldest_height)) = self.provider_factory.get_first_snapshot_height()? {
                 let state_lock = self.state_lock.read().expect("snapshot state sync locked");
