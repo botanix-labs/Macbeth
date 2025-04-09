@@ -140,7 +140,7 @@ pub fn try_parse_mint_event(
     log: &revm_primitives::Log,
 ) -> Result<Option<PeginData>, ParseMintEventError> {
     if log.address != *MINT_CONTRACT_ADDRESS {
-        info!("Log address is not mint contract address");
+        debug!("Log address is not mint contract address");
         return Ok(None);
     }
 
