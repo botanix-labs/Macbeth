@@ -274,22 +274,10 @@ where
     fn get_latest_persisted_block_height(
         &self,
     ) -> Result<Option<BlockNumber>, SnapshotManagerError> {
-        if let Some((snapshot_id, _block_number)) =
+        if let Some((_snapshot_id, block_number)) =
             self.provider_factory.provider()?.get_last_snapshot_height()?
         {
-            if let Some(latest_snapshot_chunk_id) = self
-                .provider_factory
-                .provider()?
-                .get_snapshot_by_id(snapshot_id)?
-                .and_then(|s| s.get_latest_chunk_id())
-            {
-                return self
-                    .provider_factory
-                    .provider()?
-                    .get_chunk_by_id(latest_snapshot_chunk_id)
-                    .map(|sc| sc.map(|c| c.get_ending_block_number()))
-                    .map_err(SnapshotManagerError::Provider);
-            }
+            return Ok(Some(block_number));
         }
         Ok(None)
     }
@@ -458,9 +446,10 @@ where
         }
 
         // check the block height vs. the last snapshot height
+        let mut state_lock = self.state_lock.write().expect("snapshot state sync locked");
         let mut last_snapshot_id = match self.get_last_snapshot_height()? {
             Some((last_snapshot_id, last_snapshot_height)) => {
-                if block.number < last_snapshot_height {
+                if !state_lock.is_syncing_history() && block.number < last_snapshot_height {
                     error!(target: "consensus::authority::snapshot_manager::run", "block number {} is less than last snapshot height {}", block.number, last_snapshot_height);
                     return Err(SnapshotManagerError::InvalidBlockHeightForSnapshot());
                 }
@@ -494,7 +483,6 @@ where
         info!("Snapshots count: {:?}", self.get_snapshots_count()?);
 
         // update the snapshot state lock
-        let mut state_lock = self.state_lock.write().expect("snapshot state sync locked");
         state_lock.set_snapshot_id(last_snapshot_id).set_block_number(block.number);
         drop(state_lock);
 

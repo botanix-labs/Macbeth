@@ -32,7 +32,6 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
-use reth::rpc::api::clients;
 use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_db::DatabaseEnv;
 use reth_provider::ProviderFactory;

@@ -266,12 +266,13 @@ pub fn try_parse_burn_event(
 
     // should be the pegout version which is a single byte
     let metadata = params[2].clone().into_bytes().ok_or(ParseBurnEventError::InvalidPegoutData(
-        PegoutDataError::Invalid("invalid metadata"),
+        PegoutDataError::Invalid("invalid metadata", amount),
     ))?;
 
     if metadata.len() != 1 {
         return Err(ParseBurnEventError::InvalidPegoutData(PegoutDataError::Invalid(
             "invalid metadata length",
+            amount,
         )));
     }
 
@@ -281,13 +282,14 @@ pub fn try_parse_burn_event(
     }
 
     Ok(Some(
-        PegoutData::new(btc_amount, destination, btc_network)
+        PegoutData::new(btc_amount, amount, destination, btc_network)
             .map_err(ParseBurnEventError::InvalidPegoutData)?,
     ))
 }
 
 #[cfg(test)]
 mod test {
+    use assert_matches::assert_matches;
     use revm_primitives::{hex, Bytes, Log, LogData};
 
     use super::*;
@@ -427,5 +429,32 @@ mod test {
                 .assume_checked()
         );
         assert_eq!(pegout_data.network, bitcoin::Network::Regtest);
+    }
+
+    #[test]
+    fn try_parse_burn_event_failure_error_should_contain_amount() {
+        // Create a burn event payload with an invalid metadata (empty bytes) to simulate invalid
+        // pegout metadata.
+        let amount =
+            ethabi::Token::Uint(ethabi::ethereum_types::U256::from(10_000_000_000_000_u64));
+        let destination = ethabi::Token::String("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string());
+        let invalid_metadata = ethabi::Token::Bytes(vec![]); // invalid: length != 1
+        let payload = ethabi::encode(&[amount, destination, invalid_metadata]);
+
+        let sender =
+            B256::from_str("0x000000000000000000000000a65812bac44dadb79c3e4930dbd98d5a75376b2a")
+                .unwrap();
+        let log = Log {
+            address: *MINT_CONTRACT_ADDRESS,
+            data: LogData::new(
+                vec![*BURN_TOPIC, sender],
+                Bytes::copy_from_slice(payload.as_slice()),
+            )
+            .expect("LogData creation should succeed"),
+        };
+
+        let result = try_parse_burn_event(&log, bitcoin::Network::Regtest);
+        let expected_amount = ethers::types::U256::from(10_000_000_000_000_u64);
+        assert_matches!(result, Err(ParseBurnEventError::InvalidPegoutData(PegoutDataError::Invalid("invalid metadata length", amt))) if amt == expected_amount);
     }
 }
