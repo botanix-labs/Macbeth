@@ -1192,8 +1192,8 @@ where
             .as_ref()
             .ok_or(DKGError::MissingRound1DkgPayload)
             .to_status()?
-            .1
-            == dkg_round1
+            .1 ==
+            dkg_round1
         {
             return Err(badarg!("Cannot add own round1 dkg package"));
         }

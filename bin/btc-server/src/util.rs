@@ -419,8 +419,8 @@ pub(crate) fn validate_outputs(
     }
 
     // check psbt pegout exists in pending pegouts list
-    // if round 2 flag, then we are at the end of the round and signers have already cleared the pending pegouts included
-    // in the psbt and tracked the tx
+    // if round 2 flag, then we are at the end of the round and signers have already cleared the
+    // pending pegouts included in the psbt and tracked the tx
     if !is_round_2 {
         for psbt_pegout_id in psbt_pegout_ids.iter() {
             if !pending_pegout_ids.contains(psbt_pegout_id) {
@@ -621,9 +621,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
-            / psbt.unsigned_tx.output.len() as u64
-            + 100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
+            psbt.unsigned_tx.output.len() as u64 +
+            100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
