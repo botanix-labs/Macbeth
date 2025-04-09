@@ -46,15 +46,15 @@ use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
 
-use btcserverlib::config::{GrpcConfig, TomlConfig};
-
 use btcserverlib::{
+    config::{GrpcConfig, TomlConfig},
     http::{create_web_server, state::ServerState},
     pegout_scheduler::PegoutScheduler,
     rpc::*,
     signer::error::SigningError,
     telemetry::Telemetry,
 };
+use tokio_stream::wrappers::ReceiverStream;
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -472,6 +472,10 @@ impl<BitcoindClient> BtcServer for App<BitcoindClient>
 where
     BitcoindClient: RpcApi + Send + Sync + 'static,
 {
+    // Define the associated type for the stream
+    type GetFinalizedPegoutIdsStream =
+        ReceiverStream<Result<rpc::GetFinalizedPegoutIdsResponse, tonic::Status>>;
+
     /* General Endpoints */
     async fn health_check(
         &self,
@@ -612,16 +616,37 @@ where
     async fn get_finalized_pegout_ids(
         &self,
         req: tonic::Request<rpc::Empty>,
-    ) -> Result<tonic::Response<rpc::GetFinalizedPegoutIdsResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<Self::GetFinalizedPegoutIdsStream>, tonic::Status> {
         self.validate_jwt(&req)?;
-        let finalized_pegout_ids = self.db.get_finalized_pegout_ids().to_status()?;
-        if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(finalized_pegout_ids.len() as i64);
-        }
-        let res = tonic::Response::new(rpc::GetFinalizedPegoutIdsResponse {
-            ids: finalized_pegout_ids.into_iter().map(|p| p.as_bytes().to_vec()).collect(),
+        let db = self.db.clone();
+        let telemetry = self.telemetry.clone();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(10);
+        tokio::spawn(async move {
+            loop {
+                let finalized_pegout_ids = match db.get_finalized_pegout_ids().to_status() {
+                    Ok(ids) => ids,
+                    Err(e) => {
+                        error!("Failed to get finalized pegout ids: {}", e);
+                        continue;
+                    }
+                };
+                if let Some(telemetry) = telemetry.as_ref() {
+                    telemetry.update_pending_pegouts(finalized_pegout_ids.len() as i64);
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                let batch = rpc::GetFinalizedPegoutIdsResponse {
+                    ids: finalized_pegout_ids.into_iter().map(|p| p.as_bytes().to_vec()).collect(),
+                };
+                // send the batch
+                if tx.send(Ok(batch)).await.is_err() {
+                    error!("Failed to send finalized pegout ids");
+                    continue;
+                }
+            }
         });
-        Ok(res)
+
+        Ok(tonic::Response::new(ReceiverStream::new(rx)))
     }
 
     /* Wallet State Endpoints */
