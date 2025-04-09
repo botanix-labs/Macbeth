@@ -42,6 +42,9 @@ const KEY_TRACKED_TX_MERKLE_ROOT: &[u8; 5] = b"troot";
 /// sled key for pending pegouts merkle root
 const KEY_PENDING_PEGOUTS_MERKLE_ROOT: &[u8; 5] = b"proot";
 
+/// sled key for finalized pegouts ids root
+const KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT: &[u8; 5] = b"froot";
+
 /// sled key for storing the latest finalized block of the txindex.
 const KEY_PEGOUTMGR_TIP: &[u8; 12] = b"pegoutmgrtip";
 
