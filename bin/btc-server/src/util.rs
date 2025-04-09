@@ -375,8 +375,9 @@ pub enum ValidateOutputsError {
     DuplicateOutputs,
 }
 
-/// Check all pending pegouts are being settled in this tx
-/// and additional outputs are change outputs
+/// Check:
+/// - additional outputs are change outputs
+/// - there are no duplicate outputs
 pub(crate) fn validate_outputs(
     psbt: &Psbt,
     db: &database::Db,
@@ -406,17 +407,6 @@ pub(crate) fn validate_outputs(
     let unique_pegout_ids: HashSet<PegoutId> = psbt_pegout_ids.iter().cloned().collect();
     if unique_pegout_ids.len() != psbt_pegout_ids.len() {
         return Err(ValidateOutputsError::DuplicateOutputs);
-    }
-
-    // check psbt pegout exists in pending pegouts list
-    // if round 2 flag, then we are at the end of the round and signers have already cleared the
-    // pending pegouts included in the psbt and tracked the tx
-    if !is_round_2 {
-        for psbt_pegout_id in psbt_pegout_ids.iter() {
-            if !pending_pegout_ids.contains(psbt_pegout_id) {
-                return Err(ValidateOutputsError::MissingPsbtPegout(*psbt_pegout_id));
-            }
-        }
     }
 
     // check extra outputs are change outputs:
@@ -611,9 +601,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
-            psbt.unsigned_tx.output.len() as u64 +
-            100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
+            / psbt.unsigned_tx.output.len() as u64
+            + 100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
