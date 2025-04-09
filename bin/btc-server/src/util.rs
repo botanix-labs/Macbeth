@@ -676,6 +676,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
+    /// We do not enforce signers have the psbt utxos in their db.
+    /// Leaving test here in case this logic is reverted.
     fn should_look_for_utxo_in_db() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
