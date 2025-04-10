@@ -12,7 +12,7 @@ use crate::{
     keccak256, Address, B256,
 };
 
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 lazy_static::lazy_static! {
     /// hash of the mint topic as it appears in the log
