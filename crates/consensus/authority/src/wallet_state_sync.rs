@@ -190,7 +190,17 @@ where
                                         warn!(target: "consensus::authority::sync_wallet_state", "Received wallet state with different uuid, ignoring");
                                         continue;
                                     }
-                                    peers.insert(peer_message_context.peer_id, finalized_pegout_ids);
+
+                                    match peers.get_mut(&peer_message_context.peer_id) {
+                                        Some(peer_response_cycle_data) => {
+                                            // append the peer response to the current response cycle
+                                            peer_response_cycle_data.extend_from_slice(&finalized_pegout_ids);
+                                        },
+                                        None => {
+                                            // add the peer to the response cycle
+                                            peers.insert(peer_message_context.peer_id, vec![]);
+                                        }
+                                    }
 
                                     if peers.len() as u16 >= frost_config.min_signers {
                                         // consenses the finalized pegout ids

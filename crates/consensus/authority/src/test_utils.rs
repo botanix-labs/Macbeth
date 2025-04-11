@@ -8,9 +8,9 @@ mod authority_test_utils {
     use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
     use client::{
         DkgPayload, Empty, FinalizeSignerRequest, FinalizeSigningRequest, FinalizeSigningResponse,
-        GetAllUtxosResponse, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
-        GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
-        GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
+        GetAllUtxosResponse, GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse,
+        GetGatewayAddressRequest, GetGatewayAddressResponse, GetPendingPegoutsResponse,
+        GetPublicKeyResponse, GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
         GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest,
         ResetWalletStateRequest, SigningPackage, SigningPackageRequest, ToSignRequest,
         WalletStateResponse,
@@ -24,6 +24,7 @@ mod authority_test_utils {
         round2::{sign, SignatureShare},
         Identifier,
     };
+    use futures::{future::BoxFuture, Stream};
     use rand::rngs::OsRng;
     use std::{collections::BTreeMap, future::Future, pin::Pin};
 
@@ -655,12 +656,14 @@ mod authority_test_utils {
 
         fn get_finalized_pegout_ids<'a>(
             &'a mut self,
-            _: Empty,
-        ) -> Pin<
-            Box<
-                dyn Future<Output = Result<GetFinalizedPegoutIdsResponse, GrpcClientError>>
+            request: GetFinalizedPegoutIdsRequest,
+        ) -> BoxFuture<
+            'a,
+            Result<
+                impl Stream<Item = Result<GetFinalizedPegoutIdsResponse, tonic::Status>>
                     + Send
-                    + 'a,
+                    + 'static + 'a,
+                GrpcClientError,
             >,
         > {
             unimplemented!("Not required for DKG/signing tests")
