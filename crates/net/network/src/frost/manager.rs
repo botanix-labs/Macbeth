@@ -494,6 +494,8 @@ pub struct FrostConfig {
     pub min_signers: u16,
     /// Maximum number of signers required to participate in frost
     pub max_signers: u16,
+    /// Size of chunks for wallet state sync
+    pub wallet_state_sync_chunk_size: u64,
 }
 
 impl FrostConfig {
@@ -504,8 +506,16 @@ impl FrostConfig {
         authorities: Vec<secp256k1::PublicKey>,
         min_signers: u16,
         max_signers: u16,
+        wallet_state_sync_chunk_size: u64,
     ) -> Self {
-        Self { authority_pk, authority_index, authorities, min_signers, max_signers }
+        Self {
+            authority_pk,
+            authority_index,
+            authorities,
+            min_signers,
+            max_signers,
+            wallet_state_sync_chunk_size,
+        }
     }
 
     /// Sets the authority public key

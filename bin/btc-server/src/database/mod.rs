@@ -14,6 +14,7 @@ use bitcoin::{
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
+use futures::Stream;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
@@ -757,6 +758,50 @@ impl Db {
             ret.push(tx);
         }
         Ok(ret)
+    }
+
+    /// Get all finalized pegout ids via a stream
+    /// Returns a vector of pegout chunks that have been finalized.
+    pub fn get_finalized_pegout_ids_stream(
+        &self,
+        chunk_size: usize,
+    ) -> impl Stream<Item = Result<Vec<PegoutId>, Error>> + Send + '_ + Sync {
+        async_stream::stream! {
+            let mut current_chunk = Vec::with_capacity(chunk_size);
+            let mut count = 0;
+            for res in self.finalized_pegout_ids.iter() {
+                match res {
+                    Ok((_k, v)) => {
+                        match ciborium::de::from_reader(v.as_ref()) {
+                            Ok(tx) => {
+                                current_chunk.push(tx);
+                                count += 1;
+
+                                // when we reach chunk_size, yield the current chunk and start a new one
+                                if count == chunk_size {
+                                    yield Ok(std::mem::take(&mut current_chunk));
+                                    current_chunk = Vec::with_capacity(chunk_size);
+                                    count = 0;
+                                }
+                            },
+                            Err(e) => {
+                                yield Err(Error::DataCorruption(e));
+                                return;
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        yield Err(e.into());
+                        return;
+                    }
+                }
+            }
+
+            // yield the last chunk
+            if !current_chunk.is_empty() {
+                yield Ok(current_chunk);
+            }
+        }
     }
 
     /// Removes finalized pegout ids from the database.

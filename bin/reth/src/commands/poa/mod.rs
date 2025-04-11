@@ -632,6 +632,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     .rpc
                     .max_signers
                     .ok_or_else(|| eyre::eyre!("max signers not specified"))?,
+                node_config.state_sync.wallet_state_sync_chunk_size,
             );
 
             info!(target: "reth::cli", "Frost config initialized");

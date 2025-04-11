@@ -11,7 +11,7 @@ service BtcServer {
 
     rpc GetPendingPegouts(Empty) returns (GetPendingPegoutsResponse) {}
 
-    rpc GetFinalizedPegoutIds(Empty) returns (stream GetFinalizedPegoutIdsResponse) {}
+    rpc GetFinalizedPegoutIds(GetFinalizedPegoutIdsRequest) returns (stream GetFinalizedPegoutIdsResponse) {}
 
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
@@ -79,6 +79,10 @@ message PendingPegout {
 
 message GetPendingPegoutsResponse {
     repeated PendingPegout pending_pegouts = 1;
+}
+
+message GetFinalizedPegoutIdsRequest {
+    uint64 chunk_size = 1;
 }
 
 message GetFinalizedPegoutIdsResponse {

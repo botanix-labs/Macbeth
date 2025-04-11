@@ -10,6 +10,8 @@ pub(crate) const SNAPSHOT_MESSAGE_FORMAT: u32 = 1;
 /// Snapshot message format for state sync test
 pub(crate) const SNAPSHOT_MESSAGE_FORMAT_TEST: u32 = 2;
 
+/// Wallet state sync chunk size
+pub(crate) const WALLET_STATE_SYNC_CHUNK_SIZE: u64 = 10;
 /// Parameters to configure state sync.
 #[derive(Debug, Clone, Args, PartialEq, Eq)]
 #[clap(next_help_heading = "sync")]
@@ -41,6 +43,10 @@ pub struct StateSyncArgs {
         value_name = "ENABLE_HISTORICAL_SYNC"
     )]
     pub enable_historical_sync: bool,
+
+    /// Wallet state sync chunk size
+    #[arg(default_value_t=WALLET_STATE_SYNC_CHUNK_SIZE, long = "sync.wallet_state_sync_chunk_size", name = "sync.wallet_state_sync_chunk_size", value_name = "WALLET_STATE_SYNC_CHUNK_SIZE")]
+    pub wallet_state_sync_chunk_size: u64,
 }
 
 impl Default for StateSyncArgs {
@@ -50,6 +56,7 @@ impl Default for StateSyncArgs {
             snapshot_message_format: SNAPSHOT_MESSAGE_FORMAT,
             enable_state_sync: true,
             enable_historical_sync: true,
+            wallet_state_sync_chunk_size: WALLET_STATE_SYNC_CHUNK_SIZE,
         }
     }
 }

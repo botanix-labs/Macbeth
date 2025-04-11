@@ -17,15 +17,21 @@ use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btcserverlib::{
     badarg,
-    config::{Config, Error as ConfigError},
+    config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self, error::CoordinatorError},
     database,
+    http::{create_web_server, state::ServerState},
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
-    pegout_scheduler::{self, PegoutRequest},
+    pegout_scheduler::{self, PegoutRequest, PegoutScheduler},
     rpc,
+    rpc::*,
     shutdown::{stop_signal, StopHandle},
-    signer::{self, error::SigningRound1Error},
+    signer::{
+        self,
+        error::{SigningError, SigningRound1Error},
+    },
+    telemetry::Telemetry,
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
         get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, ParsingError,
@@ -40,21 +46,13 @@ use btcserverlib::{
 };
 use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
+use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
 use rand::thread_rng;
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
-use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
-
-use btcserverlib::{
-    config::{GrpcConfig, TomlConfig},
-    http::{create_web_server, state::ServerState},
-    pegout_scheduler::PegoutScheduler,
-    rpc::*,
-    signer::error::SigningError,
-    telemetry::Telemetry,
-};
 use tokio_stream::wrappers::ReceiverStream;
+use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -615,33 +613,42 @@ where
     /// Returns all finalized pegout ids
     async fn get_finalized_pegout_ids(
         &self,
-        req: tonic::Request<rpc::Empty>,
+        req: tonic::Request<rpc::GetFinalizedPegoutIdsRequest>,
     ) -> Result<tonic::Response<Self::GetFinalizedPegoutIdsStream>, tonic::Status> {
         self.validate_jwt(&req)?;
         let db = self.db.clone();
         let telemetry = self.telemetry.clone();
+        let request = req.into_inner();
 
-        let (tx, rx) = tokio::sync::mpsc::channel(10);
+        let (tx, rx) = tokio::sync::mpsc::channel(request.chunk_size as usize);
         tokio::spawn(async move {
-            loop {
-                let finalized_pegout_ids = match db.get_finalized_pegout_ids().to_status() {
-                    Ok(ids) => ids,
+            let stream = db.get_finalized_pegout_ids_stream(request.chunk_size as usize);
+            pin_mut!(stream);
+
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(pegout_ids) => {
+                        if let Some(telemetry) = telemetry.as_ref() {
+                            telemetry.update_pending_pegouts(pegout_ids.len() as i64);
+                        }
+
+                        let batch = rpc::GetFinalizedPegoutIdsResponse {
+                            ids: pegout_ids.into_iter().map(|p| p.as_bytes().to_vec()).collect(),
+                        };
+
+                        // send the batch
+                        if tx.send(Ok(batch)).await.is_err() {
+                            error!("Client disconnected, stopping stream");
+                            continue;
+                        }
+
+                        // add a small delay between chunks
+                        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+                    }
                     Err(e) => {
                         error!("Failed to get finalized pegout ids: {}", e);
                         continue;
                     }
-                };
-                if let Some(telemetry) = telemetry.as_ref() {
-                    telemetry.update_pending_pegouts(finalized_pegout_ids.len() as i64);
-                }
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                let batch = rpc::GetFinalizedPegoutIdsResponse {
-                    ids: finalized_pegout_ids.into_iter().map(|p| p.as_bytes().to_vec()).collect(),
-                };
-                // send the batch
-                if tx.send(Ok(batch)).await.is_err() {
-                    error!("Failed to send finalized pegout ids");
-                    continue;
                 }
             }
         });

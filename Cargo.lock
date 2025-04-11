@@ -2238,6 +2238,7 @@ dependencies = [
  "actix-web",
  "alloy-rpc-types-engine",
  "anyhow",
+ "async-stream",
  "async-trait",
  "base64 0.22.1",
  "bdk_wallet",
@@ -2253,6 +2254,7 @@ dependencies = [
  "dotenvy",
  "env_logger",
  "frost-secp256k1-tr",
+ "futures",
  "futures-util",
  "hex",
  "lazy_static",
@@ -8510,6 +8512,7 @@ version = "1.0.6"
 dependencies = [
  "alloy-rpc-types-engine",
  "anyhow",
+ "async-stream",
  "bincode",
  "bitcoin 0.32.5",
  "btc-server",

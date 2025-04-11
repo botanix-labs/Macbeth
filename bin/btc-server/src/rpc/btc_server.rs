@@ -15,6 +15,11 @@ pub struct GetPendingPegoutsResponse {
     #[prost(message, repeated, tag = "1")]
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetFinalizedPegoutIdsRequest {
+    #[prost(uint64, tag = "1")]
+    pub chunk_size: u64,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetFinalizedPegoutIdsResponse {
     #[prost(bytes = "vec", repeated, tag = "1")]
@@ -307,7 +312,7 @@ pub mod btc_server_server {
             + 'static;
         async fn get_finalized_pegout_ids(
             &self,
-            request: tonic::Request<super::Empty>,
+            request: tonic::Request<super::GetFinalizedPegoutIdsRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::GetFinalizedPegoutIdsStream>,
             tonic::Status,
@@ -609,8 +614,9 @@ pub mod btc_server_server {
                     struct GetFinalizedPegoutIdsSvc<T: BtcServer>(pub Arc<T>);
                     impl<
                         T: BtcServer,
-                    > tonic::server::ServerStreamingService<super::Empty>
-                    for GetFinalizedPegoutIdsSvc<T> {
+                    > tonic::server::ServerStreamingService<
+                        super::GetFinalizedPegoutIdsRequest,
+                    > for GetFinalizedPegoutIdsSvc<T> {
                         type Response = super::GetFinalizedPegoutIdsResponse;
                         type ResponseStream = T::GetFinalizedPegoutIdsStream;
                         type Future = BoxFuture<
@@ -619,7 +625,7 @@ pub mod btc_server_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Empty>,
+                            request: tonic::Request<super::GetFinalizedPegoutIdsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

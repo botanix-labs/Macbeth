@@ -15,6 +15,11 @@ pub struct GetPendingPegoutsResponse {
     #[prost(message, repeated, tag = "1")]
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetFinalizedPegoutIdsRequest {
+    #[prost(uint64, tag = "1")]
+    pub chunk_size: u64,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetFinalizedPegoutIdsResponse {
     #[prost(bytes = "vec", repeated, tag = "1")]
@@ -410,7 +415,7 @@ pub mod btc_server_client {
         }
         pub async fn get_finalized_pegout_ids(
             &mut self,
-            request: impl tonic::IntoRequest<super::Empty>,
+            request: impl tonic::IntoRequest<super::GetFinalizedPegoutIdsRequest>,
         ) -> std::result::Result<
             tonic::Response<
                 tonic::codec::Streaming<super::GetFinalizedPegoutIdsResponse>,
