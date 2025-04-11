@@ -729,7 +729,9 @@ where
                     Ok(snapshot_sync_state_lock) => snapshot_sync_state_lock,
                     Err(e) => {
                         error!("Error getting a snapshot state lock: {:?}", e);
-                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                        return ResponseOfferSnapshot {
+                            result: SnapshotOfferResult::Reject as i32,
+                        };
                     }
                 };
 
@@ -776,7 +778,9 @@ where
                     Ok(snapshot_sync_state_lock_height) => snapshot_sync_state_lock_height,
                     Err(e) => {
                         error!("Error getting a snapshot state lock: {:?}", e);
-                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                        return ResponseOfferSnapshot {
+                            result: SnapshotOfferResult::Reject as i32,
+                        };
                     }
                 };
 
@@ -2120,7 +2124,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_finalize_block_with_signed_tx() {
         let abci_client = abci_client_builder();
 
@@ -2144,9 +2147,8 @@ mod tests {
         request.time = Some(Timestamp::default());
         request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
 
-        // this should panic bc prevrandao isn't being set in the evm env during tests
-        // but all the custom code is executed successfully up to `build_and_execute`
-        let _response = abci_client.finalize_block(request);
+        let response = abci_client.finalize_block(request);
+        assert_eq!(response, ResponseFinalizeBlock::default());
     }
 
     #[test]
