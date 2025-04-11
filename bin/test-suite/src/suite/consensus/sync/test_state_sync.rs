@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-const MAX_RETRIES: u8 = 5;
+const MAX_RETRIES: u8 = 10;
 const REQUIRED_SNAPSHOTS: usize = 1;
 
 #[allow(clippy::too_many_lines)]

@@ -376,6 +376,8 @@ impl FederationMemberTestConfig {
             discovery_secret_path.to_str().context("discovery secret path to exist")?,
             "--abci-port",
             abci_port.as_str(),
+            "--sync.enable_state_sync",
+            "--sync.enable_historical_sync",
         ];
 
         // use botanix chain spec
