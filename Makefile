@@ -739,7 +739,7 @@ start-poa-server-3:
 	--p2p-secret-key "${NODE_3_DIR}/discovery-secret" \
 	--port 30305 \
 	--abci-port=46658 \
-  --sync.enable_state_sync \
+    --sync.enable_state_sync \
 	--sync.enable_historical_sync
 
 start-non-fed-server-1:
