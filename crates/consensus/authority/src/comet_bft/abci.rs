@@ -1233,7 +1233,8 @@ where
                         warn!("{:?}/{:?} txs violated the max_tx_bytes size and got excluded from the prepared proposal", (txs_len - filtered_txs.len()), txs_len);
                         // check that the non-deterministic data is not larger than the max tx bytes
                         if non_deterministic_data_bytes.len() as i64 > request.max_tx_bytes {
-                            // We should panic bc there is a critical bug and there should be a chain halt.
+                            // We should panic bc there is a critical bug and there should be a
+                            // chain halt.
                             panic!("Non-deterministic data size: {:?} exceeds the max tx bytes allowed size {:?}", non_deterministic_data_bytes.len(), request.max_tx_bytes);
                         }
                         // insert non-deterministic data tx at index 0 so historical sync will pass
@@ -2130,7 +2131,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_finalize_block_with_signed_tx() {
         let abci_client = abci_client_builder();
 
@@ -2154,9 +2154,8 @@ mod tests {
         request.time = Some(Timestamp::default());
         request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
 
-        // this should panic bc prevrandao isn't being set in the evm env during tests
-        // but all the custom code is executed successfully up to `build_and_execute`
-        let _response = abci_client.finalize_block(request);
+        let response = abci_client.finalize_block(request);
+        assert_eq!(response, ResponseFinalizeBlock::default());
     }
 
     #[test]
