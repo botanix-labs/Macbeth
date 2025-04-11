@@ -569,8 +569,8 @@ where
     Pool: TransactionPool + Clone + 'static,
 {
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
-    // We will panic! if there's an error since there's no way to recover from an application
-    // hash mismatch error other than a manual rollback of the db to a healthy state.
+    // Panic! on an error. Proceeding when the chain can't be initialized will lead
+    // to unexpected behavior.
     fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
         info!("init_chain request: {:?}", _request);
         let client = self.storage.client.clone();
@@ -1621,10 +1621,10 @@ where
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#commit
-    /// We will always panic! if there's an error bc that means the block hasn't
+    /// Panic! if there's an error bc that means the block hasn't
     /// been successfully committed to the database. There is no way to recover from
     /// an application hash mismatch other than a manual rollback of the db to a healthy state.
-    /// If we don't panic this is what will happen.
+    /// Proceeding after an error will cause the app hash mismatch.
     fn commit(&self) -> ResponseCommit {
         info!("commit request received");
         let candidate_blocks = match self.block_cache.write() {
@@ -1728,6 +1728,11 @@ where
                         let db_rw = match self.database_provider.provider_rw() {
                             Ok(db_rw) => db_rw,
                             Err(e) => {
+                                // Panic bc this causes a db inconsistency:
+                                // CometBFT has already committed the block so if
+                                // the block can't be appended here, there will be an app hash
+                                // mismatch. This requires a manual
+                                // rollback to a healthy state.
                                 panic!("Error getting database rw provider: {:?}", e);
                             }
                         };
