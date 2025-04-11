@@ -26,7 +26,7 @@ pub struct StateSyncArgs {
 
     /// State sync enabled
     #[arg(
-        default_value_t = true,
+        default_value_t = false,
         long = "sync.enable_state_sync",
         name = "sync.enable_state_sync",
         value_name = "ENABLE_STATE_SYNC"
@@ -35,7 +35,7 @@ pub struct StateSyncArgs {
 
     /// Historical state sync enabled
     #[arg(
-        default_value_t = true,
+        default_value_t = false,
         long = "sync.enable_historical_sync",
         name = "sync.enable_historical_sync",
         value_name = "ENABLE_HISTORICAL_SYNC"
