@@ -571,8 +571,18 @@ where
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
     // Panic! on an error. Proceeding when the chain can't be initialized will lead
     // to unexpected behavior.
-    fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
-        info!("init_chain request: {:?}", _request);
+    fn init_chain(&self, request: RequestInitChain) -> ResponseInitChain {
+        info!("init_chain request: {:?}", request);
+
+        // check chain ids match
+        let cometbft_chain_id = match request.chain_id.parse::<u64>() {
+            Ok(chain_id) => chain_id,
+            Err(e) => {
+                panic!("Error parsing cometbft chain id: {:?}", e);
+            }
+        };
+        assert_eq!(self.storage.chain_spec.chain.id(), cometbft_chain_id, "Chain ID mismatch");
+
         let client = self.storage.client.clone();
         let app_hash = match self.application_hash(&client) {
             Ok(app_hash) => app_hash,
@@ -1828,7 +1838,7 @@ mod tests {
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,
     };
-    use reth_chainspec::BOTANIX_TESTNET;
+    use reth_chainspec::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use reth_cli_runner::tokio_runtime;
     use reth_db::{init_db, mdbx::DatabaseArguments};
     use reth_db_common::init::init_genesis;
@@ -1950,10 +1960,21 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Chain ID mismatch")]
+    fn test_init_chain_should_panic_if_chain_id_mismatch() {
+        let abci_client = abci_client_builder();
+
+        let mut request = RequestInitChain::default();
+        request.chain_id = BOTANIX_MAINNET.chain.id().to_string();
+        let _ = abci_client.init_chain(request);
+    }
+
+    #[test]
     fn test_init_chain() {
         let abci_client = abci_client_builder();
 
-        let request = RequestInitChain::default();
+        let mut request = RequestInitChain::default();
+        request.chain_id = BOTANIX_TESTNET.chain.id().to_string();
         let response = abci_client.init_chain(request);
 
         let expected_consensus_params = None;
