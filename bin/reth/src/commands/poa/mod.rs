@@ -268,6 +268,23 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         )?;
         let chain_arc = Arc::new(chain.clone());
 
+        // if mainnet, check btc-network is mainnet
+        if chain.chain.id() == BOTANIX_MAINNET_CHAIN_ID
+            && rpc.btc_network != bitcoin::Network::Bitcoin
+        {
+            return Err(eyre::eyre!(
+                "Chains mismatch: Botanix is mainnet and btc network is testnet."
+            ));
+        }
+        // if testnet, check btc-network is not mainnet
+        if chain.chain.id() == BOTANIX_TESTNET_CHAIN_ID
+            && rpc.btc_network == bitcoin::Network::Bitcoin
+        {
+            return Err(eyre::eyre!(
+                "Chains mismatch: Botanix is testnet and btc network is mainnet."
+            ));
+        }
+
         // set up node config
         let mut node_config = NodeConfig {
             datadir: datadir.clone(),
@@ -1252,6 +1269,7 @@ mod tests {
         )
         .expect("chain is to exist");
         assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);
+        assert_ne!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
         let data_dir =
             cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
         let db_path = data_dir.db();
@@ -1274,6 +1292,8 @@ mod tests {
             "my/custom/path",
             "--federation-config-path",
             "my/path/to/federation.toml",
+            "--btc-network",
+            "bitcoin",
         ])
         .unwrap();
         let chain = get_botanix_chain(
@@ -1282,6 +1302,7 @@ mod tests {
         )
         .expect("chain is to exist");
         assert_eq!(chain.chain.id(), BOTANIX_MAINNET_CHAIN_ID);
+        assert_eq!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
         let data_dir =
             cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
         let db_path = data_dir.db();
