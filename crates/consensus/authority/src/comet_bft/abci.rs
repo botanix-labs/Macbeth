@@ -1964,8 +1964,10 @@ mod tests {
     fn test_init_chain_should_panic_if_chain_id_mismatch() {
         let abci_client = abci_client_builder();
 
-        let mut request = RequestInitChain::default();
-        request.chain_id = BOTANIX_MAINNET.chain.id().to_string();
+        let request = RequestInitChain {
+            chain_id: BOTANIX_MAINNET.chain.id().to_string(),
+            ..Default::default()
+        };
         let _ = abci_client.init_chain(request);
     }
 
@@ -1973,8 +1975,10 @@ mod tests {
     fn test_init_chain() {
         let abci_client = abci_client_builder();
 
-        let mut request = RequestInitChain::default();
-        request.chain_id = BOTANIX_TESTNET.chain.id().to_string();
+        let request = RequestInitChain {
+            chain_id: BOTANIX_TESTNET.chain.id().to_string(),
+            ..Default::default()
+        };
         let response = abci_client.init_chain(request);
 
         let expected_consensus_params = None;
