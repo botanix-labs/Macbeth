@@ -17,7 +17,9 @@ use ethers::{
     types::{BlockId, BlockNumber, H256},
 };
 use reth::args::{FedMemberPubKey, FederationTomlConfig};
-use reth_chainspec::{create_botanix_config_with_genesis, BOTANIX_TESTNET};
+use reth_chainspec::{
+    create_botanix_config_with_genesis, BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID,
+};
 use reth_db::{
     mdbx::{DatabaseArguments, MaxReadTransactionDuration},
     models::ClientVersion,
@@ -236,20 +238,6 @@ impl FederationMemberTestConfig {
             .write_all(&self.secret_key.display_secret().to_string().as_bytes())
             .context("error writing secret key to file")?;
 
-        // update genesis config with edh and render file
-        let botanix_testnet_config_genesis = if let Some(edh) = self.edh.as_ref() {
-            let edh = hex::encode(edh.serialize());
-            let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
-            let rendered_json = botanix_testnet_config_genesis
-                .render()
-                .context("error rendering botanix testnet genesis config")?;
-            rendered_json
-        } else {
-            return Err(anyhow::anyhow!(
-                "Edh data missing. Cannot create botanix testnet config genesis file"
-            ));
-        };
-
         // Need to zip together the soc address and pk
         let mut fed_member_pks = vec![];
         for peer in self.peers_list.iter() {
@@ -377,15 +365,6 @@ impl FederationMemberTestConfig {
             "--abci-port",
             abci_port.as_str(),
         ];
-
-        // use botanix chain spec
-        let genesis = serde_json::from_str(&botanix_testnet_config_genesis)
-            .context("Can't deserialize Botanix Testnet genesis json")?;
-        let _botanix_testnet = create_botanix_config_with_genesis(
-            genesis,
-            BOTANIX_TESTNET.parent_confirmation_depth,
-            self.botanix_fee_recipient.clone(),
-        );
 
         let child_process =
             spawn_child_process(Scope::PoaNode(self.index), command, args, working_directory)?;

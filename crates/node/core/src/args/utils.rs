@@ -132,6 +132,7 @@ pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> 
         "holesky" => HOLESKY.clone(),
         "dev" => DEV.clone(),
         "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
+        "botanix_mainnet" | "botanix-mainnet" => BOTANIX_MAINNET.clone(),
         _ => {
             // try to read json from path first
             let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
