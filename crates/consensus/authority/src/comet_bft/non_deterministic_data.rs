@@ -1,6 +1,7 @@
 use crate::activation_manager;
 use bitcoin::consensus::encode::{self, Decodable, Encodable};
-use std::io;
+use reth_primitives::Address;
+use std::io::{self, Write};
 use thiserror::Error;
 
 /// Errors that can occur when deserializing NonDeterministicData
@@ -23,6 +24,7 @@ pub(crate) struct NonDeterministicData {
     pub(crate) version: u16,
     pub(crate) bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     pub(crate) aggregated_public_key: secp256k1::PublicKey,
+    pub(crate) block_fee_recipient_address: Address,
 }
 
 impl NonDeterministicData {
@@ -33,11 +35,13 @@ impl NonDeterministicData {
     pub(crate) fn new(
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
         aggregated_public_key: secp256k1::PublicKey,
+        block_fee_recipient_address: Address,
     ) -> Self {
         Self {
             version: NonDeterministicData::version_default(),
             bitcoin_block_hash,
             aggregated_public_key,
+            block_fee_recipient_address,
         }
     }
 
@@ -46,6 +50,7 @@ impl NonDeterministicData {
         self.bitcoin_block_hash.consensus_encode(&mut writer)?;
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
         self.version.consensus_encode(&mut writer)?;
+        writer.write_all(self.block_fee_recipient_address.as_slice())?;
 
         Ok(writer.to_vec())
     }
@@ -60,12 +65,19 @@ impl NonDeterministicData {
             println!("Error: {:?}", e);
             encode::Error::ParseFailed("malformed aggregate public key")
         })?;
+
         let version = u16::consensus_decode(reader)?;
         if version != NonDeterministicData::version_default() {
             return Err(NonDeterministicDataDeserializeError::InvalidVersion);
         }
 
-        Ok(Self { version, bitcoin_block_hash, aggregated_public_key })
+        let mut address_bytes = [0u8; 20];
+        reader
+            .read_exact(&mut address_bytes)
+            .map_err(|_e| encode::Error::ParseFailed("malformed block fee recipient address"))?;
+        let block_fee_recipient_address = Address::from(address_bytes);
+
+        Ok(Self { version, bitcoin_block_hash, aggregated_public_key, block_fee_recipient_address })
     }
 }
 
@@ -113,10 +125,14 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk);
+        let block_fee_recipient_address =
+            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
+                .expect("valid address");
+        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk, block_fee_recipient_address);
         assert_eq!(ndd.version, NonDeterministicData::version_default());
         assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
         assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, block_fee_recipient_address);
     }
 
     #[test]
@@ -128,12 +144,16 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let ev = NonDeterministicData::new(bitcoin_block_hash, pk);
-        let res = ev.serialize().unwrap();
+        let block_fee_recipient_address =
+            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
+                .expect("valid address");
+        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk, block_fee_recipient_address);
+        let res = ndd.serialize().unwrap();
         let mut reader = io::Cursor::new(res);
         let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
-        assert_eq!(deserialized.version, ev.version);
-        assert_eq!(deserialized.bitcoin_block_hash, ev.bitcoin_block_hash);
-        assert_eq!(deserialized.aggregated_public_key, ev.aggregated_public_key);
+        assert_eq!(deserialized.version, ndd.version);
+        assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
+        assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
+        assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
     }
 }
