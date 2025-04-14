@@ -1960,7 +1960,7 @@ mod tests {
             Arc::new(RwLock::new(SnapshotManagerStateLock::default())),
             Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
             1,
-            None,
+            Some(Address::ZERO),
         )
     }
 
@@ -2023,14 +2023,10 @@ mod tests {
         let request = RequestPrepareProposal::default();
         let response = abci_client.prepare_proposal(request);
 
-        let block_fee_recipient_address =
-            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
-                .expect("valid address");
-
         let expected_ndd = NonDeterministicData::new(
             abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
-            block_fee_recipient_address,
+            Address::ZERO,
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
@@ -2064,14 +2060,10 @@ mod tests {
         let request = RequestPrepareProposal::default();
         let response = abci_client.prepare_proposal(request);
 
-        let block_fee_recipient_address =
-            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
-                .expect("valid address");
-
         let expected_ndd = NonDeterministicData::new(
             abci_client.bitcoin_blockhash().expect("to have agg bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
-            block_fee_recipient_address,
+            Address::ZERO,
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
