@@ -131,6 +131,11 @@ pub fn parse_ethereum_address(s: &str) -> eyre::Result<Address, EthereumAddressP
         return Err(EthereumAddressParseError::IncorrectByteCount(bytes.len()));
     }
 
+    // Checksum the address.
+    if Address::parse_checksummed(format!("0x{}", hex_str), None).is_err() {
+        return Err(EthereumAddressParseError::ChecksumFailed);
+    }
+
     // Create an Address.
     let mut addr_array = [0u8; 20];
     addr_array.copy_from_slice(&bytes);
@@ -149,6 +154,9 @@ pub enum EthereumAddressParseError {
     /// Input string contains invalid hex characters.
     #[error("Invalid hex string")]
     InvalidHex,
+    /// Checksum validation failed.
+    #[error("Checksum validation failed")]
+    ChecksumFailed,
 }
 
 #[cfg(test)]
@@ -242,5 +250,12 @@ mod tests {
             EthereumAddressParseError::InvalidHex => {}
             _ => panic!("Expected InvalidHex error variant"),
         }
+    }
+    #[test]
+    fn test_parse_ethereum_address_invalid_checksum() {
+        // Test with an invalid checksum address.
+        let address_str = "0x8ba1f109551bd432803012645ac136ddd64dba72";
+        let response = parse_ethereum_address(address_str);
+        assert_eq!(response, Err(EthereumAddressParseError::ChecksumFailed));
     }
 }
