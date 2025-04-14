@@ -760,15 +760,30 @@ impl Db {
         Ok(ret)
     }
 
+    /// Count all finalized pegout ids
+    /// Returns a count of pegout requests that have been finalized.
+    pub fn peek_finalized_pegout_ids(&self) -> Result<usize, Error> {
+        Ok(self.finalized_pegout_ids.iter().count())
+    }
+
     /// Get all finalized pegout ids via a stream
     /// Returns a vector of pegout chunks that have been finalized.
     pub fn get_finalized_pegout_ids_stream(
         &self,
         chunk_size: usize,
-    ) -> impl Stream<Item = Result<Vec<PegoutId>, Error>> + Send + '_ + Sync {
+    ) -> impl Stream<Item = Result<(Vec<PegoutId>, u64, u64), Error>> + Send + '_ + Sync {
         async_stream::stream! {
             let mut current_chunk = Vec::with_capacity(chunk_size);
             let mut count = 0;
+            let mut chunk_index: u64 = 0;
+            let num_chunks = match self.peek_finalized_pegout_ids() {
+                Ok(count) => count,
+                Err(e) => {
+                    yield Err(e.into());
+                    return;
+                }
+            } as u64;
+
             for res in self.finalized_pegout_ids.iter() {
                 match res {
                     Ok((_k, v)) => {
@@ -779,9 +794,10 @@ impl Db {
 
                                 // when we reach chunk_size, yield the current chunk and start a new one
                                 if count == chunk_size {
-                                    yield Ok(std::mem::take(&mut current_chunk));
+                                    yield Ok((std::mem::take(&mut current_chunk), chunk_index, num_chunks));
                                     current_chunk = Vec::with_capacity(chunk_size);
                                     count = 0;
+                                    chunk_index += 1;
                                 }
                             },
                             Err(e) => {
@@ -799,7 +815,7 @@ impl Db {
 
             // yield the last chunk
             if !current_chunk.is_empty() {
-                yield Ok(current_chunk);
+                yield Ok((current_chunk, chunk_index, num_chunks));
             }
         }
     }

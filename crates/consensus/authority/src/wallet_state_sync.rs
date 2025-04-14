@@ -65,7 +65,59 @@ pub trait WalletStateSync {
     async fn sync_wallet_state(&self) -> Result<(), WalletStateSyncError>;
 }
 
-type WalletStateSyncResponseCycle = Arc<RwLock<Option<(Uuid, HashMap<PeerId, Vec<Vec<u8>>>)>>>;
+/// Struct for wallet state sync peer response
+/// This struct is used to store the wallet state received from a peer
+#[derive(Debug, Clone, Default)]
+pub struct WalletStateSyncPeerResponse {
+    /// Data received from the peer
+    data: Vec<Vec<u8>>,
+    /// Set of chunks received from the peer
+    total_chunks_received: HashSet<u64>,
+    /// Total number of chunks expected from the peer
+    total_chunks_expected: u64,
+}
+
+impl WalletStateSyncPeerResponse {
+    /// Creates a new WalletStateSyncPeerResponse
+    pub fn new() -> Self {
+        Self { data: Vec::new(), total_chunks_received: HashSet::new(), total_chunks_expected: 0 }
+    }
+    /// Checks if all chunks have been received
+    pub fn all_chunks_received(&self) -> bool {
+        self.total_chunks_received.len() == self.total_chunks_expected as usize
+    }
+
+    /// Appends chunk data to the response
+    pub fn append_received_data(&mut self, partial_data: &Vec<Vec<u8>>) {
+        self.data.extend_from_slice(partial_data);
+    }
+
+    /// Sets the total number of chunks expected
+    pub fn set_chunks_expected(&mut self, total_chunks_expected: u64) {
+        self.total_chunks_expected = total_chunks_expected;
+    }
+
+    /// Adds a chunk index to the set of chunks received
+    pub fn add_chunk_received(&mut self, chunk_index_received: u64) {
+        self.total_chunks_received.insert(chunk_index_received);
+    }
+}
+
+type WalletStateSyncResponseCycle =
+    Arc<RwLock<Option<(Uuid, HashMap<PeerId, WalletStateSyncPeerResponse>)>>>;
+
+/// Returns an iterator over the fully synced peers
+pub fn get_fully_synced_peers<'a>(
+    peers_wallet_state_sync_responses: &'a HashMap<PeerId, WalletStateSyncPeerResponse>,
+) -> (impl Iterator<Item = (&'a PeerId, &'a WalletStateSyncPeerResponse)> + 'a, usize) {
+    let fully_synced = peers_wallet_state_sync_responses
+        .iter()
+        .filter(|(_, response)| response.all_chunks_received())
+        .collect::<Vec<_>>();
+
+    let count = fully_synced.len();
+    (fully_synced.into_iter(), count)
+}
 
 #[derive(Clone)]
 /// Engine for synchronizing wallet state
@@ -160,7 +212,7 @@ where
 
                             // process the finalized pegout ids
                             let finalized_pegout_ids_compressed = wallet_state.finalized_pegout_ids;
-                            let finalized_pegout_ids = {
+                            let finalized_pegout_ids_decompressed = {
                                 if finalized_pegout_ids_compressed.is_empty() {
                                     warn!(target: "consensus::authority::sync_wallet_state", "Peer sent empty finalized pegout ids");
                                     continue;
@@ -178,7 +230,7 @@ where
                                         error!(target: "consensus::authority::sync_wallet_state", "Failed to deserialize pending pegouts");
                                         continue;
                                     };
-                                    finalized_pegout_ids_decompressed.ids
+                                    finalized_pegout_ids_decompressed
                                 }
                             };
 
@@ -192,21 +244,27 @@ where
                                     }
 
                                     match peers.get_mut(&peer_message_context.peer_id) {
-                                        Some(peer_response_cycle_data) => {
+                                        Some(wallet_state_sync_peer_response) => {
                                             // append the peer response to the current response cycle
-                                            peer_response_cycle_data.extend_from_slice(&finalized_pegout_ids);
+                                            wallet_state_sync_peer_response.append_received_data(&finalized_pegout_ids_decompressed.ids);
+                                            wallet_state_sync_peer_response.set_chunks_expected(finalized_pegout_ids_decompressed.total_chunks);
+                                            wallet_state_sync_peer_response.add_chunk_received(finalized_pegout_ids_decompressed.chunk_index);
                                         },
                                         None => {
                                             // add the peer to the response cycle
-                                            peers.insert(peer_message_context.peer_id, vec![]);
+                                            let mut new_wallet_state_sync_peer_response = WalletStateSyncPeerResponse::default();
+                                            new_wallet_state_sync_peer_response.set_chunks_expected(finalized_pegout_ids_decompressed.total_chunks);
+                                            new_wallet_state_sync_peer_response.add_chunk_received(finalized_pegout_ids_decompressed.chunk_index);
+                                            peers.insert(peer_message_context.peer_id, new_wallet_state_sync_peer_response);
                                         }
                                     }
 
-                                    if peers.len() as u16 >= frost_config.min_signers {
+                                    let (fully_synced_peers_iter, fully_synced_count) = get_fully_synced_peers(&peers);
+                                    if fully_synced_count as u64 >= frost_config.min_signers as u64 {
                                         // consenses the finalized pegout ids
                                         let mut condensed_finalized_pegout_ids = HashSet::new();
-                                        for peer_finalized_peer_ids in peers.values_mut() {
-                                            let peer_finalized_ids = peer_finalized_peer_ids.iter()
+                                        for (_, peer_wallet_state_sync_response) in fully_synced_peers_iter {
+                                            let peer_finalized_ids = peer_wallet_state_sync_response.data.iter()
                                             .cloned()
                                             .collect::<HashSet<_>>();
                                             condensed_finalized_pegout_ids.extend(peer_finalized_ids);

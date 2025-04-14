@@ -24,6 +24,10 @@ pub struct GetFinalizedPegoutIdsRequest {
 pub struct GetFinalizedPegoutIdsResponse {
     #[prost(bytes = "vec", repeated, tag = "1")]
     pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(uint64, tag = "2")]
+    pub chunk_index: u64,
+    #[prost(uint64, tag = "3")]
+    pub total_chunks: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizeSignerRequest {

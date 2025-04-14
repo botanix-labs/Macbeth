@@ -87,6 +87,8 @@ message GetFinalizedPegoutIdsRequest {
 
 message GetFinalizedPegoutIdsResponse {
     repeated bytes ids = 1;
+    uint64 chunk_index = 2;
+    uint64 total_chunks = 3;
 }
 
 message FinalizeSignerRequest {
