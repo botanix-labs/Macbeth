@@ -627,13 +627,15 @@ where
 
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
-                    Ok(pegout_ids) => {
+                    Ok((pegout_ids, chunk_index, total_chunks)) => {
                         if let Some(telemetry) = telemetry.as_ref() {
                             telemetry.update_pending_pegouts(pegout_ids.len() as i64);
                         }
 
                         let batch = rpc::GetFinalizedPegoutIdsResponse {
                             ids: pegout_ids.into_iter().map(|p| p.as_bytes().to_vec()).collect(),
+                            chunk_index,
+                            total_chunks,
                         };
 
                         // send the batch
