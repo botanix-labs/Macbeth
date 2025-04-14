@@ -32,7 +32,7 @@ pub struct ExtraDataHeader {
     /// Aggregated public key
     pub aggregated_public_key: secp256k1::PublicKey,
     /// Block producer address
-    pub block_producer_address: Address,
+    pub block_fee_recipient_address: Address,
 }
 
 impl Default for ExtraDataHeader {
@@ -43,7 +43,7 @@ impl Default for ExtraDataHeader {
             chain_version: CHAIN_VERSION,
             bitcoin_block_hash: bitcoin::hash_types::BlockHash::all_zeros(),
             aggregated_public_key: nums_secp256k1_pk(),
-            block_producer_address: Address::ZERO,
+            block_fee_recipient_address: Address::ZERO,
         }
     }
 }
@@ -81,14 +81,14 @@ impl ExtraDataHeader {
         // Aggregated public key
         aggregated_public_key: secp256k1::PublicKey,
         // Block producer address
-        block_producer_address: Address,
+        block_fee_recipient_address: Address,
     ) -> Self {
         Self {
             version,
             chain_version,
             bitcoin_block_hash,
             aggregated_public_key,
-            block_producer_address,
+            block_fee_recipient_address,
         }
     }
 
@@ -101,7 +101,7 @@ impl ExtraDataHeader {
         self.chain_version.consensus_encode(writer)?;
         self.bitcoin_block_hash.consensus_encode(writer)?;
         self.aggregated_public_key.serialize().consensus_encode(writer)?;
-        let block_producer_address_bytes = self.block_producer_address.0 .0;
+        let block_producer_address_bytes = self.block_fee_recipient_address.0 .0;
         let _ = writer.write(&block_producer_address_bytes)?;
 
         Ok(())
@@ -134,16 +134,16 @@ impl ExtraDataHeader {
             println!("Error: {:?}", e);
             encode::Error::ParseFailed("malformed aggregate public key")
         })?;
-        let mut block_producer_address_bytes: [u8; 20] = [0; 20];
-        reader.read_exact(&mut block_producer_address_bytes)?;
-        let block_producer_address = Address::from_slice(&block_producer_address_bytes);
+        let mut block_fee_recipient_address_bytes: [u8; 20] = [0; 20];
+        reader.read_exact(&mut block_fee_recipient_address_bytes)?;
+        let block_fee_recipient_address = Address::from_slice(&block_fee_recipient_address_bytes);
 
         Ok(Self {
             version,
             chain_version,
             bitcoin_block_hash,
             aggregated_public_key,
-            block_producer_address,
+            block_fee_recipient_address,
         })
     }
 
