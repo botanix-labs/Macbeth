@@ -208,6 +208,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
     snapshot_format: u32,
+    block_fee_recipient_address: Option<reth_primitives::Address>,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -236,6 +237,7 @@ where
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
         snapshot_format: u32,
+        block_fee_recipient_address: Option<reth_primitives::Address>,
     ) -> Self {
         Self {
             storage,
@@ -251,6 +253,7 @@ where
             snapshot_manager_state_lock,
             snapshot_sync_state_lock: Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
             snapshot_format,
+            block_fee_recipient_address,
         }
     }
 
@@ -277,6 +280,7 @@ where
             self.snapshot_manager_state_lock.clone(),
             self.snapshot_sync_state_lock.clone(),
             self.snapshot_format,
+            self.block_fee_recipient_address,
         );
 
         let server_builder = ServerBuilder::default();
@@ -342,6 +346,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
     snapshot_format: u32,
+    block_fee_recipient_address: Option<reth_primitives::Address>,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -373,6 +378,7 @@ where
         snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
         snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
         snapshot_format: u32,
+        block_fee_recipient_address: Option<reth_primitives::Address>,
     ) -> Self {
         Self {
             storage,
@@ -391,6 +397,7 @@ where
             snapshot_manager_state_lock,
             snapshot_sync_state_lock,
             snapshot_format,
+            block_fee_recipient_address,
         }
     }
 
@@ -438,11 +445,13 @@ where
         &self,
     ) -> Result<prost::bytes::Bytes, ConsensusError> {
         let aggregate_public_key = self.aggregate_public_key()?;
-        // TODO(scott): add block_fee_recipient_address to ABCIClient
+        let block_fee_recipient_address = self
+            .block_fee_recipient_address
+            .ok_or(ConsensusError::MissingBlockFeeRecipientAddress)?;
         let ndd = NonDeterministicData::new(
             self.bitcoin_blockhash()?,
             aggregate_public_key,
-            Address::ZERO,
+            block_fee_recipient_address,
         );
         let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
             ndd.serialize()
@@ -1365,11 +1374,6 @@ where
         // Drop the lock
         drop(storage);
 
-        // Extract who built this block
-        let block_builder_address = Address::new(
-            FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice()).0,
-        );
-
         // Extract block time: this must come from the CBFT block header NOT the system time
         // As that will be underministic
         let block_time = match request.time {
@@ -1444,7 +1448,7 @@ where
         match build_and_execute(
             txs,
             self.storage.chain_spec.clone(),
-            &block_builder_address,
+            &non_deterministic_data.block_fee_recipient_address,
             self.storage.evm_config,
             &self.provider_factory,
             &self.storage.bitcoind_factory,
@@ -1535,11 +1539,6 @@ where
                     }
                 };
 
-                // Extract who built this block
-                let block_builder_address = Address::new(
-                    FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice()).0,
-                );
-
                 // get txs skipping the first non-deterministic data tx
                 let txs =
                     match transactions_signed_from_bytes(txs_bytes.clone().iter().skip(1).cloned())
@@ -1554,7 +1553,7 @@ where
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
-                    &block_builder_address,
+                    &non_deterministic_data.block_fee_recipient_address,
                     self.storage.evm_config,
                     &self.provider_factory,
                     &self.storage.bitcoind_factory,
@@ -1961,6 +1960,7 @@ mod tests {
             Arc::new(RwLock::new(SnapshotManagerStateLock::default())),
             Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
             1,
+            None,
         )
     }
 

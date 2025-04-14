@@ -780,6 +780,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 driver_tx,
                 node_config.clone().state_sync,
                 provider_factory.clone(),
+                *block_fee_recipient_address,
             ) {
                 Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
                 Err(e) => {
