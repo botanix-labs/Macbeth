@@ -56,7 +56,7 @@ pub async fn block_builder(
 
     // wait for canonical chain updates reported by the node, then send new tx
     let mut tx_hashes_set: HashSet<u16> = HashSet::new();
-    let mut block_producer_address: Option<reth_primitives::Address> = None;
+    let mut block_fee_recipient_address: Option<reth_primitives::Address> = None;
     while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
             it_info_print!(
@@ -76,10 +76,10 @@ pub async fn block_builder(
                 .collect::<Vec<H256>>();
             it_info_print!("Block receipts hashes ?", block_receipt_hashes);
 
-            if block_producer_address.is_none() {
+            if block_fee_recipient_address.is_none() {
                 let extra_data = canon_state_notification.block.extra_data.0.to_vec();
                 let edh = ExtraDataHeader::deserialize(&mut extra_data.as_slice()).unwrap();
-                block_producer_address = Some(edh.block_producer_address);
+                block_fee_recipient_address = Some(edh.block_fee_recipient_address);
             }
 
             // if the received tx hash is not the one we are interested in, skip
@@ -105,9 +105,9 @@ pub async fn block_builder(
             botanix_block_reward_address_balance_after
         );
 
-        let block_producer_address = block_producer_address.unwrap();
+        let block_fee_recipient_address = block_fee_recipient_address.unwrap();
         let fed_member_balance =
-            botanix_eth_client.get_botanix_balance(block_producer_address).await.unwrap();
+            botanix_eth_client.get_botanix_balance(block_fee_recipient_address).await.unwrap();
         it_info_print!("Fed member balance", fed_member_balance);
 
         let botanix_block_reward = botanix_block_reward_address_balance_after -
