@@ -172,7 +172,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         leader_selection_window: Some(20),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
-        prune_delete_limit: 1700,
+        prune_delete_limit: 20000,
         botanix_fee_recipient: None,
     };
     spec.genesis.config.dao_fork_support = false;
@@ -193,7 +193,7 @@ pub static BOTANIX_MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         leader_selection_window: Some(20),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
-        prune_delete_limit: 1700,
+        prune_delete_limit: 20000,
         botanix_fee_recipient: None,
     };
     spec.genesis.config.dao_fork_support = false;

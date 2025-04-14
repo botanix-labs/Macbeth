@@ -268,21 +268,22 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         )?;
         let chain_arc = Arc::new(chain.clone());
 
-        // if mainnet, check btc-network is mainnet
-        if chain.chain.id() == BOTANIX_MAINNET_CHAIN_ID
-            && rpc.btc_network != bitcoin::Network::Bitcoin
-        {
-            return Err(eyre::eyre!(
-                "Chains mismatch: Botanix is mainnet and btc network is testnet."
-            ));
-        }
-        // if testnet, check btc-network is not mainnet
-        if chain.chain.id() == BOTANIX_TESTNET_CHAIN_ID
-            && rpc.btc_network == bitcoin::Network::Bitcoin
-        {
-            return Err(eyre::eyre!(
-                "Chains mismatch: Botanix is testnet and btc network is mainnet."
-            ));
+        // check chains match
+        match (chain.chain.id(), rpc.btc_network) {
+            (BOTANIX_MAINNET_CHAIN_ID, bitcoin::Network::Bitcoin) => {}
+            (BOTANIX_TESTNET_CHAIN_ID, _) => {
+                // Testnet can be any non-mainnet network for btc
+                if rpc.btc_network == bitcoin::Network::Bitcoin {
+                    return Err(eyre::eyre!(
+                        "Chains mismatch: Botanix is testnet and btc network is not."
+                    ));
+                }
+            }
+            _ => {
+                return Err(eyre::eyre!(
+                    "Chains mismatch: Botanix is mainnet and btc network is not."
+                ));
+            }
         }
 
         // set up node config
