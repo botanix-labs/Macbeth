@@ -189,7 +189,7 @@ pub static BOTANIX_MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
         hardforks: EthereumHardfork::botanix().into(),
         deposit_contract: None, // only relevant for PoS chains
-        parent_confirmation_depth: 6,
+        parent_confirmation_depth: 18,
         leader_selection_window: Some(20),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
