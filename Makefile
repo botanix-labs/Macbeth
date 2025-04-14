@@ -670,7 +670,8 @@ start-poa-server-1:
 	--port 30303 \
 	--abci-port=26658 \
 	--sync.enable_state_sync \
-	--sync.enable_historical_sync
+	--sync.enable_historical_sync \
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
 
 start-poa-server-2:
 	cd ./bin/reth && \
@@ -705,7 +706,8 @@ start-poa-server-2:
 	--port 30304 \
 	--abci-port=36658 \
 	--sync.enable_state_sync \
-	--sync.enable_historical_sync
+	--sync.enable_historical_sync \
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" 
 
 start-poa-server-3:
 	cd ./bin/reth && \
@@ -740,7 +742,8 @@ start-poa-server-3:
 	--port 30305 \
 	--abci-port=46658 \
     --sync.enable_state_sync \
-	--sync.enable_historical_sync
+	--sync.enable_historical_sync \
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
 
 start-non-fed-server-1:
 	cd ./bin/reth && \
