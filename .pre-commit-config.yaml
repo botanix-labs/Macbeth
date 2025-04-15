@@ -10,7 +10,8 @@ exclude: |
     pnpm-lock.yaml|
     contracts|
     cov-reports|
-    docker-local
+    docker-local|
+    crates/chainspec/res/genesis
   )$
 
 repos:
