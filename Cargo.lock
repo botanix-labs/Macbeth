@@ -8512,7 +8512,6 @@ version = "1.0.6"
 dependencies = [
  "alloy-rpc-types-engine",
  "anyhow",
- "async-stream",
  "bincode",
  "bitcoin 0.32.5",
  "btc-server",

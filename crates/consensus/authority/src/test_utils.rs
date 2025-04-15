@@ -654,6 +654,7 @@ mod authority_test_utils {
             unimplemented!("Not required for DKG/signing tests")
         }
 
+        #[allow(refining_impl_trait)]
         fn get_finalized_pegout_ids(
             &mut self,
             request: GetFinalizedPegoutIdsRequest,
