@@ -719,7 +719,7 @@ impl Db {
         pegouts.sort_by(|a, b| a.botanix_height.cmp(&b.botanix_height));
 
         if pegouts.len() < max {
-            return Ok(pegouts)
+            return Ok(pegouts);
         }
 
         Ok(pegouts.into_iter().take(max).collect())
@@ -777,9 +777,9 @@ impl Db {
             let mut count = 0;
             let mut chunk_index: u64 = 0;
             let num_chunks = match self.peek_finalized_pegout_ids() {
-                Ok(count) => count,
+                Ok(count) => count.div_ceil(chunk_size),
                 Err(e) => {
-                    yield Err(e.into());
+                    yield Err(e);
                     return;
                 }
             } as u64;
