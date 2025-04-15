@@ -58,7 +58,7 @@ pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
 
 pub fn get_pegin_confirmation_depth(network: bitcoin::Network) -> u32 {
     match network {
-        bitcoin::Network::Regtest | bitcoin::Network::Signet => 1,
+        bitcoin::Network::Regtest | bitcoin::Network::Signet | bitcoin::Network::Bitcoin => 1,
         _ => panic!("Unsupported network"),
     }
 }
