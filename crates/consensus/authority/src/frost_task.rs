@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     dkg::DKGStateMachine,
@@ -8,7 +8,7 @@ use crate::{
     signing::SigningStateMachine,
     utils::{
         deserialize_frost_peer_id, get_pending_pegouts_from_pegout_data, get_utxos_from_pegin_meta,
-        validate_psbt_by_ids,
+        retry_exec, validate_psbt_by_ids,
     },
     Storage,
 };
@@ -383,20 +383,40 @@ where
                         let mut block_hash_writer = vec![];
                         match cp_block_hash.consensus_encode(&mut block_hash_writer) {
                             Ok(_) => {
-                                match self
-                                    .btc_server
-                                    .new_consensus_checkpoint(ConsensusCheckpointRequest {
-                                        checkpoint_block_hash: block_hash_writer,
-                                        pegins,
-                                        pending_pegouts,
-                                    })
-                                    .await
+                                let btc_server_capture = self.btc_server.clone();
+                                let block_hash_writer = block_hash_writer.clone();
+                                let pegins = pegins.clone();
+                                let pending_pegouts = pending_pegouts.clone();
+
+                                let fut = move || {
+                                    let mut btc_server = btc_server_capture.clone();
+                                    let block_hash = block_hash_writer.clone();
+                                    let pegins_data = pegins.clone();
+                                    let pending_data = pending_pegouts.clone();
+
+                                    async move {
+                                        btc_server
+                                            .new_consensus_checkpoint(ConsensusCheckpointRequest {
+                                                checkpoint_block_hash: block_hash,
+                                                pegins: pegins_data,
+                                                pending_pegouts: pending_data,
+                                            })
+                                            .await
+                                    }
+                                };
+                                match retry_exec(
+                                    "new_consensus_checkpoint",
+                                    fut,
+                                    3,
+                                    Duration::from_secs(2),
+                                )
+                                .await
                                 {
                                     Ok(_) => {
                                         info!(target: "consensus::authority::frost_task::start_task", "Sent checkpoint to btc server");
                                     }
-                                    Err(e) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Error sending checkpoint to btc server: {}", e);
+                                    Err(err) => {
+                                        error!(target: "consensus::authority::frost_task::start_task", "Error sending checkpoint to btc server: {}", err);
                                     }
                                 }
                             }
