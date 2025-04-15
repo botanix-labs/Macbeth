@@ -654,19 +654,22 @@ mod authority_test_utils {
             unimplemented!("Not required for DKG/signing tests")
         }
 
-        fn get_finalized_pegout_ids<'a>(
-            &'a mut self,
+        fn get_finalized_pegout_ids(
+            &mut self,
             request: GetFinalizedPegoutIdsRequest,
         ) -> BoxFuture<
-            'a,
+            '_,
             Result<
                 impl Stream<Item = Result<GetFinalizedPegoutIdsResponse, tonic::Status>>
                     + Send
-                    + 'static + 'a,
+                    + 'static + '_,
                 GrpcClientError,
             >,
         > {
-            unimplemented!("Not required for DKG/signing tests")
+            Box::pin(async move {
+                // Return an empty stream as a placeholder.
+                Ok(futures::stream::empty())
+            })
         }
     }
 }
