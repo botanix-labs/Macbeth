@@ -234,7 +234,7 @@ async fn generate_invalid_pegin_metas(
                 outpoint: bitcoin::OutPoint::new(pegin_tx1.compute_txid(), vout1),
                 address: eth_account.clone(),
                 aggregate_publickey: secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
+                    gateway_address_response.aggregate_public_key.as_str(),
                 )
                 .expect("valid public key"),
                 tx: pegin_tx1.clone(),
@@ -366,7 +366,10 @@ pub async fn invalid_pegin(
     let eth_account = Address::from_slice(eth_destination.as_bytes());
 
     // --- Common Setup (assuming both confirmed in the same block for simplicity) ---
-    assert_eq!(conf_hash1, conf_hash2, "Pegins must be confirmed in the same block for this test setup");
+    assert_eq!(
+        conf_hash1, conf_hash2,
+        "Pegins must be confirmed in the same block for this test setup"
+    );
     let conf_hash = conf_hash1;
     let tip = bitcoind_rpc.get_best_block_hash().unwrap();
     it_info_print!("Bitcoin Chain Tip", tip);
@@ -407,12 +410,20 @@ pub async fn invalid_pegin(
     // Create specific PMTs for each pegin transaction
     let num_txs = conf_block_info.tx.len();
 
-    let index1 = conf_block_info.tx.iter().position(|id| id == &pegin_txid1).expect("Pegin Tx 1 should be in the block");
+    let index1 = conf_block_info
+        .tx
+        .iter()
+        .position(|id| id == &pegin_txid1)
+        .expect("Pegin Tx 1 should be in the block");
     let mut flags1 = vec![false; num_txs];
     flags1[index1] = true;
     let pmt1 = PartialMerkleTree::from_txids(&conf_block_info.tx, &flags1);
 
-    let index2 = conf_block_info.tx.iter().position(|id| id == &pegin_txid2).expect("Pegin Tx 2 should be in the block");
+    let index2 = conf_block_info
+        .tx
+        .iter()
+        .position(|id| id == &pegin_txid2)
+        .expect("Pegin Tx 2 should be in the block");
     let mut flags2 = vec![false; num_txs];
     flags2[index2] = true;
     let pmt2 = PartialMerkleTree::from_txids(&conf_block_info.tx, &flags2);
@@ -471,7 +482,13 @@ pub async fn invalid_pegin(
             reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
         let pegin_address_initial_balance =
             botanix_eth_client.get_botanix_balance(addr).await.unwrap();
+        let pegin_bitcoin_block_height_initial = botanix_eth_client
+            .mint_contract
+            .pegin_bitcoin_block_height(eth_destination)
+            .await
+            .unwrap();
         it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
+        it_info_print!("Initial pegin bitcoin block height", pegin_bitcoin_block_height_initial);
 
         // nonce before pegin
         let sender_address = botanix_eth_client.get_sender_address();
@@ -501,9 +518,16 @@ pub async fn invalid_pegin(
         // pegin address balance after pegin
         let pegin_address_final_balance =
             botanix_eth_client.get_botanix_balance(addr).await.unwrap();
+        let pegin_bitcoin_block_height_final = botanix_eth_client
+            .mint_contract
+            .pegin_bitcoin_block_height(eth_destination)
+            .await
+            .unwrap();
         it_info_print!("Final pegin address balance", pegin_address_final_balance);
+        it_info_print!("Final pegin bitcoin block height", pegin_bitcoin_block_height_final);
 
         assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
+        assert_eq!(pegin_bitcoin_block_height_initial, pegin_bitcoin_block_height_final);
 
         // nonce after pegin
         let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();
