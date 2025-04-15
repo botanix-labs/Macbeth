@@ -16,9 +16,9 @@ use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use futures::Stream;
 use miniscript::psbt::PsbtExt;
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
-
 pub mod error;
 pub mod version;
 pub use error::Error;
@@ -31,6 +31,7 @@ const TREE_ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const TREE_PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
 const TREE_PSBT: &[u8; 4] = b"psbt";
+const TREE_FINALIZED_PEGOUT_IDS: &[u8; 4] = b"pids";
 /// sled tree id for the pending txs
 const TREE_TRACKED_TXS: &[u8; 10] = b"trackedtxs";
 
@@ -46,11 +47,11 @@ const KEY_PENDING_PEGOUTS_MERKLE_ROOT: &[u8; 5] = b"proot";
 /// sled key for storing the latest finalized block of the txindex.
 const KEY_PEGOUTMGR_TIP: &[u8; 12] = b"pegoutmgrtip";
 
+/// sled key for finalized pegout ids
+const KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT: &[u8; 9] = b"pegoutids";
+
 /// sled tree for pending pegout requests
 const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
-
-/// sled tree for finalized pegout ids
-const TREE_FINALIZED_PEGOUT_IDS: &[u8; 18] = b"finalizedpegoutids";
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
@@ -697,7 +698,7 @@ impl Db {
             .get(id.as_bytes())?
             .map(|b| ciborium::de::from_reader(b.as_ref()).expect("corrupt db: pending pegout")))
     }
-    // -----------------------------------
+
     /// Get all pending pegouts
     pub fn get_pending_pegouts(&self) -> Result<Vec<pegout_scheduler::PegoutRequest>, Error> {
         let mut ret = Vec::new();
@@ -853,10 +854,18 @@ impl Db {
     ) -> Result<(), Error> {
         match finalized_pegout_ids.len() {
             0 => Ok(()),
-            1 => self
-                .store_finalized_pegout_ids(&[finalized_pegout_ids.first().expect("to have tx")]),
+            1 => self.store_finalized_pegout_id(
+                finalized_pegout_ids.first().expect("to have pegout id"),
+            ),
             _ => self.store_finalized_pegout_ids_atomically(finalized_pegout_ids),
         }
+    }
+
+    fn store_finalized_pegout_id(&self, pegout_id: &PegoutId) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&pegout_id, &mut bytes).map_err(Error::CiboriumWrite)?;
+        self.finalized_pegout_ids.insert(pegout_id.as_bytes(), &bytes[..])?;
+        Ok(())
     }
 
     /// Store a list of finalized pegout ids atomically
@@ -879,6 +888,44 @@ impl Db {
             })
             .map_err(|e: TransactionError<_>| Error::Transaction(e.to_string()))?;
         Ok(())
+    }
+
+    pub fn iter_finalized_pegout_ids(&self) -> impl Iterator<Item = Result<PegoutId, Error>> {
+        self.finalized_pegout_ids.iter().map(|res| {
+            let (_, v) = res?;
+            let ret = ciborium::from_reader::<PegoutId, _>(v.as_ref())?;
+            Ok(ret)
+        })
+    }
+
+    /// Stores the consensus Merkle root of all finalized pegout ids.
+    pub fn update_finalized_pegout_ids_merkle_root(&self) -> Result<(), Error> {
+        let mut finalized_pegout_ids = self
+            .iter_finalized_pegout_ids()
+            .map(|pegout_id| {
+                let mut engine = sha256::Hash::engine();
+                let pegout_id = pegout_id?;
+                pegout_id.idx.consensus_encode(&mut engine).expect("engine don't error");
+                pegout_id.txid.consensus_encode(&mut engine).expect("engine don't error");
+                Ok(sha256::Hash::from_engine(engine))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        finalized_pegout_ids.sort();
+        if finalized_pegout_ids.is_empty() {
+            return Ok(());
+        }
+
+        let root = bitcoin::merkle_tree::calculate_root(finalized_pegout_ids.into_iter())
+            .ok_or(Error::EmptyMerkleRoot)?;
+        self.db.insert(KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT, root.to_byte_array().to_vec())?;
+        Ok(())
+    }
+
+    /// Retrieves the consensus Merkle root of all finalized pegout ids.
+    pub fn get_finalized_pegout_ids_merkle_root(&self) -> Result<Option<sha256::Hash>, Error> {
+        Ok(self.db.get(KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT)?.map(|b| {
+            sha256::Hash::from_slice(&b).expect("corrupt db: Merkle root should be 32 bytes")
+        }))
     }
 
     /// Resets all tracked txs, and re-adding the functions arguments back in
@@ -1337,6 +1384,37 @@ mod tests {
         db.update_utxo_merkle_root().unwrap();
         db.flush().unwrap();
         let merkle_root3 = db.get_utxo_merkle_root().unwrap().unwrap();
+        assert_ne!(merkle_root, merkle_root3);
+    }
+
+    #[test]
+    fn test_update_finalized_pegout_ids_merkle_root() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            finalized_pegout_ids.push(pegout_id);
+        }
+        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+        db.update_finalized_pegout_ids_merkle_root().unwrap();
+        db.flush().unwrap();
+
+        let merkle_root = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
+        // Updating again should not change the merkle root
+        db.update_finalized_pegout_ids_merkle_root().unwrap();
+        db.flush().unwrap();
+        let merkle_root2 = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
+        assert_eq!(merkle_root, merkle_root2);
+
+        // // Adding an additional pegout id should change the merkle root
+        let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), num_txs + 1 as u32);
+        db.store_finalized_pegout_id(&pegout_id).unwrap();
+        db.update_finalized_pegout_ids_merkle_root().unwrap();
+        db.flush().unwrap();
+        let merkle_root3 = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
         assert_ne!(merkle_root, merkle_root3);
     }
 
