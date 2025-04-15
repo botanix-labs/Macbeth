@@ -405,10 +405,48 @@ pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<PegoutId> {
 pub fn validate_psbt_by_output(
     psbt: &Psbt,
     destination: &Address,
-    _amount: Amount,
+    amount: Amount,
 ) -> Result<(), PsbtValidationError> {
-    // TODO: to ensure the correct amount is being sent we need a psbt ext function to get the fee
-    // per output and compare it to the amount
+    let absolute_fee = match psbt.fee() {
+        Ok(fee) => fee,
+        Err(e) => match e {
+            bitcoin::psbt::Error::NegativeFee => {
+                return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+                    "Psbt has negative fee",
+                )))
+            }
+            bitcoin::psbt::Error::FeeOverflow => {
+                return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+                    "Psbt has fee overflow",
+                )))
+            }
+            _ => {
+                return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+                    "Psbt fee is corrupted",
+                )))
+            }
+        },
+    };
+    if absolute_fee.to_sat() <= 0 {
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "Psbt fee is zero",
+        )));
+    }
+    if amount.to_sat() <= 0 {
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from("Amount is zero")));
+    }
+    if psbt.outputs.len() <= 0 {
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "Missing psbt outputs",
+        )));
+    }
+    let fee_per_output = absolute_fee / psbt.outputs.len() as u64;
+    if fee_per_output >= amount {
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "Fee per output is greater than the actual psbt amount",
+        )))
+    }
+
     debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Validating {} outputs in psbt", psbt.outputs.len());
     match psbt.clone().extract_tx() {
         Ok(transaction) => {
