@@ -261,7 +261,7 @@ where
 
                                     let (fully_synced_peers_iter, fully_synced_count) = get_fully_synced_peers(peers);
                                     if fully_synced_count as u64 >= frost_config.min_signers as u64 {
-                                        // consenses the finalized pegout ids
+                                        // compress the finalized pegout ids
                                         let mut condensed_finalized_pegout_ids = HashSet::new();
                                         for (_, peer_wallet_state_sync_response) in fully_synced_peers_iter {
                                             let peer_finalized_ids = peer_wallet_state_sync_response.data.iter()

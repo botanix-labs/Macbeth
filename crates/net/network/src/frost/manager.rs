@@ -414,14 +414,6 @@ impl FrostManager {
                         }
                     }
                 }
-
-                // reply to caller
-                // if let Err(e) = tx.send(peer_connections) {
-                //     error!(
-                //         target: "network::frost::on_command",
-                //         "Error replying to call on GetAllConnectedPeers {:?}", e
-                //     );
-                // }
             }
         }
     }
