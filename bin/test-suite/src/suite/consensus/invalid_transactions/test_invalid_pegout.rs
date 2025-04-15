@@ -64,7 +64,6 @@ pub async fn invalid_pegout(
     // use empty pegout data
     let pegout_data = ethers::core::types::Bytes::new();
     let pegout_amount = Amount::from_btc(0.5).unwrap();
-    let actual_pegout_amount = (pegout_amount / 2).to_wei();
     it_info_print!("Pegout amount: ", pegout_amount.to_wei());
 
     // send to attack contract which halves the pegout amount
@@ -88,8 +87,6 @@ pub async fn invalid_pegout(
     let tx_cost = tx_receipt.gas_used.unwrap() * tx_receipt.effective_gas_price.unwrap();
     it_info_print!("Tx cost: ", tx_cost);
     sender_address_initial_balance -= tx_cost;
-    // subtract the actual pegout amount: what was sent from the attack contract
-    sender_address_initial_balance -= actual_pegout_amount;
 
     assert_eq!(sender_address_initial_balance, sender_address_final_balance);
 

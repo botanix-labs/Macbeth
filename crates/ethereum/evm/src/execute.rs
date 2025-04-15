@@ -6,9 +6,8 @@ use crate::{
 };
 use btcserverlib::pegout_id::PegoutId;
 use core::fmt::Display;
-use ethers::types::U256 as EthersU256;
+use std::collections::HashMap;
 use tracing::{error, info};
-
 use reth_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
@@ -32,7 +31,7 @@ use reth_primitives::{
     botanix::{
         consensus_package::BotanixConsensusPackage,
         mint_validation::{try_parse_burn_event, try_parse_mint_event, MintContractError},
-        peg_contract::{PeginData, PegoutDataError, PegoutWithId},
+        peg_contract::{PeginData, PegoutWithId},
     },
     header_ext::HeaderExt,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
@@ -50,9 +49,7 @@ use reth_revm::{
     Evm, State,
 };
 use revm_primitives::{
-    db::{Database, DatabaseCommit},
-    BlockEnv, Bytes, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, EvmState, ExecutionResult,
-    ResultAndState,
+    db::{Database, DatabaseCommit}, Account, BlockEnv, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, ExecutionResult, ResultAndState
 };
 
 #[cfg(not(feature = "std"))]
@@ -263,6 +260,13 @@ where
 
             self.evm_config.fill_tx_env(evm.tx_mut(), transaction, *sender);
 
+            // Store original sender account info before transaction execution.
+            // This is used later to partially revert the state if botanix specific validation
+            // fails.
+            let mut original_sender_info = (evm.db_mut().basic(*sender)
+                .map_err(|e| BlockExecutionError::other(e.into()))?).unwrap_or_default();
+
+
             // Execute transaction.
             let ResultAndState { mut result, mut state } = evm.transact().map_err(move |err| {
                 let new_err = match err {
@@ -306,41 +310,40 @@ where
                         }
                         Err(e) => {
                             info!("Botanix Minting contract event validation failed: {:?}", e);
-                            // Update state for reverted pegins/pegouts:
-                            // balances have been updated since tx was successful according to EVM
-                            // and we are reverting according to botanix validation
-                            match e {
-                                MintContractError::InvalidPeginData {
-                                    revert_address,
-                                    revert_amount,
-                                    ..
-                                } => Self::decrement_balance_by_address(
-                                    revert_address,
-                                    revert_amount,
-                                    &mut state,
-                                ),
-                                MintContractError::InvalidPegoutData(PegoutDataError::Invalid(
-                                    _,
-                                    amount,
-                                )) => {
-                                    Self::increment_balance_by_address(*sender, amount, &mut state);
-                                }
-                                MintContractError::InvalidLog { .. } => {
-                                    // This means we could not parse what was emitted from the mint
-                                    // contract
-                                    panic!("Invalid log emitted from botanix mint contract");
-                                }
-                            }
 
+                            // Capture gas used from the initially successful execution
+                            let gas_used = result.gas_used();
+
+                            // Determine the total gas cost: gas_used * effective_gas_price
+                            // Base fee is needed for effective_gas_price calculation
+                            let base_fee = evm.block().basefee;
+                            let effective_gas_price = transaction.effective_gas_price(Some(base_fee.to::<u64>()));
+                            let total_gas_cost = U256::from(gas_used) * U256::from(effective_gas_price);
+                
+                            // get the new nonce. This should be original nonce + 1
+                            let new_nonce = state.get(sender).unwrap().info.nonce;
+                            
+                            // Clear ALL state changes introduced by the transaction.
+                            state.clear();
+
+                            // Now, re-apply *only* the total gas cost and nonce change to the pre-transaction state.
+                            original_sender_info.nonce = new_nonce;
+                            original_sender_info.balance -= total_gas_cost;
+
+                            // Re-insert the sender's account with the original info but updated
+                            // nonce and balance (reflecting only gas cost).
+                            let reverted_account = Account {
+                                info: original_sender_info,
+                                storage: HashMap::new(), // Storage changes remain reverted.
+                                status: revm_primitives::AccountStatus::Touched, // Mark as touched
+                            };
+                            state.insert(*sender, reverted_account);
+
+                            // Return a revert result, indicating failure but consuming gas and
+                            // incrementing nonce.
                             ExecutionResult::Revert {
-                                gas_used: result.gas_used(),
-                                output: match result {
-                                    ExecutionResult::Success { output, .. } => {
-                                        output.clone().into_data()
-                                    }
-                                    ExecutionResult::Revert { output, .. } => output.clone(),
-                                    ExecutionResult::Halt { .. } => Bytes::new(),
-                                },
+                                gas_used, // Still report the gas used
+                                output: Default::default(),
                             }
                         }
                     }
@@ -399,38 +402,6 @@ where
             pegins: total_pegins,
             pegouts: total_pegouts,
         })
-    }
-
-    /// Decrement an account by the specified amount and update state
-    /// This should only occur when a pegin reverts based on our custom validation
-    fn decrement_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
-        let mut account = state.get(&address).expect("Account to exist").clone();
-        // print balance before decrement
-        info!("Balance before decrement: {:?}", account.info.balance);
-        // decrement balance by amount
-        info!("Decrementing address: {:?} by {:?}", address, amount);
-        account.info.balance = account
-            .info
-            .balance
-            .checked_sub(U256::from_be_bytes(amount.into()))
-            .expect("No overflow for checked_sub");
-        // update state with new balance
-        state.insert(address, account);
-    }
-
-    /// Increment an account by the specified amount and update state
-    /// This should only occur when a pegout reverts based on our custom validation
-    fn increment_balance_by_address(address: Address, amount: EthersU256, state: &mut EvmState) {
-        let mut account = state.get(&address).expect("Account to exist").clone();
-        // increment balance by amount
-        info!("Incrementing address: {:?} by {:?}", address, amount);
-        account.info.balance = account
-            .info
-            .balance
-            .checked_add(U256::from_be_bytes(amount.into()))
-            .expect("No overflow for checked_add");
-        // update state with new balance
-        state.insert(address, account);
     }
 
     /// Performs additional checks on mint contract transactions.
@@ -702,8 +673,8 @@ where
                 evm,
                 botanix_consensus_pkg,
                 self.executor.provider.clone(),
-            )
-        }?;
+            )?
+        };
 
         // 3. apply post execution changes
         self.post_execution(
@@ -781,7 +752,7 @@ where
     fn execute(mut self, input: Self::Input<'_>) -> Result<Self::Output, Self::Error> {
         let BlockExecutionInput { block, total_difficulty } = input;
         let EthExecuteOutput { receipts, requests, gas_used, total_block_fees, pegins, pegouts } =
-            self.execute_without_verification(block, total_difficulty)?; // TODO: check block address
+            self.execute_without_verification(block, total_difficulty)?;
 
         // TODO NOTE: we need to merge keep the reverts for the bundle retention
         self.state.merge_transitions(BundleRetention::Reverts);
@@ -849,7 +820,7 @@ where
             total_block_fees: _,
             pegins: _,
             pegouts: _,
-        } = self.executor.execute_without_verification(block, total_difficulty)?; // TODO: check block address
+        } = self.executor.execute_without_verification(block, total_difficulty)?;
 
         validate_block_post_execution(block, self.executor.chain_spec(), &receipts, &requests)?;
 
