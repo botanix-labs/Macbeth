@@ -88,7 +88,7 @@ impl WalletStateSyncPeerResponse {
     }
 
     /// Appends chunk data to the response
-    pub fn append_received_data(&mut self, partial_data: &Vec<Vec<u8>>) {
+    pub fn append_received_data(&mut self, partial_data: &[Vec<u8>]) {
         self.data.extend_from_slice(partial_data);
     }
 
@@ -107,9 +107,9 @@ type WalletStateSyncResponseCycle =
     Arc<RwLock<Option<(Uuid, HashMap<PeerId, WalletStateSyncPeerResponse>)>>>;
 
 /// Returns an iterator over the fully synced peers
-pub fn get_fully_synced_peers<'a>(
-    peers_wallet_state_sync_responses: &'a HashMap<PeerId, WalletStateSyncPeerResponse>,
-) -> (impl Iterator<Item = (&'a PeerId, &'a WalletStateSyncPeerResponse)> + 'a, usize) {
+pub fn get_fully_synced_peers(
+    peers_wallet_state_sync_responses: &HashMap<PeerId, WalletStateSyncPeerResponse>,
+) -> (impl Iterator<Item = (&PeerId, &WalletStateSyncPeerResponse)> + '_, usize) {
     let fully_synced = peers_wallet_state_sync_responses
         .iter()
         .filter(|(_, response)| response.all_chunks_received())
@@ -259,7 +259,7 @@ where
                                         }
                                     }
 
-                                    let (fully_synced_peers_iter, fully_synced_count) = get_fully_synced_peers(&peers);
+                                    let (fully_synced_peers_iter, fully_synced_count) = get_fully_synced_peers(peers);
                                     if fully_synced_count as u64 >= frost_config.min_signers as u64 {
                                         // consenses the finalized pegout ids
                                         let mut condensed_finalized_pegout_ids = HashSet::new();
