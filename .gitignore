@@ -83,6 +83,9 @@ build_rs_cov.profraw
 bin/test-suite/*.txt
 cobertura.xml
 
+# btc-server rpc binary
+bin/btc-server/src/rpc/btc_server.bin
+
 tmp
 
 # npm modules

@@ -31,10 +31,8 @@ use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{
     botanix::{
         consensus_package::BotanixConsensusPackage,
-        mint_validation::{
-            try_parse_burn_event, try_parse_mint_event, MintContractError, MINT_CONTRACT_ADDRESS,
-        },
-        peg_contract::{PeginData, PegoutWithId},
+        mint_validation::{try_parse_burn_event, try_parse_mint_event, MintContractError},
+        peg_contract::{PeginData, PegoutDataError, PegoutWithId},
     },
     header_ext::HeaderExt,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
@@ -290,12 +288,11 @@ where
             cumulative_gas_used += result.gas_used();
 
             // ***** Botanix specific checks ******
-            let pegout_amount = transaction.value();
             let mut pegins = vec![];
             let mut pegouts = vec![];
 
             let new_result = {
-                if result.is_success() && transaction.to() == Some(*MINT_CONTRACT_ADDRESS) {
+                if result.is_success() {
                     match self.botanix_mint_contract_checks(
                         &result,
                         &botanix_consensus_pkg,
@@ -322,12 +319,11 @@ where
                                     revert_amount,
                                     &mut state,
                                 ),
-                                MintContractError::InvalidPegoutData(_) => {
-                                    Self::increment_balance_by_address(
-                                        *sender,
-                                        EthersU256::from_little_endian(pegout_amount.as_le_slice()),
-                                        &mut state,
-                                    );
+                                MintContractError::InvalidPegoutData(PegoutDataError::Invalid(
+                                    _,
+                                    amount,
+                                )) => {
+                                    Self::increment_balance_by_address(*sender, amount, &mut state);
                                 }
                                 MintContractError::InvalidLog { .. } => {
                                     // This means we could not parse what was emitted from the mint
@@ -510,7 +506,7 @@ where
                     error: "No proofs found in pegin data".to_string(),
                     revert_address: pegin_data.account,
                     revert_amount: pegin_data.amount,
-                })
+                });
             };
 
             for meta in &pegin_data.meta {
@@ -519,7 +515,7 @@ where
                         error: "Proofs have mismatching versions".to_string(),
                         revert_address: pegin_data.account,
                         revert_amount: pegin_data.amount,
-                    })
+                    });
                 }
 
                 if meta.ref_block_hash() != ref_block_hash {
@@ -527,7 +523,7 @@ where
                         error: "Proofs have mismatching reference block hashes".to_string(),
                         revert_address: pegin_data.account,
                         revert_amount: pegin_data.amount,
-                    })
+                    });
                 }
             }
 

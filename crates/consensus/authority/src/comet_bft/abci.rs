@@ -438,9 +438,11 @@ where
         &self,
     ) -> Result<prost::bytes::Bytes, ConsensusError> {
         let aggregate_public_key = self.aggregate_public_key()?;
-        let ndd = NonDeterministicData::new(self.bitcoin_blockhash(), aggregate_public_key);
+        let ndd = NonDeterministicData::new(self.bitcoin_blockhash()?, aggregate_public_key);
         let ndd_bytes = prost::bytes::Bytes::copy_from_slice(
-            ndd.serialize().expect("non deterministic data to be serialized").as_slice(),
+            ndd.serialize()
+                .map_err(|_| ConsensusError::NonDeterministicDataDeserialize)?
+                .as_slice(),
         );
 
         Ok(ndd_bytes)
@@ -498,13 +500,25 @@ where
         }
     }
 
-    pub(crate) fn bitcoin_blockhash(&self) -> bitcoin::BlockHash {
-        self.bitcoin_checkpoint.blocking_read().expect("should have checkpoint").0.block_hash()
+    pub(crate) fn bitcoin_blockhash(&self) -> Result<bitcoin::BlockHash, ConsensusError> {
+        Ok(self
+            .bitcoin_checkpoint
+            .blocking_read()
+            .as_ref()
+            .ok_or(ConsensusError::MissingBitcoinCheckpoint)?
+            .0
+            .block_hash())
     }
 
-    pub(crate) fn application_hash(&self, db: &impl BlockReaderIdExt) -> prost::bytes::Bytes {
-        let header = db.latest_header().expect("should have latest").expect("should have header");
-        prost::bytes::Bytes::copy_from_slice(&header.hash().0)
+    pub(crate) fn application_hash(
+        &self,
+        db: &impl BlockReaderIdExt,
+    ) -> Result<prost::bytes::Bytes, ConsensusError> {
+        let header = db
+            .latest_header()
+            .map_err(ConsensusError::Provider)?
+            .ok_or(ConsensusError::LatestHeaderMissing)?;
+        Ok(prost::bytes::Bytes::copy_from_slice(&header.hash().0))
     }
 }
 
@@ -555,25 +569,61 @@ where
     Pool: TransactionPool + Clone + 'static,
 {
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
-    fn init_chain(&self, _request: RequestInitChain) -> ResponseInitChain {
-        info!("init_chain request: {:?}", _request);
+    // Panic! on an error. Proceeding when the chain can't be initialized will lead
+    // to unexpected behavior.
+    fn init_chain(&self, request: RequestInitChain) -> ResponseInitChain {
+        info!("init_chain request: {:?}", request);
+
+        // check chain ids match
+        let cometbft_chain_id = match request.chain_id.parse::<u64>() {
+            Ok(chain_id) => chain_id,
+            Err(e) => {
+                panic!("Error parsing cometbft chain id: {:?}", e);
+            }
+        };
+        assert_eq!(self.storage.chain_spec.chain.id(), cometbft_chain_id, "Chain ID mismatch");
+
         let client = self.storage.client.clone();
-        ResponseInitChain { app_hash: self.application_hash(&client), ..Default::default() }
+        let app_hash = match self.application_hash(&client) {
+            Ok(app_hash) => app_hash,
+            Err(e) => {
+                panic!("Error getting application hash: {:?}", e);
+            }
+        };
+        ResponseInitChain { app_hash, ..Default::default() }
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#info
     fn info(&self, request: RequestInfo) -> ResponseInfo {
         info!("info request: {:?}", request);
         let client = self.storage.client.clone();
-        let latest_header =
-            client.latest_header().expect("should have latest").expect("should have header");
+
+        let latest_header = match client.latest_header() {
+            Ok(Some(header)) => header,
+            Ok(None) => {
+                error!("No latest header found");
+                return ResponseInfo { data: String::default(), ..Default::default() };
+            }
+            Err(e) => {
+                error!("Error getting latest header: {:?}", e);
+                return ResponseInfo { data: String::default(), ..Default::default() };
+            }
+        };
+
+        let last_block_app_hash = match self.application_hash(&client) {
+            Ok(application_hash) => application_hash,
+            Err(e) => {
+                error!("Error getting application hash: {:?}", e);
+                return ResponseInfo { data: String::default(), ..Default::default() };
+            }
+        };
 
         ResponseInfo {
             data: String::default(),
             version: VERSION.to_string(),
             app_version: 1,
             last_block_height: latest_header.number as i64,
-            last_block_app_hash: self.application_hash(&client),
+            last_block_app_hash,
         }
     }
 
@@ -584,11 +634,14 @@ where
         match client.get_snapshots() {
             Ok(snapshots) => {
                 // ensure no historical sync is ongoing
-                let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read()
-                else {
-                    error!("Error getting a snapshot state lock");
-                    return ResponseListSnapshots { snapshots: vec![] };
+                let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
+                    Ok(snapshot_manager_state_lock) => snapshot_manager_state_lock,
+                    Err(e) => {
+                        error!("Error getting a snapshot state lock: {:?}", e);
+                        return ResponseListSnapshots { snapshots: vec![] };
+                    }
                 };
+
                 if snapshot_manager_state_lock.is_syncing_history() {
                     drop(snapshot_manager_state_lock);
                     info!("Historical syncing ongoing. No snapshots available yet ...");
@@ -628,10 +681,14 @@ where
         info!("offer_snapshot request {:?}", request);
 
         // ensure no historical sync is ongoing
-        let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read() else {
-            error!("Error getting a snapshot state lock");
-            return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+        let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
+            Ok(snapshot_manager_state_lock) => snapshot_manager_state_lock,
+            Err(e) => {
+                error!("Error getting a snapshot state lock: {:?}", e);
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+            }
         };
+
         if snapshot_manager_state_lock.is_syncing_history() {
             drop(snapshot_manager_state_lock);
             info!("Historical syncing ongoing. No snapshots available yet ...");
@@ -646,7 +703,15 @@ where
         }
 
         let client = self.storage.client.clone();
-        if self.application_hash(&client) == request.app_hash {
+        let application_hash = match self.application_hash(&client) {
+            Ok(application_hash) => application_hash,
+            Err(e) => {
+                error!("Error getting application hash: {:?}", e);
+                return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+            }
+        };
+
+        if application_hash == request.app_hash {
             warn!("Application hash matches, snapshot must have already been applied, rejecting snapshot");
             return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
         }
@@ -670,10 +735,16 @@ where
             // read the lock and make sure we are not already syncing the snapshot we are being
             // offered
             if let Some(snapshot_sync_state_lock) = self.snapshot_sync_state_lock.as_ref() {
-                let snapshot_sync_state_lock =
-                    snapshot_sync_state_lock.read().expect("snapshot state sync locked");
+                let snapshot_sync_state_lock = match snapshot_sync_state_lock.read() {
+                    Ok(snapshot_sync_state_lock) => snapshot_sync_state_lock,
+                    Err(e) => {
+                        error!("Error getting a snapshot state lock: {:?}", e);
+                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                    }
+                };
+
                 // we are already syncing the this snapshot
-                if snapshot_sync_state_lock.eq(&SnapshotSyncStateLock::from(&snapshot)) {
+                if (*snapshot_sync_state_lock).eq(&SnapshotSyncStateLock::from(&snapshot)) {
                     drop(snapshot_sync_state_lock);
                     // since the lock is still on the currently accepted snapshot, we must return
                     // accept
@@ -688,8 +759,17 @@ where
             }
 
             // get the latest header
-            let latest_header =
-                client.latest_header().expect("should have latest").expect("should have header");
+            let latest_header = match client.latest_header() {
+                Ok(Some(header)) => header,
+                Ok(None) => {
+                    error!("No latest header found");
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                }
+                Err(e) => {
+                    error!("Error getting latest header: {:?}", e);
+                    return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                }
+            };
 
             // check that the latest header is less than the snapshot height
             if latest_header.header().number > snapshot.height {
@@ -702,10 +782,16 @@ where
 
             // ensure that the last sync lock is less than the newly offered height
             if let Some(snapshot_sync_state_lock) = self.snapshot_sync_state_lock.as_ref() {
-                let snapshot_sync_state_lock_height = snapshot_sync_state_lock
-                    .read()
-                    .expect("snapshot state sync locked")
-                    .get_snapshot_height();
+                let snapshot_sync_state_lock_height = match snapshot_sync_state_lock.read() {
+                    Ok(snapshot_sync_state_lock_height) => snapshot_sync_state_lock_height,
+                    Err(e) => {
+                        error!("Error getting a snapshot state lock: {:?}", e);
+                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                    }
+                };
+
+                let snapshot_sync_state_lock_height =
+                    snapshot_sync_state_lock_height.get_snapshot_height();
                 if snapshot_sync_state_lock_height >= snapshot.height {
                     warn!(
                             "Offered Snapshot height {:?} is less than or equal to the last locked snapshot height {:?}, rejecting snapshot",
@@ -724,9 +810,17 @@ where
                 Ok(_snapshot_id) => {
                     // update the rw lock here as we now want to sync against that offered snapshot
                     if let Some(snapshot_sync_state_lock) = self.snapshot_sync_state_lock.as_ref() {
-                        let mut snapshot_sync_state_lock =
-                            snapshot_sync_state_lock.write().expect("snapshot state sync locked");
-                        snapshot_sync_state_lock
+                        let mut snapshot_sync_state_lock = match snapshot_sync_state_lock.write() {
+                            Ok(snapshot_sync_state_lock) => snapshot_sync_state_lock,
+                            Err(e) => {
+                                error!("Error getting a snapshot state lock: {:?}", e);
+                                return ResponseOfferSnapshot {
+                                    result: SnapshotOfferResult::Reject as i32,
+                                };
+                            }
+                        };
+
+                        (*snapshot_sync_state_lock)
                             .set_snapshot_height(snapshot.height)
                             .set_snapshot_hash(Bytes::copy_from_slice(snapshot.hash.as_ref()))
                             .set_snapshot_chunks(snapshot.chunks as u64)
@@ -750,11 +844,14 @@ where
     fn load_snapshot_chunk(&self, request: RequestLoadSnapshotChunk) -> ResponseLoadSnapshotChunk {
         info!("load_snapshot_chunk request {:?}", request);
 
-        // ensure no historical sync is ongoing
-        let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read() else {
-            error!("Error getting a snapshot state lock");
-            return ResponseLoadSnapshotChunk::default();
+        let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
+            Ok(snapshot_manager_state_lock) => snapshot_manager_state_lock,
+            Err(e) => {
+                error!("Error getting a snapshot state lock: {:?}", e);
+                return ResponseLoadSnapshotChunk::default();
+            }
         };
+
         if snapshot_manager_state_lock.is_syncing_history() {
             drop(snapshot_manager_state_lock);
             info!("Historical syncing ongoing. No snapshots available yet ...");
@@ -801,19 +898,27 @@ where
                                 let compressor = self.compressor.clone();
 
                                 self.task_executor.spawn_blocking(Box::pin(async move {
-                                    let mut blocks = Vec::new();
+                                    let mut blocks: Vec<BlockWithSenders> = Vec::new();
                                     for chunk in chunk.chunk_data() {
-                                        let block_with_sender: BlockWithSenders =
-                                            compressor.decode(chunk.as_ref()).await.unwrap();
-                                        blocks.push(block_with_sender);
+                                        if let Ok(block_with_sender) =
+                                            compressor.decode(chunk.as_ref()).await
+                                        {
+                                            blocks.push(block_with_sender);
+                                        }
                                     }
-                                    // TODO: handle the error
-                                    let serialized_blocks =
-                                        compressor.encode(&blocks).await.unwrap();
-                                    let _ = oneshot_tx.send(serialized_blocks);
+                                    if let Ok(serialized_blocks) = compressor.encode(&blocks).await
+                                    {
+                                        let _ = oneshot_tx.send(serialized_blocks);
+                                    }
                                 }));
 
-                                let serialized_blocks = oneshot_rx.blocking_recv().unwrap();
+                                let serialized_blocks = match oneshot_rx.blocking_recv() {
+                                    Ok(serialized_blocks) => serialized_blocks,
+                                    Err(e) => {
+                                        error!("Error on receiving serialized blocks from channel {:?}", e);
+                                        return ResponseLoadSnapshotChunk::default();
+                                    }
+                                };
 
                                 let res = ResponseLoadSnapshotChunk {
                                     chunk: prost::bytes::Bytes::copy_from_slice(
@@ -871,14 +976,18 @@ where
         info!("apply_snapshot_chunk request, index: {:?}", request.index);
 
         // ensure no historical sync is ongoing
-        let Ok(snapshot_manager_state_lock) = self.snapshot_manager_state_lock.read() else {
-            error!("Error getting a snapshot state lock");
-            return ResponseApplySnapshotChunk {
-                result: ApplySnapshotResult::RetrySnapshot as i32,
-                refetch_chunks: vec![],
-                reject_senders: vec![],
-            };
+        let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
+            Ok(snapshot_manager_state_lock) => snapshot_manager_state_lock,
+            Err(e) => {
+                error!("Error getting a snapshot state lock: {:?}", e);
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
         };
+
         if snapshot_manager_state_lock.is_syncing_history() {
             drop(snapshot_manager_state_lock);
             info!("Historical syncing ongoing. No snapshots available yet ...");
@@ -968,18 +1077,28 @@ where
         let (compressor_task_tx, compressor_task_rx) =
             tokio::sync::oneshot::channel::<Vec<BlockWithSenders>>();
         self.task_executor.spawn_blocking(Box::pin(async move {
-            let blocks_with_senders: Vec<BlockWithSenders> = compressor
-                .decode(request.chunk.as_ref())
-                .await
-                // TODO: handle the error
-                .expect("Failed to deserialize and decompress block with context");
-            let _ = compressor_task_tx.send(blocks_with_senders);
+            match compressor.decode(request.chunk.as_ref()).await {
+                Ok(blocks_with_senders) => {
+                    let _ = compressor_task_tx.send(blocks_with_senders);
+                }
+                Err(e) => {
+                    error!("Failed to deserialize and decompress snapshot chunk: {:?}", e);
+                }
+            };
         }));
 
         // await the response from the compressor task
-        let blocks_with_senders = compressor_task_rx
-            .blocking_recv()
-            .expect("to receive confirmation from snapshot manager");
+        let blocks_with_senders = match compressor_task_rx.blocking_recv() {
+            Ok(blocks_with_senders) => blocks_with_senders,
+            Err(e) => {
+                error!("Failed to receive blocks from compressor task: {:?}", e);
+                return ResponseApplySnapshotChunk {
+                    result: ApplySnapshotResult::RetrySnapshot as i32,
+                    refetch_chunks: vec![],
+                    reject_senders: vec![],
+                };
+            }
+        };
 
         let exec_outcome = match batch_execute(
             blocks_with_senders.clone(),
@@ -1110,18 +1229,29 @@ where
                     } => {
                         let block = payload.block();
                         // These are bytes of [SignedTransaction]
-                        let mut txs: Vec<_> = block
+                        let txs: Vec<_> = block
                             .raw_transactions()
                             .iter()
                             .map(|tx| prost::bytes::Bytes::copy_from_slice(tx))
                             .collect::<_>();
-                        info!("prepare_proposal number of txs: {:?}", txs.len());
-
+                        let txs_len = txs.len();
+                        info!("prepare_proposal number of txs: {:?}", txs_len);
+                        let mut filtered_txs = txs
+                            .into_iter()
+                            .filter(|tx| (tx.len() as i64) < request.max_tx_bytes)
+                            .collect::<Vec<_>>();
+                        warn!("{:?}/{:?} txs violated the max_tx_bytes size and got excluded from the prepared proposal", (txs_len - filtered_txs.len()), txs_len);
+                        // check that the non-deterministic data is not larger than the max tx bytes
+                        if non_deterministic_data_bytes.len() as i64 > request.max_tx_bytes {
+                            // We should panic bc there is a critical bug and there should be a
+                            // chain halt.
+                            panic!("Non-deterministic data size: {:?} exceeds the max tx bytes allowed size {:?}", non_deterministic_data_bytes.len(), request.max_tx_bytes);
+                        }
                         // insert non-deterministic data tx at index 0 so historical sync will pass
                         // verification
-                        txs.insert(0, non_deterministic_data_bytes);
+                        filtered_txs.insert(0, non_deterministic_data_bytes);
                         self.metrics.commet_prepared_proposals.increment(1);
-                        ResponsePrepareProposal { txs }
+                        ResponsePrepareProposal { txs: filtered_txs }
                     }
                 }
             }
@@ -1237,7 +1367,14 @@ where
 
         // Extract block time: this must come from the CBFT block header NOT the system time
         // As that will be underministic
-        let block_time = request.time.expect("block time");
+        let block_time = match request.time {
+            Some(time) => time,
+            None => {
+                error!("Block time is not set in process proposal");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
+
         let cbft_block_hash = FixedBytes::<32>::from_slice(request.hash.to_vec().as_slice());
 
         // extract first tx which contains non-deterministic data and validate
@@ -1260,8 +1397,18 @@ where
             }
         };
 
-        let bitcoin_checkpoint_block_hash =
-            self.bitcoin_checkpoint.blocking_read().expect("should have checkpoint").0.block_hash();
+        let bitcoin_checkpoint_block_hash = match self
+            .bitcoin_checkpoint
+            .blocking_read()
+            .as_ref()
+            .map(|(header, _)| header.block_hash())
+        {
+            Some(bitcoin_checkpoint_block_hash) => bitcoin_checkpoint_block_hash,
+            None => {
+                warn!("No bitcoin checkpoint found");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
 
         // check non-deterministic data: btc block hash and aggregate public key
         if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash {
@@ -1313,10 +1460,15 @@ where
                         return ResponseProcessProposal { status: VERIFY_REJECT };
                     }
                 }
-                self.block_cache
-                    .write()
-                    .expect("to get write lock")
-                    .insert(cbft_block_hash, block_with_context);
+                match self.block_cache.write() {
+                    Ok(mut cache) => {
+                        cache.insert(cbft_block_hash, block_with_context);
+                    }
+                    Err(e) => {
+                        error!("Error getting block cache write lock: {:?}", e);
+                        return ResponseProcessProposal { status: VERIFY_REJECT };
+                    }
+                }
             }
             Err(e) => {
                 error!("Error building block: {:?}", e);
@@ -1337,7 +1489,13 @@ where
 
         debug!("finalize_block request: {:?}", request);
         let cbft_block_hash = FixedBytes::<32>::from_slice(request.hash.to_vec().as_slice());
-        let mut block_cache_write = self.block_cache.write().expect("should get write lock");
+        let mut block_cache_write = match self.block_cache.write() {
+            Ok(block_cache_write) => block_cache_write,
+            Err(e) => {
+                error!("Error getting block cache write lock: {:?}", e);
+                return ResponseFinalizeBlock::default();
+            }
+        };
         let block_with_context = match block_cache_write.get(&cbft_block_hash) {
             Some(block) => block.clone(),
             None => {
@@ -1348,17 +1506,29 @@ where
                 let txs_bytes = request.txs.clone();
                 let non_deterministic_data_bytes = match txs_bytes.clone().first() {
                     Some(tx) => tx.clone(),
-                    None => panic!("No non-deterministic tx in finalize block request"),
+                    None => {
+                        error!("No non-deterministic tx in finalize block request");
+                        return ResponseFinalizeBlock::default();
+                    }
                 };
                 let reader_inner: Vec<u8> =
                     vec![non_deterministic_data_bytes].into_iter().flatten().collect();
                 let reader = &mut io::Cursor::new(reader_inner);
                 let non_deterministic_data = match NonDeterministicData::deserialize(reader) {
                     Ok(data) => data,
-                    Err(e) => panic!("Error deserializing non-deterministic data: {:?}", e),
+                    Err(e) => {
+                        error!("Error deserializing non-deterministic data: {:?}", e);
+                        return ResponseFinalizeBlock::default();
+                    }
                 };
 
-                let block_time = request.time.expect("block time");
+                let block_time = match request.time {
+                    Some(time) => time,
+                    None => {
+                        error!("Block time is not set in process proposal");
+                        return ResponseFinalizeBlock::default();
+                    }
+                };
 
                 // Extract who built this block
                 let block_builder_address = Address::new(
@@ -1370,7 +1540,10 @@ where
                     match transactions_signed_from_bytes(txs_bytes.clone().iter().skip(1).cloned())
                     {
                         Ok(txs) => txs,
-                        Err(e) => panic!("Error decoding transactions in finalize block: {:?}", e),
+                        Err(e) => {
+                            error!("Error decoding transactions in finalize block: {:?}", e);
+                            return ResponseFinalizeBlock::default();
+                        }
                     };
 
                 match build_and_execute(
@@ -1393,7 +1566,10 @@ where
 
                         block_with_context
                     }
-                    Err(e) => panic!("Error building block in finalize block: {:?}", e),
+                    Err(e) => {
+                        error!("Error building block in finalize block: {:?}", e);
+                        return ResponseFinalizeBlock::default();
+                    }
                 }
             }
         };
@@ -1403,8 +1579,13 @@ where
         let sealed_block_with_peg_binding = block_with_context.sealed_block_with_peg.clone();
         let sealed_block_with_senders = sealed_block_with_peg_binding.block();
         if !self.is_fed_node && block_height == 1 {
-            let edh =
-                sealed_block_with_senders.deserialize_extra_data_header().expect("edh to exist");
+            let edh = match sealed_block_with_senders.deserialize_extra_data_header() {
+                Ok(edh) => edh,
+                Err(e) => {
+                    error!("Error deserializing extra data header in finalize block: {:?}", e);
+                    return ResponseFinalizeBlock::default();
+                }
+            };
 
             let mut storage = self.storage.inner.blocking_write();
             storage.aggregate_public_key = Some(edh.aggregated_public_key);
@@ -1419,12 +1600,18 @@ where
                 block_with_context.sealed_block_with_peg.block().header().number
             );
             error!(err);
-            panic!("{}", err);
+            return ResponseFinalizeBlock::default();
         }
 
         let mut exec_results = vec![];
         // insert non-deterministic data tx which is first in the block
-        let non_deterministic_data_tx = request.txs.first().expect("tx to exist").clone();
+        let non_deterministic_data_tx = match request.txs.first() {
+            Some(tx) => tx.clone(),
+            None => {
+                error!("Expected first tx to exist in the finalize_block request");
+                return ResponseFinalizeBlock::default();
+            }
+        };
         let first_exec_tx_result =
             ExecTxResult { code: SUCCESS, data: non_deterministic_data_tx, ..Default::default() };
         exec_results.push(first_exec_tx_result);
@@ -1455,12 +1642,27 @@ where
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#commit
+    /// Panic! if there's an error bc that means the block hasn't
+    /// been successfully committed to the database. There is no way to recover from
+    /// an application hash mismatch other than a manual rollback of the db to a healthy state.
+    /// Proceeding after an error will cause the app hash mismatch.
     fn commit(&self) -> ResponseCommit {
         info!("commit request received");
-        let candidate_blocks = self.block_cache.write().expect("to get write lock");
+        let candidate_blocks = match self.block_cache.write() {
+            Ok(candidate_blocks) => candidate_blocks,
+            Err(e) => {
+                panic!("Error getting block cache write lock: {:?}", e);
+            }
+        };
         // We want to explicitly panic since we cannot get the lock and send the commit message
-        let (cbft_block_hash, sealed_block_with_context) =
-            candidate_blocks.peek_newest().expect("to have block");
+        let (cbft_block_hash, sealed_block_with_context) = match candidate_blocks.peek_newest() {
+            Some((cbft_block_hash, sealed_block_with_context)) => {
+                (cbft_block_hash, sealed_block_with_context)
+            }
+            None => {
+                panic!("Error getting block from cache");
+            }
+        };
 
         // need to clone since `sealed_block_with_context` is behind a lock
         let sealed_block_with_context = sealed_block_with_context.clone();
@@ -1474,10 +1676,12 @@ where
                 .send(ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)))
                 .await
             {
-                error!("Error sending commit block message: {:?}", e);
+                panic!("Error sending commit block message: {:?}", e);
             }
         }));
-        commit_rx.recv().expect("to receive commit block response");
+        if let Err(e) = commit_rx.recv() {
+            panic!("Error receiving commit block response {e:?}");
+        }
 
         info!("Block committed: {:?}", cbft_block_hash);
         self.metrics.commet_committed_blocks.increment(1);
@@ -1542,7 +1746,17 @@ where
                             Arc::new(trie_updates.clone()),
                         );
 
-                        let db_rw = self.database_provider.provider_rw().expect("to get db rw");
+                        let db_rw = match self.database_provider.provider_rw() {
+                            Ok(db_rw) => db_rw,
+                            Err(e) => {
+                                // Panic bc this causes a db inconsistency:
+                                // CometBFT has already committed the block so if
+                                // the block can't be appended here, there will be an app hash
+                                // mismatch. This requires a manual
+                                // rollback to a healthy state.
+                                panic!("Error getting database rw provider: {:?}", e);
+                            }
+                        };
 
                         db_rw.append_blocks_with_state(
                             vec![sealed_block_with_senders.clone()],
@@ -1592,7 +1806,9 @@ where
                             },
                         );
 
-                        commit_tx.send(()).expect("to send");
+                        if let Err(e) = commit_tx.send(()) {
+                            error!("Failed to send await on channel for ABCIDriverMessage::CommitBlock message {e:?}");
+                        }
                     }
                     ABCIDriverMessage::Exit => {
                         break;
@@ -1622,7 +1838,7 @@ mod tests {
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,
     };
-    use reth_chainspec::BOTANIX_TESTNET;
+    use reth_chainspec::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use reth_cli_runner::tokio_runtime;
     use reth_db::{init_db, mdbx::DatabaseArguments};
     use reth_db_common::init::init_genesis;
@@ -1744,10 +1960,25 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Chain ID mismatch")]
+    fn test_init_chain_should_panic_if_chain_id_mismatch() {
+        let abci_client = abci_client_builder();
+
+        let request = RequestInitChain {
+            chain_id: BOTANIX_MAINNET.chain.id().to_string(),
+            ..Default::default()
+        };
+        let _ = abci_client.init_chain(request);
+    }
+
+    #[test]
     fn test_init_chain() {
         let abci_client = abci_client_builder();
 
-        let request = RequestInitChain::default();
+        let request = RequestInitChain {
+            chain_id: BOTANIX_TESTNET.chain.id().to_string(),
+            ..Default::default()
+        };
         let response = abci_client.init_chain(request);
 
         let expected_consensus_params = None;
@@ -1788,7 +2019,7 @@ mod tests {
         let response = abci_client.prepare_proposal(request);
 
         let expected_ndd = NonDeterministicData::new(
-            abci_client.bitcoin_blockhash(),
+            abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
@@ -1824,7 +2055,7 @@ mod tests {
         let response = abci_client.prepare_proposal(request);
 
         let expected_ndd = NonDeterministicData::new(
-            abci_client.bitcoin_blockhash(),
+            abci_client.bitcoin_blockhash().expect("to have agg bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
@@ -1925,7 +2156,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_finalize_block_with_signed_tx() {
         let abci_client = abci_client_builder();
 
@@ -1949,9 +2179,8 @@ mod tests {
         request.time = Some(Timestamp::default());
         request.hash = prost::bytes::Bytes::copy_from_slice(FixedBytes::<32>::random().as_slice());
 
-        // this should panic bc prevrandao isn't being set in the evm env during tests
-        // but all the custom code is executed successfully up to `build_and_execute`
-        let _response = abci_client.finalize_block(request);
+        let response = abci_client.finalize_block(request);
+        assert_eq!(response, ResponseFinalizeBlock::default());
     }
 
     #[test]

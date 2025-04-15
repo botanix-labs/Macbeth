@@ -3,6 +3,8 @@ use reth_primitives::botanix::utils::AmountExt;
 
 use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 
+pub const SEND_AMOUNT: u64 = 1; // = 1 ether
+
 #[allow(clippy::too_many_lines)]
 pub async fn invalid_pegout(
     suite: &ConsensusIntegrationTestSuite,
@@ -14,13 +16,32 @@ pub async fn invalid_pegout(
 
     // Generate and send pegout tx
     // invalid bitcoin address
-    let botanix_eth_client = test_fed_members
+    let mut botanix_eth_client = test_fed_members
         .get(&0)
         .cloned()
         .unwrap()
         .botanix_eth_client
         .clone()
         .expect("Botanix Client must be initialized");
+
+    // create contract deployer to avoid any nonce issues during contract deployment
+    let contract_deployer =
+        botanix_eth_client.get_contract_deployer().expect("To get contract deployer");
+
+    // Fund the contract deployer
+    let _tx_receipt = botanix_eth_client
+        .send_eoa(contract_deployer.address(), SEND_AMOUNT)
+        .await
+        .expect("To send eoa")
+        .expect("To get tx receipt");
+
+    // Deploy attack contract
+    let attack_contract_address = botanix_eth_client
+        .deploy_mint_attack_contract(contract_deployer)
+        .await
+        .expect("To deploy attack contract");
+    botanix_eth_client.set_mint_attack_contract(attack_contract_address);
+
     let invalid_pegout_destination = ethers::core::types::Bytes::from(
         "invalid_pegout_destination".to_string().as_bytes().to_vec(),
     );
@@ -43,15 +64,16 @@ pub async fn invalid_pegout(
     // use empty pegout data
     let pegout_data = ethers::core::types::Bytes::new();
     let pegout_amount = Amount::from_btc(0.5).unwrap();
+    let actual_pegout_amount = (pegout_amount / 2).to_wei();
     it_info_print!("Pegout amount: ", pegout_amount.to_wei());
+
+    // send to attack contract which halves the pegout amount
+    // 0.5 BTC -> 0.25 BTC: trying to get refunded 0.5 instead of 0.25 that is burned
     let tx_receipt = botanix_eth_client
-        .burn(invalid_pegout_destination, pegout_data, pegout_amount.to_wei())
+        .burn_attack(invalid_pegout_destination, pegout_data, pegout_amount.to_wei())
         .await
         .unwrap()
         .unwrap();
-    it_info_print!("Pegout Tx Receipt: ", tx_receipt);
-
-    assert!(tx_receipt.status.unwrap().is_zero());
 
     // sender address balance after pegout
     let sender_address_final_balance = botanix_eth_client
@@ -66,6 +88,8 @@ pub async fn invalid_pegout(
     let tx_cost = tx_receipt.gas_used.unwrap() * tx_receipt.effective_gas_price.unwrap();
     it_info_print!("Tx cost: ", tx_cost);
     sender_address_initial_balance -= tx_cost;
+    // subtract the actual pegout amount: what was sent from the attack contract
+    sender_address_initial_balance -= actual_pegout_amount;
 
     assert_eq!(sender_address_initial_balance, sender_address_final_balance);
 

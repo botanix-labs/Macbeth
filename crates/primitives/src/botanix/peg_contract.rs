@@ -437,7 +437,7 @@ impl From<bitcoin::io::Error> for PeginDataError {
 pub enum PegoutDataError {
     /// Invalid pegout proof
     #[error("invalid pegout proof")]
-    Invalid(&'static str),
+    Invalid(&'static str, ethers::types::U256),
 }
 
 /// Pegout data structure
@@ -464,18 +464,19 @@ impl PegoutData {
     /// Create a new pegout data
     pub fn new(
         amount: bitcoin::Amount,
+        eth_amount: ethers::types::U256,
         address: String,
         btc_network: bitcoin::Network,
     ) -> Result<Self, PegoutDataError> {
         // Check for valid address
         let destination: bitcoin::address::Address<bitcoin::address::NetworkUnchecked> =
             bitcoin::address::Address::from_str(address.as_str())
-                .map_err(|_e| PegoutDataError::Invalid("Invalid Bitcoin Address"))?;
+                .map_err(|_e| PegoutDataError::Invalid("Invalid Bitcoin Address", eth_amount))?;
 
         // For is address if valid for network
         let network_checked_destination = destination
             .require_network(btc_network)
-            .map_err(|_e| PegoutDataError::Invalid("Address not valid for network"))?;
+            .map_err(|_e| PegoutDataError::Invalid("Address not valid for network", eth_amount))?;
 
         Ok(Self { amount, destination: network_checked_destination, network: btc_network })
     }

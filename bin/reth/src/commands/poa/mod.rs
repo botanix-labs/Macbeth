@@ -53,6 +53,7 @@ use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGenera
 use reth_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
+use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
 use reth_consensus_common::utils;
@@ -118,7 +119,7 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub network_config_path: Option<PathBuf>,
 
     /// Indicates whether we are running in testnet or not.
-    #[arg(long, value_name = "IS_TESTNET", default_value = "true")]
+    #[arg(long, value_name = "IS_TESTNET")]
     pub is_testnet: bool,
 
     /// The NTP server url
@@ -267,6 +268,24 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             *is_testnet,
         )?;
         let chain_arc = Arc::new(chain.clone());
+
+        // check chains match
+        match (chain.chain.id(), rpc.btc_network) {
+            (BOTANIX_MAINNET_CHAIN_ID, bitcoin::Network::Bitcoin) => {}
+            (BOTANIX_TESTNET_CHAIN_ID, _) => {
+                // Testnet can be any non-mainnet network for btc
+                if rpc.btc_network == bitcoin::Network::Bitcoin {
+                    return Err(eyre::eyre!(
+                        "Chains mismatch: Botanix is testnet and btc network is not."
+                    ));
+                }
+            }
+            _ => {
+                return Err(eyre::eyre!(
+                    "Chains mismatch: Botanix is mainnet and btc network is not."
+                ));
+            }
+        }
 
         // set up node config
         let mut node_config = NodeConfig {
@@ -1240,16 +1259,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_db_path() {
-        let _cmd = PoaNodeCommand::try_parse_args_from([
-            "reth",
-            "--network-config-path",
-            "my/path/to/reth.toml",
-            "--federation-config-path",
-            "my/path/to/federation.toml",
-        ])
-        .unwrap();
-
+    fn parse_db_path_testnet() {
         let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let authority = FedMemberPubKey {
             key: secret_key.public_key(SECP256K1).to_string(),
@@ -1264,6 +1274,7 @@ mod tests {
             "my/custom/path",
             "--federation-config-path",
             "my/path/to/federation.toml",
+            "--is-testnet",
         ])
         .unwrap();
         let chain = get_botanix_chain(
@@ -1271,6 +1282,41 @@ mod tests {
             cmd.is_testnet,
         )
         .expect("chain is to exist");
+        assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);
+        assert_ne!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
+        let data_dir =
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let db_path = data_dir.db();
+        assert_eq!(db_path, Path::new("my/custom/path/db"));
+    }
+
+    #[test]
+    fn parse_db_path_mainnet() {
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let authority = FedMemberPubKey {
+            key: secret_key.public_key(SECP256K1).to_string(),
+            socket_addr: format!("127.0.0.1:30303"),
+        };
+        let authorities = vec![authority];
+        let federation_config =
+            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--datadir",
+            "my/custom/path",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+            "--btc-network",
+            "bitcoin",
+        ])
+        .unwrap();
+        let chain = get_botanix_chain(
+            &federation_config.to_string().expect("should parse to string"),
+            cmd.is_testnet,
+        )
+        .expect("chain is to exist");
+        assert_eq!(chain.chain.id(), BOTANIX_MAINNET_CHAIN_ID);
+        assert_eq!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
         let data_dir =
             cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
         let db_path = data_dir.db();

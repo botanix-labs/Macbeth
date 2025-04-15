@@ -271,6 +271,8 @@ impl NonFederationMemberTestConfig {
             discovery_port.as_str(),
             "--p2p-secret-key",
             discovery_secret_path.to_str().context("discovery secret path to exist")?,
+            "--sync.enable_state_sync",
+            "--sync.enable_historical_sync",
         ];
 
         Ok(SpawnedRpcServerProcess {

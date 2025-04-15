@@ -14,6 +14,7 @@ use reth_primitives::{
     GotExpectedBoxed, Header, InvalidTransactionError, Receipt, Request, SealedBlock, SealedHeader,
     B256, U256,
 };
+use reth_storage_errors::provider::ProviderError;
 
 #[cfg(feature = "std")]
 use std::fmt::Debug;
@@ -491,6 +492,22 @@ pub enum ConsensusError {
     /// Cannot add and existing federation member to the federation
     #[display("Cannot add and existing federation member to the federation")]
     CannotAddExistingFederationMember,
+
+    /// Error deserializing extra data header.
+    #[display("error deserializing extra data header")]
+    NonDeterministicDataDeserialize,
+
+    /// Error since the latest header is missing.
+    #[display("missing latest header")]
+    LatestHeaderMissing,
+
+    /// Error from provider.
+    #[display("provider error: {_0}")]
+    Provider(ProviderError),
+
+    /// Error since the bitcoin checkpoint is missing.
+    #[display("missing latest header")]
+    MissingBitcoinCheckpoint,
 }
 
 #[cfg(feature = "std")]

@@ -13,8 +13,10 @@ pub use alloy_chains::{Chain, ChainKind, NamedChain};
 pub use info::ChainInfo;
 pub use spec::{
     create_botanix_config_with_genesis, BaseFeeParams, BaseFeeParamsKind,
-    BotanixTestnetGenesisConfig, ChainSpec, ChainSpecBuilder, ChainSpecProvider, DepositContract,
-    ForkBaseFeeParams, BOTANIX_TESTNET, DEV, HOLESKY, MAINNET, SEPOLIA,
+    BotanixMainnetGenesisConfig, BotanixTestnetGenesisConfig, ChainSpec, ChainSpecBuilder,
+    ChainSpecProvider, DepositContract, ForkBaseFeeParams, BOTANIX_MAINNET,
+    BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID, DEV, HOLESKY, MAINNET,
+    SEPOLIA,
 };
 
 #[cfg(not(feature = "std"))]

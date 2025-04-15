@@ -178,10 +178,19 @@ pub async fn test_conflicting_input(
     //    the coordinator will include a conflicting input and signers will validate against this
     // 2) The network will reject the broadcast psbt if it contains a conflicting input with error
     //    "txn-mempool-conflict" since the first tx is still in the mempool.
-    // We want failure case 2.
+    // 3) The network will reject the broadcast psbt if the replacement fee isn't high enough.  We
+    //    are not trying to replace the tx so this is an acceptable failure case as well:
+    //    "insufficient fee, rejecting replacement"
+    // We want failure case 2 or 3.
     if let Err(e) = do_signing(&mut clients, &bitcoind, &[2u8; 32]).await {
-        assert!(e.to_string().contains("txn-mempool-conflict"));
-        return Ok(())
+        let error_message = e.to_string();
+        assert!(
+            error_message.contains("txn-mempool-conflict") ||
+                error_message.contains("insufficient fee, rejecting replacement"),
+            "Unexpected error: {}",
+            error_message
+        );
+        return Ok(());
     }
 
     Err(anyhow::anyhow!("expected txn-mempool-conflict error"))

@@ -14,6 +14,8 @@ argh = "0.1.10"
 
 # crates.io dependencies
 askama = "0.12.1"
+
+assert_matches = { workspace = true }
 async-trait = "0.1.68"
 base64 = "0.22.1"
 bitcoin = { workspace = true }

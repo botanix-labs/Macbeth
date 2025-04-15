@@ -104,27 +104,6 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
     }
 }
 
-/// Returns the botanix network chain spec using the config at the passed path
-pub fn get_chain_from_federation_config(
-    s: &str,
-    is_testnet: bool,
-) -> eyre::Result<ChainSpec, eyre::Error> {
-    // try to read json from path first
-    let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
-        Ok(raw) => raw,
-        Err(io_err) => {
-            // valid json may start with "\n", but must contain "{"
-            if s.contains('{') {
-                s.to_string()
-            } else {
-                return Err(io_err.into()); // assume invalid path
-            }
-        }
-    };
-
-    get_botanix_chain(&raw, is_testnet)
-}
-
 /// Clap value parser for [ChainSpec]s.
 ///
 /// The value parser matches either a known chain, the path

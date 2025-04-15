@@ -668,7 +668,9 @@ start-poa-server-1:
 	--sync.num_snapshots_to_keep 3 \
 	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
 	--port 30303 \
-	--abci-port=26658
+	--abci-port=26658 \
+	--sync.enable_state_sync \
+	--sync.enable_historical_sync
 
 start-poa-server-2:
 	cd ./bin/reth && \
@@ -701,7 +703,9 @@ start-poa-server-2:
 	--sync.num_snapshots_to_keep 3 \
 	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--port 30304 \
-	--abci-port=36658
+	--abci-port=36658 \
+	--sync.enable_state_sync \
+	--sync.enable_historical_sync
 
 start-poa-server-3:
 	cd ./bin/reth && \
@@ -734,7 +738,9 @@ start-poa-server-3:
 	--sync.num_snapshots_to_keep 3 \
 	--p2p-secret-key "${NODE_3_DIR}/discovery-secret" \
 	--port 30305 \
-	--abci-port=46658
+	--abci-port=46658 \
+    --sync.enable_state_sync \
+	--sync.enable_historical_sync
 
 start-non-fed-server-1:
 	cd ./bin/reth && \
@@ -760,7 +766,9 @@ start-non-fed-server-1:
 	--bitcoind.password "${BITCOIND_PWD}" \
 	--p2p-secret-key "${NON_FED_1_DIR}/discovery-secret" \
 	--port 30306 \
-	--abci-port=56658
+	--abci-port=56658 \
+	--sync.enable_state_sync \
+	--sync.enable_historical_sync \
 
 clean-poa-3:
 	cd ${NODE_3_DIR} && \
