@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn test_parse_ethereum_address_no_prefix() {
         // A valid address with 40 hex characters (without the "0x" prefix)
-        let address_str = "0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9";
+        let address_str = "43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9";
         let parsed = parse_ethereum_address(address_str).expect("Should parse valid address");
 
         // Build the expected Address by decoding and converting.
