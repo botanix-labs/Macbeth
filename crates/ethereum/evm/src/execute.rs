@@ -688,7 +688,7 @@ where
                 BlockExecutionError::Validation(BlockValidationError::BotanixConsensusPkgError(e))
             })?;
 
-        let block_builder_address = edh.block_producer_address;
+        let block_fee_recipient_address = edh.block_fee_recipient_address;
 
         // 2. configure the evm and execute
         let env = self.evm_env_for_block(&block.header, total_difficulty);
@@ -707,7 +707,7 @@ where
             block,
             total_difficulty,
             Some(output.total_block_fees),
-            block_builder_address,
+            block_fee_recipient_address,
         )?;
 
         Ok(output)
@@ -727,14 +727,14 @@ where
         block: &BlockWithSenders,
         total_difficulty: U256,
         total_block_fees: Option<u128>,
-        block_builder_address: Address,
+        block_fee_recipient_address: Address,
     ) -> Result<(), BlockExecutionError> {
         let mut balance_increments = post_block_balance_increments(
             self.chain_spec(),
             block,
             total_difficulty,
             total_block_fees,
-            Some(block_builder_address),
+            Some(block_fee_recipient_address),
         );
 
         // Irregular state change at Ethereum DAO hardfork

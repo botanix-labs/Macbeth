@@ -22,7 +22,7 @@ pub fn post_block_balance_increments(
     block: &Block,
     total_difficulty: U256,
     total_block_fees: Option<u128>,
-    block_builder_address: Option<Address>,
+    block_fee_recipient_address: Option<Address>,
 ) -> HashMap<Address, u128> {
     let mut balance_increments = HashMap::new();
 
@@ -42,14 +42,14 @@ pub fn post_block_balance_increments(
     }
 
     // split block fees between builder and botanix if total_block_fees exist and
-    // block_builder_address is not zero.
+    // block_fee_recipient_address is not zero.
     // need conditional statement so reth tests can pass:
     // sometimes tests will pass None for fees (ie processor eip4788 tests)
     // sometimes it will pass fees with a zero block builder address (ie blockhchain_tree fork
     // choice tests) During normal operation, the block_builder address will never be zero: it
     // will be an authority address
     let fees = total_block_fees.unwrap_or(0);
-    let address = block_builder_address.unwrap_or(Address::ZERO);
+    let address = block_fee_recipient_address.unwrap_or(Address::ZERO);
 
     if fees > 0 && address != Address::ZERO && chain_spec.botanix_fee_recipient.is_some() {
         let (botanix_fees, builder_fees) = utils::block_fees_split(fees);
@@ -102,7 +102,7 @@ where
 {
     // If Prague is not activated or this is the genesis block, no hashes are added.
     if !chain_spec.is_prague_active_at_timestamp(block_timestamp) || block_number == 0 {
-        return Ok(())
+        return Ok(());
     }
     assert!(block_number > 0);
 

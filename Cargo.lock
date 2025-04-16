@@ -8511,8 +8511,6 @@ name = "reth-authority-consensus"
 version = "1.0.7"
 dependencies = [
  "alloy-rpc-types-engine",
- "anyhow",
- "bincode",
  "bitcoin 0.32.5",
  "btc-server",
  "bytes",

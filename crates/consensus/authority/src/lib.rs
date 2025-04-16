@@ -56,9 +56,6 @@ pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
 pub mod metrics;
 pub mod random_source_provider;
-/// Expose test utils for unit testing
-pub mod test_utils;
-pub mod wallet_state_sync;
 
 /// Max EDH size; for specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 93;
@@ -637,22 +634,24 @@ mod tests {
     }
 
     #[test]
-    fn should_get_block_producer_address_from_header() {
+    fn should_get_block_fee_recipient_address_from_header() {
         let mut header = Header::default();
         let edh = ExtraDataHeader::default();
         header.add_extra_data_header(&edh);
-        let block_producer_address = header.block_producer_address().unwrap();
-        assert_eq!(block_producer_address, Address::ZERO);
+        let block_fee_recipient_address = header.block_fee_recipient_address().unwrap();
+        assert_eq!(block_fee_recipient_address, Address::ZERO);
 
         let mut header2 = Header::default();
         let edh2 = ExtraDataHeader {
-            block_producer_address: Address::from_str("0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394")
-                .unwrap(),
+            block_fee_recipient_address: Address::from_str(
+                "0x4e0f6e05C8ca4b3dc2B7b7Ad6249B149b1980394",
+            )
+            .unwrap(),
             ..Default::default()
         };
         header2.add_extra_data_header(&edh2);
-        let block_producer_address2 = header2.block_producer_address().unwrap();
-        assert_eq!(block_producer_address2, edh2.block_producer_address);
+        let block_producer_address2 = header2.block_fee_recipient_address().unwrap();
+        assert_eq!(block_producer_address2, edh2.block_fee_recipient_address);
     }
 
     #[test]

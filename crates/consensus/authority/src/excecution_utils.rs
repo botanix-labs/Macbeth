@@ -40,7 +40,7 @@ pub(crate) mod authority_execution_utils {
     pub(crate) fn build_and_execute<BF, DB>(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
-        block_builder_address: &Address,
+        block_fee_recipient_address: &Address,
         evm_config: EthEvmConfig,
         database_provider: &ProviderFactory<DB>,
         bitcoind_factory: &BF,
@@ -61,7 +61,7 @@ pub(crate) mod authority_execution_utils {
             chain_spec.clone(),
             agg_pk,
             timestamp,
-            block_builder_address,
+            block_fee_recipient_address,
         )?;
 
         let mut block =
@@ -74,11 +74,11 @@ pub(crate) mod authority_execution_utils {
 
         trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
 
-        info!(target: "consensus::authority", "block_builder_address: {:?}", block_builder_address);
+        info!(target: "consensus::authority", "block_fee_recipient_address: {:?}", block_fee_recipient_address);
         let block_exec_output = execute(
             &block_with_senders,
             database_provider,
-            Some(*block_builder_address),
+            Some(*block_fee_recipient_address),
             bitcoind_factory,
             bitcoin_network,
             chain_spec,
@@ -133,7 +133,7 @@ pub(crate) mod authority_execution_utils {
         chain_spec: Arc<ChainSpec>,
         agg_pk: &secp256k1::PublicKey,
         timestamp: Timestamp,
-        block_builder_address: &Address,
+        block_fee_recipient_address: &Address,
     ) -> Result<Header, BlockExecutionError> {
         let client = database_provider.provider()?;
         let best_block = client.best_block_number().map_err(|e| {
@@ -177,7 +177,7 @@ pub(crate) mod authority_execution_utils {
             CHAIN_VERSION,
             *bitcoin_checkpoint,
             *agg_pk,
-            *block_builder_address,
+            *block_fee_recipient_address,
         );
         let mut header = Header {
             parent_hash: best_hash,
@@ -271,7 +271,7 @@ pub(crate) mod authority_execution_utils {
             .state_root(&block_exec_result.state)?;
         header.state_root = state_root;
 
-        let block_producer_address = header.block_producer_address().map_err(|_| {
+        let block_producer_address = header.block_fee_recipient_address().map_err(|_| {
             BlockExecutionError::Validation(BlockValidationError::FailedToFetchBlockProducerAddress)
         })?;
         // Construct [ExtraDataHeader] and sign the block
@@ -326,7 +326,7 @@ pub(crate) mod authority_execution_utils {
     fn execute<BF, DB>(
         block: &BlockWithSenders,
         database_provider: &ProviderFactory<DB>,
-        _block_builder_address: Option<Address>,
+        _block_fee_recipient_address: Option<Address>,
         bitcoind_factory: &BF,
         bitcoin_network: bitcoin::Network,
         chain_spec: Arc<ChainSpec>,
