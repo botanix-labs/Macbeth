@@ -25,6 +25,8 @@ pub enum CoinSelectionError {
     OutputsCannotBeEmpty,
     #[error("Available utxos cannot be empty")]
     AvailableUtxosCannotBeEmpty,
+    #[error("Pegout value is smaller than pegout fee")]
+    PegoutFeeOverflow,
 }
 
 impl PartialEq for CoinSelectionError {
@@ -122,7 +124,10 @@ pub(crate) fn coin_selection(
     let absolute_fee = original_psbt.fee().expect("no missing any txouts");
     let fee_per_output = absolute_fee / pegouts.len() as u64;
     for (output, _pegout_id) in pegouts.iter_mut() {
-        output.value -= fee_per_output;
+        output.value = output
+            .value
+            .checked_sub(fee_per_output)
+            .ok_or_else(|| CoinSelectionError::PegoutFeeOverflow)?;
     }
 
     let updated_changed = {

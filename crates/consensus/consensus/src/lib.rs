@@ -508,6 +508,10 @@ pub enum ConsensusError {
     /// Error since the bitcoin checkpoint is missing.
     #[display("missing latest header")]
     MissingBitcoinCheckpoint,
+
+    /// Error since the block fee recipient fee is missing.
+    #[display("missing block fee recipient address")]
+    MissingBlockFeeRecipientAddress,
 }
 
 #[cfg(feature = "std")]

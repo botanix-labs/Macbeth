@@ -40,7 +40,7 @@ pub trait HeaderExt {
     ) -> Result<secp256k1::PublicKey, ExtraDataHeaderDeserializeError>;
 
     /// Get the block producer address
-    fn block_producer_address(&self) -> Result<Address, ExtraDataHeaderDeserializeError>;
+    fn block_fee_recipient_address(&self) -> Result<Address, ExtraDataHeaderDeserializeError>;
 }
 
 /// Errors that can occur while creating a Botanix consensus package
@@ -83,10 +83,10 @@ impl HeaderExt for Header {
         self.extra_data = Bytes::from(edh.serialize());
     }
 
-    /// get block producer address
-    fn block_producer_address(&self) -> Result<Address, ExtraDataHeaderDeserializeError> {
+    /// get block fee recipient address
+    fn block_fee_recipient_address(&self) -> Result<Address, ExtraDataHeaderDeserializeError> {
         let edh = self.deserialize_extra_data_header()?;
-        Ok(edh.block_producer_address)
+        Ok(edh.block_fee_recipient_address)
     }
 
     /// deserialize the extra data header from the header

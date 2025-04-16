@@ -54,6 +54,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source> {
     abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     state_sync: StateSyncArgs,
+    block_fee_recipient_address: Option<reth_primitives::Address>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -104,6 +105,7 @@ where
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         state_sync: StateSyncArgs,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+        block_fee_recipient_address: Option<reth_primitives::Address>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -187,6 +189,7 @@ where
             abci_driver_tx,
             provider_factory,
             state_sync,
+            block_fee_recipient_address,
         })
     }
 
@@ -219,6 +222,7 @@ where
             abci_driver_tx,
             provider_factory,
             state_sync,
+            block_fee_recipient_address,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let chain_spec = storage.chain_spec.clone();
@@ -278,6 +282,7 @@ where
             provider_factory.clone(),
             Arc::clone(&snapshot_manager_state_lock),
             state_sync.snapshot_message_format,
+            block_fee_recipient_address,
         ));
 
         let snapshot_manager = if state_sync.enable_state_sync {

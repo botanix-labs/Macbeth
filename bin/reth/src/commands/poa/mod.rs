@@ -19,7 +19,7 @@ use reth_authority_consensus::{
     utils::{is_known_minting_contract, retry_exec},
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
-use reth_cli_util::{get_secret_key, parse_socket_address};
+use reth_cli_util::{get_secret_key, parse_ethereum_address, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_network_peers::pk2id;
@@ -38,7 +38,7 @@ use reth_node_metrics::{
     version::VersionInfo,
 };
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::botanix::mint_validation::MINT_CONTRACT_ADDRESS;
+use reth_primitives::{botanix::mint_validation::MINT_CONTRACT_ADDRESS, Address};
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
@@ -211,6 +211,17 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// `CometBFT` RPC Host
     #[arg(long, value_name = "COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
     pub cometbft_rpc_host: String,
+
+    /// Block fee recipient address.
+    ///
+    /// The input should be a hex string with exactly 40 hex characters.
+    /// An optional "0x" prefix is allowed.
+    #[arg(
+        long,
+        value_name = "BLOCK_FEE_RECIPIENT_ADDRESS",
+        value_parser = parse_ethereum_address,
+    )]
+    pub block_fee_recipient_address: Option<Address>,
 }
 
 impl PoaNodeCommand {
@@ -256,6 +267,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             cometbft_rpc_port,
             cometbft_rpc_host,
             state_sync,
+            block_fee_recipient_address,
         } = self;
 
         // Load reth config which is a bit different than cli config
@@ -768,6 +780,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 driver_tx,
                 node_config.clone().state_sync,
                 provider_factory.clone(),
+                *block_fee_recipient_address,
             ) {
                 Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
                 Err(e) => {

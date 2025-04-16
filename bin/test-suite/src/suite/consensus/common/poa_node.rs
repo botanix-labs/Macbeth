@@ -229,6 +229,7 @@ impl FederationMemberTestConfig {
 
         let datadir = self.temp_path.to_str().context("created temp path is unparsable")?;
         let discovery_secret_path = Path::new(&self.temp_path).join("discovery-secret");
+        let block_fee_recipient_address = "0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9";
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -366,6 +367,8 @@ impl FederationMemberTestConfig {
             abci_port.as_str(),
             "--sync.enable_state_sync",
             "--sync.enable_historical_sync",
+            "--block-fee-recipient-address",
+            block_fee_recipient_address,
         ];
 
         let child_process =

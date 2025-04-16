@@ -642,7 +642,15 @@ where
                     PeerMessageResponse::Signing(signing_response) => {
                         let SigningResponse { response_type, signing_session_id, psbt } =
                             signing_response;
-                        let signing_session_id = FixedBytes::from_slice(&signing_session_id);
+                        let signing_session_id = match FixedBytes::try_from(
+                            signing_session_id.as_slice(),
+                        ) {
+                            Ok(signing_session_id) => signing_session_id,
+                            Err(e) => {
+                                error!(target: "consensus::authority::frost_task::start_task", "Error deserializing signing session id {:?}", e);
+                                continue;
+                            }
+                        };
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
                                 let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
