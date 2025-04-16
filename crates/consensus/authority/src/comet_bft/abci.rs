@@ -3,7 +3,7 @@
 use alloy_rpc_types_engine::ForkchoiceState;
 use bytes::Bytes;
 use reth_chain_state::ExecutedBlock;
-use reth_chainspec::ChainSpec;
+use reth_chainspec::{ChainSpec, BOTANIX_TESTNET_CHAIN_ID};
 use reth_db::{
     models::{SnapshotSync, SnapshotSyncId},
     Database, DatabaseEnv,
@@ -347,6 +347,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
     snapshot_format: u32,
     block_fee_recipient_address: Option<reth_primitives::Address>,
+    is_testnet: bool,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -381,7 +382,7 @@ where
         block_fee_recipient_address: Option<reth_primitives::Address>,
     ) -> Self {
         Self {
-            storage,
+            storage: storage.clone(),
             pool,
             bitcoin_checkpoint,
             // Saving the last 5 blocks that were proposed
@@ -398,6 +399,7 @@ where
             snapshot_sync_state_lock,
             snapshot_format,
             block_fee_recipient_address,
+            is_testnet: storage.chain_spec.chain.id() == BOTANIX_TESTNET_CHAIN_ID,
         }
     }
 
@@ -448,7 +450,9 @@ where
         let block_fee_recipient_address = self
             .block_fee_recipient_address
             .ok_or(ConsensusError::MissingBlockFeeRecipientAddress)?;
-        let ndd = NonDeterministicData::new(
+        // Only v1 is supported for block production
+        // v0 is only used for historical syncing in testnet
+        let ndd = NonDeterministicData::new_v1(
             self.bitcoin_blockhash()?,
             aggregate_public_key,
             block_fee_recipient_address,
@@ -1406,6 +1410,16 @@ where
             }
         };
 
+        // Only NDD V1 is supported for block production so validate `block_fee_recipient_address`
+        // exists
+        let block_fee_recipient_address = match non_deterministic_data.block_fee_recipient_address {
+            Some(address) => address,
+            None => {
+                warn!("Block fee recipient address is not set in process proposal");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
+
         let bitcoin_checkpoint_block_hash = match self
             .bitcoin_checkpoint
             .blocking_read()
@@ -1448,7 +1462,7 @@ where
         match build_and_execute(
             txs,
             self.storage.chain_spec.clone(),
-            &non_deterministic_data.block_fee_recipient_address,
+            &block_fee_recipient_address,
             self.storage.evm_config,
             &self.provider_factory,
             &self.storage.bitcoind_factory,
@@ -1523,10 +1537,31 @@ where
                 let reader_inner: Vec<u8> =
                     vec![non_deterministic_data_bytes].into_iter().flatten().collect();
                 let reader = &mut io::Cursor::new(reader_inner);
+
                 let non_deterministic_data = match NonDeterministicData::deserialize(reader) {
                     Ok(data) => data,
                     Err(e) => {
                         error!("Error deserializing non-deterministic data: {:?}", e);
+                        return ResponseFinalizeBlock::default();
+                    }
+                };
+
+                // NDD V0 (no block_fee_recipient_address) is supported only for historical sync on
+                // testnet
+                let block_fee_recipient_address = match non_deterministic_data
+                    .block_fee_recipient_address
+                {
+                    Some(address) => address,
+                    // Need to extract from `request.proposer_address` which is legacy block
+                    // building behavior
+                    None if self.is_testnet => Address::new(
+                        FixedBytes::<20>::from_slice(request.proposer_address.to_vec().as_slice())
+                            .0,
+                    ),
+                    None => {
+                        error!(
+                            "Block fee recipient address is not set in finalize block for mainnet"
+                        );
                         return ResponseFinalizeBlock::default();
                     }
                 };
@@ -1553,7 +1588,7 @@ where
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
-                    &non_deterministic_data.block_fee_recipient_address,
+                    &block_fee_recipient_address,
                     self.storage.evm_config,
                     &self.provider_factory,
                     &self.storage.bitcoind_factory,
@@ -2023,7 +2058,7 @@ mod tests {
         let request = RequestPrepareProposal::default();
         let response = abci_client.prepare_proposal(request);
 
-        let expected_ndd = NonDeterministicData::new(
+        let expected_ndd = NonDeterministicData::new_v1(
             abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
@@ -2060,7 +2095,7 @@ mod tests {
         let request = RequestPrepareProposal::default();
         let response = abci_client.prepare_proposal(request);
 
-        let expected_ndd = NonDeterministicData::new(
+        let expected_ndd = NonDeterministicData::new_v1(
             abci_client.bitcoin_blockhash().expect("to have agg bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
