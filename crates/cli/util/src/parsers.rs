@@ -224,7 +224,7 @@ mod tests {
         let parsed = parse_ethereum_address(address_str).expect("Should parse valid address");
 
         // The expected address is the same as if the prefix weren't there.
-        let trimmed = "0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9";
+        let trimmed = "43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9";
         let expected_bytes = hex::decode(trimmed).unwrap();
         let mut expected_array = [0u8; 20];
         expected_array.copy_from_slice(&expected_bytes);

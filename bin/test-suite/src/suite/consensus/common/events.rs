@@ -85,7 +85,7 @@ pub struct GatewayAddressResponse {
 pub struct ExtraDataHeader {
     pub aggregated_public_key: String,
     pub bitcoin_block_hash: String,
-    pub block_producer_address: String,
+    pub block_fee_recipient_address: String,
     pub chain_version: u64,
     pub version: u64,
 }
