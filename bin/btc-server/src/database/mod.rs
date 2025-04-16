@@ -16,7 +16,6 @@ use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use futures::Stream;
 use miniscript::psbt::PsbtExt;
-use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
 pub mod error;
@@ -774,49 +773,46 @@ impl Db {
         chunk_size: usize,
     ) -> impl Stream<Item = Result<(Vec<PegoutId>, u64, u64), Error>> + Send + '_ + Sync {
         async_stream::stream! {
-            let mut current_chunk = Vec::with_capacity(chunk_size);
-            let mut count = 0;
-            let mut chunk_index: u64 = 0;
-            let num_chunks = match self.peek_finalized_pegout_ids() {
-                Ok(count) => count.div_ceil(chunk_size),
+            let total_count = match self.peek_finalized_pegout_ids() {
+                Ok(count) => count,
                 Err(e) => {
                     yield Err(e);
                     return;
                 }
-            } as u64;
+            };
 
-            for res in self.finalized_pegout_ids.iter() {
-                match res {
-                    Ok((_k, v)) => {
-                        match ciborium::de::from_reader(v.as_ref()) {
-                            Ok(tx) => {
-                                current_chunk.push(tx);
-                                count += 1;
+            let num_chunks = total_count.div_ceil(chunk_size) as u64;
+            let mut chunk_index: u64 = 0;
 
-                                // when we reach chunk_size, yield the current chunk and start a new one
-                                if count == chunk_size {
-                                    yield Ok((std::mem::take(&mut current_chunk), chunk_index, num_chunks));
-                                    current_chunk = Vec::with_capacity(chunk_size);
-                                    count = 0;
-                                    chunk_index += 1;
-                                }
-                            },
+            // get all keys first (this is efficient in sled)
+            let all_keys: Vec<_> = match self.finalized_pegout_ids.iter().keys().collect() {
+                Ok(keys) => keys,
+                Err(e) => {
+                    yield Err(e.into());
+                    return;
+                }
+            };
+
+            // process keys in chunks
+            for key_chunk in all_keys.chunks(chunk_size) {
+                let mut items = Vec::with_capacity(chunk_size);
+
+                for key in key_chunk {
+                    if let Ok(Some(value)) = self.finalized_pegout_ids.get(key) {
+                        match ciborium::de::from_reader(value.as_ref()) {
+                            Ok(tx) => items.push(tx),
                             Err(e) => {
                                 yield Err(Error::DataCorruption(e));
                                 return;
                             }
                         }
-                    },
-                    Err(e) => {
-                        yield Err(e.into());
-                        return;
                     }
                 }
-            }
 
-            // yield the last chunk
-            if !current_chunk.is_empty() {
-                yield Ok((current_chunk, chunk_index, num_chunks));
+                if !items.is_empty() {
+                    yield Ok((items, chunk_index, num_chunks));
+                    chunk_index += 1;
+                }
             }
         }
     }
@@ -1005,11 +1001,15 @@ impl TryFrom<Utxo> for RpcUtxo {
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
+    use rand::{thread_rng, Rng};
+    use tokio::pin;
+
     use crate::{
         pegout_scheduler::{PegoutRequest, Tx},
         test_utils::{create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db},
     };
-    use std::time::SystemTime;
+    use std::{collections::HashSet, time::SystemTime};
 
     use super::*;
     use crate::pegout_id::PegoutId;
@@ -1416,6 +1416,43 @@ mod tests {
         db.flush().unwrap();
         let merkle_root3 = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
         assert_ne!(merkle_root, merkle_root3);
+    }
+
+    #[tokio::test]
+    async fn test_stream_pegout_ids() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 52;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            finalized_pegout_ids.push(pegout_id);
+        }
+        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+        db.flush().unwrap();
+
+        let chunk_size = 10;
+        let stream = db.get_finalized_pegout_ids_stream(chunk_size);
+        pin!(stream);
+        let mut total_count = 0;
+        let expected_total_chunks = (num_txs as u64).div_ceil(chunk_size as u64);
+        let mut chunk_indexes_set = HashSet::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok((pegout_ids, chunk_index, num_chunks)) => {
+                    chunk_indexes_set.insert(chunk_index);
+                    assert_eq!(num_chunks, expected_total_chunks);
+                    total_count += pegout_ids.len();
+                }
+                Err(e) => panic!("Error streaming pegout ids: {:?}", e),
+            }
+        }
+        assert_eq!(total_count as u64, num_txs);
+        assert_eq!(
+            chunk_indexes_set.len() as u64,
+            (total_count as u64).div_ceil(chunk_size as u64)
+        );
     }
 
     #[test]
