@@ -260,40 +260,6 @@ pub async fn test_wallet_sync(
     // processes connecting
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
     // mine some btc blocks (needed for confirmed pegout)
-    generate_blocks(&bitcoind_rpc, 1).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // send the pegin transactions to all fed members
-    it_info_print!(
-        "Sending pegin tx: block headers=",
-        meta.block_headers().iter().map(|h| h.block_hash()).collect::<Vec<_>>()
-    );
-    let serialized_pegin_meta = meta.serialize().unwrap();
-    it_info_print!("Serialized pegin meta: ", hex::encode(serialized_pegin_meta.clone()));
-    let mint_contract = mint_contract_instances
-        .first()
-        .cloned()
-        .unwrap()
-        .expect("Botanix Client must be initialized");
-    let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
-    let tx_receipt = mint_contract
-        .mint(
-            eth_destination.clone(),
-            amount,
-            bitcoin_block_height as u32,
-            metadata,
-            ethers::core::types::Address::random(),
-        )
-        .await
-        .unwrap();
-    it_info_print!("Mint Tx Receipt ", tx_receipt);
-
-    // wait for a few blocks to make sure the tx got included and mined
-    it_info_print!("Waiting for botanix event after mint call");
-    await_botanix_event(&mut rx, *MINT_TOPIC).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // mine some btc blocks (needed for confirmed pegout)
     generate_blocks(&bitcoind_rpc, 10).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
