@@ -7,7 +7,7 @@ set -o pipefail
 # "e2e_peer_disconnect" is temporarily disabled as we are waiting for Reth's fix here: https://github.com/paradigmxyz/reth/issues/10016
 # "rpc_node" "batch_pegins" "frost_e2e_failed_signing_disconnect" "frost_e2e_failed_signing" "wallet_sync"
 # Add these back in as we fix the test suite
-tests_to_run=("dkg_flow" "utxo_commitment" "signing_flow" "test_mempool_gossip" "utxo_sync" "state_sync" "frost_e2e_stable" "test_pegin_v1" "invalid_pegin" "invalid_pegout" "block_builder" "test_conflicting_input" "test_round1_then_new_signing_session" "test_track_mempool")
+tests_to_run=("dkg_flow" "utxo_commitment" "signing_flow" "test_mempool_gossip" "utxo_sync" "state_sync" "frost_e2e_stable" "test_pegin_v1" "invalid_pegin" "invalid_pegout" "block_builder" "test_conflicting_input" "test_round1_then_new_signing_session" "test_track_mempool" "wallet_sync")
 
 exit_codes=()
 
