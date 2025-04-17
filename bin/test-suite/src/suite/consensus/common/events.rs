@@ -3,7 +3,7 @@ use crate::{
     suite::consensus::common::poa_node::{is_dkg_ready, FederationMemberTestConfig, Notifications},
 };
 use client::SigningStatus;
-use reth_primitives::B256;
+use reth_primitives::{constants::EPOCH_LENGTH, B256};
 use std::collections::BTreeMap;
 
 pub const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
@@ -59,6 +59,7 @@ pub async fn await_botanix_event(
                 "Canon state notification for engine index =",
                 canon_state_notification.engine_index
             );
+
             let block_receipts = canon_state_notification.tx_receipts;
             it_info_print!("Final block receipts", block_receipts.len());
             for block_receipt in block_receipts.into_iter() {
@@ -69,6 +70,25 @@ pub async fn await_botanix_event(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+pub async fn await_epoch_block(rx: &mut tokio::sync::broadcast::Receiver<Notifications>) {
+    // wait for a few blocks to make sure the tx got included and mined
+    while let Ok(notification) = rx.recv().await {
+        if let Notifications::CanonState(canon_state_notification) = notification {
+            it_info_print!(
+                "Canon state notification for engine index =",
+                canon_state_notification.engine_index
+            );
+
+            if canon_state_notification.block.number.map(|b| b.as_u64()).unwrap_or_default() %
+                EPOCH_LENGTH ==
+                0
+            {
+                break;
             }
         }
     }

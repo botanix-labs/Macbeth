@@ -1,26 +1,64 @@
-use std::{str::FromStr, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+    time::Duration,
+};
 
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
+use client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
-use reth_primitives::botanix::{
-    mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
-    utils::AmountExt,
-};
-
+use futures::StreamExt;
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::Address;
+use reth_primitives::{
+    botanix::{
+        mint_validation::{BURN_TOPIC, MINT_TOPIC},
+        peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
+        utils::AmountExt,
+    },
+    Address,
+};
+use tonic::transport::Channel;
 
 use crate::{
     it_info_print,
-    suite::consensus::{common::events::await_botanix_event, ConsensusIntegrationTestSuite},
+    suite::consensus::{
+        common::events::{await_botanix_event, await_epoch_block},
+        ConsensusIntegrationTestSuite,
+    },
     utils::{generate_blocks, get_gateway_address_with_retry},
 };
+
+pub async fn get_finalized_pegout_ids_from_peers(
+    mut btc_servers: Vec<BtcServerClient<Channel>>,
+) -> HashMap<usize, HashSet<Vec<u8>>> {
+    let mut peers_finalized_pegout_ids: HashMap<usize, HashSet<Vec<u8>>> = HashMap::new();
+    for (index, db_provider) in btc_servers.iter_mut().enumerate() {
+        let mut pegout_ids_stream = db_provider
+            .get_finalized_pegout_ids(GetFinalizedPegoutIdsRequest { chunk_size: 10 })
+            .await
+            .unwrap()
+            .into_inner();
+        while let Some(pegout_ids_chunk) = pegout_ids_stream.next().await {
+            match pegout_ids_chunk {
+                Ok(pegout_ids_chunk) => {
+                    let _ = peers_finalized_pegout_ids
+                        .entry(index)
+                        .or_insert_with(HashSet::new)
+                        .extend(pegout_ids_chunk.ids);
+                }
+                Err(_) => {
+                    continue;
+                }
+            }
+        }
+    }
+    peers_finalized_pegout_ids
+}
 
 #[allow(clippy::too_many_lines)]
 pub async fn test_wallet_sync(
@@ -225,9 +263,6 @@ pub async fn test_wallet_sync(
     generate_blocks(&bitcoind_rpc, 1).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
-    // new -------------------------
-    // retrieve the finalized pegouts db state
-
     // send the pegin transactions to all fed members
     it_info_print!(
         "Sending pegin tx: block headers=",
@@ -262,35 +297,37 @@ pub async fn test_wallet_sync(
     generate_blocks(&bitcoind_rpc, 10).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
 
-    // wait until epoch and extra 5 seconds
+    // get all finalized pegout ids before the poa epoch
+    let peers_finalized_pegout_ids_before = get_finalized_pegout_ids_from_peers(
+        suite.local_context.btc_server_clients.clone().unwrap(),
+    )
+    .await;
 
-    // -------------------------------------------------
-
-    // Retrieve the last block
-    let tip_hash = bitcoind_rpc.get_best_block_hash().expect("valid block hash");
-    let tip_block = bitcoind_rpc.get_block(&tip_hash).expect("valid block");
-    // there should be 2 transaction one of which is the pegout the other is coinbase
-    assert_eq!(tip_block.txdata.len(), 2);
-    let pegout_tx = tip_block.txdata.get(1).unwrap();
-    it_info_print!("Pegout tx: ", pegout_tx);
-
-    assert_eq!(pegout_tx.input.len(), 1);
-    assert_eq!(pegout_tx.input[0].previous_output.txid, pegin_tx.compute_txid());
-    assert_eq!(pegout_tx.input[0].previous_output.vout, vout as u32);
-    assert_eq!(pegout_tx.output.len(), 2);
-    // One of the values here should be the pegout address
-    let mut match_found = false;
-    for output in pegout_tx.output.iter() {
-        let pegout_address = output.script_pubkey.clone();
-        let address_spk = btc_address.script_pubkey();
-        match_found = pegout_address == address_spk;
-        if match_found {
-            break;
-        }
+    // make sure we have all equal pegout ids before
+    let first_peer_finalized_pegout_ids =
+        peers_finalized_pegout_ids_before.get(&0).cloned().unwrap_or_default();
+    for (_peer_id, peer_finalized_pegout_ids) in peers_finalized_pegout_ids_before {
+        assert!(first_peer_finalized_pegout_ids.len() == peer_finalized_pegout_ids.len());
+        assert!(first_peer_finalized_pegout_ids == peer_finalized_pegout_ids);
     }
-    assert!(match_found);
-    // TODO We could do a precise amounts check here
-    assert!(pegout_tx.output[1].value > Amount::from_sat(0));
+
+    // wait until epoch and extra 10 seconds for all wallets to sync
+    await_epoch_block(&mut rx).await;
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    // get all finalized pegout ids after the poa epoch
+    let peers_finalized_pegout_ids_after = get_finalized_pegout_ids_from_peers(
+        suite.local_context.btc_server_clients.clone().unwrap(),
+    )
+    .await;
+
+    // make sure we have all equal pegout ids after
+    let first_peer_finalized_pegout_ids =
+        peers_finalized_pegout_ids_after.get(&0).cloned().unwrap_or_default();
+    for (_peer_id, peer_finalized_pegout_ids) in peers_finalized_pegout_ids_after {
+        assert!(first_peer_finalized_pegout_ids.len() == peer_finalized_pegout_ids.len());
+        assert!(first_peer_finalized_pegout_ids == peer_finalized_pegout_ids);
+    }
 
     Ok(())
 }
