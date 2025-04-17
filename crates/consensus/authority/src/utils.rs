@@ -9,7 +9,7 @@ use bitcoin::{
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
-    wallet::psbt::PsbtOutputExt,
+    wallet::psbt::{PsbtExt, PsbtOutputExt},
 };
 use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
@@ -162,14 +162,14 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 #[allow(dead_code)]
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
@@ -401,78 +401,45 @@ pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<PegoutId> {
         .collect()
 }
 
-/// Validate psbt contains the correct output
+/// Validate psbt contains the correct output and amount including the shared fee
 pub fn validate_psbt_by_output(
     psbt: &Psbt,
     destination: &Address,
     amount: Amount,
+    fee_per_output: Amount,
 ) -> Result<(), PsbtValidationError> {
-    let absolute_fee = match psbt.fee() {
-        Ok(fee) => fee,
-        Err(e) => match e {
-            bitcoin::psbt::Error::NegativeFee => {
-                return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-                    "Psbt has negative fee",
-                )))
-            }
-            bitcoin::psbt::Error::FeeOverflow => {
-                return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-                    "Psbt has fee overflow",
-                )))
-            }
-            _ => {
-                return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-                    "Psbt fee is corrupted",
-                )))
-            }
-        },
-    };
-    if absolute_fee.to_sat() <= 0 {
-        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "Psbt fee is zero",
-        )));
-    }
-    if amount.to_sat() <= 0 {
-        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from("Amount is zero")));
-    }
-    if psbt.outputs.len() <= 0 {
-        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "Missing psbt outputs",
-        )));
-    }
-    let fee_per_output = absolute_fee / psbt.outputs.len() as u64;
-    if fee_per_output >= amount {
-        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "Fee per output is greater than the actual psbt amount",
-        )))
-    }
-
     debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Validating {} outputs in psbt", psbt.outputs.len());
-    match psbt.clone().extract_tx() {
-        Ok(transaction) => {
-            match transaction
-                .output
-                .iter()
-                .find(|output| output.script_pubkey == destination.script_pubkey())
-            {
-                Some(_) => {
-                    debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Found matching output in psbt");
-                    Ok(())
-                }
-                None => {
-                    error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
-                    Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-                        "Failed to find matching output in psbt",
-                    )))
-                }
-            }
-        }
-        Err(e) => {
-            error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt {:?}", e);
-            Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-                "Failed to extract transaction from psbt",
-            )))
-        }
+
+    let Ok(transaction) = psbt.clone().extract_tx() else {
+        error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt");
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "Failed to extract transaction from psbt",
+        )));
+    };
+
+    let Some(output) = transaction
+        .output
+        .iter()
+        .find(|output| output.script_pubkey == destination.script_pubkey())
+    else {
+        error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "Failed to find matching output in psbt",
+        )));
+    };
+
+    let Some(expected_amount) = amount.checked_sub(fee_per_output) else {
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "Calculating expected amount caused an underflow",
+        )));
+    };
+
+    if output.value == expected_amount {
+        Ok(())
+    } else {
+        Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "The output value does not match the expected amount",
+        )))
     }
 }
 
@@ -490,6 +457,13 @@ pub async fn validate_psbt_by_ids(
             "No pegout ids found in psbt",
         )));
     }
+
+    // check if a corresponding output exists in the psbt and is for the right amount
+    let fee_per_output = psbt.fee_per_output(pegout_ids.len() as u64)
+            .map_err(|e| {
+                error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to get fee per output {:?}", e);
+                PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get fee per output"))
+            })?;
 
     // get pegouts from db
     for PegoutId { txid, idx } in pegout_ids.iter() {
@@ -514,8 +488,7 @@ pub async fn validate_psbt_by_ids(
                 PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get pegout data from burn event"))
             })?;
 
-        // check if a corresponding output exists in the psbt
-        validate_psbt_by_output(psbt, &destination, amount)?;
+        validate_psbt_by_output(psbt, &destination, amount, fee_per_output)?;
     }
 
     Ok(())
@@ -675,6 +648,22 @@ mod tests {
         let fee = FEERATE * weight;
         let input_needed = fee.to_sat() + tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
         let value_per_input = input_needed / num_inputs as u64 + 1;
+
+        let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
+        for i in 0..num_inputs {
+            psbt.inputs[i].witness_utxo = Some(bitcoin::TxOut {
+                value: Amount::from_sat(value_per_input),
+                script_pubkey: bitcoin::ScriptBuf::new(),
+            });
+        }
+        psbt
+    }
+
+    fn create_psbt_without_fee(num_inputs: usize, address: &bitcoin::Address) -> Psbt {
+        let tx = create_tx(num_inputs, address);
+
+        let input_needed = tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
+        let value_per_input = input_needed.checked_div(num_inputs as u64).expect("num_inputs > 0");
 
         let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
         for i in 0..num_inputs {
@@ -985,21 +974,20 @@ mod tests {
 
     #[test]
     fn validate_psbt_by_output_should_validate() {
-        let value = bitcoin::Amount::from_sat(1000);
+        let value = bitcoin::Amount::from_sat(1426); // amount plus fee based on how create_psbt works
         let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
         let psbt = create_psbt(1, &destination);
-
-        let result = validate_psbt_by_output(&psbt, &destination, value);
+        let result = validate_psbt_by_output(&psbt, &destination, value, Amount::from_sat(426));
         assert!(result.is_ok());
     }
 
     #[test]
     // TODO(scott): refactor test once `validate_psbt_by_output` accounts for fee per output - see
     // comment in method
-    fn validate_psbt_by_output_should_fail_with_no_matching_value() {
-        let value = bitcoin::Amount::from_sat(1);
+    fn validate_psbt_by_output_should_fail_with_no_matching_destination() {
+        let value = bitcoin::Amount::from_sat(1426); // amount plus fee based on how create_psbt works
         let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
@@ -1009,26 +997,43 @@ mod tests {
             bitcoin::Address::from_str("bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh")
                 .expect("valid address")
                 .assume_checked();
-        let result = validate_psbt_by_output(&psbt, &incorrect_destination, value);
+        let fee_per_output = psbt.fee_per_output(1).expect("valid fee per output");
+        let result = validate_psbt_by_output(&psbt, &incorrect_destination, value, fee_per_output);
         assert!(result.is_err());
     }
 
     #[test]
-    fn validate_psbt_by_output_should_fail_with_no_matching_destination() {
-        let value = bitcoin::Amount::from_sat(1000);
+    fn validate_psbt_by_output_should_fail_with_incorrect_total_amount() {
+        // create a valid address
         let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
+
+        // create a PSBT with some outputs and fee
         let psbt = create_psbt(1, &destination);
 
-        let different_address = bitcoin::Address::from_str(
-            "bcrt1pun3g8y2jjchy0834va959e0swmz8hc7gc2w4ure54ejzyekvp89scegtyh",
-        )
-        .expect("valid address")
-        .assume_checked();
+        // calculate the actual sum of outputs from the PSBT
+        let total_outputs: Amount = psbt.unsigned_tx.output.iter().map(|output| output.value).sum();
 
-        let result = validate_psbt_by_output(&psbt, &different_address, value);
-        assert!(result.is_err());
+        // get the actual fee
+        let actual_fee = psbt.fee().expect("Fee should be calculable");
+
+        // set the expected amount to something different than outputs + fee
+        // this should trigger the validation failure
+        let incorrect_amount = bitcoin::Amount::from_sat(
+            total_outputs.to_sat() + actual_fee.to_sat() + 100, /* add 100 sats to make it
+                                                                 * incorrect */
+        );
+        let fee_per_output = psbt.fee_per_output(1).expect("valid fee per output");
+        match validate_psbt_by_output(&psbt, &destination, incorrect_amount, fee_per_output) {
+            Err(PsbtValidationError::FailedToValidatePsbtByIds(message)) => {
+                println!("Validation failed: {}", message);
+                assert!(message == "The output value does not match the expected amount");
+            }
+            _ => {
+                panic!("Validation should have failed");
+            }
+        };
     }
 
     // fail paths are covered by above tests (ie no matching value, no matching destination)
@@ -1037,13 +1042,14 @@ mod tests {
         let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
-        let mut psbt = create_psbt(1, &destination);
+        let mut psbt = create_psbt_without_fee(1, &destination);
 
         let pegout_id = PegoutId::new([0u8; 32], 0).as_bytes();
         psbt.outputs[0].set_pegout_id(pegout_id);
 
         let result =
             validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
+        println!("Result: {:?}", result);
         assert!(result.is_ok());
     }
 
