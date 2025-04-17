@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 
 use ethers::abi::decode;
 
@@ -193,6 +193,7 @@ pub fn try_parse_mint_event(
         .into_bytes()
         .ok_or(ParseMintEventError::InvalidLog("converting metadata param to bytes"))?;
 
+    let mut outpoints = HashSet::new();
     let meta = {
         let mut proofs = Vec::new();
         let mut offset = 0;
@@ -207,6 +208,13 @@ pub fn try_parse_mint_event(
                     error!("Failed to parse pegin meta: {:?}", err);
                     err
                 })?;
+            if !outpoints.insert(*proof.outpoint()) {
+                return Err(ParseMintEventError::InvalidPeginData {
+                    error: PeginDataError::Invalid("Duplicate outpoints"),
+                    revert_address: destination,
+                    revert_amount: amount,
+                });
+            }
             proofs.push(proof);
             offset += proof_size;
         }
