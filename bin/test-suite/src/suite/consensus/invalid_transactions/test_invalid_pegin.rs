@@ -35,11 +35,30 @@ async fn generate_invalid_pegin_metas(
     headers: Vec<Header>,
     provider: Provider<Http>,
 ) -> Vec<(Vec<PeginMeta>, &'static str)> {
-    let mut invalid_pegin_meta_cases = Vec::new();
-
     // Destructure pegin data for easier access
     let (pegin_tx1, vout1, pmt1) = pegin1_data;
     let (pegin_tx2, vout2, pmt2) = pegin2_data;
+    
+    let mut invalid_pegin_meta_cases = Vec::new();
+
+    // Create invalid pegin meta with invalid reference hash for v1
+    let invalid_ref_hash_meta = vec![PeginMeta::V1(PeginMetaV1 {
+        inner: PeginMetaV0 {
+            version: PEGIN_META_VERSION_V1,
+            outpoint: bitcoin::OutPoint::new(pegin_tx1.compute_txid(), vout1),
+            address: eth_account.clone(),
+            aggregate_publickey: secp256k1::PublicKey::from_str(
+                gateway_address_response.aggregate_public_key.as_str(),
+            )
+            .expect("valid public key"),
+            tx: pegin_tx1.clone(),
+            merkle_proof: pmt1.clone(),
+            block_headers: headers.clone(),
+        },
+        ref_block_hash: B256::from_slice(&[0; 32]),
+    })];
+    invalid_pegin_meta_cases.push((invalid_ref_hash_meta, "Invalid reference hash"));
+
     // Create invalid pegin meta with empty headers list
     let empty_headers_meta = vec![PeginMeta::V0(PeginMetaV0 {
         version: PEGIN_META_VERSION_V0,
@@ -70,24 +89,6 @@ async fn generate_invalid_pegin_metas(
         block_headers: headers.clone(),
     })];
     invalid_pegin_meta_cases.push((invalid_pmt_meta, "Invalid merkle proof"));
-
-    // Create invalid pegin meta with invalid reference hash for v1
-    let invalid_ref_hash_meta = vec![PeginMeta::V1(PeginMetaV1 {
-        inner: PeginMetaV0 {
-            version: PEGIN_META_VERSION_V1,
-            outpoint: bitcoin::OutPoint::new(pegin_tx1.compute_txid(), vout1),
-            address: eth_account.clone(),
-            aggregate_publickey: secp256k1::PublicKey::from_str(
-                gateway_address_response.aggregate_public_key.as_str(),
-            )
-            .expect("valid public key"),
-            tx: pegin_tx1.clone(),
-            merkle_proof: pmt1.clone(),
-            block_headers: headers.clone(),
-        },
-        ref_block_hash: B256::from_slice(&[0; 32]),
-    })];
-    invalid_pegin_meta_cases.push((invalid_ref_hash_meta, "Invalid reference hash for v1"));
 
     // Create invalid pegin meta v1 with incorrect version
     let latest_block_with_edh = provider

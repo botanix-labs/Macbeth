@@ -468,27 +468,30 @@ where
                         })
                     }
                     (1, Some(hash)) => {
-                        if let Some(block) = provider
-                            .find_block_by_hash(hash, reth_provider::BlockSource::Any)
-                            .map_err(|_| MintContractError::InvalidPeginData {
-                                error: "Reference block hash not found".to_string(),
-                                revert_address: pegin_data.account,
-                                revert_amount: pegin_data.amount,
-                            })?
-                        {
-                            let header = block.header;
-                            let package = header
-                                .botanix_consensus_package(
-                                    self.bitcoin_network,
-                                    self.bitcoind_factory.clone(),
-                                )
-                                .map_err(|_| MintContractError::InvalidPeginData {
-                                    error: "Failed to get botanix consensus package".to_string(),
+                        match provider.find_block_by_hash(hash, reth_provider::BlockSource::Any) {
+                            Ok(Some(block)) => {
+                                let header = block.header;
+                                let package = header
+                                    .botanix_consensus_package(
+                                        self.bitcoin_network,
+                                        self.bitcoind_factory.clone(),
+                                    )
+                                    .map_err(|_| MintContractError::InvalidPeginData {
+                                        error: "Failed to get botanix consensus package".to_string(),
+                                        revert_address: pegin_data.account,
+                                        revert_amount: pegin_data.amount,
+                                    })?;
+                                bitcoin_checkpoint = package.bitcoin_checkpoint;
+                            }
+                            Ok(None) => {
+                                return Err(MintContractError::InvalidPeginData {
+                                    error: "No block found for reference block hash".to_string(),
                                     revert_address: pegin_data.account,
                                     revert_amount: pegin_data.amount,
-                                })?;
-                            bitcoin_checkpoint = package.bitcoin_checkpoint;
-                        }
+                                })
+                            }
+                            Err(_) => panic!("Database error fetching reference block hash")
+                        };
                     }
                     (0, Some(_)) => {
                         return Err(MintContractError::InvalidPeginData {
