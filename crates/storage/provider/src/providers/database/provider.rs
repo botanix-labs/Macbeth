@@ -13,14 +13,18 @@ use crate::{
     ProviderError, PruneCheckpointReader, PruneCheckpointWriter, RequestsProvider, RevertsInit,
     SnapshotReader, SnapshotWriter, StageCheckpointReader, StateChangeWriter, StateProviderBox,
     StateWriter, StatsReader, StorageReader, StorageTrieWriter, TransactionVariant,
-    TransactionsProvider, TransactionsProviderExt, TrieWriter, WithdrawalsProvider,
+    TransactionsProvider, TransactionsProviderExt, TrieWriter, WalletStateSyncReader,
+    WalletStateSyncWriter, WithdrawalsProvider,
 };
 use itertools::{izip, Itertools};
 use rayon::slice::ParallelSliceMut;
 use reth_chainspec::{ChainInfo, ChainSpec, EthereumHardforks};
 use reth_db::{
     cursor::DbDupCursorRW,
-    models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
+    models::{
+        ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
+        WalletStateSyncRecord,
+    },
     tables, BlockNumberList, PlainAccountState, PlainStorageState,
 };
 use reth_db_api::{
@@ -40,7 +44,7 @@ use reth_execution_types::{Chain, ExecutionOutcome};
 use reth_network_p2p::headers::downloader::SyncTarget;
 use reth_primitives::{
     keccak256, Account, Address, Block, BlockHash, BlockHashOrNumber, BlockNumber,
-    BlockWithSenders, Bytecode, GotExpected, Header, Receipt, Requests, SealedBlock,
+    BlockWithSenders, Bytecode, Bytes, GotExpected, Header, Receipt, Requests, SealedBlock,
     SealedBlockWithSenders, SealedHeader, StaticFileSegment, StorageEntry, TransactionMeta,
     TransactionSigned, TransactionSignedEcRecovered, TransactionSignedNoHash, TxHash, TxNumber,
     Withdrawal, Withdrawals, B256, U256,
@@ -3824,6 +3828,83 @@ impl<TX: DbTx> SnapshotReader for DatabaseProvider<TX> {
     }
 }
 
+impl<TX: DbTx> WalletStateSyncReader for DatabaseProvider<TX> {
+    fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>> {
+        Ok(self
+            .tx
+            .cursor_read::<tables::WalletStateSyncs>()?
+            .walk(None)?
+            .collect::<Result<HashMap<_, _>, _>>()?
+            .values()
+            .cloned()
+            .collect::<Vec<_>>())
+    }
+
+    fn get_state_sync_record_peer_ids(&self) -> ProviderResult<Vec<PeerID>> {
+        Ok(self
+            .tx
+            .cursor_read::<tables::WalletStateSyncs>()?
+            .walk(None)?
+            .collect::<Result<HashMap<_, _>, _>>()?
+            .values()
+            .map(|val| val.get_peer_id())
+            .collect::<Vec<_>>())
+    }
+
+    fn get_state_sync_record_by_peer_id(
+        &self,
+        peer_id: PeerID,
+    ) -> ProviderResult<Option<WalletStateSyncRecord>> {
+        Ok(self
+            .tx
+            .cursor_read::<tables::WalletStateSyncs>()?
+            .seek_exact(peer_id)
+            .ok()
+            .flatten()
+            .map(|x| x.1))
+    }
+
+    fn get_state_sync_records_count(&self) -> ProviderResult<usize> {
+        Ok(self.tx.cursor_read::<tables::WalletStateSyncs>()?.walk(None)?.count())
+    }
+
+    fn get_minimum_superset(
+        &self,
+        min_required_criterion: u64,
+    ) -> ProviderResult<(bool, HashSet<Bytes>)> {
+        let already_reached_wallet_state_sync_peers = self
+            .tx
+            .cursor_read::<tables::WalletStateSyncs>()?
+            .walk(None)?
+            .filter_map(|item| match item {
+                Ok((peer_id, wallet_state_sync_record)) => {
+                    if wallet_state_sync_record.get_data().len() as u64 >=
+                        wallet_state_sync_record.get_chunks_count()
+                    {
+                        return Some((peer_id, wallet_state_sync_record));
+                    }
+                    None
+                }
+                Err(_) => None,
+            })
+            .collect::<HashMap<_, _>>();
+
+        if already_reached_wallet_state_sync_peers.len() < min_required_criterion as usize {
+            return Ok((false, HashSet::new()));
+        }
+
+        let synced_peers_superset = already_reached_wallet_state_sync_peers.into_iter().fold(
+            HashSet::new(),
+            |mut acc, (_, record)| {
+                acc.extend(record.get_data().to_vec());
+                acc
+            },
+        );
+
+        Ok((true, synced_peers_superset))
+    }
+}
+
 impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
     fn create_new_snapshot_sync(
         &self,
@@ -3956,6 +4037,55 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
             return Ok(())
         }
         Ok(self.tx.cursor_write::<tables::ChunkBlocks>()?.walk_range(range)?.delete_current()?)
+    }
+}
+
+impl<TX: DbTxMut + DbTx> WalletStateSyncWriter for DatabaseProvider<TX> {
+    fn create_new_state_sync_record(
+        &self,
+        uuid: UuidID,
+        peer_id: PeerID,
+        chunks_count: u64,
+        data: Option<Vec<Bytes>>,
+    ) -> ProviderResult<PeerID> {
+        let wallet_state_sync_record =
+            WalletStateSyncRecord::new(peer_id, uuid, chunks_count, data);
+        self.tx.put::<tables::WalletStateSyncs>(peer_id, wallet_state_sync_record)?;
+        Ok(peer_id)
+    }
+
+    fn append_data_to_state_sync_record(
+        &self,
+        peer_id: PeerID,
+        data: Vec<Bytes>,
+    ) -> ProviderResult<()> {
+        let wallet_state_sync_record = self
+            .tx
+            .cursor_write::<tables::WalletStateSyncs>()?
+            .seek_exact(peer_id)?
+            .map(|(_, record)| record);
+
+        if let Some(mut wallet_state_sync_record) = wallet_state_sync_record {
+            wallet_state_sync_record.append_data_chunks(data);
+            self.tx.put::<tables::WalletStateSyncs>(peer_id, wallet_state_sync_record)?;
+        }
+        Ok(())
+    }
+
+    fn remove_state_sync_record_per_peer_id(&self, peer_id: PeerID) -> ProviderResult<()> {
+        self.remove::<tables::WalletStateSyncs>(peer_id..=peer_id)?;
+        Ok(())
+    }
+
+    fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
+        let state_sync_records = self.get_state_sync_record_peer_ids()?;
+        if state_sync_records.is_empty() {
+            return Ok(());
+        }
+        for state_sync_record in state_sync_records {
+            self.remove::<tables::WalletStateSyncs>(state_sync_record..=state_sync_record)?;
+        }
+        Ok(())
     }
 }
 

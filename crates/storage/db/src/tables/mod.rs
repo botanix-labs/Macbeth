@@ -26,7 +26,8 @@ use reth_db_api::{
         chunks::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
         client_version::ClientVersion,
         storage_sharded_key::StorageShardedKey,
-        AccountBeforeTx, CompactU256, ShardedKey, StoredBlockBodyIndices, StoredBlockWithdrawals,
+        AccountBeforeTx, CompactU256, PeerID, ShardedKey, StoredBlockBodyIndices,
+        StoredBlockWithdrawals, WalletStateSyncRecord,
     },
     table::{Decode, DupSort, Encode, Table},
 };
@@ -310,6 +311,9 @@ tables! {
 
     /// Store snapshot id to snapshot data.
     table Snapshots<Key = SnapshotId, Value = Snapshot>;
+
+    /// Store wallet state sync record id to wallet state sync data.
+    table WalletStateSyncs<Key = PeerID, Value = WalletStateSyncRecord>;
 
     /// Store chunk id to chunk data.
     table Chunks<Key = ChunkId, Value = SnapshotChunk>;

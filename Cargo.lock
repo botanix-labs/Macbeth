@@ -9074,6 +9074,7 @@ dependencies = [
  "serde",
  "sha2 0.10.8",
  "test-fuzz",
+ "uuid 1.16.0",
 ]
 
 [[package]]

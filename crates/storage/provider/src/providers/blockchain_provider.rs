@@ -6,7 +6,7 @@ use crate::{
     ProviderFactory, PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt,
     RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader, StateProviderBox,
     StateProviderFactory, StaticFileProviderFactory, TransactionVariant, TransactionsProvider,
-    WithdrawalsProvider,
+    WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::{
@@ -14,7 +14,10 @@ use reth_chain_state::{
     MemoryOverlayStateProvider,
 };
 use reth_chainspec::{ChainInfo, ChainSpec};
-use reth_db::models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId};
+use reth_db::models::{
+    ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
+    WalletStateSyncRecord,
+};
 use reth_db_api::{
     database::Database,
     models::{AccountBeforeTx, StoredBlockBodyIndices},
@@ -22,7 +25,7 @@ use reth_db_api::{
 use reth_evm::ConfigureEvmEnv;
 use reth_primitives::{
     Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId, BlockNumHash, BlockNumber,
-    BlockNumberOrTag, BlockWithSenders, EthereumHardforks, Header, Receipt, SealedBlock,
+    BlockNumberOrTag, BlockWithSenders, Bytes, EthereumHardforks, Header, Receipt, SealedBlock,
     SealedBlockWithSenders, SealedHeader, TransactionMeta, TransactionSigned,
     TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals, B256, U256,
 };
@@ -31,6 +34,7 @@ use reth_stages_types::{StageCheckpoint, StageId};
 use reth_storage_errors::provider::ProviderResult;
 use revm::primitives::{BlockEnv, CfgEnvWithHandlerCfg};
 use std::{
+    collections::HashSet,
     ops::{Add, Bound, RangeBounds, RangeInclusive, Sub},
     sync::Arc,
     time::Instant,
@@ -1639,6 +1643,68 @@ where
 
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
         self.database.get_first_chunk_id()
+    }
+}
+
+impl<DB> WalletStateSyncWriter for BlockchainProvider2<DB>
+where
+    DB: Database + Sync + Send,
+{
+    fn create_new_state_sync_record(
+        &self,
+        uuid: UuidID,
+        peer_id: PeerID,
+        chunks_count: u64,
+        data: Option<Vec<Bytes>>,
+    ) -> ProviderResult<PeerID> {
+        self.database.create_new_state_sync_record(uuid, peer_id, chunks_count, data)
+    }
+
+    fn append_data_to_state_sync_record(
+        &self,
+        peer_id: PeerID,
+        data: Vec<Bytes>,
+    ) -> ProviderResult<()> {
+        self.database.append_data_to_state_sync_record(peer_id, data)
+    }
+
+    fn remove_state_sync_record_per_peer_id(&self, peer_id: PeerID) -> ProviderResult<()> {
+        self.database.remove_state_sync_record_per_peer_id(peer_id)
+    }
+
+    fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
+        self.database.remove_all_state_sync_records()
+    }
+}
+
+impl<DB> WalletStateSyncReader for BlockchainProvider2<DB>
+where
+    DB: Database + Sync + Send,
+{
+    fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>> {
+        self.database.get_state_sync_records()
+    }
+
+    fn get_state_sync_record_peer_ids(&self) -> ProviderResult<Vec<PeerID>> {
+        self.database.get_state_sync_record_peer_ids()
+    }
+
+    fn get_state_sync_record_by_peer_id(
+        &self,
+        peer_id: PeerID,
+    ) -> ProviderResult<Option<WalletStateSyncRecord>> {
+        self.database.get_state_sync_record_by_peer_id(peer_id)
+    }
+
+    fn get_state_sync_records_count(&self) -> ProviderResult<usize> {
+        self.database.get_state_sync_records_count()
+    }
+
+    fn get_minimum_superset(
+        &self,
+        min_required_criterion: u64,
+    ) -> ProviderResult<(bool, HashSet<Bytes>)> {
+        self.database.get_minimum_superset(min_required_criterion)
     }
 }
 

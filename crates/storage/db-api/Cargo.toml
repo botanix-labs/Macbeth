@@ -38,6 +38,7 @@ reth-storage-errors = { workspace = true }
 reth-trie-common = { workspace = true }
 serde = { workspace = true, default-features = false }
 sha2 = { workspace = true }
+uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
 

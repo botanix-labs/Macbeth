@@ -25,7 +25,7 @@ use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
-    SnapshotWriter, StateProviderFactory,
+    SnapshotWriter, StateProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
 };
 
 use reth_tasks::TaskExecutor;
@@ -76,6 +76,8 @@ where
         + Clone
         + SnapshotReader
         + SnapshotWriter
+        + WalletStateSyncWriter
+        + WalletStateSyncReader
         + CanonChainTracker
         + CanonStateSubscriptions
         + 'static,
@@ -254,6 +256,7 @@ where
                     frost_handle.clone().expect("Requires frost handle"),
                     task_executor.clone(),
                     frost_config.clone().expect("frost config exists"),
+                    provider_factory.clone(),
                 );
                 Some(wallet_state_sync_engine)
             } else {
