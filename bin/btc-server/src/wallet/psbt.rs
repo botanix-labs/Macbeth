@@ -261,14 +261,25 @@ pub trait PsbtExt: BorrowMut<Psbt> {
 
     /// Get the fee per output for this PSBT.
     /// Self only needs to be mutable so it can be included in this trait.
-    fn fee_per_output(&self, num_outputs: u64) -> Result<Amount, Box<dyn std::error::Error>> {
+    fn fee_per_output(&self, num_outputs: u64) -> Result<Amount, PsbtFeePerOutputError> {
         // calculate fee per output which is shared across all outputs
         let psbt: &Psbt = self.borrow();
         let fee: Amount = psbt.fee()?;
-        Ok(fee / num_outputs)
+        let fee_per_output: Amount =
+            fee.checked_div(num_outputs).ok_or(PsbtFeePerOutputError::DivideByZero)?;
+        Ok(fee_per_output)
     }
 }
 impl PsbtExt for Psbt {}
+
+/// Errors that can occur when calculating the fee per output for a PSBT.
+#[derive(Debug, thiserror::Error)]
+pub enum PsbtFeePerOutputError {
+    #[error("Failed to calculate fee: {0}")]
+    FeeError(#[from] bitcoin::psbt::Error),
+    #[error("Division by zero error")]
+    DivideByZero,
+}
 
 /// Errors that can occur during the conversion from a PSBT to
 /// a vector of signing packages for Frost signature generation and aggregation.
