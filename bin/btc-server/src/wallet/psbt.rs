@@ -2,7 +2,7 @@ use std::{borrow::BorrowMut, collections::BTreeMap};
 
 use bitcoin::{
     psbt::{raw::ProprietaryKey, Input as PsbtInput, Output as PsbtOutput, Psbt},
-    OutPoint, TapSighash, TapSighashType, TxOut,
+    Amount, OutPoint, TapSighash, TapSighashType, TxOut,
 };
 use bitcoin_hashes::Hash;
 use frost_secp256k1_tr as frost;
@@ -257,6 +257,15 @@ pub trait PsbtExt: BorrowMut<Psbt> {
             ret.push(signing_package);
         }
         Ok(ret)
+    }
+
+    /// Get the fee per output for this PSBT.
+    /// Self only needs to be mutable so it can be included in this trait.
+    fn fee_per_output(&self, num_outputs: u64) -> Result<Amount, Box<dyn std::error::Error>> {
+        // calculate fee per output which is shared across all outputs
+        let psbt: &Psbt = self.borrow();
+        let fee: Amount = psbt.fee()?;
+        Ok(fee / num_outputs)
     }
 }
 impl PsbtExt for Psbt {}
