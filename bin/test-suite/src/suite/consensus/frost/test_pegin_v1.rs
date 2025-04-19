@@ -1,6 +1,6 @@
 use std::{str::FromStr, time::Duration};
 
-use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
+use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
 use ethers::{
     prelude::Provider,
@@ -29,6 +29,7 @@ use crate::{
     utils::{generate_blocks, get_gateway_address_with_retry},
 };
 
+#[allow(clippy::too_many_lines)]
 pub async fn test_pegin_v1(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
@@ -122,6 +123,7 @@ pub async fn test_pegin_v1(
 
     // get the block hash of the block with the confirmed pegin tx
     let conf_hash = tx_res.info.blockhash.expect("pegin confirmed");
+    it_info_print!("Conf hash", conf_hash);
     let checkpoint_block_height =
         bitcoind_rpc.get_block_info(&btc_checkpoint_hash).expect("valid block info").height;
     let checkpoint_header =
@@ -131,6 +133,40 @@ pub async fn test_pegin_v1(
     it_info_print!("Block info", conf_block_info);
 
     let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[false, true]);
+
+    // based on timing the headers list is sometimes only the checkpoint
+    let block_headers = if conf_hash == btc_checkpoint_hash {
+        vec![checkpoint_header]
+    } else {
+        let mut headers = Vec::new();
+        let mut current = checkpoint_header;
+
+        loop {
+            headers.push(current);
+            if current.block_hash() == conf_hash {
+                break;
+            }
+            // check if we’ve hit genesis block
+            // this should not happen
+            assert!(
+                (current.prev_blockhash != bitcoin::BlockHash::all_zeros()),
+                "{} is not an ancestor of {}",
+                conf_hash,
+                checkpoint_header.block_hash()
+            );
+            // step one block back
+            current = bitcoind_rpc
+                .get_block_header(&current.prev_blockhash)
+                .expect("header lookup failed");
+        }
+
+        headers.reverse();
+        headers
+    };
+    it_info_print!(
+        "Block headers",
+        block_headers.iter().map(bitcoin::block::Header::block_hash).collect::<Vec<_>>()
+    );
 
     // create pegin meta
     let bitcoin_block_height = conf_block_info.height;
@@ -145,7 +181,7 @@ pub async fn test_pegin_v1(
             .expect("valid public key"),
             tx: pegin_tx.clone(),
             merkle_proof: pmt,
-            block_headers: vec![checkpoint_header],
+            block_headers,
         },
         ref_block_hash: FixedBytes::<32>::from_str(&latest_block_hash.as_str())
             .expect("valid hash"),
@@ -159,13 +195,17 @@ pub async fn test_pegin_v1(
         meta: vec![meta.clone()],
     };
     let checkpoint = { (checkpoint_header, checkpoint_block_height as u32) };
-    pegin_data
-        .validate(
-            &checkpoint,
-            &secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
-                .unwrap(),
-        )
-        .expect("pegin data should be valid!");
+    match pegin_data.validate(
+        &checkpoint,
+        &secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
+            .unwrap(),
+    ) {
+        Ok(_) => it_info_print!("Pegin data successfully validated"),
+        Err(e) => {
+            it_info_print!("Pegin data validation failed", e);
+            panic!();
+        }
+    };
     it_info_print!("Pegindata successfully validated");
 
     // send the pegin transactions to all fed members
