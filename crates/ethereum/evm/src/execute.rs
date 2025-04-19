@@ -6,8 +6,6 @@ use crate::{
 };
 use btcserverlib::pegout_id::PegoutId;
 use core::fmt::Display;
-use std::collections::HashMap;
-use tracing::{error, info};
 use reth_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
@@ -18,7 +16,8 @@ use reth_ethereum_consensus::validate_block_post_execution;
 use reth_evm::{
     execute::{
         BatchExecutor, BlockExecutionError, BlockExecutionInput, BlockExecutionOutput,
-        BlockExecutorProvider, BlockValidationError, Executor, ProviderError,
+        BlockExecutorProvider, BlockValidationError, Executor, InternalBlockExecutionError,
+        ProviderError,
     },
     system_calls::{
         apply_beacon_root_contract_call, apply_consolidation_requests_contract_call,
@@ -49,8 +48,12 @@ use reth_revm::{
     Evm, State,
 };
 use revm_primitives::{
-    db::{Database, DatabaseCommit}, Account, BlockEnv, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, ExecutionResult, ResultAndState
+    db::{Database, DatabaseCommit},
+    hex, Account, BlockEnv, CfgEnvWithHandlerCfg, EVMError, EnvWithHandlerCfg, ExecutionResult,
+    ResultAndState,
 };
+use std::collections::HashMap;
+use tracing::{error, info};
 
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
@@ -263,9 +266,21 @@ where
             // Store original sender account info before transaction execution.
             // This is used later to partially revert the state if botanix specific validation
             // fails.
-            let mut original_sender_info = (evm.db_mut().basic(*sender)
-                .map_err(|e| BlockExecutionError::other(e.into()))?).unwrap_or_default();
-
+            // If the sender is not found in the state, we need to error because there is no balance
+            // to subtract from. This shouldn't happen because the tx would have failed.
+            let sender_db_error =
+                BlockExecutionError::Internal(InternalBlockExecutionError::Other(
+                    format!("DB error getting sender: {}", hex::encode(sender)).into(),
+                ));
+            let sender_not_found =
+                BlockExecutionError::Internal(InternalBlockExecutionError::Other(
+                    format!("Sender not found in state: {}", hex::encode(sender)).into(),
+                ));
+            let mut original_sender_info = evm
+                .db_mut()
+                .basic(*sender)
+                .map_err(|_| sender_db_error)?
+                .ok_or(sender_not_found)?;
 
             // Execute transaction.
             let ResultAndState { mut result, mut state } = evm.transact().map_err(move |err| {
@@ -283,7 +298,7 @@ where
                 }
             })?;
 
-            // calclaute the total block fees
+            // calculate the total transaction fee
             let transaction_fee =
                 transaction.clone().effective_tip_per_gas(base_fee).expect("base fee is valid");
             total_block_fees += transaction_fee * u128::from(result.gas_used());
@@ -316,22 +331,47 @@ where
 
                             // Determine the total gas cost: gas_used * effective_gas_price
                             // Base fee is needed for effective_gas_price calculation
-                            let base_fee = evm.block().basefee;
-                            let effective_gas_price = transaction.effective_gas_price(Some(base_fee.to::<u64>()));
-                            let total_gas_cost = U256::from(gas_used) * U256::from(effective_gas_price);
-                
-                            // get the new nonce. This should be original nonce + 1
-                            let new_nonce = state.get(sender).unwrap().info.nonce;
-                            
+                            let effective_gas_price = transaction.effective_gas_price(base_fee);
+                            let total_gas_cost =
+                                U256::from(gas_used) * U256::from(effective_gas_price);
+
+                            // Get the new nonce. This should be original nonce + 1
+                            let new_nonce = state
+                                .get(sender)
+                                .ok_or(BlockExecutionError::Internal(
+                                    InternalBlockExecutionError::Other(
+                                        format!(
+                                            "Sender not found in state: {}",
+                                            hex::encode(sender)
+                                        )
+                                        .into(),
+                                    ),
+                                ))?
+                                .info
+                                .nonce;
+
                             // Clear ALL state changes introduced by the transaction.
+                            // State is the diff of the previous state and the new state after the
+                            // transaction.
                             state.clear();
 
-                            // Now, re-apply *only* the total gas cost and nonce change to the pre-transaction state.
+                            // Now, re-apply *only* the total gas cost and nonce change to the
+                            // pre-transaction state.
                             original_sender_info.nonce = new_nonce;
-                            original_sender_info.balance -= total_gas_cost;
+                            // There shouldn't be an underflow because the tx would have failed if
+                            // the sender didn't have enough balance.
+                            original_sender_info.balance = original_sender_info
+                                .balance
+                                .checked_sub(total_gas_cost)
+                                .ok_or(BlockExecutionError::Internal(
+                                    InternalBlockExecutionError::Other(
+                                        "Sender balance underflow".to_string().into(),
+                                    ),
+                                ))?;
 
                             // Re-insert the sender's account with the original info but updated
                             // nonce and balance (reflecting only gas cost).
+                            // Create new diff with only above changes.
                             let reverted_account = Account {
                                 info: original_sender_info,
                                 storage: HashMap::new(), // Storage changes remain reverted.
@@ -448,7 +488,8 @@ where
                                         self.bitcoind_factory.clone(),
                                     )
                                     .map_err(|_| MintContractError::InvalidPeginData {
-                                        error: "Failed to get botanix consensus package".to_string(),
+                                        error: "Failed to get botanix consensus package"
+                                            .to_string(),
                                         revert_address: pegin_data.account,
                                         revert_amount: pegin_data.amount,
                                     })?;
@@ -461,7 +502,7 @@ where
                                     revert_amount: pegin_data.amount,
                                 })
                             }
-                            Err(_) => panic!("Database error fetching reference block hash")
+                            Err(_) => panic!("Database error fetching reference block hash"),
                         };
                     }
                     (0, Some(_)) => {
