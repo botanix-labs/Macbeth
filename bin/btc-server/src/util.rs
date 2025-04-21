@@ -444,9 +444,10 @@ pub(crate) fn validate_outputs(
         let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
         let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
 
-        let tx = &psbt.unsigned_tx;
-        let has_correct_change = tx.output[idx].script_pubkey == expected_script_pubkey;
+        let change_output =
+            psbt.unsigned_tx.output.get(idx).ok_or(ValidateOutputsError::InvalidChangeOutput)?;
 
+        let has_correct_change = change_output.script_pubkey == expected_script_pubkey;
         if !has_correct_change {
             return Err(ValidateOutputsError::InvalidChangeOutput);
         }
