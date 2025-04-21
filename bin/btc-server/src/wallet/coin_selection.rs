@@ -285,4 +285,58 @@ mod tests {
             total_amount_being_spent - desired_amount_per_output * pegout_outputs.len() as u64
         );
     }
+
+    #[test]
+    fn test_pegout_fee_overflow() {
+        let change_script = random_p2tr_keyspend_script();
+        let output_script = random_p2wpkh_script();
+
+        // Create inputs with sufficient value
+        let input_value = Amount::from_sat(10_000);
+        let input_script = random_p2tr_keyspend_script();
+
+        // Create the TxOut that create_tx will use
+        let tx_output_template = TxOut { script_pubkey: input_script.clone(), value: input_value };
+
+        let utxo1_tx = create_tx(1, 1, Some(tx_output_template.clone()));
+        let utxo1 = Utxo::new(
+            OutPoint::new(utxo1_tx.compute_txid(), 0),
+            tx_output_template.clone(),
+            None,
+            None,
+        );
+        let utxo2_tx = create_tx(1, 1, Some(tx_output_template.clone()));
+        let utxo2 = Utxo::new(
+            OutPoint::new(utxo2_tx.compute_txid(), 0),
+            tx_output_template,
+            None,
+            None,
+        );
+
+        let mut available_utxos = HashMap::new();
+        available_utxos.insert(utxo1.outpoint, utxo1);
+        available_utxos.insert(utxo2.outpoint, utxo2);
+
+        // Create an output with a small value
+        let output_value = Amount::from_sat(500);
+        let outputs = vec![(
+            TxOut { script_pubkey: output_script, value: output_value },
+            create_random_pegout_id(),
+        )];
+
+        // Set a high fee rate
+        let fee_rate = FeeRate::from_sat_per_vb(100).unwrap();
+
+        let required_utxos = HashMap::new();
+        let result = coin_selection(
+            available_utxos,
+            required_utxos,
+            outputs,
+            fee_rate,
+            change_script.clone(),
+        );
+
+        // Assert that the specific error is returned
+        assert_eq!(result.err(), Some(CoinSelectionError::PegoutFeeOverflow));
+    }
 }
