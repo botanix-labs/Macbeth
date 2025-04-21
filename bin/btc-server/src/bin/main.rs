@@ -855,9 +855,13 @@ where
         // Signers may or may not have the same pending pegouts depending on their liveliness.
         // When signers sync with the network they will add the pending pegouts to their
         // database but some of them may have already been honored when they were offline.
-        // Signers need to track the pending pegouts included in the psbt and clear the pending pegouts from the database.
+        // Signers need to track the pending pegouts included in the psbt and clear the pending
+        // pegouts from the database.
 
         // Extract pegout ids from the psbt to store with the tx
+        if psbt.outputs.len() > UPPER_PEGOUT_BOUND {
+            return Err(badarg!("Too many pegouts in the psbt"));
+        }
         let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
         for output in psbt.outputs.iter() {
             if let Some(pegout_id) = output.pegout_id() {
@@ -866,11 +870,11 @@ where
                         SigningError::Round2(SigningRound2Error::FailedToDeserializePegoutId)
                     })
                     .to_status()?;
+                psbt_pegout_ids.push(pegout_id);
             }
         }
         // Get the matching pending pegouts
         let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
-        let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
         let psbt_pending_pegouts = pending_pegouts
             .into_iter()
             .filter(|p| psbt_pegout_ids.contains(&p.id))
