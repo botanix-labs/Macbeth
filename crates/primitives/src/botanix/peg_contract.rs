@@ -217,7 +217,9 @@ impl PeginMetaV0 {
                             remaining_bytes: bytes.len(),
                         });
                     }
-                    let mut block_headers = Vec::with_capacity(len as usize);
+
+                    let cap = len.min(MAX_BITCOIN_BLOCK_HEADERS) as usize;
+                    let mut block_headers = Vec::with_capacity(cap);
                     for _ in 0..len {
                         block_headers.push(Decodable::consensus_decode(&mut bytes)?);
                     }
