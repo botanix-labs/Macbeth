@@ -79,7 +79,7 @@ impl PeginData {
             let merkle = &pegin.merkle_proof;
             let mut txids = Vec::with_capacity(1);
             let mut idxs = Vec::with_capacity(1);
-            let root = merkle.extract_matches(&mut txids, &mut idxs).unwrap();
+            let root = merkle.extract_matches(&mut txids, &mut idxs)?;
             if !txids.contains(&pegin.outpoint.txid) {
                 return Err(PeginDataError::Invalid("invalid merkle proof: inclusion"));
             }
@@ -408,7 +408,7 @@ pub enum PeginDataError {
     #[error("invalid tweak: failed to tweak aggregate public key")]
     InvalidTweak,
     /// Frost related error
-    #[error("frost error {0}")]
+    #[error("frost error: {0}")]
     FrostError(frost::Error),
     /// Claimed length of block headers is greater than what could fit in the remaining bytes of
     /// the message.
@@ -419,6 +419,9 @@ pub enum PeginDataError {
         /// the actual number of bytes remaining in the message
         remaining_bytes: usize,
     },
+    /// Invalid merkle block: failed to extract matching Txid's.
+    #[error("invalid merkle block: {0}")]
+    InvalidMerkleBlock(#[from] bitcoin::merkle_tree::MerkleBlockError),
     /// Error when the number of block headers exceeds the maximum allowable limit.
     #[error("too many bitcoin block headers {0}")]
     TooManyBlockHeaders(u64),
