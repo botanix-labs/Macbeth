@@ -402,14 +402,22 @@ pub(crate) fn validate_outputs(
     let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
     let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
-    let mut change_outputs: Vec<Output> = Vec::with_capacity(psbt.outputs.len());
-    // TODO should get iter() for output pegout ids and impl this ext trait
-    for output in psbt.outputs.iter() {
+    let mut change_output: Option<usize> = None;
+
+    for (idx, output) in psbt.outputs.iter().enumerate() {
         match output.pegout_id() {
             Some(id) => psbt_pegout_ids.push(
                 PegoutId::from_bytes(&id).map_err(|_e| ValidateOutputsError::InvalidPegoutId)?,
             ),
-            None => change_outputs.push(output.clone()),
+            // track the index of the change output
+            None => {
+                // psbt should only have one change output
+                if change_output.is_some() {
+                    return Err(ValidateOutputsError::ExpectingOnlyOneChangeOutput);
+                }
+
+                change_output = Some(idx);
+            }
         };
     }
 
@@ -430,24 +438,20 @@ pub(crate) fn validate_outputs(
         }
     }
 
-    // check extra outputs are change outputs:
-    // psbt should only have one change output
-    if change_outputs.len() > 1 {
-        return Err(ValidateOutputsError::ExpectingOnlyOneChangeOutput);
-    }
-
-    if !change_outputs.is_empty() {
+    // if a change output exists, check if it is valid
+    if let Some(idx) = change_output {
         // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
         let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
         let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
-        // TODO remove the clone here
-        let tx = psbt.clone().extract_tx_unchecked_fee_rate();
-        let has_correct_change =
-            tx.output.iter().any(|o| o.script_pubkey == expected_script_pubkey);
+
+        let tx = &psbt.unsigned_tx;
+        let has_correct_change = tx.output[idx].script_pubkey == expected_script_pubkey;
+
         if !has_correct_change {
             return Err(ValidateOutputsError::InvalidChangeOutput);
         }
     }
+
     Ok(())
 }
 
