@@ -121,8 +121,6 @@ pub async fn make_tx(
 
     // if we are retrying pegouts, we need to add a conflicting input for each tracked tx
     // that honors each pegout
-    let mut conflicting_inputs: Result<Vec<Utxo>, CoordinatorError> = Ok(vec![]);
-    let mut conflicting_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
     let tracked_pegout_request_ids = tracked_txs
         .iter()
         .flat_map(|tx| tx.pegout_requests.iter().map(|p| p.id))
@@ -145,7 +143,8 @@ pub async fn make_tx(
     let matching_tracked_inputs = matching_tracked_inputs?;
 
     // get the utxo for each matching tracked input
-    conflicting_inputs = matching_tracked_inputs
+    let mut conflicting_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
+    let conflicting_inputs: Result<Vec<Utxo>, CoordinatorError> = matching_tracked_inputs
         .iter()
         .map(|op| {
             utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
@@ -162,7 +161,6 @@ pub async fn make_tx(
     let _ = conflicting_inputs?;
 
     // include conflicting utxos when selecting from available utxos
-    // this is done after the coin selection result above to prevent duplicate utxos
     conflicting_utxos.iter().for_each(|(op, u)| {
         available_utxos.insert(*op, u.clone());
     });

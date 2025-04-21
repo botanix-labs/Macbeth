@@ -247,7 +247,7 @@ pub fn validate_psbt(
         return Err(ValidatePSBTError::NoOutputs);
     }
 
-    validate_outputs(psbt, db, flags & ROUND2 == ROUND2)?;
+    validate_outputs(psbt, db)?;
 
     // Sanity fee checks
     let fee = match psbt.fee() {
@@ -378,18 +378,10 @@ pub enum ValidateOutputsError {
 /// Check:
 /// - additional outputs are change outputs
 /// - there are no duplicate outputs
-pub(crate) fn validate_outputs(
-    psbt: &Psbt,
-    db: &database::Db,
-    is_round_2: bool,
-) -> Result<(), ValidateOutputsError> {
+pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
     // check aggregated public key exists
     let public_key_package =
         db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
-
-    // use coord_pending_pegouts since this is what the coordinator uses when creating the psbt
-    let pending_pegouts = db.coord_pending_pegouts(UPPER_PEGOUT_BOUND)?;
-    let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
     let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
     let mut change_outputs: Vec<Output> = Vec::with_capacity(psbt.outputs.len());
