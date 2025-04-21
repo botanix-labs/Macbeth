@@ -100,7 +100,7 @@ impl PeginData {
             let vk = frost::VerifyingKey::deserialize(&encoded_pk)
                 .map_err(PeginDataError::FrostError)?;
             let tpk = generate_tweaked_public_key(&vk, &self.account.into())
-                .map_err(|_e| PeginDataError::InvalidTweak())?;
+                .map_err(|_e| PeginDataError::InvalidTweak)?;
             let gateway_script = generate_taproot_scriptpubkey(&tpk);
 
             let output = &pegin.tx.output[pegin.outpoint.vout as usize];
@@ -406,7 +406,7 @@ pub enum PeginDataError {
     InvalidBitcoinBlockHeight,
     /// Invalid tweak: failed to tweak aggregate public key
     #[error("invalid tweak: failed to tweak aggregate public key")]
-    InvalidTweak(),
+    InvalidTweak,
     /// Frost related error
     #[error("frost error {0}")]
     FrostError(frost::Error),
