@@ -6,7 +6,7 @@ use crate::wallet::{
 use bitcoin::{
     consensus::encode as btcencode,
     hashes::Hash,
-    psbt::{ExtractTxError, Output, Psbt},
+    psbt::{ExtractTxError, Psbt},
     Amount, FeeRate, OutPoint,
 };
 use frost_secp256k1_tr as frost;
