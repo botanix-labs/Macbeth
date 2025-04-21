@@ -526,7 +526,7 @@ mod tests {
         pegout_scheduler::{PegoutRequest, Tx},
         test_utils::{
             create_psbt, create_random_pegout_id, create_tx, eth_vector_to_fixed_bytes, get_change,
-            setup_db, store_pending_pegout, trusted_dealer_setup,
+            random_p2wpkh_script, setup_db, store_pending_pegout, trusted_dealer_setup,
         },
         util::*,
     };
@@ -1057,6 +1057,98 @@ mod tests {
         dup_psbt.outputs[1].set_pegout_id(pegout_id2.as_bytes());
         let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_expecting_only_one_change_output() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        let pegout_id = store_pending_pegout(&db);
+        let mut psbt = create_psbt(2, 1, Some(get_change(&db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        // Add a second change output
+        let second_change_output = get_change(&db);
+        psbt.outputs.push(Default::default());
+        psbt.unsigned_tx.output.push(second_change_output);
+
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        let utxo1 = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+            version: UtxoVersion::default() as u32,
+        };
+
+        let utxo2 = database::Utxo {
+            outpoint: tx.input[1].previous_output,
+            output: psbt.inputs[1].witness_utxo.clone().unwrap(),
+            eth_address: None,
+            version: UtxoVersion::default() as u32,
+        };
+        db.store_utxos(&[&utxo1, &utxo2]).unwrap();
+        db.flush().unwrap();
+
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).unwrap_err();
+        assert_eq!(
+            res,
+            ValidatePSBTError::InvalidOutputs(ValidateOutputsError::ExpectingOnlyOneChangeOutput)
+        );
+    }
+
+    #[test]
+    fn test_validate_change_output_destination() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        // WARNING: Here we prepare a non-aggregated key package for the change output
+        let malicious_output =
+            TxOut { value: Amount::from_sat(500), script_pubkey: random_p2wpkh_script() };
+
+        let pegout_id = store_pending_pegout(&db);
+        // Create the PSBT with the malicious output
+        let mut psbt = create_psbt(2, 1, Some(malicious_output));
+
+        // NOTE: We set the pegout destination to the aggregated key package;
+        // the validation function must not mistaken it for the change output.
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.unsigned_tx.output[0].script_pubkey = get_change(&db).script_pubkey;
+
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        let utxo1 = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+            version: UtxoVersion::default() as u32,
+        };
+
+        let utxo2 = database::Utxo {
+            outpoint: tx.input[1].previous_output,
+            output: psbt.inputs[1].witness_utxo.clone().unwrap(),
+            eth_address: None,
+            version: UtxoVersion::default() as u32,
+        };
+        db.store_utxos(&[&utxo1, &utxo2]).unwrap();
+        db.flush().unwrap();
+
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).unwrap_err();
+        assert_eq!(
+            res,
+            ValidatePSBTError::InvalidOutputs(ValidateOutputsError::InvalidChangeOutput)
+        );
     }
 
     #[test]
