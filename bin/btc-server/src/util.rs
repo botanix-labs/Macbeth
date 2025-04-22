@@ -6,7 +6,7 @@ use crate::wallet::{
 use bitcoin::{
     consensus::encode as btcencode,
     hashes::Hash,
-    psbt::{ExtractTxError, Output, Psbt},
+    psbt::{ExtractTxError, Psbt},
     Amount, FeeRate, OutPoint,
 };
 use frost_secp256k1_tr as frost;
@@ -384,14 +384,22 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
 
     let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
-    let mut change_outputs: Vec<Output> = Vec::with_capacity(psbt.outputs.len());
-    // TODO should get iter() for output pegout ids and impl this ext trait
-    for output in psbt.outputs.iter() {
+    let mut change_output: Option<usize> = None;
+
+    for (idx, output) in psbt.outputs.iter().enumerate() {
         match output.pegout_id() {
             Some(id) => psbt_pegout_ids.push(
                 PegoutId::from_bytes(&id).map_err(|_e| ValidateOutputsError::InvalidPegoutId)?,
             ),
-            None => change_outputs.push(output.clone()),
+            // track the index of the change output
+            None => {
+                // psbt should only have one change output
+                if change_output.is_some() {
+                    return Err(ValidateOutputsError::ExpectingOnlyOneChangeOutput);
+                }
+
+                change_output = Some(idx);
+            }
         };
     }
 
@@ -401,24 +409,21 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         return Err(ValidateOutputsError::DuplicateOutputs);
     }
 
-    // check extra outputs are change outputs:
-    // psbt should only have one change output
-    if change_outputs.len() > 1 {
-        return Err(ValidateOutputsError::ExpectingOnlyOneChangeOutput);
-    }
-
-    if !change_outputs.is_empty() {
+    // if a change output exists, check if it is valid
+    if let Some(idx) = change_output {
         // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
         let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
         let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
-        // TODO remove the clone here
-        let tx = psbt.clone().extract_tx_unchecked_fee_rate();
-        let has_correct_change =
-            tx.output.iter().any(|o| o.script_pubkey == expected_script_pubkey);
+
+        let change_output =
+            psbt.unsigned_tx.output.get(idx).ok_or(ValidateOutputsError::InvalidChangeOutput)?;
+
+        let has_correct_change = change_output.script_pubkey == expected_script_pubkey;
         if !has_correct_change {
             return Err(ValidateOutputsError::InvalidChangeOutput);
         }
     }
+
     Ok(())
 }
 
@@ -493,7 +498,7 @@ mod tests {
         pegout_scheduler::{PegoutRequest, Tx},
         test_utils::{
             create_psbt, create_random_pegout_id, create_tx, eth_vector_to_fixed_bytes, get_change,
-            setup_db, store_pending_pegout, trusted_dealer_setup,
+            random_p2wpkh_script, setup_db, store_pending_pegout, trusted_dealer_setup,
         },
         util::*,
     };
@@ -1027,6 +1032,98 @@ mod tests {
         dup_psbt.outputs[1].set_pegout_id(pegout_id2.as_bytes());
         let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_expecting_only_one_change_output() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        let pegout_id = store_pending_pegout(&db);
+        let mut psbt = create_psbt(2, 1, Some(get_change(&db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        // Add a second change output
+        let second_change_output = get_change(&db);
+        psbt.outputs.push(Default::default());
+        psbt.unsigned_tx.output.push(second_change_output);
+
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        let utxo1 = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+            version: UtxoVersion::default() as u32,
+        };
+
+        let utxo2 = database::Utxo {
+            outpoint: tx.input[1].previous_output,
+            output: psbt.inputs[1].witness_utxo.clone().unwrap(),
+            eth_address: None,
+            version: UtxoVersion::default() as u32,
+        };
+        db.store_utxos(&[&utxo1, &utxo2]).unwrap();
+        db.flush().unwrap();
+
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).unwrap_err();
+        assert_eq!(
+            res,
+            ValidatePSBTError::InvalidOutputs(ValidateOutputsError::ExpectingOnlyOneChangeOutput)
+        );
+    }
+
+    #[test]
+    fn test_validate_change_output_destination() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        // WARNING: Here we prepare a non-aggregated key package for the change output
+        let malicious_output =
+            TxOut { value: Amount::from_sat(500), script_pubkey: random_p2wpkh_script() };
+
+        let pegout_id = store_pending_pegout(&db);
+        // Create the PSBT with the malicious output
+        let mut psbt = create_psbt(2, 1, Some(malicious_output));
+
+        // NOTE: We set the pegout destination to the aggregated key package;
+        // the validation function must not mistaken it for the change output.
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.unsigned_tx.output[0].script_pubkey = get_change(&db).script_pubkey;
+
+        let tx = psbt.clone().extract_tx().expect("valid tx");
+        let utxo1 = database::Utxo {
+            outpoint: tx.input[0].previous_output,
+            output: psbt.inputs[0].witness_utxo.clone().unwrap(),
+            eth_address: None,
+            version: UtxoVersion::default() as u32,
+        };
+
+        let utxo2 = database::Utxo {
+            outpoint: tx.input[1].previous_output,
+            output: psbt.inputs[1].witness_utxo.clone().unwrap(),
+            eth_address: None,
+            version: UtxoVersion::default() as u32,
+        };
+        db.store_utxos(&[&utxo1, &utxo2]).unwrap();
+        db.flush().unwrap();
+
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).unwrap_err();
+        assert_eq!(
+            res,
+            ValidatePSBTError::InvalidOutputs(ValidateOutputsError::InvalidChangeOutput)
+        );
     }
 
     #[test]
