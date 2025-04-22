@@ -1,5 +1,5 @@
 use super::{FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse};
-use crate::{session::Direction, NetworkHandle};
+use crate::{frost::ConnectionEstablishedStatus, session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
 use reth_network_peers::PeerId;
@@ -215,6 +215,29 @@ impl FrostManager {
         self.authorities.contains_key(peer_id)
     }
 
+    fn respond_with_status(
+        sender: tokio::sync::oneshot::Sender<ConnectionEstablishedStatus>,
+        status: ConnectionEstablishedStatus,
+        message: &str,
+        peer_id: &PeerId,
+    ) -> bool {
+        if sender.is_closed() {
+            return false;
+        }
+        let msg = format!(
+            "Received FrostProtocolEvent::ConnectionEstablished event from peer {:?}. Error: {:?}",
+            peer_id, message
+        );
+        if sender.send(status).is_err() {
+            warn!(
+                target: "network::frost::on_network_event",
+                msg
+            );
+            return false;
+        }
+        true
+    }
+
     fn on_network_event(&mut self, protocol_event: FrostProtocolEvent) {
         match protocol_event {
             FrostProtocolEvent::ConnectionEstablished {
@@ -234,6 +257,12 @@ impl FrostManager {
                         "Received FrostProtocolEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event",
                         peer_id
                     );
+                    Self::respond_with_status(
+                        sender,
+                        ConnectionEstablishedStatus::NoneAuthority,
+                        "None authority peer",
+                        &peer_id,
+                    );
                     return;
                 }
 
@@ -244,6 +273,12 @@ impl FrostManager {
                         "Received FrostProtocolEvent::ConnectionEstablished event from our own peer {:?}",
                         peer_id
                     );
+                    Self::respond_with_status(
+                        sender,
+                        ConnectionEstablishedStatus::ConnectedToOurself,
+                        "Event from our own peer",
+                        &peer_id,
+                    );
                     return;
                 }
 
@@ -252,6 +287,12 @@ impl FrostManager {
                         target: "network::frost::on_network_event",
                         "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, but the connection channel is already closed",
                         peer_id
+                    );
+                    Self::respond_with_status(
+                        sender,
+                        ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel,
+                        "Peer commands communication channel is already closed",
+                        &peer_id,
                     );
                     return;
                 }
@@ -264,13 +305,12 @@ impl FrostManager {
                 self.connection_counter = idx.wrapping_add(1);
 
                 // send the assigned idx back to the initiator
-                if sender.send(idx).is_err() {
-                    // the initiator already dropped...
-                    warn!(
-                        target: "network::frost::on_network_event",
-                        "Received FrostProtocolEvent::ConnectionEstablished event from peer with id = {:?}, but the connection channel is already closed",
-                        peer_id
-                    );
+                if !Self::respond_with_status(
+                    sender,
+                    ConnectionEstablishedStatus::Success(idx),
+                    "Connection channel is already closed",
+                    &peer_id,
+                ) {
                     return;
                 }
 

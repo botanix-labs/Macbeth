@@ -183,6 +183,19 @@ impl fmt::Display for SigningEventResponseType {
     }
 }
 
+/// Status enum reporting the status of the connection on the frost manager.
+#[derive(Debug)]
+pub enum ConnectionEstablishedStatus {
+    /// The connection was established successfully
+    Success(u64),
+    /// The peer command communication connection was already closed
+    ClosedPeerCommandsCommunicationChannel,
+    /// Non-authority member attempted to connect
+    NoneAuthority,
+    /// Connected to ourself
+    ConnectedToOurself,
+}
+
 /// All events related to frost events emitted by the network.
 /// These are events that are emitted by the network to the frost manager.
 /// And most likely will be used to update the frost task state.
@@ -197,7 +210,7 @@ pub enum FrostProtocolEvent {
         /// the connection direction - we connected to them, or they to us
         direction: Direction,
         /// callback to send the assigned idx back to the initiator
-        sender: oneshot::Sender<u64>,
+        sender: oneshot::Sender<ConnectionEstablishedStatus>,
     },
     /// An emitted event once the connection is closed
     ConnectionClosed {
