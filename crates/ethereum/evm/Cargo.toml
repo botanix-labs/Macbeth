@@ -22,10 +22,8 @@ bitcoin = { workspace = true }
 # BTC server
 btc-server = { path = "../../../bin/btc-server" }
 
-# Ethers
-ethers = "2.0.9"
-reth-btc-wallet = { workspace = true }
 # Reth
+reth-btc-wallet = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-db = { workspace = true, features = ["test-utils"] }
 reth-ethereum-consensus = { workspace = true }

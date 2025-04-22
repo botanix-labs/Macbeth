@@ -44,7 +44,7 @@ pub enum Error {
 
 #[derive(Clone, Debug)]
 pub struct BotanixEthClient {
-    mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
+    pub mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
     mint_attack_contract:
         Option<MintAttackContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>>,
     http_client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
