@@ -1,23 +1,24 @@
 //! Wallet state sync module
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::{GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as CompressorError, SerializationType};
+use reth_db::{
+    models::{uuid_to_b256, PeerID, UuidID, WalletStateSyncRecord},
+    DatabaseEnv,
+};
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{
     manager::{FrostCommand, FrostConfig, ToFrostManager},
     PeerMessageResponse,
 };
-use reth_network_peers::PeerId;
-use reth_primitives::extra_data_header::ExtraDataHeaderDeserializeError;
+use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, Bytes};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
+    ProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use reth_tasks::TaskExecutor;
 use tokio::sync::{mpsc::error::SendError, RwLock};
@@ -30,8 +31,8 @@ use crate::{prost_parser::ProstMessageSerdelizer, Storage};
 /// Wallet state synchronization errors
 pub enum WalletStateSyncError {
     #[error("db provider error: {0}")]
-    /// Latest block error
-    LatestBlockError(#[from] ProviderError),
+    /// Error related to the database provider
+    Provider(#[from] ProviderError),
     #[error("deserilaize extra data header : {0}")]
     /// Extra data header deserialize error
     DeserializeExtraDataHeaderError(#[from] ExtraDataHeaderDeserializeError),
@@ -57,7 +58,6 @@ pub enum WalletStateSyncError {
     /// Sha256 hash error
     Sha256HashError(#[from] FromSliceError),
 }
-
 /// Trait for synchronizing wallet state
 #[allow(async_fn_in_trait)]
 pub trait WalletStateSync {
@@ -103,22 +103,7 @@ impl WalletStateSyncPeerResponse {
     }
 }
 
-type WalletStateSyncResponseCycle =
-    Arc<RwLock<Option<(Uuid, HashMap<PeerId, WalletStateSyncPeerResponse>)>>>;
-
-/// Returns an iterator over the fully synced peers
-pub fn get_fully_synced_peers(
-    peers_wallet_state_sync_responses: &HashMap<PeerId, WalletStateSyncPeerResponse>,
-) -> (impl Iterator<Item = (&PeerId, &WalletStateSyncPeerResponse)> + '_, usize) {
-    let fully_synced = peers_wallet_state_sync_responses
-        .iter()
-        .filter(|(_, response)| response.all_chunks_received())
-        .collect::<Vec<_>>();
-
-    let count = fully_synced.len();
-    (fully_synced.into_iter(), count)
-}
-
+type WalletStateSyncResponseCycle = Arc<RwLock<Option<Uuid>>>;
 #[derive(Clone)]
 /// Engine for synchronizing wallet state
 pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
@@ -129,6 +114,7 @@ pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
     task_executor: TaskExecutor,
     frost_config: FrostConfig,
     current_response_cycle: WalletStateSyncResponseCycle,
+    provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
 }
 
 impl<EF, BF, DB, ToFrostMan, BtcServerClient>
@@ -137,7 +123,12 @@ where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Sync + Clone + 'static,
-    DB: BlockReaderIdExt + CanonStateSubscriptions + Clone + 'static,
+    DB: BlockReaderIdExt
+        + CanonStateSubscriptions
+        + WalletStateSyncWriter
+        + WalletStateSyncReader
+        + Clone
+        + 'static,
     BtcServerClient: BtcServerExtendedApi + Clone,
 {
     pub(crate) fn new(
@@ -146,6 +137,7 @@ where
         to_frost_manager: ToFrostMan,
         task_executor: TaskExecutor,
         frost_config: FrostConfig,
+        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Self {
         let data_parser =
             DataParser::default().with_serialization_type(SerializationType::Postcard);
@@ -157,8 +149,61 @@ where
             task_executor,
             frost_config,
             current_response_cycle: Default::default(),
+            provider_factory,
         }
     }
+}
+
+/// This function creates a new state sync record
+fn create_new_wallet_state_sync_peer_record(
+    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
+    uuid: UuidID,
+    peer_id: PeerID,
+    chunks_count: u64,
+    data: Option<Vec<Bytes>>,
+) -> Result<PeerID, WalletStateSyncError> {
+    let provider_rw = provider_factory.provider_rw()?;
+    let record_id = provider_rw.create_new_state_sync_record(uuid, peer_id, chunks_count, data)?;
+    provider_rw.commit()?;
+    Ok(record_id)
+}
+
+/// This function retrieves a state sync record by peer id
+fn get_state_sync_record_by_peer_id(
+    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
+    peer_id: PeerID,
+) -> Result<Option<WalletStateSyncRecord>, WalletStateSyncError> {
+    Ok(provider_factory.provider()?.get_state_sync_record_by_peer_id(peer_id)?)
+}
+
+/// This function is used to append data to an existing state sync record
+fn append_data_to_state_sync_record(
+    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
+    peer_id: PeerID,
+    data: Vec<Bytes>,
+) -> Result<(), WalletStateSyncError> {
+    let provider_rw = provider_factory.provider_rw()?;
+    provider_rw.append_data_to_state_sync_record(peer_id, data)?;
+    provider_rw.commit()?;
+    Ok(())
+}
+
+/// Remove all state sync records
+fn remove_all_state_sync_records(
+    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
+) -> Result<(), WalletStateSyncError> {
+    let provider_rw = provider_factory.provider_rw()?;
+    provider_rw.remove_all_state_sync_records()?;
+    provider_rw.commit()?;
+    Ok(())
+}
+
+/// Get the minimum superset of wallet state sync records
+fn get_minimum_superset(
+    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
+    min_required_criterion: u64,
+) -> Result<(bool, HashSet<Bytes>), WalletStateSyncError> {
+    Ok(provider_factory.provider()?.get_minimum_superset(min_required_criterion)?)
 }
 
 impl<EF, BF, DB, ToFrostMan, BtcServerClient> WalletStateSync
@@ -167,12 +212,17 @@ where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + Sync + 'static,
-    DB: BlockReaderIdExt + CanonStateSubscriptions + Clone + 'static,
+    DB: BlockReaderIdExt
+        + CanonStateSubscriptions
+        + WalletStateSyncWriter
+        + WalletStateSyncReader
+        + Clone
+        + 'static,
     BtcServerClient: BtcServerExtendedApi + Clone,
 {
     // Note: this function should not be called unless we are fully synced
     async fn sync_wallet_state(&self) -> Result<(), WalletStateSyncError> {
-        trace!(target: "consensus::authority::UTXOSync::sync_utxo_set", "syncing utxo set");
+        trace!(target: "consensus::authority::WalletStateSync::sync_wallet_state", "syncing wallet state");
         let mut btc_server = self.btc_server.clone();
 
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
@@ -184,6 +234,7 @@ where
         let data_parser = self.data_parser.clone();
         let frost_config = self.frost_config.clone();
         let current_response_cycle = self.current_response_cycle.clone();
+        let provider_factory = self.provider_factory.clone();
         let mut canon_events = self.storage.client.subscribe_to_canonical_state();
 
         self.task_executor.clone().spawn(async move {
@@ -235,50 +286,99 @@ where
                             };
 
                             // update the sync responses map with the received wallet state (considering only good states towards liveness)
-                            let mut current_response_cycle = current_response_cycle.write().await;
-                            match current_response_cycle.as_mut() {
-                                Some((uuid, peers)) => {
-                                    if *uuid != request_uuid {
+                            let current_response_cycle = current_response_cycle.read().await;
+                            match *current_response_cycle {
+                                Some(uuid) => {
+                                    if uuid != request_uuid {
                                         warn!(target: "consensus::authority::sync_wallet_state", "Received wallet state with different uuid, ignoring");
                                         continue;
                                     }
 
-                                    match peers.get_mut(&peer_message_context.peer_id) {
-                                        Some(wallet_state_sync_peer_response) => {
-                                            // append the peer response to the current response cycle
-                                            wallet_state_sync_peer_response.append_received_data(&finalized_pegout_ids_decompressed.ids);
-                                            wallet_state_sync_peer_response.set_chunks_expected(finalized_pegout_ids_decompressed.total_chunks);
-                                            wallet_state_sync_peer_response.add_chunk_received(finalized_pegout_ids_decompressed.chunk_index);
-                                        },
+                                    // update the state
+                                    let state_sync_record_by_peer_id = match get_state_sync_record_by_peer_id(&provider_factory, peer_message_context.peer_id) {
+                                        Ok(state_sync_record_by_peer_id) => state_sync_record_by_peer_id,
+                                        Err(e) => {
+                                            error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to get state sync record by peer id");
+                                            continue;
+                                        }
+                                    };
+
+                                    match state_sync_record_by_peer_id.as_ref() {
+                                        Some(wallet_state_sync_record) => {
+                                            // check if the peer is already in the db
+                                            if wallet_state_sync_record.get_uuid() != uuid_to_b256(uuid) {
+                                                warn!(target: "consensus::authority::sync_wallet_state", "Peer sent different uuid, ignoring");
+                                                continue;
+                                            }
+                                            // append the data to the state sync record
+                                            match append_data_to_state_sync_record(
+                                                &provider_factory,
+                                                wallet_state_sync_record.get_peer_id(),
+                                                finalized_pegout_ids_decompressed.ids.into_iter().map(Bytes::from).collect::<Vec<_>>(),
+                                            ) {
+                                                Ok(_) => {
+                                                    info!(target: "consensus::authority::sync_wallet_state", "Appended data to state sync record");
+                                                }
+                                                Err(e) => {
+                                                    error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to append data to state sync record");
+                                                    continue;
+                                                }
+                                            }
+                                        }
                                         None => {
-                                            // add the peer to the response cycle
-                                            let mut new_wallet_state_sync_peer_response = WalletStateSyncPeerResponse::default();
-                                            new_wallet_state_sync_peer_response.set_chunks_expected(finalized_pegout_ids_decompressed.total_chunks);
-                                            new_wallet_state_sync_peer_response.add_chunk_received(finalized_pegout_ids_decompressed.chunk_index);
-                                            peers.insert(peer_message_context.peer_id, new_wallet_state_sync_peer_response);
+                                            // create a new state sync record for the peer
+                                            match create_new_wallet_state_sync_peer_record(
+                                                &provider_factory,
+                                                uuid_to_b256(uuid),
+                                                peer_message_context.peer_id,
+                                                finalized_pegout_ids_decompressed.total_chunks,
+                                                Some(finalized_pegout_ids_decompressed.ids.into_iter().map(Bytes::from).collect::<Vec<_>>()),
+                                            ) {
+                                                Ok(_) => {
+                                                    info!(target: "consensus::authority::sync_wallet_state", "Created new state sync record");
+                                                }
+                                                Err(e) => {
+                                                    error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to create new state sync record");
+                                                    continue;
+                                                }
+                                            }
                                         }
                                     }
 
-                                    let (fully_synced_peers_iter, fully_synced_count) = get_fully_synced_peers(peers);
-                                    if fully_synced_count as u64 >= frost_config.min_signers as u64 {
-                                        // compress the finalized pegout ids
-                                        let mut condensed_finalized_pegout_ids = HashSet::new();
-                                        for (_, peer_wallet_state_sync_response) in fully_synced_peers_iter {
-                                            let peer_finalized_ids = peer_wallet_state_sync_response.data.iter()
-                                            .cloned()
-                                            .collect::<HashSet<_>>();
-                                            condensed_finalized_pegout_ids.extend(peer_finalized_ids);
-                                        }
-
-                                        // Report to btc server to resync the wallet state
-                                        if let Err(e) = btc_server
-                                            .reset_wallet_state(ResetWalletStateRequest {
-                                                finalized_pegout_ids: condensed_finalized_pegout_ids.into_iter().collect(),
-                                            })
-                                            .await {
-                                                error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to reset wallet state");
-                                                continue;
+                                    // check if we have all the chunks and a minimum superset available
+                                    match get_minimum_superset(&provider_factory, frost_config.min_signers as u64) {
+                                        Ok((found, minimum_superset)) => {
+                                            if found {
+                                                info!(target: "consensus::authority::sync_wallet_state", "Found minimum superset, notifying frost manager");
+                                                // Report to btc server to resync the wallet state
+                                                match btc_server
+                                                    .reset_wallet_state(ResetWalletStateRequest {
+                                                        finalized_pegout_ids: minimum_superset.into_iter().map(|item| item.to_vec()).collect(),
+                                                    })
+                                                    .await {
+                                                    Ok(_) => {
+                                                        info!(target: "consensus::authority::sync_wallet_state", "Wallet state reset successfully");
+                                                    }
+                                                    Err(e) => {
+                                                        error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to reset wallet state");
+                                                    }
+                                                }
+                                                // Remove from the db all state sync records
+                                                match remove_all_state_sync_records(&provider_factory,) {
+                                                    Ok(_) => {
+                                                        info!(target: "consensus::authority::sync_wallet_state", "Removed all state sync records");
+                                                    }
+                                                    Err(e) => {
+                                                        error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to remove all state sync records");
+                                                    }
+                                                }
+                                            } else {
+                                                warn!(target: "consensus::authority::sync_wallet_state", "Minimum superset not found yet");
                                             }
+                                        }
+                                        Err(e) => {
+                                            error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to get minimum superset");
+                                        }
                                     }
                                 },
                                 None => {
@@ -313,8 +413,8 @@ where
                     {
                         error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to send get wallet state command to frost manager");
                     }
-                    // start the current response cycle
-                    current_response_cycle.write().await.replace((uuid, HashMap::new()));
+                    // (re-)start the current response cycle
+                    current_response_cycle.write().await.replace(uuid);
                 }
                 CanonStateNotification::Reorg { old: _old, new: _new } => {
                     warn!(target: "consensus::authority::snapshot_manager::run", "reorg detected, this should not happen");

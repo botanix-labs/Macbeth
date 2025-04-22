@@ -19,6 +19,7 @@ pub mod client_version;
 pub mod integer_list;
 pub mod sharded_key;
 pub mod storage_sharded_key;
+pub mod wallet_sync;
 
 pub use accounts::*;
 pub use activation_manager::{RuntimeVersion, Vote};
@@ -27,6 +28,7 @@ pub use chunks::*;
 pub use client_version::ClientVersion;
 pub use reth_db_models::{AccountBeforeTx, StoredBlockBodyIndices};
 pub use sharded_key::ShardedKey;
+pub use wallet_sync::*;
 
 /// Macro that implements [`Encode`] and [`Decode`] for uint types.
 macro_rules! impl_uints {
@@ -92,6 +94,20 @@ impl Encode for B256 {
 }
 
 impl Decode for B256 {
+    fn decode<B: AsRef<[u8]>>(value: B) -> Result<Self, DatabaseError> {
+        Ok(Self::new(value.as_ref().try_into().map_err(|_| DatabaseError::Decode)?))
+    }
+}
+
+impl Encode for B512 {
+    type Encoded = [u8; 64];
+
+    fn encode(self) -> Self::Encoded {
+        self.0
+    }
+}
+
+impl Decode for B512 {
     fn decode<B: AsRef<[u8]>>(value: B) -> Result<Self, DatabaseError> {
         Ok(Self::new(value.as_ref().try_into().map_err(|_| DatabaseError::Decode)?))
     }
@@ -212,6 +228,7 @@ impl_compression_for_compact!(
     Snapshot,
     SnapshotChunk,
     SnapshotSync,
+    WalletStateSyncRecord,
     Log,
     Receipt,
     TxType,

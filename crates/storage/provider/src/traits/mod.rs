@@ -15,6 +15,9 @@ pub use activation_manager::ActivationManagerReaderWriter;
 mod snapshot;
 pub use snapshot::*;
 
+mod wallet_state_sync;
+pub use wallet_state_sync::*;
+
 mod chain_info;
 pub use chain_info::CanonChainTracker;
 
