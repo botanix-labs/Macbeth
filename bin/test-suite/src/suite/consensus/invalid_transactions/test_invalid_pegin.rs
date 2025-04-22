@@ -38,7 +38,7 @@ async fn generate_invalid_pegin_metas(
     // Destructure pegin data for easier access
     let (pegin_tx1, vout1, pmt1) = pegin1_data;
     let (pegin_tx2, vout2, pmt2) = pegin2_data;
-    
+
     let mut invalid_pegin_meta_cases = Vec::new();
 
     // Create invalid pegin meta with invalid reference hash for v1
