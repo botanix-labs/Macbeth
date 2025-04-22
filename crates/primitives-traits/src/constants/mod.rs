@@ -124,7 +124,7 @@ pub const DEV_GENESIS_HASH: B256 =
 
 /// Botanix Mainnet genesis hash.
 pub const BOTANIX_MAINNET_GENESIS: B256 =
-    b256!("3ac536c14df4e92f69a506554d9516c3311553f56fb166f0a48d95679e3593c6");
+    b256!("3819e995f18e3a7fcff8af0a880a2fb7b577cf00aaf03eb50abefec1970ecbff");
 
 /// Botanix Testnet genesis hash.
 pub const BOTANIX_TESTNET_GENESIS: B256 =

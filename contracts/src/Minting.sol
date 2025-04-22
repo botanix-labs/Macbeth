@@ -4,7 +4,7 @@ pragma solidity 0.8.13;
 contract Minting {
     uint public constant SATS_TO_WEI = 10**10;
     /// Gas used when calling mint() function.
-    /// This value is based on forge and live testing for a cold EOA destination.
+    /// This value is based on forge and live testing for a cold EOA destination with 160 bytes of metadata.
     /// This is not intended to be a precise value but a rough estimate.
     /// If the destination is a contract account, the gas used will be higher.
     /// It is the caller's responsibility to check the destination before calling mint().
