@@ -68,7 +68,7 @@ contract Minting {
                 + GAS_REVERT_TRUE 
                 + BASE_GAS_MINT_EVENT 
                 + metadata.length / 4 - 1) 
-            * tx.gasprice;
+            * block.basefee;
 
         // 3 gas for comparison if true
         require(txCost <= amount, "Tx cost exceeds pegin amount");
