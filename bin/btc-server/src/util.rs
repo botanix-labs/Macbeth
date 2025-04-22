@@ -627,9 +627,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
-            / psbt.unsigned_tx.output.len() as u64
-            + 100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
+            psbt.unsigned_tx.output.len() as u64 +
+            100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {

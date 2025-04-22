@@ -306,12 +306,8 @@ mod tests {
             None,
         );
         let utxo2_tx = create_tx(1, 1, Some(tx_output_template.clone()));
-        let utxo2 = Utxo::new(
-            OutPoint::new(utxo2_tx.compute_txid(), 0),
-            tx_output_template,
-            None,
-            None,
-        );
+        let utxo2 =
+            Utxo::new(OutPoint::new(utxo2_tx.compute_txid(), 0), tx_output_template, None, None);
 
         let mut available_utxos = HashMap::new();
         available_utxos.insert(utxo1.outpoint, utxo1);
