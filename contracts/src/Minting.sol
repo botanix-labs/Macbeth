@@ -3,29 +3,12 @@ pragma solidity 0.8.13;
 
 contract Minting {
     uint public constant SATS_TO_WEI = 10**10;
-    uint constant GAS_INTERNAL_TRANSFER = 2300;
-    uint constant GAS_AMOUNT_UPDATE = 2003;
-    uint constant GAS_REVERT_TRUE = 3;
-
-    // The base gas cost to emit the [Mint] event.
-    //
-    // Additionally the cost for the [metadata] variable length field
-    // should be added.
-    //
-    // 375 + 2 * 375 (topics) + 8 * 4 (account, amount, bitcoinBlockHeight, metadata)
-    //
-    // metadata is variable length, so only including the first word above 
-    //
-    // Source: https://www.rareskills.io/post/ethereum-events
-    // > 375 + 375 * num_topics + 8 * data_size + mem_expansion cost
-    // >
-    // > Each event costs at least 375 gas. An additional 375 is paid for each
-    // > indexed parameter. A non-anonymous event has the event selector as an
-    // > indexed parameter, so that cost is included most of the time. Then we
-    // > pay 8 times the number of 32 byte words written to the chain. Because
-    // > this region is stored in memory before being emitted, the memory
-    // > expansion cost must be accounted for also.
-    uint constant BASE_GAS_MINT_EVENT = 1157;
+    /// Gas used when calling mint() function.
+    /// This value is based on forge and live testing for a cold EOA destination.
+    /// This is not intended to be a precise value but a rough estimate.
+    /// If the destination is a contract account, the gas used will be higher.
+    /// It is the caller's responsibility to check the destination before calling mint().
+    uint constant mintGasUsed = 150_000;
 
     /// Some new coins have been minted.
     event Mint(
@@ -49,8 +32,6 @@ contract Minting {
         bytes calldata metadata,
         address refundAddress
     ) public {
-        uint256 gasStart = gasleft();
-
         // Check that the user bitcoin block height is increasing.
         require(
             bitcoinBlockHeight > peginBitcoinBlockHeight[destination],
@@ -58,25 +39,10 @@ contract Minting {
         );
         peginBitcoinBlockHeight[destination] = bitcoinBlockHeight;
 
-        // account for gas needed for the transfers, amount update, and require statement if true
-        // metadata is variable length and the first byte is included in BASE_GAS_MINT_EVENT
-        uint256 txCost = 
-            (gasStart - gasleft() 
-                + GAS_INTERNAL_TRANSFER 
-                + GAS_INTERNAL_TRANSFER 
-                + GAS_AMOUNT_UPDATE 
-                + GAS_REVERT_TRUE 
-                + BASE_GAS_MINT_EVENT 
-                + metadata.length / 4 - 1) 
-            * block.basefee;
-
-        // 3 gas for comparison if true
+        uint256 txCost = mintGasUsed * block.basefee;
         require(txCost <= amount, "Tx cost exceeds pegin amount");
-
-        // 3 gas for subtraction and 2000 to update the local variable
         amount -= txCost;
 
-        // assuming 2300 gas for each call but could be more if interacting with a contract account
         (bool succeesMint, ) = payable(destination).call{value: amount}("");
         require(succeesMint, "Mint to destination failed");
 
