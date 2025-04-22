@@ -241,15 +241,13 @@ pub fn validate_psbt(
     }
 
     // Validate psbt contains conflicting input if retrying a pegout
-    if cfg!(feature = "conflicting_input") {
-        has_conflicting_input(db, psbt)?;
-    }
+    has_conflicting_input(db, psbt)?;
 
     if psbt.outputs.is_empty() {
         return Err(ValidatePSBTError::NoOutputs);
     }
 
-    validate_outputs(psbt, db, flags & ROUND2 == ROUND2)?;
+    validate_outputs(psbt, db)?;
 
     // Sanity fee checks
     let fee = match psbt.fee() {
@@ -260,15 +258,6 @@ pub fn validate_psbt(
             _ => return Err(ValidatePSBTError::PsbtError(e)),
         },
     };
-
-    let tx = psbt.clone().extract_tx()?;
-    for input in tx.input.iter() {
-        // Check if input exists in db
-        let db_utxo = db.get_utxo(input.previous_output)?;
-        if db_utxo.is_none() {
-            return Err(ValidatePSBTError::UtxoNotFound);
-        }
-    }
 
     let total_outputs_amount =
         psbt.unsigned_tx.output.iter().fold(Amount::ZERO, |total, output| {
@@ -336,11 +325,11 @@ pub fn validate_psbt(
     let tx = psbt.clone().extract_tx()?;
     for (index, psbt_input) in psbt.inputs.iter().enumerate() {
         if flags & ROUND1 == ROUND1 {
-            // validate utxo exists in DB
             let outpoint = tx.input[index].previous_output;
             let utxo = db.get_utxo(outpoint).expect("valid utxo");
+            // signer's don't enforce utxo exists but will do checks if it does
             if utxo.is_none() {
-                return Err(ValidatePSBTError::UtxoNotFound);
+                return Ok(());
             }
             // If the utxo has a eth tweak check the right one is presented in the psbt
             let eth_tweak = utxo.clone().expect("valid utxo").eth_address;
@@ -386,20 +375,13 @@ pub enum ValidateOutputsError {
     DuplicateOutputs,
 }
 
-/// Check all pending pegouts are being settled in this tx
-/// and additional outputs are change outputs
-pub(crate) fn validate_outputs(
-    psbt: &Psbt,
-    db: &database::Db,
-    is_round_2: bool,
-) -> Result<(), ValidateOutputsError> {
+/// Check:
+/// - additional outputs are change outputs
+/// - there are no duplicate outputs
+pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
     // check aggregated public key exists
     let public_key_package =
         db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
-
-    // use coord_pending_pegouts since this is what the coordinator uses when creating the psbt
-    let pending_pegouts = db.coord_pending_pegouts(UPPER_PEGOUT_BOUND)?;
-    let pending_pegout_ids = pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
 
     let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
     let mut change_output: Option<usize> = None;
@@ -425,17 +407,6 @@ pub(crate) fn validate_outputs(
     let unique_pegout_ids: HashSet<PegoutId> = psbt_pegout_ids.iter().cloned().collect();
     if unique_pegout_ids.len() != psbt_pegout_ids.len() {
         return Err(ValidateOutputsError::DuplicateOutputs);
-    }
-
-    // check psbt pegout exists in pending pegouts list
-    // if round 2 flag, then we are at the end of the round and signers have already cleared the
-    // pending pegouts included in the psbt and tracked the tx
-    if !is_round_2 {
-        for psbt_pegout_id in psbt_pegout_ids.iter() {
-            if !pending_pegout_ids.contains(psbt_pegout_id) {
-                return Err(ValidateOutputsError::MissingPsbtPegout(*psbt_pegout_id));
-            }
-        }
     }
 
     // if a change output exists, check if it is valid
@@ -627,9 +598,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
-            psbt.unsigned_tx.output.len() as u64 +
-            100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
+            / psbt.unsigned_tx.output.len() as u64
+            + 100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
@@ -702,6 +673,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
+    /// We do not enforce signers have the psbt utxos in their db.
+    /// Leaving test here in case this logic is reverted.
     fn should_look_for_utxo_in_db() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);

@@ -25,7 +25,10 @@ use btcserverlib::{
     pegout_scheduler::{self, PegoutRequest},
     rpc,
     shutdown::{stop_signal, StopHandle},
-    signer::{self, error::SigningRound1Error},
+    signer::{
+        self,
+        error::{SigningRound1Error, SigningRound2Error},
+    },
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
         get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, ParsingError,
@@ -34,7 +37,7 @@ use btcserverlib::{
     wallet::{
         self,
         address::{generate_taproot_address, generate_tweaked_public_key},
-        psbt::PsbtExt,
+        psbt::{PsbtExt, PsbtOutputExt},
         util::VerifyingKeyExt,
     },
 };
@@ -845,20 +848,43 @@ where
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
 
-        let signed_tx = psbt.extract_tx().expect("just checked in get_round2_signing_package");
+        let signed_tx =
+            psbt.clone().extract_tx().expect("just checked in get_round2_signing_package");
 
-        // We just signed for all pending pegouts lets start tracking them
-        if cfg!(feature = "conflicting_input") {
-            info!("get_round2_signing_package: removing pending pegouts");
-            let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
-            let pending_pegout_ids =
-                pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
-            self.add_tracked_tx(signed_tx.clone(), &pending_pegouts, SystemTime::now())
-                .await
-                .to_status()?;
-            self.db.remove_pending_pegout(&pending_pegout_ids).to_status()?;
-            self.db.flush().to_status()?;
+        // Note: the coordinator determines the pending pegouts to include in the psbt.
+        // Signers may or may not have the same pending pegouts depending on their liveliness.
+        // When signers sync with the network they will add the pending pegouts to their
+        // database but some of them may have already been honored when they were offline.
+        // Signers need to track the pending pegouts included in the psbt and clear the pending
+        // pegouts from the database.
+
+        // Extract pegout ids from the psbt to store with the tx
+        if psbt.outputs.len() > UPPER_PEGOUT_BOUND {
+            return Err(badarg!("Too many pegouts in the psbt"));
         }
+        let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
+        for output in psbt.outputs.iter() {
+            if let Some(pegout_id) = output.pegout_id() {
+                let pegout_id = PegoutId::from_bytes(&pegout_id)
+                    .map_err(|_| {
+                        SigningError::Round2(SigningRound2Error::FailedToDeserializePegoutId)
+                    })
+                    .to_status()?;
+                psbt_pegout_ids.push(pegout_id);
+            }
+        }
+        // Get the matching pending pegouts
+        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+        let psbt_pending_pegouts = pending_pegouts
+            .into_iter()
+            .filter(|p| psbt_pegout_ids.contains(&p.id))
+            .collect::<Vec<_>>();
+
+        self.add_tracked_tx(signed_tx.clone(), &psbt_pending_pegouts, SystemTime::now())
+            .await
+            .to_status()?;
+        self.db.reset_pending_pegouts(&[]).to_status()?;
+        self.db.flush().to_status()?;
 
         let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
