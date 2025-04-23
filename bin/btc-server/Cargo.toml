@@ -1,6 +1,6 @@
 [package]
 name = "btc-server"
-version = "1.0.7"
+version = "1.0.8"
 edition = "2021"
 
 [lib]
@@ -12,7 +12,6 @@ path = "src/bin/main.rs"
 
 [features]
 default = []
-conflicting_input = []
 
 [dependencies]
 actix-cors = "0.7.0"

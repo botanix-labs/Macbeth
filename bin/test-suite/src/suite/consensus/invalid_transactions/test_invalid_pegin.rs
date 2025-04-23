@@ -463,6 +463,10 @@ pub async fn invalid_pegin(
         .expect("To deploy attack contract");
     botanix_eth_client.set_mint_attack_contract(attack_contract_address);
 
+    let eth_pegin_address = eth_account.to_string();
+    let addr = reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
+    let mint_contract_address = botanix_eth_client.mint_contract.address();
+
     for (invalid_pegin_meta, description) in invalid_pegin_metas {
         it_info_print!("Invalid pegin meta: {}", description);
         let mut serialized_pegin_meta = Vec::new();
@@ -476,10 +480,6 @@ pub async fn invalid_pegin(
         let metadata = ethers::core::types::Bytes::from(serialized_pegin_meta.clone());
 
         // pegin address balance before pegin
-        let eth_pegin_address = eth_account.to_string();
-        it_info_print!("Pegin address", eth_pegin_address);
-        let addr =
-            reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
         let pegin_address_initial_balance =
             botanix_eth_client.get_botanix_balance(addr).await.unwrap();
         let pegin_bitcoin_block_height_initial = botanix_eth_client
@@ -489,6 +489,13 @@ pub async fn invalid_pegin(
             .unwrap();
         it_info_print!("Initial pegin address balance", pegin_address_initial_balance);
         it_info_print!("Initial pegin bitcoin block height", pegin_bitcoin_block_height_initial);
+
+        // mint contract balance before pegin
+        let mint_contract_initial_balance = botanix_eth_client
+            .get_botanix_balance(Address::from(mint_contract_address.0)) // Convert H160 -> Address
+            .await
+            .unwrap();
+        it_info_print!("Initial mint contract balance", mint_contract_initial_balance);
 
         // nonce before pegin
         let sender_address = botanix_eth_client.get_sender_address();
@@ -526,8 +533,16 @@ pub async fn invalid_pegin(
         it_info_print!("Final pegin address balance", pegin_address_final_balance);
         it_info_print!("Final pegin bitcoin block height", pegin_bitcoin_block_height_final);
 
+        // mint contract balance after pegin
+        let mint_contract_final_balance = botanix_eth_client
+            .get_botanix_balance(Address::from(mint_contract_address.0)) // Convert H160 -> Address
+            .await
+            .unwrap();
+        it_info_print!("Final mint contract balance", mint_contract_final_balance);
+
         assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
         assert_eq!(pegin_bitcoin_block_height_initial, pegin_bitcoin_block_height_final);
+        assert_eq!(mint_contract_initial_balance, mint_contract_final_balance);
 
         // nonce after pegin
         let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();

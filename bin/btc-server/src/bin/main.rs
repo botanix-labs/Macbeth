@@ -29,7 +29,7 @@ use btcserverlib::{
     shutdown::{stop_signal, StopHandle},
     signer::{
         self,
-        error::{SigningError, SigningRound1Error},
+        error::{SigningError, SigningRound1Error, SigningRound2Error},
     },
     telemetry::Telemetry,
     util::{
@@ -40,7 +40,7 @@ use btcserverlib::{
     wallet::{
         self,
         address::{generate_taproot_address, generate_tweaked_public_key},
-        psbt::PsbtExt,
+        psbt::{PsbtExt, PsbtOutputExt},
         util::VerifyingKeyExt,
     },
 };
@@ -878,20 +878,43 @@ where
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
 
-        let signed_tx = psbt.extract_tx().expect("just checked in get_round2_signing_package");
+        let signed_tx =
+            psbt.clone().extract_tx().expect("just checked in get_round2_signing_package");
 
-        // We just signed for all pending pegouts lets start tracking them
-        if cfg!(feature = "conflicting_input") {
-            info!("get_round2_signing_package: removing pending pegouts");
-            let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
-            let pending_pegout_ids =
-                pending_pegouts.iter().map(|p| p.id).collect::<Vec<PegoutId>>();
-            self.add_tracked_tx(signed_tx.clone(), &pending_pegouts, SystemTime::now())
-                .await
-                .to_status()?;
-            self.db.remove_pending_pegout(&pending_pegout_ids).to_status()?;
-            self.db.flush().to_status()?;
+        // Note: the coordinator determines the pending pegouts to include in the psbt.
+        // Signers may or may not have the same pending pegouts depending on their liveliness.
+        // When signers sync with the network they will add the pending pegouts to their
+        // database but some of them may have already been honored when they were offline.
+        // Signers need to track the pending pegouts included in the psbt and clear the pending
+        // pegouts from the database.
+
+        // Extract pegout ids from the psbt to store with the tx
+        if psbt.outputs.len() > UPPER_PEGOUT_BOUND {
+            return Err(badarg!("Too many pegouts in the psbt"));
         }
+        let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
+        for output in psbt.outputs.iter() {
+            if let Some(pegout_id) = output.pegout_id() {
+                let pegout_id = PegoutId::from_bytes(&pegout_id)
+                    .map_err(|_| {
+                        SigningError::Round2(SigningRound2Error::FailedToDeserializePegoutId)
+                    })
+                    .to_status()?;
+                psbt_pegout_ids.push(pegout_id);
+            }
+        }
+        // Get the matching pending pegouts
+        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+        let psbt_pending_pegouts = pending_pegouts
+            .into_iter()
+            .filter(|p| psbt_pegout_ids.contains(&p.id))
+            .collect::<Vec<_>>();
+
+        self.add_tracked_tx(signed_tx.clone(), &psbt_pending_pegouts, SystemTime::now())
+            .await
+            .to_status()?;
+        self.db.reset_pending_pegouts(&[]).to_status()?;
+        self.db.flush().to_status()?;
 
         let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
@@ -1981,5 +2004,57 @@ mod tests {
             assert_eq!(pending_pegout.value.to_sat(), original_pegout.amount);
             assert_eq!(pending_pegout.botanix_height, original_pegout.height);
         }
+    }
+
+    #[tokio::test]
+    async fn test_finalized_pegout_ids_streaming_chunksize_gt_chunks() {
+        let app = setup().await;
+        let num_txs = 52;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            finalized_pegout_ids.push(pegout_id);
+        }
+        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        app.db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+
+        let chunk_size = 10;
+        let req = tonic::Request::new(rpc::GetFinalizedPegoutIdsRequest { chunk_size });
+        let res = app.get_finalized_pegout_ids(req).await.unwrap();
+        let mut stream = res.into_inner();
+        let mut collected_chunks = vec![];
+        while let Some(item) = stream.next().await {
+            let item = item.unwrap();
+            assert_eq!(item.total_chunks, (num_txs as u64).div_ceil(chunk_size));
+            collected_chunks.extend_from_slice(&item.ids);
+        }
+        assert_eq!(collected_chunks.len(), num_txs);
+    }
+
+    #[tokio::test]
+    async fn test_finalized_pegout_ids_streaming_chunksize_lt_chunks() {
+        let app = setup().await;
+        let num_txs = 1;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            finalized_pegout_ids.push(pegout_id);
+        }
+        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        app.db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+
+        let chunk_size = 10;
+        let req = tonic::Request::new(rpc::GetFinalizedPegoutIdsRequest { chunk_size });
+        let res = app.get_finalized_pegout_ids(req).await.unwrap();
+        let mut stream = res.into_inner();
+        let mut collected_chunks = vec![];
+        while let Some(item) = stream.next().await {
+            let item = item.unwrap();
+            assert_eq!(item.total_chunks, (num_txs as u64).div_ceil(chunk_size));
+            collected_chunks.extend_from_slice(&item.ids);
+        }
+        assert_eq!(collected_chunks.len(), num_txs);
     }
 }

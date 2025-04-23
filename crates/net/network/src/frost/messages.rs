@@ -9,29 +9,6 @@ use reth_primitives::{Buf, BufMut, BytesMut};
 const MESSAGE_VERSION: usize = 0;
 const WALLET_STATE_MESSAGE_VERSION: usize = 0;
 
-/// A structured healthcheck message
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HealthcheckRequest {
-    /// healthcheck ping sender
-    pub sender: PeerId,
-    /// healthcheck ping receiver
-    pub receiver: PeerId,
-}
-
-/// Healtcheck message builder
-impl HealthcheckRequest {
-    /// Constructs a new healthcheck request
-    pub const fn new(sender: PeerId, receiver: PeerId) -> Self {
-        Self { sender, receiver }
-    }
-}
-
-impl fmt::Display for HealthcheckRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Healtcheck sender: {:?}. Healthcheck receiver: {:?}", self.sender, self.receiver)
-    }
-}
-
 /// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DkgRequest {

@@ -171,7 +171,7 @@ where
         }
     }
 
-    async fn get_serialized_compressed_finalized_pegout_ids(
+    async fn send_serialized_compressed_finalized_pegout_ids(
         &mut self,
         chunk_size: u64,
         peer_data: &PeerData,
@@ -186,26 +186,27 @@ where
 
         // get the stream from the response
         while let Some(item) = response.next().await {
+            info!(target: "consensus::authority::forst_task::get_serialized_compressed_pegout_ids", "XXXXXXXXXXXXXXXXXXX {:?}", item);
             let prost_serialized_pegout_ids = item.map_err(|e| {
-                error!(target: "consensus::authority::forst_task::get_serialized_compressed_finalized_pegout_ids", "Got grpc error {:?}", e);
+                error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got grpc error {:?}", e);
                 FinalizedPegoutIdsSyncSerializationError::Grpc(GrpcClientError::Call(e))
             })?;
 
             if prost_serialized_pegout_ids.ids.is_empty() {
-                warn!(target: "consensus::authority::forst_task::get_serialized_compressed_finalized_pegout_ids", "Received empty finalized pegout ids from btc server");
+                warn!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received empty finalized pegout ids from btc server");
                 continue;
             }
 
             // serialize the prost message
             let prost_message_wrapper = ProstMessageSerdelizer(prost_serialized_pegout_ids);
             let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
-                error!(target: "consensus::authority::forst_task::get_serialized_compressed_finalized_pegout_ids", "Got serializer error {:?}", e);
+                error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got serializer error {:?}", e);
                 FinalizedPegoutIdsSyncSerializationError::Prost(e)
             })?;
 
             // now compress the prost message
             let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
-                error!(target: "consensus::authority::forst_task::get_serialized_compressed_finalized_pegout_ids", "Got compressor error {:?}", e);
+                error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got compressor error {:?}", e);
                 FinalizedPegoutIdsSyncSerializationError::DataParser(e)
             })?;
 
@@ -459,24 +460,32 @@ where
                             continue;
                         }
 
-                        let all_peers_handle = self
-                            .dkg_state_machine
-                            .get_all_peers_handle()
-                            .await
-                            .expect("expect all peers handle to exist");
-                        let peer_handle =
-                            all_peers_handle.get(&peer_id).expect("peer handle to exist");
+                        match self.dkg_state_machine.get_all_peers_handle().await {
+                            Ok(all_peers_handle) => {
+                                info!(target: "consensus::authority::frost_task::start_task", "Got all peers handle");
+                                if all_peers_handle.get(&peer_id).is_none() {
+                                    error!(target: "consensus::authority::frost_task::start_task", "Peer handle not found for peer id {:?}", peer_id);
+                                    continue;
+                                }
+                                let peer_handle =
+                                    all_peers_handle.get(&peer_id).expect("peer handle to exist");
 
-                        if let Err(e) = self
-                            .get_serialized_compressed_finalized_pegout_ids(
-                                self.frost_config.wallet_state_sync_chunk_size,
-                                peer_handle,
-                                &response,
-                            )
-                            .await
-                        {
-                            error!(target: "consensus::authority::frost_task::start_task", "Error getting serialized compressed finalized pegout ids: {:?}", e);
-                            continue;
+                                if let Err(e) = self
+                                    .send_serialized_compressed_finalized_pegout_ids(
+                                        self.frost_config.wallet_state_sync_chunk_size,
+                                        peer_handle,
+                                        &response,
+                                    )
+                                    .await
+                                {
+                                    error!(target: "consensus::authority::frost_task::start_task", "Error getting serialized compressed finalized pegout ids: {:?}", e);
+                                    continue;
+                                }
+                            }
+                            Err(e) => {
+                                error!(target: "consensus::authority::frost_task::start_task", "Error getting all peers handle {:?}", e);
+                                continue;
+                            }
                         }
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {

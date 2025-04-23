@@ -1419,7 +1419,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_stream_pegout_ids() {
+    async fn test_stream_pegout_ids_chunksize_lt_items() {
         let (db, _temp_dir) = setup_db();
         let num_txs = 52;
         let mut finalized_pegout_ids = vec![];
@@ -1453,6 +1453,87 @@ mod tests {
             chunk_indexes_set.len() as u64,
             (total_count as u64).div_ceil(chunk_size as u64)
         );
+    }
+
+    #[tokio::test]
+    async fn test_stream_pegout_ids_chunksize_gt_items() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 2;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            finalized_pegout_ids.push(pegout_id);
+        }
+        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+        db.flush().unwrap();
+
+        let chunk_size = 10;
+        let stream = db.get_finalized_pegout_ids_stream(chunk_size);
+        pin!(stream);
+        let mut total_count = 0;
+        let expected_total_chunks = (num_txs as u64).div_ceil(chunk_size as u64);
+        let mut chunk_indexes_set = HashSet::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok((pegout_ids, chunk_index, num_chunks)) => {
+                    chunk_indexes_set.insert(chunk_index);
+                    assert_eq!(num_chunks, expected_total_chunks);
+                    total_count += pegout_ids.len();
+                }
+                Err(e) => panic!("Error streaming pegout ids: {:?}", e),
+            }
+        }
+        assert_eq!(total_count as u64, num_txs);
+        assert_eq!(
+            chunk_indexes_set.len() as u64,
+            (total_count as u64).div_ceil(chunk_size as u64)
+        );
+    }
+
+    #[test]
+    fn should_store_many_finalized_pegout_ids_atomically() {
+        let (db, _temp_dir) = setup_db();
+        let num_pegout_ids = 5;
+        let mut pegouts = vec![];
+        for _ in 0..num_pegout_ids {
+            let pegout_id = create_random_pegout_id();
+            pegouts.push(pegout_id);
+        }
+        let pegout_slice = pegouts.iter().collect::<Vec<&PegoutId>>();
+        db.store_finalized_pegout_ids_atomically(&pegout_slice).unwrap();
+        db.flush().unwrap();
+
+        // Get all pegout ids
+        let pegouts_retrieved = db.get_finalized_pegout_ids().unwrap();
+        assert_eq!(pegouts.len(), num_pegout_ids);
+        // All pegouts should be present
+        for pegout in pegouts.iter() {
+            assert!(pegouts_retrieved.contains(pegout));
+        }
+    }
+
+    #[test]
+    fn should_store_many_finalized_pegout_ids() {
+        let (db, _temp_dir) = setup_db();
+        let num_pegout_ids = 5;
+        let mut pegouts = vec![];
+        for _ in 0..num_pegout_ids {
+            let pegout_id = create_random_pegout_id();
+            pegouts.push(pegout_id);
+        }
+        let pegout_slice = pegouts.iter().collect::<Vec<&PegoutId>>();
+        db.store_finalized_pegout_ids(&pegout_slice).unwrap();
+        db.flush().unwrap();
+
+        // Get all pegout ids
+        let pegouts_retrieved = db.get_finalized_pegout_ids().unwrap();
+        assert_eq!(pegouts.len(), num_pegout_ids);
+        // All pegouts should be present
+        for pegout in pegouts.iter() {
+            assert!(pegouts_retrieved.contains(pegout));
+        }
     }
 
     #[test]

@@ -49,7 +49,7 @@ jobs:
       - name: Run tests
         run: |
           cargo nextest run \
-            --locked --features "ethereum conflicting_input" \
+            --locked --features "ethereum" \
             --workspace --exclude example-custom-evm --exclude example-stateful-precompile --exclude ef-tests \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
   
