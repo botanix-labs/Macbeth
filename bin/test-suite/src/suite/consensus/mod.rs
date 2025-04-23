@@ -527,6 +527,19 @@ impl Suite for ConsensusIntegrationTestSuite {
                     invalid_transactions::test_invalid_pegout::invalid_pegout
                 )
             }
+            "multi_pegin_revert_scenarios" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    invalid_transactions::test_multi_pegin::multi_pegin_revert_scenarios
+                )
+            }
             "test_mempool_gossip" => {
                 run_test!(
                     self,
