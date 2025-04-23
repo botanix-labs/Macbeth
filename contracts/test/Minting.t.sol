@@ -40,14 +40,14 @@ contract MintingTest is Test {
 
     function testMintEvent() public payable {
         // set gas price to greater than 0
-        vm.txGasPrice(1); 
+        vm.fee(1);
 
         // check that the Mint event was emitted
         vm.expectEmit(true, true, true, true);
 
         // mock metadata
         bytes memory metadata = bytes("0x00000000");
-        uint256 expectedMintAmount = 999999999999969496;
+        uint256 expectedMintAmount = 999999999999850000;
         emit Mint(destination, expectedMintAmount, bitcoinBlockHeight, metadata);
 
         minting.mint(destination, amount, bitcoinBlockHeight, metadata, refundAddress);
@@ -56,7 +56,7 @@ contract MintingTest is Test {
 
     function testRevertWhenTxCostExceedsAmount() public payable {
         // set gas price so txCost exceeds amount
-        vm.txGasPrice(10000000000000000000000);
+        vm.fee(10000000000000000000000);
 
         bytes memory metadata = bytes("0x00000000");
         
