@@ -3,6 +3,9 @@ use crate::{
     mint_attack_contract_abi::{
         MintAttackContract, MINTATTACKCONTRACT_ABI, MINTATTACKCONTRACT_BYTECODE,
     },
+    multi_mint_helper_abi::{
+        MultiMintHelperContract, MULTIMINTHELPERCONTRACT_ABI, MULTIMINTHELPERCONTRACT_BYTECODE,
+    },
     minting::Minting as MintContract,
     suite::consensus::common::poa_node::RPC_PORT_BASE,
 };
@@ -47,6 +50,8 @@ pub struct BotanixEthClient {
     pub mint_contract: MintContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>,
     mint_attack_contract:
         Option<MintAttackContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>>,
+    multi_mint_helper_contract:
+        Option<MultiMintHelperContract<SignerMiddleware<Provider<Http>, Wallet<SigningKey>>>>,
     http_client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
     ws_provider: Provider<Ws>,
 }
@@ -88,7 +93,13 @@ impl BotanixEthClient {
         // create a mint contract
         let mint_contract = MintContract::new(mint_contract_address, Arc::new(http_client.clone()));
 
-        Ok(Self { mint_contract, mint_attack_contract: None, http_client, ws_provider })
+        Ok(Self {
+            mint_contract,
+            mint_attack_contract: None,
+            multi_mint_helper_contract: None,
+            http_client,
+            ws_provider,
+        })
     }
 
     pub fn http_client(&self) -> &SignerMiddleware<Provider<Http>, Wallet<SigningKey>> {
@@ -449,10 +460,20 @@ impl BotanixEthClient {
         Ok(latest_block)
     }
 
-    pub fn set_mint_attack_contract(&mut self, address: AbiAddress) {
-        let mint_attack_contract =
-            MintAttackContract::new(address, Arc::new(self.http_client.clone()));
-        self.mint_attack_contract = Some(mint_attack_contract);
+    pub fn set_mint_attack_contract(&mut self, contract_address: EtherAddress) {
+        let contract_instance = MintAttackContract::new(
+            contract_address,
+            Arc::new(self.http_client.clone()),
+        );
+        self.mint_attack_contract = Some(contract_instance);
+    }
+
+    pub fn set_multi_mint_helper_contract(&mut self, contract_address: EtherAddress) {
+        let contract_instance = MultiMintHelperContract::new(
+            contract_address,
+            Arc::new(self.http_client.clone()),
+        );
+        self.multi_mint_helper_contract = Some(contract_instance);
     }
 
     pub async fn deploy_mint_attack_contract(
@@ -496,5 +517,70 @@ impl BotanixEthClient {
         let client = SignerMiddleware::new(http_provider.clone(), wallet);
 
         Ok(client)
+    }
+
+    pub async fn deploy_multi_mint_helper_contract(
+        &self,
+        deployer_client: SignerMiddleware<Provider<Http>, Wallet<SigningKey>>,
+    ) -> anyhow::Result<EtherAddress> {
+        let factory = ContractFactory::new(
+            MULTIMINTHELPERCONTRACT_ABI.clone(),
+            MULTIMINTHELPERCONTRACT_BYTECODE.clone(),
+            Arc::new(deployer_client),
+        );
+
+        let mint_contract_address = self.mint_contract.address();
+
+        let contract = factory
+            .deploy(mint_contract_address)
+            .context("Failed to deploy MultiMintHelper contract")?
+            .send()
+            .await
+            .context("Failed to send deployment tx for MultiMintHelper contract")?;
+
+        Ok(contract.address())
+    }
+
+    pub async fn multi_mint_two(
+        &self,
+        destination1: EtherAddress,
+        amount1: U256,
+        bitcoin_block_height1: u32,
+        metadata1: ethers::core::types::Bytes,
+        refund_address1: EtherAddress,
+        destination2: EtherAddress,
+        amount2: U256,
+        bitcoin_block_height2: u32,
+        metadata2: ethers::core::types::Bytes,
+        refund_address2: EtherAddress,
+    ) -> Result<Option<TransactionReceipt>, Error> {
+        let contract = self
+            .multi_mint_helper_contract
+            .as_ref()
+            .ok_or(Error::MintAttackContractNotFound)?;
+
+        let gas_price = self.http_client.get_gas_price().await.ok().unwrap_or_default();
+
+        let tx_receipt = contract
+            .multi_mint_two(
+                destination1,
+                amount1,
+                bitcoin_block_height1,
+                metadata1,
+                refund_address1,
+                destination2,
+                amount2,
+                bitcoin_block_height2,
+                metadata2,
+                refund_address2,
+            )
+            .gas_price(gas_price)
+            .gas(U256::from(2_000_000))
+            .send()
+            .await
+            .map_err(Error::Contract)?
+            .await
+            .map_err(Error::Provider)?;
+        Ok(tx_receipt)
     }
 }
