@@ -1055,6 +1055,45 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[tokio::test]
+    async fn validate_psbt_by_ids_reject_malicious_output() {
+        let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+            .expect("valid address")
+            .assume_checked();
+
+        let mut tx = create_tx(1, &destination);
+
+        // WARNING: Adding malicious output to the transaction
+        tx.output.push(bitcoin::TxOut {
+            value: Amount::from_sat(1000),
+            script_pubkey: random_p2wpkh_script(),
+        });
+
+        let input_needed = tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
+
+        let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
+        psbt.inputs[0].witness_utxo = Some(bitcoin::TxOut {
+            value: Amount::from_sat(input_needed),
+            script_pubkey: bitcoin::ScriptBuf::new(),
+        });
+
+        let pegout_id = PegoutId::new([0u8; 32], 0).as_bytes();
+        // WARNING: Reusing the pegout Id for the malicious output!
+        psbt.outputs[0].set_pegout_id(pegout_id);
+        psbt.outputs[1].set_pegout_id(pegout_id);
+
+        let result =
+            validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            PsbtValidationError::FailedToValidatePsbtByIds(
+                "Output script pubkey does not match destination".to_string()
+            )
+        );
+    }
+
     #[derive(Debug)]
     struct TestError(String);
 
