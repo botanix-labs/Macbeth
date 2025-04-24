@@ -130,6 +130,10 @@ pub const BOTANIX_MAINNET_GENESIS: B256 =
 pub const BOTANIX_TESTNET_GENESIS: B256 =
     b256!("3797638175875c37cefa72ef546db685e43c81ba4af8238b48a495f98d61588d");
 
+/// LST `FeeReceiver` address: `0x06ceeD3eD58b8028C73AA63E2874cd86a37AA448`
+// TODO: This is not the production address. Please update.
+pub const LST_FEE_RECEIVER: &str = "06ceeD3eD58b8028C73AA63E2874cd86a37AA448";
+
 /// Keccak256 over empty array: `0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`
 pub const KECCAK_EMPTY: B256 =
     b256!("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
