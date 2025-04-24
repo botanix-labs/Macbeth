@@ -502,7 +502,13 @@ pub async fn validate_psbt_by_ids(
 
         // Retrieve the corresponding TxOut from the PSBT, according to the
         // specified pegout position.
-        let tx_out = &psbt.unsigned_tx.output[*pegout_pos];
+        let tx_out = psbt.unsigned_tx.output.get(*pegout_pos).ok_or(
+            PsbtValidationError::FailedToValidatePsbtByIds(format!(
+                "Failed to get output in unsigned_tx at position {}",
+                *pegout_pos
+            )),
+        )?;
+
         validate_psbt_by_output(tx_out, &destination, amount, fee_per_output)?;
     }
 
