@@ -5,7 +5,9 @@ use alloy_eips::eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE};
 use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_consensus_common::{calc, utils};
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
-use reth_primitives::{Address, Block, Withdrawal, Withdrawals, B256, U256};
+use reth_primitives::{
+    constants::LST_FEE_RECEIVER, Address, Block, Withdrawal, Withdrawals, B256, U256,
+};
 use reth_storage_errors::provider::ProviderError;
 use revm::{
     primitives::{Account, AccountInfo, Bytecode, EvmStorageSlot, BLOCKHASH_SERVE_WINDOW},
@@ -49,11 +51,21 @@ pub fn post_block_balance_increments(
     // choice tests) During normal operation, the block_builder address will never be zero: it
     // will be an authority address
     let fees = total_block_fees.unwrap_or(0);
-    let address = block_fee_recipient_address.unwrap_or(Address::ZERO);
+    let block_fee_recipient = block_fee_recipient_address.unwrap_or(Address::ZERO);
 
-    if fees > 0 && address != Address::ZERO && chain_spec.botanix_fee_recipient.is_some() {
-        let (botanix_fees, builder_fees) = utils::block_fees_split(fees);
+    if fees > 0
+        && block_fee_recipient != Address::ZERO
+        && chain_spec.botanix_fee_recipient.is_some()
+    {
+        let (fee_receiver_fees, botanix_fees, block_fee_recipient_fees) =
+            utils::block_fees_split(fees);
 
+        // FeeReceiver fees
+        *balance_increments
+            .entry(Address::from_str(LST_FEE_RECEIVER).expect("FeeReceiver to exist"))
+            .or_default() += fee_receiver_fees;
+
+        // Botanix fees
         *balance_increments
             .entry(
                 Address::from_str(
@@ -66,7 +78,9 @@ pub fn post_block_balance_increments(
                 .expect("Recipient to exist"),
             )
             .or_default() += botanix_fees;
-        *balance_increments.entry(address).or_default() += builder_fees;
+
+        // Block fee recipient fees
+        *balance_increments.entry(block_fee_recipient).or_default() += block_fee_recipient_fees;
     }
 
     // process withdrawals

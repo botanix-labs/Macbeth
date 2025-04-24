@@ -11,13 +11,19 @@ pub fn unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
-// not in authority utils because of circular dependency
-/// Calculate the block reward split between botanix and the beneficiary
-pub const fn block_fees_split(total_block_fees: u128) -> (u128, u128) {
-    // 20% of the block reward
-    let botanix_reward = total_block_fees / 5;
-    let beneficiary_reward = total_block_fees - botanix_reward;
-    (botanix_reward, beneficiary_reward)
+/// Splits block fees three ways:
+/// 1. 50% to LST `FeeReceiver`
+/// 2. 40% to Botanix
+/// 3. 10% to the Block Fee Recipient (determined by the node operator)
+pub const fn block_fees_split(total_block_fees: u128) -> (u128, u128, u128) {
+    // 50% to LST `FeeReceiver`
+    let fee_receiver_fees = total_block_fees * 50 / 100;
+    // 40% to Botanix
+    let botanix_fees = total_block_fees * 40 / 100;
+    // 10% to the Block Fee Recipient (determined by the node operator)
+    let block_fee_recipient_fees = total_block_fees * 10 / 100;
+
+    (fee_receiver_fees, botanix_fees, block_fee_recipient_fees)
 }
 
 /// Validate poa block beneficiary
@@ -120,9 +126,11 @@ mod tests {
     #[test]
     fn should_split_rewards() {
         let base_block_reward = 100;
-        let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
-        assert_eq!(botanix_reward, 20);
-        assert_eq!(beneficiary_reward, 80);
+        let (fee_receiver_reward, botanix_reward, block_fee_recipient_reward) =
+            block_fees_split(base_block_reward);
+        assert_eq!(fee_receiver_reward, 50);
+        assert_eq!(botanix_reward, 40);
+        assert_eq!(block_fee_recipient_reward, 10);
     }
 
     #[test]
