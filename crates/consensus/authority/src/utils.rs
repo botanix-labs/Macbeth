@@ -391,11 +391,12 @@ pub enum PsbtValidationError {
 }
 
 /// Extract pegouts ids from psbt
-pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<PegoutId> {
+pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<(usize, PegoutId)> {
     psbt.outputs
         .iter()
-        .filter_map(|output| match output.pegout_id() {
-            Some(pegout_id) => PegoutId::from_bytes(pegout_id.as_slice()).ok(),
+        .enumerate()
+        .filter_map(|(pos, output)| match output.pegout_id() {
+            Some(pegout_id) => PegoutId::from_bytes(pegout_id.as_slice()).ok().map(|id| (pos, id)),
             _ => None,
         })
         .collect()
@@ -403,30 +404,17 @@ pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<PegoutId> {
 
 /// Validate psbt contains the correct output and amount including the shared fee
 pub fn validate_psbt_by_output(
-    psbt: &Psbt,
+    tx_out: &bitcoin::TxOut,
     destination: &Address,
     amount: Amount,
     fee_per_output: Amount,
 ) -> Result<(), PsbtValidationError> {
-    debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Validating {} outputs in psbt", psbt.outputs.len());
-
-    let Ok(transaction) = psbt.clone().extract_tx() else {
-        error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt");
+    if tx_out.script_pubkey != destination.script_pubkey() {
+        error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Output script pubkey does not match destination");
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "Failed to extract transaction from psbt",
+            "Output script pubkey does not match destination",
         )));
-    };
-
-    let Some(output) = transaction
-        .output
-        .iter()
-        .find(|output| output.script_pubkey == destination.script_pubkey())
-    else {
-        error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
-        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "Failed to find matching output in psbt",
-        )));
-    };
+    }
 
     let Some(expected_amount) = amount.checked_sub(fee_per_output) else {
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
@@ -434,7 +422,7 @@ pub fn validate_psbt_by_output(
         )));
     };
 
-    if output.value == expected_amount {
+    if tx_out.value == expected_amount {
         Ok(())
     } else {
         Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
@@ -466,7 +454,7 @@ pub async fn validate_psbt_by_ids(
             })?;
 
     // get pegouts from db
-    for PegoutId { txid, idx } in pegout_ids.iter() {
+    for (pegout_pos, PegoutId { txid, idx }) in pegout_ids.iter() {
         let log =
             client
             .receipt_by_hash(txid.into())
@@ -488,7 +476,12 @@ pub async fn validate_psbt_by_ids(
                 PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get pegout data from burn event"))
             })?;
 
-        validate_psbt_by_output(psbt, &destination, amount, fee_per_output)?;
+        debug_assert_eq!(psbt.outputs.len(), psbt.unsigned_tx.output.len());
+
+        // Retrieve the corresponding TxOut from the PSBT, according to the
+        // specified pegout position.
+        let tx_out = &psbt.unsigned_tx.output[*pegout_pos];
+        validate_psbt_by_output(tx_out, &destination, amount, fee_per_output)?;
     }
 
     Ok(())
