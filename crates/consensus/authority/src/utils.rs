@@ -962,7 +962,8 @@ mod tests {
         let expected = PegoutId::from(pegout_id);
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0], expected);
+        assert_eq!(result[0].0, 0); // position of the output
+        assert_eq!(result[0].1, expected);
     }
 
     #[test]
@@ -971,8 +972,11 @@ mod tests {
         let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
+
         let psbt = create_psbt(1, &destination);
-        let result = validate_psbt_by_output(&psbt, &destination, value, Amount::from_sat(426));
+        let tx_out = &psbt.unsigned_tx.output[0];
+
+        let result = validate_psbt_by_output(&tx_out, &destination, value, Amount::from_sat(426));
         assert!(result.is_ok());
     }
 
@@ -991,7 +995,9 @@ mod tests {
                 .expect("valid address")
                 .assume_checked();
         let fee_per_output = psbt.fee_per_output(1).expect("valid fee per output");
-        let result = validate_psbt_by_output(&psbt, &incorrect_destination, value, fee_per_output);
+
+        let tx_out = &psbt.unsigned_tx.output[0];
+        let result = validate_psbt_by_output(tx_out, &incorrect_destination, value, fee_per_output);
         assert!(result.is_err());
     }
 
@@ -1017,8 +1023,11 @@ mod tests {
             total_outputs.to_sat() + actual_fee.to_sat() + 100, /* add 100 sats to make it
                                                                  * incorrect */
         );
+
         let fee_per_output = psbt.fee_per_output(1).expect("valid fee per output");
-        match validate_psbt_by_output(&psbt, &destination, incorrect_amount, fee_per_output) {
+        let tx_out = &psbt.unsigned_tx.output[0];
+
+        match validate_psbt_by_output(tx_out, &destination, incorrect_amount, fee_per_output) {
             Err(PsbtValidationError::FailedToValidatePsbtByIds(message)) => {
                 println!("Validation failed: {}", message);
                 assert!(message == "The output value does not match the expected amount");
