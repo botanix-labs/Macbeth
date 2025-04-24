@@ -319,7 +319,7 @@ impl FrostProtoMessage {
 
         // Safely get message ID
         let id = buf[0];
-        if buf.len() < 1 {
+        if buf.is_empty() {
             return None;
         }
         buf.advance(1);
