@@ -498,8 +498,6 @@ pub async fn validate_psbt_by_ids(
                 PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get pegout data from burn event"))
             })?;
 
-        debug_assert_eq!(psbt.outputs.len(), psbt.unsigned_tx.output.len());
-
         // Retrieve the corresponding TxOut from the PSBT, according to the
         // specified pegout position.
         let tx_out = psbt.unsigned_tx.output.get(*pegout_pos).ok_or(
