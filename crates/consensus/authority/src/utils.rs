@@ -382,7 +382,7 @@ pub fn is_known_minting_contract(
     Ok(())
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 /// Represents errors that can occur during psbt validation
 pub enum PsbtValidationError {
     #[error("Failed to validate psbt by ids: {0}")]
@@ -402,7 +402,11 @@ pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<(usize, PegoutId)> {
         .collect()
 }
 
-/// Validate psbt contains the correct output and amount including the shared fee
+/// Validates a transaction output against an expected destination address and
+/// amount.
+///
+/// This function verifies that a transaction output pays to the correct
+/// destination and contains the correct amount after subtracting the fee.
 pub fn validate_psbt_by_output(
     tx_out: &bitcoin::TxOut,
     destination: &Address,
@@ -431,7 +435,25 @@ pub fn validate_psbt_by_output(
     }
 }
 
-/// Validate psbt by pegout ids
+/// Validates a PSBT by verifying its pegout outputs against data from the
+/// receipt database.
+///
+/// This function extracts pegout IDs from the PSBT, retrieves the corresponding
+/// pegout data from the database, and validates each output's destination and
+/// amount.
+///
+/// # Warning
+///
+/// This function only validates pegout outputs. It does NOT validate:
+/// * Non-pegout outputs (usually change outputs)
+/// * Duplicate pegout IDs
+/// * Conflicting inputs
+/// * Change outputs
+///
+/// These responsibilities are handled by the `btc-server`.
+//
+// TODO(lamafab): All those responsibilities SHOULD be handled in one place,
+// ideally by a single function.
 pub async fn validate_psbt_by_ids(
     client: impl ReceiptProvider + Clone,
     btc_network: bitcoin::Network,
@@ -495,7 +517,7 @@ mod tests {
         transaction::Version,
         FeeRate, OutPoint, Sequence, Transaction, TxIn, Txid,
     };
-    use btcserverlib::wallet::psbt::PsbtOutputExt;
+    use btcserverlib::{test_utils::random_p2wpkh_script, wallet::psbt::PsbtOutputExt};
     use rand::{thread_rng, Rng, RngCore};
     use reth_primitives::{
         address, b256, bytes, hex_literal::hex, Bytes, Header, Log, LogData, Receipt, TxHash,
