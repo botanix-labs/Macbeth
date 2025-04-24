@@ -309,11 +309,19 @@ impl FrostProtoMessage {
 
     /// Decodes a Frost protocol message from the given message buffer.
     pub fn decode_message(buf: &mut &[u8]) -> Option<Self> {
+        // Check if buffer is empty
         if buf.is_empty() {
             return None;
         }
+
+        // Safely get message ID
         let id = buf[0];
+        if buf.is_empty() {
+            return None;
+        }
         buf.advance(1);
+
+        // Match message type
         let message_type = match id {
             0x00 => FrostProtoMessageId::Round1Dkg,
             0x01 => FrostProtoMessageId::Round2Dkg,
@@ -329,163 +337,220 @@ impl FrostProtoMessage {
             0x0B => FrostProtoMessageId::WalletState,
             _ => return None,
         };
+
+        // Decode message based on type
         let message = match message_type {
-            // Other cases remain unchanged
-            FrostProtoMessageId::Round1Dkg => {
-                let id_len = buf[0] as usize;
-                buf.advance(1);
-                let identifier = buf[..id_len].to_vec();
-                buf.advance(id_len);
-
-                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let data = buf[..data_len].to_vec();
-                buf.advance(data_len);
-
-                FrostProtoMessageKind::Round1Dkg(DkgRequest::new(data, identifier))
-            }
-            FrostProtoMessageId::Round2Dkg => {
-                let id_len = buf[0] as usize;
-                buf.advance(1);
-                let identifier = buf[..id_len].to_vec();
-                buf.advance(id_len);
-
-                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let data = buf[..data_len].to_vec();
-                buf.advance(data_len);
-
-                FrostProtoMessageKind::Round2Dkg(DkgRequest::new(data, identifier))
-            }
+            FrostProtoMessageId::Round1Dkg |
+            FrostProtoMessageId::Round2Dkg |
             FrostProtoMessageId::Round1DkgRequest => {
+                // Check if there's enough data for id_len
+                if buf.is_empty() {
+                    return None;
+                }
+
                 let id_len = buf[0] as usize;
                 buf.advance(1);
+
+                // Check if there's enough data for identifier
+                if buf.len() < id_len {
+                    return None;
+                }
+
                 let identifier = buf[..id_len].to_vec();
                 buf.advance(id_len);
 
-                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                // Check if there's enough data for data_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                // Safely convert bytes to u32
+                let data_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(4);
+
+                // Check if there's enough data for data
+                if buf.len() < data_len {
+                    return None;
+                }
+
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::Round1DkgRequest(DkgRequest::new(data, identifier))
+                match message_type {
+                    FrostProtoMessageId::Round1Dkg => {
+                        FrostProtoMessageKind::Round1Dkg(DkgRequest::new(data, identifier))
+                    }
+                    FrostProtoMessageId::Round2Dkg => {
+                        FrostProtoMessageKind::Round2Dkg(DkgRequest::new(data, identifier))
+                    }
+                    FrostProtoMessageId::Round1DkgRequest => {
+                        FrostProtoMessageKind::Round1DkgRequest(DkgRequest::new(data, identifier))
+                    }
+                    _ => unreachable!(), // We've already matched these values above
+                }
             }
 
             FrostProtoMessageId::Ping => FrostProtoMessageKind::Ping,
             FrostProtoMessageId::Pong => FrostProtoMessageKind::Pong,
-            FrostProtoMessageId::PingMessage => {
-                let peer_id_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+
+            FrostProtoMessageId::PingMessage | FrostProtoMessageId::PongMessage => {
+                // Check if there's enough data for peer_id_len
+                if buf.len() < 2 {
+                    return None;
+                }
+
+                // Safely convert bytes to u16
+                let peer_id_len = match buf[..2].try_into() {
+                    Ok(bytes) => u16::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(2);
-                let peer_id_str = std::str::from_utf8(&buf[..peer_id_len]).unwrap();
-                let peer_id = PeerId::from_str(peer_id_str).unwrap(); // Assuming from_str can never fail in this context
+
+                // Check if there's enough data for peer_id_str
+                if buf.len() < peer_id_len {
+                    return None;
+                }
+
+                // Safely convert bytes to string
+                let peer_id_str = match std::str::from_utf8(&buf[..peer_id_len]) {
+                    Ok(s) => s,
+                    Err(_) => return None,
+                };
+
+                // Safely convert string to PeerId
+                let peer_id = match PeerId::from_str(peer_id_str) {
+                    Ok(id) => id,
+                    Err(_) => return None,
+                };
                 buf.advance(peer_id_len);
 
-                FrostProtoMessageKind::PingMessage(peer_id)
+                match message_type {
+                    FrostProtoMessageId::PingMessage => FrostProtoMessageKind::PingMessage(peer_id),
+                    FrostProtoMessageId::PongMessage => FrostProtoMessageKind::PongMessage(peer_id),
+                    _ => unreachable!(), // We've already matched these values above
+                }
             }
-            FrostProtoMessageId::PongMessage => {
-                let peer_id_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
-                buf.advance(2);
-                let peer_id_str = std::str::from_utf8(&buf[..peer_id_len]).unwrap();
-                let peer_id = PeerId::from_str(peer_id_str).unwrap(); // Assuming from_str can never fail in this context
-                buf.advance(peer_id_len);
 
-                FrostProtoMessageKind::PongMessage(peer_id)
-            }
-            FrostProtoMessageId::SignerRound1SigningPackage => {
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
-                buf.advance(4);
-                let signing_session_id = buf[..session_id_len].to_vec();
-                buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let psbt = buf[..psbt_len].to_vec();
-                buf.advance(psbt_len);
-
-                FrostProtoMessageKind::SignerRound1SigningPackage(SignRequest::new(
-                    signing_session_id,
-                    psbt,
-                ))
-            }
-            FrostProtoMessageId::CoordinatorRound1SigningPackage => {
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
-                buf.advance(4);
-                let signing_session_id = buf[..session_id_len].to_vec();
-                buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let psbt = buf[..psbt_len].to_vec();
-                buf.advance(psbt_len);
-
-                FrostProtoMessageKind::CoordinatorRound1SigningPackage(SignRequest::new(
-                    signing_session_id,
-                    psbt,
-                ))
-            }
-            FrostProtoMessageId::SignerRound2SigningPackage => {
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
-                buf.advance(4);
-                let signing_session_id = buf[..session_id_len].to_vec();
-                buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let psbt = buf[..psbt_len].to_vec();
-                buf.advance(psbt_len);
-
-                FrostProtoMessageKind::SignerRound2SigningPackage(SignRequest::new(
-                    signing_session_id,
-                    psbt,
-                ))
-            }
+            FrostProtoMessageId::SignerRound1SigningPackage |
+            FrostProtoMessageId::CoordinatorRound1SigningPackage |
+            FrostProtoMessageId::SignerRound2SigningPackage |
             FrostProtoMessageId::CoordinatorRound2SigningPackage => {
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
+                // Check if there's enough data for session_id_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                // Safely convert bytes to u32
+                let session_id_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(4);
+
+                // Check if there's enough data for signing_session_id
+                if buf.len() < session_id_len {
+                    return None;
+                }
+
                 let signing_session_id = buf[..session_id_len].to_vec();
                 buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+
+                // Check if there's enough data for psbt_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                // Safely convert bytes to u32
+                let psbt_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(4);
+
+                // Check if there's enough data for psbt
+                if buf.len() < psbt_len {
+                    return None;
+                }
+
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
 
-                FrostProtoMessageKind::CoordinatorRound2SigningPackage(SignRequest::new(
-                    signing_session_id,
-                    psbt,
-                ))
+                let sign_request = SignRequest::new(signing_session_id, psbt);
+
+                match message_type {
+                    FrostProtoMessageId::SignerRound1SigningPackage => {
+                        FrostProtoMessageKind::SignerRound1SigningPackage(sign_request)
+                    }
+                    FrostProtoMessageId::CoordinatorRound1SigningPackage => {
+                        FrostProtoMessageKind::CoordinatorRound1SigningPackage(sign_request)
+                    }
+                    FrostProtoMessageId::SignerRound2SigningPackage => {
+                        FrostProtoMessageKind::SignerRound2SigningPackage(sign_request)
+                    }
+                    FrostProtoMessageId::CoordinatorRound2SigningPackage => {
+                        FrostProtoMessageKind::CoordinatorRound2SigningPackage(sign_request)
+                    }
+                    _ => unreachable!(), // We've already matched these values above
+                }
             }
+
             FrostProtoMessageId::WalletState => {
-                // Decode uuid
-                let uuid_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for uuid length"),
-                ) as usize;
+                // Check if there's enough data for uuid_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                // Safely convert bytes to u32 for uuid_len
+                let uuid_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(4);
-                let uuid =
-                    String::from_utf8(buf[..uuid_len].to_vec()).expect("Invalid UTF-8 in uuid");
+
+                // Check if there's enough data for uuid
+                if buf.len() < uuid_len {
+                    return None;
+                }
+
+                // Safely convert bytes to string for uuid
+                let uuid = match String::from_utf8(buf[..uuid_len].to_vec()) {
+                    Ok(s) => s,
+                    Err(_) => return None,
+                };
                 buf.advance(uuid_len);
 
-                // Decode version
-                let version =
-                    u16::from_le_bytes(buf[..2].try_into().expect("Buffer underflow for version"));
+                // Check if there's enough data for version
+                if buf.len() < 2 {
+                    return None;
+                }
+
+                // Safely convert bytes to u16 for version
+                let version = match buf[..2].try_into() {
+                    Ok(bytes) => u16::from_le_bytes(bytes),
+                    Err(_) => return None,
+                };
                 buf.advance(2);
 
-                // Decode finalized_pegout_ids
-                let finalized_pegout_ids_len =
-                    u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                // Check if there's enough data for finalized_pegout_ids_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                // Safely convert bytes to u32 for finalized_pegout_ids_len
+                let finalized_pegout_ids_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(4);
+
+                // Check if there's enough data for finalized_pegout_ids
+                if buf.len() < finalized_pegout_ids_len {
+                    return None;
+                }
+
                 let finalized_pegout_ids = buf[..finalized_pegout_ids_len].to_vec();
                 buf.advance(finalized_pegout_ids_len);
 
@@ -496,6 +561,7 @@ impl FrostProtoMessage {
                 })
             }
         };
+
         Some(Self { message_type, message })
     }
 }

@@ -49,6 +49,7 @@ pub mod context;
 pub mod macros;
 pub mod mint_attack_contract_abi;
 pub mod minting;
+pub mod multi_mint_helper_abi;
 pub mod server;
 pub mod shutdown;
 pub mod suite;

@@ -463,7 +463,7 @@ where
                         match self.dkg_state_machine.get_all_peers_handle().await {
                             Ok(all_peers_handle) => {
                                 info!(target: "consensus::authority::frost_task::start_task", "Got all peers handle");
-                                if all_peers_handle.get(&peer_id).is_none() {
+                                if !all_peers_handle.contains_key(&peer_id) {
                                     error!(target: "consensus::authority::frost_task::start_task", "Peer handle not found for peer id {:?}", peer_id);
                                     continue;
                                 }

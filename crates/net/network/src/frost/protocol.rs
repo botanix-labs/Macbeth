@@ -27,7 +27,7 @@ use crate::{
 
 use super::{
     messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest},
-    FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse,
+    ConnectionEstablishedStatus, FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse,
 };
 
 /// Frost Protocol Handler
@@ -157,7 +157,7 @@ enum RegistrationState {
     NotRegistered,
     Pending {
         remote_peer_rx: mpsc::UnboundedReceiver<FrostPeerCommand>,
-        callback_rx: oneshot::Receiver<u64>,
+        callback_rx: oneshot::Receiver<ConnectionEstablishedStatus>,
     },
     Registered(u64),
 }
@@ -243,12 +243,23 @@ impl Stream for FrostProtoConnection {
 
                 // Wait for the FROST manager to assign an idx to this connection.
                 match callback_rx.poll_unpin(cx) {
-                    Poll::Ready(Ok(idx)) => {
+                    Poll::Ready(Ok(conn_established_status)) => {
                         // connection was registered immediately and
                         // successfully (unlikely that actually happens in
                         // practice)
-                        this.registration = RegistrationState::Registered(idx);
-                        this.commands_rx = Some(UnboundedReceiverStream::new(remote_peer_rx));
+                        match conn_established_status {
+                            ConnectionEstablishedStatus::Success(idx) => {
+                                // connection was registered successfully
+                                this.registration = RegistrationState::Registered(idx);
+                                this.commands_rx =
+                                    Some(UnboundedReceiverStream::new(remote_peer_rx));
+                            }
+                            ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel |
+                            ConnectionEstablishedStatus::NoneAuthority |
+                            ConnectionEstablishedStatus::ConnectedToOurself => {
+                                return Poll::Ready(None);
+                            }
+                        }
                     }
                     Poll::Ready(Err(e)) => {
                         // this error only occurs if the FROST manager has been dropped.
@@ -272,10 +283,20 @@ impl Stream for FrostProtoConnection {
                 };
 
                 match callback_rx.poll_unpin(cx) {
-                    Poll::Ready(Ok(idx)) => {
-                        // connection was registered successfully
-                        this.registration = RegistrationState::Registered(idx);
-                        this.commands_rx = Some(UnboundedReceiverStream::new(remote_peer_rx));
+                    Poll::Ready(Ok(conn_established_status)) => {
+                        match conn_established_status {
+                            ConnectionEstablishedStatus::Success(idx) => {
+                                // connection was registered successfully
+                                this.registration = RegistrationState::Registered(idx);
+                                this.commands_rx =
+                                    Some(UnboundedReceiverStream::new(remote_peer_rx));
+                            }
+                            ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel |
+                            ConnectionEstablishedStatus::NoneAuthority |
+                            ConnectionEstablishedStatus::ConnectedToOurself => {
+                                return Poll::Ready(None);
+                            }
+                        }
                     }
                     Poll::Ready(Err(e)) => {
                         error!(target: "network::frost::protocol", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
@@ -561,7 +582,7 @@ mod tests {
         };
 
         // Manager assigns the connection idx
-        sender.send(0).unwrap();
+        sender.send(ConnectionEstablishedStatus::Success(0)).unwrap();
 
         // Send wire message to the connection (ping)
         let wire_msg = FrostProtoMessage::ping().encoded();
@@ -628,7 +649,7 @@ mod tests {
         };
 
         // Manager assigns the connection idx
-        sender.send(0).unwrap();
+        sender.send(ConnectionEstablishedStatus::Success(0)).unwrap();
 
         // Connection receives all wire messages and generates a response each (pong)
         for _ in 0..4 {
@@ -698,7 +719,7 @@ mod tests {
         };
 
         // Manager assigns the connection idx
-        sender.send(0).unwrap();
+        sender.send(ConnectionEstablishedStatus::Success(0)).unwrap();
 
         let event_queue = protocol_events_rx.len();
         assert_eq!(event_queue, 0); // max=3
@@ -752,5 +773,61 @@ mod tests {
         let Poll::Pending = res else { panic!() };
 
         assert!(protocol_events_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn frost_proto_conn_established_violation() {
+        let (protocol_events_tx, mut protocol_events_rx) = mpsc::channel(3);
+        let protocol_events_tx = PollSender::new(protocol_events_tx);
+
+        let (_conn_tx, conn_rx) = mpsc::unbounded_channel();
+        let conn_rx = UnboundedReceiverStream::new(conn_rx);
+        let conn_rx = ProtocolConnection::from(conn_rx);
+
+        let direction = Direction::Incoming;
+
+        let mut conn = FrostProtoConnection {
+            protocol_events_tx,
+            registration: RegistrationState::NotRegistered,
+            conn_rx,
+            commands_rx: None,
+            my_peer_id: PeerId::new([0; 64]),
+            peer_id: PeerId::new([1; 64]),
+            direction,
+            pending_pong: None,
+        };
+
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        // Poll connection for the first time; it's pending as it needs to be registered first.
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        // Manager receives the connection established event.
+        let msg = protocol_events_rx.try_recv().unwrap();
+        let FrostProtocolEvent::ConnectionEstablished {
+            direction: _,
+            peer_id: _,
+            peer_commands_tx: _,
+            sender,
+        } = msg
+        else {
+            panic!()
+        };
+
+        // Connection is pending at this point
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        // Manager reports a none authority connection attempt
+        sender.send(ConnectionEstablishedStatus::NoneAuthority).unwrap();
+
+        // Connection has to be closed and no longer pending here
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Ready(None) = res else { panic!() };
     }
 }
