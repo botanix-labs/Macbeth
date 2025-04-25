@@ -88,8 +88,9 @@ impl AuthorityConsensus {
         // Determine the parent gas limit, considering elasticity multiplier on the London fork.
         let parent_gas_limit =
             if self.chain_spec.fork(EthereumHardfork::London).transitions_at_block(header.number) {
-                parent.gas_limit *
-                    self.chain_spec
+                parent.gas_limit
+                    * self
+                        .chain_spec
                         .base_fee_params_at_timestamp(header.timestamp)
                         .elasticity_multiplier as u64
             } else {
@@ -398,7 +399,7 @@ mod tests {
     use random_source_provider::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
-    use reth_consensus_common::utils::{block_fees_split, is_inturn};
+    use reth_consensus_common::utils::is_inturn;
     use reth_primitives::{
         constants::{ALLOWED_FUTURE_BLOCK_TIME_SECONDS, MAXIMUM_EXTRA_DATA_SIZE},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
