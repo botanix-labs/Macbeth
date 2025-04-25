@@ -43,9 +43,9 @@ pub fn post_block_balance_increments(
             calc::block_reward(base_block_reward, block.ommers.len());
     }
 
-    // split block fees between builder and botanix if total_block_fees exist and
+    // Split block fees between LST FeeReceiver, Botanix, and the block_fee_recipient_address if total_block_fees exist and
     // block_fee_recipient_address is not zero.
-    // need conditional statement so reth tests can pass:
+    // Need conditional statement so reth tests can pass:
     // sometimes tests will pass None for fees (ie processor eip4788 tests)
     // sometimes it will pass fees with a zero block builder address (ie blockhchain_tree fork
     // choice tests) During normal operation, the block_builder address will never be zero: it
