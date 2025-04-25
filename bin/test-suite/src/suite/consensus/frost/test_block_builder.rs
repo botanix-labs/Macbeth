@@ -127,8 +127,8 @@ pub async fn block_builder(
             botanix_eth_client.get_botanix_balance(block_fee_recipient_address).await.unwrap();
         it_info_print!("Fed member balance", fed_member_balance);
 
-        let botanix_block_reward = botanix_block_reward_address_balance_after
-            - botanix_block_reward_address_balance_before;
+        let botanix_block_reward = botanix_block_reward_address_balance_after -
+            botanix_block_reward_address_balance_before;
 
         let lst_fee_receiver_block_reward =
             lst_fee_receiver_address_balance_after - lst_fee_receiver_address_balance_before;

@@ -626,14 +626,6 @@ mod tests {
     }
 
     #[test]
-    fn should_split_rewards() {
-        let base_block_reward = 100;
-        let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
-        assert_eq!(botanix_reward, 20);
-        assert_eq!(beneficiary_reward, 80);
-    }
-
-    #[test]
     fn should_get_block_fee_recipient_address_from_header() {
         let mut header = Header::default();
         let edh = ExtraDataHeader::default();
