@@ -138,7 +138,10 @@ pub async fn block_builder(
 
         assert_eq!(lst_fee_receiver_block_reward, (total_block_reward * 50) / 100); // 50%
         assert_eq!(botanix_block_reward, (total_block_reward * 40) / 100); // 40%
-        assert_eq!(fed_member_balance, (total_block_reward * 10) / 100); // 10%
+        assert_eq!(
+            fed_member_balance,
+            (total_block_reward - lst_fee_receiver_block_reward - botanix_block_reward)
+        ); // 10%
     }
 
     Ok(())

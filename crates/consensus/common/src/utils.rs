@@ -21,7 +21,7 @@ pub const fn block_fees_split(total_block_fees: u128) -> (u128, u128, u128) {
     // 40% to Botanix
     let botanix_fees = total_block_fees * 40 / 100;
     // 10% to the Block Fee Recipient (determined by the node operator)
-    let block_fee_recipient_fees = total_block_fees * 10 / 100;
+    let block_fee_recipient_fees = total_block_fees - fee_receiver_fees - botanix_fees;
 
     (fee_receiver_fees, botanix_fees, block_fee_recipient_fees)
 }
