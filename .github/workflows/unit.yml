@@ -26,8 +26,7 @@ concurrency:
 jobs:
   test:
     name: test / ethereum
-    runs-on:
-      group: macbeth
+    runs-on: k8-test
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
@@ -81,8 +80,7 @@ jobs:
 
   doc:
     name: doc tests (ethereum)
-    runs-on:
-      group: macbeth
+    runs-on: k8-test
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
