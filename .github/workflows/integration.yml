@@ -34,10 +34,7 @@ jobs:
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-
-      - name: Install killall
-        run: sudo apt-get install psmisc
-
+        
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
