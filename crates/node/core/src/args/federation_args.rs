@@ -56,6 +56,8 @@ pub struct FederationTomlConfig {
     pub botanix_fee_recipient: String,
     /// The precompiled Minting contract bytecode
     pub minting_contract_bytecode: String,
+    /// LST fee receiver
+    pub lst_fee_receiver: String,
 }
 
 impl FederationTomlConfig {
@@ -69,8 +71,14 @@ impl FederationTomlConfig {
         federation_member_public_key: Vec<FedMemberPubKey>,
         botanix_fee_recipient: String,
         minting_contract_bytecode: String,
+        lst_fee_receiver: String,
     ) -> Self {
-        Self { federation_member_public_key, botanix_fee_recipient, minting_contract_bytecode }
+        Self {
+            federation_member_public_key,
+            botanix_fee_recipient,
+            minting_contract_bytecode,
+            lst_fee_receiver,
+        }
     }
     /// Write the config to a file
     pub fn write_to_path(&self, path: impl AsRef<Path> + Send) -> Result<(), Error> {
