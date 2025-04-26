@@ -26,7 +26,7 @@ use reth_provider::{BlockReaderIdExt, ReceiptProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
 use std::{fmt::Debug, time::Duration};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use uuid::Uuid;
 
 /// Checks if the network is undergoing an active sync or not
@@ -1002,7 +1002,7 @@ mod tests {
         let psbt = create_psbt(1, &destination);
         let tx_out = &psbt.unsigned_tx.output[0];
 
-        let result = validate_psbt_by_output(&tx_out, &destination, value, Amount::from_sat(426));
+        let result = validate_psbt_by_output(tx_out, &destination, value, Amount::from_sat(426));
         assert!(result.is_ok());
     }
 
