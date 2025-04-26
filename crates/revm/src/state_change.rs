@@ -59,31 +59,42 @@ pub fn post_block_balance_increments(
             utils::block_fees_split(fees);
 
         // FeeReceiver fees
-        *balance_increments
-            .entry(
-                Address::from_str(
-                    chain_spec.lst_fee_receiver.clone().expect("FeeReceiver to ecist").as_str(),
-                )
-                .expect("FeeReceiver to exist"),
-            )
-            .or_default() += lst_fee_receiver_fees;
+        let lst_fee_receiver_addr = Address::from_str(
+            chain_spec.lst_fee_receiver.clone().expect("FeeReceiver to exist").as_str(),
+        )
+        .expect("Valid FeeReceiver");
+        balance_increments
+            .entry(lst_fee_receiver_addr)
+            .and_modify(|bal: &mut u128| {
+                *bal = bal
+                    .checked_add(lst_fee_receiver_fees)
+                    .expect("overflow incrementing balance for LST FeeReceiver");
+            })
+            .or_insert(lst_fee_receiver_fees);
 
         // Botanix fees
-        *balance_increments
-            .entry(
-                Address::from_str(
-                    chain_spec
-                        .botanix_fee_recipient
-                        .clone()
-                        .expect("botanix fee recipient to exist")
-                        .as_str(),
-                )
-                .expect("Recipient to exist"),
-            )
-            .or_default() += botanix_fees;
+        let botanix_addr = Address::from_str(
+            chain_spec.botanix_fee_recipient.clone().expect("FeeReceiver to exist").as_str(),
+        )
+        .expect("Valid FeeReceiver");
+        balance_increments
+            .entry(botanix_addr)
+            .and_modify(|bal| {
+                *bal = bal
+                    .checked_add(botanix_fees)
+                    .expect("overflow incrementing balance for Botanix fee recipient");
+            })
+            .or_insert(botanix_fees);
 
         // Block fee recipient fees
-        *balance_increments.entry(block_fee_recipient).or_default() += block_fee_recipient_fees;
+        balance_increments
+            .entry(block_fee_recipient)
+            .and_modify(|bal| {
+                *bal = bal
+                    .checked_add(block_fee_recipient_fees)
+                    .expect("overflow incrementing balance for block fee recipient");
+            })
+            .or_insert(block_fee_recipient_fees);
     }
 
     // process withdrawals

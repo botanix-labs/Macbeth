@@ -17,13 +17,25 @@ pub fn unix_timestamp() -> u64 {
 /// 3. 10% to the Block Fee Recipient (determined by the node operator)
 pub const fn block_fees_split(total_block_fees: u128) -> (u128, u128, u128) {
     // 50% to LST `FeeReceiver`
-    let fee_receiver_fees = total_block_fees * 50 / 100;
+    let lst_fee_receiver_fees = total_block_fees
+        .checked_mul(50)
+        .expect("overflow when computing 50%")
+        .checked_div(100)
+        .expect("divide by zero when computing 50%");
     // 40% to Botanix
-    let botanix_fees = total_block_fees * 40 / 100;
+    let botanix_fees = total_block_fees
+        .checked_mul(40)
+        .expect("overflow when computing 40%")
+        .checked_div(100)
+        .expect("divide by zero when computing 40%");
     // 10% to the Block Fee Recipient (determined by the node operator)
-    let block_fee_recipient_fees = total_block_fees - fee_receiver_fees - botanix_fees;
+    let block_fee_recipient_fees = total_block_fees
+        .checked_sub(lst_fee_receiver_fees)
+        .expect("underflow when subtracting lst_fee_receiver_fees")
+        .checked_sub(botanix_fees)
+        .expect("underflow when subtracting botanix_fees");
 
-    (fee_receiver_fees, botanix_fees, block_fee_recipient_fees)
+    (lst_fee_receiver_fees, botanix_fees, block_fee_recipient_fees)
 }
 
 /// Validate poa block beneficiary
