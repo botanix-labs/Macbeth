@@ -5,9 +5,7 @@ use alloy_eips::eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE};
 use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_consensus_common::{calc, utils};
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
-use reth_primitives::{
-    constants::LST_FEE_RECEIVER, Address, Block, Withdrawal, Withdrawals, B256, U256,
-};
+use reth_primitives::{Address, Block, Withdrawal, Withdrawals, B256, U256};
 use reth_storage_errors::provider::ProviderError;
 use revm::{
     primitives::{Account, AccountInfo, Bytecode, EvmStorageSlot, BLOCKHASH_SERVE_WINDOW},
@@ -43,27 +41,32 @@ pub fn post_block_balance_increments(
             calc::block_reward(base_block_reward, block.ommers.len());
     }
 
-    // Split block fees between LST FeeReceiver, Botanix, and the block_fee_recipient_address if total_block_fees exist and
-    // block_fee_recipient_address is not zero.
-    // Need conditional statement so reth tests can pass:
+    // Split block fees between LST FeeReceiver, Botanix, and the Block Fee Recipient address.
+    // A conditional statement is needed so reth tests can pass:
     // sometimes tests will pass None for fees (ie processor eip4788 tests)
-    // sometimes it will pass fees with a zero block builder address (ie blockhchain_tree fork
-    // choice tests) During normal operation, the block_builder address will never be zero: it
-    // will be an authority address
+    // sometimes it will pass fees with a zero block fee recipient address (ie blockhchain_tree fork
+    // choice tests). During normal operation, the block fee recipient address will never be a zero address: it
+    // will be an address passed by the node operator.
     let fees = total_block_fees.unwrap_or(0);
     let block_fee_recipient = block_fee_recipient_address.unwrap_or(Address::ZERO);
 
     if fees > 0
         && block_fee_recipient != Address::ZERO
         && chain_spec.botanix_fee_recipient.is_some()
+        && chain_spec.lst_fee_receiver.is_some()
     {
-        let (fee_receiver_fees, botanix_fees, block_fee_recipient_fees) =
+        let (lst_fee_receiver_fees, botanix_fees, block_fee_recipient_fees) =
             utils::block_fees_split(fees);
 
         // FeeReceiver fees
         *balance_increments
-            .entry(Address::from_str(LST_FEE_RECEIVER).expect("FeeReceiver to exist"))
-            .or_default() += fee_receiver_fees;
+            .entry(
+                Address::from_str(
+                    chain_spec.lst_fee_receiver.clone().expect("FeeReceiver to ecist").as_str(),
+                )
+                .expect("FeeReceiver to exist"),
+            )
+            .or_default() += lst_fee_receiver_fees;
 
         // Botanix fees
         *balance_increments

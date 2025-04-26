@@ -57,6 +57,8 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
     let genesis_toml_config = FederationTomlConfig::from_str(raw)?;
     let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient;
     info!("Botanix fee recipient: {:?}", botanix_fee_recipient);
+    let lst_fee_receiver = genesis_toml_config.lst_fee_receiver;
+    info!("LST fee receiver: {:?}", lst_fee_receiver);
 
     let extra_data_header = ExtraDataHeader::new(
         EXTRA_HEADER_VERSION,
@@ -96,6 +98,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         botanix_fee_recipient,
         chain_id,
         genesis_hash,
+        lst_fee_receiver,
     );
     Ok(botanix_chain)
 }
@@ -185,6 +188,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
             // our own toml format
             let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
             let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient;
+            let lst_fee_receiver = genesis_toml_config.lst_fee_receiver;
 
             let extra_data_header = ExtraDataHeader::new(
                 EXTRA_HEADER_VERSION,
@@ -204,6 +208,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                 botanix_fee_recipient,
                 BOTANIX_TESTNET_CHAIN_ID,
                 BOTANIX_TESTNET.genesis_hash,
+                lst_fee_receiver,
             );
             Arc::new(botanix_testnet)
         }
