@@ -26,7 +26,7 @@ use reth_provider::{BlockReaderIdExt, ReceiptProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
 use std::{fmt::Debug, time::Duration};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use uuid::Uuid;
 
 /// Checks if the network is undergoing an active sync or not
@@ -382,7 +382,7 @@ pub fn is_known_minting_contract(
     Ok(())
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 /// Represents errors that can occur during psbt validation
 pub enum PsbtValidationError {
     #[error("Failed to validate psbt by ids: {0}")]
@@ -391,42 +391,34 @@ pub enum PsbtValidationError {
 }
 
 /// Extract pegouts ids from psbt
-pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<PegoutId> {
+pub fn extract_pegout_ids(psbt: &Psbt) -> Vec<(usize, PegoutId)> {
     psbt.outputs
         .iter()
-        .filter_map(|output| match output.pegout_id() {
-            Some(pegout_id) => PegoutId::from_bytes(pegout_id.as_slice()).ok(),
+        .enumerate()
+        .filter_map(|(pos, output)| match output.pegout_id() {
+            Some(pegout_id) => PegoutId::from_bytes(pegout_id.as_slice()).ok().map(|id| (pos, id)),
             _ => None,
         })
         .collect()
 }
 
-/// Validate psbt contains the correct output and amount including the shared fee
+/// Validates a transaction output against an expected destination address and
+/// amount.
+///
+/// This function verifies that a transaction output pays to the correct
+/// destination and contains the correct amount after subtracting the fee.
 pub fn validate_psbt_by_output(
-    psbt: &Psbt,
+    tx_out: &bitcoin::TxOut,
     destination: &Address,
     amount: Amount,
     fee_per_output: Amount,
 ) -> Result<(), PsbtValidationError> {
-    debug!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Validating {} outputs in psbt", psbt.outputs.len());
-
-    let Ok(transaction) = psbt.clone().extract_tx() else {
-        error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to extract transaction from psbt");
+    if tx_out.script_pubkey != destination.script_pubkey() {
+        error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Output script pubkey does not match destination");
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "Failed to extract transaction from psbt",
+            "Output script pubkey does not match destination",
         )));
-    };
-
-    let Some(output) = transaction
-        .output
-        .iter()
-        .find(|output| output.script_pubkey == destination.script_pubkey())
-    else {
-        error!(target: "consensus::authority::frost_task::validate_psbt_by_ids", "Failed to find matching output in psbt");
-        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "Failed to find matching output in psbt",
-        )));
-    };
+    }
 
     let Some(expected_amount) = amount.checked_sub(fee_per_output) else {
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
@@ -434,7 +426,7 @@ pub fn validate_psbt_by_output(
         )));
     };
 
-    if output.value == expected_amount {
+    if tx_out.value == expected_amount {
         Ok(())
     } else {
         Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
@@ -443,7 +435,25 @@ pub fn validate_psbt_by_output(
     }
 }
 
-/// Validate psbt by pegout ids
+/// Validates a PSBT by verifying its pegout outputs against data from the
+/// receipt database.
+///
+/// This function extracts pegout IDs from the PSBT, retrieves the corresponding
+/// pegout data from the database, and validates each output's destination and
+/// amount.
+///
+/// # Warning
+///
+/// This function only validates pegout outputs. It does NOT validate:
+/// * Non-pegout outputs (usually change outputs)
+/// * Duplicate pegout IDs
+/// * Conflicting inputs
+/// * Change outputs
+///
+/// These responsibilities are handled by the `btc-server`.
+//
+// TODO(lamafab): All those responsibilities SHOULD be handled in one place,
+// ideally by a single function.
 pub async fn validate_psbt_by_ids(
     client: impl ReceiptProvider + Clone,
     btc_network: bitcoin::Network,
@@ -466,7 +476,7 @@ pub async fn validate_psbt_by_ids(
             })?;
 
     // get pegouts from db
-    for PegoutId { txid, idx } in pegout_ids.iter() {
+    for (pegout_pos, PegoutId { txid, idx }) in pegout_ids.iter() {
         let log =
             client
             .receipt_by_hash(txid.into())
@@ -488,7 +498,16 @@ pub async fn validate_psbt_by_ids(
                 PsbtValidationError::FailedToValidatePsbtByIds(String::from("Failed to get pegout data from burn event"))
             })?;
 
-        validate_psbt_by_output(psbt, &destination, amount, fee_per_output)?;
+        // Retrieve the corresponding TxOut from the PSBT, according to the
+        // specified pegout position.
+        let tx_out = psbt.unsigned_tx.output.get(*pegout_pos).ok_or(
+            PsbtValidationError::FailedToValidatePsbtByIds(format!(
+                "Failed to get output in unsigned_tx at position {}",
+                *pegout_pos
+            )),
+        )?;
+
+        validate_psbt_by_output(tx_out, &destination, amount, fee_per_output)?;
     }
 
     Ok(())
@@ -502,7 +521,7 @@ mod tests {
         transaction::Version,
         FeeRate, OutPoint, Sequence, Transaction, TxIn, Txid,
     };
-    use btcserverlib::wallet::psbt::PsbtOutputExt;
+    use btcserverlib::{test_utils::random_p2wpkh_script, wallet::psbt::PsbtOutputExt};
     use rand::{thread_rng, Rng, RngCore};
     use reth_primitives::{
         address, b256, bytes, hex_literal::hex, Bytes, Header, Log, LogData, Receipt, TxHash,
@@ -969,7 +988,8 @@ mod tests {
         let expected = PegoutId::from(pegout_id);
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0], expected);
+        assert_eq!(result[0].0, 0); // position of the output
+        assert_eq!(result[0].1, expected);
     }
 
     #[test]
@@ -978,8 +998,11 @@ mod tests {
         let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
+
         let psbt = create_psbt(1, &destination);
-        let result = validate_psbt_by_output(&psbt, &destination, value, Amount::from_sat(426));
+        let tx_out = &psbt.unsigned_tx.output[0];
+
+        let result = validate_psbt_by_output(tx_out, &destination, value, Amount::from_sat(426));
         assert!(result.is_ok());
     }
 
@@ -998,7 +1021,9 @@ mod tests {
                 .expect("valid address")
                 .assume_checked();
         let fee_per_output = psbt.fee_per_output(1).expect("valid fee per output");
-        let result = validate_psbt_by_output(&psbt, &incorrect_destination, value, fee_per_output);
+
+        let tx_out = &psbt.unsigned_tx.output[0];
+        let result = validate_psbt_by_output(tx_out, &incorrect_destination, value, fee_per_output);
         assert!(result.is_err());
     }
 
@@ -1024,8 +1049,11 @@ mod tests {
             total_outputs.to_sat() + actual_fee.to_sat() + 100, /* add 100 sats to make it
                                                                  * incorrect */
         );
+
         let fee_per_output = psbt.fee_per_output(1).expect("valid fee per output");
-        match validate_psbt_by_output(&psbt, &destination, incorrect_amount, fee_per_output) {
+        let tx_out = &psbt.unsigned_tx.output[0];
+
+        match validate_psbt_by_output(tx_out, &destination, incorrect_amount, fee_per_output) {
             Err(PsbtValidationError::FailedToValidatePsbtByIds(message)) => {
                 println!("Validation failed: {}", message);
                 assert!(message == "The output value does not match the expected amount");
@@ -1051,6 +1079,45 @@ mod tests {
             validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
         println!("Result: {:?}", result);
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn validate_psbt_by_ids_reject_malicious_output() {
+        let destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
+            .expect("valid address")
+            .assume_checked();
+
+        let mut tx = create_tx(1, &destination);
+
+        // WARNING: Adding malicious output to the transaction
+        tx.output.push(bitcoin::TxOut {
+            value: Amount::from_sat(1000),
+            script_pubkey: random_p2wpkh_script(),
+        });
+
+        let input_needed = tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
+
+        let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
+        psbt.inputs[0].witness_utxo = Some(bitcoin::TxOut {
+            value: Amount::from_sat(input_needed),
+            script_pubkey: bitcoin::ScriptBuf::new(),
+        });
+
+        let pegout_id = PegoutId::new([0u8; 32], 0).as_bytes();
+        // WARNING: Reusing the pegout Id for the malicious output!
+        psbt.outputs[0].set_pegout_id(pegout_id);
+        psbt.outputs[1].set_pegout_id(pegout_id);
+
+        let result =
+            validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            PsbtValidationError::FailedToValidatePsbtByIds(
+                "Output script pubkey does not match destination".to_string()
+            )
+        );
     }
 
     #[derive(Debug)]

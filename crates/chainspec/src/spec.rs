@@ -139,7 +139,7 @@ pub static DEV: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
 /// Includes Testnet and Mainnet
 pub const BOTANIX_TESTNET_CHAIN_ID: u64 = 3636;
 /// Mainnet chain id
-pub const BOTANIX_MAINNET_CHAIN_ID: u64 = 3737;
+pub const BOTANIX_MAINNET_CHAIN_ID: u64 = 3637;
 
 /// Botanix Testnet Genesis Configuration
 #[derive(Template, Clone, Debug)]
