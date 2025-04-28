@@ -44,6 +44,9 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+      
+      - name: Use offline mode when possible
+        run: echo "CARGO_NET_OFFLINE=true" >> $GITHUB_ENV
 
       - name: Run tests
         run: |
