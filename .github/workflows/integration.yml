@@ -4,9 +4,11 @@ name: Botanix Integration Tests
 on:
   pull_request:
   merge_group:
-    branches: [main]
+    branches:
+      - main
   push:
-    branches: [main]
+    branches:
+      - main
 
 env:
   CARGO_TERM_COLOR: always
@@ -82,6 +84,13 @@ jobs:
       - name: Run test_mempool_gossip
         run: |
           export TEST_TO_RUN="test_mempool_gossip"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
+      - name: Run wallet sync
+        run: |
+          export TEST_TO_RUN="wallet_sync"
           make start-test-suite
           killall btc-server || true
           killall bitcoind || true
@@ -165,7 +174,8 @@ jobs:
     name: integration success
     runs-on: ubuntu-latest
     if: always()
-    needs: [e2e]
+    needs:
+      - e2e
     timeout-minutes: 30
     steps:
       - name: Decide whether the needed jobs succeeded or failed
