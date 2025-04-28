@@ -642,13 +642,19 @@ where
                         }
 
                         let batch = rpc::GetFinalizedPegoutIdsResponse {
-                            ids: pegout_ids.into_iter().map(|p| p.as_bytes().to_vec()).collect(),
+                            data: pegout_ids
+                                .into_iter()
+                                .map(|p| rpc::FinalizedPegout {
+                                    id: p.id.as_bytes().to_vec(),
+                                    botanix_block_height: p.block_number,
+                                })
+                                .collect(),
                             chunk_index,
                             total_chunks,
                         };
 
                         // send the batch
-                        info!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.ids.len());
+                        info!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
                         if tx.send(Ok(batch)).await.is_err() {
                             error!("get_finalized_pegout_ids stream task: Client disconnected, stopping stream.");
                             continue;
@@ -757,10 +763,16 @@ where
         let finalized_pegout_ids = req
             .finalized_pegout_ids
             .into_iter()
-            .map(|v| PegoutId::from_bytes(&v))
-            .collect::<Result<Vec<PegoutId>, _>>()
+            .map(|v| {
+                Ok(btcserverlib::database::FinalizedPegout {
+                    id: PegoutId::from_bytes(&v.id)?,
+                    block_number: v.botanix_block_height,
+                })
+            })
+            .collect::<Result<Vec<btcserverlib::database::FinalizedPegout>, ()>>()
             .map_err(|_| internal!("Failed to convert finalized pegout ids"))?;
-        let pegout_refs: Vec<&PegoutId> = finalized_pegout_ids.iter().collect();
+        let pegout_refs: Vec<&btcserverlib::database::FinalizedPegout> =
+            finalized_pegout_ids.iter().collect();
         self.db.reset_finalized_pegout_ids(&pegout_refs).to_status()?;
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -2080,9 +2092,12 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            finalized_pegout_ids.push(pegout_id);
+            let finalized_pegout =
+                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
         }
-        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&btcserverlib::database::FinalizedPegout>>();
         app.db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
 
         let chunk_size = 10;
@@ -2093,7 +2108,7 @@ mod tests {
         while let Some(item) = stream.next().await {
             let item = item.unwrap();
             assert_eq!(item.total_chunks, (num_txs as u64).div_ceil(chunk_size));
-            collected_chunks.extend_from_slice(&item.ids);
+            collected_chunks.extend_from_slice(&item.data);
         }
         assert_eq!(collected_chunks.len(), num_txs);
     }
@@ -2106,9 +2121,12 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            finalized_pegout_ids.push(pegout_id);
+            let finalized_pegout =
+                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
         }
-        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&btcserverlib::database::FinalizedPegout>>();
         app.db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
 
         let chunk_size = 10;
@@ -2119,7 +2137,7 @@ mod tests {
         while let Some(item) = stream.next().await {
             let item = item.unwrap();
             assert_eq!(item.total_chunks, (num_txs as u64).div_ceil(chunk_size));
-            collected_chunks.extend_from_slice(&item.ids);
+            collected_chunks.extend_from_slice(&item.data);
         }
         assert_eq!(collected_chunks.len(), num_txs);
     }

@@ -186,13 +186,12 @@ where
 
         // get the stream from the response
         while let Some(item) = response.next().await {
-            info!(target: "consensus::authority::forst_task::get_serialized_compressed_pegout_ids", "XXXXXXXXXXXXXXXXXXX {:?}", item);
             let prost_serialized_pegout_ids = item.map_err(|e| {
                 error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got grpc error {:?}", e);
                 FinalizedPegoutIdsSyncSerializationError::Grpc(GrpcClientError::Call(e))
             })?;
 
-            if prost_serialized_pegout_ids.ids.is_empty() {
+            if prost_serialized_pegout_ids.data.is_empty() {
                 warn!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received empty finalized pegout ids from btc server");
                 continue;
             }
@@ -453,8 +452,6 @@ where
                         // which updates the wallet state. This code block
                         // handles sending our wallet state to a peer
                         //
-                        // TODO: create separate messages for asking for wallet state and sending
-                        // wallet state
                         if Self::has_wallet_state(&response) {
                             info!(target: "consensus::authority::wallet_syncer::start_task", "Received wallet state in frost task from peer {:?}", peer_id);
                             continue;

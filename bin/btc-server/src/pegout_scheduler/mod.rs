@@ -12,6 +12,7 @@ use std::{
 };
 
 use crate::{
+    database::FinalizedPegout,
     pegout_id::PegoutId,
     telemetry::Telemetry,
     update_telemetry_error,
@@ -533,8 +534,14 @@ impl PegoutScheduler {
         for txid in &block.relevant_txs {
             // Retrieve the Tx object before removing it
             if let Some(tx) = self.txs.get(txid).cloned() {
-                let finalized_pegout_ids: Vec<PegoutId> =
-                    tx.pegout_requests.iter().map(|pegout_request| pegout_request.id).collect();
+                let finalized_pegout_ids: Vec<FinalizedPegout> = tx
+                    .pegout_requests
+                    .iter()
+                    .map(|pegout_request| FinalizedPegout {
+                        id: pegout_request.id,
+                        block_number: pegout_request.botanix_height,
+                    })
+                    .collect();
 
                 if !finalized_pegout_ids.is_empty() {
                     info!(
@@ -542,7 +549,7 @@ impl PegoutScheduler {
                         finalized_pegout_ids.len(),
                         txid
                     );
-                    let refs: Vec<&PegoutId> = finalized_pegout_ids.iter().collect();
+                    let refs: Vec<&FinalizedPegout> = finalized_pegout_ids.iter().collect();
                     info!(
                         "PegoutScheduler::finalize_block: Attempting to store finalized pegout IDs: {:?}",
                         finalized_pegout_ids

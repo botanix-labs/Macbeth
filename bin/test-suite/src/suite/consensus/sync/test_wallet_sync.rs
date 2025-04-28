@@ -49,7 +49,12 @@ pub async fn get_finalized_pegout_ids_from_peers(
                     let _ = peers_finalized_pegout_ids
                         .entry(index)
                         .or_insert_with(HashSet::new)
-                        .extend(pegout_ids_chunk.ids);
+                        .extend(
+                            pegout_ids_chunk
+                                .data
+                                .into_iter()
+                                .map(|finalized_pegout_id| finalized_pegout_id.id),
+                        );
                 }
                 Err(_) => {
                     continue;

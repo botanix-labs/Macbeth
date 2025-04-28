@@ -11,6 +11,13 @@ pub struct PendingPegout {
     pub height: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FinalizedPegout {
+    #[prost(bytes = "vec", tag = "1")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "2")]
+    pub botanix_block_height: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPendingPegoutsResponse {
     #[prost(message, repeated, tag = "1")]
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
@@ -22,8 +29,8 @@ pub struct GetFinalizedPegoutIdsRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetFinalizedPegoutIdsResponse {
-    #[prost(bytes = "vec", repeated, tag = "1")]
-    pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(message, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<FinalizedPegout>,
     #[prost(uint64, tag = "2")]
     pub chunk_index: u64,
     #[prost(uint64, tag = "3")]
@@ -53,8 +60,8 @@ pub struct ResetAllUtxosRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetWalletStateRequest {
-    #[prost(bytes = "vec", repeated, tag = "1")]
-    pub finalized_pegout_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(message, repeated, tag = "1")]
+    pub finalized_pegout_ids: ::prost::alloc::vec::Vec<FinalizedPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConsensusCheckpointRequest {

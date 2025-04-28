@@ -310,7 +310,7 @@ impl WalletStateSyncWriter for NoopProvider {
         _uuid: UuidID,
         _peer_id: PeerID,
         _chunks_count: u64,
-        _data: Option<Vec<Bytes>>,
+        _data: Option<Vec<(u64, Bytes)>>,
     ) -> ProviderResult<PeerID> {
         Ok(PeerID::random())
     }
@@ -318,7 +318,7 @@ impl WalletStateSyncWriter for NoopProvider {
     fn append_data_to_state_sync_record(
         &self,
         _peer_id: PeerID,
-        _data: Vec<Bytes>,
+        _data: Vec<(u64, Bytes)>,
     ) -> ProviderResult<()> {
         Ok(())
     }
@@ -355,7 +355,7 @@ impl WalletStateSyncReader for NoopProvider {
     fn get_minimum_superset(
         &self,
         _min_required_criterion: u64,
-    ) -> ProviderResult<(bool, HashSet<Bytes>)> {
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
         Ok((false, HashSet::new()))
     }
 }

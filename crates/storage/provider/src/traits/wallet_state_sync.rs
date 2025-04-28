@@ -28,7 +28,7 @@ pub trait WalletStateSyncReader: Send + Sync {
     fn get_minimum_superset(
         &self,
         min_required_criterion: u64,
-    ) -> ProviderResult<(bool, HashSet<Bytes>)>;
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)>;
 }
 
 /// WalletStateSyncWriter
@@ -40,14 +40,14 @@ pub trait WalletStateSyncWriter: Send + Sync {
         uuid: UuidID,
         peer_id: PeerID,
         chunks_count: u64,
-        data: Option<Vec<Bytes>>,
+        data: Option<Vec<(u64, Bytes)>>,
     ) -> ProviderResult<PeerID>;
 
     /// Append data to state sync record
     fn append_data_to_state_sync_record(
         &self,
         peer_id: PeerID,
-        data: Vec<Bytes>,
+        data: Vec<(u64, Bytes)>,
     ) -> ProviderResult<()>;
 
     /// Remove state sync record by peer_id
