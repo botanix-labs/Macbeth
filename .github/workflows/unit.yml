@@ -26,8 +26,8 @@ concurrency:
 jobs:
   test:
     name: test / ethereum
-    runs-on:
-      group: macbeth
+    runs-on: k8-runners
+
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
@@ -45,6 +45,10 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+          
+      - name: Ensure registry is up to date
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        run: cargo fetch
 
       - name: Run tests
         run: |
@@ -81,8 +85,7 @@ jobs:
 
   doc:
     name: doc tests (ethereum)
-    runs-on:
-      group: macbeth
+    runs-on: k8-runners
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
@@ -93,6 +96,10 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+
+      - name: Ensure registry is up to date
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        run: cargo fetch
 
       - name: Run doctests
         run: cargo test --doc --workspace --features "ethereum"
