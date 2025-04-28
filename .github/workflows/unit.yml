@@ -29,9 +29,6 @@ jobs:
     runs-on: k8-test
     env:
       RUST_BACKTRACE: 1
-      CARGO_HOME: /home/runner/.cargo
-      CARGO_TARGET_DIR: /home/runner/target
-      CARGO_NET_OFFLINE: "true"
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +39,12 @@ jobs:
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-          
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+
       - name: Ensure registry is up to date
         if: steps.rust-cache.outputs.cache-hit != 'true'
         run: cargo fetch
@@ -85,9 +87,6 @@ jobs:
     runs-on: k8-test
     env:
       RUST_BACKTRACE: 1
-      CARGO_HOME: /home/runner/.cargo
-      CARGO_TARGET_DIR: /home/runner/target
-      CARGO_NET_OFFLINE: "true"
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -96,6 +95,10 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+          
+      - name: Ensure registry is up to date
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        run: cargo fetch
 
       - name: Run doctests
         run: cargo test --doc --workspace --features "ethereum"
