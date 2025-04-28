@@ -621,11 +621,20 @@ where
         let request = req.into_inner();
 
         let (tx, rx) = tokio::sync::mpsc::channel(request.chunk_size as usize);
+        info!(
+            "get_finalized_pegout_ids: Starting stream task (chunk_size={})...",
+            request.chunk_size
+        );
         tokio::spawn(async move {
             let stream = db.get_finalized_pegout_ids_stream(request.chunk_size as usize);
             pin_mut!(stream);
+            info!("get_finalized_pegout_ids stream task: Created DB stream.");
 
             while let Some(chunk_result) = stream.next().await {
+                info!(
+                    "get_finalized_pegout_ids stream task: Received chunk from DB stream: {:?}",
+                    chunk_result
+                );
                 match chunk_result {
                     Ok((pegout_ids, chunk_index, total_chunks)) => {
                         if let Some(telemetry) = telemetry.as_ref() {
@@ -639,8 +648,9 @@ where
                         };
 
                         // send the batch
+                        info!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.ids.len());
                         if tx.send(Ok(batch)).await.is_err() {
-                            error!("Client disconnected, stopping stream");
+                            error!("get_finalized_pegout_ids stream task: Client disconnected, stopping stream.");
                             continue;
                         }
 
@@ -648,11 +658,15 @@ where
                         tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
                     }
                     Err(e) => {
-                        error!("Failed to get finalized pegout ids: {}", e);
+                        error!("get_finalized_pegout_ids stream task: Error from DB stream: {}. Skipping chunk.", e);
+                        // Optionally send error to client?
+                        // if tx.send(Err(tonic::Status::internal(format!("DB Error: {}",
+                        // e)))).await.is_err() { ... }
                         continue;
                     }
                 }
             }
+            info!("get_finalized_pegout_ids stream task: DB stream finished.");
         });
 
         Ok(tonic::Response::new(ReceiverStream::new(rx)))
@@ -915,6 +929,7 @@ where
             .to_status()?;
         self.db.reset_pending_pegouts(&[]).to_status()?;
         self.db.flush().to_status()?;
+        info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
 
         let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
@@ -970,19 +985,58 @@ where
         // If the coordinator participated in signing they have already tracked the tx
         // however, if the coordinator did not participate in signing they need to track the
         // tx now.
-        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
         let pegout_ids = psbt
             .pegout_ids()
             .iter()
             .map(|p| PegoutId::from_bytes(p).expect("values are 36 bytes"))
             .collect::<Vec<PegoutId>>();
 
+        info!(
+            "[finalize_signing] Extracted transaction outputs before add_tracked_tx (session {:?}):",
+            hex::encode(signing_session_id)
+        );
+        for (i, tx_output) in tx.output.iter().enumerate() {
+            info!(
+                "- Output {}: value={}, script_pubkey={:?}",
+                i, tx_output.value, tx_output.script_pubkey
+            );
+        }
+
+        info!(
+            "[finalize_signing] Attempting to fetch pending pegouts from DB matching {} IDs extracted from finalized PSBT: {:?}",
+            pegout_ids.len(),
+            pegout_ids
+        );
+        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
         let pending_pegouts =
             pending_pegouts.into_iter().filter(|p| pegout_ids.contains(&p.id)).collect::<Vec<_>>();
-
-        self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await.to_status()?;
+        info!(
+            "[finalize_signing] Found {} matching pending pegouts in DB: {:?}",
+            pending_pegouts.len(),
+            pending_pegouts.iter().map(|p| p.id).collect::<Vec<_>>()
+        );
+        info!(
+            "[finalize_signing] Extracted transaction outputs before potentially adding tracked tx (session {:?}):",
+            hex::encode(signing_session_id)
+        );
+        for (i, tx_output) in tx.output.iter().enumerate() {
+            info!(
+                "- Output {}: value={}, script_pubkey={:?}",
+                i, tx_output.value, tx_output.script_pubkey
+            );
+        }
+        info!(
+            "[finalize_signing] NOT calling add_tracked_tx again. Associated pegout requests found in DB were: {:?}",
+            pending_pegouts.iter().map(|p| p.id).collect::<Vec<_>>()
+        );
+        info!(
+            "[finalize_signing] Removing {} pending pegouts from DB: {:?}",
+            pegout_ids.len(),
+            pegout_ids
+        );
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
         self.db.flush().to_status()?;
+        info!("[finalize_signing] Pending pegouts removed and DB flushed.");
 
         if let Some(tx_id) = tx_id {
             info!("Broadcasted tx: {:?}", tx_id);
@@ -1067,6 +1121,18 @@ where
         )
         .await
         .to_status()?;
+
+        // Log the outputs of the generated PSBT for debugging
+        info!("PSBT generated by make_tx for session {:?}:", hex::encode(signing_session_id));
+        // Iterate through the outputs of the unsigned transaction embedded in the PSBT
+        for (i, tx_output) in psbt.unsigned_tx.output.iter().enumerate() {
+            info!(
+                "- Output {}: value={}, script_pubkey={:?}",
+                i, tx_output.value, tx_output.script_pubkey
+            );
+        }
+        // Note: Standard PSBT doesn't explicitly track change_index in rust-bitcoin library easily.
+        // We rely on our logic correctly identifying it later.
 
         // Save psbt to db
         self.db.update_psbt(&signing_session_id, &psbt).to_status()?;
@@ -1708,7 +1774,7 @@ mod tests {
         assert!(pkgs.contains_key(&frost_id!(2)));
         assert_eq!(pkgs.len(), 1);
 
-        // Adding the same round 1 package should not make a difference
+        // Adding the same round 1 dkg should not make a difference
         let req = tonic::Request::new(rpc::Empty {});
         let pkgs = app.get_round1_dkg_packages(req).await.unwrap();
         let inner = pkgs.into_inner();

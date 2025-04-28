@@ -315,6 +315,10 @@ impl PegoutScheduler {
             ret
         };
         let txid = tx.compute_txid();
+        info!(
+            "PegoutScheduler::add_tx: Tracking txid={}, pegout_idxs={:?}, change_idxs={:?}",
+            txid, pegout_idxs, change_idxs
+        );
         self.track_tx(Tx {
             created: timestamp,
             change_idxs,
@@ -369,6 +373,7 @@ impl PegoutScheduler {
     /// not done by this function Note: will panic if provided txid is not tracked
     fn un_track_tx(&mut self, txid: &Txid) -> Result<(), database::Error> {
         let tx = self.txs.get(txid).expect("relevant tx should exist");
+        info!("PegoutScheduler::un_track_tx: Untracking txid={}", txid);
         for input in tx.inputs() {
             self.txs_by_input.remove(&input);
         }
@@ -394,6 +399,12 @@ impl PegoutScheduler {
     fn rollback_tip(&mut self) {
         assert!(!self.last_blocks.is_empty());
         let drop = self.last_blocks.pop_back().unwrap();
+        info!(
+            "PegoutScheduler::rollback_tip: Rolling back block {}, relevant_txs={:?}, relevant_inputs={:?}",
+            drop.hash,
+            drop.relevant_txs,
+            drop.relevant_inputs
+        );
         for txid in drop.relevant_txs {
             let tx = self.txs.get(&txid).expect("relevant tx should exist").clone();
             // Currently confirmed_txs is not used, could remove this
@@ -407,7 +418,10 @@ impl PegoutScheduler {
     /// Finalize a block by adding the UTXOs that are deeply confirmed back to the database.
     /// This is also where we remove tracked transactions
     fn finalize_block(&mut self, block: &BlockInfo) -> Result<(), database::Error> {
-        let change_spk = self.get_change_spk().expect("dkg should have been performed");
+        info!("PegoutScheduler::finalize_block: Finalizing block {}", block.hash);
+        let change_spk_res = self.get_change_spk(); // Get result first
+        info!("PegoutScheduler::finalize_block: Expected change SPK result: {:?}", change_spk_res);
+
         // To make sure we only update the index when the db is also synced,
         // first try store the new finalized UTXOs to the db, then update the index.
         let mut all_inputs = block.relevant_inputs.iter().copied().collect::<HashSet<_>>();
@@ -415,60 +429,176 @@ impl PegoutScheduler {
             let tx = self.txs.get(txid).expect("corrupt db");
             // Add back the change to the utxo set
             let mut change_utxos = vec![];
-            for (outpoint, output) in tx.change() {
-                if output.script_pubkey != change_spk {
-                    warn!("Change output being tracked is not a p2tr: {:?}", output);
-                    continue;
+            if let Ok(ref change_spk) = change_spk_res {
+                // Check if we got the SPK successfully
+                for (outpoint, output) in tx.change() {
+                    if &output.script_pubkey != change_spk {
+                        warn!(
+                            "Finalizing block {}: Change output in tx {} being tracked is not the expected p2tr: {:?} != {:?}",
+                            block.hash,
+                            txid,
+                            output.script_pubkey,
+                            change_spk
+                        );
+                        continue;
+                    }
+                    let utxo_version = self
+                        .db
+                        .get_utxo(outpoint)
+                        .ok()
+                        .flatten()
+                        .map(|utxo| utxo.version)
+                        .unwrap_or_default();
+                    change_utxos.push(database::Utxo {
+                        outpoint,
+                        output: output.clone(),
+                        eth_address: None,
+                        version: utxo_version,
+                    });
                 }
-                let utxo_version = self
-                    .db
-                    .get_utxo(outpoint)
-                    .ok()
-                    .flatten()
-                    .map(|utxo| utxo.version)
-                    .unwrap_or_default();
-                change_utxos.push(database::Utxo {
-                    outpoint,
-                    output: output.clone(),
-                    eth_address: None,
-                    version: utxo_version,
-                });
+            } else {
+                // Log if we couldn't get the expected change SPK
+                error!(
+                    "Finalizing block {}: Could not get expected change SPK to verify change outputs for tx {}. Error: {:?}",
+                    block.hash,
+                    txid,
+                    change_spk_res.as_ref().err()
+                );
             }
-            self.db.store_utxos(change_utxos.iter().collect::<Vec<_>>().as_slice())?;
-            self.db.flush()?;
+            info!(
+                "PegoutScheduler::finalize_block: Attempting to store {} change UTXOs for tx {}",
+                change_utxos.len(),
+                txid
+            );
+            let store_change_res =
+                self.db.store_utxos(change_utxos.iter().collect::<Vec<_>>().as_slice());
+            info!(
+                "PegoutScheduler::finalize_block: Result of storing change UTXOs for tx {}: {:?}",
+                txid, store_change_res
+            );
+            store_change_res?;
+            info!(
+                "PegoutScheduler::finalize_block: Attempting flush after storing change UTXOs for tx {}",
+                txid
+            );
+            let flush_change_res = self.db.flush(); // Flush after storing change UTXOs
+            info!(
+                "PegoutScheduler::finalize_block: Result of flush after storing change UTXOs for tx {}: {:?}",
+                txid,
+                flush_change_res
+            );
+            flush_change_res?;
             all_inputs.extend(tx.tx.input.iter().map(|i| i.previous_output));
         }
 
         // Now that it's all in the db, we can apply changes here.
+        info!("PegoutScheduler::finalize_block: Processing finalized inputs: {:?}", all_inputs);
         for input in all_inputs {
             // Remove the tracked tx from the database as well
-            self.db.remove_tracked_tx(&input.txid)?;
-            // Remove local copy
-            if let Some(tx) = self.txs.remove(&input.txid) {
-                info!("Dropped tx that conflicts with finalized tx: {:?}", tx);
-                let deeply_confirmed_pegout_ids = tx
-                    .pegout_requests
-                    .iter()
-                    .map(|pegout_request| pegout_request.id)
-                    .collect::<Vec<PegoutId>>();
-                info!(
-                    "Storing {:?} deeply confirmed tx pegout ids",
-                    deeply_confirmed_pegout_ids.len()
-                );
-                let refs: Vec<&PegoutId> = deeply_confirmed_pegout_ids.iter().collect();
-                self.db.store_finalized_pegout_ids_atomically(&refs)?;
+            // NOTE: This removes based on input.txid, which might be a conflicting tx, not the one
+            // in the block
+            if let Some(_tx) = self.txs.get(&input.txid).cloned() {
+                // This input conflicts with a tx we were tracking. That tracked tx is now
+                // definitely dead. Its pegouts failed. We should *not* mark them as
+                // finalized. We already removed the UTXO (`input`) from the DB.
+                // We just need to remove the dead tx from tracking.
+                info!("Dropping tracked tx {} because its input {} was spent by another tx in finalized block {}", input.txid, input, block.hash);
+                self.txs.remove(&input.txid);
+                self.db.remove_tracked_tx(&input.txid)?;
+                // We *could* add the pegouts back to pending, but likely the conflicting tx already
+                // paid them. Let L2 handle potential duplicates if necessary.
             }
-            // Those inputs are no longer worth tracking
-            // And no longer spendable, we can safely remove them
-            self.db.remove_utxo(&input)?;
-            self.db.flush()?;
+            // Remove the spent input UTXO if it exists in our DB (it might not if it wasn't ours)
+            info!("PegoutScheduler::finalize_block: Attempting to remove input UTXO: {:?}", input);
+            let remove_utxo_res = self.db.remove_utxo(&input);
+            info!(
+                "PegoutScheduler::finalize_block: Result of removing input UTXO {:?}: {:?}",
+                input, remove_utxo_res
+            );
+            remove_utxo_res?;
+            info!(
+                "PegoutScheduler::finalize_block: Attempting flush after removing input UTXO: {:?}",
+                input
+            );
+            let flush_remove_res = self.db.flush();
+            info!(
+                "PegoutScheduler::finalize_block: Result of flush after removing input UTXO {:?}: {:?}",
+                input,
+                flush_remove_res
+            );
+            flush_remove_res?;
         }
+
+        // Process transactions confirmed in this finalized block
         for txid in &block.relevant_txs {
-            self.txs.remove(txid);
-            self.db.remove_tracked_tx(txid)?;
+            // Retrieve the Tx object before removing it
+            if let Some(tx) = self.txs.get(txid).cloned() {
+                let finalized_pegout_ids: Vec<PegoutId> =
+                    tx.pegout_requests.iter().map(|pegout_request| pegout_request.id).collect();
+
+                if !finalized_pegout_ids.is_empty() {
+                    info!(
+                        "Storing {} finalized pegout IDs for confirmed tx {}",
+                        finalized_pegout_ids.len(),
+                        txid
+                    );
+                    let refs: Vec<&PegoutId> = finalized_pegout_ids.iter().collect();
+                    info!(
+                        "PegoutScheduler::finalize_block: Attempting to store finalized pegout IDs: {:?}",
+                        finalized_pegout_ids
+                    );
+                    let store_finalized_res = self.db.store_finalized_pegout_ids_atomically(&refs);
+                    info!(
+                        "PegoutScheduler::finalize_block: Result of storing finalized pegout IDs for tx {}: {:?}",
+                        txid,
+                        store_finalized_res
+                    );
+                    store_finalized_res?;
+                    info!(
+                        "PegoutScheduler::finalize_block: Attempting flush after storing finalized IDs for tx {}",
+                        txid
+                    );
+                    let flush_finalized_res = self.db.flush(); // Ensure DB consistency
+                    info!(
+                        "PegoutScheduler::finalize_block: Result of flush after storing finalized IDs for tx {}: {:?}",
+                        txid,
+                        flush_finalized_res
+                    );
+                    flush_finalized_res?;
+                } else {
+                    info!("Confirmed tx {} had no associated pegout requests to finalize.", txid);
+                }
+
+                // Now remove the finalized tx from tracking
+                info!(
+                    "PegoutScheduler::finalize_block: Attempting to remove finalized tx {} from tracking map.",
+                    txid
+                );
+                self.txs.remove(txid);
+                info!(
+                    "PegoutScheduler::finalize_block: Attempting to remove finalized tx {} from DB tracking.",
+                    txid
+                );
+                let remove_tracked_res = self.db.remove_tracked_tx(txid);
+                info!(
+                    "PegoutScheduler::finalize_block: Result of removing finalized tx {} from DB tracking: {:?}",
+                    txid,
+                    remove_tracked_res
+                );
+                remove_tracked_res?;
+            } else {
+                // This case should ideally not happen if relevant_txs is derived correctly
+                warn!("Txid {} marked as relevant in finalized block {}, but not found in tracked txs.", txid, block.hash);
+                // Attempt removal from DB just in case it's only present there
+                self.db.remove_tracked_tx(txid)?;
+            }
         }
 
         self.last_finalized = block.hash;
+        info!("PegoutScheduler::finalize_block: Finished finalizing block {}, attempting final flush...", block.hash);
+        let flush_res = self.db.flush();
+        info!("PegoutScheduler::finalize_block: Final flush result: {:?}", flush_res);
+        flush_res?; // Propagate potential flush error
 
         Ok(())
     }
@@ -524,6 +654,10 @@ impl PegoutScheduler {
     ) -> Result<(), SyncError> {
         // Determine the timestamp of the checkpoint block
         let cp_time = checkpoint.block_time();
+        info!(
+            "PegoutScheduler::track_mempool: Checking tracked txs older than checkpoint time {:?}",
+            cp_time
+        );
         // Get txs older than timestamp
         let maybe_dropped_txs = self
             .txs
@@ -551,6 +685,7 @@ impl PegoutScheduler {
                     continue;
                 }
                 Err(e) => {
+                    info!("PegoutScheduler::track_mempool: Tx {} not found in mempool (Error: {}). Checking chain...", txid, e);
                     // check error message to confirm the tx is not in the mempool
                     if !e.to_string().to_lowercase().contains(TX_NOT_IN_MEMPOOL_BITCOIND_ERROR) {
                         warn!("Error checking mempool for tx {}: {}", &txid, e);
@@ -558,7 +693,7 @@ impl PegoutScheduler {
                     }
 
                     // the tx has been dropped or there was a reorg
-                    warn!("Tx {} is not in the mempool and not included in a block: {}", &txid, e);
+                    info!("PegoutScheduler::track_mempool: Tx {} confirmed not on chain. Untracking and adding back to pending.", txid);
                     self.un_track_tx(&txid)?;
                 }
             }
@@ -598,7 +733,7 @@ impl PegoutScheduler {
         let cp_result = bitcoind.get_block_header_info(&checkpoint).map_err(SyncError::Rpc)?;
 
         info!(
-            "Syncing pegout scheduler: last={}:{}, cp={}:{}",
+            "PegoutScheduler::sync_until: Starting sync: last_finalized={}:{}, target_cp={}:{}",
             print_safe!(bitcoind.get_block_header_info(&self.last_finalized).map(|r| r.height)),
             self.last_finalized,
             cp_result.height,
@@ -641,6 +776,7 @@ impl PegoutScheduler {
             if tip.hash == new_tip.hash {
                 break (last, tip);
             }
+            info!("PegoutScheduler::sync_until: Tip changed during reorg check ({} -> {}), retrying...", tip.hash, new_tip.hash);
         };
         if last.height == tip.height {
             assert_eq!(tip.hash, last.hash, "last={:?}, tip={:?}", last, tip);
@@ -669,22 +805,53 @@ impl PegoutScheduler {
         // Then we actually sync all blocks.
         for hash in to_sync.into_iter().rev() {
             if self.last_finalized == checkpoint {
-                debug!("Checkpoint reached: {}", checkpoint);
+                info!("PegoutScheduler::sync_until: Checkpoint {} reached before processing block {}.", checkpoint, hash);
                 break;
             }
             let height = bitcoind.get_block_header_info(&hash)?.height;
+            info!("PegoutScheduler::sync_until: Processing block {}:{}", height, hash);
             let block = bitcoind.get_block(&hash)?;
             self.add_block(&block, height);
 
             if self.last_blocks.len() > self.conf_window as usize {
                 let deeply_confirmed_block = self.last_blocks.pop_front().unwrap();
-                self.finalize_block(&deeply_confirmed_block)?;
+                info!(
+                    "PegoutScheduler::sync_until: Block {} is now deeply confirmed ({} blocks deep). Finalizing...",
+                    deeply_confirmed_block.hash,
+                    self.conf_window
+                );
+                // Log result of finalize_block
+                match self.finalize_block(&deeply_confirmed_block) {
+                    Ok(_) => info!(
+                        "PegoutScheduler::sync_until: Successfully finalized block {}",
+                        deeply_confirmed_block.hash
+                    ),
+                    Err(e) => {
+                        error!(
+                            "PegoutScheduler::sync_until: Error finalizing block {}: {}. Propagating error.",
+                            deeply_confirmed_block.hash,
+                            e
+                        );
+                        // Propagate ALL database errors immediately
+                        // Removed the specific check for Storage variant as it doesn't exist
+                        // and we want to propagate any DB error from finalize_block.
+                        return Err(SyncError::Db(e));
+                    }
+                }
             }
         }
 
         // handle txs that are still in the mempool, have been dropped or there was a reorg
         // this must be done after `finalize_block` which updates the db and pegout scheduler state
-        self.track_mempool(bitcoind, cp_result)?;
+        info!("PegoutScheduler::sync_until: Finished block processing loop. Tracking mempool...");
+        match self.track_mempool(bitcoind, cp_result.clone()) {
+            Ok(_) => info!("PegoutScheduler::sync_until: Mempool tracking successful."),
+            Err(e) => {
+                error!("PegoutScheduler::sync_until: Error during mempool tracking: {}. Propagating error.", e);
+                // Decide if mempool tracking error should halt the sync
+                return Err(e);
+            }
+        }
 
         if self.last_finalized == checkpoint {
             info!("Checkpoint reached: {}", checkpoint);
