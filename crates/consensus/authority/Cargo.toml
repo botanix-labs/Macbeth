@@ -28,6 +28,7 @@ frost-secp256k1-tr = { workspace = true }
 futures = { workspace = true }
 # async
 futures-util = { workspace = true }
+arc-swap = "1.7.1"
 
 hex = "0.4.3"
 metrics = { workspace = true }

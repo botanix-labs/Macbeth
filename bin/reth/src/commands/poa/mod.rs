@@ -1,7 +1,5 @@
 //! POA node command
 
-use bitcoin::hashes::Hash;
-use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -88,17 +86,19 @@ use reth_transaction_pool::{
 };
 use rsntp::AsyncSntpClient;
 use tokio::{
-    sync::{mpsc::unbounded_channel, oneshot, RwLock},
+    sync::{mpsc::unbounded_channel, oneshot},
     time::Duration,
 };
-
-use tracing::{debug, error, info};
 
 use crate::{
     args::{DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs},
     cli::NoArgs,
     payload::PayloadBuilderService,
 };
+use reth_authority_consensus::bitcoin_checkpoint::{
+    BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer,
+};
+use tracing::{debug, error, info};
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -415,10 +415,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             None
         };
 
-        let bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
-            Arc::new(RwLock::new(None));
-        let bitcoin_block_header_clone = bitcoin_block_header.clone();
-
         // create bitcoind client and make sure its synced
         let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
 
@@ -437,62 +433,24 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }
         }
 
-        let bitcoind_factory_clone = bitcoind_factory.clone();
-        let pegin_conf_depth = chain.parent_confirmation_depth;
-        assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
-        executor.spawn_critical(
-            "async bitcoin task for block headers",
-            Box::pin(async move {
-                /// Sleep interval between wake-ups.
-                const SLEEP: tokio::time::Duration = tokio::time::Duration::from_secs(1);
+        // Synchronize the bitcoin checkpoints chain with the bitcoind node
 
-                macro_rules! or_continue {
-                    ($e:expr) => {{
-                        match $e {
-                            Ok(r) => r,
-                            Err(_) => {
-                                error!(
-                                    target: "reth::cli",
-                                    "Async bitcoin task error calling '{}'. Retrying...",
-                                    stringify!($e),
-                                );
-                                tokio::time::sleep(SLEEP).await;
-                                continue;
-                            }
-                        }
-                    }};
-                }
+        // TODO: Magic numbers
+        let bitcoin_checkpoints =
+            Arc::new(BitcoinCheckpointsChain::new(chain.parent_confirmation_depth as usize, 1, 1));
 
-                // Note: we should be panicking if our connection to bitcoind is severed
-                let bitcoind =
-                    bitcoind_factory_clone.build_and_connect().expect("can connect to bitcoind");
-                let mut last_tip = bitcoin::BlockHash::all_zeros();
-                loop {
-                    let tip_hash = or_continue!(bitcoind.get_best_block_hash());
-                    if last_tip != tip_hash {
-                        let tip_block = or_continue!(bitcoind.get_block_info(&tip_hash));
-                        let height = tip_block.height;
-                        let finalized = {
-                            let height = height.saturating_sub(pegin_conf_depth as usize);
-                            let hash = or_continue!(bitcoind.get_block_hash(height as u64));
-                            or_continue!(bitcoind.get_block_info(&hash))
-                        };
-                        let header = or_continue!(bitcoind.get_block_header(&finalized.hash));
+        let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
 
-                        info!(
-                            "Async bitcoin task setting checkpoint to {}:{}",
-                            finalized.height,
-                            header.block_hash(),
-                        );
-                        info!("Async bitcoin Tip {}:{}", height, tip_hash,);
-                        *bitcoin_block_header.write().await =
-                            Some((header, finalized.height as u32));
-                        last_tip = tip_hash;
-                    }
-                    tokio::time::sleep(SLEEP).await;
-                }
-            }),
+        let checkpoints_synchronizer = BitcoinCheckpointsChainSynchronizer::new(
+            Arc::clone(&bitcoin_checkpoints),
+            bitcoind_client,
         );
+
+        executor.spawn_critical(
+            "async bitcoin checkpoint chain synchronization task",
+            checkpoints_synchronizer.sync(),
+        );
+
         info!(target: "reth::cli", "Spawned async bitcoin task for block headers");
 
         let static_file_provider = StaticFileProvider::read_write(data_dir.static_files())?;
@@ -763,7 +721,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 Arc::clone(&chain_arc.clone()),
                 blockchain_db.clone(),
                 btc_server_factory.clone(),
-                bitcoin_block_header_clone.clone(),
+                bitcoin_checkpoints.clone(),
                 secret_key,
                 network_handle.clone(),
                 frost_handle,

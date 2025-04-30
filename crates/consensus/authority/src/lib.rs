@@ -54,6 +54,7 @@ mod signing;
 pub mod snapshot_manager;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
+pub mod bitcoin_checkpoint;
 pub mod metrics;
 pub mod random_source_provider;
 
@@ -88,8 +89,9 @@ impl AuthorityConsensus {
         // Determine the parent gas limit, considering elasticity multiplier on the London fork.
         let parent_gas_limit =
             if self.chain_spec.fork(EthereumHardfork::London).transitions_at_block(header.number) {
-                parent.gas_limit *
-                    self.chain_spec
+                parent.gas_limit
+                    * self
+                        .chain_spec
                         .base_fee_params_at_timestamp(header.timestamp)
                         .elasticity_multiplier as u64
             } else {

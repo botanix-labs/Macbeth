@@ -27,15 +27,13 @@ use reth_provider::{
     SnapshotWriter, StateProviderFactory,
 };
 
+use crate::bitcoin_checkpoint::BitcoinCheckpointsChain;
 use reth_tasks::TaskExecutor;
 use std::{
     net::SocketAddr,
     sync::{Arc, RwLock},
 };
-use tokio::sync::RwLock as TokioRwLock;
 use tracing::info;
-
-pub(crate) type BitcoinCheckpoint = Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>;
 
 /// Builder type for configuring the setup
 #[allow(dead_code)]
@@ -43,7 +41,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
     btc_server_factory: Option<GrpcClientFactory>,
-    bitcoin_block_header: Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>,
+    bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     network_handle: NetworkHandle,
     frost_handle: Option<ToFrostMan>,
     task_executor: TaskExecutor,
@@ -88,7 +86,7 @@ where
         chain_spec: Arc<ChainSpec>,
         client: DB,
         btc_server_factory: Option<GrpcClientFactory>,
-        bitcoin_block_header: BitcoinCheckpoint,
+        bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         sk: secp256k1::SecretKey,
         network_handle: NetworkHandle,
         frost_handle: Option<ToFrostMan>,
@@ -178,7 +176,7 @@ where
             storage,
             consensus: AuthorityConsensus::new(chain_spec),
             btc_server_factory,
-            bitcoin_block_header,
+            bitcoin_checkpoints,
             network_handle,
             frost_handle,
             task_executor,
@@ -211,7 +209,7 @@ where
             btc_server_factory,
             consensus,
             storage,
-            bitcoin_block_header,
+            bitcoin_checkpoints,
             network_handle,
             frost_handle,
             task_executor,
@@ -271,7 +269,7 @@ where
         // all nodes will have an abci client builder
         let abci_client_builder = Some(ABCIClientBuilder::new(
             storage.clone(),
-            bitcoin_block_header,
+            bitcoin_checkpoints,
             consensus.clone(),
             cometbft_rpc_factory.clone(),
             is_fed_node,
