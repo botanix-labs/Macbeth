@@ -8,7 +8,7 @@ contract Minting {
     /// This is not intended to be a precise value but a rough estimate.
     /// If the destination is a contract account, the gas used will be higher.
     /// It is the caller's responsibility to check the destination before calling mint().
-    uint constant mintGasUsed = 150_000;
+    uint constant MINT_GAS_USED = 150_000;
 
     /// Some new coins have been minted.
     event Mint(
@@ -39,7 +39,7 @@ contract Minting {
         );
         peginBitcoinBlockHeight[destination] = bitcoinBlockHeight;
 
-        uint256 txCost = mintGasUsed * block.basefee;
+        uint256 txCost = MINT_GAS_USED * block.basefee;
         require(txCost <= amount, "Tx cost exceeds pegin amount");
         amount -= txCost;
 
