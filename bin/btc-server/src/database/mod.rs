@@ -76,6 +76,20 @@ impl Utxo {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct FinalizedPegout {
+    /// The pegout id
+    pub id: PegoutId,
+    /// The Botanix block number.
+    pub block_number: u64,
+}
+
+impl FinalizedPegout {
+    pub fn new(id: PegoutId, block_number: u64) -> Self {
+        FinalizedPegout { id, block_number }
+    }
+}
+
 #[derive(Clone)]
 pub struct Db {
     /// NB a db is also a "default tree" so maybe here we could store some
@@ -748,9 +762,9 @@ impl Db {
         Ok(self.pending_pegouts.clear()?)
     }
 
-    /// Get all finalized pegout ids
+    /// Get all finalized pegouts
     /// Returns a vector of pegout requests that have been finalized.
-    pub fn get_finalized_pegout_ids(&self) -> Result<Vec<PegoutId>, Error> {
+    pub fn get_finalized_pegout_ids(&self) -> Result<Vec<FinalizedPegout>, Error> {
         let mut ret = Vec::new();
         for res in self.finalized_pegout_ids.iter() {
             let (_k, v) = res?;
@@ -771,7 +785,8 @@ impl Db {
     pub fn get_finalized_pegout_ids_stream(
         &self,
         chunk_size: usize,
-    ) -> impl Stream<Item = Result<(Vec<PegoutId>, u64, u64), Error>> + Send + '_ + Sync {
+    ) -> impl Stream<Item = Result<(Vec<FinalizedPegout>, u64, u64), Error>> + Send + '_ + Sync
+    {
         async_stream::stream! {
             let total_count = match self.peek_finalized_pegout_ids() {
                 Ok(count) => count,
@@ -820,10 +835,10 @@ impl Db {
     /// Removes finalized pegout ids from the database.
     pub fn remove_finalized_pegout_ids(
         &self,
-        finalized_pegout_ids: &[PegoutId],
+        finalized_pegout_ids: &[FinalizedPegout],
     ) -> Result<(), Error> {
         for pegout_id in finalized_pegout_ids.iter() {
-            self.finalized_pegout_ids.remove(&pegout_id.as_bytes()[..])?;
+            self.finalized_pegout_ids.remove(&pegout_id.id.as_bytes()[..])?;
         }
         Ok(())
     }
@@ -836,7 +851,7 @@ impl Db {
     /// Resets all finalized pegout txs, and re-adding the functions arguments back in
     pub fn reset_finalized_pegout_ids(
         &self,
-        finalized_pegout_ids: &[&PegoutId],
+        finalized_pegout_ids: &[&FinalizedPegout],
     ) -> Result<(), Error> {
         self.clear_finalized_pegout_ids()?;
         self.store_finalized_pegout_ids(finalized_pegout_ids)?;
@@ -846,7 +861,7 @@ impl Db {
     /// Store a list of finalized pegout ids
     pub fn store_finalized_pegout_ids(
         &self,
-        finalized_pegout_ids: &[&PegoutId],
+        finalized_pegout_ids: &[&FinalizedPegout],
     ) -> Result<(), Error> {
         match finalized_pegout_ids.len() {
             0 => Ok(()),
@@ -857,27 +872,27 @@ impl Db {
         }
     }
 
-    fn store_finalized_pegout_id(&self, pegout_id: &PegoutId) -> Result<(), Error> {
+    fn store_finalized_pegout_id(&self, pegout_id: &FinalizedPegout) -> Result<(), Error> {
         let mut bytes = Vec::new();
         ciborium::into_writer(&pegout_id, &mut bytes).map_err(Error::CiboriumWrite)?;
-        self.finalized_pegout_ids.insert(pegout_id.as_bytes(), &bytes[..])?;
+        self.finalized_pegout_ids.insert(pegout_id.id.as_bytes(), &bytes[..])?;
         Ok(())
     }
 
     /// Store a list of finalized pegout ids atomically
     pub fn store_finalized_pegout_ids_atomically(
         &self,
-        pegout_ids_requests: &[&PegoutId],
+        pegout_ids_requests: &[&FinalizedPegout],
     ) -> Result<(), Error> {
         self.finalized_pegout_ids
             .transaction(|database_tx| {
                 for req in pegout_ids_requests.iter() {
-                    if database_tx.get(req.as_bytes())?.is_none() {
+                    if database_tx.get(req.id.as_bytes())?.is_none() {
                         let mut bytes = Vec::new();
                         ciborium::into_writer(req, &mut bytes)
                             .map_err(Error::CiboriumWrite)
                             .expect("Ciborium error");
-                        database_tx.insert(req.as_bytes().to_vec(), &bytes[..])?;
+                        database_tx.insert(req.id.as_bytes().to_vec(), &bytes[..])?;
                     }
                 }
                 Ok::<(), ConflictableTransactionError>(())
@@ -886,10 +901,12 @@ impl Db {
         Ok(())
     }
 
-    pub fn iter_finalized_pegout_ids(&self) -> impl Iterator<Item = Result<PegoutId, Error>> {
+    pub fn iter_finalized_pegout_ids(
+        &self,
+    ) -> impl Iterator<Item = Result<FinalizedPegout, Error>> {
         self.finalized_pegout_ids.iter().map(|res| {
             let (_, v) = res?;
-            let ret = ciborium::from_reader::<PegoutId, _>(v.as_ref())?;
+            let ret = ciborium::from_reader::<FinalizedPegout, _>(v.as_ref())?;
             Ok(ret)
         })
     }
@@ -901,8 +918,9 @@ impl Db {
             .map(|pegout_id| {
                 let mut engine = sha256::Hash::engine();
                 let pegout_id = pegout_id?;
-                pegout_id.idx.consensus_encode(&mut engine).expect("engine don't error");
-                pegout_id.txid.consensus_encode(&mut engine).expect("engine don't error");
+                pegout_id.id.idx.consensus_encode(&mut engine).expect("engine don't error");
+                pegout_id.id.txid.consensus_encode(&mut engine).expect("engine don't error");
+                pegout_id.block_number.consensus_encode(&mut engine).expect("engine don't error");
                 Ok(sha256::Hash::from_engine(engine))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -1395,9 +1413,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            finalized_pegout_ids.push(pegout_id);
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
         }
-        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&FinalizedPegout>>();
         db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
         db.update_finalized_pegout_ids_merkle_root().unwrap();
         db.flush().unwrap();
@@ -1411,7 +1431,8 @@ mod tests {
 
         // // Adding an additional pegout id should change the merkle root
         let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), num_txs + 1 as u32);
-        db.store_finalized_pegout_id(&pegout_id).unwrap();
+        let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+        db.store_finalized_pegout_id(&finalized_pegout).unwrap();
         db.update_finalized_pegout_ids_merkle_root().unwrap();
         db.flush().unwrap();
         let merkle_root3 = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
@@ -1426,9 +1447,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            finalized_pegout_ids.push(pegout_id);
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
         }
-        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&FinalizedPegout>>();
         db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
         db.flush().unwrap();
 
@@ -1463,9 +1486,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            finalized_pegout_ids.push(pegout_id);
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
         }
-        let finalized_pegout_ids_slice = finalized_pegout_ids.iter().collect::<Vec<&PegoutId>>();
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&FinalizedPegout>>();
         db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
         db.flush().unwrap();
 
@@ -1499,9 +1524,10 @@ mod tests {
         let mut pegouts = vec![];
         for _ in 0..num_pegout_ids {
             let pegout_id = create_random_pegout_id();
-            pegouts.push(pegout_id);
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            pegouts.push(finalized_pegout);
         }
-        let pegout_slice = pegouts.iter().collect::<Vec<&PegoutId>>();
+        let pegout_slice = pegouts.iter().collect::<Vec<&FinalizedPegout>>();
         db.store_finalized_pegout_ids_atomically(&pegout_slice).unwrap();
         db.flush().unwrap();
 
@@ -1521,9 +1547,10 @@ mod tests {
         let mut pegouts = vec![];
         for _ in 0..num_pegout_ids {
             let pegout_id = create_random_pegout_id();
-            pegouts.push(pegout_id);
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            pegouts.push(finalized_pegout);
         }
-        let pegout_slice = pegouts.iter().collect::<Vec<&PegoutId>>();
+        let pegout_slice = pegouts.iter().collect::<Vec<&FinalizedPegout>>();
         db.store_finalized_pegout_ids(&pegout_slice).unwrap();
         db.flush().unwrap();
 

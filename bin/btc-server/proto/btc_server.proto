@@ -77,6 +77,11 @@ message PendingPegout {
     uint64 height = 4;
 }
 
+message FinalizedPegout {
+    bytes id = 1;
+    uint64 botanix_block_height = 2;
+}
+
 message GetPendingPegoutsResponse {
     repeated PendingPegout pending_pegouts = 1;
 }
@@ -86,7 +91,7 @@ message GetFinalizedPegoutIdsRequest {
 }
 
 message GetFinalizedPegoutIdsResponse {
-    repeated bytes ids = 1;
+    repeated FinalizedPegout data = 1;
     uint64 chunk_index = 2;
     uint64 total_chunks = 3;
 }
@@ -108,7 +113,7 @@ message ResetAllUtxosRequest {
 }
 
 message ResetWalletStateRequest {
-    repeated bytes finalized_pegout_ids = 1;
+    repeated FinalizedPegout finalized_pegout_ids = 1;
 }
 
 message ConsensusCheckpointRequest {

@@ -3871,7 +3871,7 @@ impl<TX: DbTx> WalletStateSyncReader for DatabaseProvider<TX> {
     fn get_minimum_superset(
         &self,
         min_required_criterion: u64,
-    ) -> ProviderResult<(bool, HashSet<Bytes>)> {
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
         let already_reached_wallet_state_sync_peers = self
             .tx
             .cursor_read::<tables::WalletStateSyncs>()?
@@ -3895,8 +3895,8 @@ impl<TX: DbTx> WalletStateSyncReader for DatabaseProvider<TX> {
 
         let synced_peers_superset = already_reached_wallet_state_sync_peers.into_iter().fold(
             HashSet::new(),
-            |mut acc, (_, record)| {
-                acc.extend(record.get_data().to_vec());
+            |mut acc, (_, mut record)| {
+                acc.extend(record.blocks_and_data_to_set());
                 acc
             },
         );
@@ -4046,7 +4046,7 @@ impl<TX: DbTxMut + DbTx> WalletStateSyncWriter for DatabaseProvider<TX> {
         uuid: UuidID,
         peer_id: PeerID,
         chunks_count: u64,
-        data: Option<Vec<Bytes>>,
+        data: Option<Vec<(u64, Bytes)>>,
     ) -> ProviderResult<PeerID> {
         let wallet_state_sync_record =
             WalletStateSyncRecord::new(peer_id, uuid, chunks_count, data);
@@ -4057,7 +4057,7 @@ impl<TX: DbTxMut + DbTx> WalletStateSyncWriter for DatabaseProvider<TX> {
     fn append_data_to_state_sync_record(
         &self,
         peer_id: PeerID,
-        data: Vec<Bytes>,
+        data: Vec<(u64, Bytes)>,
     ) -> ProviderResult<()> {
         let wallet_state_sync_record = self
             .tx
@@ -4066,7 +4066,9 @@ impl<TX: DbTxMut + DbTx> WalletStateSyncWriter for DatabaseProvider<TX> {
             .map(|(_, record)| record);
 
         if let Some(mut wallet_state_sync_record) = wallet_state_sync_record {
-            wallet_state_sync_record.append_data_chunks(data);
+            for (block, data_chunk) in data {
+                wallet_state_sync_record.append_data_with_block(data_chunk, block);
+            }
             self.tx.put::<tables::WalletStateSyncs>(peer_id, wallet_state_sync_record)?;
         }
         Ok(())

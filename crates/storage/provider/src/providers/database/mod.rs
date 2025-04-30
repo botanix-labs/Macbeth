@@ -440,7 +440,7 @@ impl<DB: Database> WalletStateSyncReader for ProviderFactory<DB> {
     fn get_minimum_superset(
         &self,
         min_required_criterion: u64,
-    ) -> ProviderResult<(bool, HashSet<Bytes>)> {
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
         self.provider()?.get_minimum_superset(min_required_criterion)
     }
 }
@@ -452,7 +452,7 @@ impl<DB: Database> WalletStateSyncWriter for ProviderFactory<DB> {
         uuid: UuidID,
         peer_id: PeerID,
         chunks_count: u64,
-        data: Option<Vec<Bytes>>,
+        data: Option<Vec<(u64, Bytes)>>,
     ) -> ProviderResult<PeerID> {
         self.provider_rw()?.create_new_state_sync_record(uuid, peer_id, chunks_count, data)
     }
@@ -461,7 +461,7 @@ impl<DB: Database> WalletStateSyncWriter for ProviderFactory<DB> {
     fn append_data_to_state_sync_record(
         &self,
         peer_id: PeerID,
-        data: Vec<Bytes>,
+        data: Vec<(u64, Bytes)>,
     ) -> ProviderResult<()> {
         self.provider_rw()?.append_data_to_state_sync_record(peer_id, data)
     }

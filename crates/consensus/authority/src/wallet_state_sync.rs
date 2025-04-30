@@ -1,9 +1,15 @@
 //! Wallet state sync module
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
-use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
-use client::{GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
+use btcserverlib::{
+    extended_client::{BtcServerExtendedApi, GrpcClientError},
+    pegout_id::PegoutId,
+};
+use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as CompressorError, SerializationType};
 use reth_db::{
@@ -25,7 +31,11 @@ use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
-use crate::{prost_parser::ProstMessageSerdelizer, Storage};
+use crate::{
+    prost_parser::ProstMessageSerdelizer,
+    utils::{get_block_pegouts, EpochPegoutsError},
+    Storage,
+};
 
 #[derive(Debug, thiserror::Error)]
 /// Wallet state synchronization errors
@@ -63,44 +73,6 @@ pub enum WalletStateSyncError {
 pub trait WalletStateSync {
     /// Synchronizes the wallet state
     async fn sync_wallet_state(&self) -> Result<(), WalletStateSyncError>;
-}
-
-/// Struct for wallet state sync peer response
-/// This struct is used to store the wallet state received from a peer
-#[derive(Debug, Clone, Default)]
-pub struct WalletStateSyncPeerResponse {
-    /// Data received from the peer
-    data: Vec<Vec<u8>>,
-    /// Set of chunks received from the peer
-    total_chunks_received: HashSet<u64>,
-    /// Total number of chunks expected from the peer
-    total_chunks_expected: u64,
-}
-
-impl WalletStateSyncPeerResponse {
-    /// Creates a new WalletStateSyncPeerResponse
-    pub fn new() -> Self {
-        Self { data: Vec::new(), total_chunks_received: HashSet::new(), total_chunks_expected: 0 }
-    }
-    /// Checks if all chunks have been received
-    pub fn all_chunks_received(&self) -> bool {
-        self.total_chunks_received.len() == self.total_chunks_expected as usize
-    }
-
-    /// Appends chunk data to the response
-    pub fn append_received_data(&mut self, partial_data: &[Vec<u8>]) {
-        self.data.extend_from_slice(partial_data);
-    }
-
-    /// Sets the total number of chunks expected
-    pub fn set_chunks_expected(&mut self, total_chunks_expected: u64) {
-        self.total_chunks_expected = total_chunks_expected;
-    }
-
-    /// Adds a chunk index to the set of chunks received
-    pub fn add_chunk_received(&mut self, chunk_index_received: u64) {
-        self.total_chunks_received.insert(chunk_index_received);
-    }
 }
 
 type WalletStateSyncResponseCycle = Arc<RwLock<Option<Uuid>>>;
@@ -160,7 +132,7 @@ fn create_new_wallet_state_sync_peer_record(
     uuid: UuidID,
     peer_id: PeerID,
     chunks_count: u64,
-    data: Option<Vec<Bytes>>,
+    data: Option<Vec<(u64, Bytes)>>,
 ) -> Result<PeerID, WalletStateSyncError> {
     let provider_rw = provider_factory.provider_rw()?;
     let record_id = provider_rw.create_new_state_sync_record(uuid, peer_id, chunks_count, data)?;
@@ -180,7 +152,7 @@ fn get_state_sync_record_by_peer_id(
 fn append_data_to_state_sync_record(
     provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
     peer_id: PeerID,
-    data: Vec<Bytes>,
+    data: Vec<(u64, Bytes)>,
 ) -> Result<(), WalletStateSyncError> {
     let provider_rw = provider_factory.provider_rw()?;
     provider_rw.append_data_to_state_sync_record(peer_id, data)?;
@@ -202,8 +174,61 @@ fn remove_all_state_sync_records(
 fn get_minimum_superset(
     provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
     min_required_criterion: u64,
-) -> Result<(bool, HashSet<Bytes>), WalletStateSyncError> {
+) -> Result<(bool, HashSet<(u64, Bytes)>), WalletStateSyncError> {
     Ok(provider_factory.provider()?.get_minimum_superset(min_required_criterion)?)
+}
+
+/// check the L2 existence of the pegouts
+async fn hydrate_minimum_superset(
+    minimum_superset: HashSet<(u64, Bytes)>,
+    client: &impl BlockReaderIdExt,
+    btc_network: bitcoin::Network,
+) -> Result<HashMap<u64, Vec<Bytes>>, EpochPegoutsError> {
+    // Group data by block number
+    let mut superset_map: HashMap<u64, Vec<Bytes>> = HashMap::new();
+    for (block_num, data) in minimum_superset {
+        superset_map.entry(block_num).or_default().push(data);
+    }
+
+    // Create futures for each block
+    let futures = superset_map.into_iter().map(|(block, data)| async move {
+        // Get valid pegout IDs for this block
+        let pegouts_result = get_block_pegouts(block, client, btc_network).await;
+
+        match pegouts_result {
+            Ok(pegouts_in_block) => {
+                // Filter data to only include valid pegout IDs
+                let hydrated_data = data
+                    .into_iter()
+                    .filter(|item| match PegoutId::from_bytes(item) {
+                        Ok(pegout_id) => pegouts_in_block.contains(&pegout_id),
+                        Err(_) => false,
+                    })
+                    .collect::<Vec<_>>();
+
+                Ok((block, hydrated_data))
+            }
+            Err(e) => Err(e),
+        }
+    });
+
+    // Execute all futures in parallel
+    let results = futures::future::join_all(futures).await;
+
+    // Process results
+    let mut hydrated_superset_map = HashMap::new();
+    for result in results {
+        match result {
+            Ok((block, data)) => {
+                if !data.is_empty() {
+                    hydrated_superset_map.insert(block, data);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(hydrated_superset_map)
 }
 
 impl<EF, BF, DB, ToFrostMan, BtcServerClient> WalletStateSync
@@ -236,6 +261,9 @@ where
         let current_response_cycle = self.current_response_cycle.clone();
         let provider_factory = self.provider_factory.clone();
         let mut canon_events = self.storage.client.subscribe_to_canonical_state();
+        let btc_network = self.storage.btc_network;
+        let storage = self.storage.clone();
+        let client = storage.client.clone();
 
         self.task_executor.clone().spawn(async move {
             // try getting the wallet state from the peers we requested it from
@@ -310,11 +338,12 @@ where
                                                 warn!(target: "consensus::authority::sync_wallet_state", "Peer sent different uuid, ignoring");
                                                 continue;
                                             }
+
                                             // append the data to the state sync record
                                             match append_data_to_state_sync_record(
                                                 &provider_factory,
                                                 wallet_state_sync_record.get_peer_id(),
-                                                finalized_pegout_ids_decompressed.ids.into_iter().map(Bytes::from).collect::<Vec<_>>(),
+                                                finalized_pegout_ids_decompressed.data.into_iter().map(|pid | (pid.botanix_block_height, Bytes::from(pid.id))).collect::<Vec<_>>(),
                                             ) {
                                                 Ok(_) => {
                                                     info!(target: "consensus::authority::sync_wallet_state", "Appended data to state sync record");
@@ -332,7 +361,7 @@ where
                                                 uuid_to_b256(uuid),
                                                 peer_message_context.peer_id,
                                                 finalized_pegout_ids_decompressed.total_chunks,
-                                                Some(finalized_pegout_ids_decompressed.ids.into_iter().map(Bytes::from).collect::<Vec<_>>()),
+                                                Some(finalized_pegout_ids_decompressed.data.into_iter().map(|pid| (pid.botanix_block_height, Bytes::from(pid.id))).collect::<Vec<_>>()),
                                             ) {
                                                 Ok(_) => {
                                                     info!(target: "consensus::authority::sync_wallet_state", "Created new state sync record");
@@ -349,11 +378,36 @@ where
                                     match get_minimum_superset(&provider_factory, frost_config.min_signers as u64) {
                                         Ok((found, minimum_superset)) => {
                                             if found {
+                                                // hydrate the superset
+                                                let hydrated_minimum_superset = match hydrate_minimum_superset(
+                                                    minimum_superset,
+                                                    &client,
+                                                    btc_network,
+                                                ).await {
+                                                    Ok(hydrated_minimum_superset) => hydrated_minimum_superset,
+                                                    Err(e) => {
+                                                        error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to hydrate minimum superset");
+                                                        continue;
+                                                    }
+                                                };
+                                                // prepare the grpc response
+                                                let finalized_pegout_ids = hydrated_minimum_superset
+                                                .into_iter()
+                                                .flat_map(|(block, data)| {
+                                                    data.into_iter().map(move |pegout_id| {
+                                                        FinalizedPegout {
+                                                            botanix_block_height: block,
+                                                            id: pegout_id.to_vec(),
+                                                        }
+                                                    })
+                                                })
+                                                .collect::<Vec<_>>();
+
                                                 info!(target: "consensus::authority::sync_wallet_state", "Found minimum superset, notifying frost manager");
                                                 // Report to btc server to resync the wallet state
                                                 match btc_server
                                                     .reset_wallet_state(ResetWalletStateRequest {
-                                                        finalized_pegout_ids: minimum_superset.into_iter().map(|item| item.to_vec()).collect(),
+                                                        finalized_pegout_ids,
                                                     })
                                                     .await {
                                                     Ok(_) => {
