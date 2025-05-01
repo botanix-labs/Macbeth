@@ -9,12 +9,12 @@ use std::sync::Arc;
 
 pub struct BitcoinCheckpointsChain {
     strong_confirmation_depth: usize,
-    /// how many headers to keep
-    confirmation_window: std::ops::RangeInclusive<usize>,
     /// Bitcoin headers chain
     /// front=oldest, back=newest
     checkpoints: ArcSwap<VecDeque<BitcoinCheckpoint>>,
-    chain_size_limit: usize,
+    /// how many headers to keep
+    confirmation_window: std::ops::RangeInclusive<usize>,
+    confirmation_window_size: usize,
 }
 
 impl BitcoinCheckpointsChain {
@@ -51,9 +51,7 @@ impl BitcoinCheckpointsChain {
                 weak_checkpoints_count,
             })?;
 
-        let confirmations_window = confirmations_from..=confirmations_to;
-
-        let chain_size_limit = confirmations_to
+        let confirmation_window_size = confirmations_to
             .checked_sub(confirmations_from) // width of the window
             .and_then(|v| v.checked_add(1)) // +1 for inclusive range
             .ok_or(BitcoinCheckpointError::ChainParamsTooLarge {
@@ -62,14 +60,15 @@ impl BitcoinCheckpointsChain {
                 weak_checkpoints_count,
             })?;
 
-        //We push new header first and then pop the oldest one, so we need an additional slot
-        let checkpoints = VecDeque::with_capacity(chain_size_limit + 1);
+        let confirmation_window = confirmations_from..=confirmations_to;
+
+        let checkpoints = VecDeque::with_capacity(confirmation_window_size);
 
         Ok(Self {
-            confirmation_window: confirmations_window,
             strong_confirmation_depth,
+            confirmation_window,
+            confirmation_window_size,
             checkpoints: ArcSwap::new(Arc::new(checkpoints)),
-            chain_size_limit,
         })
     }
 
@@ -87,10 +86,12 @@ impl BitcoinCheckpointsChain {
 
         let mut new_checkpoints = checkpoints.deref().clone();
 
-        new_checkpoints.push_back(checkpoint);
-        if new_checkpoints.len() > self.chain_size_limit {
+        // Remove the oldest checkpoint if we exceed the size limit
+        if new_checkpoints.len() == self.confirmation_window_size {
             new_checkpoints.pop_front();
         }
+
+        new_checkpoints.push_back(checkpoint);
 
         self.checkpoints.store(Arc::new(new_checkpoints));
 
@@ -110,41 +111,33 @@ impl BitcoinCheckpointsChain {
         }
 
         let checkpoints = self.checkpoints.load();
-
         if checkpoints.is_empty() {
             return None;
         }
 
-        // Translate depth to index
+        // Translate depth to index from back first
+        let lowest_confirmation_depth = *self.confirmation_window.start(); // e.g. 4
+        let index_from_back = depth - lowest_confirmation_depth;
 
-        // how many depths we could keep but haven't accumulated yet
-        let shift = self.chain_size_limit - checkpoints.len();
-
-        // if shift > end we haven’t reached even the deepest kept depth
-        let end = *self.confirmation_window.end();
-        if shift > end {
+        // Do we have enough headers?
+        if index_from_back >= checkpoints.len() {
             return None;
         }
 
-        let deepest_kept = end - shift;
-
-        // we don't have enough checkpoints
-        if depth > deepest_kept {
-            return None;
-        }
-
-        let index = deepest_kept - depth;
+        // Calculate an index from front from the index from back :)
+        let index = checkpoints.len() - 1 - index_from_back;
 
         checkpoints.get(index).cloned()
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn strong(&self) -> Option<BitcoinCheckpoint> {
         self.get_by_confirmation_depth(self.strong_confirmation_depth)
     }
 
+    #[inline]
     pub fn size_limit(&self) -> usize {
-        self.chain_size_limit
+        self.confirmation_window_size
     }
 
     pub fn len(&self) -> usize {
@@ -162,7 +155,8 @@ impl BitcoinCheckpointsChain {
         checkpoints.back().map(|checkpoint| checkpoint.height)
     }
 
-    pub(super) fn lowest_confirmations_depth(&self) -> usize {
+    #[inline]
+    pub(super) fn lowest_confirmation_depth(&self) -> usize {
         *self.confirmation_window.start()
     }
 }
@@ -176,10 +170,10 @@ impl Display for BitcoinCheckpointsChain {
         if checkpoints.is_empty() {
             writeln!(f, "  No checkpoints ")?;
         } else {
-            let index_shift = self.chain_size_limit - checkpoints.len();
+            let shift = self.confirmation_window_size - checkpoints.len();
 
             for (i, checkpoint) in checkpoints.iter().enumerate() {
-                let confirmations = self.confirmation_window.end() - i - index_shift;
+                let confirmations = self.confirmation_window.end() - i - shift;
 
                 writeln!(f, "  {}: {}", confirmations, checkpoint)?;
             }
@@ -614,10 +608,10 @@ mod tests {
         #[test]
         fn test_lowest_confirmations_depth() {
             let chain1 = BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create a valid chain");
-            assert_eq!(chain1.lowest_confirmations_depth(), 4);
+            assert_eq!(chain1.lowest_confirmation_depth(), 4);
 
             let chain2 = BitcoinCheckpointsChain::try_new(10, 5, 3).expect("create a valid chain");
-            assert_eq!(chain2.lowest_confirmations_depth(), 7);
+            assert_eq!(chain2.lowest_confirmation_depth(), 7);
         }
     }
 
