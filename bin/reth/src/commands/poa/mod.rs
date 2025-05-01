@@ -436,10 +436,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Synchronize the bitcoin checkpoints chain with the bitcoind node
 
         // TODO: Magic numbers
-        let bitcoin_checkpoints =
-            Arc::new(BitcoinCheckpointsChain::new(chain.parent_confirmation_depth as usize, 1, 1));
-
-        let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
+        let bitcoin_checkpoints = Arc::new(BitcoinCheckpointsChain::try_new(
+            chain.parent_confirmation_depth as usize,
+            1,
+            1,
+        )?);
 
         let checkpoints_synchronizer = BitcoinCheckpointsChainSynchronizer::new(
             Arc::clone(&bitcoin_checkpoints),

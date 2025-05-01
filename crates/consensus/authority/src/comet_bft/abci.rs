@@ -1954,6 +1954,9 @@ mod tests {
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
 
+        let bitcoin_checkpoints_chain =
+            BitcoinCheckpointsChain::try_new(1, 0, 0).expect("create a valid chain");
+
         let bitcoin_header = Header {
             version: Version::default(),
             prev_blockhash: BlockHash::all_zeros(),
@@ -1963,8 +1966,9 @@ mod tests {
             bits: CompactTarget::from_consensus(0),
             nonce: 0,
         };
+
         let bitcoin_checkpoint = BitcoinCheckpoint::new(bitcoin_header, 0);
-        let bitcoin_checkpoint_store = Arc::new(BitcoinCheckpointsChain::new(1, 0, 0));
+        bitcoin_checkpoints_chain.push(bitcoin_checkpoint).expect("push a checkpoint");
 
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
@@ -1973,7 +1977,7 @@ mod tests {
         ABCIClient::new(
             storage,
             transaction_pool,
-            bitcoin_checkpoint_store,
+            Arc::new(bitcoin_checkpoints_chain),
             driver_tx,
             cometbft_rpc_factory,
             AuthorityConsensus::new(spec),
