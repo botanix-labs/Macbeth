@@ -519,7 +519,10 @@ where
     }
 
     pub(crate) fn bitcoin_blockhash(&self) -> Result<bitcoin::BlockHash, ConsensusError> {
-        Ok(self.bitcoin_checkpoints.strong().ok_or(ConsensusError::MissingBitcoinCheckpoint)?.hash)
+        self.bitcoin_checkpoints
+            .strong()
+            .ok_or(ConsensusError::MissingBitcoinCheckpoint)
+            .map(|checkpoint| checkpoint.hash)
     }
 
     pub(crate) fn application_hash(
