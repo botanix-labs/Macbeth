@@ -107,3 +107,215 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::{
+        block::Header as BitcoinHeader, hashes::Hash, BlockHash as BitcoinBlockHash, TxMerkleNode,
+    };
+
+    use mockall::{mock, predicate::*};
+    use reth_btc_wallet::bitcoind::jsonrpc::serde;
+
+    mod sync_new_blocks {
+        use super::*;
+        #[test]
+        fn test_no_new_blocks_does_nothing() {
+            let chain =
+                Arc::new(BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create valid chain"));
+
+            let mut mock = MockRpc::new();
+            mock.expect_get_block_count().returning(|| Ok(100));
+
+            let mut syncer = BitcoinCheckpointsChainSynchronizer::new(Arc::clone(&chain), mock);
+            syncer.last_synced_height = Some(100);
+
+            syncer.sync_new_blocks().expect("sync new blocks");
+
+            assert_eq!(chain.len(), 0);
+        }
+        #[test]
+        fn test_new_blocks_fewer_than_limit_fetches_exact_delta() {
+            // limit = 7, lowest_conf_depth = 4 -> heights 98-102
+            let chain =
+                Arc::new(BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create valid chain"));
+
+            let mut mock = MockRpc::new();
+            mock.expect_get_block_count().returning(|| Ok(105));
+
+            expect_header_chain(&mut mock, 98..=102, BitcoinBlockHash::all_zeros());
+
+            let mut syncer = BitcoinCheckpointsChainSynchronizer::new(Arc::clone(&chain), mock);
+            syncer.last_synced_height = Some(100);
+
+            syncer.sync_new_blocks().expect("sync new blocks");
+
+            assert_eq!(chain.len(), 5);
+        }
+
+        #[test]
+        fn test_blocks_truncated_to_limit() {
+            // limit = 7 -> heights 131-137
+            let chain =
+                Arc::new(BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create valid chain"));
+
+            let mut mock = MockRpc::new();
+            mock.expect_get_block_count().returning(|| Ok(140));
+
+            expect_header_chain(&mut mock, 131..=137, BitcoinBlockHash::all_zeros());
+
+            let mut syncer = BitcoinCheckpointsChainSynchronizer::new(Arc::clone(&chain), mock);
+            syncer.last_synced_height = Some(100);
+
+            syncer.sync_new_blocks().expect("sync new blocks");
+
+            assert_eq!(chain.len(), 7);
+        }
+
+        #[test]
+        fn test_rpc_error_mapping() {
+            let chain =
+                Arc::new(BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create valid chain"));
+
+            let mut mock = MockRpc::new();
+            mock.expect_get_block_count()
+                .return_once(|| Err(reth_btc_wallet::bitcoind::JsonRPCError::UnexpectedStructure));
+
+            let mut syncer = BitcoinCheckpointsChainSynchronizer::new(chain, mock);
+
+            let result = syncer.sync_new_blocks();
+
+            assert!(
+                matches!(result, Err(BitcoinCheckpointError::RpcError { procedure_name, .. }) if procedure_name == "get_block_count")
+            );
+        }
+
+        #[test]
+        fn test_stale_block_error() {
+            let chain =
+                Arc::new(BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create valid chain"));
+
+            // Preload height-1 checkpoint, so the next height-1 push will be "stale"
+            let header = create_header(BitcoinBlockHash::all_zeros());
+
+            chain.push(BitcoinCheckpoint::new(header, 1)).unwrap();
+
+            let mut mock = MockRpc::new();
+
+            // Tip=5 (enough to sync)
+            // Syncer will fetch heights 1-2
+            // Height 1 will collide -> `StaleBlockAdded`
+            mock.expect_get_block_count().returning(|| Ok(5));
+
+            let h1 = BitcoinBlockHash::from_byte_array([1u8; 32]);
+            let h2 = BitcoinBlockHash::from_byte_array([2u8; 32]);
+
+            mock.expect_get_block_hash().with(eq(1u64)).returning(move |_| Ok(h1));
+            mock.expect_get_block_header()
+                .with(eq(h1))
+                .returning(|_| Ok(create_header(BitcoinBlockHash::all_zeros())));
+
+            mock.expect_get_block_hash().with(eq(2u64)).returning(move |_| Ok(h2));
+            mock.expect_get_block_header().with(eq(h2)).returning(move |_| Ok(create_header(h1)));
+
+            let mut syncer = BitcoinCheckpointsChainSynchronizer::new(chain, mock);
+            syncer.last_synced_height = Some(1);
+
+            let result = syncer.sync_new_blocks();
+
+            assert!(matches!(result, Err(BitcoinCheckpointError::StaleBlockAdded { .. })));
+        }
+    }
+
+    // Mock Bitcoin RPC client
+
+    mock! {
+        pub Rpc {
+            fn get_block_count(&self)
+                -> Result<u64, reth_btc_wallet::bitcoind::JsonRPCError>;
+
+            fn get_block_hash(&self, height: u64)
+                -> Result<BitcoinBlockHash, reth_btc_wallet::bitcoind::JsonRPCError>;
+
+            fn get_block_header(&self, hash: &BitcoinBlockHash)
+                -> Result<BitcoinHeader, reth_btc_wallet::bitcoind::JsonRPCError>;
+        }
+    }
+
+    // Mockall doesn't allow to mock `call` method because it has a generic parameter without 'static lifetime.
+    // So to satisfy the `RpcApi` trait, we need to implement the `call` method directly in generated MockRpc
+    impl reth_btc_wallet::bitcoind::RpcApi for MockRpc {
+        // Generic method we never need in the synchroniser tests,
+        // but it used by others
+        fn call<T>(
+            &self,
+            _cmd: &str,
+            _args: &[serde_json::Value],
+        ) -> Result<T, reth_btc_wallet::bitcoind::JsonRPCError>
+        where
+            T: for<'a> serde::de::Deserialize<'a>,
+        {
+            panic!("MockRpc::call is not expected to be invoked in these tests")
+        }
+
+        // The rest just forward to the mockall generated methods
+
+        fn get_block_header(
+            &self,
+            hash: &BitcoinBlockHash,
+        ) -> Result<BitcoinHeader, reth_btc_wallet::bitcoind::JsonRPCError> {
+            self.get_block_header(hash)
+        }
+
+        fn get_block_count(&self) -> Result<u64, reth_btc_wallet::bitcoind::JsonRPCError> {
+            self.get_block_count()
+        }
+
+        fn get_block_hash(
+            &self,
+            height: u64,
+        ) -> Result<BitcoinBlockHash, reth_btc_wallet::bitcoind::JsonRPCError> {
+            self.get_block_hash(height)
+        }
+    }
+
+    // This one depends on call as well so we can't do it with mock macro
+
+    impl reth_btc_wallet::bitcoind::RpcApiExt for MockRpc {
+        async fn is_synced(&self) -> Result<bool, reth_btc_wallet::bitcoind::BitcoindError> {
+            Ok(true)
+        }
+
+        async fn wait_until_synced(&self) {}
+    }
+
+    /// Small helper to make a fake header
+    fn create_header(prev_hash: BitcoinBlockHash) -> BitcoinHeader {
+        BitcoinHeader {
+            version: Default::default(),
+            prev_blockhash: prev_hash,
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: Default::default(),
+            bits: Default::default(),
+            nonce: Default::default(),
+        }
+    }
+
+    fn expect_header_chain(
+        mock: &mut MockRpc,
+        heights: std::ops::RangeInclusive<u64>,
+        mut prev_hash: BitcoinBlockHash,
+    ) {
+        for height in heights {
+            let header = create_header(prev_hash);
+            let new_hash = header.block_hash();
+
+            mock.expect_get_block_hash().with(eq(height)).returning(move |_| Ok(new_hash));
+
+            mock.expect_get_block_header().with(eq(new_hash)).returning(move |_| Ok(header));
+
+            prev_hash = new_hash;
+        }
+    }
+}

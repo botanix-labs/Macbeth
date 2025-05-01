@@ -99,3 +99,4 @@ reth-cli-runner = { workspace = true }
 reth-db-common = { workspace = true }
 reth-evm = { workspace = true, features = ["test-utils"] }
 tempfile = { workspace = true }
+mockall = { workspace = true }

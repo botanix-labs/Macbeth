@@ -1,6 +1,6 @@
-use bitcoincore_rpc::{
+pub use bitcoincore_rpc::{
     json::{EstimateMode, EstimateSmartFeeResult, GetBlockHeaderResult},
-    Auth, Client, Error as JsonRPCError, RpcApi,
+    jsonrpc, Auth, Client, Error as JsonRPCError, RpcApi,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
