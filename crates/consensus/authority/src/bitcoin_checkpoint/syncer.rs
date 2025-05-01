@@ -3,6 +3,7 @@
 use super::chain::BitcoinCheckpointsChain;
 use super::checkpoint::BitcoinCheckpoint;
 use super::error::BitcoinCheckpointError;
+use bitcoin::block::BlockHash as BitcoinBlockHash;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -18,6 +19,17 @@ macro_rules! map_rpc_error {
 }
 
 const SLEEP: Duration = Duration::from_secs(10);
+
+struct SyncedCheckpointInfo {
+    height: u32,
+    hash: BitcoinBlockHash,
+}
+
+impl From<&BitcoinCheckpoint> for SyncedCheckpointInfo {
+    fn from(checkpoint: &BitcoinCheckpoint) -> Self {
+        Self { height: checkpoint.height, hash: checkpoint.hash }
+    }
+}
 
 pub struct BitcoinCheckpointsChainSynchronizer<R> {
     rpc: R,
@@ -35,43 +47,66 @@ where
         // in chain and the lowest confirmation depth
         let last_synced_height = checkpoints_chain
             .recent_height()
-            .map(|height| height as u64 + checkpoints_chain.lowest_confirmations_depth() as u64);
+            .map(|height| height as u64 + checkpoints_chain.lowest_confirmation_depth() as u64);
 
         Self { rpc, checkpoints_chain, last_synced_height }
     }
 
     /// It will return StaleBlockAdded error if a new block arrives during sync.
-    fn sync_new_blocks(&mut self) -> Result<(), BitcoinCheckpointError> {
+    fn sync_new_blocks(&mut self) -> Result<Vec<SyncedCheckpointInfo>, BitcoinCheckpointError> {
         let tip_height = map_rpc_error!(self.rpc, get_block_count())?;
 
         let last_synced_height = self.last_synced_height.unwrap_or_default();
 
         // Don't sync if we're at the same height
         if tip_height <= last_synced_height {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
-        // Figure out how many blocks we need to sync
+        // Is the chain too young to have any blocks with the
+        // required lowest confirmation depth?
+        let lowest_confirmation_depth = self.checkpoints_chain.lowest_confirmation_depth() as u64;
+        if tip_height < lowest_confirmation_depth {
+            // Not enough blocks yet.
+            // Just remember the new tip and return.
+            self.last_synced_height = Some(tip_height);
+
+            return Ok(Vec::new());
+        }
+
+        // Total confirmed blocks currently available
+        let confirmed_available = tip_height + 1 - lowest_confirmation_depth;
+
+        // How many of them have we already synced?
+        let confirmed_already =
+            last_synced_height.saturating_add(1).saturating_sub(lowest_confirmation_depth);
+        let need_to_sync = confirmed_available.saturating_sub(confirmed_already);
+
+        if need_to_sync == 0 {
+            self.last_synced_height = Some(tip_height);
+
+            return Ok(Vec::new());
+        }
+
+        // How many blocks we need to sync (limited by the chain size)
         let chain_size_limit = self.checkpoints_chain.size_limit() as u64;
-        let mut blocks_to_sync_count = tip_height - last_synced_height;
-        if blocks_to_sync_count > chain_size_limit {
-            blocks_to_sync_count = chain_size_limit;
-        }
+        let blocks_to_sync = need_to_sync.min(chain_size_limit);
 
-        // Calculate the range of block heights to sync
-        let lowest_confirmations_depth = self.checkpoints_chain.lowest_confirmations_depth() as u64;
+        let top_confirmed_height = tip_height - (lowest_confirmation_depth - 1);
 
-        // To keep chain consistency we need to push from lowest to highest checkpoint
-        let from_height = tip_height - lowest_confirmations_depth + blocks_to_sync_count;
-        let to_height = tip_height - lowest_confirmations_depth;
+        // We push from oldest to newest, so we start `blocks_to_sync`−1 below the top.
+        let from_height = top_confirmed_height - (blocks_to_sync - 1);
+        let to_height = top_confirmed_height;
 
+        let mut report = Vec::new();
         for height in from_height..=to_height {
             let confirmed_hash = map_rpc_error!(self.rpc, get_block_hash(height))?;
-
             let header = map_rpc_error!(self.rpc, get_block_header(&confirmed_hash))?;
 
-            // Create and push the checkpoint
+            // Create, report and push the checkpoint
             let bitcoin_checkpoint = BitcoinCheckpoint::new(header, height as u32);
+
+            report.push(SyncedCheckpointInfo::from(&bitcoin_checkpoint));
 
             self.checkpoints_chain.push(bitcoin_checkpoint)?;
         }
@@ -79,8 +114,7 @@ where
         // Update the last height we've seen
         self.last_synced_height = Some(tip_height);
 
-        // TODO: return synced hashes and heights for logging
-        Ok(())
+        Ok(report)
     }
 
     /// Run the synchronizer forever.
@@ -98,6 +132,7 @@ where
             .await
             .expect("spawn_blocking task panicked");
 
+            // TODO: Better logging
             match result {
                 Ok(_) => tracing::info!("bitcoin checkpoints synced"),
                 Err(e) => tracing::warn!("bitcoin checkpoints sync failed: {e}"),
