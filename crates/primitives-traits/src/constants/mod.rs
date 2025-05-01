@@ -122,9 +122,10 @@ pub const HOLESKY_GENESIS_HASH: B256 =
 pub const DEV_GENESIS_HASH: B256 =
     b256!("2f980576711e3617a5e4d83dd539548ec0f7792007d505a3d2e9674833af2d7c");
 
-/// Botanix Mainnet genesis hash.
+/// Botanix Mainnet genesis hash:
+/// `0x0210ae550e730d0e18f96896b80caad6f59dcc0b83b67421975716d155d027c6`
 pub const BOTANIX_MAINNET_GENESIS: B256 =
-    b256!("3ac536c14df4e92f69a506554d9516c3311553f56fb166f0a48d95679e3593c6");
+    b256!("0210ae550e730d0e18f96896b80caad6f59dcc0b83b67421975716d155d027c6");
 
 /// Botanix Testnet genesis hash.
 pub const BOTANIX_TESTNET_GENESIS: B256 =

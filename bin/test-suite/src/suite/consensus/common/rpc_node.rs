@@ -90,6 +90,7 @@ pub struct NonFederationMemberTestConfig {
     pub peer_id: PeerId,
     pub botanix_fee_recipient: String,
     pub botanix_eth_client: Option<BotanixEthClient>,
+    pub lst_fee_receiver: String,
 }
 
 impl NonFederationMemberTestConfig {
@@ -106,6 +107,7 @@ impl NonFederationMemberTestConfig {
         rpc_port: u16,
         ws_port: u16,
         discovery_port: u16,
+        lst_fee_receiver: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
@@ -122,6 +124,7 @@ impl NonFederationMemberTestConfig {
             peer_id,
             botanix_fee_recipient,
             botanix_eth_client: None,
+            lst_fee_receiver,
         })
     }
 
@@ -195,6 +198,7 @@ impl NonFederationMemberTestConfig {
             edh_authorities,
             self.botanix_fee_recipient.clone(),
             String::from(MINTING_CONTRACT_BYTECODE),
+            self.lst_fee_receiver.clone(),
         );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
@@ -365,6 +369,7 @@ pub async fn create_rpc_nodes(
                                                                           * start port assigning
                                                                           * after poa servers */
             DISCOVERY_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we start port assigning after poa servers */
+            global_context.lst_fee_receiver.clone(),
         ).await?;
         rpc_members.insert(global_context.fed_instances + member_index, rpc_node);
     }

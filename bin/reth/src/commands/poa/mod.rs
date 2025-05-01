@@ -1249,8 +1249,12 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config =
-            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
+        let federation_config = FederationTomlConfig::new(
+            authorities,
+            "0x".to_string(),
+            "0x".to_string(),
+            "0x".to_string(),
+        );
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
             cmd.is_testnet,
@@ -1279,8 +1283,12 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config =
-            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
+        let federation_config = FederationTomlConfig::new(
+            authorities,
+            "0x".to_string(),
+            "0x".to_string(),
+            "0x".to_string(),
+        );
         let cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--datadir",
@@ -1311,8 +1319,12 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config =
-            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
+        let federation_config = FederationTomlConfig::new(
+            authorities,
+            "0x".to_string(),
+            "0x".to_string(),
+            "0x".to_string(),
+        );
         let cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--datadir",

@@ -145,6 +145,7 @@ pub struct FederationMemberTestConfig {
     pub botanix_fee_recipient: String,
     pub botanix_eth_client: Option<BotanixEthClient>,
     pub is_state_syncing: bool,
+    pub lst_fee_receiver: String,
 }
 
 impl FederationMemberTestConfig {
@@ -168,6 +169,7 @@ impl FederationMemberTestConfig {
         test_signal_tx: Sender<TestSignal>,
         botanix_fee_recipient: String,
         is_state_syncing: bool,
+        lst_fee_receiver: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
@@ -194,6 +196,7 @@ impl FederationMemberTestConfig {
             botanix_fee_recipient,
             botanix_eth_client: None,
             is_state_syncing,
+            lst_fee_receiver,
         })
     }
 
@@ -273,6 +276,7 @@ impl FederationMemberTestConfig {
             edh_authorities,
             self.botanix_fee_recipient.clone(),
             String::from(MINTING_CONTRACT_BYTECODE),
+            self.lst_fee_receiver.clone(),
         );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
@@ -753,6 +757,7 @@ pub async fn create_poa_nodes(
             test_signal_tx,
             global_context.botanix_fee_recipient.clone(),
             member_index > poa_instances - 1,
+            global_context.lst_fee_receiver.clone(),
         )
         .await?;
         poa_nodes.insert(member_index, fed_member_config);

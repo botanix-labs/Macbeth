@@ -399,7 +399,7 @@ mod tests {
     use random_source_provider::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
-    use reth_consensus_common::utils::{block_fees_split, is_inturn};
+    use reth_consensus_common::utils::is_inturn;
     use reth_primitives::{
         constants::{ALLOWED_FUTURE_BLOCK_TIME_SECONDS, MAXIMUM_EXTRA_DATA_SIZE},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
@@ -624,14 +624,6 @@ mod tests {
             ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
             random_source
         ));
-    }
-
-    #[test]
-    fn should_split_rewards() {
-        let base_block_reward = 100;
-        let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
-        assert_eq!(botanix_reward, 20);
-        assert_eq!(beneficiary_reward, 80);
     }
 
     #[test]

@@ -41,32 +41,60 @@ pub fn post_block_balance_increments(
             calc::block_reward(base_block_reward, block.ommers.len());
     }
 
-    // split block fees between builder and botanix if total_block_fees exist and
-    // block_fee_recipient_address is not zero.
-    // need conditional statement so reth tests can pass:
+    // Split block fees between LST FeeReceiver, Botanix, and the Block Fee Recipient address.
+    // A conditional statement is needed so reth tests can pass:
     // sometimes tests will pass None for fees (ie processor eip4788 tests)
-    // sometimes it will pass fees with a zero block builder address (ie blockhchain_tree fork
-    // choice tests) During normal operation, the block_builder address will never be zero: it
-    // will be an authority address
+    // sometimes it will pass fees with a zero block fee recipient address (ie blockhchain_tree fork
+    // choice tests). During normal operation, the block fee recipient address will never be a zero
+    // address: it will be an address passed by the node operator.
     let fees = total_block_fees.unwrap_or(0);
-    let address = block_fee_recipient_address.unwrap_or(Address::ZERO);
+    let block_fee_recipient = block_fee_recipient_address.unwrap_or(Address::ZERO);
 
-    if fees > 0 && address != Address::ZERO && chain_spec.botanix_fee_recipient.is_some() {
-        let (botanix_fees, builder_fees) = utils::block_fees_split(fees);
+    if fees > 0 &&
+        block_fee_recipient != Address::ZERO &&
+        chain_spec.botanix_fee_recipient.is_some() &&
+        chain_spec.lst_fee_receiver.is_some()
+    {
+        let (lst_fee_receiver_fees, botanix_fees, block_fee_recipient_fees) =
+            utils::block_fees_split(fees);
 
-        *balance_increments
-            .entry(
-                Address::from_str(
-                    chain_spec
-                        .botanix_fee_recipient
-                        .clone()
-                        .expect("botanix fee recipient to exist")
-                        .as_str(),
-                )
-                .expect("Recipient to exist"),
-            )
-            .or_default() += botanix_fees;
-        *balance_increments.entry(address).or_default() += builder_fees;
+        // FeeReceiver fees
+        let lst_fee_receiver_addr = Address::from_str(
+            chain_spec.lst_fee_receiver.clone().expect("FeeReceiver to exist").as_str(),
+        )
+        .expect("Valid FeeReceiver");
+        balance_increments
+            .entry(lst_fee_receiver_addr)
+            .and_modify(|bal: &mut u128| {
+                *bal = bal
+                    .checked_add(lst_fee_receiver_fees)
+                    .expect("overflow incrementing balance for LST FeeReceiver");
+            })
+            .or_insert(lst_fee_receiver_fees);
+
+        // Botanix fees
+        let botanix_addr = Address::from_str(
+            chain_spec.botanix_fee_recipient.clone().expect("FeeReceiver to exist").as_str(),
+        )
+        .expect("Valid FeeReceiver");
+        balance_increments
+            .entry(botanix_addr)
+            .and_modify(|bal| {
+                *bal = bal
+                    .checked_add(botanix_fees)
+                    .expect("overflow incrementing balance for Botanix fee recipient");
+            })
+            .or_insert(botanix_fees);
+
+        // Block fee recipient fees
+        balance_increments
+            .entry(block_fee_recipient)
+            .and_modify(|bal| {
+                *bal = bal
+                    .checked_add(block_fee_recipient_fees)
+                    .expect("overflow incrementing balance for block fee recipient");
+            })
+            .or_insert(block_fee_recipient_fees);
     }
 
     // process withdrawals

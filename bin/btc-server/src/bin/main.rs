@@ -638,7 +638,7 @@ where
                 match chunk_result {
                     Ok((pegout_ids, chunk_index, total_chunks)) => {
                         if let Some(telemetry) = telemetry.as_ref() {
-                            telemetry.update_pending_pegouts(pegout_ids.len() as i64);
+                            telemetry.update_finalized_pegout_ids(pegout_ids.len() as i64);
                         }
 
                         let batch = rpc::GetFinalizedPegoutIdsResponse {
