@@ -1418,7 +1418,6 @@ where
             }
         };
 
-        // TODO: check sequence
         // check non-deterministic data: btc block hash and aggregate public key
         if !self.bitcoin_checkpoints.contains_by_hash(non_deterministic_data.bitcoin_block_hash) {
             warn!(
