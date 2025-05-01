@@ -435,7 +435,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Synchronize the bitcoin checkpoints chain with the bitcoind node
 
-        // TODO: Magic numbers
+        // TODO: Magic numbers. Shall I add it configuration?
         let bitcoin_checkpoints = Arc::new(BitcoinCheckpointsChain::try_new(
             chain.parent_confirmation_depth as usize,
             1,
