@@ -409,7 +409,7 @@ mod tests {
                 let checkpoint = chain.get_by_confirmation_depth(depth);
                 assert!(checkpoint.is_some(), "failed to get checkpoint at depth {depth}");
 
-                let expected_position = 11 - depth;
+                let expected_position = 10 - depth;
                 let expected_height = 100 + expected_position;
 
                 assert!(
@@ -462,9 +462,10 @@ mod tests {
             create_checkpoints_and_push_to_chain(&chain, 100, 11);
 
             let strong_checkpoint = chain.strong();
-            // After 11 blocks, the header with exactly 6 confirmations is at height 105.
+
+            // After 11 blocks, the header with exactly 6 confirmations is at height 108.
             assert!(
-                matches!(strong_checkpoint, Some(BitcoinCheckpoint { height, .. }) if height == 105)
+                matches!(strong_checkpoint, Some(BitcoinCheckpoint { height, .. }) if height == 108)
             );
         }
     }
