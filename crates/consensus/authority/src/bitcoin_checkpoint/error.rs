@@ -10,7 +10,7 @@ pub enum BitcoinCheckpointError {
         added_prev_block_hash: BitcoinBlockHash,
     },
     #[error("RPC call {procedure_name} error: {error}")]
-    RpcError { error: reth_btc_wallet::bitcoincore_rpc::Error, procedure_name: String },
+    RpcError { error: reth_btc_wallet::bitcoind::JsonRPCError, procedure_name: String },
     #[error("Strong confirmation depth must be greater than zero")]
     ZeroStrongConfirmationDepth,
     #[error("Weak checkpoints count {weak_checkpoints_count} is greater than strong confirmation depth {strong_confirmation_depth}")]

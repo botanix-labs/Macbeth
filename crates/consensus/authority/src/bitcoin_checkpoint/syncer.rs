@@ -4,6 +4,7 @@ use super::chain::BitcoinCheckpointsChain;
 use super::checkpoint::BitcoinCheckpoint;
 use super::error::BitcoinCheckpointError;
 use bitcoin::block::BlockHash as BitcoinBlockHash;
+use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,6 +21,7 @@ macro_rules! map_rpc_error {
 
 const SLEEP: Duration = Duration::from_secs(10);
 
+#[derive(Debug)]
 struct SyncedCheckpointInfo {
     height: u32,
     hash: BitcoinBlockHash,
@@ -98,7 +100,7 @@ where
         let from_height = top_confirmed_height - (blocks_to_sync - 1);
         let to_height = top_confirmed_height;
 
-        let mut report = Vec::new();
+        let mut synced_checkpoints = Vec::new();
         for height in from_height..=to_height {
             let confirmed_hash = map_rpc_error!(self.rpc, get_block_hash(height))?;
             let header = map_rpc_error!(self.rpc, get_block_header(&confirmed_hash))?;
@@ -106,7 +108,7 @@ where
             // Create, report and push the checkpoint
             let bitcoin_checkpoint = BitcoinCheckpoint::new(header, height as u32);
 
-            report.push(SyncedCheckpointInfo::from(&bitcoin_checkpoint));
+            synced_checkpoints.push(SyncedCheckpointInfo::from(&bitcoin_checkpoint));
 
             self.checkpoints_chain.push(bitcoin_checkpoint)?;
         }
@@ -114,7 +116,7 @@ where
         // Update the last height we've seen
         self.last_synced_height = Some(tip_height);
 
-        Ok(report)
+        Ok(synced_checkpoints)
     }
 
     /// Run the synchronizer forever.
@@ -123,19 +125,24 @@ where
         let syncer = Arc::new(Mutex::new(self));
 
         loop {
-            // Call `sync_new_blocks()` on the blocking pool
+            // Sync bitcoin checkpoints to the tip in blocking task
             let syncer_clone = Arc::clone(&syncer);
             let result = tokio::task::spawn_blocking(move || {
                 let mut syncer = syncer_clone.lock().unwrap();
                 syncer.sync_new_blocks()
             })
             .await
-            .expect("spawn_blocking task panicked");
+            .expect("spawned blocking task failed to sync bitcoin checkpoints");
 
-            // TODO: Better logging
             match result {
-                Ok(_) => tracing::info!("bitcoin checkpoints synced"),
-                Err(e) => tracing::warn!("bitcoin checkpoints sync failed: {e}"),
+                Ok(synced_checkpoints) => {
+                    tracing::info!(
+                        ?synced_checkpoints,
+                        "Asynced task synced {} bitcoin checkpoints",
+                        synced_checkpoints.len()
+                    )
+                }
+                Err(e) => tracing::warn!("Async task failed to sync bitcoin checkpoints: {e}"),
             }
 
             tokio::time::sleep(SLEEP).await;
@@ -155,6 +162,7 @@ mod tests {
 
     mod sync_new_blocks {
         use super::*;
+
         #[test]
         fn test_no_new_blocks_does_nothing() {
             let chain =
@@ -240,7 +248,7 @@ mod tests {
 
             // Tip=5 (enough to sync)
             // Syncer will fetch heights 1-2
-            // Height 1 will collide -> `StaleBlockAdded`
+            // Height 1 will collide, and we get `StaleBlockAdded`
             mock.expect_get_block_count().returning(|| Ok(5));
 
             let h1 = BitcoinBlockHash::from_byte_array([1u8; 32]);
