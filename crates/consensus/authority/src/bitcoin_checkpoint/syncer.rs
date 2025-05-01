@@ -1,17 +1,24 @@
+//! Bitcoin checkpoint synchronization.
+//!
+//! This module handles synchronization of Bitcoin checkpoints chain with the Bitcoin network
+//! using a Bitcoin RPC connection.
+
 // TODO: Better solution would be to trigger sync using Bitcoin ZMQ new block event
 
 use super::chain::BitcoinCheckpointsChain;
 use super::checkpoint::BitcoinCheckpoint;
 use super::error::BitcoinCheckpointError;
 use bitcoin::block::BlockHash as BitcoinBlockHash;
-use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// Sleep duration between synchronization attempts.
+const SLEEP: Duration = Duration::from_secs(10);
 
 macro_rules! map_rpc_error {
     ($target:expr, $method:ident ( $($args:tt)* )) => {{
         $target.$method($($args)*).map_err(|error| {
-            BitcoinCheckpointError::RpcError {
+            BitcoinCheckpointError::SyncRpcError {
                 error,
                 procedure_name: stringify!($method).to_string(),
             }
@@ -19,24 +26,37 @@ macro_rules! map_rpc_error {
     }};
 }
 
-const SLEEP: Duration = Duration::from_secs(10);
-
+/// Information about a synchronized Bitcoin checkpoint.
+///
+/// Contains only the essential information needed for reporting successful
+/// synchronization of a checkpoint.
 #[derive(Debug)]
 struct SyncedCheckpointInfo {
+    /// Block height of the checkpoint
     height: u32,
+    /// Block hash of the checkpoint
     hash: BitcoinBlockHash,
 }
 
+/// Conversion from a BitcoinCheckpoint to SyncedCheckpointInfo.
 impl From<&BitcoinCheckpoint> for SyncedCheckpointInfo {
     fn from(checkpoint: &BitcoinCheckpoint) -> Self {
         Self { height: checkpoint.height, hash: checkpoint.hash }
     }
 }
 
+/// Synchronizes a Bitcoin checkpoints chain with the Bitcoin network.
+///
+/// This structure manages the synchronization process between a Bitcoin node (via RPC)
+/// and our local checkpoints chain, ensuring the chain is kept up to date with
+/// confirmed blocks from the Bitcoin network.
 pub struct BitcoinCheckpointsChainSynchronizer<R> {
+    /// RPC client for communicating with a Bitcoin node
     rpc: R,
+    /// The checkpoints chain to be synchronized
     checkpoints_chain: Arc<BitcoinCheckpointsChain>,
-    // RPC is using u64 for block height for some reason, so we use it as well to avoid casting
+    /// The height of the last Bitcoin block that has been processed
+    /// RPC is using u64 for block height for some reason, so we use it as well to avoid casting
     last_synced_height: Option<u64>,
 }
 
@@ -44,6 +64,16 @@ impl<R> BitcoinCheckpointsChainSynchronizer<R>
 where
     R: reth_btc_wallet::bitcoind::RpcApiExt + 'static,
 {
+    /// Creates a new Bitcoin checkpoints chain synchronizer.
+    ///
+    /// # Arguments
+    ///
+    /// * `checkpoints_chain` - The chain to synchronize with Bitcoin network
+    /// * `rpc` - The Bitcoin RPC client used to fetch blockchain data
+    ///
+    /// # Returns
+    ///
+    /// A new synchronizer instance with the last synced height initialized from the chain.
     pub fn new(checkpoints_chain: Arc<BitcoinCheckpointsChain>, rpc: R) -> Self {
         // Calculate the last synced height based on the most recent checkpoint
         // in chain and the lowest confirmation depth
@@ -54,7 +84,25 @@ where
         Self { rpc, checkpoints_chain, last_synced_height }
     }
 
-    /// It will return StaleBlockAdded error if a new block arrives during sync.
+    /// Synchronizes new Bitcoin blocks to the checkpoints chain.
+    ///
+    /// This method:
+    /// 1. Fetches the current Bitcoin blockchain height
+    /// 2. Determines which blocks need to be synced based on:
+    ///    - The last height we've already synchronized
+    ///    - The minimum required confirmation depth
+    ///    - The maximum size limit of the checkpoints chain
+    /// 3. Fetches block headers for the required blocks
+    /// 4. Adds them to the checkpoints chain
+    ///
+    /// # Returns
+    ///
+    /// A vector of information about all successfully synchronized checkpoints,
+    /// or an error if synchronization failed.
+    ///
+    /// # Errors
+    ///
+    /// It will return `StaleBlockAdded` error if a new block arrives during sync.
     fn sync_new_blocks(&mut self) -> Result<Vec<SyncedCheckpointInfo>, BitcoinCheckpointError> {
         let tip_height = map_rpc_error!(self.rpc, get_block_count())?;
 
@@ -119,7 +167,18 @@ where
         Ok(synced_checkpoints)
     }
 
-    /// Run the synchronizer forever.
+    /// Runs the synchronizer indefinitely.
+    ///
+    /// This method continuously monitors the Bitcoin blockchain and updates the checkpoints chain.
+    /// It will periodically:
+    /// 1. Query the Bitcoin node for the latest block height
+    /// 2. Calculate which blocks need to be fetched based on confirmation depths
+    /// 3. Fetch block headers and add them to the checkpoints chain
+    /// 4. Sleep for a configured duration before repeating
+    ///
+    /// If an RPC error occurs, the method will log the error and retry after sleeping.
+    ///
+    /// This method runs in a loop and never returns, so it should be run in a separate task or thread.
     pub async fn sync(self) {
         // We need interior mutability so that we can move `self` into spawn_blocking
         let syncer = Arc::new(Mutex::new(self));
@@ -230,7 +289,7 @@ mod tests {
             let result = syncer.sync_new_blocks();
 
             assert!(
-                matches!(result, Err(BitcoinCheckpointError::RpcError { procedure_name, .. }) if procedure_name == "get_block_count")
+                matches!(result, Err(BitcoinCheckpointError::SyncRpcError { procedure_name, .. }) if procedure_name == "get_block_count")
             );
         }
 

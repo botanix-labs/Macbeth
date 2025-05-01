@@ -1,3 +1,8 @@
+//! Bitcoin checkpoints chain
+//!
+//! This module provides functionality to maintain a chain of Bitcoin checkpoints
+//! with configurable confirmation depths and size limits.
+
 use super::checkpoint::BitcoinCheckpoint;
 use super::error::BitcoinCheckpointError;
 use arc_swap::ArcSwap;
@@ -7,24 +12,43 @@ use std::fmt::Display;
 use std::ops::Deref;
 use std::sync::Arc;
 
+/// Maintains a chain of Bitcoin checkpoints with configurable confirmation depths.
+///
+/// The chain maintains a window of blocks that satisfy specific confirmation requirements.
+/// It supports operations to get blocks at specific confirmation depths, strong confirmations,
+/// and chain management.
 pub struct BitcoinCheckpointsChain {
+    /// The number of confirmations required for a checkpoint to be considered strong
     strong_confirmation_depth: usize,
+
     /// Bitcoin headers chain
     /// front=oldest, back=newest
+    // We update every 10 mins, so we use `ArcSwap` to make reads lock-free and fast.
     checkpoints: ArcSwap<VecDeque<BitcoinCheckpoint>>,
-    /// how many headers to keep
+
+    /// Range of confirmation depths to keep in the window
+    /// front=lowest, back=highest
     confirmation_window: std::ops::RangeInclusive<usize>,
+
+    /// Size of the confirmation window (precalculated for efficiency)
     confirmation_window_size: usize,
 }
 
 impl BitcoinCheckpointsChain {
-    /// Creates a new BitcoinCheckpointsChain
+    /// Creates a new BitcoinCheckpointsChain with the specified parameters.
     ///
-    /// ## Params
-    /// * `strong_confirmation_depth` - how many confirmations are needed to consider a checkpoints strong
-    /// * `historical_checkpoints_count` - how many historical checkpoints to keep
-    /// * `weak_checkpoints_count` - how many checkpoints before the strong confirmation depth to keep
-    // TODO: Should it be u8?
+    /// ## Parameters
+    /// * `strong_confirmation_depth` - How many confirmations are needed to consider a checkpoint strong
+    /// * `historical_checkpoints_count` - How many historical checkpoints to keep (depth > strong)
+    /// * `weak_checkpoints_count` - How many checkpoints before the strong confirmation depth to keep (depth < strong)
+    ///
+    /// ## Returns
+    /// A new `BitcoinCheckpointsChain` or an error if the parameters are invalid
+    ///
+    /// ## Errors
+    /// * `ZeroStrongConfirmationDepth` - If strong confirmation depth is zero
+    /// * `WeakCheckpointsCountTooBig` - If weak checkpoints count is greater than strong confirmation depth
+    /// * `ChainParamsTooLarge` - If the parameters would cause numeric overflow
     pub fn try_new(
         strong_confirmation_depth: usize,
         historical_checkpoints_count: usize,
@@ -72,6 +96,24 @@ impl BitcoinCheckpointsChain {
         })
     }
 
+    /// Adds a new checkpoint to the chain.
+    ///
+    /// The new checkpoint must be linked to the current tip (its previous hash
+    /// must match the hash of the current tip).
+    ///
+    /// If the chain size exceeds the limit, the oldest checkpoints are removed.
+    ///
+    /// We expect `push` to be called once at 10 mins, so for interior mutability
+    /// we use ArcSwap, which guarantee lock-free and fast reads
+    ///
+    /// ## Parameters
+    /// * `checkpoint` - The checkpoint to add
+    ///
+    /// ## Returns
+    /// Ok(()) if the checkpoint was added, or an error
+    ///
+    /// ## Errors
+    /// * `StaleBlockAdded` - If the checkpoint doesn't connect to the current chain
     pub fn push(&self, checkpoint: BitcoinCheckpoint) -> Result<(), BitcoinCheckpointError> {
         let checkpoints = self.checkpoints.load_full();
 
@@ -98,12 +140,29 @@ impl BitcoinCheckpointsChain {
         Ok(())
     }
 
-    pub fn contains_by_hash(&self, h: BitcoinBlockHash) -> bool {
+    /// Checks if a checkpoint with the given hash exists in the chain.
+    ///
+    /// ## Parameters
+    /// * `hash` - The hash to look for
+    ///
+    /// ## Returns
+    /// `true` if a checkpoint with the given hash exists, `false` otherwise
+    pub fn contains_by_hash(&self, hash: BitcoinBlockHash) -> bool {
         let checkpoints = self.checkpoints.load();
         // We expect a few headers at most, so linear scan is optimal.
-        checkpoints.iter().any(|checkpoint| checkpoint.hash == h)
+        checkpoints.iter().any(|checkpoint| checkpoint.hash == hash)
     }
 
+    /// Gets a checkpoint at the specified confirmation depth.
+    ///
+    /// ## Parameters
+    /// * `depth` - The confirmation depth to get the checkpoint for
+    ///
+    /// ## Returns
+    /// The checkpoint at the specified depth, or `None` if:
+    /// - The depth is outside the configured confirmation window
+    /// - The chain is empty
+    /// - The chain doesn't have enough blocks to reach the specified depth
     pub fn get_by_confirmation_depth(&self, depth: usize) -> Option<BitcoinCheckpoint> {
         // Confirmation depth must belong to the configured window
         if !self.confirmation_window.contains(&depth) {
@@ -130,31 +189,55 @@ impl BitcoinCheckpointsChain {
         checkpoints.get(index).cloned()
     }
 
+    /// Gets the checkpoint with strong confirmation depth.
+    ///
+    /// ## Returns
+    /// The checkpoint at the strong confirmation depth, or `None` if not available
     #[inline]
     pub fn strong(&self) -> Option<BitcoinCheckpoint> {
         self.get_by_confirmation_depth(self.strong_confirmation_depth)
     }
 
+    /// Gets the maximum number of checkpoints this chain can hold.
+    ///
+    /// ## Returns
+    /// The maximum number of checkpoints
     #[inline]
     pub fn size_limit(&self) -> usize {
         self.confirmation_window_size
     }
 
+    /// Gets the number of checkpoints currently in the chain.
+    ///
+    /// ## Returns
+    /// The number of checkpoints
     pub fn len(&self) -> usize {
         let checkpoints = self.checkpoints.load();
         checkpoints.len()
     }
 
+    /// Checks if the chain is empty.
+    ///
+    /// ## Returns
+    /// `true` if the chain has no checkpoints, `false` otherwise
     pub fn is_empty(&self) -> bool {
         let checkpoints = self.checkpoints.load();
         checkpoints.is_empty()
     }
 
+    /// Gets the height of the most recent checkpoint.
+    ///
+    /// ## Returns
+    /// The height of the most recent checkpoint, or `None` if the chain is empty
     pub(super) fn recent_height(&self) -> Option<u32> {
         let checkpoints = self.checkpoints.load();
         checkpoints.back().map(|checkpoint| checkpoint.height)
     }
 
+    /// Gets the lowest confirmation depth in the window.
+    ///
+    /// ## Returns
+    /// The lowest confirmation depth
     #[inline]
     pub(super) fn lowest_confirmation_depth(&self) -> usize {
         *self.confirmation_window.start()
