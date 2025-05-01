@@ -191,20 +191,6 @@ mod tests {
     use bitcoin::TxMerkleNode;
     use std::str::FromStr;
 
-    // Helper function to create a test checkpoint
-    fn create_checkpoint(height: u32, prev_blockhash: BitcoinBlockHash) -> BitcoinCheckpoint {
-        let header = BitcoinHeader {
-            version: Default::default(),
-            prev_blockhash,
-            merkle_root: TxMerkleNode::all_zeros(),
-            time: Default::default(),
-            bits: Default::default(),
-            nonce: Default::default(),
-        };
-
-        BitcoinCheckpoint { height, hash: header.block_hash(), header }
-    }
-
     mod try_new {
         use super::*;
 
@@ -248,13 +234,11 @@ mod tests {
             let chain =
                 BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create a checkpoint chain");
 
-            let checkpoint1 = create_checkpoint(100, BitcoinBlockHash::all_zeros());
-            let checkpoint2 = create_checkpoint(101, checkpoint1.hash);
-
-            chain.push(checkpoint1).expect("push first checkpoint");
-            chain.push(checkpoint2).expect("push second checkpoint");
+            let checkpoints = create_checkpoints_and_push_to_chain(&chain, 100, 2);
 
             assert_eq!(chain.len(), 2);
+            assert_eq!(checkpoints[0].height, 100);
+            assert_eq!(checkpoints[1].height, 101);
         }
 
         #[test]
@@ -292,37 +276,19 @@ mod tests {
             let chain = BitcoinCheckpointsChain::try_new(3, 1, 1).expect("create a valid chain"); // Size limit = 4
 
             // Push 5 checkpoints (exceeding capacity)
-            let checkpoint1 = create_checkpoint(100, BitcoinBlockHash::all_zeros());
-            let checkpoint1_hash = checkpoint1.hash;
-
-            let checkpoint2 = create_checkpoint(101, checkpoint1_hash);
-            let checkpoint2_hash = checkpoint2.hash;
-
-            let checkpoint3 = create_checkpoint(102, checkpoint2_hash);
-            let checkpoint3_hash = checkpoint3.hash;
-
-            let checkpoint4 = create_checkpoint(103, checkpoint3_hash);
-            let checkpoint4_hash = checkpoint4.hash;
-
-            let checkpoint5 = create_checkpoint(104, checkpoint4_hash);
-            let checkpoint5_hash = checkpoint5.hash;
-
-            chain.push(checkpoint1).expect("push checkpoint 1");
-            chain.push(checkpoint2).expect("push checkpoint 2");
-            chain.push(checkpoint3).expect("push checkpoint 3");
-            chain.push(checkpoint4).expect("push checkpoint 4");
-            chain.push(checkpoint5).expect("push checkpoint 5");
+            let checkpoints = create_checkpoints_and_push_to_chain(&chain, 100, 5);
 
             // Should maintain size limit by removing oldest
             assert_eq!(chain.len(), 3);
 
             // Should not contain the first checkpoint anymore
-            assert!(!chain.contains_by_hash(checkpoint1_hash));
+            assert!(!chain.contains_by_hash(checkpoints[0].hash));
+            assert!(!chain.contains_by_hash(checkpoints[1].hash));
 
             // Should contain checkpoints 3-5
-            assert!(chain.contains_by_hash(checkpoint3_hash));
-            assert!(chain.contains_by_hash(checkpoint4_hash));
-            assert!(chain.contains_by_hash(checkpoint5_hash));
+            assert!(chain.contains_by_hash(checkpoints[2].hash));
+            assert!(chain.contains_by_hash(checkpoints[3].hash));
+            assert!(chain.contains_by_hash(checkpoints[4].hash));
         }
 
         /// Make sure the deque never grows past its limit (regression for the
@@ -433,22 +399,14 @@ mod tests {
 
         #[test]
         fn test_get_by_confirmations_depth_success() {
-            let chain = BitcoinCheckpointsChain::try_new(6, 2, 2).expect("create a valid chain"); // window 10..=4
+            let chain = BitcoinCheckpointsChain::try_new(6, 2, 2).expect("create a valid chain"); // window 4..=8
 
-            // Add 11 checkpoints (enough for all positions in window)
-            let mut previous_block_hash = BitcoinBlockHash::all_zeros();
-            for i in 1..=7 {
-                let checkpoint = create_checkpoint(100 + i, previous_block_hash);
-
-                previous_block_hash = checkpoint.hash;
-
-                assert!(chain.push(checkpoint).is_ok(), "failed to push checkpoint {i}")
-            }
+            // Add 7 checkpoints
+            create_checkpoints_and_push_to_chain(&chain, 100, 7);
 
             // Check depths within the window
             for depth in 4..=8 {
                 let checkpoint = chain.get_by_confirmation_depth(depth);
-
                 assert!(checkpoint.is_some(), "failed to get checkpoint at depth {depth}");
 
                 let expected_position = 11 - depth;
@@ -501,19 +459,12 @@ mod tests {
             let chain = BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create a valid chain");
 
             // Add 11 checkpoints (enough for strong confirmation)
-            let mut previous_block_hash = BitcoinBlockHash::all_zeros();
-            for i in 1..=11 {
-                let checkpoint = create_checkpoint(100 + i, previous_block_hash);
-
-                previous_block_hash = checkpoint.hash;
-
-                assert!(chain.push(checkpoint).is_ok(), "push checkpoint {i}")
-            }
+            create_checkpoints_and_push_to_chain(&chain, 100, 11);
 
             let strong_checkpoint = chain.strong();
-            // After 11 blocks, the header with exactly 6 confirmations is at height 109.
+            // After 11 blocks, the header with exactly 6 confirmations is at height 105.
             assert!(
-                matches!(strong_checkpoint, Some(BitcoinCheckpoint { height, .. }) if height == 109)
+                matches!(strong_checkpoint, Some(BitcoinCheckpoint { height, .. }) if height == 105)
             );
         }
     }
@@ -645,26 +596,50 @@ mod tests {
         fn test_display_with_all_checkpoints() {
             let chain = BitcoinCheckpointsChain::try_new(6, 2, 2).expect("create a valid chain");
 
-            let checkpoint1 = create_checkpoint(100, BitcoinBlockHash::all_zeros());
-            let checkpoint2 = create_checkpoint(101, checkpoint1.hash);
-            let checkpoint3 = create_checkpoint(102, checkpoint2.hash);
-            let checkpoint4 = create_checkpoint(103, checkpoint3.hash);
-            let checkpoint5 = create_checkpoint(104, checkpoint4.hash);
-
-            chain.push(checkpoint1.clone()).expect("push checkpoint 1");
-            chain.push(checkpoint2.clone()).expect("push checkpoint 2");
-            chain.push(checkpoint3.clone()).expect("push checkpoint 3");
-            chain.push(checkpoint4.clone()).expect("push checkpoint 4");
-            chain.push(checkpoint5.clone()).expect("push checkpoint 5");
+            let checkpoints = create_checkpoints_and_push_to_chain(&chain, 100, 5);
 
             // Should contain the confirmation depth and checkpoint info
             assert!(chain.to_string().contains(
                 format!(
                     "8: {}\n  7: {}\n  6: {}\n  5: {}\n  4: {}",
-                    checkpoint1, checkpoint2, checkpoint3, checkpoint4, checkpoint5
+                    checkpoints[0], checkpoints[1], checkpoints[2], checkpoints[3], checkpoints[4]
                 )
                 .as_str()
             ));
         }
+    }
+
+    fn create_checkpoint(height: u32, prev_blockhash: BitcoinBlockHash) -> BitcoinCheckpoint {
+        let header = BitcoinHeader {
+            version: Default::default(),
+            prev_blockhash,
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: Default::default(),
+            bits: Default::default(),
+            nonce: Default::default(),
+        };
+
+        BitcoinCheckpoint { height, hash: header.block_hash(), header }
+    }
+
+    fn create_checkpoints_and_push_to_chain(
+        chain: &BitcoinCheckpointsChain,
+        start_height: u32,
+        count: usize,
+    ) -> Vec<BitcoinCheckpoint> {
+        let mut checkpoints = Vec::with_capacity(count);
+        let mut prev_hash = BitcoinBlockHash::all_zeros();
+
+        for i in 0..count {
+            let height = start_height + i as u32;
+            let checkpoint = create_checkpoint(height, prev_hash);
+            prev_hash = checkpoint.hash;
+
+            assert!(chain.push(checkpoint.clone()).is_ok(), "push checkpoint {}", i + 1);
+
+            checkpoints.push(checkpoint);
+        }
+
+        checkpoints
     }
 }
