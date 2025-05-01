@@ -62,7 +62,7 @@ pub struct BitcoinCheckpointsChainSynchronizer<R> {
 
 impl<R> BitcoinCheckpointsChainSynchronizer<R>
 where
-    R: reth_btc_wallet::bitcoind::RpcApiExt + 'static,
+    R: reth_btc_wallet::bitcoind::RpcApiExt,
 {
     /// Creates a new Bitcoin checkpoints chain synchronizer.
     ///
