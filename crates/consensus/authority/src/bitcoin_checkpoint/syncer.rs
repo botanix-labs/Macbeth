@@ -33,8 +33,10 @@ macro_rules! map_rpc_error {
 #[derive(Debug)]
 struct SyncedCheckpointInfo {
     /// Block height of the checkpoint
+    #[allow(dead_code)]
     height: u32,
     /// Block hash of the checkpoint
+    #[allow(dead_code)]
     hash: BitcoinBlockHash,
 }
 
