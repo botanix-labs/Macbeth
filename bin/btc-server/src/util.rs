@@ -412,6 +412,7 @@ pub enum ValidateOutputsError {
 
 /// Check:
 /// - additional outputs are change outputs
+/// - pegouts have not already been finalized
 /// - there are no duplicate outputs
 pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
     // check aggregated public key exists
@@ -436,6 +437,15 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
                 change_output = Some(idx);
             }
         };
+    }
+
+    // check outputs are not in finalized pegouts list
+    let finalized_pegouts_id =
+        db.get_finalized_pegout_ids()?.into_iter().map(|id| id.id).collect::<Vec<_>>();
+    for id in &psbt_pegout_ids {
+        if finalized_pegouts_id.contains(id) {
+            return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
+        }
     }
 
     // check for duplicate outputs by pegout ids
