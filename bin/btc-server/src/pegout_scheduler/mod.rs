@@ -466,29 +466,8 @@ impl PegoutScheduler {
                     change_spk_res.as_ref().err()
                 );
             }
-            info!(
-                "PegoutScheduler::finalize_block: Attempting to store {} change UTXOs for tx {}",
-                change_utxos.len(),
-                txid
-            );
-            let store_change_res =
-                self.db.store_utxos(change_utxos.iter().collect::<Vec<_>>().as_slice());
-            info!(
-                "PegoutScheduler::finalize_block: Result of storing change UTXOs for tx {}: {:?}",
-                txid, store_change_res
-            );
-            store_change_res?;
-            info!(
-                "PegoutScheduler::finalize_block: Attempting flush after storing change UTXOs for tx {}",
-                txid
-            );
-            let flush_change_res = self.db.flush(); // Flush after storing change UTXOs
-            info!(
-                "PegoutScheduler::finalize_block: Result of flush after storing change UTXOs for tx {}: {:?}",
-                txid,
-                flush_change_res
-            );
-            flush_change_res?;
+            self.db.store_utxos(change_utxos.iter().collect::<Vec<_>>().as_slice())?;
+            self.db.flush()?;
             all_inputs.extend(tx.tx.input.iter().map(|i| i.previous_output));
         }
 
@@ -510,24 +489,8 @@ impl PegoutScheduler {
                 // paid them. Let L2 handle potential duplicates if necessary.
             }
             // Remove the spent input UTXO if it exists in our DB (it might not if it wasn't ours)
-            info!("PegoutScheduler::finalize_block: Attempting to remove input UTXO: {:?}", input);
-            let remove_utxo_res = self.db.remove_utxo(&input);
-            info!(
-                "PegoutScheduler::finalize_block: Result of removing input UTXO {:?}: {:?}",
-                input, remove_utxo_res
-            );
-            remove_utxo_res?;
-            info!(
-                "PegoutScheduler::finalize_block: Attempting flush after removing input UTXO: {:?}",
-                input
-            );
-            let flush_remove_res = self.db.flush();
-            info!(
-                "PegoutScheduler::finalize_block: Result of flush after removing input UTXO {:?}: {:?}",
-                input,
-                flush_remove_res
-            );
-            flush_remove_res?;
+            self.db.remove_utxo(&input)?;
+            self.db.flush()?;
         }
 
         // Process transactions confirmed in this finalized block
@@ -550,49 +513,15 @@ impl PegoutScheduler {
                         txid
                     );
                     let refs: Vec<&FinalizedPegout> = finalized_pegout_ids.iter().collect();
-                    info!(
-                        "PegoutScheduler::finalize_block: Attempting to store finalized pegout IDs: {:?}",
-                        finalized_pegout_ids
-                    );
-                    let store_finalized_res = self.db.store_finalized_pegout_ids_atomically(&refs);
-                    info!(
-                        "PegoutScheduler::finalize_block: Result of storing finalized pegout IDs for tx {}: {:?}",
-                        txid,
-                        store_finalized_res
-                    );
-                    store_finalized_res?;
-                    info!(
-                        "PegoutScheduler::finalize_block: Attempting flush after storing finalized IDs for tx {}",
-                        txid
-                    );
-                    let flush_finalized_res = self.db.flush(); // Ensure DB consistency
-                    info!(
-                        "PegoutScheduler::finalize_block: Result of flush after storing finalized IDs for tx {}: {:?}",
-                        txid,
-                        flush_finalized_res
-                    );
-                    flush_finalized_res?;
+                    self.db.store_finalized_pegout_ids_atomically(&refs)?;
+                    self.db.flush()?;
                 } else {
                     info!("Confirmed tx {} had no associated pegout requests to finalize.", txid);
                 }
 
                 // Now remove the finalized tx from tracking
-                info!(
-                    "PegoutScheduler::finalize_block: Attempting to remove finalized tx {} from tracking map.",
-                    txid
-                );
                 self.txs.remove(txid);
-                info!(
-                    "PegoutScheduler::finalize_block: Attempting to remove finalized tx {} from DB tracking.",
-                    txid
-                );
-                let remove_tracked_res = self.db.remove_tracked_tx(txid);
-                info!(
-                    "PegoutScheduler::finalize_block: Result of removing finalized tx {} from DB tracking: {:?}",
-                    txid,
-                    remove_tracked_res
-                );
-                remove_tracked_res?;
+                self.db.remove_tracked_tx(txid)?;
             } else {
                 // This case should ideally not happen if relevant_txs is derived correctly
                 warn!("Txid {} marked as relevant in finalized block {}, but not found in tracked txs.", txid, block.hash);
@@ -602,10 +531,7 @@ impl PegoutScheduler {
         }
 
         self.last_finalized = block.hash;
-        info!("PegoutScheduler::finalize_block: Finished finalizing block {}, attempting final flush...", block.hash);
-        let flush_res = self.db.flush();
-        info!("PegoutScheduler::finalize_block: Final flush result: {:?}", flush_res);
-        flush_res?; // Propagate potential flush error
+        self.db.flush()?;
 
         Ok(())
     }

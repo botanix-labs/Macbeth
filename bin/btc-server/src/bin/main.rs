@@ -1002,45 +1002,6 @@ where
             .iter()
             .map(|p| PegoutId::from_bytes(p).expect("values are 36 bytes"))
             .collect::<Vec<PegoutId>>();
-
-        info!(
-            "[finalize_signing] Extracted transaction outputs before add_tracked_tx (session {:?}):",
-            hex::encode(signing_session_id)
-        );
-        for (i, tx_output) in tx.output.iter().enumerate() {
-            info!(
-                "- Output {}: value={}, script_pubkey={:?}",
-                i, tx_output.value, tx_output.script_pubkey
-            );
-        }
-
-        info!(
-            "[finalize_signing] Attempting to fetch pending pegouts from DB matching {} IDs extracted from finalized PSBT: {:?}",
-            pegout_ids.len(),
-            pegout_ids
-        );
-        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
-        let pending_pegouts =
-            pending_pegouts.into_iter().filter(|p| pegout_ids.contains(&p.id)).collect::<Vec<_>>();
-        info!(
-            "[finalize_signing] Found {} matching pending pegouts in DB: {:?}",
-            pending_pegouts.len(),
-            pending_pegouts.iter().map(|p| p.id).collect::<Vec<_>>()
-        );
-        info!(
-            "[finalize_signing] Extracted transaction outputs before potentially adding tracked tx (session {:?}):",
-            hex::encode(signing_session_id)
-        );
-        for (i, tx_output) in tx.output.iter().enumerate() {
-            info!(
-                "- Output {}: value={}, script_pubkey={:?}",
-                i, tx_output.value, tx_output.script_pubkey
-            );
-        }
-        info!(
-            "[finalize_signing] NOT calling add_tracked_tx again. Associated pegout requests found in DB were: {:?}",
-            pending_pegouts.iter().map(|p| p.id).collect::<Vec<_>>()
-        );
         info!(
             "[finalize_signing] Removing {} pending pegouts from DB: {:?}",
             pegout_ids.len(),
@@ -1048,7 +1009,6 @@ where
         );
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
         self.db.flush().to_status()?;
-        info!("[finalize_signing] Pending pegouts removed and DB flushed.");
 
         if let Some(tx_id) = tx_id {
             info!("Broadcasted tx: {:?}", tx_id);
