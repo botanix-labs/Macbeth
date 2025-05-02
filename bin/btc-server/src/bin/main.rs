@@ -24,8 +24,7 @@ use btcserverlib::{
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
     pegout_scheduler::{self, PegoutRequest, PegoutScheduler},
-    rpc,
-    rpc::*,
+    rpc::{self, *},
     shutdown::{stop_signal, StopHandle},
     signer::{
         self,
@@ -34,8 +33,8 @@ use btcserverlib::{
     telemetry::Telemetry,
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
-        get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, ParsingError,
-        UPPER_PEGOUT_BOUND,
+        get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, retry_exec,
+        ParsingError, UPPER_PEGOUT_BOUND,
     },
     wallet::{
         self,
@@ -651,14 +650,27 @@ where
                                 .collect(),
                             chunk_index,
                             total_chunks,
+                            is_final: chunk_index + 1 == total_chunks,
                         };
 
-                        // send the batch
+                        // send the batch with retries
                         info!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
-                        if tx.send(Ok(batch)).await.is_err() {
-                            error!("get_finalized_pegout_ids stream task: Client disconnected, stopping stream.");
+                        let fut = || async {
+                            let tx = tx.clone();
+                            let batch = batch.clone();
+                            tx.send(Ok(batch)).await
+                        };
+                        if let Err(e) = retry_exec(
+                            "sending_finalized_pegout_id_chunk",
+                            fut,
+                            3,
+                            Duration::from_secs(2),
+                        )
+                        .await
+                        {
+                            error!("get_finalized_pegout_ids stream task: Client disconnected, stopping stream. Error = {:?}", e);
                             continue;
-                        }
+                        };
 
                         // add a small delay between chunks
                         tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;

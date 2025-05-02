@@ -184,40 +184,58 @@ where
         let response = self.btc_server.get_finalized_pegout_ids(request).await?;
         pin_mut!(response);
 
+        let mut received_healthy_chunks = 0;
+        let mut total_expected_chunks = 0;
+        let mut is_final_chunk_received = false;
+
         // get the stream from the response
         while let Some(item) = response.next().await {
-            let prost_serialized_pegout_ids = item.map_err(|e| {
-                error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got grpc error {:?}", e);
-                FinalizedPegoutIdsSyncSerializationError::Grpc(GrpcClientError::Call(e))
-            })?;
+            match item {
+                Ok(prost_serialized_pegout_ids) => {
+                    total_expected_chunks = prost_serialized_pegout_ids.total_chunks;
+                    if prost_serialized_pegout_ids.is_final {
+                        is_final_chunk_received = true;
+                    }
+                    if prost_serialized_pegout_ids.data.is_empty() {
+                        warn!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received empty finalized pegout ids from btc server");
+                        continue;
+                    }
 
-            if prost_serialized_pegout_ids.data.is_empty() {
-                warn!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received empty finalized pegout ids from btc server");
-                continue;
+                    // serialize the prost message
+                    let prost_message_wrapper = ProstMessageSerdelizer(prost_serialized_pegout_ids);
+                    let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
+                        error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got serializer error {:?}", e);
+                        FinalizedPegoutIdsSyncSerializationError::Prost(e)
+                    })?;
+
+                    // now compress the prost message
+                    let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
+                        error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got compressor error {:?}", e);
+                        FinalizedPegoutIdsSyncSerializationError::DataParser(e)
+                    })?;
+                    received_healthy_chunks += 1;
+
+                    let mut wallet_state_response = wallet_state_response.clone();
+                    wallet_state_response.finalized_pegout_ids = prost_serialized_compressed;
+
+                    info!(target: "consensus::authority::frost_task::start_task", "Sending wallet state to peer {:?}", peer_data.peer_id);
+                    if let Err(e) = peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
+                        PeerMessageResponse::WalletState(wallet_state_response),
+                    )) {
+                        error!(target: "consensus::authority::frost_task::start_task", "Error sending wallet state message to peer {:?}: {:?}",  peer_data.peer_id, e);
+                        continue;
+                    }
+                }
+                Err(e) => {
+                    error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got grpc error {:?}", e);
+                    continue;
+                }
             }
 
-            // serialize the prost message
-            let prost_message_wrapper = ProstMessageSerdelizer(prost_serialized_pegout_ids);
-            let prost_serialized = prost_message_wrapper.serialize().map_err(|e| {
-                error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got serializer error {:?}", e);
-                FinalizedPegoutIdsSyncSerializationError::Prost(e)
-            })?;
-
-            // now compress the prost message
-            let prost_serialized_compressed = self.compressor.compress(&prost_serialized).await.map_err(|e| {
-                error!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Got compressor error {:?}", e);
-                FinalizedPegoutIdsSyncSerializationError::DataParser(e)
-            })?;
-
-            let mut wallet_state_response = wallet_state_response.clone();
-            wallet_state_response.finalized_pegout_ids = prost_serialized_compressed;
-
-            info!(target: "consensus::authority::frost_task::start_task", "Sending wallet state to peer {:?}", peer_data.peer_id);
-            if let Err(e) = peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
-                PeerMessageResponse::WalletState(wallet_state_response),
-            )) {
-                error!(target: "consensus::authority::frost_task::start_task", "Error sending wallet state message to peer {:?}: {:?}",  peer_data.peer_id, e);
-                continue;
+            if (received_healthy_chunks == total_expected_chunks) && is_final_chunk_received {
+                info!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received all chunks");
+            } else {
+                warn!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received {} out of {} chunks", received_healthy_chunks, total_expected_chunks);
             }
         }
         Ok(())

@@ -10,9 +10,13 @@ use bitcoin::{
     Amount, FeeRate, OutPoint,
 };
 use frost_secp256k1_tr as frost;
+use futures_util::Future;
 use lazy_static::lazy_static;
-use log::info;
-use std::collections::{HashMap, HashSet};
+use log::{error, info};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use crate::{
     database::{self, Db, Utxo},
@@ -31,6 +35,35 @@ pub(crate) const ROUND1: u8 = 1u8;
 pub(crate) const ROUND1_TRANSITION: u8 = (1u8 << 1) | ROUND1;
 pub(crate) const ROUND2: u8 = (1u8 << 2) | ROUND1_TRANSITION;
 pub(crate) const ROUND2_TRANSITION: u8 = (1u8 << 3) | ROUND1_TRANSITION;
+
+/// Function for retrying an async closure with retries and delays
+pub async fn retry_exec<T, E, F, Fut>(
+    method_name: &str,
+    fut: F,
+    max_retries: u32,
+    retry_delay: Duration,
+) -> Result<T, E>
+where
+    E: std::error::Error,
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    let mut retries = 0;
+    loop {
+        match fut().await {
+            Ok(result) => return Ok(result),
+            Err(e) if retries < max_retries => {
+                error!(
+                    "Error retrying the execution of function {:?}. Error: {:?}",
+                    method_name, e
+                );
+                retries += 1;
+                tokio::time::sleep(retry_delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
 
 /// The upper bound on pegouts in a single transaction. We use a _reasonable_
 /// number based on the following properties:

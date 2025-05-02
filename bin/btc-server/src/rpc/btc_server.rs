@@ -35,6 +35,8 @@ pub struct GetFinalizedPegoutIdsResponse {
     pub chunk_index: u64,
     #[prost(uint64, tag = "3")]
     pub total_chunks: u64,
+    #[prost(bool, tag = "4")]
+    pub is_final: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizeSignerRequest {
