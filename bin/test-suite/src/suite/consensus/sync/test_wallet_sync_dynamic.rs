@@ -27,7 +27,10 @@ use tonic::transport::Channel;
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::events::{await_botanix_event, await_epoch_block},
+        common::{
+            events::{await_botanix_event, await_epoch_block},
+            poa_node::TestSignal,
+        },
         ConsensusIntegrationTestSuite,
     },
     utils::{generate_blocks, get_gateway_address_with_retry},
@@ -66,13 +69,15 @@ pub async fn get_finalized_pegout_ids_from_peers(
 }
 
 #[allow(clippy::too_many_lines)]
-pub async fn test_wallet_sync(
+pub async fn test_wallet_sync_dynamic(
     suite: &mut ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), anyhow::Error> {
-    // This test is for the happy path:
+    // Non-happy path:
+    // Non happy path where a signer drops and misses a finalized block:
     // Create a pegout, sign, and broadcast
+    // Drop a signer so they miss the finalized block
     // Then generate deeply confirmed blocks to finalize the pegout
-    // Get finalized pegouts list from all peers
+    // Bring signer back online
     // Wait for an epoch block and sync
     // Get finalized pegouts list from all peers again
     // Confirm the finalized pegouts list is the same as before
@@ -268,33 +273,37 @@ pub async fn test_wallet_sync(
     // wait for the tx to be included in a botanix block
     await_botanix_event(&mut rx, *BURN_TOPIC).await;
 
-    // wait until pegout has been broadcasted
-    // can indirectly know if signing server has a tracked_tx
-    let mut signer = suite
-        .local_context
-        .btc_server_clients
-        .as_ref()
-        .expect("btc_server_client")
-        .first()
-        .expect("btc server client")
-        .clone();
-    it_info_print!("Waiting for tracked tx");
-    loop {
-        let response =
-            signer.get_tracked_txs(tonic::Request::new(client::Empty {})).await?.into_inner();
-        if !response.tracked_txs.is_empty() {
-            it_info_print!("Tracked tx found");
-            break;
-        }
-        // sleep for 10s
-        tokio::time::sleep(Duration::from_secs(10)).await;
-    }
+    // drop one of the signers so it misses the signing
+    let dropped_signer = 1;
+    let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
+    // now disconnect the peers of fed member 1
+    test_fed_members
+        .get(&dropped_signer)
+        .cloned()
+        .unwrap()
+        .send_test_signal(TestSignal::DisconnectAll());
 
     // Reconnect to bitcoind. Occasionally the connection is lost after a long time or b/c of other
     // processes connecting
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
     // mine some btc blocks (needed for confirmed pegout)
-    generate_blocks(&bitcoind_rpc, 10).await;
+    generate_blocks(&bitcoind_rpc, 20).await;
+
+    // now reconnect the peers of fed member 1
+    test_fed_members
+        .get(&dropped_signer)
+        .cloned()
+        .unwrap()
+        .send_test_signal(TestSignal::ReconnectAll());
+
+    // sleep for 20s
+    tokio::time::sleep(Duration::from_secs(20)).await;
+
+    // bring signer back up
+    let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
+    // now disconnect the peers of fed member 1
+    test_fed_members.get(&1).cloned().unwrap().send_test_signal(TestSignal::DisconnectAll());
+
     // wait for an epoch since this is when the pegout scheduler
     // determines if tracked txs are finalized
     await_epoch_block(&mut rx).await;
@@ -342,16 +351,6 @@ pub async fn test_wallet_sync(
 
         break;
     }
-
-    // TODO(scott): implement non happy path
-    // Non happy path where a signer drops and misses a finalized block:
-    // Create a pegout, sign, and broadcast
-    // Drop a signer so they miss the finalized block
-    // Then generate deeply confirmed blocks to finalize the pegout
-    // Bring signer back online
-    // Wait for an epoch block and sync
-    // Get finalized pegouts list from all peers again
-    // Confirm the finalized pegouts list is the same as before
 
     Ok(())
 }

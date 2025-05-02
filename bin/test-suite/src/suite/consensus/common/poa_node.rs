@@ -17,9 +17,7 @@ use ethers::{
     types::{BlockId, BlockNumber, H256},
 };
 use reth::args::{FedMemberPubKey, FederationTomlConfig};
-use reth_chainspec::{
-    create_botanix_config_with_genesis, BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID,
-};
+use reth_chainspec::BOTANIX_TESTNET;
 use reth_db::{
     mdbx::{DatabaseArguments, MaxReadTransactionDuration},
     models::ClientVersion,

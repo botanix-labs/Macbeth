@@ -95,6 +95,13 @@ jobs:
           killall btc-server || true
           killall bitcoind || true
 
+      - name: Run wallet sync dynamic
+        run: |
+          export TEST_TO_RUN="wallet_sync_dynamic"
+          make start-test-suite
+          killall btc-server || true
+          killall bitcoind || true
+
       - name: Run utxo_sync
         run: |
           export TEST_TO_RUN="utxo_sync"

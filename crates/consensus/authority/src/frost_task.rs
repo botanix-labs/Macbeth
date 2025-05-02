@@ -185,7 +185,7 @@ where
         pin_mut!(response);
 
         let mut received_healthy_chunks = 0;
-        let mut total_expected_chunks = 0;
+        let mut total_expected_chunks;
         let mut is_final_chunk_received = false;
 
         // get the stream from the response
