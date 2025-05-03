@@ -298,7 +298,8 @@ pub async fn test_wallet_sync(
 
     // Finalized pegout ids are added during finalize_block():
     // deeply confirmed pegouts are moved to finalized pegouts.
-    // This will occur first: before peers sync their wallets when their finalized pegouts list is populated.
+    // This will occur first: before peers sync their wallets when their finalized pegouts list is
+    // populated.
     it_info_print!("Waiting for block to be finalized");
     loop {
         // get all finalized pegout ids after block is finalized

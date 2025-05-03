@@ -112,6 +112,8 @@ pub async fn make_tx(
         .iter()
         .flat_map(|tx| tx.inputs().collect::<Vec<OutPoint>>())
         .collect::<HashSet<OutPoint>>();
+    info!("tracked_inputs = {:?}", tracked_inputs);
+
     // Filter utxos that are still pending and conflict with pending txs.
     let mut available_utxos = utxos
         .clone()
@@ -125,7 +127,7 @@ pub async fn make_tx(
         .iter()
         .flat_map(|tx| tx.pegout_requests.iter().map(|p| p.id))
         .collect::<HashSet<_>>();
-    println!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
+    info!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
 
     // Collect all pegout ids being retried.
     let matching_pegouts_ids: Vec<&PegoutId> = outputs
