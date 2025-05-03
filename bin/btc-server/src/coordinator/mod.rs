@@ -107,12 +107,15 @@ pub async fn make_tx(
             map.insert(utxo.outpoint, utxo);
             Ok::<HashMap<bitcoin::OutPoint, Utxo>, DbError>(map)
         })?;
+    debug!("utxos len = {:?}", utxos.len());
+    debug!("utxos = {:?}", utxos);
 
     let tracked_inputs = tracked_txs
         .iter()
         .flat_map(|tx| tx.inputs().collect::<Vec<OutPoint>>())
         .collect::<HashSet<OutPoint>>();
-    info!("tracked_inputs = {:?}", tracked_inputs);
+    debug!("tracked_inputs len = {:?}", tracked_inputs.len());
+    debug!("tracked_inputs = {:?}", tracked_inputs);
 
     // Filter utxos that are still pending and conflict with pending txs.
     let mut available_utxos = utxos
@@ -120,6 +123,8 @@ pub async fn make_tx(
         .into_iter()
         .filter(|(p, _u)| !tracked_inputs.contains(p))
         .collect::<HashMap<_, _>>();
+    debug!("available_utxos len = {:?}", available_utxos.len());
+    debug!("available_utxos = {:?}", available_utxos);
 
     // if we are retrying pegouts, we need to add a conflicting input for each tracked tx
     // that honors each pegout
@@ -127,7 +132,7 @@ pub async fn make_tx(
         .iter()
         .flat_map(|tx| tx.pegout_requests.iter().map(|p| p.id))
         .collect::<HashSet<_>>();
-    info!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
+    debug!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
 
     // Collect all pegout ids being retried.
     let matching_pegouts_ids: Vec<&PegoutId> = outputs
@@ -135,6 +140,7 @@ pub async fn make_tx(
         .filter(|(_, pegout_id)| tracked_pegout_request_ids.contains(pegout_id))
         .map(|(_, pegout_id)| pegout_id)
         .collect();
+    debug!("matching_pegouts_ids = {:?}", matching_pegouts_ids);
 
     // get a tracked input for each matching pegout
     let matching_tracked_inputs: Result<Vec<OutPoint>, CoordinatorError> = tracked_txs
@@ -143,6 +149,7 @@ pub async fn make_tx(
         .map(|tx| tx.inputs().next().ok_or_else(|| CoordinatorError::NoConflictingInputs))
         .collect();
     let matching_tracked_inputs = matching_tracked_inputs?;
+    debug!("matching_tracked_inputs = {:?}", matching_tracked_inputs);
 
     // get the utxo for each matching tracked input
     let mut conflicting_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
@@ -161,6 +168,7 @@ pub async fn make_tx(
         .collect();
 
     let _ = conflicting_inputs?;
+    debug!("conflicting_utxos = {:?}", conflicting_utxos);
 
     // include conflicting utxos when selecting from available utxos
     conflicting_utxos.iter().for_each(|(op, u)| {
