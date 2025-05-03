@@ -1416,8 +1416,41 @@ mod tests {
         assert_eq!(sat_per_vb.to_sat_per_vb_ceil(), 50);
     }
 
+    #[tokio::test]
+    // tests db can determine if a conflicting input is present in a psbt
+    async fn test_has_conflicting_input() {
+        let (db, _temp_dir) = setup_db();
+
+        // create a tracked tx with a pegout request
+        let tx = create_tx(1, 1, None);
+        let pegout_id = create_random_pegout_id();
+        let pegout_requests = vec![PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: pegout_id,
+            botanix_height: 0,
+        }];
+        let tracked_tx = Tx {
+            txid: tx.compute_txid(),
+            tx: tx.clone(),
+            change_idxs: vec![1],
+            pegout_idxs: vec![0],
+            pegout_requests,
+            created: SystemTime::now(),
+        };
+        db.store_tracked_tx(&tracked_tx).unwrap();
+        db.flush().unwrap();
+
+        // create a psbt with the tracked tx so it has a conflicting input
+        let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
+        // set the tracked pegout id
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let res = has_conflicting_input(&db, &psbt);
+        assert!(res.is_ok());
+    }
+
     #[test]
-    // success case is tested in `test_has_conflicting_input` in main.rs
     fn has_conflicting_input_should_error_when_no_conflicting_input() {
         let (db, _temp_dir) = setup_db();
 
