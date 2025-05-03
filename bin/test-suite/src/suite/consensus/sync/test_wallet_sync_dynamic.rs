@@ -68,6 +68,9 @@ pub async fn get_finalized_pegout_ids_from_peers(
     peers_finalized_pegout_ids
 }
 
+// This test doesn't perform as needed so not including it in the test suite yet
+// The signer intended to be dropped isn't actually dropped
+// TODO: kill the signer process and restart it
 #[allow(clippy::too_many_lines)]
 pub async fn test_wallet_sync_dynamic(
     suite: &mut ConsensusIntegrationTestSuite,
@@ -301,8 +304,8 @@ pub async fn test_wallet_sync_dynamic(
 
     // bring signer back up
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
-    // now disconnect the peers of fed member 1
-    test_fed_members.get(&1).cloned().unwrap().send_test_signal(TestSignal::DisconnectAll());
+    // now reconnect the peers of fed member 1
+    test_fed_members.get(&1).cloned().unwrap().send_test_signal(TestSignal::ReconnectAll());
 
     // wait for an epoch since this is when the pegout scheduler
     // determines if tracked txs are finalized

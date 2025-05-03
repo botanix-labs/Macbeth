@@ -295,26 +295,44 @@ pub async fn test_wallet_sync(
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
     // mine some btc blocks (needed for confirmed pegout)
     generate_blocks(&bitcoind_rpc, 10).await;
-    // wait for an epoch since this is when the pegout scheduler
-    // determines if tracked txs are finalized
-    await_epoch_block(&mut rx).await;
 
-    // get all finalized pegout ids before the poa epoch (before wallets sync)
-    let peers_finalized_pegout_ids_before = get_finalized_pegout_ids_from_peers(
-        suite.local_context.btc_server_clients.clone().unwrap(),
-    )
-    .await;
+    // Finalized pegout ids are added during finalize_block():
+    // deeply confirmed pegouts are moved to finalized pegouts.
+    // This will occur first: before peers sync their wallets when their finalized pegouts list is populated.
+    it_info_print!("Waiting for block to be finalized");
+    loop {
+        // get all finalized pegout ids after block is finalized
+        let peers_finalized_pegout_ids_after = get_finalized_pegout_ids_from_peers(
+            suite.local_context.btc_server_clients.clone().unwrap(),
+        )
+        .await;
 
-    // make sure we have all equal pegout ids before
-    let first_peer_finalized_pegout_ids =
-        peers_finalized_pegout_ids_before.get(&0).cloned().unwrap_or_default();
-    for (_peer_id, peer_finalized_pegout_ids) in peers_finalized_pegout_ids_before {
-        assert!(first_peer_finalized_pegout_ids.len() == peer_finalized_pegout_ids.len());
-        assert!(first_peer_finalized_pegout_ids == peer_finalized_pegout_ids);
+        let first_peer_finalized_pegout_ids =
+            peers_finalized_pegout_ids_after.get(&0).cloned().unwrap_or_default();
+        // wait until block has been finalized and finalized pegouts list is not empty
+        if first_peer_finalized_pegout_ids.is_empty() {
+            it_info_print!("finalized pegout ids empty");
+
+            // sleep for 10s
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            continue;
+        }
+        it_info_print!("First peer finalized pegout ids", first_peer_finalized_pegout_ids);
+        // assert that all peers have the same list
+        for (_peer_id, peer_finalized_pegout_ids) in peers_finalized_pegout_ids_after {
+            assert!(first_peer_finalized_pegout_ids.len() == peer_finalized_pegout_ids.len());
+            assert!(first_peer_finalized_pegout_ids == peer_finalized_pegout_ids);
+        }
+
+        break;
     }
+    it_info_print!("finalized pegout ids match before syncing");
 
-    await_epoch_block(&mut rx).await;
-
+    // Now that peers have finalized pegouts, we can sync wallets.
+    // Wait for 60s to make sure we've reached the next epoch
+    // and nodes have requested wallet state from peers.
+    // TODO(scott): refactor to listen for wallet state request if possible
+    tokio::time::sleep(Duration::from_secs(60)).await;
     it_info_print!("Waiting for wallets to sync");
     loop {
         // get all finalized pegout ids after the poa epoch
@@ -343,15 +361,7 @@ pub async fn test_wallet_sync(
         break;
     }
 
-    // TODO(scott): implement non happy path
-    // Non happy path where a signer drops and misses a finalized block:
-    // Create a pegout, sign, and broadcast
-    // Drop a signer so they miss the finalized block
-    // Then generate deeply confirmed blocks to finalize the pegout
-    // Bring signer back online
-    // Wait for an epoch block and sync
-    // Get finalized pegouts list from all peers again
-    // Confirm the finalized pegouts list is the same as before
+    it_info_print!("finalized pegout ids match after syncing");
 
     Ok(())
 }
