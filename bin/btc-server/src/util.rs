@@ -398,7 +398,7 @@ pub enum ValidateOutputsError {
     InvalidPegoutId,
     #[error("missing psbt pegout {0}")]
     MissingPsbtPegout(PegoutId),
-    #[error("found already finalzied psbt pegouts in db {0:?}")]
+    #[error("found already finalized psbt pegouts in db {0:?}")]
     AlreadyFinalizedPegouts(Vec<PegoutId>),
     #[error("expecting only one change output")]
     ExpectingOnlyOneChangeOutput,
@@ -532,11 +532,12 @@ mod tests {
     use std::time::SystemTime;
 
     use crate::{
-        database::version::UtxoVersion,
+        database::{version::UtxoVersion, FinalizedPegout},
         frost_id,
         wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
     };
     use bitcoin::{psbt::Psbt, ScriptBuf, TxOut};
+    use rand::Rng;
 
     use crate::{
         database::{self},
@@ -1504,5 +1505,31 @@ mod tests {
         let res = has_conflicting_input(&db, &psbt);
         // should be ok since the psbt is not retrying a pegout
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_validate_outputs_should_check_for_finalized_pegouts() {
+        let (db, _temp_dir) = setup_db();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        // store finalized pegout
+        let pegout_id = PegoutId::new(rand::thread_rng().gen::<[u8; 32]>(), 0);
+        let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+        db.store_finalized_pegout_ids_atomically(vec![&finalized_pegout].as_slice()).unwrap();
+
+        // create a psbt with the finalized pegout id
+        let mut psbt = create_psbt(1, 1, None);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res_error = res.unwrap_err().to_string();
+        assert!(res_error
+            .contains("error validating outputs: found already finalized psbt pegouts in db"));
     }
 }
