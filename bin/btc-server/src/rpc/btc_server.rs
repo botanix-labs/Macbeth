@@ -11,9 +11,32 @@ pub struct PendingPegout {
     pub height: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FinalizedPegout {
+    #[prost(bytes = "vec", tag = "1")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "2")]
+    pub botanix_block_height: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPendingPegoutsResponse {
     #[prost(message, repeated, tag = "1")]
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetFinalizedPegoutIdsRequest {
+    #[prost(uint64, tag = "1")]
+    pub chunk_size: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetFinalizedPegoutIdsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<FinalizedPegout>,
+    #[prost(uint64, tag = "2")]
+    pub chunk_index: u64,
+    #[prost(uint64, tag = "3")]
+    pub total_chunks: u64,
+    #[prost(bool, tag = "4")]
+    pub is_final: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizeSignerRequest {
@@ -40,11 +63,7 @@ pub struct ResetAllUtxosRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetWalletStateRequest {
     #[prost(message, repeated, tag = "1")]
-    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
-    #[prost(message, repeated, tag = "2")]
-    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
-    #[prost(message, repeated, tag = "3")]
-    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
+    pub finalized_pegout_ids: ::prost::alloc::vec::Vec<FinalizedPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConsensusCheckpointRequest {
@@ -293,6 +312,22 @@ pub mod btc_server_server {
             request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
             tonic::Response<super::GetPendingPegoutsResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the GetFinalizedPegoutIds method.
+        type GetFinalizedPegoutIdsStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<
+                    super::GetFinalizedPegoutIdsResponse,
+                    tonic::Status,
+                >,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn get_finalized_pegout_ids(
+            &self,
+            request: tonic::Request<super::GetFinalizedPegoutIdsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::GetFinalizedPegoutIdsStream>,
             tonic::Status,
         >;
         async fn get_gateway_address(
@@ -583,6 +618,54 @@ pub mod btc_server_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/GetFinalizedPegoutIds" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetFinalizedPegoutIdsSvc<T: BtcServer>(pub Arc<T>);
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::ServerStreamingService<
+                        super::GetFinalizedPegoutIdsRequest,
+                    > for GetFinalizedPegoutIdsSvc<T> {
+                        type Response = super::GetFinalizedPegoutIdsResponse;
+                        type ResponseStream = T::GetFinalizedPegoutIdsStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetFinalizedPegoutIdsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as BtcServer>::get_finalized_pegout_ids(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetFinalizedPegoutIdsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

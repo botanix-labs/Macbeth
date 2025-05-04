@@ -56,6 +56,7 @@ pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
 pub mod metrics;
 pub mod random_source_provider;
+pub mod wallet_state_sync;
 
 /// Max EDH size; for specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 93;
@@ -88,9 +89,8 @@ impl AuthorityConsensus {
         // Determine the parent gas limit, considering elasticity multiplier on the London fork.
         let parent_gas_limit =
             if self.chain_spec.fork(EthereumHardfork::London).transitions_at_block(header.number) {
-                parent.gas_limit
-                    * self
-                        .chain_spec
+                parent.gas_limit *
+                    self.chain_spec
                         .base_fee_params_at_timestamp(header.timestamp)
                         .elasticity_multiplier as u64
             } else {

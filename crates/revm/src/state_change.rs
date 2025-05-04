@@ -45,15 +45,15 @@ pub fn post_block_balance_increments(
     // A conditional statement is needed so reth tests can pass:
     // sometimes tests will pass None for fees (ie processor eip4788 tests)
     // sometimes it will pass fees with a zero block fee recipient address (ie blockhchain_tree fork
-    // choice tests). During normal operation, the block fee recipient address will never be a zero address: it
-    // will be an address passed by the node operator.
+    // choice tests). During normal operation, the block fee recipient address will never be a zero
+    // address: it will be an address passed by the node operator.
     let fees = total_block_fees.unwrap_or(0);
     let block_fee_recipient = block_fee_recipient_address.unwrap_or(Address::ZERO);
 
-    if fees > 0
-        && block_fee_recipient != Address::ZERO
-        && chain_spec.botanix_fee_recipient.is_some()
-        && chain_spec.lst_fee_receiver.is_some()
+    if fees > 0 &&
+        block_fee_recipient != Address::ZERO &&
+        chain_spec.botanix_fee_recipient.is_some() &&
+        chain_spec.lst_fee_receiver.is_some()
     {
         let (lst_fee_receiver_fees, botanix_fees, block_fee_recipient_fees) =
             utils::block_fees_split(fees);

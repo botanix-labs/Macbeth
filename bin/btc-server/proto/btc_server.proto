@@ -11,6 +11,8 @@ service BtcServer {
 
     rpc GetPendingPegouts(Empty) returns (GetPendingPegoutsResponse) {}
 
+    rpc GetFinalizedPegoutIds(GetFinalizedPegoutIdsRequest) returns (stream GetFinalizedPegoutIdsResponse) {}
+
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse){}
@@ -75,8 +77,24 @@ message PendingPegout {
     uint64 height = 4;
 }
 
+message FinalizedPegout {
+    bytes id = 1;
+    uint64 botanix_block_height = 2;
+}
+
 message GetPendingPegoutsResponse {
     repeated PendingPegout pending_pegouts = 1;
+}
+
+message GetFinalizedPegoutIdsRequest {
+    uint64 chunk_size = 1;
+}
+
+message GetFinalizedPegoutIdsResponse {
+    repeated FinalizedPegout data = 1;
+    uint64 chunk_index = 2;
+    uint64 total_chunks = 3;
+    bool is_final = 4;
 }
 
 message FinalizeSignerRequest {
@@ -96,9 +114,7 @@ message ResetAllUtxosRequest {
 }
 
 message ResetWalletStateRequest {
-    repeated Utxo utxos = 1;
-    repeated TrackedTx tracked_txs = 2;
-    repeated PendingPegout pending_pegouts = 3;
+    repeated FinalizedPegout finalized_pegout_ids = 1;
 }
 
 message ConsensusCheckpointRequest {

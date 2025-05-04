@@ -17,22 +17,24 @@ use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btcserverlib::{
     badarg,
-    config::{Config, Error as ConfigError},
+    config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self, error::CoordinatorError},
     database,
+    http::{create_web_server, state::ServerState},
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
-    pegout_scheduler::{self, PegoutRequest},
-    rpc,
+    pegout_scheduler::{self, PegoutRequest, PegoutScheduler},
+    rpc::{self, *},
     shutdown::{stop_signal, StopHandle},
     signer::{
         self,
-        error::{SigningRound1Error, SigningRound2Error},
+        error::{SigningError, SigningRound1Error, SigningRound2Error},
     },
+    telemetry::Telemetry,
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
-        get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, ParsingError,
-        UPPER_PEGOUT_BOUND,
+        get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, retry_exec,
+        ParsingError, UPPER_PEGOUT_BOUND,
     },
     wallet::{
         self,
@@ -43,21 +45,13 @@ use btcserverlib::{
 };
 use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
+use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
 use rand::thread_rng;
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
-
-use btcserverlib::config::{GrpcConfig, TomlConfig};
-
-use btcserverlib::{
-    http::{create_web_server, state::ServerState},
-    pegout_scheduler::PegoutScheduler,
-    rpc::*,
-    signer::error::SigningError,
-    telemetry::Telemetry,
-};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -475,6 +469,10 @@ impl<BitcoindClient> BtcServer for App<BitcoindClient>
 where
     BitcoindClient: RpcApi + Send + Sync + 'static,
 {
+    // Define the associated type for the stream
+    type GetFinalizedPegoutIdsStream =
+        ReceiverStream<Result<rpc::GetFinalizedPegoutIdsResponse, tonic::Status>>;
+
     /* General Endpoints */
     async fn health_check(
         &self,
@@ -611,6 +609,87 @@ where
         Ok(res)
     }
 
+    /// Returns all finalized pegout ids
+    async fn get_finalized_pegout_ids(
+        &self,
+        req: tonic::Request<rpc::GetFinalizedPegoutIdsRequest>,
+    ) -> Result<tonic::Response<Self::GetFinalizedPegoutIdsStream>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let db = self.db.clone();
+        let telemetry = self.telemetry.clone();
+        let request = req.into_inner();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(request.chunk_size as usize);
+        info!(
+            "get_finalized_pegout_ids: Starting stream task (chunk_size={})...",
+            request.chunk_size
+        );
+        tokio::spawn(async move {
+            let stream = db.get_finalized_pegout_ids_stream(request.chunk_size as usize);
+            pin_mut!(stream);
+            info!("get_finalized_pegout_ids stream task: Created DB stream.");
+
+            while let Some(chunk_result) = stream.next().await {
+                info!(
+                    "get_finalized_pegout_ids stream task: Received chunk from DB stream: {:?}",
+                    chunk_result
+                );
+                match chunk_result {
+                    Ok((pegout_ids, chunk_index, total_chunks)) => {
+                        if let Some(telemetry) = telemetry.as_ref() {
+                            telemetry.update_finalized_pegout_ids(pegout_ids.len() as i64);
+                        }
+
+                        let batch = rpc::GetFinalizedPegoutIdsResponse {
+                            data: pegout_ids
+                                .into_iter()
+                                .map(|p| rpc::FinalizedPegout {
+                                    id: p.id.as_bytes().to_vec(),
+                                    botanix_block_height: p.block_number,
+                                })
+                                .collect(),
+                            chunk_index,
+                            total_chunks,
+                            is_final: chunk_index + 1 == total_chunks,
+                        };
+
+                        // send the batch with retries
+                        info!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
+                        let fut = || async {
+                            let tx = tx.clone();
+                            let batch = batch.clone();
+                            tx.send(Ok(batch)).await
+                        };
+                        if let Err(e) = retry_exec(
+                            "sending_finalized_pegout_id_chunk",
+                            fut,
+                            3,
+                            Duration::from_secs(2),
+                        )
+                        .await
+                        {
+                            error!("get_finalized_pegout_ids stream task: Client disconnected, stopping stream. Error = {:?}", e);
+                            continue;
+                        };
+
+                        // add a small delay between chunks
+                        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+                    }
+                    Err(e) => {
+                        error!("get_finalized_pegout_ids stream task: Error from DB stream: {}. Skipping chunk.", e);
+                        // Optionally send error to client?
+                        // if tx.send(Err(tonic::Status::internal(format!("DB Error: {}",
+                        // e)))).await.is_err() { ... }
+                        continue;
+                    }
+                }
+            }
+            info!("get_finalized_pegout_ids stream task: DB stream finished.");
+        });
+
+        Ok(tonic::Response::new(ReceiverStream::new(rx)))
+    }
+
     /* Wallet State Endpoints */
     /// Resets all utxos in the database
     async fn reset_all_utxos(
@@ -686,39 +765,28 @@ where
 
     async fn reset_wallet_state(
         &self,
-        _req: tonic::Request<rpc::ResetWalletStateRequest>,
+        req: tonic::Request<rpc::ResetWalletStateRequest>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        panic!("not used yet");
-        // self.validate_jwt(&req)?;
-        // let req = req.into_inner();
-        // info!("Received reset wallet state request");
+        self.validate_jwt(&req)?;
+        let req = req.into_inner();
+        info!("Received reset wallet state request");
 
-        // // handle utxos
-        // let utxos: Result<Vec<crate::database::Utxo>, _> =
-        //     req.utxos.into_iter().map(TryFrom::try_from).collect();
-        // let utxos = utxos.to_status()?;
-        // let utxo_refs: Vec<&crate::database::Utxo> = utxos.iter().collect();
-        // self.db.reset_utxos(&utxo_refs).to_status()?;
-
-        // // handle tracked txs
-        // let tracked_txs = req
-        //     .tracked_txs
-        //     .into_iter()
-        //     .map(TryFrom::try_from)
-        //     .collect::<Result<Vec<crate::pegout_scheduler::Tx>, _>>()
-        //     .map_err(|e| internal!("Failed to convert tracked tx: {}", e))?;
-        // let tracked_txs_refs: Vec<&crate::pegout_scheduler::Tx> = tracked_txs.iter().collect();
-        // self.db.reset_tracked_txs(&tracked_txs_refs).to_status()?;
-
-        // // handle pending pegouts
-        // let pending_pegouts = req
-        //     .pending_pegouts
-        //     .into_iter()
-        //     .map(TryFrom::try_from)
-        //     .collect::<Result<Vec<PegoutRequest>, _>>()
-        //     .map_err(|e| internal!("Failed to convert pending pegout: {}", e))?;
-        // let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
-        // self.db.reset_pending_pegouts(&pending_pegouts_refs).to_status()?;
+        // handle finalized pegout ids
+        let finalized_pegout_ids = req
+            .finalized_pegout_ids
+            .into_iter()
+            .map(|v| {
+                Ok(btcserverlib::database::FinalizedPegout {
+                    id: PegoutId::from_bytes(&v.id)?,
+                    block_number: v.botanix_block_height,
+                })
+            })
+            .collect::<Result<Vec<btcserverlib::database::FinalizedPegout>, ()>>()
+            .map_err(|_| internal!("Failed to convert finalized pegout ids"))?;
+        let pegout_refs: Vec<&btcserverlib::database::FinalizedPegout> =
+            finalized_pegout_ids.iter().collect();
+        self.db.reset_finalized_pegout_ids(&pegout_refs).to_status()?;
+        Ok(tonic::Response::new(rpc::Empty {}))
     }
 
     /* Signer Endpoints */
@@ -885,6 +953,7 @@ where
             .to_status()?;
         self.db.reset_pending_pegouts(&[]).to_status()?;
         self.db.flush().to_status()?;
+        info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
 
         let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
@@ -937,20 +1006,16 @@ where
         }
         .to_status()?;
 
-        // If the coordinator participated in signing they have already tracked the tx
-        // however, if the coordinator did not participate in signing they need to track the
-        // tx now.
-        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
         let pegout_ids = psbt
             .pegout_ids()
             .iter()
             .map(|p| PegoutId::from_bytes(p).expect("values are 36 bytes"))
             .collect::<Vec<PegoutId>>();
-
-        let pending_pegouts =
-            pending_pegouts.into_iter().filter(|p| pegout_ids.contains(&p.id)).collect::<Vec<_>>();
-
-        self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await.to_status()?;
+        info!(
+            "[finalize_signing] Removing {} pending pegouts from DB: {:?}",
+            pegout_ids.len(),
+            pegout_ids
+        );
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
         self.db.flush().to_status()?;
 
@@ -1037,6 +1102,18 @@ where
         )
         .await
         .to_status()?;
+
+        // Log the outputs of the generated PSBT for debugging
+        info!("PSBT generated by make_tx for session {:?}:", hex::encode(signing_session_id));
+        // Iterate through the outputs of the unsigned transaction embedded in the PSBT
+        for (i, tx_output) in psbt.unsigned_tx.output.iter().enumerate() {
+            info!(
+                "- Output {}: value={}, script_pubkey={:?}",
+                i, tx_output.value, tx_output.script_pubkey
+            );
+        }
+        // Note: Standard PSBT doesn't explicitly track change_index in rust-bitcoin library easily.
+        // We rely on our logic correctly identifying it later.
 
         // Save psbt to db
         self.db.update_psbt(&signing_session_id, &psbt).to_status()?;
@@ -1678,7 +1755,7 @@ mod tests {
         assert!(pkgs.contains_key(&frost_id!(2)));
         assert_eq!(pkgs.len(), 1);
 
-        // Adding the same round 1 package should not make a difference
+        // Adding the same round 1 dkg should not make a difference
         let req = tonic::Request::new(rpc::Empty {});
         let pkgs = app.get_round1_dkg_packages(req).await.unwrap();
         let inner = pkgs.into_inner();
@@ -1974,5 +2051,63 @@ mod tests {
             assert_eq!(pending_pegout.value.to_sat(), original_pegout.amount);
             assert_eq!(pending_pegout.botanix_height, original_pegout.height);
         }
+    }
+
+    #[tokio::test]
+    async fn test_finalized_pegout_ids_streaming_chunksize_gt_chunks() {
+        let app = setup().await;
+        let num_txs = 52;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            let finalized_pegout =
+                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
+        }
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&btcserverlib::database::FinalizedPegout>>();
+        app.db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+
+        let chunk_size = 10;
+        let req = tonic::Request::new(rpc::GetFinalizedPegoutIdsRequest { chunk_size });
+        let res = app.get_finalized_pegout_ids(req).await.unwrap();
+        let mut stream = res.into_inner();
+        let mut collected_chunks = vec![];
+        while let Some(item) = stream.next().await {
+            let item = item.unwrap();
+            assert_eq!(item.total_chunks, (num_txs as u64).div_ceil(chunk_size));
+            collected_chunks.extend_from_slice(&item.data);
+        }
+        assert_eq!(collected_chunks.len(), num_txs);
+    }
+
+    #[tokio::test]
+    async fn test_finalized_pegout_ids_streaming_chunksize_lt_chunks() {
+        let app = setup().await;
+        let num_txs = 1;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            let finalized_pegout =
+                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
+        }
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&btcserverlib::database::FinalizedPegout>>();
+        app.db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+
+        let chunk_size = 10;
+        let req = tonic::Request::new(rpc::GetFinalizedPegoutIdsRequest { chunk_size });
+        let res = app.get_finalized_pegout_ids(req).await.unwrap();
+        let mut stream = res.into_inner();
+        let mut collected_chunks = vec![];
+        while let Some(item) = stream.next().await {
+            let item = item.unwrap();
+            assert_eq!(item.total_chunks, (num_txs as u64).div_ceil(chunk_size));
+            collected_chunks.extend_from_slice(&item.data);
+        }
+        assert_eq!(collected_chunks.len(), num_txs);
     }
 }

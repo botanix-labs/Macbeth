@@ -19,6 +19,7 @@ actix-server = "2.5.0"
 actix-web = "4.9.0"
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 anyhow = "1.0.75"
+async-stream = "0.3.6"
 
 async-trait = "0.1.68"
 base64 = "0.22.0"
@@ -40,6 +41,7 @@ frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c
     "serde",
     "serialization",
 ] }
+futures = { workspace = true }
 futures-util = "0.3.25"
 hex = "0.4.3"
 lazy_static = "1.4.0"
@@ -63,6 +65,7 @@ thiserror = "2.0.11"
 
 # for tonic
 tokio = { version = "1.43.0", features = ["full"] }
+tokio-stream = { workspace = true }
 
 #config
 toml = "0.8.4"

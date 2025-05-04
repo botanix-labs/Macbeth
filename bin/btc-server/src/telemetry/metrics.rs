@@ -41,6 +41,7 @@ pub struct BtcServerMetrics {
     // pegout scheduler
     pub pegout_scheduler_error_rates: IntCounterVec,
     pub pending_pegouts: IntGaugeVec,
+    pub finalized_pegout_ids: IntGaugeVec,
 }
 
 impl Default for BtcServerMetrics {
@@ -237,6 +238,13 @@ impl BtcServerMetrics {
         )
         .expect("metric must be created");
 
+        let finalized_pegout_ids = register_int_gauge_vec!(
+            format!("{}finalized_pegout_ids", metric_prefix),
+            "A metric counting the number of pending pegouts",
+            &[],
+        )
+        .expect("metric must be created");
+
         // ====================================================================
         let registry = Registry::new_custom(prefix, None).expect("registry to be created");
         // signing
@@ -268,6 +276,7 @@ impl BtcServerMetrics {
         // pegouts
         registry.register(Box::new(pegout_scheduler_error_rates.clone()))?;
         registry.register(Box::new(pending_pegouts.clone()))?;
+        registry.register(Box::new(finalized_pegout_ids.clone()))?;
 
         Ok(Self {
             registry,
@@ -297,6 +306,7 @@ impl BtcServerMetrics {
 
             pegout_scheduler_error_rates,
             pending_pegouts,
+            finalized_pegout_ids,
         })
     }
 }

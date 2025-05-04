@@ -1,16 +1,14 @@
-use crate::suite::consensus::common::events::SEND_AMOUNT;
-use crate::utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE};
+use crate::{
+    suite::consensus::common::events::SEND_AMOUNT,
+    utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
+};
 use std::{str::FromStr, time::Duration};
 
 use bitcoin::{
-    blockdata::block::Header,
-    hashes::Hash,
-    merkle_tree::PartialMerkleTree,
-    Amount, Txid,
+    blockdata::block::Header, hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid,
 };
 use bitcoincore_rpc::RpcApi;
-use ethers::prelude::Provider;
-use ethers::providers::Http;
+use ethers::{prelude::Provider, providers::Http};
 use reth_primitives::{
     botanix::{
         peg_contract::{PeginMeta, PeginMetaV0, PEGIN_META_VERSION_V0},
@@ -80,7 +78,8 @@ pub async fn multi_pegin_revert_scenarios(
 
     // Make sure we have mature coins
     let balance = bitcoind_rpc.get_balance(None, Some(true)).expect("get balance");
-    if balance < Amount::from_btc(5.0).unwrap() { // Need ~4.5 BTC for pegins + fees
+    if balance < Amount::from_btc(5.0).unwrap() {
+        // Need ~4.5 BTC for pegins + fees
         it_info_print!("Generating initial blocks for mature coins...");
         generate_blocks(&bitcoind_rpc, MIN_BLOCKS_COINBASE_MATURE).await;
     }
@@ -112,17 +111,32 @@ pub async fn multi_pegin_revert_scenarios(
     // Retrieve data for Pegins
     let tx_res1 = bitcoind_rpc.get_transaction(&pegin_txid1, None).expect("valid tx 1");
     let pegin_tx1 = tx_res1.transaction().expect("valid tx 1");
-    let (vout1, _) = pegin_tx1.output.iter().enumerate().find(|(_, o)| o.script_pubkey == btc_address.script_pubkey()).unwrap();
+    let (vout1, _) = pegin_tx1
+        .output
+        .iter()
+        .enumerate()
+        .find(|(_, o)| o.script_pubkey == btc_address.script_pubkey())
+        .unwrap();
     let conf_hash1 = tx_res1.info.blockhash.expect("pegin 1 confirmed");
 
     let tx_res2 = bitcoind_rpc.get_transaction(&pegin_txid2, None).expect("valid tx 2");
     let pegin_tx2 = tx_res2.transaction().expect("valid tx 2");
-    let (vout2, _) = pegin_tx2.output.iter().enumerate().find(|(_, o)| o.script_pubkey == btc_address.script_pubkey()).unwrap();
+    let (vout2, _) = pegin_tx2
+        .output
+        .iter()
+        .enumerate()
+        .find(|(_, o)| o.script_pubkey == btc_address.script_pubkey())
+        .unwrap();
     let conf_hash2 = tx_res2.info.blockhash.expect("pegin 2 confirmed");
 
     let tx_res3 = bitcoind_rpc.get_transaction(&pegin_txid3, None).expect("valid tx 3");
     let pegin_tx3 = tx_res3.transaction().expect("valid tx 3");
-    let (vout3, pegin_output3) = pegin_tx3.output.iter().enumerate().find(|(_, o)| o.script_pubkey == btc_address.script_pubkey()).unwrap();
+    let (vout3, pegin_output3) = pegin_tx3
+        .output
+        .iter()
+        .enumerate()
+        .find(|(_, o)| o.script_pubkey == btc_address.script_pubkey())
+        .unwrap();
     let amount_wei3 = pegin_output3.value.to_wei(); // Only need amount for the valid pegin
     let conf_hash3 = tx_res3.info.blockhash.expect("pegin 3 confirmed");
 
@@ -139,10 +153,14 @@ pub async fn multi_pegin_revert_scenarios(
     let mut cursor = tip_header;
     let mut stopgap = 200;
     loop {
-        if stopgap == 0 || cursor.block_hash() == bitcoin::BlockHash::all_zeros() { panic!("conf block not found"); }
+        if stopgap == 0 || cursor.block_hash() == bitcoin::BlockHash::all_zeros() {
+            panic!("conf block not found");
+        }
         stopgap -= 1;
         headers.push(cursor);
-        if cursor.block_hash() == conf_hash { break; }
+        if cursor.block_hash() == conf_hash {
+            break;
+        }
         cursor = bitcoind_rpc.get_block_header(&cursor.prev_blockhash).unwrap();
     }
     headers.reverse();
@@ -154,39 +172,48 @@ pub async fn multi_pegin_revert_scenarios(
 
     // Create PMT for Pegin 1
     let index1 = conf_block_info.tx.iter().position(|id| id == &pegin_txid1).unwrap();
-    let mut flags1 = vec![false; num_txs]; flags1[index1] = true;
+    let mut flags1 = vec![false; num_txs];
+    flags1[index1] = true;
     let _pmt1 = PartialMerkleTree::from_txids(&conf_block_info.tx, &flags1);
 
     // Create PMT for Pegin 2
     let index2 = conf_block_info.tx.iter().position(|id| id == &pegin_txid2).unwrap();
-    let mut flags2 = vec![false; num_txs]; flags2[index2] = true;
+    let mut flags2 = vec![false; num_txs];
+    flags2[index2] = true;
     let pmt2 = PartialMerkleTree::from_txids(&conf_block_info.tx, &flags2);
 
     // Create PMT for Pegin 3
     let index3 = conf_block_info.tx.iter().position(|id| id == &pegin_txid3).unwrap();
-    let mut flags3 = vec![false; num_txs]; flags3[index3] = true;
+    let mut flags3 = vec![false; num_txs];
+    flags3[index3] = true;
     let pmt3 = PartialMerkleTree::from_txids(&conf_block_info.tx, &flags3);
 
     // --- Setup Aggregate Public Key ---
-    let agg_pk = secp256k1::PublicKey::from_str(
-        gateway_address_response.aggregate_public_key.as_str(),
-    )
-    .expect("valid public key");
+    let agg_pk =
+        secp256k1::PublicKey::from_str(gateway_address_response.aggregate_public_key.as_str())
+            .expect("valid public key");
 
     // --- Deploy Helper Contract ---
     let contract_deployer =
         botanix_eth_client.get_contract_deployer().expect("To get contract deployer");
     let _tx_receipt = botanix_eth_client
-        .send_eoa(contract_deployer.address(), SEND_AMOUNT).await.expect("To send eoa").expect("To get tx receipt");
+        .send_eoa(contract_deployer.address(), SEND_AMOUNT)
+        .await
+        .expect("To send eoa")
+        .expect("To get tx receipt");
     it_info_print!("Deploying MultiMintHelper contract...");
     let helper_contract_address = botanix_eth_client
-        .deploy_multi_mint_helper_contract(contract_deployer).await.expect("To deploy multi mint helper contract");
+        .deploy_multi_mint_helper_contract(contract_deployer)
+        .await
+        .expect("To deploy multi mint helper contract");
     botanix_eth_client.set_multi_mint_helper_contract(helper_contract_address);
     it_info_print!("MultiMintHelper contract deployed at", helper_contract_address);
     let mint_contract_address = botanix_eth_client.mint_contract.address();
-    let mint_contract_initial_balance = botanix_eth_client.get_botanix_balance(Address::from(mint_contract_address.0)).await.unwrap();
+    let mint_contract_initial_balance = botanix_eth_client
+        .get_botanix_balance(Address::from(mint_contract_address.0))
+        .await
+        .unwrap();
     it_info_print!("Mint contract initial balance", mint_contract_initial_balance);
-
 
     // ==========================================
     // === Scenario 1: Invalid + Invalid Pegin ===
@@ -221,8 +248,16 @@ pub async fn multi_pegin_revert_scenarios(
     // Get initial balances & block heights for Scenario 1
     let balance1_before_s1 = botanix_eth_client.get_balance(eth_destination1).await.unwrap();
     let balance2_before_s1 = botanix_eth_client.get_balance(eth_destination2).await.unwrap();
-    let height1_before_s1 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination1).await.unwrap();
-    let height2_before_s1 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination2).await.unwrap();
+    let height1_before_s1 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination1)
+        .await
+        .unwrap();
+    let height2_before_s1 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination2)
+        .await
+        .unwrap();
 
     it_info_print!("Calling multiMintTwo with two invalid pegins...");
     let tx_receipt_s1 = botanix_eth_client
@@ -248,15 +283,31 @@ pub async fn multi_pegin_revert_scenarios(
     // Check balances & block heights unchanged
     let balance1_after_s1 = botanix_eth_client.get_balance(eth_destination1).await.unwrap();
     let balance2_after_s1 = botanix_eth_client.get_balance(eth_destination2).await.unwrap();
-    let height1_after_s1 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination1).await.unwrap();
-    let height2_after_s1 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination2).await.unwrap();
-    let mint_contract_balance_after_s1 = botanix_eth_client.get_botanix_balance(Address::from(mint_contract_address.0)).await.unwrap();
+    let height1_after_s1 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination1)
+        .await
+        .unwrap();
+    let height2_after_s1 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination2)
+        .await
+        .unwrap();
+    let mint_contract_balance_after_s1 = botanix_eth_client
+        .get_botanix_balance(Address::from(mint_contract_address.0))
+        .await
+        .unwrap();
     assert_eq!(balance1_before_s1, balance1_after_s1, "Scenario 1 Balance 1 should be unchanged");
     assert_eq!(balance2_before_s1, balance2_after_s1, "Scenario 1 Balance 2 should be unchanged");
     assert_eq!(height1_before_s1, height1_after_s1, "Scenario 1 Height 1 should be unchanged");
     assert_eq!(height2_before_s1, height2_after_s1, "Scenario 1 Height 2 should be unchanged");
-    assert_eq!(mint_contract_balance_after_s1, mint_contract_initial_balance, "Mint contract balance should be unchanged");
-    it_info_print!("Scenario 1 Verified: Transaction reverted, balances and block heights unchanged.");
+    assert_eq!(
+        mint_contract_balance_after_s1, mint_contract_initial_balance,
+        "Mint contract balance should be unchanged"
+    );
+    it_info_print!(
+        "Scenario 1 Verified: Transaction reverted, balances and block heights unchanged."
+    );
 
     // ==========================================
     // === Scenario 2: Valid + Invalid Pegin ===
@@ -290,8 +341,16 @@ pub async fn multi_pegin_revert_scenarios(
     // Get initial balances & block heights for Scenario 2
     let balance3_before_s2 = botanix_eth_client.get_balance(eth_destination3).await.unwrap();
     let balance1_before_s2 = botanix_eth_client.get_balance(eth_destination1).await.unwrap();
-    let height3_before_s2 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination3).await.unwrap();
-    let height1_before_s2 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination1).await.unwrap();
+    let height3_before_s2 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination3)
+        .await
+        .unwrap();
+    let height1_before_s2 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination1)
+        .await
+        .unwrap();
 
     it_info_print!("Calling multiMintTwo with valid then invalid pegin...");
     let tx_receipt_s2 = botanix_eth_client
@@ -317,15 +376,43 @@ pub async fn multi_pegin_revert_scenarios(
     // Check balances & block heights unchanged (both should be unchanged due to revert)
     let balance3_after_s2 = botanix_eth_client.get_balance(eth_destination3).await.unwrap();
     let balance1_after_s2 = botanix_eth_client.get_balance(eth_destination1).await.unwrap();
-    let height3_after_s2 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination3).await.unwrap();
-    let height1_after_s2 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination1).await.unwrap();
-    let mint_contract_balance_after_s2 = botanix_eth_client.get_botanix_balance(Address::from(mint_contract_address.0)).await.unwrap();
-    assert_eq!(balance3_before_s2, balance3_after_s2, "Scenario 2 Balance 3 (Valid Target) should be unchanged");
-    assert_eq!(balance1_before_s2, balance1_after_s2, "Scenario 2 Balance 1 (Invalid Target) should be unchanged");
-    assert_eq!(height3_before_s2, height3_after_s2, "Scenario 2 Height 3 (Valid Target) should be unchanged");
-    assert_eq!(height1_before_s2, height1_after_s2, "Scenario 2 Height 1 (Invalid Target) should be unchanged");
-    assert_eq!(mint_contract_balance_after_s2, mint_contract_initial_balance, "Mint contract balance should be unchanged");
-    it_info_print!("Scenario 2 Verified: Transaction reverted, balances and block heights unchanged.");
+    let height3_after_s2 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination3)
+        .await
+        .unwrap();
+    let height1_after_s2 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination1)
+        .await
+        .unwrap();
+    let mint_contract_balance_after_s2 = botanix_eth_client
+        .get_botanix_balance(Address::from(mint_contract_address.0))
+        .await
+        .unwrap();
+    assert_eq!(
+        balance3_before_s2, balance3_after_s2,
+        "Scenario 2 Balance 3 (Valid Target) should be unchanged"
+    );
+    assert_eq!(
+        balance1_before_s2, balance1_after_s2,
+        "Scenario 2 Balance 1 (Invalid Target) should be unchanged"
+    );
+    assert_eq!(
+        height3_before_s2, height3_after_s2,
+        "Scenario 2 Height 3 (Valid Target) should be unchanged"
+    );
+    assert_eq!(
+        height1_before_s2, height1_after_s2,
+        "Scenario 2 Height 1 (Invalid Target) should be unchanged"
+    );
+    assert_eq!(
+        mint_contract_balance_after_s2, mint_contract_initial_balance,
+        "Mint contract balance should be unchanged"
+    );
+    it_info_print!(
+        "Scenario 2 Verified: Transaction reverted, balances and block heights unchanged."
+    );
 
     // ==========================================
     // === Scenario 3: Invalid + Valid Pegin ===
@@ -337,8 +424,16 @@ pub async fn multi_pegin_revert_scenarios(
     // Get initial balances & block heights (relative to after Scenario 2 completed)
     let balance1_before_s3 = botanix_eth_client.get_balance(eth_destination1).await.unwrap(); // Invalid Target
     let balance3_before_s3 = botanix_eth_client.get_balance(eth_destination3).await.unwrap(); // Valid Target
-    let height1_before_s3 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination1).await.unwrap(); // Invalid Target
-    let height3_before_s3 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination3).await.unwrap(); // Valid Target
+    let height1_before_s3 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination1)
+        .await
+        .unwrap(); // Invalid Target
+    let height3_before_s3 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination3)
+        .await
+        .unwrap(); // Valid Target
 
     it_info_print!("Calling multiMintTwo with invalid then valid pegin...");
     let tx_receipt_s3 = botanix_eth_client
@@ -364,15 +459,43 @@ pub async fn multi_pegin_revert_scenarios(
     // Check balances & block heights unchanged (both should be unchanged due to revert)
     let balance1_after_s3 = botanix_eth_client.get_balance(eth_destination1).await.unwrap();
     let balance3_after_s3 = botanix_eth_client.get_balance(eth_destination3).await.unwrap();
-    let height1_after_s3 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination1).await.unwrap();
-    let height3_after_s3 = botanix_eth_client.mint_contract.pegin_bitcoin_block_height(eth_destination3).await.unwrap();
-    let mint_contract_balance_after_s3 = botanix_eth_client.get_botanix_balance(Address::from(mint_contract_address.0)).await.unwrap();
-    assert_eq!(balance1_before_s3, balance1_after_s3, "Scenario 3 Balance 1 (Invalid Target) should be unchanged");
-    assert_eq!(balance3_before_s3, balance3_after_s3, "Scenario 3 Balance 3 (Valid Target) should be unchanged");
-    assert_eq!(height1_before_s3, height1_after_s3, "Scenario 3 Height 1 (Invalid Target) should be unchanged");
-    assert_eq!(height3_before_s3, height3_after_s3, "Scenario 3 Height 3 (Valid Target) should be unchanged");
-    assert_eq!(mint_contract_balance_after_s3, mint_contract_initial_balance, "Mint contract balance should be unchanged");
-    it_info_print!("Scenario 3 Verified: Transaction reverted, balances and block heights unchanged.");
+    let height1_after_s3 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination1)
+        .await
+        .unwrap();
+    let height3_after_s3 = botanix_eth_client
+        .mint_contract
+        .pegin_bitcoin_block_height(eth_destination3)
+        .await
+        .unwrap();
+    let mint_contract_balance_after_s3 = botanix_eth_client
+        .get_botanix_balance(Address::from(mint_contract_address.0))
+        .await
+        .unwrap();
+    assert_eq!(
+        balance1_before_s3, balance1_after_s3,
+        "Scenario 3 Balance 1 (Invalid Target) should be unchanged"
+    );
+    assert_eq!(
+        balance3_before_s3, balance3_after_s3,
+        "Scenario 3 Balance 3 (Valid Target) should be unchanged"
+    );
+    assert_eq!(
+        height1_before_s3, height1_after_s3,
+        "Scenario 3 Height 1 (Invalid Target) should be unchanged"
+    );
+    assert_eq!(
+        height3_before_s3, height3_after_s3,
+        "Scenario 3 Height 3 (Valid Target) should be unchanged"
+    );
+    assert_eq!(
+        mint_contract_balance_after_s3, mint_contract_initial_balance,
+        "Mint contract balance should be unchanged"
+    );
+    it_info_print!(
+        "Scenario 3 Verified: Transaction reverted, balances and block heights unchanged."
+    );
 
     Ok(())
-} 
+}

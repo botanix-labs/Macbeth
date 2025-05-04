@@ -464,8 +464,7 @@ pub async fn invalid_pegin(
     botanix_eth_client.set_mint_attack_contract(attack_contract_address);
 
     let eth_pegin_address = eth_account.to_string();
-    let addr =
-        reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
+    let addr = reth_primitives::Address::from_str(&eth_pegin_address).expect("valid eth address");
     let mint_contract_address = botanix_eth_client.mint_contract.address();
 
     for (invalid_pegin_meta, description) in invalid_pegin_metas {
@@ -544,7 +543,7 @@ pub async fn invalid_pegin(
         assert_eq!(pegin_address_initial_balance, pegin_address_final_balance);
         assert_eq!(pegin_bitcoin_block_height_initial, pegin_bitcoin_block_height_final);
         assert_eq!(mint_contract_initial_balance, mint_contract_final_balance);
-        
+
         // nonce after pegin
         let nonce_after = botanix_eth_client.get_nonce(sender_address).await.unwrap();
         it_info_print!("Nonce after pegin", nonce_after);

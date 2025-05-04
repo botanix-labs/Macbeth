@@ -3,10 +3,10 @@ use crate::{
     mint_attack_contract_abi::{
         MintAttackContract, MINTATTACKCONTRACT_ABI, MINTATTACKCONTRACT_BYTECODE,
     },
+    minting::Minting as MintContract,
     multi_mint_helper_abi::{
         MultiMintHelperContract, MULTIMINTHELPERCONTRACT_ABI, MULTIMINTHELPERCONTRACT_BYTECODE,
     },
-    minting::Minting as MintContract,
     suite::consensus::common::poa_node::RPC_PORT_BASE,
 };
 use anyhow::Context;
@@ -461,18 +461,14 @@ impl BotanixEthClient {
     }
 
     pub fn set_mint_attack_contract(&mut self, contract_address: EtherAddress) {
-        let contract_instance = MintAttackContract::new(
-            contract_address,
-            Arc::new(self.http_client.clone()),
-        );
+        let contract_instance =
+            MintAttackContract::new(contract_address, Arc::new(self.http_client.clone()));
         self.mint_attack_contract = Some(contract_instance);
     }
 
     pub fn set_multi_mint_helper_contract(&mut self, contract_address: EtherAddress) {
-        let contract_instance = MultiMintHelperContract::new(
-            contract_address,
-            Arc::new(self.http_client.clone()),
-        );
+        let contract_instance =
+            MultiMintHelperContract::new(contract_address, Arc::new(self.http_client.clone()));
         self.multi_mint_helper_contract = Some(contract_instance);
     }
 
@@ -554,10 +550,8 @@ impl BotanixEthClient {
         metadata2: ethers::core::types::Bytes,
         refund_address2: EtherAddress,
     ) -> Result<Option<TransactionReceipt>, Error> {
-        let contract = self
-            .multi_mint_helper_contract
-            .as_ref()
-            .ok_or(Error::MintAttackContractNotFound)?;
+        let contract =
+            self.multi_mint_helper_contract.as_ref().ok_or(Error::MintAttackContractNotFound)?;
 
         let gas_price = self.http_client.get_gas_price().await.ok().unwrap_or_default();
 

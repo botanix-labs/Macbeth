@@ -11,9 +11,32 @@ pub struct PendingPegout {
     pub height: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FinalizedPegout {
+    #[prost(bytes = "vec", tag = "1")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint64, tag = "2")]
+    pub botanix_block_height: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPendingPegoutsResponse {
     #[prost(message, repeated, tag = "1")]
     pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetFinalizedPegoutIdsRequest {
+    #[prost(uint64, tag = "1")]
+    pub chunk_size: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetFinalizedPegoutIdsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<FinalizedPegout>,
+    #[prost(uint64, tag = "2")]
+    pub chunk_index: u64,
+    #[prost(uint64, tag = "3")]
+    pub total_chunks: u64,
+    #[prost(bool, tag = "4")]
+    pub is_final: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizeSignerRequest {
@@ -40,11 +63,7 @@ pub struct ResetAllUtxosRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetWalletStateRequest {
     #[prost(message, repeated, tag = "1")]
-    pub utxos: ::prost::alloc::vec::Vec<Utxo>,
-    #[prost(message, repeated, tag = "2")]
-    pub tracked_txs: ::prost::alloc::vec::Vec<TrackedTx>,
-    #[prost(message, repeated, tag = "3")]
-    pub pending_pegouts: ::prost::alloc::vec::Vec<PendingPegout>,
+    pub finalized_pegout_ids: ::prost::alloc::vec::Vec<FinalizedPegout>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConsensusCheckpointRequest {
@@ -406,6 +425,34 @@ pub mod btc_server_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetPendingPegouts"));
             self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_finalized_pegout_ids(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetFinalizedPegoutIdsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<
+                tonic::codec::Streaming<super::GetFinalizedPegoutIdsResponse>,
+            >,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/GetFinalizedPegoutIds",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "GetFinalizedPegoutIds"),
+                );
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn get_gateway_address(
             &mut self,

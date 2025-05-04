@@ -1,4 +1,4 @@
-use super::{FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse};
+use super::{FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse, WalletStateResponse};
 use crate::{frost::ConnectionEstablishedStatus, session::Direction, NetworkHandle};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
@@ -430,6 +430,31 @@ impl FrostManager {
                     );
                 }
             }
+            FrostCommand::GetWalletStateFromPeer(uuid) => {
+                let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
+                // filter all peers with active connections
+                let connected_peers =
+                    peer_ids.iter().filter_map(|peer_id| self.retrieve_peer_data(peer_id));
+
+                for peer in connected_peers {
+                    match peer.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
+                        PeerMessageResponse::WalletState(WalletStateResponse {
+                            uuid: uuid.to_string(),
+                            finalized_pegout_ids: vec![],
+                        }),
+                    )) {
+                        Ok(_) => {
+                            tracing::debug!(
+                                target: "network::frost::on_command",
+                                "Request for finalized pegout ids sent to peer {:?}", peer.peer_id
+                            );
+                        }
+                        Err(e) => {
+                            error!(target: "network::frost::on_command", "Failed to send finalized pegout ids request to peer {:?}, error: {:?}", peer.peer_id, e);
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -484,6 +509,8 @@ pub enum FrostCommand {
     GetAllConnectedPeers(oneshot::Sender<HashMap<PeerId, PeerData>>),
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageContext>>),
+    /// Get pending pegouts state from peer
+    GetWalletStateFromPeer(uuid::Uuid),
 }
 
 /// Config type for initiating a [`FrostManager`] instance.
@@ -499,6 +526,8 @@ pub struct FrostConfig {
     pub min_signers: u16,
     /// Maximum number of signers required to participate in frost
     pub max_signers: u16,
+    /// Size of chunks for wallet state sync
+    pub wallet_state_sync_chunk_size: u64,
 }
 
 impl FrostConfig {
@@ -509,8 +538,16 @@ impl FrostConfig {
         authorities: Vec<secp256k1::PublicKey>,
         min_signers: u16,
         max_signers: u16,
+        wallet_state_sync_chunk_size: u64,
     ) -> Self {
-        Self { authority_pk, authority_index, authorities, min_signers, max_signers }
+        Self {
+            authority_pk,
+            authority_index,
+            authorities,
+            min_signers,
+            max_signers,
+            wallet_state_sync_chunk_size,
+        }
     }
 
     /// Sets the authority public key

@@ -2238,6 +2238,7 @@ dependencies = [
  "actix-web",
  "alloy-rpc-types-engine",
  "anyhow",
+ "async-stream",
  "async-trait",
  "base64 0.22.1",
  "bdk_wallet",
@@ -2253,6 +2254,7 @@ dependencies = [
  "dotenvy",
  "env_logger",
  "frost-secp256k1-tr",
+ "futures",
  "futures-util",
  "hex",
  "lazy_static",
@@ -2275,6 +2277,7 @@ dependencies = [
  "test-log",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-stream",
  "toml",
  "tonic 0.12.3",
  "tonic-build",
@@ -9071,6 +9074,7 @@ dependencies = [
  "serde",
  "sha2 0.10.8",
  "test-fuzz",
+ "uuid 1.16.0",
 ]
 
 [[package]]
@@ -9863,6 +9867,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+ "uuid 1.16.0",
 ]
 
 [[package]]
@@ -12928,6 +12933,7 @@ dependencies = [
  "ethers",
  "eyre",
  "frost-secp256k1-tr",
+ "futures",
  "hex",
  "port-killer",
  "pretty_assertions",

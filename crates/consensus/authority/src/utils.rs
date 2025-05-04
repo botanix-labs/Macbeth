@@ -237,6 +237,8 @@ pub(crate) fn parse_signing_session_id(
 pub(crate) enum EpochPegoutsError {
     #[error("Failed to fetch pegouts for an epoch")]
     FailedToFetchPegouts,
+    #[error("No receipts found for block {0}")]
+    NoReceiptsFoundForBlock(u64),
 }
 
 /// Returns all pegouts in an epoch iterating through an inclusive block range
@@ -298,6 +300,79 @@ pub(crate) async fn epoch_pegouts(
     Ok(pegouts)
 }
 
+/// Returns all pegouts ids in a given block
+///
+/// # Arguments
+///
+/// * `block` - The block height
+/// * `client` - Reth database client
+/// * `btc_network` - Bitcoin network
+///
+/// # Returns
+///
+/// A vector of [PegoutId] representing the pegout ids in the block
+pub(crate) async fn get_block_pegouts(
+    block: u64,
+    client: &impl BlockReaderIdExt,
+    btc_network: bitcoin::Network,
+) -> Result<Vec<PegoutId>, EpochPegoutsError> {
+    let mut pegouts = Vec::new();
+    match client.block_by_number(block) {
+        Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+            let transactions_by_block = match client
+                .transactions_by_block(BlockHashOrNumber::Number(block.header.number))
+            {
+                Ok(transactions_by_block) => transactions_by_block,
+                Err(e) => {
+                    error!("Error fetching transactions for block {:?}: {}", block, e);
+                    return Err(EpochPegoutsError::FailedToFetchPegouts);
+                }
+            };
+            let receipts_by_block =
+                match client.receipts_by_block(BlockHashOrNumber::Number(block.header.number)) {
+                    Ok(receipts_by_block) => receipts_by_block,
+                    Err(e) => {
+                        error!("Error fetching receipts for block {:?}: {}", block, e);
+                        return Err(EpochPegoutsError::FailedToFetchPegouts);
+                    }
+                };
+
+            match transactions_by_block.zip(receipts_by_block) {
+                Some((transactions, receipts)) => {
+                    for (receipt, tx) in receipts.iter().zip(transactions) {
+                        if !receipt.success {
+                            continue;
+                        }
+                        for (index, log) in receipt.logs.iter().enumerate() {
+                            if let Ok(Some(_p)) = try_parse_burn_event(log, btc_network) {
+                                let mut tx_hash_array = [0u8; 32];
+                                tx_hash_array.copy_from_slice(tx.hash().as_slice());
+                                let pegout_id = PegoutId::new(tx_hash_array, index as u32);
+                                pegouts.push(pegout_id);
+                            }
+                        }
+                    }
+                }
+                None => {
+                    info!("No txs/receipts found for block {:?}", block);
+                    return Err(EpochPegoutsError::NoReceiptsFoundForBlock(block.header.number));
+                }
+            }
+        }
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            error!("Block {} not found", block);
+            return Err(EpochPegoutsError::FailedToFetchPegouts);
+        }
+        Err(e) => {
+            error!("Error fetching block {}: {}", block, e);
+            return Err(EpochPegoutsError::FailedToFetchPegouts);
+        }
+    }
+
+    Ok(pegouts)
+}
+
 /// Errors that can occur while generating a signing session ID
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum GenerateSigningSesssionIdError {
@@ -319,7 +394,7 @@ pub(crate) fn generate_signing_session_id(
 /// Repersents an error related to utxo operations
 #[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
-pub enum UtxoMerkelRootError {
+pub(crate) enum UtxoMerkelRootError {
     #[error("Unparsable tx id")]
     /// Unparsable tx id
     UnparsableTxId,

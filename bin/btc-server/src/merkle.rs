@@ -3,6 +3,16 @@ use std::io::Write;
 use crate::database::{Db, Error};
 use bitcoin::hashes::{sha256, Hash};
 
+/// Get the merkle root of the finalized pegout ids set.
+pub fn get_finalized_pegout_ids_merkle_root(db: &Db) -> Result<Vec<u8>, Error> {
+    let root = db.get_finalized_pegout_ids_merkle_root()?;
+    if let Some(root) = root {
+        Ok(root[..].to_vec())
+    } else {
+        Ok(vec![0u8; 32])
+    }
+}
+
 /// Get the merkle root of the UTXO set.
 pub fn get_utxo_set_merkle_root(db: &Db) -> Result<Vec<u8>, Error> {
     let root = db.get_utxo_merkle_root()?;
