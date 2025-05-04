@@ -47,7 +47,6 @@ jobs:
           cache-all-crates: true
           
       - name: Ensure registry is up to date
-        if: steps.rust-cache.outputs.cache-hit != 'true'
         run: cargo fetch
 
       - name: Run tests
@@ -98,7 +97,6 @@ jobs:
           cache-all-crates: true
 
       - name: Ensure registry is up to date
-        if: steps.rust-cache.outputs.cache-hit != 'true'
         run: cargo fetch
 
       - name: Run doctests

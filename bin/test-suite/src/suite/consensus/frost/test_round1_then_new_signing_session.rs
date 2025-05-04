@@ -19,7 +19,7 @@ use tonic::transport::Channel;
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::events::BITCOIND_WALLET_NAME,
+        common::events::get_unique_wallet_name,
         frost::{error::Error, test_dkg::do_dkg},
         ConsensusIntegrationTestSuite,
     },
@@ -102,11 +102,12 @@ pub async fn test_round1_then_new_signing_session(
         it_info_print!("#UNLOADING WALLET?", &wallet);
         let _ = bitcoind.unload_wallet(Some(&wallet))?;
     }
-    let create_res = bitcoind.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    let wallet_name = get_unique_wallet_name();
+    let create_res = bitcoind.create_wallet(&wallet_name, None, None, None, None);
     if create_res.is_err() {
         tracing::info!("Wallet already exists, loading wallet ...");
         // wallet already exists, load wallet
-        let _ = bitcoind.load_wallet(BITCOIND_WALLET_NAME);
+        let _ = bitcoind.load_wallet(&wallet_name);
     }
     generate_blocks(&bitcoind, MIN_BLOCKS_COINBASE_MATURE).await;
 

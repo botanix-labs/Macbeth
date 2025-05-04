@@ -21,7 +21,7 @@ use crate::{
     suite::consensus::{
         common::{
             events::{
-                await_botanix_event, GatewayAddressResponse, BITCOIND_WALLET_NAME, SEND_AMOUNT,
+                await_botanix_event, get_unique_wallet_name, GatewayAddressResponse, SEND_AMOUNT,
             },
             poa_node::TestSignal,
         },
@@ -54,11 +54,12 @@ pub async fn frost_e2e_failed_signing_disconnect(
     }
 
     // Load up the bitcoin wallet and generate some blocks
-    let create_res = bitcoind_rpc.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None);
+    let wallet_name = get_unique_wallet_name();
+    let create_res = bitcoind_rpc.create_wallet(&wallet_name, None, None, None, None);
     if create_res.is_err() {
         // wallet already exists
         // load wallet
-        let _ = bitcoind_rpc.load_wallet(BITCOIND_WALLET_NAME);
+        let _ = bitcoind_rpc.load_wallet(&wallet_name);
     }
     // Set up dummy eth address
     let eth_destination = ethers::core::types::Address::random();
