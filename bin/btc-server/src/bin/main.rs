@@ -1006,18 +1006,11 @@ where
         }
         .to_status()?;
 
-        // The coordinator doesn't track the tx when signing round 2 as it uses
-        // a different method than non-coordinator signers.
-        // Track the tx before broadcasting it.
-        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
         let pegout_ids = psbt
             .pegout_ids()
             .iter()
             .map(|p| PegoutId::from_bytes(p).expect("values are 36 bytes"))
             .collect::<Vec<PegoutId>>();
-        let pending_pegouts =
-            pending_pegouts.into_iter().filter(|p| pegout_ids.contains(&p.id)).collect::<Vec<_>>();
-        self.add_tracked_tx(tx.clone(), &pending_pegouts, SystemTime::now()).await.to_status()?;
         info!(
             "[finalize_signing] Removing {} pending pegouts from DB: {:?}",
             pegout_ids.len(),
