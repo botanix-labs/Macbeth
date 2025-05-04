@@ -148,11 +148,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy, cargo
-          toolchain: stable
-
       - name: Install dependencies
         run: |
           bash .github/scripts/deps.sh
@@ -176,20 +171,6 @@ jobs:
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
           
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.8
-      
-      - name: Configure sccache
-        run: |
-          sccache --start-server
-          sccache --show-stats
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-          env-vars: |
-            RUSTC_WRAPPER
 
       - name: Download compiled binaries
         uses: actions/download-artifact@v4
@@ -225,17 +206,12 @@ jobs:
         run: |
           make start-test-suite-runners
           
-      - name: Display sccache stats
-        if: always()
-        run: |
-          sccache --show-stats
           
       - name: Cleanup resources
         if: always()
         run: |
           killall btc-server || true
           killall bitcoind || true
-          sccache --stop-server || true
 
   # Final job to report overall status
   integration-summary:
