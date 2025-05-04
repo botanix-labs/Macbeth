@@ -558,6 +558,19 @@ clean-unused-deps:
 # Botanix
 # ------------------------------------------------------------
 
+start-test-suite-runners:
+	cd ./bin/test-suite && \
+	/usr/local/bin/test-suite \
+	--test-to-run "${TEST_TO_RUN}" \
+	--config "./config.toml" \
+	--run-suite all \
+	--timeout 500000 \
+	--dry-run false \
+	--min-signers 3 \
+	--max-signers 4 \
+	--rpc-nodes 1 \
+	--syncing-nodes 1
+
 start-test-suite:
 	cd ./bin/test-suite && \
 	cargo run --bin test-suite -- \

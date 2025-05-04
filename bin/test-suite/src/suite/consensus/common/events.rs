@@ -6,7 +6,9 @@ use client::SigningStatus;
 use reth_primitives::{constants::EPOCH_LENGTH, B256};
 use std::collections::BTreeMap;
 
-pub const BITCOIND_WALLET_NAME: &str = "botanix_integration_test_wallet";
+pub fn get_unique_wallet_name() -> String {
+    format!("botanix_test_wallet_{}", uuid::Uuid::new_v4().to_string().replace("-", ""))
+}
 pub const SEND_AMOUNT: u64 = 1; // = 1 ether
 
 pub async fn await_dkg(
