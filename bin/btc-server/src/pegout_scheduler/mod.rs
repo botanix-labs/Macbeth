@@ -307,8 +307,17 @@ impl PegoutScheduler {
         };
         let change_idxs = {
             let mut ret = Vec::with_capacity(pegout_idxs.len());
-            for (i, _) in tx.output.iter().enumerate() {
+            for (i, txout) in tx.output.iter().enumerate() {
                 if pegout_idxs.contains(&i) {
+                    continue;
+                }
+                // sanity check that the change output spk is correct
+                if txout.script_pubkey != self.get_change_spk().expect("change spk should exist") {
+                    warn!(
+                        "PegoutScheduler::add_tx: Change output spk in tx {} is not correct: {:?}",
+                        tx.compute_txid(),
+                        txout.script_pubkey
+                    );
                     continue;
                 }
                 ret.push(i);
@@ -941,9 +950,13 @@ mod tests {
         db.set_pubkey_package(pk_package).expect("set public key package");
         db.set_key_package(key_package).expect("set key package");
 
-        let tx = create_tx(3, 3, None);
-        let pegout_idxs = vec![0, 1];
-        let change_idxs = vec![2];
+        let agg_pk =
+            db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
+        let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
+        let change_output = TxOut { value: Amount::from_sat(1000), script_pubkey: change_spk };
+        let tx = create_tx(3, 3, Some(change_output.clone()));
+        let pegout_idxs = vec![0, 1, 2];
+        let change_idxs = vec![3];
 
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db);
@@ -958,7 +971,7 @@ mod tests {
             };
             pegouts.push(pegout_req);
         }
-        assert_eq!(pegouts.len(), 2);
+        assert_eq!(pegouts.len(), 3);
         pegout_scheduler.add_tx(tx.clone(), &pegouts, SystemTime::now());
 
         let pending_txs = pegout_scheduler.txs.clone();
@@ -970,7 +983,7 @@ mod tests {
 
         // Check the mapping is correct
         let txs_by_pegout = pegout_scheduler.txs_by_pegout.clone();
-        assert_eq!(txs_by_pegout.len(), 2);
+        assert_eq!(txs_by_pegout.len(), 3);
         for pegout in pegouts.iter() {
             assert_eq!(txs_by_pegout.get(&pegout.txout()).unwrap(), &vec![tx.compute_txid()]);
         }
@@ -1143,7 +1156,8 @@ mod tests {
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
         assert_eq!(last_tx_txid, tx.compute_txid());
         assert_eq!(last_tx.pegout_idxs, vec![0]);
-        assert_eq!(last_tx.change_idxs, vec![1]);
+        // should be empty since we check against change.spk during add_tx
+        assert!(last_tx.change_idxs.is_empty());
 
         let block = create_block(vec![tx], bitcoin::BlockHash::all_zeros());
         pegout_scheduler.add_block(&block, 1);
@@ -1185,7 +1199,8 @@ mod tests {
         let (last_tx_txid, last_tx) = pegout_scheduler.txs.clone().into_iter().next().unwrap();
         assert_eq!(last_tx_txid, tx.compute_txid());
         assert_eq!(last_tx.pegout_idxs, vec![0, 1]);
-        assert_eq!(last_tx.change_idxs, vec![2]);
+        // should be empty since we check against change.spk during add_tx
+        assert!(last_tx.change_idxs.is_empty());
 
         let block = create_block(vec![tx], bitcoin::BlockHash::all_zeros());
         pegout_scheduler.add_block(&block, 1);
@@ -1292,6 +1307,12 @@ mod tests {
     #[test]
     fn test_roll_back_tip() {
         let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
         let mut pegout_scheduler =
             PegoutScheduler::new(1, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
         let tx = create_tx(1, 2, None);
@@ -1341,6 +1362,12 @@ mod tests {
     #[test]
     fn track_mempool_should_not_add_back_pegout_when_still_in_mempool() {
         let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
         let mut pegout_scheduler =
             PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
         let tx = create_tx(1, 2, None);
