@@ -9,8 +9,9 @@ use super::chain::BitcoinCheckpointsChain;
 use super::checkpoint::BitcoinCheckpoint;
 use super::error::BitcoinCheckpointError;
 use bitcoin::block::BlockHash as BitcoinBlockHash;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::{Mutex as TokioMutex, Mutex};
 
 /// Sleep duration between synchronization attempts.
 const SLEEP: Duration = Duration::from_secs(10);
@@ -120,7 +121,7 @@ where
         let lowest_confirmation_depth = self.checkpoints_chain.lowest_confirmation_depth() as u64;
         if tip_height < lowest_confirmation_depth {
             // Not enough blocks yet.
-            // Just remember the new tip and return.
+            // Remember the new tip and return.
             self.last_synced_height = Some(tip_height);
 
             return Ok(Vec::new());
@@ -183,30 +184,60 @@ where
     /// This method runs in a loop and never returns, so it should be run in a separate task or thread.
     pub async fn sync(self) {
         // We need interior mutability so that we can move `self` into spawn_blocking
-        let syncer = Arc::new(Mutex::new(self));
+        let syncer_lock = Arc::new(TokioMutex::new(self));
 
         loop {
-            // Sync bitcoin checkpoints to the tip in blocking task
-            let syncer_clone = Arc::clone(&syncer);
+            // Sync bitcoin checkpoints to the tip in a blocking task
+            // because we are using block IO operations in bitcoind RPC client
+            let syncer_lock_clone = Arc::clone(&syncer_lock);
             let result = tokio::task::spawn_blocking(move || {
-                let mut syncer = syncer_clone.lock().expect("syncer lock is poisoned");
+                let mut syncer = syncer_lock_clone.blocking_lock();
                 syncer.sync_new_blocks()
             })
             .await
             .expect("spawned blocking task failed to sync bitcoin checkpoints");
 
-            match result {
-                Ok(synced_checkpoints) => {
-                    tracing::info!(
-                        ?synced_checkpoints,
-                        "Asynced task synced {} bitcoin checkpoints",
-                        synced_checkpoints.len()
-                    )
-                }
-                Err(e) => tracing::warn!("Async task failed to sync bitcoin checkpoints: {e}"),
-            }
+            Self::handle_new_blocks_sync_result(result, Arc::clone(&syncer_lock)).await;
 
             tokio::time::sleep(SLEEP).await;
+        }
+    }
+
+    async fn handle_new_blocks_sync_result(
+        result: Result<Vec<SyncedCheckpointInfo>, BitcoinCheckpointError>,
+        syncer_lock: Arc<Mutex<BitcoinCheckpointsChainSynchronizer<R>>>,
+    ) {
+        match result {
+            Ok(synced_checkpoints) => {
+                tracing::info!(
+                    ?synced_checkpoints,
+                    "Asynced task synced {} bitcoin checkpoints",
+                    synced_checkpoints.len()
+                )
+            }
+            Err(BitcoinCheckpointError::StaleBlockAdded {
+                expected_prev_block_hash,
+                received_prev_block_hash,
+            }) => {
+                // if we are getting a stale block, which is not corresponding to the existing checkpoint chain
+                // let's clean up the chain and start syncing from scratch.
+                let mut syncer = syncer_lock.lock().await;
+                syncer.checkpoints_chain.clear();
+                syncer.last_synced_height = None;
+
+                tracing::warn!(
+                    %expected_prev_block_hash,
+                    %received_prev_block_hash,
+                    "Async task failed to add a stale block to the checkpoint chain due hashes mismatch. Reset the chain and start syncing from scratch in {} seconds",
+                    SLEEP.as_secs()
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Async task failed to sync bitcoin checkpoints: {e}. Retry in {} seconds",
+                    SLEEP.as_secs()
+                )
+            }
         }
     }
 }
@@ -329,6 +360,47 @@ mod tests {
             let result = syncer.sync_new_blocks();
 
             assert!(matches!(result, Err(BitcoinCheckpointError::StaleBlockAdded { .. })));
+        }
+    }
+
+    mod handle_new_blocks_sync_result {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_stale_block_resets_chain_and_height() {
+            // Configure a chain with some data
+            let chain =
+                Arc::new(BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create valid chain"));
+
+            let initial_header = create_header(BitcoinBlockHash::all_zeros());
+            let initial_checkpoint = BitcoinCheckpoint::new(initial_header, 1);
+            chain.push(initial_checkpoint).expect("push initial checkpoint");
+
+            let mock = MockRpc::new();
+
+            // Create our synchronizer with initial state
+            let syncer = BitcoinCheckpointsChainSynchronizer::new(Arc::clone(&chain), mock);
+
+            // Should be initialized from chain
+            assert_eq!(syncer.last_synced_height, Some(5));
+
+            let syncer_lock = Arc::new(Mutex::new(syncer));
+
+            let result = Err(BitcoinCheckpointError::StaleBlockAdded {
+                expected_prev_block_hash: BitcoinBlockHash::all_zeros(),
+                received_prev_block_hash: BitcoinBlockHash::all_zeros(),
+            });
+
+            BitcoinCheckpointsChainSynchronizer::handle_new_blocks_sync_result(
+                result,
+                Arc::clone(&syncer_lock),
+            )
+            .await;
+
+            // Verify the chain was cleared and last_synced_height was reset
+            let syncer = syncer_lock.lock().await;
+            assert_eq!(syncer.last_synced_height, None);
+            assert_eq!(syncer.checkpoints_chain.len(), 0);
         }
     }
 

@@ -121,7 +121,7 @@ impl BitcoinCheckpointsChain {
             if checkpoint.header.prev_blockhash != recent.hash {
                 return Err(BitcoinCheckpointError::StaleBlockAdded {
                     expected_prev_block_hash: recent.hash,
-                    added_prev_block_hash: checkpoint.header.prev_blockhash,
+                    received_prev_block_hash: checkpoint.header.prev_blockhash,
                 });
             }
         }
@@ -223,6 +223,14 @@ impl BitcoinCheckpointsChain {
     pub fn is_empty(&self) -> bool {
         let checkpoints = self.checkpoints.load();
         checkpoints.is_empty()
+    }
+
+    /// Clears all checkpoints from the chain.
+    ///
+    /// This method removes all checkpoints from the chain, resetting it to an empty state.
+    /// The configuration settings such as confirmation depths and window size remain unchanged.
+    pub fn clear(&self) {
+        self.checkpoints.store(Arc::new(VecDeque::new()));
     }
 
     /// Gets the height of the most recent checkpoint.
@@ -346,9 +354,9 @@ mod tests {
                 result,
                 Err(BitcoinCheckpointError::StaleBlockAdded {
                     expected_prev_block_hash,
-                    added_prev_block_hash
+                    received_prev_block_hash
                 })
-                if expected_prev_block_hash == checkpoint1_hash && added_prev_block_hash == BitcoinBlockHash::all_zeros()
+                if expected_prev_block_hash == checkpoint1_hash && received_prev_block_hash == BitcoinBlockHash::all_zeros()
             ));
 
             assert_eq!(chain.len(), 1);
@@ -690,6 +698,23 @@ mod tests {
                 )
                 .as_str()
             ));
+        }
+    }
+
+    mod clear {
+        use super::*;
+
+        #[test]
+        fn test_clear() {
+            let chain = BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create a valid chain");
+
+            create_checkpoints_and_push_to_chain(&chain, 100, 5);
+
+            assert!(!chain.is_empty());
+
+            chain.clear();
+
+            assert!(chain.is_empty());
         }
     }
 

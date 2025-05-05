@@ -10,13 +10,13 @@ use bitcoin::block::BlockHash as BitcoinBlockHash;
 pub enum BitcoinCheckpointError {
     /// Attempted to add a block that doesn't connect to the current chain.
     #[error(
-        "Block from other chain added: expected previous block hash {expected_prev_block_hash}, found {added_prev_block_hash}"
+        "Block from other chain added: expected previous block hash {expected_prev_block_hash}, found {received_prev_block_hash}"
     )]
     StaleBlockAdded {
         /// The hash we expected based on our latest checkpoint
         expected_prev_block_hash: BitcoinBlockHash,
         /// The hash we received from the new checkpoint
-        added_prev_block_hash: BitcoinBlockHash,
+        received_prev_block_hash: BitcoinBlockHash,
     },
 
     /// An error occurred while calling the Bitcoin RPC.
