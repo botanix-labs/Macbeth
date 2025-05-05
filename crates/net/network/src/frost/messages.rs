@@ -16,14 +16,16 @@ pub struct DkgRequest {
     pub version: u16,
     /// Frost data
     pub data: Vec<u8>,
-    /// Frost identifier
-    pub identifier: Vec<u8>,
+    /// Frost sender
+    pub sender: Vec<u8>,
+    /// Frost recipient
+    pub recipient: Vec<u8>,
 }
 
 impl DkgRequest {
     /// Constructs a new DKG Request using a frost identifier and a data payload.
-    pub const fn new(data: Vec<u8>, identifier: Vec<u8>) -> Self {
-        Self { version: MESSAGE_VERSION as u16, data, identifier }
+    pub const fn new(data: Vec<u8>, sender: Vec<u8>, recipient: Vec<u8>) -> Self {
+        Self { version: MESSAGE_VERSION as u16, data, sender, recipient }
     }
 }
 
@@ -83,10 +85,8 @@ impl WalletStateRequest {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrostProtoMessageId {
-    /// Round 1 package
-    Round1Dkg = 0x00,
-    /// Round 2 package
-    Round2Dkg = 0x01,
+    /// Dkg package
+    Dkg = 0x00,
     /// Ping
     Ping = 0x02,
     /// Pong
@@ -103,8 +103,6 @@ pub enum FrostProtoMessageId {
     SignerRound2SigningPackage = 0x08,
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage = 0x09,
-    /// Round 1 Dkg request message
-    Round1DkgRequest = 0x0A,
     /// `WalletState`
     WalletState = 0x0B,
 }
@@ -112,12 +110,8 @@ pub enum FrostProtoMessageId {
 /// Enum defining the frost message kind
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FrostProtoMessageKind {
-    /// Round 1 package
-    Round1Dkg(DkgRequest),
-    /// Round 2 package
-    Round2Dkg(DkgRequest),
-    /// Round 1 Dkg request
-    Round1DkgRequest(DkgRequest),
+    /// Dkg package
+    Dkg(DkgRequest),
     /// Ping
     Ping,
     /// Pong
@@ -183,27 +177,11 @@ impl FrostProtoMessage {
         }
     }
 
-    /// Creates a round1 package request message
-    pub const fn round1_dkg_request_message(resource: DkgRequest) -> Self {
+    /// Creates a dkg package message
+    pub const fn dkg_request_message(resource: DkgRequest) -> Self {
         Self {
-            message_type: FrostProtoMessageId::Round1DkgRequest,
-            message: FrostProtoMessageKind::Round1Dkg(resource),
-        }
-    }
-
-    /// Creates a round1 package message
-    pub const fn round1_dkg_message(resource: DkgRequest) -> Self {
-        Self {
-            message_type: FrostProtoMessageId::Round1Dkg,
-            message: FrostProtoMessageKind::Round1Dkg(resource),
-        }
-    }
-
-    /// Creates a round2 package message
-    pub const fn round2_dkg_message(resource: DkgRequest) -> Self {
-        Self {
-            message_type: FrostProtoMessageId::Round2Dkg,
-            message: FrostProtoMessageKind::Round2Dkg(resource),
+            message_type: FrostProtoMessageId::Dkg,
+            message: FrostProtoMessageKind::Dkg(resource),
         }
     }
 
@@ -253,21 +231,14 @@ impl FrostProtoMessage {
         let mut buf = BytesMut::new();
         buf.put_u8(self.message_type as u8);
         match &self.message {
-            FrostProtoMessageKind::Round1Dkg(resource) |
-            FrostProtoMessageKind::Round2Dkg(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
+            FrostProtoMessageKind::Dkg(resource) => {
+                // sender
+                buf.put_u8(resource.sender.len() as u8); // Assuming sender is not too long
+                buf.put_slice(&resource.sender);
+                // recipient
+                buf.put_u8(resource.recipient.len() as u8); // Assuming recipient is not too long
+                buf.put_slice(&resource.recipient);
                 // data
-                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.data);
-            }
-            FrostProtoMessageKind::Round1DkgRequest(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
-                // data
-                // TODO(armins) data is empty, simplify
                 buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.data);
             }
@@ -323,8 +294,7 @@ impl FrostProtoMessage {
 
         // Match message type
         let message_type = match id {
-            0x00 => FrostProtoMessageId::Round1Dkg,
-            0x01 => FrostProtoMessageId::Round2Dkg,
+            0x00 => FrostProtoMessageId::Dkg,
             0x02 => FrostProtoMessageId::Ping,
             0x03 => FrostProtoMessageId::Pong,
             0x04 => FrostProtoMessageId::PingMessage,
@@ -333,66 +303,30 @@ impl FrostProtoMessage {
             0x07 => FrostProtoMessageId::CoordinatorRound1SigningPackage,
             0x08 => FrostProtoMessageId::SignerRound2SigningPackage,
             0x09 => FrostProtoMessageId::CoordinatorRound2SigningPackage,
-            0x0A => FrostProtoMessageId::Round1DkgRequest,
             0x0B => FrostProtoMessageId::WalletState,
             _ => return None,
         };
 
         // Decode message based on type
         let message = match message_type {
-            FrostProtoMessageId::Round1Dkg |
-            FrostProtoMessageId::Round2Dkg |
-            FrostProtoMessageId::Round1DkgRequest => {
-                // Check if there's enough data for id_len
-                if buf.is_empty() {
-                    return None;
-                }
-
+            FrostProtoMessageId::Dkg => {
                 let id_len = buf[0] as usize;
                 buf.advance(1);
-
-                // Check if there's enough data for identifier
-                if buf.len() < id_len {
-                    return None;
-                }
-
-                let identifier = buf[..id_len].to_vec();
+                let sender = buf[..id_len].to_vec();
+                buf.advance(id_len);
+                //
+                let id_len = buf[0] as usize;
+                buf.advance(1);
+                let recipient = buf[..id_len].to_vec();
                 buf.advance(id_len);
 
-                // Check if there's enough data for data_len
-                if buf.len() < 4 {
-                    return None;
-                }
-
-                // Safely convert bytes to u32
-                let data_len = match buf[..4].try_into() {
-                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
-                    Err(_) => return None,
-                };
+                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
                 buf.advance(4);
-
-                // Check if there's enough data for data
-                if buf.len() < data_len {
-                    return None;
-                }
-
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                match message_type {
-                    FrostProtoMessageId::Round1Dkg => {
-                        FrostProtoMessageKind::Round1Dkg(DkgRequest::new(data, identifier))
-                    }
-                    FrostProtoMessageId::Round2Dkg => {
-                        FrostProtoMessageKind::Round2Dkg(DkgRequest::new(data, identifier))
-                    }
-                    FrostProtoMessageId::Round1DkgRequest => {
-                        FrostProtoMessageKind::Round1DkgRequest(DkgRequest::new(data, identifier))
-                    }
-                    _ => unreachable!(), // We've already matched these values above
-                }
+                FrostProtoMessageKind::Dkg(DkgRequest::new(data, sender, recipient))
             }
-
             FrostProtoMessageId::Ping => FrostProtoMessageKind::Ping,
             FrostProtoMessageId::Pong => FrostProtoMessageKind::Pong,
 
@@ -582,11 +516,12 @@ mod tests {
 
     #[test]
     fn test_dkg_encoding_decoding() {
-        let dkg_request = DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9]);
+        let dkg_request =
+            DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![9, 8, 7, 6, 5]);
 
         let message = FrostProtoMessage {
-            message_type: FrostProtoMessageId::Round1Dkg,
-            message: FrostProtoMessageKind::Round1Dkg(dkg_request),
+            message_type: FrostProtoMessageId::Dkg,
+            message: FrostProtoMessageKind::Dkg(dkg_request),
         };
 
         // Encode the message

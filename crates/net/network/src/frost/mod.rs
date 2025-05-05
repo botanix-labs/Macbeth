@@ -36,22 +36,37 @@ impl fmt::Display for PeerMessageResponse {
 }
 
 /// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DkgResponse {
-    /// The Response Type
-    pub response_type: DkgEventResponseType,
     /// Frost Data
     pub data: Vec<u8>,
-    /// Frost Identifier
-    /// Note: for signing we do not require this field as we can pull it from peer data when the
-    /// session is established for DKG we do require it as the coordinator sends the round 1
-    /// package on the behalf of the signers
-    pub identifier: Vec<u8>,
+    /// Frost Sender from whom the message originated
+    pub sender: Vec<u8>,
+    /// Frost Recipient to whom the message should be sent
+    pub recipient: Vec<u8>,
 }
 
 impl fmt::Display for DkgResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} - bytes, Data Size: {} bytes", self.response_type, self.data.len())
+        write!(
+            f,
+            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}",
+            self.data.len(),
+            self.sender,
+            self.recipient,
+        )
+    }
+}
+
+impl fmt::Debug for DkgResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}",
+            self.data.len(),
+            self.sender,
+            self.recipient,
+        )
     }
 }
 
@@ -109,27 +124,6 @@ impl fmt::Display for SigningResponse {
             self.signing_session_id.len(),
             self.psbt.len()
         )
-    }
-}
-
-/// Event Response Variants indicating the type of response
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub enum DkgEventResponseType {
-    /// DKG round 1 request
-    DkgRound1Request,
-    /// DKG round 1
-    DkgRound1,
-    /// DKG round 2
-    DkgRound2,
-}
-
-impl fmt::Display for DkgEventResponseType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DkgRound1 => write!(f, "dkground 1"),
-            Self::DkgRound2 => write!(f, "dkground 2"),
-            Self::DkgRound1Request => write!(f, "dkground 1 request"),
-        }
     }
 }
 
