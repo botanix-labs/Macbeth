@@ -145,10 +145,12 @@ where
         let chain_size_limit = self.checkpoints_chain.size_limit() as u64;
         let blocks_to_sync = need_to_sync.min(chain_size_limit);
 
-        let top_confirmed_height = tip_height - (lowest_confirmation_depth - 1);
+        // Use saturating subtraction to prevent overflow when tip_height is small
+        let top_confirmed_height = tip_height.saturating_sub(lowest_confirmation_depth - 1);
 
         // We push from oldest to newest, so we start `blocks_to_sync`−1 below the top.
-        let from_height = top_confirmed_height - (blocks_to_sync - 1);
+        // Use saturating subtraction to prevent overflow when blocks_to_sync > top_confirmed_height
+        let from_height = top_confirmed_height.saturating_sub(blocks_to_sync - 1);
         let to_height = top_confirmed_height;
 
         let mut synced_checkpoints = Vec::new();
