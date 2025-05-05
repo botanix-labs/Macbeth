@@ -94,9 +94,6 @@ pub type SigningSessionId = [u8; 32];
 /// Repersents an error related to frost operations
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FrostParseError {
-    /// Failed to notify btc server about pegin
-    #[error("Invalid frost peer id")]
-    InvalidFrostPeerId,
     #[error("Invalid frost signing session id")]
     InvalidSigningSessionId,
 }
@@ -194,32 +191,6 @@ pub(crate) fn find_epoch_start(epoch_length: u64, current_block_number: u64) -> 
 #[allow(dead_code)]
 pub(crate) fn get_witness_data_from_psbt(psbt: Psbt) -> Vec<Witness> {
     psbt.inputs.iter().filter_map(|input| input.final_script_witness.clone()).collect()
-}
-
-// Deserializes a Frost peer ID.
-///
-/// # Arguments
-///
-/// * `id` - The peer ID to be decoded.
-///
-/// # Returns
-///
-/// Returns a `Result` containing the serialized Frost identifier if successful, or an `Error` if
-/// the peer ID is invalid.
-/// use frost_secp256k1_tr
-pub(crate) fn deserialize_frost_peer_id(
-    id: Vec<u8>,
-) -> Result<frost_secp256k1_tr::Identifier, FrostParseError> {
-    if id.len() != 32 {
-        return Err(FrostParseError::InvalidFrostPeerId);
-    }
-    let peer_id_bytes: &[u8; 32] =
-        id.as_slice().try_into().map_err(|_e| FrostParseError::InvalidFrostPeerId)?;
-
-    let frost_id = frost_secp256k1_tr::Identifier::deserialize(peer_id_bytes)
-        .map_err(|_e| FrostParseError::InvalidFrostPeerId)?;
-
-    Ok(frost_id)
 }
 
 pub(crate) fn parse_signing_session_id(
@@ -1404,53 +1375,6 @@ mod tests {
         .await;
 
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_deserialize_frost_peer_id_too_short() {
-        let too_short = vec![0; 31]; // only 31 bytes
-        let result = deserialize_frost_peer_id(too_short);
-        assert!(result.is_err(), "Should reject too short peer ID");
-
-        match result {
-            Err(FrostParseError::InvalidFrostPeerId) => {}
-            _ => panic!("Wrong error returned for too short peer ID"),
-        }
-    }
-
-    #[test]
-    fn test_deserialize_frost_peer_id_too_long() {
-        let too_long = vec![0; 33]; // 33 bytes
-        let result = deserialize_frost_peer_id(too_long);
-        assert!(result.is_err(), "Should reject too long peer ID");
-
-        match result {
-            Err(FrostParseError::InvalidFrostPeerId) => {}
-            _ => panic!("Wrong error returned for too long peer ID"),
-        }
-    }
-
-    #[test]
-    fn test_deserialize_frost_peer_id_invalid_format() {
-        let invalid_format = vec![0; 32];
-        let result = deserialize_frost_peer_id(invalid_format);
-        match result {
-            Ok(_) => {}
-            Err(FrostParseError::InvalidFrostPeerId) => {}
-            Err(_) => panic!("Wrong error returned for invalid format"),
-        }
-    }
-
-    #[test]
-    fn test_deserialize_legitimate_frost_peer_id() {
-        // Valid peer ID, len = 32
-        let valid_id: Vec<u8> = vec![
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
-            0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C,
-            0x1D, 0x1E, 0x1F, 0x20,
-        ];
-        let result = deserialize_frost_peer_id(valid_id);
-        assert!(result.is_ok());
     }
 
     #[test]
