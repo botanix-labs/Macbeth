@@ -7,9 +7,3 @@ pub(crate) const MAINNET_DEPOSIT_CONTRACT: DepositContract = DepositContract::ne
     11052984,
     b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
 );
-
-/// How many historical checkpoints to keep (depth > strong)
-pub const HISTORICAL_CHECKPOINTS_COUNT: usize = 1;
-
-/// How many checkpoints before the strong confirmation depth to keep (depth < strong)
-pub const WEAK_CHECKPOINTS_COUNT: usize = 1;

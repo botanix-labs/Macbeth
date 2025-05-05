@@ -32,7 +32,7 @@ use crate::{
 pub async fn test_pegin_v1(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
-    let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
+    let pegin_conf_depth = BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
 
     // Set up regtest connection

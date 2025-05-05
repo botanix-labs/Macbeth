@@ -32,9 +32,7 @@ mod api;
 pub use api::EthChainSpec;
 
 /// Chain specific constants
-pub mod constants;
-
-pub use constants::*;
+pub(crate) mod constants;
 
 /// Re-export for convenience
 pub use reth_ethereum_forks::*;

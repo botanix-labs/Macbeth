@@ -58,7 +58,7 @@ impl BitcoinCheckpointsChain {
             return Err(BitcoinCheckpointError::ZeroStrongConfirmationDepth);
         }
 
-        if weak_checkpoints_count > strong_confirmation_depth {
+        if weak_checkpoints_count >= strong_confirmation_depth {
             return Err(BitcoinCheckpointError::WeakCheckpointsCountTooBig {
                 weak_checkpoints_count,
                 strong_confirmation_depth,

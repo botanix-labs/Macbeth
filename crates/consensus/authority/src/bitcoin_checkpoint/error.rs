@@ -33,7 +33,7 @@ pub enum BitcoinCheckpointError {
     ZeroStrongConfirmationDepth,
 
     /// Weak checkpoints count exceeds strong confirmation depth.
-    #[error("Weak checkpoints count {weak_checkpoints_count} is greater than strong confirmation depth {strong_confirmation_depth}")]
+    #[error("Weak checkpoints count {weak_checkpoints_count} must be less than strong confirmation depth {strong_confirmation_depth}")]
     WeakCheckpointsCountTooBig {
         /// The weak checkpoints count that was provided
         weak_checkpoints_count: usize,

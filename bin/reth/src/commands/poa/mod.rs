@@ -50,10 +50,7 @@ use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGenera
 use reth_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
-use reth_chainspec::{
-    BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID, HISTORICAL_CHECKPOINTS_COUNT,
-    WEAK_CHECKPOINTS_COUNT,
-};
+use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
 use reth_consensus_common::utils;
@@ -439,9 +436,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Synchronize the bitcoin checkpoints chain with the bitcoind node
 
         let bitcoin_checkpoints = Arc::new(BitcoinCheckpointsChain::try_new(
-            chain.parent_confirmation_depth as usize,
-            HISTORICAL_CHECKPOINTS_COUNT,
-            WEAK_CHECKPOINTS_COUNT,
+            chain.bitcoin_checkpoint_confirmation_depth as usize,
+            chain.historical_bitcoin_checkpoints_count,
+            chain.weak_bitcoin_checkpoints_count,
         )?);
 
         let checkpoints_synchronizer = BitcoinCheckpointsChainSynchronizer::new(

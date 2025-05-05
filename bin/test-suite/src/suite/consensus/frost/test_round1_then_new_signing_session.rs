@@ -34,7 +34,7 @@ pub async fn do_signing_round1(
     bitcoind: &bitcoincore_rpc::Client,
     signing_session_id: &[u8; 32],
 ) -> anyhow::Result<(), anyhow::Error> {
-    let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
+    let pegin_conf_depth = BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
 
     // Currently we support a static coordinator
     // this is always the first client
