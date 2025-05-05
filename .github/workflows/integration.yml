@@ -70,7 +70,7 @@ jobs:
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.8
+        uses: mozilla-actions/sccache-action@v0.0.9
       
       - name: Configure sccache
         run: |
