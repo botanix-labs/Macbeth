@@ -19,8 +19,7 @@ use tracing::{error, info, warn};
 use crate::{
     frost::{
         messages::{DkgRequest, WalletStateRequest},
-        DkgEventResponseType, DkgResponse, SigningEventResponseType, SigningResponse,
-        WalletStateResponse,
+        DkgResponse, SigningEventResponseType, SigningResponse, WalletStateResponse,
     },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
 };
@@ -329,21 +328,10 @@ impl Stream for FrostProtoConnection {
                 }
                 FrostPeerCommand::PeerMessage(response) => match response {
                     PeerMessageResponse::Dkg(dkg_response) => {
-                        let DkgResponse { response_type, identifier, data } = dkg_response;
-                        match response_type {
-                            DkgEventResponseType::DkgRound1Request => {
-                                let req = DkgRequest::new(data, identifier);
-                                FrostProtoMessage::round1_dkg_request_message(req)
-                            }
-                            DkgEventResponseType::DkgRound1 => {
-                                let req = DkgRequest::new(data, identifier);
-                                FrostProtoMessage::round1_dkg_message(req)
-                            }
-                            DkgEventResponseType::DkgRound2 => {
-                                let req = DkgRequest::new(data, identifier);
-                                FrostProtoMessage::round2_dkg_message(req)
-                            }
-                        }
+                        let DkgResponse { data, sender, recipient } = dkg_response;
+
+                        let req = DkgRequest::new(data, sender, recipient);
+                        FrostProtoMessage::dkg_request_message(req)
                     }
                     PeerMessageResponse::Signing(signing_response) => {
                         let SigningResponse { response_type, signing_session_id, psbt } =
@@ -448,26 +436,10 @@ impl Stream for FrostProtoConnection {
                 }
                 return Poll::Pending;
             }
-            FrostProtoMessageKind::Round1Dkg(data) => FrostProtocolEvent::PeerMessage {
+            FrostProtoMessageKind::Dkg(data) => FrostProtocolEvent::PeerMessage {
                 response: PeerMessageResponse::Dkg(DkgResponse {
-                    response_type: DkgEventResponseType::DkgRound1,
-                    identifier: data.identifier,
-                    data: data.data,
-                }),
-                peer_id: this.peer_id,
-            },
-            FrostProtoMessageKind::Round1DkgRequest(data) => FrostProtocolEvent::PeerMessage {
-                response: PeerMessageResponse::Dkg(DkgResponse {
-                    response_type: DkgEventResponseType::DkgRound1Request,
-                    identifier: data.identifier,
-                    data: data.data,
-                }),
-                peer_id: this.peer_id,
-            },
-            FrostProtoMessageKind::Round2Dkg(data) => FrostProtocolEvent::PeerMessage {
-                response: PeerMessageResponse::Dkg(DkgResponse {
-                    response_type: DkgEventResponseType::DkgRound2,
-                    identifier: data.identifier,
+                    sender: data.sender,
+                    recipient: data.recipient,
                     data: data.data,
                 }),
                 peer_id: this.peer_id,
