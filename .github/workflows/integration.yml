@@ -134,6 +134,7 @@ jobs:
           "test_mempool_gossip",
           "utxo_sync",
           "state_sync",
+          "wallet_sync",
           "frost_e2e_stable",
           "test_pegin_v1",
           "invalid_pegin",
