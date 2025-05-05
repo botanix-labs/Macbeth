@@ -1426,7 +1426,7 @@ where
             warn!(
                 checkpoints_chain = %self.bitcoin_checkpoints,
                 proposed_checkpoint_hash = %non_deterministic_data.bitcoin_block_hash,
-                "A proposed bitcoin checkpont is not a part of local checkpoint chain. Most probably a proposer's or local bitcoin node is out of sync."
+                "A proposed bitcoin checkpoint is not a part of local checkpoint chain. Most probably a proposer's or local bitcoin node is out of sync."
             );
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
