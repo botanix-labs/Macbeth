@@ -189,7 +189,7 @@ where
             // Sync bitcoin checkpoints to the tip in blocking task
             let syncer_clone = Arc::clone(&syncer);
             let result = tokio::task::spawn_blocking(move || {
-                let mut syncer = syncer_clone.lock().unwrap();
+                let mut syncer = syncer_clone.lock().expect("syncer lock is poisoned");
                 syncer.sync_new_blocks()
             })
             .await
