@@ -1424,9 +1424,9 @@ where
         // check non-deterministic data: btc block hash and aggregate public key
         if !self.bitcoin_checkpoints.contains_by_hash(non_deterministic_data.bitcoin_block_hash) {
             warn!(
-                available_checkpoints = %self.bitcoin_checkpoints,
-                expected = %non_deterministic_data.bitcoin_block_hash,
-                "Bitcoin block hash mismatch"
+                checkpoints_chain = %self.bitcoin_checkpoints,
+                proposed_checkpoint_hash = %non_deterministic_data.bitcoin_block_hash,
+                "A proposed bitcoin checkpont is not a part of local checkpoint chain. Most probably a proposer's or local bitcoin node is out of sync."
             );
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
