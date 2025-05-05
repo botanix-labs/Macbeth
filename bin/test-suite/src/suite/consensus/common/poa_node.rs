@@ -23,10 +23,9 @@ use reth_db::{
     models::ClientVersion,
     open_db_read_only, DatabaseEnv,
 };
-use reth_network_peers::pk2id;
 use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    public_key_to_address, Address,
+    Address,
 };
 use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
 use reth_rpc_types::PeerId;
@@ -703,6 +702,7 @@ pub fn is_dkg_ready(federation_memebers: &BTreeMap<u16, FederationMemberTestConf
 
 pub async fn create_poa_nodes(
     global_context: Arc<GlobalContext>,
+    members_keypairs: &Vec<(SecretKey, PublicKey, PeerId, Address)>,
     btc_server_processes: Option<&Vec<SpawnedBtcServerProcess>>,
 ) -> anyhow::Result<(
     BTreeMap<u16, FederationMemberTestConfig>,
@@ -712,15 +712,6 @@ pub async fn create_poa_nodes(
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
     let mut poa_nodes: BTreeMap<u16, FederationMemberTestConfig> = BTreeMap::new();
-    let mut members_keypairs: Vec<(SecretKey, PublicKey, PeerId, Address)> = vec![];
-
-    for _ in 0..global_context.fed_instances {
-        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let pk = secret_key.public_key(SECP256K1);
-        let peer_id = pk2id(&pk);
-        let address = public_key_to_address(pk);
-        members_keypairs.push((secret_key, pk, peer_id, address));
-    }
     let authorities = members_keypairs.iter().map(|(_, pk, _, _)| pk.clone()).collect::<Vec<_>>();
     let poa_instances = global_context.fed_instances - global_context.syncing_instances;
 

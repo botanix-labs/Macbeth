@@ -1,6 +1,9 @@
 use crate::context::GlobalContext;
 use anyhow::Context;
+use btcserverlib::federation_args::{FedMemberPubKey, FederationTomlConfig};
 use reth::consensus_common::utils::unix_timestamp;
+use reth_primitives::Address;
+use reth_rpc_types::PeerId;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -50,6 +53,7 @@ impl SpawnedBtcServerProcess {
 
 fn spawn_btc_server_process(
     global_context: Arc<GlobalContext>,
+    members_keypairs: &Vec<(secp256k1::SecretKey, secp256k1::PublicKey, PeerId, Address)>,
     id: u16,
     port: u16,
     db_path: PathBuf,
@@ -62,6 +66,8 @@ fn spawn_btc_server_process(
     }
 
     let identifier = id.to_string();
+    let coordinator = 0u16.to_string();
+
     let frost_max_signers = global_context.max_signers.to_string();
     let frost_min_signers = global_context.min_signers.to_string();
     let address = format!("0.0.0.0:{}", port);
@@ -72,6 +78,47 @@ fn spawn_btc_server_process(
     if !std::fs::exists(&binary_abs_path)? {
         return Err(anyhow::anyhow!("btc-server binary not found at {}. Please compile it first before running the test-suite", binary_abs_path.display().to_string()));
     }
+
+    // Create federation members
+    let mut fed_members = vec![];
+    for i in 0..global_context.fed_instances {
+        let public_key =
+            members_keypairs.get(i as usize).cloned().expect("To have keypair information").1;
+
+        fed_members.push(FedMemberPubKey {
+            key: public_key.to_string(),
+            // Not needed
+            socket_addr: String::new(),
+        });
+    }
+
+    // Write federation config to tempfile
+    let federation_config = FederationTomlConfig::new(
+        fed_members,
+        String::new(), // Not needed
+        String::new(), // Not needed
+        String::new(), // Not needed
+    );
+
+    let mut temp_federation = tempfile::NamedTempFile::new().unwrap();
+    std::io::Write::write_all(
+        &mut temp_federation,
+        toml::to_string(&federation_config)?.as_bytes(),
+    )?;
+
+    // Write the secret key to a tempfile
+    let my_secret_key =
+        members_keypairs.get(id as usize).cloned().expect("To have keypair information").0;
+
+    let mut temp_secret_key = tempfile::NamedTempFile::new().unwrap();
+    std::io::Write::write_all(
+        &mut temp_secret_key,
+        my_secret_key.display_secret().to_string().as_bytes(),
+    )?;
+
+    let federation_path = temp_federation.path().to_str().unwrap().to_owned();
+    let secret_key_path = temp_secret_key.path().to_str().unwrap().to_owned();
+
     let args = vec![
         "--btc-network",
         "regtest",
@@ -79,6 +126,12 @@ fn spawn_btc_server_process(
         db_path_arg.as_str(),
         "--identifier",
         identifier.as_str(),
+        "--coordinator",
+        coordinator.as_str(),
+        "--federation-config-path",
+        federation_path.as_str(),
+        "--p2p-secret-key",
+        secret_key_path.as_str(),
         "--address",
         address.as_str(),
         "--min-signers",
@@ -99,6 +152,10 @@ fn spawn_btc_server_process(
         "5",
     ];
 
+    // Keep the temp files alive for the duration of the test
+    std::mem::forget(temp_federation);
+    std::mem::forget(temp_secret_key);
+
     Ok(SpawnedBtcServerProcess {
         child_process: spawn_child_process(Scope::BtcServer(id), command, args, working_directory)?,
         db_path,
@@ -108,6 +165,7 @@ fn spawn_btc_server_process(
 
 pub fn spawn_n_btc_server_processes(
     global_context: Arc<GlobalContext>,
+    members_keypairs: &Vec<(secp256k1::SecretKey, secp256k1::PublicKey, PeerId, Address)>,
 ) -> anyhow::Result<Vec<SpawnedBtcServerProcess>> {
     let mut processes = vec![];
     for i in 0..global_context.fed_instances {
@@ -120,8 +178,13 @@ pub fn spawn_n_btc_server_processes(
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
         std::fs::create_dir_all(&db_path).context("failed to create tempdir with db subdir")?;
         let port = BTC_SERVER_START_PORT + i;
-        let child_process =
-            spawn_btc_server_process(global_context.clone(), i, port, db_path.clone())?;
+        let child_process = spawn_btc_server_process(
+            global_context.clone(),
+            members_keypairs,
+            i,
+            port,
+            db_path.clone(),
+        )?;
         processes.push(child_process);
     }
     Ok(processes)
