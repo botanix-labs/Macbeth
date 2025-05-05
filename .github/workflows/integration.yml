@@ -86,23 +86,27 @@ jobs:
 
       - name: Compile btc-server
         run: |
-          cd ./bin/btc-server && \
-          cargo build --bin btc-server && \
+          set -eo pipefail
+          cd ./bin/btc-server 
+          cargo build --bin btc-server 
           echo "Bitcoin server compiled successfully!"
           sccache --show-stats
-
+    
       - name: Compile poa-node
         run: |
-          cargo build --bin reth && \
+          set -eo pipefail
+          cargo build --bin reth 
           echo "Poa node compiled successfully!"
           sccache --show-stats
 
       - name: Compile test-suite
-        run: |
-          cd ./bin/test-suite && \
-          cargo build --bin test-suite && \
+        run: | 
+          set -eo pipefail
+          cd ./bin/test-suite
+          cargo build --bin test-suite
           echo "Test suite compiled successfully!"
           sccache --show-stats
+
 
       - name: Prepare binaries for upload
         run: |
@@ -110,7 +114,6 @@ jobs:
           cp target/debug/btc-server /tmp/binaries/ || true
           cp target/debug/reth /tmp/binaries/ || true
           cp target/debug/test-suite /tmp/binaries/ || true
-          cp -r ./bin/test-suite /tmp/binaries/ || true
 
       - name: Upload compiled binaries
         uses: actions/upload-artifact@v4
@@ -172,7 +175,6 @@ jobs:
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
           
-
       - name: Download compiled binaries
         uses: actions/download-artifact@v4
         with:
@@ -199,8 +201,8 @@ jobs:
             sudo chmod +x /usr/local/bin/test-suite
           fi
           
-          if [ -d "/tmp/binaries/test-suite" ]; then
-            cp -r /tmp/binaries/test-suite/* ./bin/test-suite/
+          if [ -d "/tmp/binaries/test-suite-dir" ]; then
+            cp -r /tmp/binaries/test-suite-dir/* ./bin/test-suite/
           fi
       
       - name: Run ${{ matrix.test }}
