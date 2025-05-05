@@ -23,12 +23,9 @@ use reth_chainspec::ChainSpec;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_network::{
     frost::{
-        manager::{
-            authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData,
-            ToFrostManager,
-        },
-        DkgEventResponseType, DkgResponse, FrostPeerCommand, PeerMessageResponse,
-        SigningEventResponseType, SigningResponse, WalletStateResponse,
+        manager::{FrostCommand, FrostConfig, PeerData, ToFrostManager},
+        DkgResponse, FrostPeerCommand, PeerMessageResponse, SigningEventResponseType,
+        SigningResponse, WalletStateResponse,
     },
     NetworkHandle,
 };
@@ -38,7 +35,8 @@ use reth_provider::{
 };
 use reth_revm::primitives::FixedBytes;
 use tendermint_rpc::client::HttpClient;
-use tracing::{debug, error, info, warn};
+use tokio::sync::mpsc;
+use tracing::{error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 /// Errors that can occur during synchronization.
@@ -445,32 +443,36 @@ where
                             continue;
                         }
 
-                        match self.dkg_state_machine.get_all_peers_handle().await {
-                            Ok(all_peers_handle) => {
-                                info!(target: "consensus::authority::frost_task::start_task", "Got all peers handle");
-                                if !all_peers_handle.contains_key(&peer_id) {
-                                    error!(target: "consensus::authority::frost_task::start_task", "Peer handle not found for peer id {:?}", peer_id);
-                                    continue;
-                                }
-                                let peer_handle =
-                                    all_peers_handle.get(&peer_id).expect("peer handle to exist");
+                        // get all frost peers connections
+                        let all_peers_handle = {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
 
-                                if let Err(e) = self
-                                    .send_serialized_compressed_finalized_pegout_ids(
-                                        self.frost_config.wallet_state_sync_chunk_size,
-                                        peer_handle,
-                                        &response,
-                                    )
-                                    .await
-                                {
-                                    error!(target: "consensus::authority::frost_task::start_task", "Error getting serialized compressed finalized pegout ids: {:?}", e);
-                                    continue;
-                                }
-                            }
-                            Err(e) => {
+                            let cmd = FrostCommand::GetAllConnectedPeers(tx);
+                            if let Err(e) = self.frost_handle.send_command(cmd) {
                                 error!(target: "consensus::authority::frost_task::start_task", "Error getting all peers handle {:?}", e);
-                                continue;
                             }
+
+                            rx.await.expect("expect all peers handle to exist")
+                        };
+
+                        info!(target: "consensus::authority::frost_task::start_task", "Got all peers handle");
+                        if !all_peers_handle.contains_key(&peer_id) {
+                            error!(target: "consensus::authority::frost_task::start_task", "Peer handle not found for peer id {:?}", peer_id);
+                            continue;
+                        }
+                        let peer_handle =
+                            all_peers_handle.get(&peer_id).expect("peer handle to exist");
+
+                        if let Err(e) = self
+                            .send_serialized_compressed_finalized_pegout_ids(
+                                self.frost_config.wallet_state_sync_chunk_size,
+                                peer_handle,
+                                &response,
+                            )
+                            .await
+                        {
+                            error!(target: "consensus::authority::frost_task::start_task", "Error getting serialized compressed finalized pegout ids: {:?}", e);
+                            continue;
                         }
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {
