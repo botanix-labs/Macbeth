@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y libclang-dev pkg-config build-essential
 RUN rustup toolchain install stable && \
     rustup default stable && \
     cd bin/btc-server && \
-    cargo build --release
+    cargo build --release --package btc-server 
 
 # Stage 2: Create the final lightweight image
 FROM ubuntu AS runtime
@@ -22,7 +22,7 @@ FROM ubuntu AS runtime
 WORKDIR /app
 
 # Copy the built artifacts from the builder stage
-COPY --from=builder /app/bin/btc-server/target/release/btc-server /usr/local/bin/server
+COPY --from=builder /app/target/release/btc-server /usr/local/bin/server
 
 EXPOSE 8080
 
