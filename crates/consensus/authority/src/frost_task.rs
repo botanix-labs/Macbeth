@@ -234,7 +234,9 @@ where
         if let Ok(public_key) = self.btc_server.get_public_key(client::Empty {}).await {
             info!(target: "consensus::authority::frost_task::start_task", " received aggregate public key from dkg state machine {:?}", public_key);
             if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
-                hex::decode(public_key.publickey).unwrap().as_slice(),
+                hex::decode(public_key.publickey)
+                    .expect("invalid aggregated public key")
+                    .as_slice(),
             ) {
                 let mut storage = self.storage.inner.write().await;
                 storage.aggregate_public_key = Some(secp_pk);
@@ -708,14 +710,22 @@ where
                         payload: dkg.data,
                     };
 
-                    let resp = self.btc_server.new_dkg_payload(req).await.unwrap();
+                    let resp = match self.btc_server.new_dkg_payload(req).await {
+                        Ok(r) => r,
+                        Err(err) => {
+                            timeout = Duration::from_secs(10);
+                            error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error sending dkg payload to btc server {:?}", err);
+                            continue;
+                        }
+                    };
 
                     if let Ok(resp) = self.btc_server.get_public_key(client::Empty {}).await {
                         self.metrics.created_agg_pub_keys.increment(1);
 
                         // decode the public key and assign it to the self variable
-                        let public_key_package =
-                            secp256k1::PublicKey::from_str(&resp.publickey).unwrap();
+                        let public_key_package = secp256k1::PublicKey::from_str(&resp.publickey)
+                            .expect("invalid aggregated public key");
+
                         let mut storage = self.storage.write().await;
                         storage.aggregate_public_key = Some(public_key_package);
                     }
@@ -734,7 +744,14 @@ where
                 Err(_) => {
                     warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "DKG timeout triggered");
 
-                    let resp = self.btc_server.get_dkg_payloads(client::Empty {}).await.unwrap();
+                    let resp = match self.btc_server.get_dkg_payloads(client::Empty {}).await {
+                        Ok(r) => r,
+                        Err(err) => {
+                            timeout = Duration::from_secs(10);
+                            error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error getting dkg payloads from btc server {:?}", err);
+                            continue;
+                        }
+                    };
 
                     // Update timeout at which point the btc-server should be called again.
                     timeout = Duration::from_millis(resp.timeout);
@@ -764,7 +781,7 @@ where
         };
 
         for payload in payloads {
-            let recipient = frost_id_from_bytes(&payload.recipient).unwrap();
+            let recipient = frost_id_from_bytes(&payload.recipient).expect("valid frost id");
 
             // TODO (lamafab): This could be improved, by using a hashmap or so.
             let Some(peer_data) = all_peers_handles
@@ -782,7 +799,10 @@ where
                 recipient: payload.recipient,
             });
 
-            peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(resp)).unwrap();
+            if peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(resp)).is_err() {
+                error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error sending DKG payload to peer {:?}", peer_data.peer_id);
+                continue;
+            }
         }
     }
 }
