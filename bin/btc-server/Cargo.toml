@@ -29,6 +29,7 @@ bdk_wallet = "1.0.0"   # just using this for the coin selection
 bitcoin = { version = "0.32.5", features = ["base64", "rand", "serde"] }
 bitcoin_hashes = "0.14.0"
 bitcoincore-rpc = "0.19.0"
+chacha20poly1305 = "0.10.1"
 ciborium = "0.2.1"
 clap = { version = "4.3.22", features = ["derive"] }
 client = { path = "./client" }
@@ -46,6 +47,8 @@ futures-util = "0.3.25"
 hex = "0.4.3"
 lazy_static = "1.4.0"
 log = "0.4.18"
+
+merlin = "3.0.0"
 miniscript = "12.3.0"
 parking_lot = { version = "0.12.3", features = ["serde"] }
 prometheus = { version = "0.13", features = ["process"] }
@@ -74,6 +77,7 @@ tonic-health = { version = "0.12.3" }
 tonic-reflection = { version = "0.12.3" }
 tracing-actix-web = "0.7.14"
 url = "2.5.0"
+zeroize = "1.8.1"
 
 [build-dependencies]
 prost-build = "0.13.3"

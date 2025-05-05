@@ -1,5 +1,6 @@
 pub mod coordinator;
 pub mod database;
+pub mod dkg;
 pub mod extended_client;
 pub mod http;
 pub mod merkle;
