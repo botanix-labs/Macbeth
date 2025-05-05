@@ -57,9 +57,11 @@ pub enum Error {
     #[error("Awaiting our round3 commitment to generate the challenge")]
     AwaitingChallengeGeneration,
     /// An unexpected internal error from the FROST library
+    #[allow(clippy::enum_variant_names)]
     #[error("Unexpected internal Frost error")]
     InternalFrostError(#[from] frost::Error),
     /// An unexpected internal error from the encryption library
+    #[allow(clippy::enum_variant_names)]
     #[error("Unexpected internal Aead error")]
     InternalAeadError(chacha20poly1305::aead::Error),
 }
@@ -132,7 +134,7 @@ impl DkgHandshakeManager {
 
         // Track my eph key
         let mut eph_keys = BTreeMap::new();
-        eph_keys.insert(my_frost_id, my_eph_pub.clone());
+        eph_keys.insert(my_frost_id, my_eph_pub);
 
         Ok(DkgHandshakeManager {
             secp,
@@ -165,7 +167,7 @@ impl DkgHandshakeManager {
         package: &round1::Package,
     ) -> Result<(secp256k1::PublicKey, secp256k1::ecdsa::Signature), Error> {
         let mut commit = vec![0; 32];
-        let my_eph_pub = self.my_eph_pub.clone();
+        let my_eph_pub = self.my_eph_pub;
 
         // Compute the challenge bytes to be signed; notably, we commit the
         // ephemeral key and the round1 package.
@@ -273,7 +275,7 @@ impl DkgHandshakeManager {
                 continue;
             }
 
-            let fed_eph = self.eph_keys.get(&fed_id).expect("ephemeral key must exist");
+            let fed_eph = self.eph_keys.get(fed_id).expect("ephemeral key must exist");
 
             // Compute the shared secrets; the participant with the lower Frost
             // ID generates the following order:
@@ -288,11 +290,11 @@ impl DkgHandshakeManager {
 
             debug_assert_ne!(&self.my_frost_id, fed_id);
             if &self.my_frost_id < fed_id {
-                ss1 = secp256k1::ecdh::SharedSecret::new(&fed_eph, &self.my_static_sec);
-                ss2 = secp256k1::ecdh::SharedSecret::new(&fed_static, &self.my_eph_sec);
+                ss1 = secp256k1::ecdh::SharedSecret::new(fed_eph, &self.my_static_sec);
+                ss2 = secp256k1::ecdh::SharedSecret::new(fed_static, &self.my_eph_sec);
             } else {
-                ss1 = secp256k1::ecdh::SharedSecret::new(&fed_static, &self.my_eph_sec);
-                ss2 = secp256k1::ecdh::SharedSecret::new(&fed_eph, &self.my_static_sec);
+                ss1 = secp256k1::ecdh::SharedSecret::new(fed_static, &self.my_eph_sec);
+                ss2 = secp256k1::ecdh::SharedSecret::new(fed_eph, &self.my_static_sec);
             }
 
             let mut key1 = Zeroizing::new([0; 32]);
@@ -418,7 +420,7 @@ impl SecureChannelManager {
         let entry = self.symmetric_keys.get(&initiator.0).ok_or(Error::NotAFedMember)?;
 
         let receiving_key = entry.receiving.as_slice();
-        let cipher = ChaCha20Poly1305::new_from_slice(receiving_key.as_ref()).expect("valid size");
+        let cipher = ChaCha20Poly1305::new_from_slice(receiving_key).expect("valid size");
         let ser_nonce = integer_to_serialized_nonce(nonce);
 
         // Decrypt the package using the symmetric key.

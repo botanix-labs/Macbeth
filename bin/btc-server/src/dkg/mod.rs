@@ -85,7 +85,7 @@ mod sealed_pkg {
             auth: &mut KeyVerificationManager,
         ) -> Result<secp256k1::ecdsa::Signature, encryption::Error> {
             // TODO: This should take a reference
-            auth.validate_round3(initiator, self.0.clone())?;
+            auth.validate_round3(initiator, self.0)?;
             Ok(self.0)
         }
     }
@@ -111,6 +111,7 @@ pub struct DkgPayload {
 ///
 /// Each variant corresponds to a specific stage of the DKG protocol, either
 /// sending cryptographic packages or acknowledging receipt of packages.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DkgMessage {
     /// A round1 message containing the sender's FROST round1 package.
@@ -278,24 +279,18 @@ enum StageState {
 
 impl StageState {
     fn did_round_one_finalize(&self) -> bool {
-        match self {
+        matches!(
+            self,
             StageState::RoundTwoActive { .. } |
-            StageState::RoundThreeActive { .. } |
-            StageState::Finalized { .. } => true,
-            _ => false,
-        }
+                StageState::RoundThreeActive { .. } |
+                StageState::Finalized { .. }
+        )
     }
     fn did_round_two_finalize(&self) -> bool {
-        match self {
-            StageState::RoundThreeActive { .. } | StageState::Finalized { .. } => true,
-            _ => false,
-        }
+        matches!(self, StageState::RoundThreeActive { .. } | StageState::Finalized { .. })
     }
     fn did_round_three_finalize(&self) -> bool {
-        match self {
-            StageState::Finalized { .. } => true,
-            _ => false,
-        }
+        matches!(self, StageState::Finalized { .. })
     }
 }
 
@@ -423,7 +418,7 @@ impl DkgStateMachine {
         )?;
 
         // Retain only the Frost Ids going forward.
-        let members = members.into_iter().map(|(id, _)| id).collect::<Vec<_>>();
+        let members = members.into_keys().collect::<Vec<_>>();
 
         // Generate the secret package and our round1 package
         let (secret_package, our_round1_package) = frost::keys::dkg::part1(
@@ -1137,7 +1132,7 @@ impl DkgStateMachine {
 
         let their_signature = sealed_signature.clone().extract(initiator, auth)?;
 
-        in_round3_packages.insert(initiator, their_signature.clone());
+        in_round3_packages.insert(initiator, their_signature);
         self.queue.send_round3_ack(initiator, sender);
 
         if *pending {

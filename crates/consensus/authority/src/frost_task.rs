@@ -675,6 +675,7 @@ where
     ToFrostMan: 'static + Send + Sync + ToFrostManager,
     BtcServerClient: BtcServerExtendedApi,
 {
+    #[allow(clippy::new_ret_no_self)]
     fn new(
         frost_handle: ToFrostMan,
         storage: Storage<EF, BF, DB>,

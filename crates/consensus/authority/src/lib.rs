@@ -27,6 +27,8 @@ use reth_consensus_common::{
         validate_header_extradata, validate_header_gas,
     },
 };
+use reth_network_peers as _;
+use serde_json as _;
 
 use metrics_util as _;
 use reth_ethereum_consensus::validate_block_post_execution;
