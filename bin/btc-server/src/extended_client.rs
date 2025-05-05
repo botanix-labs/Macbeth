@@ -1,8 +1,8 @@
 //! Extended bitcoin server client with authentication
 use alloy_rpc_types_engine::{Claims, JwtSecret};
 use client::{
-    BtcServerClient, ConsensusCheckpointRequest, DkgPayload, Empty, FinalizeSignerRequest,
-    FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
+    BtcServerClient, ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty,
+    FinalizeSignerRequest, FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
     GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
     GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
     GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
@@ -59,26 +59,14 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         &mut self,
         request: Empty,
     ) -> BoxFuture<'_, Result<GetPublicKeyResponse, GrpcClientError>>;
-    fn get_round1_dkg_package(
+    fn get_dkg_payloads(
         &mut self,
         request: Empty,
-    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
-    fn get_round1_dkg_packages(
-        &mut self,
-        request: Empty,
-    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
-    fn new_round1_dkg_package(
+    ) -> BoxFuture<'_, Result<DkgPayloads, GrpcClientError>>;
+    fn new_dkg_payload(
         &mut self,
         request: DkgPayload,
-    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
-    fn get_round2_dkg_package(
-        &mut self,
-        request: Empty,
-    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
-    fn new_round2_dkg_package(
-        &mut self,
-        request: DkgPayload,
-    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    ) -> BoxFuture<'_, Result<DkgPayloads, GrpcClientError>>;
     fn get_round1_signing_package(
         &mut self,
         request: SigningPackageRequest,
@@ -263,11 +251,8 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
 
     generate_method!(get_gateway_address, GetGatewayAddressRequest, GetGatewayAddressResponse);
     generate_method!(get_public_key, Empty, GetPublicKeyResponse);
-    generate_method!(get_round1_dkg_package, Empty, DkgPayload);
-    generate_method!(get_round1_dkg_packages, Empty, DkgPayload);
-    generate_method!(new_round1_dkg_package, DkgPayload, Empty);
-    generate_method!(get_round2_dkg_package, Empty, DkgPayload);
-    generate_method!(new_round2_dkg_package, DkgPayload, Empty);
+    generate_method!(get_dkg_payloads, Empty, DkgPayloads);
+    generate_method!(new_dkg_payload, DkgPayload, DkgPayloads);
     generate_method!(get_round1_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(get_round2_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(new_round1_signing_package, SigningPackage, Empty);

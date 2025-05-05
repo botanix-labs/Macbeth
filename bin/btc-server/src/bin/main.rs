@@ -2,16 +2,20 @@
 extern crate log;
 
 use std::{
+    collections::BTreeMap,
     fmt::Debug,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
+    str::FromStr,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
-use bitcoin::{consensus::Decodable, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut};
+use bitcoin::{
+    consensus::Decodable, secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
+};
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
@@ -19,7 +23,9 @@ use btcserverlib::{
     badarg,
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self, error::CoordinatorError},
-    database,
+    database, dkg,
+    federation_args::FederationTomlConfig,
+    frost_id,
     http::{create_web_server, state::ServerState},
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
@@ -47,7 +53,6 @@ use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
-use rand::thread_rng;
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
@@ -76,14 +81,6 @@ macro_rules! unauthenticated {
 }
 
 #[derive(Debug, Error)]
-pub enum DKGError {
-    #[error("Missing 1 dkg payload")]
-    MissingRound1DkgPayload,
-    #[error("Failed to get round 2 dkg payload")]
-    FailedToGetRound2DkgPayload,
-}
-
-#[derive(Debug, Error)]
 pub enum Error {
     #[error("Signing error")]
     Signing(#[from] SigningError),
@@ -107,8 +104,10 @@ pub enum Error {
     FailedToReachCheckPoint(BlockHash),
     #[error("config error: {0}")]
     Config(#[from] ConfigError),
-    #[error("dkg error: {0}")]
-    Dkg(#[from] DKGError),
+    #[error("DKG state machine error: {0}")]
+    DkgStateMachine(#[from] dkg::Error),
+    #[error("Dkg deserialization error: {0}")]
+    DkgDeserialization(#[from] ciborium::de::Error<std::io::Error>),
 }
 
 // To status util to convert Results with top level errors to tonic::Status
@@ -139,7 +138,10 @@ impl<T, S: Into<Error> + Debug> ToStatus<T> for Result<T, S> {
                 Error::FailedToReachCheckPoint(failed_to_reach_check_point) => {
                     Err(internal!("Failed to reach check point: {}", failed_to_reach_check_point))
                 }
-                Error::Dkg(dkg) => Err(internal!("Dkg error: {}", dkg)),
+                Error::DkgStateMachine(dkg) => Err(internal!("Dkg state machine error: {}", dkg)),
+                Error::DkgDeserialization(de) => {
+                    Err(internal!("Dkg deserialization error: {}", de))
+                }
             },
         }
     }
@@ -162,6 +164,7 @@ impl<T> ToStatus<T> for Result<T, bitcoin::psbt::Error> {
         }
     }
 }
+
 impl<T> ToStatus<T> for Result<T, bitcoin::psbt::ExtractTxError> {
     fn to_status(self) -> Result<T, tonic::Status> {
         match self {
@@ -170,6 +173,7 @@ impl<T> ToStatus<T> for Result<T, bitcoin::psbt::ExtractTxError> {
         }
     }
 }
+
 impl<T> ToStatus<T> for Result<T, hex::FromHexError> {
     fn to_status(self) -> Result<T, tonic::Status> {
         match self {
@@ -178,6 +182,7 @@ impl<T> ToStatus<T> for Result<T, hex::FromHexError> {
         }
     }
 }
+
 type SigningNoncesCommitmentsMap =
     Arc<Mutex<Option<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>>>>;
 
@@ -189,12 +194,10 @@ struct App<BitcoinRpcApi> {
     /// spend the same operations twice.
     tx_lock: Arc<Mutex<()>>,
     identifier: frost::Identifier,
+    #[cfg(test)]
     max_signers: u16,
     min_signers: u16,
-    frost_round1_dkg: Arc<
-        Mutex<Option<(frost::keys::dkg::round1::SecretPackage, frost::keys::dkg::round1::Package)>>,
-    >,
-    frost_round2_dkg: Arc<Mutex<Option<frost::keys::dkg::round2::SecretPackage>>>,
+    dkg: Mutex<Option<dkg::DkgStateMachine>>,
     /// The signing nonces for the current signing session
     /// We will replace this value in the case of a new signing session
     frost_round1_nonces: SigningNoncesCommitmentsMap,
@@ -289,12 +292,37 @@ where
         let config = config.clone();
         let db = database::Db::open(&config.db).expect("failed to open db");
 
-        // +1 b/c we use the index of the federation member's pk as the identifier
-        // And 0 is not a valid identifier
+        // Prepare our Frost Id.
         let frost_identifier =
             frost::Identifier::derive(config.identifier.to_le_bytes().as_slice())
                 .expect("valid identifier");
-        info!("Frost identifier: {:?} - {:?}", config.identifier, frost_identifier);
+
+        info!("Local Frost identifier: {:?} - {:?}", config.identifier, frost_identifier);
+
+        // Prepare coordinator Frost Id.
+        let coordinator = if let Some(id) = config.coordinator {
+            let i = frost_id!(id);
+            info!("Specified Frost coordinator: {:?} - {:?}", id, i);
+            i
+        } else {
+            let i = frost_id!(0);
+            info!("Default Frost coordinator: {:?} - {:?}", 0, i);
+            i
+        };
+
+        // Prepare the federation config.
+        // TODO: Handle error
+        let raw = std::fs::read_to_string(&config.federation_config_path)?;
+        let federation = FederationTomlConfig::from_str(&raw)
+            .map_err(|_| dkg::Error::BadConfig("invalid federation Toml config".to_string()))?;
+
+        // Prepare our secret key.
+        let raw = std::fs::read_to_string(&config.p2p_secret_key)?;
+        let sanitzed_key = raw.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>();
+        let secret_key = sanitzed_key
+            .as_str()
+            .parse::<secp256k1::SecretKey>()
+            .map_err(|_| dkg::Error::BadConfig("invalid p2p secret key".to_string()))?;
 
         let min_signers = config.min_signers;
         let max_signers = config.max_signers;
@@ -312,16 +340,6 @@ where
                     .map_err(Error::Jwt)?,
             )
         };
-
-        let mut round1_dkg = None;
-        if db.get_public_key_package().expect("failed to get public key package").is_none() {
-            let rng = thread_rng();
-            round1_dkg = Some(
-                frost::keys::dkg::part1(frost_identifier, max_signers, min_signers, rng)
-                    .map_err(Error::Frost)?,
-            );
-            info!("Successfully generated round 1 dkg: {:?}", round1_dkg);
-        }
 
         let fall_back_fee_rate =
             bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
@@ -341,18 +359,61 @@ where
             fallback_checkpoint,
             pegin_confirmation_depth,
         )?);
+
+        // NOTE (lamafab): in this implementation, the DKG state machine starts
+        // automatically on startup if and only if no existing aggregated public
+        // key is found in the db. In the future, when we're dealing with
+        // dynamic Fed members, multiple multisigs and rotations, we'll need a
+        // mechanism to start/stop the DKG process arbitrarily.
+        let dkg = if db.get_key_package().expect("failed to interact with db").is_none() {
+            warn!("No key package found, starting DKG process...");
+
+            let dkg_config = dkg::Config {
+                max_signers,
+                min_signers,
+                // NOTE: We set a very conservative timeout for the DKG process
+                // to resend messages. For direct connections this could be set
+                // to a lower millisecond range, technically.
+                round1_package_timeout: Duration::from_secs(3),
+                round2_package_timeout: Duration::from_secs(3),
+                round3_package_timeout: Duration::from_secs(3),
+            };
+
+            let mut members = BTreeMap::new();
+            for (pos, fed_pubkey) in federation.federation_member_public_key.iter().enumerate() {
+                let id = frost_id!(pos as u16);
+                let pubkey = secp256k1::PublicKey::from_str(&fed_pubkey.key).map_err(|_| {
+                    dkg::Error::BadConfig("invalid federation member public key".to_string())
+                })?;
+
+                members.insert(id, pubkey);
+            }
+
+            let dkg = dkg::DkgStateMachine::new(
+                frost_identifier,
+                secret_key,
+                coordinator,
+                members,
+                dkg_config,
+            )?;
+
+            Mutex::new(Some(dkg))
+        } else {
+            Mutex::new(None)
+        };
+
         Ok(Self {
             btc_network: config.btc_network,
             db,
             pegout_scheduler: pegout_manager,
             tx_lock: Arc::new(Mutex::new(())),
             identifier: frost_identifier,
-            frost_round1_dkg: Arc::new(Mutex::new(round1_dkg)),
-            frost_round2_dkg: Arc::new(Mutex::new(None)),
+            dkg,
             frost_round1_nonces: Arc::new(Mutex::new(None)),
             config,
             btc_signing_server_jwt_secret,
             min_signers,
+            #[cfg(test)]
             max_signers,
             bitcoind_client,
             fall_back_fee_rate,
@@ -1267,210 +1328,125 @@ where
         }));
     }
 
-    /* DKG Endpoints */
-    /// Adds round 1 pkg received from another peer to our own state
-    async fn new_round1_dkg_package(
-        &self,
-        req: tonic::Request<rpc::DkgPayload>,
-    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.validate_jwt(&req)?;
-        // If there is already a key package, we don't need to add round 1 dkg
-        if self.db.get_key_package().to_status()?.is_some() {
-            return Err(already_exists!("already have key package"));
-        }
-
-        let req = req.into_inner();
-        let frost_id = deserialize_frost_peer_id(req.identifier.clone()).to_status()?;
-        let dkg_round1 =
-            frost::keys::dkg::round1::Package::deserialize(req.payload.as_slice()).to_status()?;
-
-        if frost_id == self.identifier {
-            return Err(badarg!("Cannot add own round1 dkg package"));
-        }
-
-        if self
-            .frost_round1_dkg
-            .lock()
-            .await
-            .as_ref()
-            .ok_or(DKGError::MissingRound1DkgPayload)
-            .to_status()?
-            .1 ==
-            dkg_round1
-        {
-            return Err(badarg!("Cannot add own round1 dkg package"));
-        }
-        // Should not add if we have max signers
-        if self.db.get_round1_dkg_packages().to_status()?.len() as u16 == self.max_signers - 1 {
-            return Err(badarg!("dkg max signers reached"));
-        }
-
-        self.db.add_round1_dkg(frost_id, dkg_round1).to_status()?;
-        self.db.flush().to_status()?;
-
-        Ok(tonic::Response::new(rpc::Empty {}))
-    }
-
-    /// Gets round 1 pkg we have generated (to be sent to another peer) - default when we start the
-    /// btc server
-    async fn get_round1_dkg_package(
+    async fn get_dkg_payloads(
         &self,
         req: tonic::Request<rpc::Empty>,
-    ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
+    ) -> Result<tonic::Response<rpc::DkgPayloads>, tonic::Status> {
         self.validate_jwt(&req)?;
-        // If there is already a key package, we don't need to add round 1 dkg
+
         if self.db.get_key_package().to_status()?.is_some() {
             return Err(already_exists!("already have key package"));
         }
 
-        let round1_dkg = self
-            .frost_round1_dkg
-            .lock()
-            .await
-            .clone()
-            .ok_or(badarg!("Missing round1 dkg package"))?
-            .1;
-
-        let res = rpc::DkgPayload {
-            identifier: self.identifier.serialize().to_vec(),
-            payload: round1_dkg
-                .serialize()
-                .map_err(|e| internal!("Failed to serialize round1 dkg package: {}", e))?
-                .to_vec(),
+        let mut l = self.dkg.lock().await;
+        let Some(dkg) = l.as_mut() else {
+            return Err(tonic::Status::internal("dkg not initialized"));
         };
 
-        Ok(tonic::Response::new(res))
-    }
+        // Generate responses on potential timeout events; if no timers expired,
+        // then this is simply a no-op call.
+        dkg.on_timeout(Instant::now());
 
-    /// Gets round 1 pkgs we have collected so far - includes our own package
-    async fn get_round1_dkg_packages(
-        &self,
-        req: tonic::Request<rpc::Empty>,
-    ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
-        self.validate_jwt(&req)?;
-        if self.db.get_public_key_package().to_status()?.is_some() {
-            warn!("receivednotification about round 2 DKG while having key package");
-            return Err(already_exists!("already have key package"));
+        // Process response (or initial) payloads.
+        let mut payloads = vec![];
+        while let Some(p) = dkg.send(Instant::now()) {
+            // Encode the payload.
+            let mut bytes = vec![];
+            ciborium::into_writer(&p.msg, &mut bytes).expect("failed to encode Dkg payload");
+
+            payloads.push(rpc::DkgPayload {
+                sender: p.sender.serialize(),
+                recipient: p.recipient.serialize(),
+                payload: bytes.clone(),
+            });
         }
 
-        let round1_packages = self.db.get_round1_dkg_packages().to_status()?;
+        debug_assert!(dkg.aggregate_key_packages().is_none());
 
-        let json = serde_json::to_string(&round1_packages)
-            .map_err(|e| internal!("Failed to serialize round1 dkg packages: {}", e))?;
-        let res = rpc::DkgPayload {
-            identifier: self.identifier.serialize().to_vec(),
-            payload: json.as_bytes().to_vec(),
+        // Set any timers, and retrieve next timeout event.
+        let timeout = dkg.timeout(Instant::now());
+
+        let resp = rpc::DkgPayloads {
+            // TODO (lamafab): Option?
+            timeout: timeout.map(|t| t.as_millis() as u64).unwrap_or(u64::MAX),
+            payloads,
         };
-        Ok(tonic::Response::new(res))
+
+        Ok(tonic::Response::new(resp))
     }
 
-    /// Generates a hashmap of round2 packages for sending to all other peers (needs round 1
-    /// packages)
-    async fn get_round2_dkg_package(
-        &self,
-        req: tonic::Request<rpc::Empty>,
-    ) -> Result<tonic::Response<rpc::DkgPayload>, tonic::Status> {
-        self.validate_jwt(&req)?;
-        // If there is already a key package, we don't need to add round 2 dkg
-        if self.db.get_key_package().to_status()?.is_some() {
-            return Err(already_exists!("already have key package"));
-        }
-
-        match self.frost_round1_dkg.lock().await.clone() {
-            Some(round1_dkg) => {
-                // Retrieve round 1 packages from peers
-                let round1_packages = self.db.get_round1_dkg_packages().to_status()?;
-
-                // We only continue with part 2 if and only if ALL participants have
-                // submitted their round 1 packages
-                if (round1_packages.len() as u16) < self.max_signers - 1 {
-                    return Err(badarg!(
-                        "not all participants have submitted their round 1 packages yet"
-                    ));
-                }
-
-                let (round2_secret_package, round2_packages) =
-                    frost::keys::dkg::part2(round1_dkg.0.clone(), &round1_packages).to_status()?;
-                self.frost_round2_dkg.lock().await.replace(round2_secret_package.clone());
-
-                // Each package is unique for a peer.
-                // Upstream caller must ensure that the package is sent to that specific peer
-                // let round2_packages = self.db.get_round2_dkg_packages().to_status()?;
-                let json = serde_json::to_string(&round2_packages)
-                    .map_err(|e| internal!("Failed to serialize round2 dkg packages: {}", e))?;
-                let res = rpc::DkgPayload {
-                    identifier: self.identifier.serialize().to_vec(),
-                    payload: json.as_bytes().to_vec(),
-                };
-                Ok(tonic::Response::new(res))
-            }
-            None => {
-                return Err(badarg!("not enough round1 packages"));
-            }
-        }
-
-        // Each package is unique for a peer.
-    }
-
-    async fn new_round2_dkg_package(
+    async fn new_dkg_payload(
         &self,
         req: tonic::Request<rpc::DkgPayload>,
-    ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+    ) -> Result<tonic::Response<rpc::DkgPayloads>, tonic::Status> {
         self.validate_jwt(&req)?;
-        // If there is already a key package, we don't need to add round 2 dkg
-        if self.db.get_key_package().to_status()?.is_some() {
-            return Err(already_exists!("already have key package"));
-        }
+
+        // NOTE: we do not make an existing aggregated key check at the start
+        // here, since we still want to respond to the coordinator in case they
+        // have not received our acknowledgment yet.
 
         let req = req.into_inner();
-        let frost_id = deserialize_frost_peer_id(req.identifier).to_status()?;
-        let package: frost::keys::dkg::round2::Package =
-            serde_json::from_slice(req.payload.as_slice())
-                .map_err(|e| internal!("Failed to deserialize round2 dkg package: {}", e))?;
+        let sender = deserialize_frost_peer_id(req.sender.clone()).to_status()?;
+        let recipient = deserialize_frost_peer_id(req.recipient.clone()).to_status()?;
 
-        if frost_id == self.identifier {
-            return Err(badarg!("cannot add own dkg package"));
+        // Decode the payload.
+        let msg =
+            ciborium::from_reader::<dkg::DkgMessage, _>(req.payload.as_slice()).to_status()?;
+
+        let payload = dkg::DkgPayload { sender, recipient, msg };
+
+        // Acquire the lock on the dkg machine.
+        let mut l = self.dkg.lock().await;
+        let Some(dkg) = l.as_mut() else {
+            return Err(tonic::Status::internal("dkg not initialized"));
+        };
+
+        // Process the payload.
+        dkg.recv(payload).to_status()?;
+
+        // Process response (or initial) payloads.
+        let mut payloads = vec![];
+        while let Some(p) = dkg.send(Instant::now()) {
+            // Encode the payload.
+            let mut bytes = vec![];
+            ciborium::into_writer(&p.msg, &mut bytes).expect("failed to encode Dkg payload");
+
+            payloads.push(rpc::DkgPayload {
+                sender: p.sender.serialize(),
+                recipient: p.recipient.serialize(),
+                payload: bytes.clone(),
+            });
         }
 
-        self.db.add_round2_dkg(frost_id, package).to_status()?;
+        if let Some((sec_key, pub_key)) = dkg.aggregate_key_packages() {
+            if self.db.get_key_package().to_status()?.is_none() {
+                info!("DKG completed successfully, saving key packages...");
 
-        // If we have a max_signers round2 packages we can generate and save the key package
-        let mut dkg_done = false;
-        let round2_packages = self.db.get_round2_dkg_packages().to_status()?;
-        if round2_packages.len() as u16 == self.max_signers - 1 {
-            let round1_packages = self.db.get_round1_dkg_packages().to_status()?;
-            if let Some(round2_secret) = self.frost_round2_dkg.lock().await.clone() {
-                let pk_res =
-                    frost::keys::dkg::part3(&round2_secret, &round1_packages, &round2_packages)
-                        .to_status()?;
-
-                self.db.set_key_package(pk_res.0.clone()).to_status()?;
-                self.db.set_pubkey_package(pk_res.1.clone()).to_status()?;
+                self.db.set_key_package(sec_key.clone()).to_status()?;
+                self.db.set_pubkey_package(pub_key.clone()).to_status()?;
                 self.db.flush().to_status()?;
 
-                dkg_done = true;
-            } else {
-                return Err(badarg!("invalid round2 dkg payload missing package"));
+                // Note that we keep the dkg machine running, in case the
+                // coordinator does not receive the final acknowledgment and we need
+                // to issue a response.
+                //
+                // TODO (lamafab): we could technically shut it down once we receive
+                // the first signing request, since that indicates that the Dkg
+                // process has completed successfully. But there are no downsides of
+                // keeping it running as of now.
             }
         }
 
-        // Signing at this point is successful
-        // Clear out round 2 secret
-        if dkg_done {
-            self.frost_round2_dkg.lock().await.take();
-            self.frost_round1_dkg.lock().await.take();
-        }
+        // Set any timers, and retrieve next timeout event.
+        let timeout = dkg.timeout(Instant::now());
 
-        // if let Some(telemetry) = self.telemetry.as_ref() {
-        //     telemetry.update_round2_dkg_metrics(
-        //         self.btc_network,
-        //         self.config.identifier,
-        //         data_written,
-        //         start.elapsed().as_millis(),
-        //     )
-        // }
+        let resp = rpc::DkgPayloads {
+            // TODO (lamafab): Option?
+            timeout: timeout.map(|t| t.as_millis() as u64).unwrap_or(u64::MAX),
+            payloads,
+        };
 
-        Ok(tonic::Response::new(rpc::Empty {}))
+        Ok(tonic::Response::new(resp))
     }
 
     // Currently not used
@@ -1588,10 +1564,11 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, str::FromStr};
-
-    use bitcoin::{OutPoint, Script, Txid};
-    use rand::Rng;
+    use bitcoin::{secp256k1, OutPoint, Script, Txid};
+    use btcserverlib::dkg::DkgMessage;
+    use frost_secp256k1_tr::keys::dkg::round1;
+    use rand::{thread_rng, Rng};
+    use std::{str::FromStr, vec};
     use tempfile::TempDir;
     use url::Url;
 
@@ -1605,12 +1582,45 @@ mod tests {
     };
 
     async fn setup() -> App<MockBitcoind> {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_db = TempDir::new().unwrap();
+
+        // WARNING: This is a test federation config with exposed private keys,
+        // DO NOT use in production!
+        let federation_content = r#"botanix-fee-recipient = ""
+        minting-contract-bytecode = ""
+        lst-fee-receiver = ""
+
+        [[federation-member-public-key]]
+        key = "03185b1f0226d6d5949b902f083dd6e5b04ecdccdedd4cf48080de60b0bfe3b606"
+        # Private key: 46de0f5cdbf2619ba8155964f951661ef89126aaddfcbbab56b7422e37572ff8
+        socket-addr = "127.0.0.1:30303"
+
+        [[federation-member-public-key]]
+        key = "038df7fcb0e1cdd68741ca85184e046a42c914e0c3ffcb2464d46be3d8b4a5b140"
+        # Private key: 27eeb2264674f15f2bac84d84b5e8f0c40722f8327fe7354bf14c84e248f8838
+        socket-addr = "127.0.0.1:30304"
+
+        [[federation-member-public-key]]
+        key = "02a7a1a9c37cd072f9752ef6b154876fe51f1ad2f7a6a627ef26e5075631af9f29"
+        socket-addr = "127.0.0.1:30305"
+        "#;
+
+        let mut temp_federation = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_federation, federation_content.as_bytes()).unwrap();
+
+        let secret_key_content = "46de0f5cdbf2619ba8155964f951661ef89126aaddfcbbab56b7422e37572ff8";
+        let mut temp_secret_key = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_all(&mut temp_secret_key, secret_key_content.as_bytes()).unwrap();
+
         let bitcoind_client = MockBitcoind::new();
+
         let config = Config {
-            db: temp_dir.into_path(),
+            db: temp_db.into_path(),
             btc_network: bitcoin::Network::Regtest,
             identifier: 0,
+            coordinator: Some(0),
+            federation_config_path: temp_federation.path().to_owned(),
+            p2p_secret_key: temp_secret_key.path().to_owned(),
             address: "0.0.0.0:8080".to_string(),
             max_signers: 3,
             min_signers: 2,
@@ -1626,6 +1636,10 @@ mod tests {
 
         let app = App::new(config, bitcoind_client, None).expect("btc server");
 
+        // Keep the temp files alive for the duration of the test
+        std::mem::forget(temp_federation);
+        std::mem::forget(temp_secret_key);
+
         app
     }
 
@@ -1639,293 +1653,174 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn round1_dkg_should_work_if_missing_key_package() {
+    async fn dkg_should_work_if_missing_key_package() {
         let app = setup().await;
         let req = tonic::Request::new(rpc::Empty {});
-        let round1_dkg = app.get_round1_dkg_package(req).await.unwrap();
-        let inner = round1_dkg.into_inner();
-        let frost_id = deserialize_frost_peer_id(inner.identifier).unwrap();
-        assert_eq!(frost_id, frost_id!(0));
-        let payload = inner.payload;
-        let _round1_dkg_pkg = frost::keys::dkg::round1::Package::deserialize(&payload).unwrap();
+        let payloads = app.get_dkg_payloads(req).await.unwrap();
+        let inner = payloads.into_inner();
+
+        for payload in inner.payloads {
+            let frost_id = deserialize_frost_peer_id(payload.sender).unwrap();
+            assert_eq!(frost_id, frost_id!(0));
+            let payload = payload.payload;
+            let msg: DkgMessage = ciborium::from_reader(payload.as_slice()).unwrap();
+            match msg {
+                DkgMessage::Round1 { .. } => {}
+                _ => panic!("Expected Round1 message"),
+            }
+        }
         // Not much to assert on here, just that we can deserialize the package
     }
 
     #[tokio::test]
-    async fn round1_dkg_should_fail_if_key_package_already_exists() {
+    async fn dkg_should_should_retry_when_no_response() {
         let app = setup().await;
-        let (secret_shares, pk_pkg) = trusted_dealer_setup(2, 3);
-        let secret_share = secret_shares.values().collect::<Vec<_>>()[0];
-        // derive key package for some participant
-        let key_package =
-            frost::keys::KeyPackage::try_from(secret_share.clone()).expect("valid key package");
 
-        app.db.set_pubkey_package(pk_pkg.clone()).unwrap();
-        app.db.set_key_package(key_package.clone()).unwrap();
-
+        // Two payloads to be sent.
         let req = tonic::Request::new(rpc::Empty {});
-        let res = app.get_round1_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::AlreadyExists);
-        assert_eq!(res.message(), "already have key package");
+        let payloads = app.get_dkg_payloads(req).await.unwrap();
+        let inner = payloads.into_inner();
+        assert_eq!(inner.payloads.len(), 2);
+
+        // No payloads to be sent right now.
+        let req = tonic::Request::new(rpc::Empty {});
+        let payloads = app.get_dkg_payloads(req).await.unwrap();
+        let inner = payloads.into_inner();
+        assert!(inner.payloads.is_empty());
+
+        // Wait until `get_dkg_payloads` should be called again.
+        assert!(inner.timeout > 0);
+        let timeout = Duration::from_millis(inner.timeout);
+        tokio::time::sleep(timeout).await;
+
+        // Two payloads to be (re-)sent.
+        let req = tonic::Request::new(rpc::Empty {});
+        let payloads = app.get_dkg_payloads(req).await.unwrap();
+        let inner = payloads.into_inner();
+        assert_eq!(inner.payloads.len(), 2);
     }
 
+    /// Test the basic DKG interface. More comprehensive tests are covered
+    /// separately.
     #[tokio::test]
-    async fn round1_dkg_should_get_round1_dkg() {
-        let rng = thread_rng();
-        let mut app = setup().await;
-        // Save round 1 secret package
-        app.frost_round1_dkg = Arc::new(Mutex::new(Some(
-            frost::keys::dkg::part1(app.identifier, app.max_signers, app.min_signers, rng.clone())
-                .unwrap(),
-        )));
+    async fn basic_dkg_interface() {
+        const SAMPLE_ROUND_PKG: &[u8] = &[
+            0, 35, 15, 138, 179, 2, 2, 120, 88, 85, 71, 235, 157, 87, 39, 38, 125, 191, 226, 130,
+            130, 109, 33, 101, 203, 186, 92, 8, 192, 49, 14, 162, 200, 99, 210, 81, 193, 116, 35,
+            3, 3, 106, 54, 33, 158, 157, 204, 101, 31, 134, 240, 213, 83, 120, 7, 193, 132, 135, 1,
+            209, 27, 29, 108, 85, 16, 2, 41, 11, 129, 48, 199, 108, 64, 82, 233, 151, 145, 38, 39,
+            23, 230, 84, 196, 216, 128, 145, 22, 182, 69, 191, 243, 11, 111, 220, 94, 34, 101, 66,
+            1, 34, 206, 187, 151, 84, 248, 127, 11, 173, 110, 104, 72, 32, 73, 170, 148, 211, 170,
+            108, 244, 232, 37, 117, 104, 172, 111, 16, 249, 70, 33, 22, 18, 156, 178, 255, 134, 99,
+            134,
+        ];
 
-        // can get round 1 dkg
-        let req = tonic::Request::new(rpc::Empty {});
-        let round1_dkg = app.get_round1_dkg_package(req).await.unwrap();
-        let inner_1 = round1_dkg.into_inner();
+        const SAMPLE_EPH_PUB: &[u8] = &[
+            2, 198, 219, 42, 125, 89, 147, 102, 157, 74, 46, 224, 42, 39, 110, 178, 212, 193, 93,
+            218, 129, 115, 234, 83, 4, 112, 112, 91, 211, 159, 17, 242, 104,
+        ];
 
-        // if we repeat the call we should get the same result
-        let req = tonic::Request::new(rpc::Empty {});
-        let round1_dkg2 = app.get_round1_dkg_package(req).await.unwrap();
-        let inner_2 = round1_dkg2.into_inner();
-        assert_eq!(inner_1, inner_2);
+        // Sample signature generated with private key:
+        // 27eeb2264674f15f2bac84d84b5e8f0c40722f8327fe7354bf14c84e248f8838
+        //
+        // Corresponding public key:
+        // 038df7fcb0e1cdd68741ca85184e046a42c914e0c3ffcb2464d46be3d8b4a5b140
+        //
+        // Respectively, the second entry in the temporary federation config.
+        const SAMPLE_SIG: &[u8] = &[
+            97, 239, 21, 245, 44, 204, 59, 181, 45, 16, 126, 138, 167, 239, 21, 148, 68, 161, 34,
+            248, 114, 159, 47, 193, 213, 231, 26, 188, 130, 189, 194, 170, 81, 206, 79, 29, 88, 63,
+            16, 16, 216, 150, 235, 150, 162, 151, 101, 80, 158, 18, 54, 0, 96, 94, 93, 138, 216,
+            83, 148, 67, 125, 184, 148, 215,
+        ];
 
-        // However if we modify the round1_dkg we should get a different result
-        // we don't have to modify the whole package, the rng should create new coefficients
-        app.frost_round1_dkg = Arc::new(Mutex::new(Some(
-            frost::keys::dkg::part1(app.identifier, app.max_signers, app.min_signers, rng.clone())
-                .unwrap(),
-        )));
+        // Setup Alice (coordinator), Bob, and Eve.
+        let app = setup().await;
 
-        let req = tonic::Request::new(rpc::Empty {});
-        let round1_dkg3 = app.get_round1_dkg_package(req).await.unwrap();
-        let inner_3 = round1_dkg3.into_inner();
-        assert_ne!(inner_1, inner_3);
-    }
+        let round1_pkg = round1::Package::deserialize(SAMPLE_ROUND_PKG).unwrap();
+        let ephemeral_pub = secp256k1::PublicKey::from_slice(SAMPLE_EPH_PUB).unwrap();
+        let signature = secp256k1::ecdsa::Signature::from_compact(SAMPLE_SIG).unwrap();
 
-    #[tokio::test]
-    async fn should_add_round1_dkg() {
-        let mut app = setup().await;
-        let rng = thread_rng();
-        let mut round1_dkgs = vec![];
-        for index in 1..(app.max_signers + 1) {
-            round1_dkgs.push(
-                frost::keys::dkg::part1(
-                    frost_id!(index),
-                    app.max_signers,
-                    app.min_signers,
-                    rng.clone(),
-                )
-                .unwrap(),
-            );
+        // Alice generates two round1 packages, one for Bob and one for Eve.
+        {
+            let req = tonic::Request::new(rpc::Empty {});
+            let payloads = app.get_dkg_payloads(req).await.unwrap();
+            let inner = payloads.into_inner();
+            assert_eq!(inner.payloads.len(), 2);
+
+            let p1 = &inner.payloads[0];
+            let msg: DkgMessage = ciborium::from_reader(p1.payload.as_slice()).unwrap();
+            let DkgMessage::Round1 { .. } = msg else {
+                panic!("Expected Round1 message");
+            };
+
+            let p2 = &inner.payloads[1];
+            let msg: DkgMessage = ciborium::from_reader(p2.payload.as_slice()).unwrap();
+            let DkgMessage::Round1 { .. } = msg else {
+                panic!("Expected Round1 message");
+            };
+
+            assert_eq!(p1.sender, frost_id!(0).serialize());
+            assert_eq!(p1.recipient, frost_id!(2).serialize());
+            //
+            assert_eq!(p2.sender, frost_id!(0).serialize());
+            assert_eq!(p2.recipient, frost_id!(1).serialize());
+        };
+
+        // Bob sends his round1 package to Alice.
+        {
+            // We use a temporary structure that that not contain the _Sealed_
+            // newtype for `round1::Package`, as seen in `DkgMessage`.
+            #[derive(serde::Serialize, serde::Deserialize)]
+            enum Embedded {
+                Round1 {
+                    initiator: frost::Identifier,
+                    ephemeral_pub: secp256k1::PublicKey,
+                    signature: secp256k1::ecdsa::Signature,
+                    package: round1::Package,
+                },
+            }
+
+            let msg = Embedded::Round1 {
+                initiator: frost_id!(1).into(),
+                ephemeral_pub,
+                signature,
+                package: round1_pkg,
+            };
+
+            let mut payload = vec![];
+            ciborium::into_writer(&msg, &mut payload).unwrap();
+
+            let req = tonic::Request::new(rpc::DkgPayload {
+                sender: frost_id!(1).serialize().to_vec(),
+                recipient: frost_id!(0).serialize().to_vec(),
+                payload,
+            });
+
+            let resp = app.new_dkg_payload(req).await.unwrap();
+            let inner = resp.into_inner();
+
+            // Alice responds with Ack to Bob and forwards Bob's package to Eve.
+            assert_eq!(inner.payloads.len(), 2);
+
+            let p1 = &inner.payloads[0];
+            let msg: DkgMessage = ciborium::from_reader(p1.payload.as_slice()).unwrap();
+            let DkgMessage::AckRound1 { .. } = msg else {
+                panic!("Expected AckRound1 message");
+            };
+
+            let p2 = &inner.payloads[1];
+            let msg: DkgMessage = ciborium::from_reader(p2.payload.as_slice()).unwrap();
+            let DkgMessage::Round1 { .. } = msg else {
+                panic!("Expected Round1 message");
+            };
+
+            assert_eq!(p1.sender, frost_id!(0).serialize());
+            assert_eq!(p1.recipient, frost_id!(1).serialize());
+            //
+            assert_eq!(p2.sender, frost_id!(0).serialize());
+            assert_eq!(p2.recipient, frost_id!(2).serialize());
         }
-        app.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[0].clone())));
-
-        // Should not be able to add ourselves -- when identifier is the same
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: app.identifier.serialize().to_vec(),
-            payload: round1_dkgs[0].clone().1.serialize().unwrap().to_vec(),
-        });
-        let res = app.new_round1_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::InvalidArgument);
-        assert_eq!(res.message(), "Cannot add own round1 dkg package");
-
-        // Should not be able to add ourselves -- when package is the same but frost id is the same
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(2).serialize().to_vec(),
-            payload: round1_dkgs[0].clone().1.serialize().unwrap().to_vec(),
-        });
-        let res = app.new_round1_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::InvalidArgument);
-        assert_eq!(res.message(), "Cannot add own round1 dkg package");
-
-        // Add round 1 dkg from peer
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(2).serialize().to_vec(),
-            payload: round1_dkgs[1].clone().1.serialize().unwrap().to_vec(),
-        });
-        app.new_round1_dkg_package(req).await.unwrap();
-
-        // Check it updates the db
-        let req = tonic::Request::new(rpc::Empty {});
-        let pkgs = app.get_round1_dkg_packages(req).await.unwrap();
-        let inner = pkgs.into_inner();
-        let pkgs: HashMap<frost::Identifier, frost::keys::dkg::round1::Package> =
-            serde_json::from_slice(&inner.payload).unwrap();
-        assert!(pkgs.contains_key(&frost_id!(2)));
-        assert_eq!(pkgs.len(), 1);
-
-        // Adding the same round 1 dkg should not make a difference
-        let req = tonic::Request::new(rpc::Empty {});
-        let pkgs = app.get_round1_dkg_packages(req).await.unwrap();
-        let inner = pkgs.into_inner();
-        let pkgs: HashMap<frost::Identifier, frost::keys::dkg::round1::Package> =
-            serde_json::from_slice(&inner.payload).unwrap();
-        assert!(pkgs.contains_key(&frost_id!(2)));
-        assert_eq!(pkgs.len(), 1);
-
-        // Should be able to add different round 1 dkg
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(3).serialize().to_vec(),
-            payload: round1_dkgs[2].clone().1.serialize().unwrap().to_vec(),
-        });
-        app.new_round1_dkg_package(req).await.unwrap();
-
-        let req = tonic::Request::new(rpc::Empty {});
-        let pkgs = app.get_round1_dkg_packages(req).await.unwrap();
-        let inner = pkgs.into_inner();
-        let pkgs: HashMap<frost::Identifier, frost::keys::dkg::round1::Package> =
-            serde_json::from_slice(&inner.payload).unwrap();
-        assert!(pkgs.contains_key(&frost_id!(2)));
-        assert!(pkgs.contains_key(&frost_id!(3)));
-        assert_eq!(pkgs.len(), 2);
-
-        // Try to add one more participant
-        let extra =
-            frost::keys::dkg::part1(frost_id!(4), app.max_signers, app.min_signers, rng.clone())
-                .unwrap();
-
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(4).serialize().to_vec(),
-            payload: extra.1.serialize().unwrap().to_vec(),
-        });
-        let res = app.new_round1_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::InvalidArgument);
-        assert_eq!(res.message(), "dkg max signers reached");
-    }
-
-    #[tokio::test]
-    async fn should_not_get_round2_dkg_when_keys_exist() {
-        let app = setup().await;
-        let (secret_shares, pk_pkg) = trusted_dealer_setup(2, 3);
-        let secret_share = secret_shares.values().collect::<Vec<_>>()[0];
-        // derive key package for some participant
-        let key_package =
-            frost::keys::KeyPackage::try_from(secret_share.clone()).expect("valid key package");
-
-        app.db.set_pubkey_package(pk_pkg.clone()).unwrap();
-        app.db.set_key_package(key_package.clone()).unwrap();
-
-        let req = tonic::Request::new(rpc::Empty {});
-        let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::AlreadyExists);
-        assert_eq!(res.message(), "already have key package");
-    }
-
-    #[tokio::test]
-    async fn round2_dkg_fails_when_missing_round1_secret() {
-        let app = setup().await;
-        let req = tonic::Request::new(rpc::Empty {});
-        let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::InvalidArgument);
-        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
-    }
-
-    #[tokio::test]
-    async fn round2_dkg_get_packages() {
-        let mut app = setup().await;
-        let rng = thread_rng();
-        let mut round1_dkgs = vec![];
-        // reminder that frost identifiers start at 1
-        for index in 0..(app.max_signers) {
-            round1_dkgs.push(
-                frost::keys::dkg::part1(
-                    frost_id!(index),
-                    app.max_signers,
-                    app.min_signers,
-                    rng.clone(),
-                )
-                .unwrap(),
-            );
-        }
-        app.frost_round1_dkg = Arc::new(Mutex::new(Some(round1_dkgs[0].clone())));
-
-        let req = tonic::Request::new(rpc::Empty {});
-        let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::InvalidArgument);
-        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
-
-        // Lets add the round 1 dkg for the first participant
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(1).serialize().to_vec(),
-            payload: round1_dkgs[1].clone().1.serialize().unwrap().to_vec(),
-        });
-        app.new_round1_dkg_package(req).await.unwrap();
-
-        // Insufficient round 1 dkg packages, require `max_signers - 1`
-        let req = tonic::Request::new(rpc::Empty {});
-        let res = app.get_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::InvalidArgument);
-        assert_eq!(res.message(), "not all participants have submitted their round 1 packages yet");
-
-        // Lets add the round 1 dkg for the second participant
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(2).serialize().to_vec(),
-            payload: round1_dkgs[2].clone().1.serialize().unwrap().to_vec(),
-        });
-        app.new_round1_dkg_package(req).await.unwrap();
-
-        // Now we should be able to get the round 2 dkg
-        let req = tonic::Request::new(rpc::Empty {});
-        let res = app.get_round2_dkg_package(req).await.unwrap();
-        let inner = res.into_inner();
-        let pkgs: HashMap<frost::Identifier, frost::keys::dkg::round2::Package> =
-            serde_json::from_slice(&inner.payload).unwrap();
-        assert!(pkgs.contains_key(&frost_id!(1)));
-        assert!(pkgs.contains_key(&frost_id!(2)));
-        assert_eq!(pkgs.len(), 2);
-
-        // Ensure the round2 dkg secret package is stored
-        assert!(app.frost_round2_dkg.lock().await.is_some());
-    }
-
-    #[tokio::test]
-    async fn should_not_accept_round2_dkg_from_ourselves() {
-        let app = setup().await;
-        let rng = thread_rng();
-        let mut round1_dkgs = vec![];
-        // reminder that frost identifiers start at 1
-        for index in 0..(app.max_signers) {
-            round1_dkgs.push(
-                frost::keys::dkg::part1(
-                    frost_id!(index),
-                    app.max_signers,
-                    app.min_signers,
-                    rng.clone(),
-                )
-                .unwrap(),
-            );
-        }
-
-        // Add round 1 dkg for the first two participants
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(1).serialize().to_vec(),
-            payload: round1_dkgs[1].clone().1.serialize().unwrap().to_vec(),
-        });
-        app.new_round1_dkg_package(req).await.unwrap();
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(2).serialize().to_vec(),
-            payload: round1_dkgs[2].clone().1.serialize().unwrap().to_vec(),
-        });
-        app.new_round1_dkg_package(req).await.unwrap();
-
-        let req = tonic::Request::new(rpc::Empty {});
-        let round2_dkg = app.get_round2_dkg_package(req).await.unwrap();
-        let inner = round2_dkg.into_inner();
-        let pkgs: HashMap<frost::Identifier, frost::keys::dkg::round2::Package> =
-            serde_json::from_slice(&inner.payload).unwrap();
-        assert!(pkgs.contains_key(&frost_id!(1)));
-        assert!(pkgs.contains_key(&frost_id!(2)));
-        assert_eq!(pkgs.len(), 2);
-
-        // Try to add round 2 dkg from ourselves
-        let req = tonic::Request::new(rpc::DkgPayload {
-            identifier: frost_id!(0).serialize().to_vec(),
-            payload: serde_json::to_vec(&pkgs.get(&frost_id!(1))).unwrap(),
-        });
-        let res = app.new_round2_dkg_package(req).await.unwrap_err();
-        assert_eq!(res.code(), tonic::Code::InvalidArgument);
-        assert_eq!(res.message(), "cannot add own dkg package");
     }
 
     #[tokio::test]

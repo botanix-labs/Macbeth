@@ -188,10 +188,19 @@ pub struct GetTrackedTxsResponse {
 pub struct Empty {}
 /// Frost things
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DkgPayloads {
+    #[prost(uint64, tag = "1")]
+    pub timeout: u64,
+    #[prost(message, repeated, tag = "2")]
+    pub payloads: ::prost::alloc::vec::Vec<DkgPayload>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DkgPayload {
     #[prost(bytes = "vec", tag = "1")]
-    pub identifier: ::prost::alloc::vec::Vec<u8>,
+    pub sender: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
+    pub recipient: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -502,10 +511,10 @@ pub mod btc_server_client {
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetPublicKey"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_round1_dkg_package(
+        pub async fn get_dkg_payloads(
             &mut self,
             request: impl tonic::IntoRequest<super::Empty>,
-        ) -> std::result::Result<tonic::Response<super::DkgPayload>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::DkgPayloads>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -516,38 +525,17 @@ pub mod btc_server_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/GetRound1DkgPackage",
+                "/btc_server.BtcServer/GetDkgPayloads",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "GetRound1DkgPackage"));
+                .insert(GrpcMethod::new("btc_server.BtcServer", "GetDkgPayloads"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn get_round1_dkg_packages(
-            &mut self,
-            request: impl tonic::IntoRequest<super::Empty>,
-        ) -> std::result::Result<tonic::Response<super::DkgPayload>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/GetRound1DkgPackages",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "GetRound1DkgPackages"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn new_round1_dkg_package(
+        pub async fn new_dkg_payload(
             &mut self,
             request: impl tonic::IntoRequest<super::DkgPayload>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::DkgPayloads>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -558,53 +546,11 @@ pub mod btc_server_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/NewRound1DkgPackage",
+                "/btc_server.BtcServer/NewDkgPayload",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "NewRound1DkgPackage"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_round2_dkg_package(
-            &mut self,
-            request: impl tonic::IntoRequest<super::Empty>,
-        ) -> std::result::Result<tonic::Response<super::DkgPayload>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/GetRound2DkgPackage",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "GetRound2DkgPackage"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn new_round2_dkg_package(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DkgPayload>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/NewRound2DkgPackage",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "NewRound2DkgPackage"));
+                .insert(GrpcMethod::new("btc_server.BtcServer", "NewDkgPayload"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_round1_signing_package(
