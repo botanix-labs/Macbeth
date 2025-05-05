@@ -154,6 +154,17 @@ pub struct CliConfig {
     /// Frost participant identifier
     #[arg(long)]
     identifier: u16,
+    // The optional Frost coordinator identifier. If not set, the first member
+    // specified in `--federation-config-path` will be selected as the
+    // coordinator.
+    #[arg(long)]
+    coordinator: Option<u16>,
+    /// The path to the configuration file for the federation setup.
+    #[arg(long, value_name = "FEDERATION_CONFIG_FILE", verbatim_doc_comment)]
+    federation_config_path: PathBuf,
+    /// Secret key to use for this node.
+    #[arg(long)]
+    p2p_secret_key: PathBuf,
     #[arg(long)]
     address: String,
     /// max signers
@@ -194,9 +205,17 @@ pub struct Config {
     pub db: PathBuf,
     /// The bitcoin L1 network
     pub btc_network: bitcoin::Network,
-    /// Frost participant identifier. Should be your index into the chain.toml federation pk list
-    /// for example if you are the first signer in the chain.toml you should use 0
+    /// Frost participant identifier. Should be your index into the chain.toml
+    /// federation pk list for example if you are the first signer in the
+    /// chain.toml you should use 0
     pub identifier: u16,
+    // The optional Frost coordinator identifier. If not set, the Frost Id of 0
+    // will be used.
+    pub coordinator: Option<u16>,
+    /// The path to the configuration file for the federation setup.
+    pub federation_config_path: PathBuf,
+    /// Secret key to use for this node.
+    pub p2p_secret_key: PathBuf,
     /// Address to bind to.
     pub address: String,
     /// multisig max signers
@@ -231,6 +250,9 @@ pub fn load_config() -> Result<Config, Error> {
         toml: cli_config.toml,
         btc_network: cli_config.btc_network,
         identifier: cli_config.identifier,
+        coordinator: cli_config.coordinator,
+        federation_config_path: cli_config.federation_config_path,
+        p2p_secret_key: cli_config.p2p_secret_key,
         address: cli_config.address,
         max_signers: cli_config.max_signers,
         min_signers: cli_config.min_signers,
