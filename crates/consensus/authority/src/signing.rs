@@ -27,8 +27,6 @@ type SigningStatesMap = Arc<RwLock<HashMap<[u8; 32], SigningSession>>>;
 pub(crate) enum Error {
     #[error("Internal gRPC error: message: {0}, status: {1}")]
     InternalGrpc(String, tonic::Status),
-    #[error("Invalid frost peer id")]
-    InvalidFrostPeerId,
     #[error("Invalid signing session id")]
     InvalidSigningSessionId,
     #[error("Failed to get peers handles")]
@@ -44,7 +42,6 @@ pub(crate) enum Error {
 impl From<FrostParseError> for Error {
     fn from(value: FrostParseError) -> Self {
         match value {
-            FrostParseError::InvalidFrostPeerId => Error::InvalidFrostPeerId,
             FrostParseError::InvalidSigningSessionId => Error::InvalidSigningSessionId,
         }
     }

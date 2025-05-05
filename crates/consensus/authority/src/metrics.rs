@@ -11,12 +11,6 @@ pub struct AuthorityMetrics {
     /// Number of currently connected peers
     pub(crate) signing_sessions: Gauge,
 
-    /// Number of received round1 DKG packages
-    pub(crate) received_round1_dkg_packages: Counter,
-
-    /// Number of received round2 DKG packages
-    pub(crate) received_round2_dkg_packages: Counter,
-
     /// Number of created agg pub keys
     pub(crate) created_agg_pub_keys: Counter,
 
@@ -83,8 +77,6 @@ mod tests {
             AuthorityMetrics::describe();
 
             metrics.signing_sessions.set(5.0);
-            metrics.received_round1_dkg_packages.increment(3);
-            metrics.received_round2_dkg_packages.increment(4);
             metrics.created_agg_pub_keys.increment(2);
             metrics.received_round1_signing_packages.increment(7);
             metrics.received_round2_signing_packages.increment(6);
@@ -111,8 +103,6 @@ mod tests {
 
             // verify all counters
             let counters_to_check = [
-                ("authority.received_round1_dkg_packages", 3),
-                ("authority.received_round2_dkg_packages", 4),
                 ("authority.created_agg_pub_keys", 2),
                 ("authority.received_round1_signing_packages", 7),
                 ("authority.received_round2_signing_packages", 6),
