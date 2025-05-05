@@ -3,19 +3,18 @@ FROM rust:1.74.0 AS builder
 
 WORKDIR /app
 
-# Copy your Rust project files into the container
-COPY crates/btc-wallet /app/crates/btc-wallet
-COPY bin/btc-server /app/server/btc-server
+COPY . .
 
-WORKDIR /app/server/btc-server
+WORKDIR /app
 
 # Install necessary dependencies in the runtime stage
 RUN apt-get update && apt-get install -y libclang-dev pkg-config build-essential libssl-dev protobuf-compiler
 
-# Build your Rust application using the specified nightly version
+# Build only btc-server package
 RUN rustup toolchain install stable && \
     rustup default stable && \
-    cargo build --release --target-dir /app/server/btc-server/target/
+    cd bin/btc-server && \
+    cargo build --release
 
 # Stage 2: Create the final lightweight image
 FROM ubuntu AS runtime
@@ -23,7 +22,7 @@ FROM ubuntu AS runtime
 WORKDIR /app
 
 # Copy the built artifacts from the builder stage
-COPY --from=builder /app/server/btc-server/target/release/btc-server /usr/local/bin/server
+COPY --from=builder /app/bin/btc-server/target/release/btc-server /usr/local/bin/server
 
 EXPOSE 8080
 
