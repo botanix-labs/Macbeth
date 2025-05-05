@@ -603,6 +603,9 @@ start-btc-server-1:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
 	--identifier 0 \
+	--coordinator 0 \
+	--federation-config-path "${NODE_1_DIR}/federation.toml" \
+	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
 	--address 0.0.0.0:8081 \
 	--db "./db1" \
 	--min-signers 2 \
@@ -620,6 +623,9 @@ start-btc-server-2:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
 	--identifier 1 \
+	--coordinator 0 \
+	--federation-config-path "${NODE_2_DIR}/federation.toml" \
+	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--address 0.0.0.0:8082 \
 	--db "./db2" \
 	--min-signers 2 \
@@ -637,6 +643,9 @@ start-btc-server-3:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
 	--identifier 2 \
+	--coordinator 0 \
+	--federation-config-path "${NODE_3_DIR}/federation.toml" \
+	--p2p-secret-key "${NODE_3_DIR}/discovery-secret" \
 	--address 0.0.0.0:8083 \
 	--db "./db3" \
 	--min-signers 3 \
