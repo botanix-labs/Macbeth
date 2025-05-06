@@ -78,11 +78,23 @@ where
 /// With a pegout bound of 500, we can conclude: (32 + 110) * 500 = 71_000
 pub const UPPER_PEGOUT_BOUND: usize = 500;
 
+/// Converts the BTC/kB fee rate as returned by the Bitcoin Core API endpoint
+/// `estimatesmartfee` to sat/vB.
+///
+/// https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
+///
+/// > Estimates the approximate fee per kilobyte needed for a transaction to
+/// > begin confirmation within conf_target blocks if possible and return the
+/// > number of blocks for which the estimate is valid. Uses virtual transaction
+/// > size as defined in BIP 141 (witness data is discounted).
 pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     let sats = btc_per_kb.to_sat();
     info!("fee rate sats: {:?}", sats);
 
     // Conversion formula
+    //
+    // To convert BTC/kB to sat/vB:
+    // (BTC * 100_000_000) / 1_000 = BTC * 100_000
     let sat_per_vb = btc_per_kb.to_float_in(bitcoin::Denomination::Bitcoin) * 100_000.0;
     info!("fee rate sat_per_vb: {:?}", sat_per_vb);
 
