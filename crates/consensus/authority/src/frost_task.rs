@@ -801,18 +801,21 @@ where
         for payload in payloads {
             let recipient = frost_id_from_bytes(&payload.recipient).expect("valid frost id");
 
+            // Lookup the public key of the recipient.
+            let Some(pk) = self.frost_ids.get(&recipient) else {
+                error!(target: "consensus::authority::frost_task::DkgRunnerTask", "No Frost Id lookup available for recipient {:?}, dropping DKG payload...", recipient);
+                continue;
+            };
+
+            let pk_string = pk.to_string();
+
             // TODO (lamafab): This could be improved, by using a hashmap or so.
             let Some(peer_data) = all_peers_handles
                 .iter()
                 .find(|(_, peer_data)| peer_data.frost_identifier == recipient)
                 .map(|(_, peer_data)| peer_data)
             else {
-                let Some(pk) = self.frost_ids.get(&recipient) else {
-                    error!(target: "consensus::authority::frost_task::DkgRunnerTask", "No Frost Id lookup available for recipient {:?}, dropping DKG payload...", recipient);
-                    continue;
-                };
-
-                warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "Peer handle not found for recipient {}, dropping DKG payload...", pk.to_string());
+                warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "Peer handle not found for recipient {}, dropping DKG payload...", pk_string);
                 continue;
             };
 
@@ -822,9 +825,13 @@ where
                 recipient: payload.recipient,
             });
 
-            if peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(resp)).is_err() {
-                error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error sending DKG payload to peer {:?}", peer_data.peer_id);
-                continue;
+            match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(resp)) {
+                Ok(_) => {
+                    info!(target: "consensus::authority::frost_task::DkgRunnerTask", "Gossiping DKG payload to peer {:?}", pk_string);
+                }
+                Err(err) => {
+                    error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error sending DKG payload to recipient {}: {:?}", pk_string, err);
+                }
             }
         }
     }
