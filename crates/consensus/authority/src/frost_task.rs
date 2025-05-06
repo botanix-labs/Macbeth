@@ -830,7 +830,7 @@ where
 
             match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(resp)) {
                 Ok(_) => {
-                    info!(target: "consensus::authority::frost_task::DkgRunnerTask", "Gossiping DKG payload to peer {:?}", pk_string);
+                    info!(target: "consensus::authority::frost_task::DkgRunnerTask", "Gossiping DKG payload to peer {}", pk_string);
                 }
                 Err(err) => {
                     error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error sending DKG payload to recipient {}: {:?}", pk_string, err);
