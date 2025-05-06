@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use crate::{
     metrics::AuthorityMetrics,
@@ -23,7 +23,10 @@ use reth_chainspec::ChainSpec;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_network::{
     frost::{
-        manager::{FrostCommand, FrostConfig, PeerData, ToFrostManager},
+        manager::{
+            authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData,
+            ToFrostManager,
+        },
         DkgResponse, FrostPeerCommand, PeerMessageResponse, SigningEventResponseType,
         SigningResponse, WalletStateResponse,
     },
@@ -253,6 +256,7 @@ where
             // Start the dkg state machine task runner.
             let tx = DkgRunnerTask::new(
                 self.frost_handle.clone(),
+                self.frost_config.authorities.as_ref(),
                 self.storage.clone(),
                 self.btc_server.clone(),
                 Arc::clone(&self.metrics),
@@ -655,6 +659,8 @@ struct DkgRunnerTask<EF, BF, DB, ToFrostMan, BtcServerClient> {
     rx: mpsc::Receiver<DkgResponse>,
     // Frost network Handler
     frost_handle: ToFrostMan,
+    // Frost Id lookup table
+    frost_ids: HashMap<frost_secp256k1_tr::Identifier, secp256k1::PublicKey>,
     // Shared storage to insert aggregate public key
     storage: Storage<EF, BF, DB>,
     // btc-server client
@@ -680,13 +686,23 @@ where
     #[allow(clippy::new_ret_no_self)]
     fn new(
         frost_handle: ToFrostMan,
+        authorities: &[secp256k1::PublicKey],
         storage: Storage<EF, BF, DB>,
         btc_server: BtcServerClient,
         metrics: Arc<AuthorityMetrics>,
     ) -> mpsc::Sender<DkgResponse> {
         let (tx, rx) = mpsc::channel(100);
 
-        let this = DkgRunnerTask { rx, frost_handle, storage, btc_server, metrics };
+        let frost_ids = authorities
+            .iter()
+            .enumerate()
+            .map(|(index, pk)| {
+                let frost_id = authority_index_to_frost_identifier(index as u16);
+                (frost_id, pk.clone())
+            })
+            .collect();
+
+        let this = DkgRunnerTask { rx, frost_handle, frost_ids, storage, btc_server, metrics };
 
         // Spawn-off the task, which will keep interacting with the btc-server.
         tokio::spawn(this.run());
@@ -791,7 +807,12 @@ where
                 .find(|(_, peer_data)| peer_data.frost_identifier == recipient)
                 .map(|(_, peer_data)| peer_data)
             else {
-                warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "Peer handle not found for recipient {:?}, dropping DKG payload...", payload.recipient);
+                let Some(pk) = self.frost_ids.get(&recipient) else {
+                    error!(target: "consensus::authority::frost_task::DkgRunnerTask", "No Frost Id lookup available for recipient {:?}, dropping DKG payload...", recipient);
+                    continue;
+                };
+
+                warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "Peer handle not found for recipient {}, dropping DKG payload...", pk.to_string());
                 continue;
             };
 
