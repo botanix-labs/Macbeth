@@ -694,11 +694,13 @@ where
         tx
     }
     async fn run(mut self) {
+        const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
         // On startup, we call the btc-server immediately to get the initial
         // payloads. Only the coordinator will have something to send at this
         // point, while non-coordinators wait for the coordinators first message
         // before any messages get sent.
-        let mut timeout = std::time::Duration::from_millis(0);
+        let mut timeout = Duration::from_millis(0);
 
         loop {
             match tokio::time::timeout(timeout, self.rx.recv()).await {
@@ -713,7 +715,7 @@ where
                     let resp = match self.btc_server.new_dkg_payload(req).await {
                         Ok(r) => r,
                         Err(err) => {
-                            timeout = Duration::from_secs(10);
+                            timeout = DEFAULT_TIMEOUT;
                             error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error sending dkg payload to btc server {:?}", err);
                             continue;
                         }
@@ -747,7 +749,7 @@ where
                     let resp = match self.btc_server.get_dkg_payloads(client::Empty {}).await {
                         Ok(r) => r,
                         Err(err) => {
-                            timeout = Duration::from_secs(10);
+                            timeout = DEFAULT_TIMEOUT;
                             error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error getting dkg payloads from btc server {:?}", err);
                             continue;
                         }
