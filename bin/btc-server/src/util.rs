@@ -1422,11 +1422,26 @@ mod tests {
 
     #[test]
     fn test_btc_per_kb_to_sat_per_vb() {
+        // 0.000_5 BTC = 50_000 sats
+        // 50_000 sats/kb = 50 sats/vb
+
         let btc_per_kb =
-            bitcoin::Amount::from_float_in(0.0005, bitcoin::Denomination::Bitcoin).unwrap();
+            bitcoin::Amount::from_float_in(0.000_5, bitcoin::Denomination::Bitcoin).unwrap();
         let sat_per_vb = btc_per_kb_to_sat_per_vb(btc_per_kb);
 
         assert_eq!(sat_per_vb.to_sat_per_vb_ceil(), 50);
+    }
+
+    #[test]
+    fn test_btc_per_kb_to_sat_per_vb_min_fee_rate() {
+        // 0.000_005 BTC = 500 sats
+        // 500 sats/kb = 0.5 sats/vb => 1 sat/vb
+
+        let btc_per_kb =
+            bitcoin::Amount::from_float_in(0.000_005, bitcoin::Denomination::Bitcoin).unwrap();
+        let sat_per_vb = btc_per_kb_to_sat_per_vb(btc_per_kb);
+
+        assert_eq!(sat_per_vb.to_sat_per_vb_ceil(), 1);
     }
 
     #[tokio::test]
