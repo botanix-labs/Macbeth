@@ -407,6 +407,7 @@ where
     /// this method will block and wait for the storage lock
     fn payload_builder_arguments(
         &self,
+        max_tx_bytes: usize,
     ) -> Result<PayloadConfig<EthPayloadBuilderAttributes>, PayloadBuilderError> {
         let client = self.storage.client.clone();
         let chain_spec = self.storage.chain_spec.clone();
@@ -433,7 +434,7 @@ where
         };
 
         let payload_builder_attributes =
-            EthPayloadBuilderAttributes::new(best_block.hash(), payload_attributes);
+            EthPayloadBuilderAttributes::new(best_block.hash(), payload_attributes, max_tx_bytes);
 
         Ok(PayloadConfig::new(
             Arc::new(best_block),
@@ -1200,7 +1201,14 @@ where
     fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
         debug!("prepare_proposal request: {:?}", request);
         info!("prepare_proposal request for height: {:?}", request.height);
-        let _txs_bytes = request.txs;
+
+        if !request.txs.is_empty() {
+            panic!("Transactions are not expected from CometBFT mempool");
+        }
+
+        let Ok(max_tx_bytes) = request.max_tx_bytes.try_into() else {
+            panic!("Invalid request proposal max_tx_bytes value: {}", request.max_tx_bytes);
+        };
 
         // insert non-deterministic data tx at index 0 so historical sync will pass verification
         let non_deterministic_data_bytes = match self.non_deterministic_data_bytes() {
@@ -1211,13 +1219,28 @@ where
             }
         };
 
+        // NDD goes to a block as the first transaction
+        // so we need to take into account its size
+
+        let non_deterministic_data_bytes_len = non_deterministic_data_bytes.len();
+        if non_deterministic_data_bytes_len > max_tx_bytes {
+            // We should panic bc there is a critical bug and there should be a chain halt.
+            panic!(
+                "Non-deterministic data size: {} exceeds the max tx bytes allowed size {}",
+                non_deterministic_data_bytes_len, max_tx_bytes
+            );
+        };
+        let max_tx_bytes = max_tx_bytes - non_deterministic_data_bytes_len;
+
+        // Nothing to process if mempool is empty
+        // propose an empty block with NDD only
         if self.pool.pool_size().total == 0 {
             info!("No transactions in pool, waiting...");
 
             return ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
         }
 
-        let payload_config = match self.payload_builder_arguments() {
+        let payload_config = match self.payload_builder_arguments(max_tx_bytes) {
             Ok(payload_config) => payload_config,
             Err(e) => {
                 error!("Error building payload config: {:?}", e);
@@ -1251,29 +1274,22 @@ where
                     } => {
                         let block = payload.block();
                         // These are bytes of [SignedTransaction]
-                        let txs: Vec<_> = block
+                        let mut txs: Vec<_> = block
                             .raw_transactions()
                             .iter()
-                            .map(|tx| prost::bytes::Bytes::copy_from_slice(tx))
+                            .map(|tx| Bytes::copy_from_slice(tx))
                             .collect::<_>();
-                        let txs_len = txs.len();
-                        info!("prepare_proposal number of txs: {:?}", txs_len);
-                        let mut filtered_txs = txs
-                            .into_iter()
-                            .filter(|tx| (tx.len() as i64) < request.max_tx_bytes)
-                            .collect::<Vec<_>>();
-                        warn!("{:?}/{:?} txs violated the max_tx_bytes size and got excluded from the prepared proposal", (txs_len - filtered_txs.len()), txs_len);
-                        // check that the non-deterministic data is not larger than the max tx bytes
-                        if non_deterministic_data_bytes.len() as i64 > request.max_tx_bytes {
-                            // We should panic bc there is a critical bug and there should be a
-                            // chain halt.
-                            panic!("Non-deterministic data size: {:?} exceeds the max tx bytes allowed size {:?}", non_deterministic_data_bytes.len(), request.max_tx_bytes);
-                        }
+
+                        info!("prepare_proposal number of txs: {:?}", txs.len());
+
                         // insert non-deterministic data tx at index 0 so historical sync will pass
                         // verification
-                        filtered_txs.insert(0, non_deterministic_data_bytes);
+
+                        txs.insert(0, non_deterministic_data_bytes);
+
                         self.metrics.commet_prepared_proposals.increment(1);
-                        ResponsePrepareProposal { txs: filtered_txs }
+
+                        ResponsePrepareProposal { txs }
                     }
                 }
             }
