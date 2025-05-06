@@ -15,6 +15,9 @@ use tokio::sync::{Mutex as TokioMutex, Mutex};
 
 /// Sleep duration between synchronization attempts.
 const SLEEP: Duration = Duration::from_secs(10);
+/// Even if we don't need to sleep, we should avoid
+/// busy loops
+const SAFE_DELAY: Duration = Duration::from_secs(1);
 
 macro_rules! map_rpc_error {
     ($target:expr, $method:ident ( $($args:tt)* )) => {{
@@ -41,11 +44,21 @@ struct SyncedCheckpointInfo {
     hash: BitcoinBlockHash,
 }
 
-/// Conversion from a BitcoinCheckpoint to SyncedCheckpointInfo.
+/// Conversion from a [BitcoinCheckpoint] to [SyncedCheckpointInfo].
 impl From<&BitcoinCheckpoint> for SyncedCheckpointInfo {
     fn from(checkpoint: &BitcoinCheckpoint) -> Self {
         Self { height: checkpoint.height, hash: checkpoint.hash }
     }
+}
+
+/// The [BitcoinCheckpointsChainSynchronizer::handle_new_blocks_sync_result] returns `SyncLoopControl` to signal
+/// to the main sync loop do we need to start the sync process right away
+/// or sleep before the next sync
+enum SyncLoopControl {
+    /// Sleep before next sync
+    Sleep,
+    /// Start sync right away
+    NoSleep,
 }
 
 /// Synchronizes a Bitcoin checkpoints chain with the Bitcoin network.
@@ -105,7 +118,7 @@ where
     ///
     /// # Errors
     ///
-    /// It will return `StaleBlockAdded` error if a new block arrives during sync.
+    /// It will return [BitcoinCheckpointError::StaleBlockAdded] error if a new block arrives during sync.
     fn sync_new_blocks(&mut self) -> Result<Vec<SyncedCheckpointInfo>, BitcoinCheckpointError> {
         let tip_height = map_rpc_error!(self.rpc, get_block_count())?;
 
@@ -199,23 +212,28 @@ where
             .await
             .expect("spawned blocking task failed to sync bitcoin checkpoints");
 
-            Self::handle_new_blocks_sync_result(result, Arc::clone(&syncer_lock)).await;
-
-            tokio::time::sleep(SLEEP).await;
+            match Self::handle_new_blocks_sync_result(result, Arc::clone(&syncer_lock)).await {
+                SyncLoopControl::Sleep => tokio::time::sleep(SLEEP).await,
+                // If we don't need to sleep, we should still wait for a bit to avoid a busy loop
+                SyncLoopControl::NoSleep => tokio::time::sleep(SAFE_DELAY).await,
+            };
         }
     }
 
     async fn handle_new_blocks_sync_result(
         result: Result<Vec<SyncedCheckpointInfo>, BitcoinCheckpointError>,
         syncer_lock: Arc<Mutex<BitcoinCheckpointsChainSynchronizer<R>>>,
-    ) {
+    ) -> SyncLoopControl {
         match result {
             Ok(synced_checkpoints) => {
                 tracing::info!(
                     ?synced_checkpoints,
                     "Asynced task synced {} bitcoin checkpoints",
                     synced_checkpoints.len()
-                )
+                );
+
+                // We need to sleep before the next sync
+                SyncLoopControl::Sleep
             }
             Err(BitcoinCheckpointError::StaleBlockAdded {
                 expected_prev_block_hash,
@@ -233,12 +251,18 @@ where
                     "Async task failed to add a stale block to the checkpoint chain due hashes mismatch. Reset the chain and start syncing from scratch in {} seconds",
                     SLEEP.as_secs()
                 );
+
+                // We reset checkpoints, so we need to sync them ASAP
+                SyncLoopControl::NoSleep
             }
             Err(e) => {
                 tracing::warn!(
                     "Async task failed to sync bitcoin checkpoints: {e}. Retry in {} seconds",
                     SLEEP.as_secs()
-                )
+                );
+
+                // We need to sleep before the next sync
+                SyncLoopControl::Sleep
             }
         }
     }
