@@ -757,7 +757,9 @@ where
                     Ok(snapshot_sync_state_lock) => snapshot_sync_state_lock,
                     Err(e) => {
                         error!("Error getting a snapshot state lock: {:?}", e);
-                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                        return ResponseOfferSnapshot {
+                            result: SnapshotOfferResult::Reject as i32,
+                        };
                     }
                 };
 
@@ -804,7 +806,9 @@ where
                     Ok(snapshot_sync_state_lock_height) => snapshot_sync_state_lock_height,
                     Err(e) => {
                         error!("Error getting a snapshot state lock: {:?}", e);
-                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
+                        return ResponseOfferSnapshot {
+                            result: SnapshotOfferResult::Reject as i32,
+                        };
                     }
                 };
 
@@ -1357,7 +1361,7 @@ where
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
         debug!("process_proposal request: {:?}", request);
         info!("process_proposal request for height: {:?}", request.height);
-        let storage = self.storage.inner.blocking_read();
+
         let agg_pk = match self.aggregate_public_key() {
             Ok(pk) => pk,
             Err(_) => {
@@ -1374,9 +1378,6 @@ where
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
-
-        // Drop the lock
-        drop(storage);
 
         // Extract block time: this must come from the CBFT block header NOT the system time
         // As that will be underministic
