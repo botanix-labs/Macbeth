@@ -701,7 +701,7 @@ where
             .enumerate()
             .map(|(index, pk)| {
                 let frost_id = authority_index_to_frost_identifier(index as u16);
-                (frost_id, pk.clone())
+                (frost_id, *pk)
             })
             .collect();
 
