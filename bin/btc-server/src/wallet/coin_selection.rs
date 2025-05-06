@@ -1,4 +1,4 @@
-use crate::{database::version::UtxoVersion, wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT};
+use crate::{database::version::UtxoVersion, wallet::SEGWIT_KEYSPEND_SATISFACTION_WEIGHT};
 use bdk_wallet::coin_selection::{
     CoinSelectionAlgorithm, InsufficientFunds, OldestFirstCoinSelection,
 };
@@ -53,7 +53,7 @@ pub(crate) fn coin_selection(
 
     let to_bdk = |u: &Utxo| {
         bdk_wallet::WeightedUtxo {
-            satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+            satisfaction_weight: SEGWIT_KEYSPEND_SATISFACTION_WEIGHT,
             utxo: bdk_wallet::Utxo::Local(bdk_wallet::LocalOutput {
                 outpoint: u.outpoint.to_bdk(),
                 txout: bdk_wallet::bitcoin::TxOut {
