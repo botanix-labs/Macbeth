@@ -74,6 +74,9 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<EF, BF, DB>,
+    /// A handle to the `DkgRunnerTask` task. This is only `Some` if no
+    /// aggregate public key is available, and the `start_task` method has hence
+    /// started the DKG process.
     dkg_task: Option<mpsc::Sender<DkgResponse>>,
     /// Pre-configured data-parser
     compressor: DataParser,
