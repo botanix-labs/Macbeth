@@ -45,6 +45,7 @@ pub trait PayloadBuilderAttributes: Send + Sync + std::fmt::Debug {
     fn try_new(
         parent: B256,
         rpc_payload_attributes: Self::RpcPayloadAttributes,
+        max_tx_bytes: usize,
     ) -> Result<Self, Self::Error>
     where
         Self: Sized;
@@ -156,7 +157,7 @@ impl PayloadAttributes for OptimismPayloadAttributes {
         if self.gas_limit.is_none() {
             return Err(EngineObjectValidationError::InvalidParams(
                 "MissingGasLimitInPayloadAttributes".to_string().into(),
-            ))
+            ));
         }
 
         Ok(())
