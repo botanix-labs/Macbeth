@@ -295,13 +295,23 @@ mod tests {
 
         /// Overflow during `confirmations_to + 1` is trapped.
         #[test]
-        fn window_too_wide_is_rejected() {
+        fn test_window_too_wide_is_rejected() {
             let strong = usize::MAX - 3;
             let hist = 10; // strong + hist overflows
             let weak = 1;
 
             let res = BitcoinCheckpointsChain::try_new(strong, hist, weak);
             assert!(matches!(res, Err(BitcoinCheckpointError::ChainParamsTooLarge { .. })));
+        }
+
+        #[test]
+        fn test_weak_confirmation_depth_too_big() {
+            let chain = BitcoinCheckpointsChain::try_new(1, 0, 1);
+
+            assert!(matches!(chain, Err(BitcoinCheckpointError::WeakCheckpointsCountTooBig {
+                weak_checkpoints_count,
+                strong_confirmation_depth
+            }) if weak_checkpoints_count == 1 && strong_confirmation_depth == 1));
         }
     }
 
@@ -386,13 +396,13 @@ mod tests {
         /// off-by-one bug in `push`).
         #[test]
         fn size_limit_is_respected() {
-            let chain = BitcoinCheckpointsChain::try_new(3, 1, 1).unwrap(); // limit = 4
+            let chain = BitcoinCheckpointsChain::try_new(3, 1, 1).expect("create a valid chain"); // limit = 4
             let mut prev = BitcoinBlockHash::all_zeros();
 
             for h in 1..=10 {
                 let cp = create_checkpoint(h, prev);
                 prev = cp.hash;
-                chain.push(cp).unwrap();
+                chain.push(cp).expect("push checkpoint");
                 assert!(chain.len() <= chain.size_limit());
             }
         }
@@ -532,7 +542,7 @@ mod tests {
 
         #[test]
         fn test_strong_with_small_window() {
-            let chain = BitcoinCheckpointsChain::try_new(1, 0, 1).unwrap();
+            let chain = BitcoinCheckpointsChain::try_new(2, 0, 1).expect("create a valid chain");
             let checkpoint1 = create_checkpoint(1, BitcoinBlockHash::all_zeros());
             let checkpoint2 = create_checkpoint(2, checkpoint1.hash);
 
