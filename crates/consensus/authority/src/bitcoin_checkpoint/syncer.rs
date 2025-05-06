@@ -248,7 +248,7 @@ where
                 tracing::warn!(
                     %expected_prev_block_hash,
                     %received_prev_block_hash,
-                    "Async task failed to add a stale block to the checkpoint chain due hashes mismatch. Reset the chain and start syncing from scratch in {} seconds",
+                    "Async task failed to add a stale block to the checkpoint chain due hashes mismatch. Reset the chain and start syncing immediately.",
                     SLEEP.as_secs()
                 );
 
