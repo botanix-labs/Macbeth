@@ -2,7 +2,7 @@ use super::{create_temp_working_directory, kill_process_at_port, Scope};
 use crate::{
     context::GlobalContext,
     suite::consensus::{
-        common::{events::BITCOIND_WALLET_NAME, spawn_child_process},
+        common::{events::get_unique_wallet_name, spawn_child_process},
         ConsensusIntegrationTestSuite,
     },
     utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
@@ -78,6 +78,7 @@ pub struct BitcoindNodeConfig {
     pub bitcoind_url: Url,
     pub bitcoind_user: String,
     pub bitcoind_password: String,
+    pub wallet_name: String,
 }
 
 impl BitcoindNodeConfig {
@@ -93,6 +94,7 @@ impl BitcoindNodeConfig {
             bitcoind_url,
             bitcoind_user,
             bitcoind_password,
+            wallet_name: get_unique_wallet_name(),
         })
     }
 
@@ -141,7 +143,7 @@ impl BitcoindNodeConfig {
                 ));
                 let bitcoind_client =
                     bitcoind_factory.build_and_connect().expect("to build and connect client");
-                bitcoind_client.load_wallet(BITCOIND_WALLET_NAME).expect("wallet exists");
+                bitcoind_client.load_wallet(&self.wallet_name).expect("wallet exists");
 
                 // update local context
                 suite.local_context.bitcoind_process = Some(bitcoind_process);
@@ -159,19 +161,19 @@ impl BitcoindNodeConfig {
 
 impl BitcoindNodeConfig {
     pub async fn setup_wallet(&self, bitcoin_client: &impl RpcApi) -> anyhow::Result<()> {
-        match bitcoin_client.create_wallet(BITCOIND_WALLET_NAME, None, None, None, None) {
+        match bitcoin_client.create_wallet(&self.wallet_name, None, None, None, None) {
             Ok(res) => {
-                tracing::info!("Created wallet: {BITCOIND_WALLET_NAME} with result {res:?}");
+                tracing::info!("Created wallet: {} with result {res:?}", &self.wallet_name);
             }
             Err(e) => {
                 let err_msg = e.to_string();
                 // Load the wallet if it already exists
                 if err_msg.contains("already exists") || err_msg.contains("already loaded") {
-                    tracing::info!("Wallet {BITCOIND_WALLET_NAME} already loaded or existing");
+                    tracing::info!("Wallet {} already loaded or existing", &self.wallet_name);
                 } else {
-                    tracing::info!("Loading wallet {BITCOIND_WALLET_NAME} ...");
+                    tracing::info!("Loading wallet {} ...", &self.wallet_name);
                     bitcoin_client
-                        .load_wallet(BITCOIND_WALLET_NAME)
+                        .load_wallet(&self.wallet_name)
                         .map_err(|e| anyhow::anyhow!("Failed to create wallet: {}", e))?;
                 }
             }

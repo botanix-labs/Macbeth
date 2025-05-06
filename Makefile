@@ -558,6 +558,19 @@ clean-unused-deps:
 # Botanix
 # ------------------------------------------------------------
 
+start-test-suite-runners:
+	cd ./bin/test-suite && \
+	/usr/local/bin/test-suite \
+	--test-to-run "${TEST_TO_RUN}" \
+	--config "./config.toml" \
+	--run-suite all \
+	--timeout 500000 \
+	--dry-run false \
+	--min-signers 3 \
+	--max-signers 4 \
+	--rpc-nodes 1 \
+	--syncing-nodes 1
+
 start-test-suite:
 	cd ./bin/test-suite && \
 	cargo run --bin test-suite -- \
@@ -590,6 +603,9 @@ start-btc-server-1:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
 	--identifier 0 \
+	--coordinator 0 \
+	--federation-config-path "${NODE_1_DIR}/federation.toml" \
+	--p2p-secret-key "${NODE_1_DIR}/discovery-secret" \
 	--address 0.0.0.0:8081 \
 	--db "./db1" \
 	--min-signers 2 \
@@ -607,6 +623,9 @@ start-btc-server-2:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
 	--identifier 1 \
+	--coordinator 0 \
+	--federation-config-path "${NODE_2_DIR}/federation.toml" \
+	--p2p-secret-key "${NODE_2_DIR}/discovery-secret" \
 	--address 0.0.0.0:8082 \
 	--db "./db2" \
 	--min-signers 2 \
@@ -624,6 +643,9 @@ start-btc-server-3:
 	cd ./bin/btc-server && \
 	cargo run --bin btc-server -- \
 	--identifier 2 \
+	--coordinator 0 \
+	--federation-config-path "${NODE_3_DIR}/federation.toml" \
+	--p2p-secret-key "${NODE_3_DIR}/discovery-secret" \
 	--address 0.0.0.0:8083 \
 	--db "./db3" \
 	--min-signers 3 \

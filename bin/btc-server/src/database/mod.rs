@@ -14,10 +14,10 @@ use bitcoin::{
 };
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
+use futures::Stream;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
-
 pub mod error;
 pub mod version;
 pub use error::Error;
@@ -30,6 +30,7 @@ const TREE_ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const TREE_PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
 const TREE_PSBT: &[u8; 4] = b"psbt";
+const TREE_FINALIZED_PEGOUT_IDS: &[u8; 4] = b"pids";
 /// sled tree id for the pending txs
 const TREE_TRACKED_TXS: &[u8; 10] = b"trackedtxs";
 
@@ -44,6 +45,9 @@ const KEY_PENDING_PEGOUTS_MERKLE_ROOT: &[u8; 5] = b"proot";
 
 /// sled key for storing the latest finalized block of the txindex.
 const KEY_PEGOUTMGR_TIP: &[u8; 12] = b"pegoutmgrtip";
+
+/// sled key for finalized pegout ids
+const KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT: &[u8; 9] = b"pegoutids";
 
 /// sled tree for pending pegout requests
 const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
@@ -69,6 +73,20 @@ impl Utxo {
         version: Option<UtxoVersion>,
     ) -> Self {
         Utxo { outpoint, output, eth_address, version: version.unwrap_or(UtxoVersion::V1) as u32 }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct FinalizedPegout {
+    /// The pegout id
+    pub id: PegoutId,
+    /// The Botanix block number.
+    pub block_number: u64,
+}
+
+impl FinalizedPegout {
+    pub fn new(id: PegoutId, block_number: u64) -> Self {
+        FinalizedPegout { id, block_number }
     }
 }
 
@@ -106,6 +124,9 @@ pub struct Db {
     /// Indexed by txid.
     tracked_txs: sled::Tree,
 
+    /// Finalized PegoutIds
+    finalized_pegout_ids: sled::Tree,
+
     /// A tree of pending pegout requests, serialized as the [pegouts::PegoutRequest] format.
     ///
     /// Indexed by the [PegoutRequest::id] inspector.
@@ -122,6 +143,7 @@ impl Db {
             psbt: db.open_tree(TREE_PSBT)?,
             tracked_txs: db.open_tree(TREE_TRACKED_TXS)?,
             pending_pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
+            finalized_pegout_ids: db.open_tree(TREE_FINALIZED_PEGOUT_IDS)?,
             db,
         })
     }
@@ -134,6 +156,7 @@ impl Db {
         self.psbt.flush()?;
         self.tracked_txs.flush()?;
         self.pending_pegouts.flush()?;
+        self.finalized_pegout_ids.flush()?;
         Ok(())
     }
 
@@ -710,7 +733,7 @@ impl Db {
         pegouts.sort_by(|a, b| a.botanix_height.cmp(&b.botanix_height));
 
         if pegouts.len() < max {
-            return Ok(pegouts)
+            return Ok(pegouts);
         }
 
         Ok(pegouts.into_iter().take(max).collect())
@@ -737,6 +760,186 @@ impl Db {
     /// Clears all pending pegouts from the database.
     pub fn clear_pending_pegouts(&self) -> Result<(), Error> {
         Ok(self.pending_pegouts.clear()?)
+    }
+
+    /// Get all finalized pegouts
+    /// Returns a vector of pegout requests that have been finalized.
+    pub fn get_finalized_pegout_ids(&self) -> Result<Vec<FinalizedPegout>, Error> {
+        let mut ret = Vec::new();
+        for res in self.finalized_pegout_ids.iter() {
+            let (_k, v) = res?;
+            let tx = ciborium::de::from_reader(v.as_ref()).expect("corrupt db: pending tx");
+            ret.push(tx);
+        }
+        Ok(ret)
+    }
+
+    /// Count all finalized pegout ids
+    /// Returns a count of pegout requests that have been finalized.
+    pub fn peek_finalized_pegout_ids(&self) -> Result<usize, Error> {
+        Ok(self.finalized_pegout_ids.iter().count())
+    }
+
+    /// Get all finalized pegout ids via a stream
+    /// Returns a vector of pegout chunks that have been finalized.
+    pub fn get_finalized_pegout_ids_stream(
+        &self,
+        chunk_size: usize,
+    ) -> impl Stream<Item = Result<(Vec<FinalizedPegout>, u64, u64), Error>> + Send + '_ + Sync
+    {
+        async_stream::stream! {
+            let total_count = match self.peek_finalized_pegout_ids() {
+                Ok(count) => count,
+                Err(e) => {
+                    yield Err(e);
+                    return;
+                }
+            };
+
+            let num_chunks = total_count.div_ceil(chunk_size) as u64;
+            let mut chunk_index: u64 = 0;
+
+            // get all keys first (this is efficient in sled)
+            let all_keys: Vec<_> = match self.finalized_pegout_ids.iter().keys().collect() {
+                Ok(keys) => keys,
+                Err(e) => {
+                    yield Err(e.into());
+                    return;
+                }
+            };
+
+            // process keys in chunks
+            for key_chunk in all_keys.chunks(chunk_size) {
+                let mut items = Vec::with_capacity(chunk_size);
+
+                for key in key_chunk {
+                    if let Ok(Some(value)) = self.finalized_pegout_ids.get(key) {
+                        match ciborium::de::from_reader(value.as_ref()) {
+                            Ok(tx) => items.push(tx),
+                            Err(e) => {
+                                yield Err(Error::DataCorruption(e));
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                if !items.is_empty() {
+                    yield Ok((items, chunk_index, num_chunks));
+                    chunk_index += 1;
+                }
+            }
+        }
+    }
+
+    /// Removes finalized pegout ids from the database.
+    pub fn remove_finalized_pegout_ids(
+        &self,
+        finalized_pegout_ids: &[FinalizedPegout],
+    ) -> Result<(), Error> {
+        for pegout_id in finalized_pegout_ids.iter() {
+            self.finalized_pegout_ids.remove(&pegout_id.id.as_bytes()[..])?;
+        }
+        Ok(())
+    }
+
+    /// Clears all finalized pegout ids from the database.
+    pub fn clear_finalized_pegout_ids(&self) -> Result<(), Error> {
+        Ok(self.finalized_pegout_ids.clear()?)
+    }
+
+    /// Resets all finalized pegout txs, and re-adding the functions arguments back in
+    pub fn reset_finalized_pegout_ids(
+        &self,
+        finalized_pegout_ids: &[&FinalizedPegout],
+    ) -> Result<(), Error> {
+        self.clear_finalized_pegout_ids()?;
+        self.store_finalized_pegout_ids(finalized_pegout_ids)?;
+        Ok(())
+    }
+
+    /// Store a list of finalized pegout ids
+    pub fn store_finalized_pegout_ids(
+        &self,
+        finalized_pegout_ids: &[&FinalizedPegout],
+    ) -> Result<(), Error> {
+        match finalized_pegout_ids.len() {
+            0 => Ok(()),
+            1 => self.store_finalized_pegout_id(
+                finalized_pegout_ids.first().expect("to have pegout id"),
+            ),
+            _ => self.store_finalized_pegout_ids_atomically(finalized_pegout_ids),
+        }
+    }
+
+    fn store_finalized_pegout_id(&self, pegout_id: &FinalizedPegout) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&pegout_id, &mut bytes).map_err(Error::CiboriumWrite)?;
+        self.finalized_pegout_ids.insert(pegout_id.id.as_bytes(), &bytes[..])?;
+        Ok(())
+    }
+
+    /// Store a list of finalized pegout ids atomically
+    pub fn store_finalized_pegout_ids_atomically(
+        &self,
+        pegout_ids_requests: &[&FinalizedPegout],
+    ) -> Result<(), Error> {
+        self.finalized_pegout_ids
+            .transaction(|database_tx| {
+                for req in pegout_ids_requests.iter() {
+                    if database_tx.get(req.id.as_bytes())?.is_none() {
+                        let mut bytes = Vec::new();
+                        ciborium::into_writer(req, &mut bytes)
+                            .map_err(Error::CiboriumWrite)
+                            .expect("Ciborium error");
+                        database_tx.insert(req.id.as_bytes().to_vec(), &bytes[..])?;
+                    }
+                }
+                Ok::<(), ConflictableTransactionError>(())
+            })
+            .map_err(|e: TransactionError<_>| Error::Transaction(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn iter_finalized_pegout_ids(
+        &self,
+    ) -> impl Iterator<Item = Result<FinalizedPegout, Error>> {
+        self.finalized_pegout_ids.iter().map(|res| {
+            let (_, v) = res?;
+            let ret = ciborium::from_reader::<FinalizedPegout, _>(v.as_ref())?;
+            Ok(ret)
+        })
+    }
+
+    /// Stores the consensus Merkle root of all finalized pegout ids.
+    pub fn update_finalized_pegout_ids_merkle_root(&self) -> Result<(), Error> {
+        let mut finalized_pegout_ids = self
+            .iter_finalized_pegout_ids()
+            .map(|pegout_id| {
+                let mut engine = sha256::Hash::engine();
+                let pegout_id = pegout_id?;
+                pegout_id.id.idx.consensus_encode(&mut engine).expect("engine don't error");
+                pegout_id.id.txid.consensus_encode(&mut engine).expect("engine don't error");
+                pegout_id.block_number.consensus_encode(&mut engine).expect("engine don't error");
+                Ok(sha256::Hash::from_engine(engine))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        finalized_pegout_ids.sort();
+        if finalized_pegout_ids.is_empty() {
+            return Ok(());
+        }
+
+        let root = bitcoin::merkle_tree::calculate_root(finalized_pegout_ids.into_iter())
+            .ok_or(Error::EmptyMerkleRoot)?;
+        self.db.insert(KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT, root.to_byte_array().to_vec())?;
+        Ok(())
+    }
+
+    /// Retrieves the consensus Merkle root of all finalized pegout ids.
+    pub fn get_finalized_pegout_ids_merkle_root(&self) -> Result<Option<sha256::Hash>, Error> {
+        Ok(self.db.get(KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT)?.map(|b| {
+            sha256::Hash::from_slice(&b).expect("corrupt db: Merkle root should be 32 bytes")
+        }))
     }
 
     /// Resets all tracked txs, and re-adding the functions arguments back in
@@ -816,11 +1019,15 @@ impl TryFrom<Utxo> for RpcUtxo {
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
+    use rand::{thread_rng, Rng};
+    use tokio::pin;
+
     use crate::{
         pegout_scheduler::{PegoutRequest, Tx},
         test_utils::{create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db},
     };
-    use std::time::SystemTime;
+    use std::{collections::HashSet, time::SystemTime};
 
     use super::*;
     use crate::pegout_id::PegoutId;
@@ -1196,6 +1403,164 @@ mod tests {
         db.flush().unwrap();
         let merkle_root3 = db.get_utxo_merkle_root().unwrap().unwrap();
         assert_ne!(merkle_root, merkle_root3);
+    }
+
+    #[test]
+    fn test_update_finalized_pegout_ids_merkle_root() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 5;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
+        }
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&FinalizedPegout>>();
+        db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+        db.update_finalized_pegout_ids_merkle_root().unwrap();
+        db.flush().unwrap();
+
+        let merkle_root = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
+        // Updating again should not change the merkle root
+        db.update_finalized_pegout_ids_merkle_root().unwrap();
+        db.flush().unwrap();
+        let merkle_root2 = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
+        assert_eq!(merkle_root, merkle_root2);
+
+        // // Adding an additional pegout id should change the merkle root
+        let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), num_txs + 1 as u32);
+        let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+        db.store_finalized_pegout_id(&finalized_pegout).unwrap();
+        db.update_finalized_pegout_ids_merkle_root().unwrap();
+        db.flush().unwrap();
+        let merkle_root3 = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
+        assert_ne!(merkle_root, merkle_root3);
+    }
+
+    #[tokio::test]
+    async fn test_stream_pegout_ids_chunksize_lt_items() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 52;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
+        }
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&FinalizedPegout>>();
+        db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+        db.flush().unwrap();
+
+        let chunk_size = 10;
+        let stream = db.get_finalized_pegout_ids_stream(chunk_size);
+        pin!(stream);
+        let mut total_count = 0;
+        let expected_total_chunks = (num_txs as u64).div_ceil(chunk_size as u64);
+        let mut chunk_indexes_set = HashSet::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok((pegout_ids, chunk_index, num_chunks)) => {
+                    chunk_indexes_set.insert(chunk_index);
+                    assert_eq!(num_chunks, expected_total_chunks);
+                    total_count += pegout_ids.len();
+                }
+                Err(e) => panic!("Error streaming pegout ids: {:?}", e),
+            }
+        }
+        assert_eq!(total_count as u64, num_txs);
+        assert_eq!(
+            chunk_indexes_set.len() as u64,
+            (total_count as u64).div_ceil(chunk_size as u64)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_stream_pegout_ids_chunksize_gt_items() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 2;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegout_ids.push(finalized_pegout);
+        }
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&FinalizedPegout>>();
+        db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+        db.flush().unwrap();
+
+        let chunk_size = 10;
+        let stream = db.get_finalized_pegout_ids_stream(chunk_size);
+        pin!(stream);
+        let mut total_count = 0;
+        let expected_total_chunks = (num_txs as u64).div_ceil(chunk_size as u64);
+        let mut chunk_indexes_set = HashSet::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok((pegout_ids, chunk_index, num_chunks)) => {
+                    chunk_indexes_set.insert(chunk_index);
+                    assert_eq!(num_chunks, expected_total_chunks);
+                    total_count += pegout_ids.len();
+                }
+                Err(e) => panic!("Error streaming pegout ids: {:?}", e),
+            }
+        }
+        assert_eq!(total_count as u64, num_txs);
+        assert_eq!(
+            chunk_indexes_set.len() as u64,
+            (total_count as u64).div_ceil(chunk_size as u64)
+        );
+    }
+
+    #[test]
+    fn should_store_many_finalized_pegout_ids_atomically() {
+        let (db, _temp_dir) = setup_db();
+        let num_pegout_ids = 5;
+        let mut pegouts = vec![];
+        for _ in 0..num_pegout_ids {
+            let pegout_id = create_random_pegout_id();
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            pegouts.push(finalized_pegout);
+        }
+        let pegout_slice = pegouts.iter().collect::<Vec<&FinalizedPegout>>();
+        db.store_finalized_pegout_ids_atomically(&pegout_slice).unwrap();
+        db.flush().unwrap();
+
+        // Get all pegout ids
+        let pegouts_retrieved = db.get_finalized_pegout_ids().unwrap();
+        assert_eq!(pegouts.len(), num_pegout_ids);
+        // All pegouts should be present
+        for pegout in pegouts.iter() {
+            assert!(pegouts_retrieved.contains(pegout));
+        }
+    }
+
+    #[test]
+    fn should_store_many_finalized_pegout_ids() {
+        let (db, _temp_dir) = setup_db();
+        let num_pegout_ids = 5;
+        let mut pegouts = vec![];
+        for _ in 0..num_pegout_ids {
+            let pegout_id = create_random_pegout_id();
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            pegouts.push(finalized_pegout);
+        }
+        let pegout_slice = pegouts.iter().collect::<Vec<&FinalizedPegout>>();
+        db.store_finalized_pegout_ids(&pegout_slice).unwrap();
+        db.flush().unwrap();
+
+        // Get all pegout ids
+        let pegouts_retrieved = db.get_finalized_pegout_ids().unwrap();
+        assert_eq!(pegouts.len(), num_pegout_ids);
+        // All pegouts should be present
+        for pegout in pegouts.iter() {
+            assert!(pegouts_retrieved.contains(pegout));
+        }
     }
 
     #[test]

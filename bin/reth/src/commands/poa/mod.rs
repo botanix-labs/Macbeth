@@ -15,6 +15,7 @@ use reth_authority_consensus::{
     random_source_provider::RandomSourceProvider,
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
+    wallet_state_sync::WalletStateSync,
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
 use reth_cli_util::{get_secret_key, parse_ethereum_address, parse_socket_address};
@@ -620,6 +621,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     .rpc
                     .max_signers
                     .ok_or_else(|| eyre::eyre!("max signers not specified"))?,
+                node_config.state_sync.wallet_state_sync_chunk_size,
             );
 
             info!(target: "reth::cli", "Frost config initialized");
@@ -716,7 +718,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
-        let (frost_task, abci_client_builder, snapshot_manager) =
+        let (frost_task, abci_client_builder, snapshot_manager, wallet_sync) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
                 blockchain_db.clone(),
@@ -753,6 +755,17 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 Box::pin(async move {
                     if let Err(e) = snapshot_manager.run().await {
                         error!(target: "reth::cli", "Snapshot Manager Error: {:?}", e);
+                    }
+                }),
+            );
+        }
+
+        if let Some(wallet_sync) = wallet_sync {
+            executor.spawn_critical(
+                "Wallet Sync",
+                Box::pin(async move {
+                    if let Err(e) = wallet_sync.sync_wallet_state().await {
+                        error!(target: "reth::cli", "Wallet Sync Error: {:?}", e);
                     }
                 }),
             );
@@ -1194,8 +1207,12 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config =
-            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
+        let federation_config = FederationTomlConfig::new(
+            authorities,
+            "0x".to_string(),
+            "0x".to_string(),
+            "0x".to_string(),
+        );
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
             cmd.is_testnet,
@@ -1224,8 +1241,12 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config =
-            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
+        let federation_config = FederationTomlConfig::new(
+            authorities,
+            "0x".to_string(),
+            "0x".to_string(),
+            "0x".to_string(),
+        );
         let cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--datadir",
@@ -1256,8 +1277,12 @@ mod tests {
             socket_addr: format!("127.0.0.1:30303"),
         };
         let authorities = vec![authority];
-        let federation_config =
-            FederationTomlConfig::new(authorities, "0x".to_string(), "0x".to_string());
+        let federation_config = FederationTomlConfig::new(
+            authorities,
+            "0x".to_string(),
+            "0x".to_string(),
+            "0x".to_string(),
+        );
         let cmd = PoaNodeCommand::try_parse_args_from([
             "reth",
             "--datadir",

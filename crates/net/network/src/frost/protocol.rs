@@ -19,15 +19,14 @@ use tracing::{error, info, warn};
 use crate::{
     frost::{
         messages::{DkgRequest, WalletStateRequest},
-        DkgEventResponseType, DkgResponse, SigningEventResponseType, SigningResponse,
-        WalletStateResponse,
+        DkgResponse, SigningEventResponseType, SigningResponse, WalletStateResponse,
     },
     protocol::{ConnectionHandler, OnNotSupported, ProtocolHandler},
 };
 
 use super::{
     messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest},
-    FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse,
+    ConnectionEstablishedStatus, FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse,
 };
 
 /// Frost Protocol Handler
@@ -157,7 +156,7 @@ enum RegistrationState {
     NotRegistered,
     Pending {
         remote_peer_rx: mpsc::UnboundedReceiver<FrostPeerCommand>,
-        callback_rx: oneshot::Receiver<u64>,
+        callback_rx: oneshot::Receiver<ConnectionEstablishedStatus>,
     },
     Registered(u64),
 }
@@ -243,12 +242,23 @@ impl Stream for FrostProtoConnection {
 
                 // Wait for the FROST manager to assign an idx to this connection.
                 match callback_rx.poll_unpin(cx) {
-                    Poll::Ready(Ok(idx)) => {
+                    Poll::Ready(Ok(conn_established_status)) => {
                         // connection was registered immediately and
                         // successfully (unlikely that actually happens in
                         // practice)
-                        this.registration = RegistrationState::Registered(idx);
-                        this.commands_rx = Some(UnboundedReceiverStream::new(remote_peer_rx));
+                        match conn_established_status {
+                            ConnectionEstablishedStatus::Success(idx) => {
+                                // connection was registered successfully
+                                this.registration = RegistrationState::Registered(idx);
+                                this.commands_rx =
+                                    Some(UnboundedReceiverStream::new(remote_peer_rx));
+                            }
+                            ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel |
+                            ConnectionEstablishedStatus::NoneAuthority |
+                            ConnectionEstablishedStatus::ConnectedToOurself => {
+                                return Poll::Ready(None);
+                            }
+                        }
                     }
                     Poll::Ready(Err(e)) => {
                         // this error only occurs if the FROST manager has been dropped.
@@ -272,10 +282,20 @@ impl Stream for FrostProtoConnection {
                 };
 
                 match callback_rx.poll_unpin(cx) {
-                    Poll::Ready(Ok(idx)) => {
-                        // connection was registered successfully
-                        this.registration = RegistrationState::Registered(idx);
-                        this.commands_rx = Some(UnboundedReceiverStream::new(remote_peer_rx));
+                    Poll::Ready(Ok(conn_established_status)) => {
+                        match conn_established_status {
+                            ConnectionEstablishedStatus::Success(idx) => {
+                                // connection was registered successfully
+                                this.registration = RegistrationState::Registered(idx);
+                                this.commands_rx =
+                                    Some(UnboundedReceiverStream::new(remote_peer_rx));
+                            }
+                            ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel |
+                            ConnectionEstablishedStatus::NoneAuthority |
+                            ConnectionEstablishedStatus::ConnectedToOurself => {
+                                return Poll::Ready(None);
+                            }
+                        }
                     }
                     Poll::Ready(Err(e)) => {
                         error!(target: "network::frost::protocol", "Failed to send ConnectionEstablished event: {:?}", e.to_string());
@@ -308,21 +328,10 @@ impl Stream for FrostProtoConnection {
                 }
                 FrostPeerCommand::PeerMessage(response) => match response {
                     PeerMessageResponse::Dkg(dkg_response) => {
-                        let DkgResponse { response_type, identifier, data } = dkg_response;
-                        match response_type {
-                            DkgEventResponseType::DkgRound1Request => {
-                                let req = DkgRequest::new(data, identifier);
-                                FrostProtoMessage::round1_dkg_request_message(req)
-                            }
-                            DkgEventResponseType::DkgRound1 => {
-                                let req = DkgRequest::new(data, identifier);
-                                FrostProtoMessage::round1_dkg_message(req)
-                            }
-                            DkgEventResponseType::DkgRound2 => {
-                                let req = DkgRequest::new(data, identifier);
-                                FrostProtoMessage::round2_dkg_message(req)
-                            }
-                        }
+                        let DkgResponse { data, sender, recipient } = dkg_response;
+
+                        let req = DkgRequest::new(data, sender, recipient);
+                        FrostProtoMessage::dkg_request_message(req)
                     }
                     PeerMessageResponse::Signing(signing_response) => {
                         let SigningResponse { response_type, signing_session_id, psbt } =
@@ -348,9 +357,9 @@ impl Stream for FrostProtoConnection {
                         }
                     }
                     PeerMessageResponse::WalletState(wallet_state_response) => {
-                        let WalletStateResponse { utxos, tracked_txs, pending_pegouts } =
+                        let WalletStateResponse { uuid, finalized_pegout_ids } =
                             wallet_state_response;
-                        let req = WalletStateRequest::new(utxos, tracked_txs, pending_pegouts);
+                        let req = WalletStateRequest::new(&uuid, finalized_pegout_ids);
                         FrostProtoMessage::wallet_state_message(req)
                     }
                 },
@@ -427,26 +436,10 @@ impl Stream for FrostProtoConnection {
                 }
                 return Poll::Pending;
             }
-            FrostProtoMessageKind::Round1Dkg(data) => FrostProtocolEvent::PeerMessage {
+            FrostProtoMessageKind::Dkg(data) => FrostProtocolEvent::PeerMessage {
                 response: PeerMessageResponse::Dkg(DkgResponse {
-                    response_type: DkgEventResponseType::DkgRound1,
-                    identifier: data.identifier,
-                    data: data.data,
-                }),
-                peer_id: this.peer_id,
-            },
-            FrostProtoMessageKind::Round1DkgRequest(data) => FrostProtocolEvent::PeerMessage {
-                response: PeerMessageResponse::Dkg(DkgResponse {
-                    response_type: DkgEventResponseType::DkgRound1Request,
-                    identifier: data.identifier,
-                    data: data.data,
-                }),
-                peer_id: this.peer_id,
-            },
-            FrostProtoMessageKind::Round2Dkg(data) => FrostProtocolEvent::PeerMessage {
-                response: PeerMessageResponse::Dkg(DkgResponse {
-                    response_type: DkgEventResponseType::DkgRound2,
-                    identifier: data.identifier,
+                    sender: data.sender,
+                    recipient: data.recipient,
                     data: data.data,
                 }),
                 peer_id: this.peer_id,
@@ -493,9 +486,8 @@ impl Stream for FrostProtoConnection {
             }
             FrostProtoMessageKind::WalletState(data) => FrostProtocolEvent::PeerMessage {
                 response: PeerMessageResponse::WalletState(WalletStateResponse {
-                    utxos: data.utxos,
-                    tracked_txs: data.tracked_txs,
-                    pending_pegouts: data.pending_pegouts,
+                    uuid: data.uuid,
+                    finalized_pegout_ids: data.finalized_pegout_ids,
                 }),
                 peer_id: this.peer_id,
             },
@@ -562,7 +554,7 @@ mod tests {
         };
 
         // Manager assigns the connection idx
-        sender.send(0).unwrap();
+        sender.send(ConnectionEstablishedStatus::Success(0)).unwrap();
 
         // Send wire message to the connection (ping)
         let wire_msg = FrostProtoMessage::ping().encoded();
@@ -629,7 +621,7 @@ mod tests {
         };
 
         // Manager assigns the connection idx
-        sender.send(0).unwrap();
+        sender.send(ConnectionEstablishedStatus::Success(0)).unwrap();
 
         // Connection receives all wire messages and generates a response each (pong)
         for _ in 0..4 {
@@ -671,9 +663,8 @@ mod tests {
 
         let req = WalletStateRequest {
             version: 1,
-            pending_pegouts: vec![1, 2, 3],
-            tracked_txs: vec![4, 5, 6],
-            utxos: vec![7, 8, 9],
+            uuid: "uuid-1".to_string(),
+            finalized_pegout_ids: vec![1, 2, 3],
         };
 
         // Send wire messages to the connection that create events for the manager
@@ -700,7 +691,7 @@ mod tests {
         };
 
         // Manager assigns the connection idx
-        sender.send(0).unwrap();
+        sender.send(ConnectionEstablishedStatus::Success(0)).unwrap();
 
         let event_queue = protocol_events_rx.len();
         assert_eq!(event_queue, 0); // max=3
@@ -754,5 +745,61 @@ mod tests {
         let Poll::Pending = res else { panic!() };
 
         assert!(protocol_events_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn frost_proto_conn_established_violation() {
+        let (protocol_events_tx, mut protocol_events_rx) = mpsc::channel(3);
+        let protocol_events_tx = PollSender::new(protocol_events_tx);
+
+        let (_conn_tx, conn_rx) = mpsc::unbounded_channel();
+        let conn_rx = UnboundedReceiverStream::new(conn_rx);
+        let conn_rx = ProtocolConnection::from(conn_rx);
+
+        let direction = Direction::Incoming;
+
+        let mut conn = FrostProtoConnection {
+            protocol_events_tx,
+            registration: RegistrationState::NotRegistered,
+            conn_rx,
+            commands_rx: None,
+            my_peer_id: PeerId::new([0; 64]),
+            peer_id: PeerId::new([1; 64]),
+            direction,
+            pending_pong: None,
+        };
+
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        // Poll connection for the first time; it's pending as it needs to be registered first.
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        // Manager receives the connection established event.
+        let msg = protocol_events_rx.try_recv().unwrap();
+        let FrostProtocolEvent::ConnectionEstablished {
+            direction: _,
+            peer_id: _,
+            peer_commands_tx: _,
+            sender,
+        } = msg
+        else {
+            panic!()
+        };
+
+        // Connection is pending at this point
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Pending = res else { panic!() };
+
+        // Manager reports a none authority connection attempt
+        sender.send(ConnectionEstablishedStatus::NoneAuthority).unwrap();
+
+        // Connection has to be closed and no longer pending here
+        let res = conn.poll_next_unpin(&mut cx);
+        let Poll::Ready(None) = res else { panic!() };
     }
 }

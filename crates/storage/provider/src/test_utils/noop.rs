@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::{RangeBounds, RangeInclusive},
     sync::Arc,
 };
@@ -9,7 +9,10 @@ use reth_chain_state::{
     ForkChoiceSubscriptions,
 };
 use reth_chainspec::{ChainInfo, ChainSpec, MAINNET};
-use reth_db::models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId};
+use reth_db::models::{
+    ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
+    WalletStateSyncRecord,
+};
 use reth_db_api::models::{AccountBeforeTx, StoredBlockBodyIndices};
 use reth_errors::ProviderError;
 use reth_evm::ConfigureEvmEnv;
@@ -36,7 +39,8 @@ use crate::{
     ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider, PruneCheckpointReader,
     ReceiptProviderIdExt, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
     StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
-    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WithdrawalsProvider,
+    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WalletStateSyncReader,
+    WalletStateSyncWriter, WithdrawalsProvider,
 };
 
 /// Supports various api interfaces for testing purposes.
@@ -297,6 +301,62 @@ impl SnapshotWriter for NoopProvider {
 
     fn delete_chunks_in_blocks(&self, _range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
         Ok(())
+    }
+}
+
+impl WalletStateSyncWriter for NoopProvider {
+    fn create_new_state_sync_record(
+        &self,
+        _uuid: UuidID,
+        _peer_id: PeerID,
+        _chunks_count: u64,
+        _data: Option<Vec<(u64, Bytes)>>,
+    ) -> ProviderResult<PeerID> {
+        Ok(PeerID::random())
+    }
+
+    fn append_data_to_state_sync_record(
+        &self,
+        _peer_id: PeerID,
+        _data: Vec<(u64, Bytes)>,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn remove_state_sync_record_per_peer_id(&self, _peer_id: PeerID) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
+        Ok(())
+    }
+}
+
+impl WalletStateSyncReader for NoopProvider {
+    fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>> {
+        Ok(vec![])
+    }
+
+    fn get_state_sync_record_peer_ids(&self) -> ProviderResult<Vec<PeerID>> {
+        Ok(vec![])
+    }
+
+    fn get_state_sync_record_by_peer_id(
+        &self,
+        _peer_id: PeerID,
+    ) -> ProviderResult<Option<WalletStateSyncRecord>> {
+        Ok(None)
+    }
+
+    fn get_state_sync_records_count(&self) -> ProviderResult<usize> {
+        Ok(0)
+    }
+
+    fn get_minimum_superset(
+        &self,
+        _min_required_criterion: u64,
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
+        Ok((false, HashSet::new()))
     }
 }
 

@@ -1195,8 +1195,8 @@ where
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
     fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
-        info!("prepare_proposal request for height: {:?}", request.height);
         debug!("prepare_proposal request: {:?}", request);
+        info!("prepare_proposal request for height: {:?}", request.height);
         let _txs_bytes = request.txs;
 
         // insert non-deterministic data tx at index 0 so historical sync will pass verification
@@ -1356,8 +1356,8 @@ where
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
-        info!("process_proposal request for height: {:?}", request.height);
         debug!("process_proposal request: {:?}", request);
+        info!("process_proposal request for height: {:?}", request.height);
         let storage = self.storage.inner.blocking_read();
         let agg_pk = match self.aggregate_public_key() {
             Ok(pk) => pk,
@@ -1496,6 +1496,7 @@ where
 
     ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
+        debug!("finalize_block request: {:?}", request);
         info!(
             "finalize_block request for height: {:?}, number of txs: {:?}",
             request.height,
@@ -1662,7 +1663,7 @@ where
         }
 
         let block_hash = block_with_context.sealed_block_with_peg.block().hash();
-        self.metrics.commet_finalzied_blocks.increment(1);
+        self.metrics.commet_finalized_blocks.increment(1);
         ResponseFinalizeBlock {
             events: vec![],
             tx_results: exec_results,

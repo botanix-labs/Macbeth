@@ -1,8 +1,9 @@
 //! Extended bitcoin server client with authentication
 use alloy_rpc_types_engine::{Claims, JwtSecret};
 use client::{
-    BtcServerClient, ConsensusCheckpointRequest, DkgPayload, Empty, FinalizeSignerRequest,
-    FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse, GetGatewayAddressRequest,
+    BtcServerClient, ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty,
+    FinalizeSignerRequest, FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
+    GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
     GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
     GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
     GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest, ResetWalletStateRequest,
@@ -58,26 +59,14 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         &mut self,
         request: Empty,
     ) -> BoxFuture<'_, Result<GetPublicKeyResponse, GrpcClientError>>;
-    fn get_round1_dkg_package(
+    fn get_dkg_payloads(
         &mut self,
         request: Empty,
-    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
-    fn get_round1_dkg_packages(
-        &mut self,
-        request: Empty,
-    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
-    fn new_round1_dkg_package(
+    ) -> BoxFuture<'_, Result<DkgPayloads, GrpcClientError>>;
+    fn new_dkg_payload(
         &mut self,
         request: DkgPayload,
-    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
-    fn get_round2_dkg_package(
-        &mut self,
-        request: Empty,
-    ) -> BoxFuture<'_, Result<DkgPayload, GrpcClientError>>;
-    fn new_round2_dkg_package(
-        &mut self,
-        request: DkgPayload,
-    ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    ) -> BoxFuture<'_, Result<DkgPayloads, GrpcClientError>>;
     fn get_round1_signing_package(
         &mut self,
         request: SigningPackageRequest,
@@ -148,15 +137,60 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         &mut self,
         request: ConsensusCheckpointRequest,
     ) -> BoxFuture<'_, Result<Empty, GrpcClientError>>;
+    fn get_finalized_pegout_ids(
+        &mut self,
+        request: GetFinalizedPegoutIdsRequest,
+    ) -> BoxFuture<
+        '_,
+        Result<
+            impl tonic::codegen::tokio_stream::Stream<
+                    Item = Result<GetFinalizedPegoutIdsResponse, tonic::Status>,
+                > + Send
+                + 'static,
+            GrpcClientError,
+        >,
+    >;
 }
 
-/// Macro for generating grpc methods implementation
+/// Macros for generating grpc methods implementation
 macro_rules! generate_method {
     ($method_name:ident, $req_ty:ty, $resp_ty:ty) => {
         fn $method_name(
             &mut self,
             request: $req_ty,
         ) -> BoxFuture<'_, Result<$resp_ty, GrpcClientError>> {
+            Box::pin(async move {
+                let mut req = tonic::Request::new(request);
+
+                if let Some(jwt_auth_token) = self.generate_jwt_token() {
+                    let jwt_auth_token = MetadataValue::from_bytes(jwt_auth_token.as_bytes());
+                    let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
+                    req.metadata_mut().insert_bin(key, jwt_auth_token);
+                }
+
+                match self.client.$method_name(req).await {
+                    Ok(response) => Ok(response.into_inner()),
+                    Err(status) => Err(GrpcClientError::Call(status)),
+                }
+            })
+        }
+    };
+}
+
+macro_rules! generate_stream_method {
+    ($method_name:ident, $req_ty:ty, $resp_ty:ty) => {
+        fn $method_name(
+            &mut self,
+            request: $req_ty,
+        ) -> BoxFuture<
+            '_,
+            Result<
+                impl tonic::codegen::tokio_stream::Stream<Item = Result<$resp_ty, tonic::Status>>
+                    + Send
+                    + 'static,
+                GrpcClientError,
+            >,
+        > {
             Box::pin(async move {
                 let mut req = tonic::Request::new(request);
 
@@ -217,11 +251,8 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
 
     generate_method!(get_gateway_address, GetGatewayAddressRequest, GetGatewayAddressResponse);
     generate_method!(get_public_key, Empty, GetPublicKeyResponse);
-    generate_method!(get_round1_dkg_package, Empty, DkgPayload);
-    generate_method!(get_round1_dkg_packages, Empty, DkgPayload);
-    generate_method!(new_round1_dkg_package, DkgPayload, Empty);
-    generate_method!(get_round2_dkg_package, Empty, DkgPayload);
-    generate_method!(new_round2_dkg_package, DkgPayload, Empty);
+    generate_method!(get_dkg_payloads, Empty, DkgPayloads);
+    generate_method!(new_dkg_payload, DkgPayload, DkgPayloads);
     generate_method!(get_round1_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(get_round2_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(new_round1_signing_package, SigningPackage, Empty);
@@ -241,6 +272,11 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     generate_method!(get_pending_pegouts, Empty, GetPendingPegoutsResponse);
     generate_method!(reset_wallet_state, ResetWalletStateRequest, Empty);
     generate_method!(new_consensus_checkpoint, ConsensusCheckpointRequest, Empty);
+    generate_stream_method!(
+        get_finalized_pegout_ids,
+        GetFinalizedPegoutIdsRequest,
+        GetFinalizedPegoutIdsResponse
+    );
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

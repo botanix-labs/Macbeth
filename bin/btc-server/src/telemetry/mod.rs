@@ -235,6 +235,12 @@ impl Telemetry {
         });
     }
 
+    pub fn update_finalized_pegout_ids(&self, pegout_ids: i64) {
+        self.maybe_use_metrics(|metrics| {
+            metrics.finalized_pegout_ids.with_label_values(&[]).set(pegout_ids);
+        });
+    }
+
     pub fn maybe_use_metrics<F>(&self, f: F)
     where
         F: Fn(&BtcServerMetrics),

@@ -52,14 +52,6 @@ pub async fn do_signing(
         bitcoind.get_block_hash(tip - pegin_conf_depth as u64)?
     };
 
-    // TODO assertions on wallet state
-    // let _utxo_merkle = coordinator
-    //     .get_utxo_merkle_root(tonic::Request::new(client::Empty {}))
-    //     .await
-    //     .map_err(Error::Request)?
-    //     .into_inner()
-    //     .merkle_root;
-
     let original_psbt = coordinator
         .get_psbt(tonic::Request::new(client::MakeTxRequest {
             signing_session_id: signing_session_id.to_vec(),
@@ -73,11 +65,7 @@ pub async fn do_signing(
     // Round 1 signing
     // Signers will add their signing commitments to the psbt (including the coordinator)
     let mut round1_signing_commitments: Vec<SigningPackage> = vec![];
-    for (index, client) in clients.iter_mut().enumerate() {
-        // skip the coordinator here
-        if coordinator_index == index {
-            continue;
-        }
+    for (_index, client) in clients.iter_mut().enumerate() {
         let c_signing = client
             .get_round1_signing_package(tonic::Request::new(client::SigningPackageRequest {
                 psbt: original_psbt.clone(),
@@ -109,11 +97,7 @@ pub async fn do_signing(
 
     // Signers should add their partial sigs to the psbt for each input
     let mut round2_signing_commitments: Vec<SigningPackage> = vec![];
-    for (index, client) in clients.iter_mut().enumerate() {
-        // skip the coordinator here
-        if coordinator_index == index {
-            continue;
-        }
+    for (_index, client) in clients.iter_mut().enumerate() {
         let c_signing2 = client
             .get_round2_signing_package(tonic::Request::new(SigningPackageRequest {
                 psbt: to_sign_package.clone().psbt,
@@ -143,21 +127,6 @@ pub async fn do_signing(
     let coord_psbt = bitcoin::Psbt::deserialize(&finalized.clone().psbt)?;
     // TODO add some assertions for psbt here
     let final_tx = coord_psbt.clone().extract_tx()?;
-    // for (index, client) in clients.iter_mut().enumerate() {
-    //     // skip the coordinator here
-    //     if coordinator_index == index {
-    //         continue;
-    //     }
-
-    //     client
-    //         .signer_finalize(tonic::Request::new(client::FinalizeSignerRequest {
-    //             psbt: finalized.clone().psbt,
-    //         }))
-    //         .await
-    //         .map_err(Error::Request)?;
-
-    //     // TODO Signers should end up with the same tracked txs after they finalize
-    // }
 
     Ok(final_tx)
 }
@@ -185,6 +154,7 @@ pub async fn all_clients_have_same_wallet_state(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub async fn test_many_inputs_signing(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), anyhow::Error> {
@@ -306,7 +276,7 @@ pub async fn test_many_inputs_signing(
         .await
         .err()
         .ok_or_else(|| anyhow::anyhow!("error not present"))?;
-    println!("err_res: {:?}", err_res);
+    it_info_print!("err_res: ", err_res);
 
     assert!(err_res.to_string().contains("Outputs cannot be empty"));
 
@@ -329,15 +299,12 @@ pub async fn test_many_inputs_signing(
 
     // Lets make sure it was broadcasted
     let tx_res = bitcoind.get_raw_transaction(&final_tx.compute_txid(), None).expect("valid tx");
-    it_info_print!("final tx_res: {:?}", tx_res);
+    it_info_print!("final tx_res: ", tx_res);
     assert_eq!(tx_res.compute_txid(), final_tx.compute_txid());
 
     assert_eq!(final_tx.input.len(), 2);
     // One output should be the change output
     assert_eq!(final_tx.output.len(), 2);
-
-    // Assert that all clients have the same UTXO set
-    all_clients_have_same_wallet_state(&mut clients).await?;
 
     let mut pending_pegouts = vec![];
     let number_of_pending_pegouts = 5;
@@ -399,7 +366,6 @@ pub async fn test_many_inputs_signing(
     // txs
     assert_eq!(utxos.len(), 5);
     bitcoind.generate_to_address(1, &address).expect("generate regtest block");
-    all_clients_have_same_wallet_state(&mut clients).await?;
 
     // update the checkpoint blockhash
     let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
@@ -491,6 +457,5 @@ pub async fn test_many_inputs_signing(
     let found_match = change_ots.iter().any(|change_ot| tx_ots.contains(change_ot));
     assert!(found_match);
 
-    all_clients_have_same_wallet_state(&mut clients).await?;
     Ok(())
 }

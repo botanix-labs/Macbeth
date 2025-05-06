@@ -21,21 +21,6 @@ pub async fn get_round1_signing_package(
     db: &Database,
     my_identifier: &Identifier,
 ) -> Result<Vec<(SigningNonces, SigningCommitments)>, SigningRound1Error> {
-    // self.db.get_key_package()?.ok_or(SigningRound1Error::MissingKeyPackage)?;
-    // // Check if have already provided nonces for the current session
-    // let mut nonces_lock = self.frost_round1_nonces.lock().await;
-    // if nonces_lock.is_some() {
-    //     if let Some(telemetry) = self.telemetry.as_ref() {
-    //         telemetry.update_signing_error_metrics(
-    //             self.btc_network,
-    //             self.config.identifier,
-    //             Some(signing_session_id.clone()),
-    //             &SigningRound1Error::AlreadyInSigningSession.to_string(),
-    //         );
-    //     }
-    //     return Err(SigningRound1Error::AlreadyInSigningSession);
-    // }
-
     // TODO: re-enable this check
     // check fee is within acceptable range
     // let psbt_fee_rate =
@@ -70,9 +55,7 @@ pub async fn get_round1_signing_package(
     // }
 
     // Validate PSBT
-    if cfg!(feature = "conflicting_input") {
-        validate_psbt(psbt, ROUND1, min_signers, db)?;
-    }
+    validate_psbt(psbt, ROUND1, min_signers, db)?;
 
     let num_inputs = psbt.inputs.len();
 
@@ -106,10 +89,7 @@ pub async fn get_round2_signing_package(
     // Each nonce pair is commitment to a input of the tx
     signing_nonces: &[(SigningNonces, SigningCommitments)],
 ) -> Result<(), SigningRound2Error> {
-    // Validate PSBT
-    if cfg!(feature = "conflicting_input") {
-        validate_psbt(psbt, ROUND1, min_signers, db)?;
-    }
+    validate_psbt(psbt, ROUND1, min_signers, db)?;
 
     let tx = psbt.clone().extract_tx()?;
     let num_inputs = tx.input.len();

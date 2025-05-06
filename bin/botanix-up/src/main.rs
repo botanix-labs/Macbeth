@@ -109,6 +109,7 @@ async fn create_cometbft_nodes(num_nodes: u16, output_path: PathBuf) -> AnyResul
 
 async fn create_poa_nodes(num_nodes: u16, output_path: PathBuf) -> AnyResult<()> {
     let random_fee_recipient = Address::random();
+    let random_lst_fee_receiver = Address::random();
     let poa_path = output_path.join("poa");
     // Create the output directory
     std::fs::create_dir_all(&poa_path)?;
@@ -153,6 +154,7 @@ async fn create_poa_nodes(num_nodes: u16, output_path: PathBuf) -> AnyResult<()>
         federation_member_public_key: fed_pks,
         botanix_fee_recipient: random_fee_recipient.to_string(),
         minting_contract_bytecode: String::from(MINTING_CONTRACT_BYTECODE),
+        lst_fee_receiver: random_lst_fee_receiver.to_string(),
     };
 
     let federation_config_path = Path::new(&poa_path).join("federation.toml");

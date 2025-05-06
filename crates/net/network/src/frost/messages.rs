@@ -9,29 +9,6 @@ use reth_primitives::{Buf, BufMut, BytesMut};
 const MESSAGE_VERSION: usize = 0;
 const WALLET_STATE_MESSAGE_VERSION: usize = 0;
 
-/// A structured healthcheck message
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HealthcheckRequest {
-    /// healthcheck ping sender
-    pub sender: PeerId,
-    /// healthcheck ping receiver
-    pub receiver: PeerId,
-}
-
-/// Healtcheck message builder
-impl HealthcheckRequest {
-    /// Constructs a new healthcheck request
-    pub const fn new(sender: PeerId, receiver: PeerId) -> Self {
-        Self { sender, receiver }
-    }
-}
-
-impl fmt::Display for HealthcheckRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Healtcheck sender: {:?}. Healthcheck receiver: {:?}", self.sender, self.receiver)
-    }
-}
-
 /// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DkgRequest {
@@ -39,14 +16,16 @@ pub struct DkgRequest {
     pub version: u16,
     /// Frost data
     pub data: Vec<u8>,
-    /// Frost identifier
-    pub identifier: Vec<u8>,
+    /// Frost sender
+    pub sender: Vec<u8>,
+    /// Frost recipient
+    pub recipient: Vec<u8>,
 }
 
 impl DkgRequest {
     /// Constructs a new DKG Request using a frost identifier and a data payload.
-    pub const fn new(data: Vec<u8>, identifier: Vec<u8>) -> Self {
-        Self { version: MESSAGE_VERSION as u16, data, identifier }
+    pub const fn new(data: Vec<u8>, sender: Vec<u8>, recipient: Vec<u8>) -> Self {
+        Self { version: MESSAGE_VERSION as u16, data, sender, recipient }
     }
 }
 
@@ -69,17 +48,15 @@ impl SignRequest {
     }
 }
 
-/// A structured wallet state message
+/// A structured wallet state sync request message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WalletStateRequest {
+    /// uuid of the wallet state sync request
+    pub uuid: String,
     /// The version of the request message
     pub version: u16,
-    /// utxos
-    pub utxos: Vec<u8>,
-    /// tracked transactions
-    pub tracked_txs: Vec<u8>,
-    /// pending pegouts
-    pub pending_pegouts: Vec<u8>,
+    /// finalized pegout ids
+    pub finalized_pegout_ids: Vec<u8>,
 }
 
 impl fmt::Display for WalletStateRequest {
@@ -87,20 +64,20 @@ impl fmt::Display for WalletStateRequest {
         write!(
             f,
             "WalletStateRequest:\n\
-            - UTXOs: {} bytes\n\
-            - Tracked Transactions: {} bytes\n\
-            - Pending Pegouts: {} bytes",
-            self.utxos.len(),
-            self.tracked_txs.len(),
-            self.pending_pegouts.len()
+            - Pegout Ids: {} bytes",
+            self.finalized_pegout_ids.len()
         )
     }
 }
 
 impl WalletStateRequest {
     /// Constructs a new wallet state request using a data payload.
-    pub const fn new(utxos: Vec<u8>, tracked_txs: Vec<u8>, pending_pegouts: Vec<u8>) -> Self {
-        Self { version: WALLET_STATE_MESSAGE_VERSION as u16, utxos, tracked_txs, pending_pegouts }
+    pub fn new(uuid: &str, finalized_pegout_ids: Vec<u8>) -> Self {
+        Self {
+            version: WALLET_STATE_MESSAGE_VERSION as u16,
+            finalized_pegout_ids,
+            uuid: uuid.to_string(),
+        }
     }
 }
 
@@ -108,10 +85,8 @@ impl WalletStateRequest {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrostProtoMessageId {
-    /// Round 1 package
-    Round1Dkg = 0x00,
-    /// Round 2 package
-    Round2Dkg = 0x01,
+    /// Dkg package
+    Dkg = 0x00,
     /// Ping
     Ping = 0x02,
     /// Pong
@@ -128,8 +103,6 @@ pub enum FrostProtoMessageId {
     SignerRound2SigningPackage = 0x08,
     /// Coordinating node will collect the PSBTs with the partial sigs
     CoordinatorRound2SigningPackage = 0x09,
-    /// Round 1 Dkg request message
-    Round1DkgRequest = 0x0A,
     /// `WalletState`
     WalletState = 0x0B,
 }
@@ -137,12 +110,8 @@ pub enum FrostProtoMessageId {
 /// Enum defining the frost message kind
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FrostProtoMessageKind {
-    /// Round 1 package
-    Round1Dkg(DkgRequest),
-    /// Round 2 package
-    Round2Dkg(DkgRequest),
-    /// Round 1 Dkg request
-    Round1DkgRequest(DkgRequest),
+    /// Dkg package
+    Dkg(DkgRequest),
     /// Ping
     Ping,
     /// Pong
@@ -208,27 +177,11 @@ impl FrostProtoMessage {
         }
     }
 
-    /// Creates a round1 package request message
-    pub const fn round1_dkg_request_message(resource: DkgRequest) -> Self {
+    /// Creates a dkg package message
+    pub const fn dkg_request_message(resource: DkgRequest) -> Self {
         Self {
-            message_type: FrostProtoMessageId::Round1DkgRequest,
-            message: FrostProtoMessageKind::Round1Dkg(resource),
-        }
-    }
-
-    /// Creates a round1 package message
-    pub const fn round1_dkg_message(resource: DkgRequest) -> Self {
-        Self {
-            message_type: FrostProtoMessageId::Round1Dkg,
-            message: FrostProtoMessageKind::Round1Dkg(resource),
-        }
-    }
-
-    /// Creates a round2 package message
-    pub const fn round2_dkg_message(resource: DkgRequest) -> Self {
-        Self {
-            message_type: FrostProtoMessageId::Round2Dkg,
-            message: FrostProtoMessageKind::Round2Dkg(resource),
+            message_type: FrostProtoMessageId::Dkg,
+            message: FrostProtoMessageKind::Dkg(resource),
         }
     }
 
@@ -278,21 +231,14 @@ impl FrostProtoMessage {
         let mut buf = BytesMut::new();
         buf.put_u8(self.message_type as u8);
         match &self.message {
-            FrostProtoMessageKind::Round1Dkg(resource) |
-            FrostProtoMessageKind::Round2Dkg(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
+            FrostProtoMessageKind::Dkg(resource) => {
+                // sender
+                buf.put_u8(resource.sender.len() as u8); // Assuming sender is not too long
+                buf.put_slice(&resource.sender);
+                // recipient
+                buf.put_u8(resource.recipient.len() as u8); // Assuming recipient is not too long
+                buf.put_slice(&resource.recipient);
                 // data
-                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
-                buf.put_slice(&resource.data);
-            }
-            FrostProtoMessageKind::Round1DkgRequest(resource) => {
-                // identifier
-                buf.put_u8(resource.identifier.len() as u8); // Assuming identifier is not too long
-                buf.put_slice(&resource.identifier);
-                // data
-                // TODO(armins) data is empty, simplify
                 buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.data);
             }
@@ -317,17 +263,16 @@ impl FrostProtoMessage {
                 buf.put_slice(&resource.psbt);
             }
             FrostProtoMessageKind::WalletState(resource) => {
-                // serialize the utxos
-                buf.put_u64_le(resource.utxos.len() as u64); // Use u64 to support larger utxos sizes
-                buf.put_slice(&resource.utxos);
+                // uuid
+                buf.put_u32_le(resource.uuid.len() as u32);
+                buf.put_slice(resource.uuid.as_bytes());
 
-                // serialize the tracked txs
-                buf.put_u64_le(resource.tracked_txs.len() as u64); // Use u64 to support larger tracked txs sizes
-                buf.put_slice(&resource.tracked_txs);
+                // version
+                buf.put_u16_le(resource.version);
 
-                // serialize the pending pegouts
-                buf.put_u64_le(resource.pending_pegouts.len() as u64); // Use u64 to support larger pending pegouts sizes
-                buf.put_slice(&resource.pending_pegouts);
+                // finalized_pegout_ids - first put the length of the vector
+                buf.put_u32_le(resource.finalized_pegout_ids.len() as u32); // Use u32 to support larger data sizes
+                buf.put_slice(&resource.finalized_pegout_ids);
             }
         }
         buf
@@ -335,14 +280,21 @@ impl FrostProtoMessage {
 
     /// Decodes a Frost protocol message from the given message buffer.
     pub fn decode_message(buf: &mut &[u8]) -> Option<Self> {
+        // Check if buffer is empty
         if buf.is_empty() {
             return None;
         }
+
+        // Safely get message ID
         let id = buf[0];
+        if buf.is_empty() {
+            return None;
+        }
         buf.advance(1);
+
+        // Match message type
         let message_type = match id {
-            0x00 => FrostProtoMessageId::Round1Dkg,
-            0x01 => FrostProtoMessageId::Round2Dkg,
+            0x00 => FrostProtoMessageId::Dkg,
             0x02 => FrostProtoMessageId::Ping,
             0x03 => FrostProtoMessageId::Pong,
             0x04 => FrostProtoMessageId::PingMessage,
@@ -351,16 +303,21 @@ impl FrostProtoMessage {
             0x07 => FrostProtoMessageId::CoordinatorRound1SigningPackage,
             0x08 => FrostProtoMessageId::SignerRound2SigningPackage,
             0x09 => FrostProtoMessageId::CoordinatorRound2SigningPackage,
-            0x0A => FrostProtoMessageId::Round1DkgRequest,
             0x0B => FrostProtoMessageId::WalletState,
             _ => return None,
         };
+
+        // Decode message based on type
         let message = match message_type {
-            // Other cases remain unchanged
-            FrostProtoMessageId::Round1Dkg => {
+            FrostProtoMessageId::Dkg => {
                 let id_len = buf[0] as usize;
                 buf.advance(1);
-                let identifier = buf[..id_len].to_vec();
+                let sender = buf[..id_len].to_vec();
+                buf.advance(id_len);
+                //
+                let id_len = buf[0] as usize;
+                buf.advance(1);
+                let recipient = buf[..id_len].to_vec();
                 buf.advance(id_len);
 
                 let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
@@ -368,157 +325,177 @@ impl FrostProtoMessage {
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::Round1Dkg(DkgRequest::new(data, identifier))
+                FrostProtoMessageKind::Dkg(DkgRequest::new(data, sender, recipient))
             }
-            FrostProtoMessageId::Round2Dkg => {
-                let id_len = buf[0] as usize;
-                buf.advance(1);
-                let identifier = buf[..id_len].to_vec();
-                buf.advance(id_len);
-
-                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let data = buf[..data_len].to_vec();
-                buf.advance(data_len);
-
-                FrostProtoMessageKind::Round2Dkg(DkgRequest::new(data, identifier))
-            }
-            FrostProtoMessageId::Round1DkgRequest => {
-                let id_len = buf[0] as usize;
-                buf.advance(1);
-                let identifier = buf[..id_len].to_vec();
-                buf.advance(id_len);
-
-                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let data = buf[..data_len].to_vec();
-                buf.advance(data_len);
-
-                FrostProtoMessageKind::Round1DkgRequest(DkgRequest::new(data, identifier))
-            }
-
             FrostProtoMessageId::Ping => FrostProtoMessageKind::Ping,
             FrostProtoMessageId::Pong => FrostProtoMessageKind::Pong,
-            FrostProtoMessageId::PingMessage => {
-                let peer_id_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
+
+            FrostProtoMessageId::PingMessage | FrostProtoMessageId::PongMessage => {
+                // Check if there's enough data for peer_id_len
+                if buf.len() < 2 {
+                    return None;
+                }
+
+                // Safely convert bytes to u16
+                let peer_id_len = match buf[..2].try_into() {
+                    Ok(bytes) => u16::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(2);
-                let peer_id_str = std::str::from_utf8(&buf[..peer_id_len]).unwrap();
-                let peer_id = PeerId::from_str(peer_id_str).unwrap(); // Assuming from_str can never fail in this context
+
+                // Check if there's enough data for peer_id_str
+                if buf.len() < peer_id_len {
+                    return None;
+                }
+
+                // Safely convert bytes to string
+                let peer_id_str = match std::str::from_utf8(&buf[..peer_id_len]) {
+                    Ok(s) => s,
+                    Err(_) => return None,
+                };
+
+                // Safely convert string to PeerId
+                let peer_id = match PeerId::from_str(peer_id_str) {
+                    Ok(id) => id,
+                    Err(_) => return None,
+                };
                 buf.advance(peer_id_len);
 
-                FrostProtoMessageKind::PingMessage(peer_id)
+                match message_type {
+                    FrostProtoMessageId::PingMessage => FrostProtoMessageKind::PingMessage(peer_id),
+                    FrostProtoMessageId::PongMessage => FrostProtoMessageKind::PongMessage(peer_id),
+                    _ => unreachable!(), // We've already matched these values above
+                }
             }
-            FrostProtoMessageId::PongMessage => {
-                let peer_id_len = u16::from_le_bytes(buf[..2].try_into().unwrap()) as usize;
-                buf.advance(2);
-                let peer_id_str = std::str::from_utf8(&buf[..peer_id_len]).unwrap();
-                let peer_id = PeerId::from_str(peer_id_str).unwrap(); // Assuming from_str can never fail in this context
-                buf.advance(peer_id_len);
 
-                FrostProtoMessageKind::PongMessage(peer_id)
-            }
-            FrostProtoMessageId::SignerRound1SigningPackage => {
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
-                buf.advance(4);
-                let signing_session_id = buf[..session_id_len].to_vec();
-                buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let psbt = buf[..psbt_len].to_vec();
-                buf.advance(psbt_len);
-
-                FrostProtoMessageKind::SignerRound1SigningPackage(SignRequest::new(
-                    signing_session_id,
-                    psbt,
-                ))
-            }
-            FrostProtoMessageId::CoordinatorRound1SigningPackage => {
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
-                buf.advance(4);
-                let signing_session_id = buf[..session_id_len].to_vec();
-                buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let psbt = buf[..psbt_len].to_vec();
-                buf.advance(psbt_len);
-
-                FrostProtoMessageKind::CoordinatorRound1SigningPackage(SignRequest::new(
-                    signing_session_id,
-                    psbt,
-                ))
-            }
-            FrostProtoMessageId::SignerRound2SigningPackage => {
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
-                buf.advance(4);
-                let signing_session_id = buf[..session_id_len].to_vec();
-                buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
-                buf.advance(4);
-                let psbt = buf[..psbt_len].to_vec();
-                buf.advance(psbt_len);
-
-                FrostProtoMessageKind::SignerRound2SigningPackage(SignRequest::new(
-                    signing_session_id,
-                    psbt,
-                ))
-            }
+            FrostProtoMessageId::SignerRound1SigningPackage |
+            FrostProtoMessageId::CoordinatorRound1SigningPackage |
+            FrostProtoMessageId::SignerRound2SigningPackage |
             FrostProtoMessageId::CoordinatorRound2SigningPackage => {
-                // Decode signing_session_id as u32
-                let session_id_len = u32::from_le_bytes(
-                    buf[..4].try_into().expect("Buffer underflow for session ID length"),
-                ) as usize;
+                // Check if there's enough data for session_id_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                // Safely convert bytes to u32
+                let session_id_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(4);
+
+                // Check if there's enough data for signing_session_id
+                if buf.len() < session_id_len {
+                    return None;
+                }
+
                 let signing_session_id = buf[..session_id_len].to_vec();
                 buf.advance(session_id_len);
-                // psbt
-                let psbt_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+
+                // Check if there's enough data for psbt_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                // Safely convert bytes to u32
+                let psbt_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(4);
+
+                // Check if there's enough data for psbt
+                if buf.len() < psbt_len {
+                    return None;
+                }
+
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
 
-                FrostProtoMessageKind::CoordinatorRound2SigningPackage(SignRequest::new(
-                    signing_session_id,
-                    psbt,
-                ))
+                let sign_request = SignRequest::new(signing_session_id, psbt);
+
+                match message_type {
+                    FrostProtoMessageId::SignerRound1SigningPackage => {
+                        FrostProtoMessageKind::SignerRound1SigningPackage(sign_request)
+                    }
+                    FrostProtoMessageId::CoordinatorRound1SigningPackage => {
+                        FrostProtoMessageKind::CoordinatorRound1SigningPackage(sign_request)
+                    }
+                    FrostProtoMessageId::SignerRound2SigningPackage => {
+                        FrostProtoMessageKind::SignerRound2SigningPackage(sign_request)
+                    }
+                    FrostProtoMessageId::CoordinatorRound2SigningPackage => {
+                        FrostProtoMessageKind::CoordinatorRound2SigningPackage(sign_request)
+                    }
+                    _ => unreachable!(), // We've already matched these values above
+                }
             }
+
             FrostProtoMessageId::WalletState => {
-                // utxos
-                let utxos_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
-                buf.advance(8);
-                let utxos = buf[..utxos_len].to_vec();
-                buf.advance(utxos_len);
+                // Check if there's enough data for uuid_len
+                if buf.len() < 4 {
+                    return None;
+                }
 
-                // tracked txs
-                let tracked_txs_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
-                buf.advance(8);
-                let tracked_txs = buf[..tracked_txs_len].to_vec();
-                buf.advance(tracked_txs_len);
+                // Safely convert bytes to u32 for uuid_len
+                let uuid_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
+                buf.advance(4);
 
-                // pending pegouts
-                let pending_pegouts_len = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
-                buf.advance(8);
-                let pending_pegouts = buf[..pending_pegouts_len].to_vec();
-                buf.advance(pending_pegouts_len);
+                // Check if there's enough data for uuid
+                if buf.len() < uuid_len {
+                    return None;
+                }
 
-                FrostProtoMessageKind::WalletState(WalletStateRequest::new(
-                    utxos,
-                    tracked_txs,
-                    pending_pegouts,
-                ))
+                // Safely convert bytes to string for uuid
+                let uuid = match String::from_utf8(buf[..uuid_len].to_vec()) {
+                    Ok(s) => s,
+                    Err(_) => return None,
+                };
+                buf.advance(uuid_len);
+
+                // Check if there's enough data for version
+                if buf.len() < 2 {
+                    return None;
+                }
+
+                // Safely convert bytes to u16 for version
+                let version = match buf[..2].try_into() {
+                    Ok(bytes) => u16::from_le_bytes(bytes),
+                    Err(_) => return None,
+                };
+                buf.advance(2);
+
+                // Check if there's enough data for finalized_pegout_ids_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                // Safely convert bytes to u32 for finalized_pegout_ids_len
+                let finalized_pegout_ids_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
+                buf.advance(4);
+
+                // Check if there's enough data for finalized_pegout_ids
+                if buf.len() < finalized_pegout_ids_len {
+                    return None;
+                }
+
+                let finalized_pegout_ids = buf[..finalized_pegout_ids_len].to_vec();
+                buf.advance(finalized_pegout_ids_len);
+
+                FrostProtoMessageKind::WalletState(WalletStateRequest {
+                    uuid,
+                    version,
+                    finalized_pegout_ids,
+                })
             }
         };
+
         Some(Self { message_type, message })
     }
 }
@@ -530,7 +507,6 @@ mod tests {
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest,
     };
-    use itertools::Itertools;
     #[allow(unused_imports)]
     use reth_primitives::SealedBlock;
     #[allow(unused_imports)]
@@ -540,11 +516,12 @@ mod tests {
 
     #[test]
     fn test_dkg_encoding_decoding() {
-        let dkg_request = DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9]);
+        let dkg_request =
+            DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![9, 8, 7, 6, 5]);
 
         let message = FrostProtoMessage {
-            message_type: FrostProtoMessageId::Round1Dkg,
-            message: FrostProtoMessageKind::Round1Dkg(dkg_request),
+            message_type: FrostProtoMessageId::Dkg,
+            message: FrostProtoMessageKind::Dkg(dkg_request),
         };
 
         // Encode the message
@@ -631,21 +608,15 @@ mod tests {
 
     #[test]
     fn test_wallet_state_encode_decode() {
-        let utxos = "utxos".to_owned();
-        let tracked_txs = "tracked_txs".to_owned();
-        let pending_pegouts = "pending_pegouts".to_owned();
-
-        let utxos_bytes = utxos.bytes().collect_vec();
-        let tracked_txs_bytes = tracked_txs.bytes().collect_vec();
-        let pending_pegouts_bytes = pending_pegouts.bytes().collect_vec();
-
+        let uuid = "550e8400-e29b-41d4-a716-446655440000".to_string();
+        let finalized_pegout_ids = vec![1, 2, 3];
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::WalletState,
-            message: FrostProtoMessageKind::WalletState(WalletStateRequest::new(
-                utxos_bytes,
-                tracked_txs_bytes,
-                pending_pegouts_bytes,
-            )),
+            message: FrostProtoMessageKind::WalletState(WalletStateRequest {
+                uuid,
+                version: 1,
+                finalized_pegout_ids: finalized_pegout_ids.clone(),
+            }),
         };
 
         // Encode the message
@@ -658,14 +629,20 @@ mod tests {
 
         // Verify that the decoded message matches the original message
         if let FrostProtoMessageKind::WalletState(wallet_state_request) = decoded_message.message {
-            let decoded_utxos = String::from_utf8(wallet_state_request.utxos).unwrap();
-            let decoded_tracked_txs = String::from_utf8(wallet_state_request.tracked_txs).unwrap();
-            let decoded_pending_pegouts =
-                String::from_utf8(wallet_state_request.pending_pegouts).unwrap();
-
-            assert_eq!(decoded_utxos, utxos, "utxos does not match");
-            assert_eq!(decoded_tracked_txs, tracked_txs, "tracked_txs does not match");
-            assert_eq!(decoded_pending_pegouts, pending_pegouts, "pending_pegouts does not match");
+            assert_eq!(
+                wallet_state_request.uuid, "550e8400-e29b-41d4-a716-446655440000",
+                "uuid does not match"
+            );
+            assert_eq!(wallet_state_request.version, 1, "version does not match");
+            assert_eq!(
+                wallet_state_request.finalized_pegout_ids.len(),
+                finalized_pegout_ids.len(),
+                "finalized_pegout_ids length does not match"
+            );
+            assert_eq!(
+                wallet_state_request.finalized_pegout_ids, finalized_pegout_ids,
+                "pegout id does not match"
+            );
         } else {
             panic!("Decoded message is not a WalletState Message");
         }

@@ -67,6 +67,8 @@ pub enum SigningRound2Error {
     FailedToValidatePsbt(#[from] crate::util::ValidatePSBTError),
     #[error("extract tx error: {0}")]
     ExtractTxError(#[from] ExtractTxError),
+    #[error("Failed to deserialize pegout id from bytes")]
+    FailedToDeserializePegoutId,
 }
 
 // Currently not used

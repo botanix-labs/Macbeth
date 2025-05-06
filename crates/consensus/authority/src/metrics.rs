@@ -11,12 +11,6 @@ pub struct AuthorityMetrics {
     /// Number of currently connected peers
     pub(crate) signing_sessions: Gauge,
 
-    /// Number of received round1 DKG packages
-    pub(crate) received_round1_dkg_packages: Counter,
-
-    /// Number of received round2 DKG packages
-    pub(crate) received_round2_dkg_packages: Counter,
-
     /// Number of created agg pub keys
     pub(crate) created_agg_pub_keys: Counter,
 
@@ -26,15 +20,15 @@ pub struct AuthorityMetrics {
     /// Number of received round2 signing packages
     pub(crate) received_round2_signing_packages: Counter,
 
-    /// Number of finalzied signings
+    /// Number of finalized signings
     pub(crate) finalized_signings: Counter,
 
     #[allow(dead_code)]
     /// Number of reset wallet states
     pub(crate) reset_wallet_states: Counter,
 
-    /// Number of commet finalzied blocks
-    pub(crate) commet_finalzied_blocks: Counter,
+    /// Number of commet finalized blocks
+    pub(crate) commet_finalized_blocks: Counter,
 
     /// Number of commet committed blocks
     pub(crate) commet_committed_blocks: Counter,
@@ -83,14 +77,12 @@ mod tests {
             AuthorityMetrics::describe();
 
             metrics.signing_sessions.set(5.0);
-            metrics.received_round1_dkg_packages.increment(3);
-            metrics.received_round2_dkg_packages.increment(4);
             metrics.created_agg_pub_keys.increment(2);
             metrics.received_round1_signing_packages.increment(7);
             metrics.received_round2_signing_packages.increment(6);
             metrics.finalized_signings.increment(1);
             metrics.reset_wallet_states.increment(2);
-            metrics.commet_finalzied_blocks.increment(3);
+            metrics.commet_finalized_blocks.increment(3);
             metrics.commet_committed_blocks.increment(1);
             metrics.commet_prepared_proposals.increment(5);
             metrics.commet_processed_proposals.increment(4);
@@ -111,14 +103,12 @@ mod tests {
 
             // verify all counters
             let counters_to_check = [
-                ("authority.received_round1_dkg_packages", 3),
-                ("authority.received_round2_dkg_packages", 4),
                 ("authority.created_agg_pub_keys", 2),
                 ("authority.received_round1_signing_packages", 7),
                 ("authority.received_round2_signing_packages", 6),
                 ("authority.finalized_signings", 1),
                 ("authority.reset_wallet_states", 2),
-                ("authority.commet_finalzied_blocks", 3),
+                ("authority.commet_finalized_blocks", 3),
                 ("authority.commet_committed_blocks", 1),
                 ("authority.commet_prepared_proposals", 5),
                 ("authority.commet_processed_proposals", 4),

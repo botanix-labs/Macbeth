@@ -4,171 +4,238 @@ name: Botanix Integration Tests
 on:
   pull_request:
   merge_group:
-    branches: [main]
+    branches:
+      - main
   push:
     branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   SEED: rustethereumethereumrust
   JWT_DIR: "/home/runner/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
+  # sccache configuration
+  RUSTC_WRAPPER: "sccache"
+  SCCACHE_GHA_ENABLED: "false"  # Disable GitHub Actions cache in favor of GCS
+  SCCACHE_GCS_RW_MODE: "READ_WRITE"
+  SCCACHE_GCS_BUCKET: "macbeth-sccache-bucket"
+  SCCACHE_ERROR_LOG: "/tmp/sccache_log.txt"
+  SCCACHE_LOG: "warn"
+  SCCACHE_GCS_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+  GCP_PROJECT_ID: botanix-391913
+  SCCACHE_GCS_KEY_PATH: "/tmp/gcs-key.json"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
-  e2e:
-    name: test / e2e
-    runs-on:
-      group: macbeth
+  build:
+    name: build test binaries
+    runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: 1
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, cargo
           toolchain: stable
 
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
+      - name: Install dependencies
+        run: |
+          bash .github/scripts/deps.sh
 
-      - name: Install killall
-        run: sudo apt-get install psmisc
+      - name: gcloud auth
+        id: 'auth'
+        uses: google-github-actions/auth@v2
+        with: 
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      
+      - name: gcloud setup
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: 'Create GCS credentials file for sccache'
+        run: |
+          echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
+          chmod 600 ${SCCACHE_GCS_KEY_PATH}
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      
+      - name: Configure sccache
+        run: |
+          sccache --start-server
+          sccache --show-stats
 
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
           cache-all-crates: true
           env-vars: |
-            CARGO_HOME="/home/runner/.cargo"
+            RUSTC_WRAPPER
 
       - name: Compile btc-server
         run: |
-          cd ./bin/btc-server && \
-          cargo build --features conflicting_input --bin btc-server && \
+          set -eo pipefail
+          cd ./bin/btc-server 
+          cargo build --bin btc-server 
           echo "Bitcoin server compiled successfully!"
-
+          sccache --show-stats
+    
       - name: Compile poa-node
         run: |
-          cargo build --bin reth && \
+          set -eo pipefail
+          cargo build --bin reth 
           echo "Poa node compiled successfully!"
+          sccache --show-stats
 
-      # Define individual steps for each test
-      - name: Run dkg_flow
+      - name: Compile test-suite
+        run: | 
+          set -eo pipefail
+          cd ./bin/test-suite
+          cargo build --bin test-suite
+          echo "Test suite compiled successfully!"
+          sccache --show-stats
+
+
+      - name: Prepare binaries for upload
         run: |
-          export TEST_TO_RUN="dkg_flow"
-          make start-test-suite
+          mkdir -p /tmp/binaries
+          cp target/debug/btc-server /tmp/binaries/ || true
+          cp target/debug/reth /tmp/binaries/ || true
+          cp target/debug/test-suite /tmp/binaries/ || true
+
+      - name: Upload compiled binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-binaries
+          path: /tmp/binaries
+          retention-days: 1
+
+      
+  e2e-tests:
+    name: test / ${{ matrix.test }}
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false  # Continue running other tests even if one fails
+      matrix: 
+        test: ["dkg_flow",
+          "utxo_commitment",
+          "signing_flow",
+          "test_mempool_gossip",
+          "utxo_sync",
+          "state_sync",
+          "wallet_sync",
+          "frost_e2e_stable",
+          "test_pegin_v1",
+          "invalid_pegin",
+          "invalid_pegout",
+          "block_builder",
+          "test_conflicting_input",
+          "test_round1_then_new_signing_session",
+          "test_track_mempool"]
+    env:
+      RUST_BACKTRACE: 1
+      TEST_TO_RUN: ${{ matrix.test }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          bash .github/scripts/deps.sh
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Install killall
+        run: sudo apt-get install psmisc
+      
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: 'Create GCS credentials file for sccache'
+        run: |
+          echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
+          chmod 600 ${SCCACHE_GCS_KEY_PATH}
+          
+      - name: Download compiled binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: compiled-binaries
+          path: /tmp/binaries
+          
+      - name: Setup binaries
+        run: |
+          mkdir -p target/debug
+          mkdir -p ./bin/test-suite
+          
+          if [ -f "/tmp/binaries/btc-server" ]; then
+            cp /tmp/binaries/btc-server target/debug/ 
+            chmod +x target/debug/btc-server
+          fi
+          
+          if [ -f "/tmp/binaries/reth" ]; then
+            cp /tmp/binaries/reth target/debug/
+            chmod +x target/debug/reth
+          fi
+
+          if [ -f "/tmp/binaries/test-suite" ]; then
+            sudo cp /tmp/binaries/test-suite /usr/local/bin/
+            sudo chmod +x /usr/local/bin/test-suite
+          fi
+          
+          if [ -d "/tmp/binaries/test-suite-dir" ]; then
+            cp -r /tmp/binaries/test-suite-dir/* ./bin/test-suite/
+          fi
+      
+      - name: Run ${{ matrix.test }}
+        run: |
+          make start-test-suite-runners
+          
+          
+      - name: Cleanup resources
+        if: always()
+        run: |
           killall btc-server || true
           killall bitcoind || true
 
-      - name: Run utxo_commitment
-        run: |
-          export TEST_TO_RUN="utxo_commitment"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run signing_flow
-        run: |
-          export TEST_TO_RUN="signing_flow"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run test_mempool_gossip
-        run: |
-          export TEST_TO_RUN="test_mempool_gossip"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run utxo_sync
-        run: |
-          export TEST_TO_RUN="utxo_sync"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run state_sync
-        run: |
-          export TEST_TO_RUN="state_sync"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run frost_e2e_stable
-        run: |
-          export TEST_TO_RUN="frost_e2e_stable"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run test_pegin_v1
-        run: |
-          export TEST_TO_RUN="test_pegin_v1"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run invalid_pegin
-        run: |
-          export TEST_TO_RUN="invalid_pegin"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run invalid_pegout
-        run: |
-          export TEST_TO_RUN="invalid_pegout"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run block_builder
-        run: |
-          export TEST_TO_RUN="block_builder"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run test_conflicting_input
-        run: |
-          export TEST_TO_RUN="test_conflicting_input"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run test_round1_then_new_signing_session
-        run: |
-          export TEST_TO_RUN="test_round1_then_new_signing_session"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      - name: Run test_track_mempool
-        run: |
-          export TEST_TO_RUN="test_track_mempool"
-          make start-test-suite
-          killall btc-server || true
-          killall bitcoind || true
-
-      # ✅ Final success step if all tests pass
-      - name: All tests passed!
-        if: success()
-        run: echo "✅ All tests completed successfully!"
-
-  integration-success:
-    name: integration success
+  # Final job to report overall status
+  integration-summary:
+    name: integration summary
     runs-on: ubuntu-latest
     if: always()
-    needs: [e2e]
-    timeout-minutes: 30
+    needs: [e2e-tests]
+    timeout-minutes: 10
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
+      
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All tests completed with status: ${{ needs.e2e-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Cache Performance" >> $GITHUB_STEP_SUMMARY
+          echo "Parallel execution with sccache was used to optimize build times." >> $GITHUB_STEP_SUMMARY
+
+

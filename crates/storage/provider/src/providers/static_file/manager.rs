@@ -7,14 +7,17 @@ use crate::{
     to_range, BlockHashReader, BlockNumReader, BlockReader, BlockSource, DatabaseProvider,
     HeaderProvider, ReceiptProvider, RequestsProvider, SnapshotReader, SnapshotWriter,
     StageCheckpointReader, StatsReader, TransactionVariant, TransactionsProvider,
-    TransactionsProviderExt, WithdrawalsProvider,
+    TransactionsProviderExt, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use reth_chainspec::ChainInfo;
 use reth_db::{
     lockfile::StorageLock,
-    models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
+    models::{
+        ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
+        WalletStateSyncRecord,
+    },
     static_file::{iter_static_files, HeaderMask, ReceiptMask, StaticFileCursor, TransactionMask},
     tables,
 };
@@ -28,15 +31,15 @@ use reth_nippy_jar::NippyJar;
 use reth_primitives::{
     keccak256,
     static_file::{find_fixed_range, HighestStaticFiles, SegmentHeader, SegmentRangeInclusive},
-    Address, Block, BlockHash, BlockHashOrNumber, BlockNumber, BlockWithSenders, Header, Receipt,
-    SealedBlock, SealedBlockWithSenders, SealedHeader, StaticFileSegment, TransactionMeta,
+    Address, Block, BlockHash, BlockHashOrNumber, BlockNumber, BlockWithSenders, Bytes, Header,
+    Receipt, SealedBlock, SealedBlockWithSenders, SealedHeader, StaticFileSegment, TransactionMeta,
     TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals, B256,
     U256,
 };
 use reth_stages_types::{PipelineTarget, StageId};
 use reth_storage_errors::provider::{ProviderError, ProviderResult};
 use std::{
-    collections::{hash_map::Entry, BTreeMap, HashMap},
+    collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     ops::{Deref, Range, RangeBounds, RangeInclusive},
     path::{Path, PathBuf},
     sync::{mpsc, Arc},
@@ -1674,6 +1677,62 @@ impl SnapshotWriter for StaticFileProvider {
     }
 
     fn delete_chunks_in_blocks(&self, _range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+}
+
+impl WalletStateSyncWriter for StaticFileProvider {
+    fn create_new_state_sync_record(
+        &self,
+        _uuid: UuidID,
+        _peer_id: PeerID,
+        _chunks_count: u64,
+        _data: Option<Vec<(u64, Bytes)>>,
+    ) -> ProviderResult<PeerID> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn append_data_to_state_sync_record(
+        &self,
+        _peer_id: PeerID,
+        _data: Vec<(u64, Bytes)>,
+    ) -> ProviderResult<()> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn remove_state_sync_record_per_peer_id(&self, _peer_id: PeerID) -> ProviderResult<()> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+}
+
+impl WalletStateSyncReader for StaticFileProvider {
+    fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn get_state_sync_record_peer_ids(&self) -> ProviderResult<Vec<PeerID>> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn get_state_sync_record_by_peer_id(
+        &self,
+        _peer_id: PeerID,
+    ) -> ProviderResult<Option<WalletStateSyncRecord>> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn get_state_sync_records_count(&self) -> ProviderResult<usize> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn get_minimum_superset(
+        &self,
+        _min_required_criterion: u64,
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
         Err(ProviderError::UnsupportedProvider)
     }
 }

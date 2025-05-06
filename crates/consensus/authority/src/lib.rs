@@ -27,6 +27,8 @@ use reth_consensus_common::{
         validate_header_extradata, validate_header_gas,
     },
 };
+use reth_network_peers as _;
+use serde_json as _;
 
 use metrics_util as _;
 use reth_ethereum_consensus::validate_block_post_execution;
@@ -46,7 +48,6 @@ pub mod comet_bft;
 
 pub use comet_bft::light_client::LightCBFTClientBuilder;
 pub mod activation_manager;
-mod dkg;
 mod excecution_utils;
 mod frost_task;
 mod prost_parser;
@@ -57,6 +58,7 @@ pub use builder::AuthorityConsensusBuilder;
 pub mod bitcoin_checkpoint;
 pub mod metrics;
 pub mod random_source_provider;
+pub mod wallet_state_sync;
 
 /// Max EDH size; for specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 93;
@@ -400,7 +402,7 @@ mod tests {
     use random_source_provider::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
-    use reth_consensus_common::utils::{block_fees_split, is_inturn};
+    use reth_consensus_common::utils::is_inturn;
     use reth_primitives::{
         constants::{ALLOWED_FUTURE_BLOCK_TIME_SECONDS, MAXIMUM_EXTRA_DATA_SIZE},
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
@@ -625,14 +627,6 @@ mod tests {
             ALLOWED_FUTURE_BLOCK_TIME_SECONDS,
             random_source
         ));
-    }
-
-    #[test]
-    fn should_split_rewards() {
-        let base_block_reward = 100;
-        let (botanix_reward, beneficiary_reward) = block_fees_split(base_block_reward);
-        assert_eq!(botanix_reward, 20);
-        assert_eq!(beneficiary_reward, 80);
     }
 
     #[test]

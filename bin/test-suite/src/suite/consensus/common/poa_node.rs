@@ -17,18 +17,15 @@ use ethers::{
     types::{BlockId, BlockNumber, H256},
 };
 use reth::args::{FedMemberPubKey, FederationTomlConfig};
-use reth_chainspec::{
-    create_botanix_config_with_genesis, BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID,
-};
+use reth_chainspec::BOTANIX_TESTNET;
 use reth_db::{
     mdbx::{DatabaseArguments, MaxReadTransactionDuration},
     models::ClientVersion,
     open_db_read_only, DatabaseEnv,
 };
-use reth_network_peers::pk2id;
 use reth_primitives::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    public_key_to_address, Address,
+    Address,
 };
 use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
 use reth_rpc_types::PeerId;
@@ -145,6 +142,7 @@ pub struct FederationMemberTestConfig {
     pub botanix_fee_recipient: String,
     pub botanix_eth_client: Option<BotanixEthClient>,
     pub is_state_syncing: bool,
+    pub lst_fee_receiver: String,
 }
 
 impl FederationMemberTestConfig {
@@ -168,6 +166,7 @@ impl FederationMemberTestConfig {
         test_signal_tx: Sender<TestSignal>,
         botanix_fee_recipient: String,
         is_state_syncing: bool,
+        lst_fee_receiver: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
@@ -194,6 +193,7 @@ impl FederationMemberTestConfig {
             botanix_fee_recipient,
             botanix_eth_client: None,
             is_state_syncing,
+            lst_fee_receiver,
         })
     }
 
@@ -273,6 +273,7 @@ impl FederationMemberTestConfig {
             edh_authorities,
             self.botanix_fee_recipient.clone(),
             String::from(MINTING_CONTRACT_BYTECODE),
+            self.lst_fee_receiver.clone(),
         );
         it_info_print!("Federation config", federation_config);
         let federation_config_path = Path::new(datadir).join("federation.toml");
@@ -701,6 +702,7 @@ pub fn is_dkg_ready(federation_memebers: &BTreeMap<u16, FederationMemberTestConf
 
 pub async fn create_poa_nodes(
     global_context: Arc<GlobalContext>,
+    members_keypairs: &Vec<(SecretKey, PublicKey, PeerId, Address)>,
     btc_server_processes: Option<&Vec<SpawnedBtcServerProcess>>,
 ) -> anyhow::Result<(
     BTreeMap<u16, FederationMemberTestConfig>,
@@ -710,15 +712,6 @@ pub async fn create_poa_nodes(
     let (tx, _rx) = tokio::sync::broadcast::channel::<Notifications>(100);
 
     let mut poa_nodes: BTreeMap<u16, FederationMemberTestConfig> = BTreeMap::new();
-    let mut members_keypairs: Vec<(SecretKey, PublicKey, PeerId, Address)> = vec![];
-
-    for _ in 0..global_context.fed_instances {
-        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
-        let pk = secret_key.public_key(SECP256K1);
-        let peer_id = pk2id(&pk);
-        let address = public_key_to_address(pk);
-        members_keypairs.push((secret_key, pk, peer_id, address));
-    }
     let authorities = members_keypairs.iter().map(|(_, pk, _, _)| pk.clone()).collect::<Vec<_>>();
     let poa_instances = global_context.fed_instances - global_context.syncing_instances;
 
@@ -753,6 +746,7 @@ pub async fn create_poa_nodes(
             test_signal_tx,
             global_context.botanix_fee_recipient.clone(),
             member_index > poa_instances - 1,
+            global_context.lst_fee_receiver.clone(),
         )
         .await?;
         poa_nodes.insert(member_index, fed_member_config);

@@ -4,7 +4,11 @@ use crate::suite::consensus::ConsensusIntegrationTestSuite;
 use btcserverlib::frost_id;
 use client::{self, BtcServerClient};
 use frost_secp256k1_tr as frost;
-use std::{collections::BTreeMap, str::FromStr, vec};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    str::FromStr,
+    vec,
+};
 use tonic::transport::Channel;
 
 pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error> {
@@ -65,76 +69,40 @@ pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<
         let frost_id = frost_id!(i as u16);
         frost_id_map.insert(frost_id, i);
     }
-    // Round 1 dkg
-    let mut round1_packages = vec![];
-    for c in clients.iter_mut() {
-        let p = c
-            .get_round1_dkg_package(tonic::Request::new(client::Empty {}))
+
+    let mut queue: VecDeque<client::DkgPayload> = VecDeque::new();
+
+    // Kick-off the initial DKG payloads; only the coordinator will have a
+    // payloads to send.
+    for client in clients.iter_mut() {
+        let p = client
+            .get_dkg_payloads(tonic::Request::new(client::Empty {}))
             .await
             .map_err(Error::Request)?
             .into_inner();
-        round1_packages.push(p);
-    }
 
-    // Ensure all packages have correct props
-    for p in round1_packages.iter() {
-        if p.identifier.len() != 32 {
-            return Err(Error::Round1PackagesLenghtMismatch);
-        }
-    }
-    // Send each package to all other clients
-    for (i, c) in clients.iter_mut().enumerate() {
-        for (j, p) in round1_packages.iter().enumerate() {
-            if i != j {
-                c.new_round1_dkg_package(tonic::Request::new(client::DkgPayload {
-                    identifier: p.identifier.clone(),
-                    payload: p.payload.clone(),
-                }))
-                .await
-                .map_err(Error::Request)?;
-            }
-        }
-    }
-    // Round 2 dkg
-    let mut round2_packages = vec![];
-    for c in clients.iter_mut() {
-        let p = c
-            .get_round2_dkg_package(tonic::Request::new(client::Empty {}))
-            .await
-            .map_err(Error::Request)?
-            .into_inner();
-        round2_packages.push(p);
-    }
-    // Ensure all packages have correct props
-    // Not much to assert here, we can check the length of the ids
-    for p in round2_packages.iter() {
-        if p.identifier.len() != 32 {
-            return Err(Error::Round2PackagesLenghtMismatch);
+        for p in p.payloads {
+            queue.push_back(p);
         }
     }
 
-    // Send dkg round2 shares to each recipient
-    for (i, p) in round2_packages.iter().enumerate() {
-        let from_frost_id = frost_id!(i as u16).serialize().to_vec();
-        let round2_shares = p.payload.clone();
-        let shares = serde_json::from_slice::<
-            BTreeMap<frost::Identifier, frost::keys::dkg::round2::Package>,
-        >(&round2_shares)
-        .expect("Failed to deserialize round 2 shares");
+    // Forward each payload to the correct client, and push the resulting
+    // payloads back into the queue.
+    while let Some(p) = queue.pop_front() {
+        // Find the corresponding client.
+        let frost_id = frost::Identifier::deserialize(&p.recipient).unwrap();
+        let idx = frost_id_map.get(&frost_id).unwrap();
+        let recipient = clients.get_mut(*idx).unwrap();
 
-        // there should always be n-1 shares
-        assert_eq!(shares.len(), clients.len() - 1);
-        for (_j, (identifier, payload)) in shares.iter().enumerate() {
-            let client_index = frost_id_map.get(&identifier).unwrap();
-            let mut client = clients[*client_index].clone();
-            client
-                .new_round2_dkg_package(tonic::Request::new(client::DkgPayload {
-                    identifier: from_frost_id.clone(),
-                    payload: serde_json::to_vec(&payload).unwrap(),
-                }))
-                .await
-                .map_err(Error::Request)?;
+        let p = recipient.new_dkg_payload(p).await.map_err(Error::Request)?.into_inner();
+
+        for p in p.payloads {
+            queue.push_back(p);
         }
     }
+
+    // At this point, the DKG should be complete, and all clients should have
+    // the same public key.
+
     Ok(())
 }

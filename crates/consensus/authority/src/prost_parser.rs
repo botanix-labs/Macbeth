@@ -29,7 +29,6 @@ where
 
     /// Method to deserialize
     pub(crate) fn deserialize(buf: Vec<u8>) -> Result<T, ProstError> {
-        //let x = Bytes::from(buf);
         T::decode(Bytes::from(buf)).map_err(ProstError::ProstDecode)
     }
 }

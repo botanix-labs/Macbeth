@@ -6,21 +6,24 @@ use crate::{
     EvmEnvProvider, HeaderProvider, HeaderSyncGap, HeaderSyncGapProvider, ProviderError,
     PruneCheckpointReader, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
     StateProviderBox, StaticFileProviderFactory, TransactionVariant, TransactionsProvider,
-    WithdrawalsProvider,
+    WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 use reth_chainspec::{ChainInfo, ChainSpec, EthChainSpec};
 use reth_db::{
     init_db,
     mdbx::DatabaseArguments,
-    models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
+    models::{
+        ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
+        WalletStateSyncRecord,
+    },
     DatabaseEnv,
 };
 use reth_db_api::{database::Database, models::StoredBlockBodyIndices};
 use reth_errors::{RethError, RethResult};
 use reth_evm::ConfigureEvmEnv;
 use reth_primitives::{
-    Address, Block, BlockHash, BlockHashOrNumber, BlockNumber, BlockWithSenders, Header, Receipt,
-    SealedBlock, SealedBlockWithSenders, SealedHeader, StaticFileSegment, TransactionMeta,
+    Address, Block, BlockHash, BlockHashOrNumber, BlockNumber, BlockWithSenders, Bytes, Header,
+    Receipt, SealedBlock, SealedBlockWithSenders, SealedHeader, StaticFileSegment, TransactionMeta,
     TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals, B256,
     U256,
 };
@@ -29,6 +32,7 @@ use reth_stages_types::{StageCheckpoint, StageId};
 use reth_storage_errors::provider::ProviderResult;
 use revm::primitives::{BlockEnv, CfgEnvWithHandlerCfg};
 use std::{
+    collections::HashSet,
     ops::{RangeBounds, RangeInclusive},
     path::Path,
     sync::Arc,
@@ -410,6 +414,66 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
 
     fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
         self.provider_rw()?.delete_chunks_in_blocks(range)
+    }
+}
+
+impl<DB: Database> WalletStateSyncReader for ProviderFactory<DB> {
+    fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>> {
+        self.provider()?.get_state_sync_records()
+    }
+
+    fn get_state_sync_record_peer_ids(&self) -> ProviderResult<Vec<PeerID>> {
+        self.provider()?.get_state_sync_record_peer_ids()
+    }
+
+    fn get_state_sync_record_by_peer_id(
+        &self,
+        peer_id: PeerID,
+    ) -> ProviderResult<Option<WalletStateSyncRecord>> {
+        self.provider()?.get_state_sync_record_by_peer_id(peer_id)
+    }
+
+    fn get_state_sync_records_count(&self) -> ProviderResult<usize> {
+        self.provider()?.get_state_sync_records_count()
+    }
+
+    fn get_minimum_superset(
+        &self,
+        min_required_criterion: u64,
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
+        self.provider()?.get_minimum_superset(min_required_criterion)
+    }
+}
+
+impl<DB: Database> WalletStateSyncWriter for ProviderFactory<DB> {
+    /// Create new state sync record
+    fn create_new_state_sync_record(
+        &self,
+        uuid: UuidID,
+        peer_id: PeerID,
+        chunks_count: u64,
+        data: Option<Vec<(u64, Bytes)>>,
+    ) -> ProviderResult<PeerID> {
+        self.provider_rw()?.create_new_state_sync_record(uuid, peer_id, chunks_count, data)
+    }
+
+    /// Append data to state sync record
+    fn append_data_to_state_sync_record(
+        &self,
+        peer_id: PeerID,
+        data: Vec<(u64, Bytes)>,
+    ) -> ProviderResult<()> {
+        self.provider_rw()?.append_data_to_state_sync_record(peer_id, data)
+    }
+
+    /// Remove state sync record by `peer_id`
+    fn remove_state_sync_record_per_peer_id(&self, peer_id: PeerID) -> ProviderResult<()> {
+        self.provider_rw()?.remove_state_sync_record_per_peer_id(peer_id)
+    }
+
+    /// Removes all state sync records
+    fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
+        self.provider_rw()?.remove_all_state_sync_records()
     }
 }
 

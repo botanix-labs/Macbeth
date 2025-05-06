@@ -27,7 +27,7 @@ Note: the test suite will not build the btc server or reth binaries for you. It 
 So before running the test suite, you need to build the binaries.
 
 ```bash
-cargo build && cd bin/btc-server && cargo build --bin btc-server --features conflicting_input
+cargo build && cd bin/btc-server && cargo build --bin btc-server
 ```
 
 However, integration tests can ONLY be run using the local bitcoind instance with `regtest`. Running them on the `signet` is not feasible as block times are quite long there and the test will not finish in time. You are advised, prior to running the integration tests suite to update the `.env` file with your paths:

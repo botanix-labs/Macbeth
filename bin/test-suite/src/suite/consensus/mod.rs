@@ -34,8 +34,12 @@ use common::{
 };
 use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_db::DatabaseEnv;
+use reth_network_peers::pk2id;
+use reth_primitives::{public_key_to_address, Address};
 use reth_provider::ProviderFactory;
+use reth_rpc_types::PeerId;
 use reth_tracing::tracing::error;
+use secp256k1::SECP256K1;
 use std::{
     collections::{BTreeMap, HashSet},
     panic,
@@ -461,6 +465,32 @@ impl Suite for ConsensusIntegrationTestSuite {
                     sync::test_state_sync::test_state_sync
                 )
             }
+            "wallet_sync" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    sync::test_wallet_sync::test_wallet_sync
+                )
+            }
+            "wallet_sync_dynamic" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    sync::test_wallet_sync_dynamic::test_wallet_sync_dynamic
+                )
+            }
             "frost_e2e_failed_signing_disconnect" => {
                 run_test!(
                     self,
@@ -525,6 +555,19 @@ impl Suite for ConsensusIntegrationTestSuite {
                         ..Default::default()
                     },
                     invalid_transactions::test_invalid_pegout::invalid_pegout
+                )
+            }
+            "multi_pegin_revert_scenarios" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    invalid_transactions::test_multi_pegin::multi_pegin_revert_scenarios
                 )
             }
             "test_mempool_gossip" => {
@@ -762,12 +805,29 @@ impl Suite for ConsensusIntegrationTestSuite {
             self.local_context.bitcoind_notification = Some(tx);
         }
 
+        // Create member keypairs, where each corresponding secret key and
+        // public key is shared between the BTC server and the POA node.
+        let mut members_keypairs: Vec<(
+            secp256k1::SecretKey,
+            secp256k1::PublicKey,
+            PeerId,
+            Address,
+        )> = vec![];
+
+        for _ in 0..self.global_context.fed_instances {
+            let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+            let pk = secret_key.public_key(SECP256K1);
+            let peer_id = pk2id(&pk);
+            let address = public_key_to_address(pk);
+            members_keypairs.push((secret_key, pk, peer_id, address));
+        }
+
         // =================== BTC SERVERS ================== //
         let mut btc_server_clients = vec![];
         if create_test_config.create_btc_servers {
             it_info_print!("Starting btc servers ...");
             self.local_context.btc_processes =
-                Some(spawn_n_btc_server_processes(self.global_context.clone())?);
+                Some(spawn_n_btc_server_processes(self.global_context.clone(), &members_keypairs)?);
             // let btc servers come up
             tokio::time::sleep(Duration::from_secs(5)).await;
             // try to connect to each btc server before moving on
@@ -871,6 +931,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             // then generate test fed members poa nodes
             let (mut poa_nodes, tx, edh_authorities_list) = create_poa_nodes(
                 self.global_context.clone(),
+                &members_keypairs,
                 self.local_context.btc_processes.as_ref(),
             )
             .await?;

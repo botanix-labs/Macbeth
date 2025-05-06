@@ -60,6 +60,7 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         historical_bitcoin_checkpoints_count: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
+        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -89,6 +90,7 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         historical_bitcoin_checkpoints_count: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
+        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -116,6 +118,7 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         historical_bitcoin_checkpoints_count: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
+        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -145,7 +148,7 @@ pub static DEV: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
 /// Includes Testnet and Mainnet
 pub const BOTANIX_TESTNET_CHAIN_ID: u64 = 3636;
 /// Mainnet chain id
-pub const BOTANIX_MAINNET_CHAIN_ID: u64 = 3737;
+pub const BOTANIX_MAINNET_CHAIN_ID: u64 = 3637;
 
 /// Botanix Testnet Genesis Configuration
 #[derive(Template, Clone, Debug)]
@@ -182,6 +185,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 20000,
         botanix_fee_recipient: None,
+        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = false;
     spec.into()
@@ -205,6 +209,7 @@ pub static BOTANIX_MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 20000,
         botanix_fee_recipient: None,
+        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = false;
     spec.into()
@@ -217,6 +222,7 @@ pub fn create_botanix_config_with_genesis(
     botanix_fee_recipient: String,
     chain_id: u64,
     genesis_hash: Option<B256>,
+    lst_fee_receiver: String,
 ) -> ChainSpec {
     ChainSpec {
         chain: Chain::from_id(chain_id),
@@ -230,6 +236,7 @@ pub fn create_botanix_config_with_genesis(
         botanix_fee_recipient: Some(botanix_fee_recipient),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 1700,
+        lst_fee_receiver: Some(lst_fee_receiver),
         ..Default::default()
     }
 }
@@ -276,7 +283,7 @@ impl core::ops::Deref for ChainSpec {
     }
 }
 
-/// An Ethereum chain specification.
+/// An Ethereum chain spec with additional functionality to support bridging from other chains.
 ///
 /// A chain specification describes:
 ///
@@ -331,6 +338,10 @@ pub struct ChainSpec {
 
     /// Botanix fee recipient
     pub botanix_fee_recipient: Option<String>,
+
+    /// LST fee receiver
+    /// This is the contract address that receives block fees as part of native staking
+    pub lst_fee_receiver: Option<String>,
 }
 
 impl Default for ChainSpec {
@@ -350,6 +361,7 @@ impl Default for ChainSpec {
             historical_bitcoin_checkpoints_count: 0,
             leader_selection_window: None,
             botanix_fee_recipient: None,
+            lst_fee_receiver: None,
         }
     }
 }

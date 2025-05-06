@@ -6,7 +6,7 @@ use crate::{
     PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt, RequestsProvider, SnapshotReader,
     SnapshotWriter, StageCheckpointReader, StateProviderBox, StateProviderFactory,
     StaticFileProviderFactory, TransactionVariant, TransactionsProvider, TreeViewer,
-    WithdrawalsProvider,
+    WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 use reth_blockchain_tree_api::{
     error::{CanonicalError, InsertBlockError},
@@ -15,7 +15,10 @@ use reth_blockchain_tree_api::{
 };
 use reth_chain_state::{ChainInfoTracker, ForkChoiceNotifications, ForkChoiceSubscriptions};
 use reth_chainspec::{ChainInfo, ChainSpec, EthChainSpec};
-use reth_db::models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId};
+use reth_db::models::{
+    ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
+    WalletStateSyncRecord,
+};
 use reth_db_api::{
     database::Database,
     models::{AccountBeforeTx, StoredBlockBodyIndices},
@@ -23,16 +26,16 @@ use reth_db_api::{
 use reth_evm::ConfigureEvmEnv;
 use reth_primitives::{
     Account, Address, Block, BlockHash, BlockHashOrNumber, BlockId, BlockNumHash, BlockNumber,
-    BlockNumberOrTag, BlockWithSenders, Header, Receipt, SealedBlock, SealedBlockWithSenders,
-    SealedHeader, TransactionMeta, TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber,
-    Withdrawal, Withdrawals, B256, U256,
+    BlockNumberOrTag, BlockWithSenders, Bytes, Header, Receipt, SealedBlock,
+    SealedBlockWithSenders, SealedHeader, TransactionMeta, TransactionSigned,
+    TransactionSignedNoHash, TxHash, TxNumber, Withdrawal, Withdrawals, B256, U256,
 };
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::{StageCheckpoint, StageId};
 use reth_storage_errors::provider::ProviderResult;
 use revm::primitives::{BlockEnv, CfgEnvWithHandlerCfg};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     ops::{RangeBounds, RangeInclusive},
     sync::Arc,
     time::Instant,
@@ -699,6 +702,68 @@ where
 
     fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
         self.database.provider_rw()?.delete_chunks_in_blocks(range)
+    }
+}
+
+impl<DB> WalletStateSyncWriter for BlockchainProvider<DB>
+where
+    DB: Database,
+{
+    fn create_new_state_sync_record(
+        &self,
+        uuid: UuidID,
+        peer_id: PeerID,
+        chunks_count: u64,
+        data: Option<Vec<(u64, Bytes)>>,
+    ) -> ProviderResult<PeerID> {
+        self.database.provider_rw()?.create_new_state_sync_record(uuid, peer_id, chunks_count, data)
+    }
+
+    fn append_data_to_state_sync_record(
+        &self,
+        peer_id: PeerID,
+        data: Vec<(u64, Bytes)>,
+    ) -> ProviderResult<()> {
+        self.database.provider_rw()?.append_data_to_state_sync_record(peer_id, data)
+    }
+
+    fn remove_state_sync_record_per_peer_id(&self, peer_id: PeerID) -> ProviderResult<()> {
+        self.database.provider_rw()?.remove_state_sync_record_per_peer_id(peer_id)
+    }
+
+    fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
+        self.database.provider_rw()?.remove_all_state_sync_records()
+    }
+}
+
+impl<DB> WalletStateSyncReader for BlockchainProvider<DB>
+where
+    DB: Database,
+{
+    fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>> {
+        self.database.provider()?.get_state_sync_records()
+    }
+
+    fn get_state_sync_record_peer_ids(&self) -> ProviderResult<Vec<PeerID>> {
+        self.database.provider()?.get_state_sync_record_peer_ids()
+    }
+
+    fn get_state_sync_record_by_peer_id(
+        &self,
+        peer_id: PeerID,
+    ) -> ProviderResult<Option<WalletStateSyncRecord>> {
+        self.database.provider()?.get_state_sync_record_by_peer_id(peer_id)
+    }
+
+    fn get_state_sync_records_count(&self) -> ProviderResult<usize> {
+        self.database.provider()?.get_state_sync_records_count()
+    }
+
+    fn get_minimum_superset(
+        &self,
+        min_required_criterion: u64,
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
+        self.database.provider()?.get_minimum_superset(min_required_criterion)
     }
 }
 

@@ -7,6 +7,7 @@ use crate::{
 };
 
 pub const BOTANIX_FEE_RECEIPIENT: &str = "0xb8c03cb8C9bAC79c53926E3C66344C13452105f5";
+pub const LST_FEE_RECEIVER: &str = "0xDAfdb73cF5f14417fc5aEd97486704dC7C6ee0a4";
 pub const BTC_NETWORK: &str = "regtest";
 pub const BITCOIND_URL: &str = "http://127.0.0.1:18443";
 pub const BITCOIND_USER: &str = "foo";
@@ -28,6 +29,7 @@ pub struct GlobalContext {
     pub bitcoind_user: String,
     pub bitcoind_pass: String,
     pub botanix_fee_recipient: String,
+    pub lst_fee_receiver: String,
     pub features: String, // space delimited String
 }
 
@@ -60,6 +62,7 @@ impl GlobalContext {
             bitcoind_user: BITCOIND_USER.to_string(),
             bitcoind_pass: BITCOIND_PASS.to_string(),
             botanix_fee_recipient: BOTANIX_FEE_RECEIPIENT.to_string(),
+            lst_fee_receiver: LST_FEE_RECEIVER.to_string(),
             features: args.features,
         })
     }

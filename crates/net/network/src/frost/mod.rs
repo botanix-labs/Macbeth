@@ -30,28 +30,43 @@ impl fmt::Display for PeerMessageResponse {
         match self {
             Self::Dkg(response) => write!(f, "DKG Response: {}", response),
             Self::Signing(response) => write!(f, "Signing Response: {}", response),
-            Self::WalletState(response) => write!(f, "Wallet state Response: {}", response),
+            Self::WalletState(response) => write!(f, "Wallet State Response: {}", response),
         }
     }
 }
 
 /// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DkgResponse {
-    /// The Response Type
-    pub response_type: DkgEventResponseType,
     /// Frost Data
     pub data: Vec<u8>,
-    /// Frost Identifier
-    /// Note: for signing we do not require this field as we can pull it from peer data when the
-    /// session is established for DKG we do require it as the coordinator sends the round 1
-    /// package on the behalf of the signers
-    pub identifier: Vec<u8>,
+    /// Frost Sender from whom the message originated
+    pub sender: Vec<u8>,
+    /// Frost Recipient to whom the message should be sent
+    pub recipient: Vec<u8>,
 }
 
 impl fmt::Display for DkgResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} - bytes, Data Size: {} bytes", self.response_type, self.data.len())
+        write!(
+            f,
+            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}",
+            self.data.len(),
+            self.sender,
+            self.recipient,
+        )
+    }
+}
+
+impl fmt::Debug for DkgResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}",
+            self.data.len(),
+            self.sender,
+            self.recipient,
+        )
     }
 }
 
@@ -71,12 +86,10 @@ impl fmt::Display for UtxoSetResponse {
 /// Response structure for internal communication
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WalletStateResponse {
-    /// Serialized utxos
-    pub utxos: Vec<u8>,
-    /// Serialized tracked transactions
-    pub tracked_txs: Vec<u8>,
-    /// Serialized pending pegouts
-    pub pending_pegouts: Vec<u8>,
+    /// uuid of the state sync request
+    pub uuid: String,
+    /// Serialized and compressed pegout ids data
+    pub finalized_pegout_ids: Vec<u8>,
 }
 
 impl fmt::Display for WalletStateResponse {
@@ -84,12 +97,9 @@ impl fmt::Display for WalletStateResponse {
         write!(
             f,
             "WalletStateResponse:\n\
-            - UTXOs: {} bytes\n\
-            - Tracked Transactions: {} bytes\n\
-            - Pending Pegouts: {} bytes",
-            self.utxos.len(),
-            self.tracked_txs.len(),
-            self.pending_pegouts.len()
+            - Finalized Pegout Ids: {} bytes, uuid = {}",
+            self.finalized_pegout_ids.len(),
+            &self.uuid
         )
     }
 }
@@ -114,27 +124,6 @@ impl fmt::Display for SigningResponse {
             self.signing_session_id.len(),
             self.psbt.len()
         )
-    }
-}
-
-/// Event Response Variants indicating the type of response
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
-pub enum DkgEventResponseType {
-    /// DKG round 1 request
-    DkgRound1Request,
-    /// DKG round 1
-    DkgRound1,
-    /// DKG round 2
-    DkgRound2,
-}
-
-impl fmt::Display for DkgEventResponseType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DkgRound1 => write!(f, "dkground 1"),
-            Self::DkgRound2 => write!(f, "dkground 2"),
-            Self::DkgRound1Request => write!(f, "dkground 1 request"),
-        }
     }
 }
 
@@ -183,6 +172,19 @@ impl fmt::Display for SigningEventResponseType {
     }
 }
 
+/// Status enum reporting the status of the connection on the frost manager.
+#[derive(Debug)]
+pub enum ConnectionEstablishedStatus {
+    /// The connection was established successfully
+    Success(u64),
+    /// The peer command communication connection was already closed
+    ClosedPeerCommandsCommunicationChannel,
+    /// Non-authority member attempted to connect
+    NoneAuthority,
+    /// Connected to ourself
+    ConnectedToOurself,
+}
+
 /// All events related to frost events emitted by the network.
 /// These are events that are emitted by the network to the frost manager.
 /// And most likely will be used to update the frost task state.
@@ -197,7 +199,7 @@ pub enum FrostProtocolEvent {
         /// the connection direction - we connected to them, or they to us
         direction: Direction,
         /// callback to send the assigned idx back to the initiator
-        sender: oneshot::Sender<u64>,
+        sender: oneshot::Sender<ConnectionEstablishedStatus>,
     },
     /// An emitted event once the connection is closed
     ConnectionClosed {

@@ -4,6 +4,7 @@ use crate::{
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
+    wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
 use btcserverlib::extended_client::{
@@ -24,7 +25,7 @@ use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
-    SnapshotWriter, StateProviderFactory,
+    SnapshotWriter, StateProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
 };
 
 use crate::bitcoin_checkpoint::BitcoinCheckpointsChain;
@@ -67,12 +68,14 @@ pub enum AuthorityConsensusBuilderError {
 // ===== impl AuthorityConsensusBuilder =====
 impl<EF, BF, DB, ToFrostMan, Source> AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source>
 where
-    ToFrostMan: ToFrostManager + Clone + 'static + Send,
+    ToFrostMan: ToFrostManager + Clone + 'static + Send + Sync,
     DB: BlockReaderIdExt
         + StateProviderFactory
         + Clone
         + SnapshotReader
         + SnapshotWriter
+        + WalletStateSyncWriter
+        + WalletStateSyncReader
         + CanonChainTracker
         + CanonStateSubscriptions
         + 'static,
@@ -200,6 +203,7 @@ where
         Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
         Option<ABCIClientBuilder<EF, BF, DB>>,
         Option<SnapshotManager<EF, BF, DB>>,
+        Option<WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>>,
     )
     where
         BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
@@ -241,6 +245,22 @@ where
             }
         }
         .await;
+
+        let wallet_sync = {
+            if let Some(btc_server) = &btc_server_client {
+                let wallet_state_sync_engine = WalletStateSyncEngine::new(
+                    storage.clone(),
+                    btc_server.clone(),
+                    frost_handle.clone().expect("Requires frost handle"),
+                    task_executor.clone(),
+                    frost_config.clone().expect("frost config exists"),
+                    provider_factory.clone(),
+                );
+                Some(wallet_state_sync_engine)
+            } else {
+                None
+            }
+        };
 
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
@@ -299,6 +319,6 @@ where
             None
         };
 
-        (frost_task, abci_client_builder, snapshot_manager)
+        (frost_task, abci_client_builder, snapshot_manager, wallet_sync)
     }
 }

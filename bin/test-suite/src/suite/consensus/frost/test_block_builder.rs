@@ -43,6 +43,12 @@ pub async fn block_builder(
         botanix_block_reward_address_balance_before
     );
 
+    let addr = reth_primitives::Address::from_str(&suite.global_context.lst_fee_receiver)
+        .expect("valid eth address");
+    let lst_fee_receiver_address_balance_before =
+        botanix_eth_client.get_botanix_balance(addr).await.unwrap();
+    it_info_print!("LST FeeReceiver balance before", lst_fee_receiver_address_balance_before);
+
     // create a hashmap to store tx hashes
     let mut tx_hashes_set = HashSet::new();
 
@@ -87,11 +93,14 @@ pub async fn block_builder(
                 continue;
             }
             tx_hashes_set.insert(canon_state_notification.engine_index);
-            if tx_hashes_set.len() != test_fed_members.len() {
-                return Ok(());
+            // We need to remove the syncing node from the count
+            if tx_hashes_set.len() == test_fed_members.len() - 1 {
+                break;
             }
         }
     }
+
+    it_info_print!("All members accepted the block");
 
     // Check that all members accepted the block
     for (_index, _fed_member_config) in test_fed_members.iter() {
@@ -105,7 +114,15 @@ pub async fn block_builder(
             botanix_block_reward_address_balance_after
         );
 
+        let addr = reth_primitives::Address::from_str(&suite.global_context.lst_fee_receiver)
+            .expect("valid eth address");
+        let lst_fee_receiver_address_balance_after =
+            botanix_eth_client.get_botanix_balance(addr).await.unwrap();
+        it_info_print!("LST FeeReceiver  balance after", lst_fee_receiver_address_balance_after);
+
         let block_fee_recipient_address = block_fee_recipient_address.unwrap();
+        // Since the fed member has never produced a block until now,
+        // the entire balance should be the block fee reward.
         let fed_member_balance =
             botanix_eth_client.get_botanix_balance(block_fee_recipient_address).await.unwrap();
         it_info_print!("Fed member balance", fed_member_balance);
@@ -113,10 +130,18 @@ pub async fn block_builder(
         let botanix_block_reward = botanix_block_reward_address_balance_after -
             botanix_block_reward_address_balance_before;
 
-        let total_block_reward = fed_member_balance + botanix_block_reward;
+        let lst_fee_receiver_block_reward =
+            lst_fee_receiver_address_balance_after - lst_fee_receiver_address_balance_before;
 
-        assert_eq!(fed_member_balance, (total_block_reward * 4) / 5); // 80%
-        assert_eq!(botanix_block_reward, total_block_reward / 5); // 20%
+        let total_block_reward =
+            fed_member_balance + botanix_block_reward + lst_fee_receiver_block_reward;
+
+        assert_eq!(lst_fee_receiver_block_reward, (total_block_reward * 50) / 100); // 50%
+        assert_eq!(botanix_block_reward, (total_block_reward * 40) / 100); // 40%
+        assert_eq!(
+            fed_member_balance,
+            (total_block_reward - lst_fee_receiver_block_reward - botanix_block_reward)
+        ); // 10%
     }
 
     Ok(())

@@ -26,8 +26,8 @@ concurrency:
 jobs:
   test:
     name: test / ethereum
-    runs-on:
-      group: macbeth
+    runs-on: k8-runners
+
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 60
@@ -45,11 +45,14 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+          
+      - name: Ensure registry is up to date
+        run: cargo fetch
 
       - name: Run tests
         run: |
           cargo nextest run \
-            --locked --features "ethereum conflicting_input" \
+            --locked --features "ethereum" \
             --workspace --exclude example-custom-evm --exclude example-stateful-precompile --exclude ef-tests \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
   
@@ -81,8 +84,7 @@ jobs:
 
   doc:
     name: doc tests (ethereum)
-    runs-on:
-      group: macbeth
+    runs-on: k8-runners
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 90
@@ -93,6 +95,9 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+
+      - name: Ensure registry is up to date
+        run: cargo fetch
 
       - name: Run doctests
         run: cargo test --doc --workspace --features "ethereum"
