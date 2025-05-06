@@ -77,7 +77,7 @@ pub async fn test_wallet_sync(
     // Get finalized pegouts list from all peers again
     // Confirm the finalized pegouts list is the same as before
 
-    let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
+    let pegin_conf_depth = BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
 
     // Set up regtest connection
