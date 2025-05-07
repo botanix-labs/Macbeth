@@ -45,7 +45,6 @@ pub trait PayloadBuilderAttributes: Send + Sync + std::fmt::Debug {
     fn try_new(
         parent: B256,
         rpc_payload_attributes: Self::RpcPayloadAttributes,
-        max_tx_bytes: usize,
     ) -> Result<Self, Self::Error>
     where
         Self: Sized;

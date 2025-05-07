@@ -407,7 +407,6 @@ where
     /// this method will block and wait for the storage lock
     fn payload_builder_arguments(
         &self,
-        max_tx_bytes: usize,
     ) -> Result<PayloadConfig<EthPayloadBuilderAttributes>, PayloadBuilderError> {
         let client = self.storage.client.clone();
         let chain_spec = self.storage.chain_spec.clone();
@@ -434,7 +433,7 @@ where
         };
 
         let payload_builder_attributes =
-            EthPayloadBuilderAttributes::new(best_block.hash(), payload_attributes, max_tx_bytes);
+            EthPayloadBuilderAttributes::new(best_block.hash(), payload_attributes);
 
         Ok(PayloadConfig::new(
             Arc::new(best_block),
@@ -758,9 +757,7 @@ where
                     Ok(snapshot_sync_state_lock) => snapshot_sync_state_lock,
                     Err(e) => {
                         error!("Error getting a snapshot state lock: {:?}", e);
-                        return ResponseOfferSnapshot {
-                            result: SnapshotOfferResult::Reject as i32,
-                        };
+                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
                     }
                 };
 
@@ -807,9 +804,7 @@ where
                     Ok(snapshot_sync_state_lock_height) => snapshot_sync_state_lock_height,
                     Err(e) => {
                         error!("Error getting a snapshot state lock: {:?}", e);
-                        return ResponseOfferSnapshot {
-                            result: SnapshotOfferResult::Reject as i32,
-                        };
+                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
                     }
                 };
 
@@ -1206,9 +1201,8 @@ where
             panic!("Transactions are not expected from CometBFT mempool");
         }
 
-        let Ok(max_tx_bytes) = request.max_tx_bytes.try_into() else {
-            panic!("Invalid request proposal max_tx_bytes value: {}", request.max_tx_bytes);
-        };
+        let max_tx_bytes: usize =
+            request.max_tx_bytes.try_into().expect("Invalid request proposal max_tx_bytes value");
 
         // insert non-deterministic data tx at index 0 so historical sync will pass verification
         let non_deterministic_data_bytes = match self.non_deterministic_data_bytes() {
@@ -1240,7 +1234,7 @@ where
             return ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
         }
 
-        let payload_config = match self.payload_builder_arguments(max_tx_bytes) {
+        let payload_config = match self.payload_builder_arguments() {
             Ok(payload_config) => payload_config,
             Err(e) => {
                 error!("Error building payload config: {:?}", e);
@@ -1256,6 +1250,7 @@ where
             config: payload_config,
             cancel: Default::default(),
             best_payload: None,
+            max_tx_bytes: Some(max_tx_bytes),
         };
         let res = default_ethereum_payload_builder(self.storage.evm_config, build_args);
         let response = match res {

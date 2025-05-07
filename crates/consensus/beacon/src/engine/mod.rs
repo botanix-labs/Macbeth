@@ -745,8 +745,8 @@ where
 
             // If current_header is None, then the current_hash does not have an invalid
             // ancestor in the cache, check its presence in blockchain tree
-            if current_header.is_none()
-                && self.blockchain.find_block_by_hash(current_hash, BlockSource::Any)?.is_some()
+            if current_header.is_none() &&
+                self.blockchain.find_block_by_hash(current_hash, BlockSource::Any)?.is_some()
             {
                 return Ok(Some(current_hash));
             }
@@ -845,8 +845,8 @@ where
         //
         // This ensures that the finalized block is consistent with the head block, i.e. the
         // finalized block is an ancestor of the head block.
-        if !state.finalized_block_hash.is_zero()
-            && !self.blockchain.is_canonical(state.finalized_block_hash)?
+        if !state.finalized_block_hash.is_zero() &&
+            !self.blockchain.is_canonical(state.finalized_block_hash)?
         {
             return Ok(Some(OnForkChoiceUpdated::invalid_state()));
         }
@@ -859,8 +859,8 @@ where
         //
         // This ensures that the safe block is consistent with the head block, i.e. the safe
         // block is an ancestor of the head block.
-        if !state.safe_block_hash.is_zero()
-            && !self.blockchain.is_canonical(state.safe_block_hash)?
+        if !state.safe_block_hash.is_zero() &&
+            !self.blockchain.is_canonical(state.safe_block_hash)?
         {
             return Ok(Some(OnForkChoiceUpdated::invalid_state()));
         }
@@ -1165,7 +1165,6 @@ where
         match <EngineT::PayloadBuilderAttributes as PayloadBuilderAttributes>::try_new(
             state.head_block_hash,
             attrs,
-            40_000, // TODO: How to pass this param here?
         ) {
             Ok(attributes) => {
                 // send the payload to the builder and return the receiver for the pending payload
@@ -1244,8 +1243,8 @@ where
                 latest_valid_hash = Some(block_hash);
                 PayloadStatusEnum::Valid
             }
-            InsertPayloadOk::Inserted(BlockStatus::Disconnected { .. })
-            | InsertPayloadOk::AlreadySeen(BlockStatus::Disconnected { .. }) => {
+            InsertPayloadOk::Inserted(BlockStatus::Disconnected { .. }) |
+            InsertPayloadOk::AlreadySeen(BlockStatus::Disconnected { .. }) => {
                 // check if the block's parent is already marked as invalid
                 if let Some(status) =
                     self.check_invalid_ancestor_with_head(block.parent_hash, block.hash()).map_err(

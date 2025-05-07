@@ -261,7 +261,15 @@ where
     Client: StateProviderFactory,
     Pool: TransactionPool,
 {
-    let BuildArguments { client, pool, mut cached_reads, config, cancel, best_payload } = args;
+    let BuildArguments {
+        client,
+        pool,
+        mut cached_reads,
+        config,
+        cancel,
+        best_payload,
+        max_tx_bytes,
+    } = args;
 
     let state_provider = client.state_by_block_hash(config.parent_block.hash())?;
     let state = StateProviderDatabase::new(state_provider);
@@ -292,7 +300,8 @@ where
     ));
 
     // TODO: Shall we use no_updates() to freeze the view of the mempool
-    //  so new arrivals don’t change the order mid-build. This ensures stable iteration and block creation time.
+    //  so new arrivals don’t change the order mid-build. This ensures stable iteration and block
+    // creation time.
 
     let mut total_fees = U256::ZERO;
 
@@ -345,11 +354,12 @@ where
             return Ok(BuildOutcome::Cancelled);
         }
 
-        // ensure max transaction bytes limit
-        let tx_bytes = pool_tx.encoded_length();
-        if tx_bytes + total_bytes > attributes.max_tx_bytes {
-            // Check other txs if they could fit in the block
-            continue;
+        // ensure max transaction bytes limit if set
+        if let Some(max_bytes) = max_tx_bytes {
+            if pool_tx.encoded_length() + total_bytes > max_bytes {
+                // Check other txs if they could fit in the block
+                continue;
+            }
         }
 
         // convert tx to a signed transaction
@@ -439,7 +449,11 @@ where
             .effective_tip_per_gas(Some(base_fee))
             .expect("fee is always valid; execution succeeded");
         total_fees += U256::from(miner_fee) * U256::from(gas_used);
-        total_bytes += tx_bytes;
+
+        // update the total bytes used if we need this to limit the size of the payload
+        if max_tx_bytes.is_some() {
+            total_bytes += pool_tx.encoded_length();
+        }
 
         // append transaction to the list of executed transactions
         executed_txs.push(tx.into_signed());
