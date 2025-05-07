@@ -1515,6 +1515,13 @@ where
         self.database.create_new_snapshot(block_id, block_hash)
     }
 
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()> {
+        self.database.remove_block_snapshot_id_mapping(range)
+    }
+
     fn create_new_chunk(
         &self,
         snapshot_id: SnapshotId,

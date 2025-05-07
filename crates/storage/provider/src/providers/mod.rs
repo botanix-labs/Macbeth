@@ -637,6 +637,13 @@ where
         )
     }
 
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()> {
+        self.database.provider_rw()?.remove_block_snapshot_id_mapping(range)
+    }
+
     fn create_new_snapshot(
         &self,
         block_id: BlockNumber,
