@@ -2191,6 +2191,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-db-cleaner"
+version = "1.0.10"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "rand 0.8.5",
+ "reth-chainspec",
+ "reth-db",
+ "reth-node-core",
+ "reth-provider",
+ "secp256k1 0.29.1",
+ "serde",
+ "serde_json",
+ "test-suite",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "botanix-up"
 version = "1.0.10"
 dependencies = [

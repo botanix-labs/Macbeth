@@ -4032,6 +4032,14 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for DatabaseProvider<TX> {
         Ok(self.tx.put::<tables::BlockSnapshots>(block_id, snapshot_id)?)
     }
 
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()> {
+        self.remove::<tables::BlockSnapshots>(*range.start()..=*range.end())?;
+        Ok(())
+    }
+
     fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
         if range.is_empty() {
             return Ok(())

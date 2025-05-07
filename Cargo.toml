@@ -11,6 +11,7 @@ exclude = [".github/"]
 resolver = "2"
 
 members = [
+    "bin/botanix-db-cleaner",
     "bin/botanix-up",
     "bin/btc-server",
     "bin/federation-utils",

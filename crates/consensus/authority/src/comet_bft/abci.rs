@@ -757,9 +757,7 @@ where
                     Ok(snapshot_sync_state_lock) => snapshot_sync_state_lock,
                     Err(e) => {
                         error!("Error getting a snapshot state lock: {:?}", e);
-                        return ResponseOfferSnapshot {
-                            result: SnapshotOfferResult::Reject as i32,
-                        };
+                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
                     }
                 };
 
@@ -806,9 +804,7 @@ where
                     Ok(snapshot_sync_state_lock_height) => snapshot_sync_state_lock_height,
                     Err(e) => {
                         error!("Error getting a snapshot state lock: {:?}", e);
-                        return ResponseOfferSnapshot {
-                            result: SnapshotOfferResult::Reject as i32,
-                        };
+                        return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
                     }
                 };
 

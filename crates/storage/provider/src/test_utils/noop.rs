@@ -244,6 +244,13 @@ impl SnapshotWriter for NoopProvider {
         Ok(0)
     }
 
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        _range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
     fn create_new_chunk(
         &self,
         _snapshot_id: SnapshotId,
