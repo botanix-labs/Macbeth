@@ -168,8 +168,6 @@ pub struct EthPayloadBuilderAttributes {
     pub withdrawals: Withdrawals,
     /// Root of the parent beacon block
     pub parent_beacon_block_root: Option<B256>,
-    /// Maximum (sum) transaction bytes for the payload
-    pub max_tx_bytes: usize,
 }
 
 // === impl EthPayloadBuilderAttributes ===
@@ -183,7 +181,7 @@ impl EthPayloadBuilderAttributes {
     /// Creates a new payload builder for the given parent block and the attributes.
     ///
     /// Derives the unique [`PayloadId`] for the given parent and attributes
-    pub fn new(parent: B256, attributes: PayloadAttributes, max_tx_bytes: usize) -> Self {
+    pub fn new(parent: B256, attributes: PayloadAttributes) -> Self {
         let id = payload_id(&parent, &attributes);
 
         Self {
@@ -194,7 +192,6 @@ impl EthPayloadBuilderAttributes {
             prev_randao: attributes.prev_randao,
             withdrawals: attributes.withdrawals.unwrap_or_default().into(),
             parent_beacon_block_root: attributes.parent_beacon_block_root,
-            max_tx_bytes,
         }
     }
 }
@@ -206,12 +203,8 @@ impl PayloadBuilderAttributes for EthPayloadBuilderAttributes {
     /// Creates a new payload builder for the given parent block and the attributes.
     ///
     /// Derives the unique [`PayloadId`] for the given parent and attributes
-    fn try_new(
-        parent: B256,
-        attributes: PayloadAttributes,
-        max_tx_bytes: usize,
-    ) -> Result<Self, Infallible> {
-        Ok(Self::new(parent, attributes, max_tx_bytes))
+    fn try_new(parent: B256, attributes: PayloadAttributes) -> Result<Self, Infallible> {
+        Ok(Self::new(parent, attributes))
     }
 
     fn payload_id(&self) -> PayloadId {
@@ -403,9 +396,8 @@ mod tests {
         // check that it deserializes properly
         let genesis: Genesis = serde_json::from_str(hive_london).unwrap();
         let chainspec = ChainSpec::from(genesis);
-        let max_tx_bytes = 100_000;
         let payload_builder_attributes =
-            EthPayloadBuilderAttributes::new(chainspec.genesis_hash(), attributes, max_tx_bytes);
+            EthPayloadBuilderAttributes::new(chainspec.genesis_hash(), attributes);
 
         // use cfg_and_block_env
         let cfg_and_block_env =
