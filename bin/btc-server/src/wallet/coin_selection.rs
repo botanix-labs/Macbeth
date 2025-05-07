@@ -103,7 +103,7 @@ pub(crate) fn coin_selection(
         bdk_wallet::coin_selection::Excess::NoChange { .. } => None,
     };
 
-    let mut pegouts = outputs
+    let pegouts = outputs
         .into_iter()
         .map(|(txout, pegout_id)| (txout, pegout_id.as_bytes()))
         .collect::<Vec<_>>();
@@ -123,12 +123,26 @@ pub(crate) fn coin_selection(
 
     let absolute_fee = original_psbt.fee().expect("no missing any txouts");
     let fee_per_output = absolute_fee / pegouts.len() as u64;
-    for (output, _pegout_id) in pegouts.iter_mut() {
-        output.value = output
-            .value
-            .checked_sub(fee_per_output)
-            .ok_or_else(|| CoinSelectionError::PegoutFeeOverflow)?;
-    }
+
+    let pegouts = pegouts
+        .into_iter()
+        .filter_map(|(mut output, _pegout_id)| {
+            match output
+                .value
+                .checked_sub(fee_per_output)
+                .ok_or_else(|| CoinSelectionError::PegoutFeeOverflow)
+            {
+                Ok(amount) => {
+                    output.value = amount;
+                    Some((output, _pegout_id))
+                }
+                Err(_) => {
+                    // ignore the pegout
+                    None
+                }
+            }
+        })
+        .collect::<Vec<(TxOut, [u8; 36])>>();
 
     let updated_changed = {
         if let Some(mut ch) = change.clone() {
@@ -332,7 +346,8 @@ mod tests {
             change_script.clone(),
         );
 
-        // Assert that the specific error is returned
-        assert_eq!(result.err(), Some(CoinSelectionError::PegoutFeeOverflow));
+        // Assert that the response is ok and we have filtered the outputs to 1
+        assert!(result.is_ok());
+        assert!(result.unwrap().outputs.len() == 1);
     }
 }
