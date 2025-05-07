@@ -38,9 +38,10 @@ use reth_provider::{
 };
 use reth_revm::primitives::FixedBytes;
 use tendermint_rpc::client::HttpClient;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::SendError};
 use tracing::{error, info, warn};
 
+// TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]
 /// Errors that can occur during synchronization.
 pub(crate) enum SyncError {
@@ -52,6 +53,7 @@ pub(crate) enum SyncError {
     TendermintRpc(#[from] tendermint_rpc::Error),
 }
 
+// TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FinalizedPegoutIdsSyncSerializationError {
     #[error("Received a grpc client error {0}")]
@@ -86,6 +88,12 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     metrics: Arc<AuthorityMetrics>,
     /// cometbft light client provider
     cbft_rpc_provider: HttpClient,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum FrostTaskError {
+    #[error("Unable to get all connected peers {0}")]
+    UnableToGetAllConnectedPeers(#[from] SendError<FrostCommand>),
 }
 
 impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
@@ -459,6 +467,7 @@ where
                             let cmd = FrostCommand::GetAllConnectedPeers(tx);
                             if let Err(e) = self.frost_handle.send_command(cmd) {
                                 error!(target: "consensus::authority::frost_task::start_task", "Error getting all peers handle {:?}", e);
+                                continue;
                             }
 
                             rx.await.expect("expect all peers handle to exist")
@@ -754,7 +763,11 @@ where
                     // Update timeout at which point the btc-server should be called again.
                     timeout = Duration::from_millis(resp.timeout);
 
-                    self.gossip_payloads(resp.payloads).await;
+                    // Gossip the payloads to all frost peers.
+                    if self.gossip_payloads(resp.payloads).await.is_err() {
+                        error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Failed to gossip payloads. Wait for the next message");
+                        continue;
+                    }
                 }
                 // Frost task dropped the handle, exiting...
                 Ok(None) => {
@@ -777,14 +790,20 @@ where
                     // Update timeout at which point the btc-server should be called again.
                     timeout = Duration::from_millis(resp.timeout);
 
-                    self.gossip_payloads(resp.payloads).await;
+                    if self.gossip_payloads(resp.payloads).await.is_err() {
+                        error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Failed to gossip payloads. Wait for the next message");
+                        continue;
+                    }
                 }
             }
         }
     }
-    async fn gossip_payloads(&self, payloads: Vec<client::DkgPayload>) {
+    async fn gossip_payloads(
+        &self,
+        payloads: Vec<client::DkgPayload>,
+    ) -> Result<(), FrostTaskError> {
         if payloads.is_empty() {
-            return;
+            return Ok(());
         }
 
         info!(target: "consensus::authority::frost_task::DkgRunnerTask", "Ready to gossip {} generated DKG payload(s)", payloads.len());
@@ -796,6 +815,7 @@ where
             let cmd = FrostCommand::GetAllConnectedPeers(tx);
             if let Err(e) = self.frost_handle.send_command(cmd) {
                 error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Failed to send GetAllConnectedPeers frost command {}", e);
+                return Err(FrostTaskError::UnableToGetAllConnectedPeers(e));
             }
 
             rx.await.expect("expect all peers handle to exist")
@@ -837,5 +857,7 @@ where
                 }
             }
         }
+
+        Ok(())
     }
 }
