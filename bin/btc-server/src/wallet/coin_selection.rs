@@ -1,4 +1,7 @@
-use crate::{database::version::UtxoVersion, wallet::TAPROOT_KEYSPEND_SATISFACTION_WEIGHT};
+use crate::{
+    database::version::UtxoVersion,
+    wallet::{psbt::PegoutId as PegoutIdBytes, TAPROOT_KEYSPEND_SATISFACTION_WEIGHT},
+};
 use bdk_wallet::coin_selection::{
     CoinSelectionAlgorithm, InsufficientFunds, OldestFirstCoinSelection,
 };
@@ -142,7 +145,7 @@ pub(crate) fn coin_selection(
                 }
             }
         })
-        .collect::<Vec<(TxOut, [u8; 36])>>();
+        .collect::<Vec<(TxOut, PegoutIdBytes)>>();
 
     let updated_changed = {
         if let Some(mut ch) = change.clone() {
