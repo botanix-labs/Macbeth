@@ -992,6 +992,7 @@ where
             return Err(badarg!("Too many pegouts in the psbt"));
         }
         let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
+        info!("[get_round2_signing_package] Found {} outputs in the psbt", psbt.outputs.len());
         for output in psbt.outputs.iter() {
             if let Some(pegout_id) = output.pegout_id() {
                 let pegout_id = PegoutId::from_bytes(&pegout_id)
@@ -1002,13 +1003,26 @@ where
                 psbt_pegout_ids.push(pegout_id);
             }
         }
+        info!(
+            "[get_round2_signing_package] Found {} pegout ids in the psbt",
+            psbt_pegout_ids.len()
+        );
+
         // Get the matching pending pegouts
         let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+        info!(
+            "[get_round2_signing_package] Found {} pending pegouts in the DB",
+            pending_pegouts.len()
+        );
         let psbt_pending_pegouts = pending_pegouts
             .into_iter()
             .filter(|p| psbt_pegout_ids.contains(&p.id))
             .collect::<Vec<_>>();
 
+        info!(
+            "[get_round2_signing_package] Found {} matching pending pegouts in the psbt",
+            psbt_pending_pegouts.len()
+        );
         self.add_tracked_tx(signed_tx.clone(), &psbt_pending_pegouts, SystemTime::now())
             .await
             .to_status()?;
@@ -1124,6 +1138,10 @@ where
 
         debug!("Cord Fee rate: {:?}", fee_rate);
 
+        // First sync the pegout scheduler as this may add tracked pegouts back to the pending pegouts list
+        self.sync_pegout_scheduler(checkpoint).await.to_status()?;
+        let tracked_txs = self.db.get_tracked_txs().to_status()?;
+
         // Select up to `UPPER_PEGOUT_BOUND` pegouts, sorted by age in ascending
         // order. Respectively, the oldest pegouts come first.
         let pending_pegouts = self.db.coord_pending_pegouts(UPPER_PEGOUT_BOUND).to_status()?;
@@ -1148,10 +1166,6 @@ where
             .to_secp_pk()
             .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
         let change_script = wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-
-        // First sync the pegout scheduler
-        self.sync_pegout_scheduler(checkpoint).await.to_status()?;
-        let tracked_txs = self.db.get_tracked_txs().to_status()?;
 
         let psbt = coordinator::make_tx(
             outputs,
