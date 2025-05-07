@@ -2068,7 +2068,7 @@ mod tests {
     fn test_prepare_proposal_empty_mempool() {
         let abci_client = abci_client_builder();
 
-        let request = RequestPrepareProposal::default();
+        let request = RequestPrepareProposal { max_tx_bytes: 100, ..Default::default() };
         let response = abci_client.prepare_proposal(request);
 
         let expected_ndd = NonDeterministicData::new_v1(
