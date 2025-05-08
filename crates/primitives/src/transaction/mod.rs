@@ -381,7 +381,7 @@ impl Transaction {
         if let Some(priority_fee) = self.max_priority_fee_per_gas() {
             Some(fee.min(priority_fee) + base_fee)
         } else {
-            Some(fee)
+            Some(fee + base_fee)
         }
     }
 
@@ -1199,7 +1199,7 @@ impl TransactionSigned {
     /// of bytes in input data.
     pub fn decode_enveloped(input_data: &mut &[u8]) -> alloy_rlp::Result<Self> {
         if input_data.is_empty() {
-            return Err(RlpError::InputTooShort)
+            return Err(RlpError::InputTooShort);
         }
 
         // Check if the tx is a list
@@ -1211,7 +1211,7 @@ impl TransactionSigned {
         };
 
         if !input_data.is_empty() {
-            return Err(RlpError::UnexpectedLength)
+            return Err(RlpError::UnexpectedLength);
         }
 
         Ok(output_data)
@@ -1290,7 +1290,7 @@ impl Decodable for TransactionSigned {
     /// string header if the first byte is less than `0xf7`.
     fn decode(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         if buf.is_empty() {
-            return Err(RlpError::InputTooShort)
+            return Err(RlpError::InputTooShort);
         }
 
         // decode header
