@@ -30,6 +30,28 @@ pub enum CoinSelectionError {
     AvailableUtxosCannotBeEmpty,
     #[error("Pegout value is smaller than pegout fee")]
     PegoutFeeOverflow,
+    #[error("Fee rate overflow")]
+    FeeRateOverflow,
+    #[error("Sanity check error - SHOULD NOT HAPPEN: {0}")]
+    SanityCheckError(#[from] SanityCheckError),
+}
+
+#[derive(Debug, Error)]
+pub enum SanityCheckError {
+    #[error("Absolute fee not evenly distributed among pegouts")]
+    /// Failed validation: `total_pegout_value + absolute_fee == target_amount`
+    AbsoluteFeeNotDistributed {
+        total_pegout_value: Amount,
+        absolute_fee: Amount,
+        target_amount: Amount,
+    },
+    #[error("Bad refund balance in change output")]
+    /// Failed validation: `change_output_value == total_input_value - target_amount`
+    BadRefundBalance {
+        change_output_value: Amount,
+        total_input_value: Amount,
+        target_amount: Amount,
+    },
 }
 
 impl PartialEq for CoinSelectionError {
@@ -185,14 +207,51 @@ pub(crate) fn coin_selection(
         }
     };
 
+    let change_available = updated_changed.is_some();
+
+    // The total input value, as selected by the coin selection algorithm.
+    let total_input_value =
+        selected_inputs.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
+
+    // The total pegouts value, excluding the change output, and with the
+    // absolute fee evenly distributed among each pegouts.
+    let total_pegout_value = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
+
     let updated_psbt = crate::wallet::psbt::create_psbt(selected_inputs, pegouts, updated_changed);
 
     // Lets extract the tx, doing so will do some fee sanity checks
     // Better to catch them here than later in signing
-    let _tx = updated_psbt.clone().extract_tx()?;
+    let tx = updated_psbt.clone().extract_tx()?;
 
-    // TODO should check that min relay fee rate is met
-    // TODO should check that none of the outputs are now dust
+    {
+        let absolute_fee = updated_psbt.fee().expect("not missing any txouts");
+
+        // VALIDATE: Total pegout value plus absolute fee must be equal to target amount
+        if total_pegout_value + absolute_fee != target_amount {
+            return Err(SanityCheckError::AbsoluteFeeNotDistributed {
+                total_pegout_value,
+                absolute_fee,
+                target_amount,
+            }
+            .into());
+        }
+
+        // VALIDATE: Change output value must be equal the total input value
+        // minus the target amount. Notably, the pegouts cover all the fees.
+        if change_available {
+            let change_output = tx.output.last().expect("change output not included");
+            let change_output_value = change_output.value;
+
+            if change_output_value != total_input_value - target_amount {
+                return Err(SanityCheckError::BadRefundBalance {
+                    change_output_value,
+                    total_input_value,
+                    target_amount,
+                }
+                .into());
+            }
+        }
+    }
 
     Ok(updated_psbt)
 }
