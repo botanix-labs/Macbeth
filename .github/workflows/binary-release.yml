@@ -62,6 +62,11 @@ jobs:
           run: |
             cargo install cross --git https://github.com/cross-rs/cross
 
+        - name: Install protoc
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+
         - name: Build Reth Binary
           run: make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
 

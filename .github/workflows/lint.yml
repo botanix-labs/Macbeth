@@ -46,6 +46,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
         with:
@@ -66,6 +69,9 @@ jobs:
         uses: ./.github/actions/setup-rust
 
       - uses: taiki-e/install-action@cargo-hack
+
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile
 
@@ -177,6 +183,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Install Protobuf Compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - uses: pnpm/action-setup@v4
         name: Install pnpm

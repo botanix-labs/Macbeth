@@ -34,12 +34,6 @@ runs:
         target: ${{ inputs.target }}
         components: ${{ inputs.components }}
 
-    - name: Install Protobuf Compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
-      shell: bash
-
     - uses: Swatinem/rust-cache@v2
       with:
         cache-on-failure: true
