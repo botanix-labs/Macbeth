@@ -42,10 +42,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy, cargo
-          toolchain: stable
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
 
       - name: Install dependencies
         run: |
@@ -54,11 +52,11 @@ jobs:
       - name: gcloud auth
         id: 'auth'
         uses: google-github-actions/auth@v2
-        with: 
+        with:
           project_id: ${{ env.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-      
+
       - name: gcloud setup
         uses: google-github-actions/setup-gcloud@v2
         with:
@@ -71,18 +69,11 @@ jobs:
 
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.9
-      
+
       - name: Configure sccache
         run: |
           sccache --start-server
           sccache --show-stats
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-          env-vars: |
-            RUSTC_WRAPPER
 
       - name: Compile btc-server
         run: |
@@ -91,7 +82,7 @@ jobs:
           cargo build --bin btc-server 
           echo "Bitcoin server compiled successfully!"
           sccache --show-stats
-    
+
       - name: Compile poa-node
         run: |
           set -eo pipefail
@@ -122,7 +113,7 @@ jobs:
           path: /tmp/binaries
           retention-days: 1
 
-      
+
   e2e-tests:
     name: test / ${{ matrix.test }}
     runs-on: ubuntu-latest
@@ -130,7 +121,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       fail-fast: false  # Continue running other tests even if one fails
-      matrix: 
+      matrix:
         test: ["dkg_flow",
           "utxo_commitment",
           "signing_flow",
@@ -161,7 +152,7 @@ jobs:
 
       - name: Install killall
         run: sudo apt-get install psmisc
-      
+
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v2'
@@ -174,13 +165,13 @@ jobs:
         run: |
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
-          
+
       - name: Download compiled binaries
         uses: actions/download-artifact@v4
         with:
           name: compiled-binaries
           path: /tmp/binaries
-          
+
       - name: Setup binaries
         run: |
           mkdir -p target/debug
@@ -204,12 +195,12 @@ jobs:
           if [ -d "/tmp/binaries/test-suite-dir" ]; then
             cp -r /tmp/binaries/test-suite-dir/* ./bin/test-suite/
           fi
-      
+
       - name: Run ${{ matrix.test }}
         run: |
           make start-test-suite-runners
           
-          
+
       - name: Cleanup resources
         if: always()
         run: |
@@ -228,7 +219,7 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-      
+
       - name: Generate test report
         if: always()
         run: |

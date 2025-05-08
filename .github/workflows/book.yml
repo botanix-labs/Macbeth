@@ -57,9 +57,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - name: Install Protobuf Compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+
       - name: Install mdbook
         run: |
           mkdir mdbook
@@ -71,10 +72,6 @@ jobs:
           mkdir mdbook-template
           curl -sSL https://github.com/sgoudham/mdbook-template/releases/latest/download/mdbook-template-x86_64-unknown-linux-gnu.tar.gz | tar -xz --directory=./mdbook-template
           echo $(pwd)/mdbook-template >> $GITHUB_PATH
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
 
       - name: Build book
         run: mdbook build

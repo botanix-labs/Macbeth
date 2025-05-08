@@ -26,10 +26,10 @@ jobs:
         id: extract_version
     outputs:
       VERSION: ${{ steps.extract_version.outputs.VERSION }}
-  
+
   build:
     name: build release
-    runs-on: 
+    runs-on:
       group: macbeth
     permissions:
       contents: read
@@ -51,22 +51,17 @@ jobs:
     steps:
         - uses: actions/checkout@v4
         - uses: rui314/setup-mold@v1
-        - uses: dtolnay/rust-toolchain@stable
+
+        - name: Setup Rust
+          uses: ./.github/actions/setup-rust
           with:
             target: ${{ matrix.configs.target }}
+
         - name: Install cross main
           id: cross_main
           run: |
             cargo install cross --git https://github.com/cross-rs/cross
 
-        - name: Install protoc
-          run: |
-            sudo apt-get update
-            sudo apt-get install -y protobuf-compiler
-
-        - uses: Swatinem/rust-cache@v2
-          with:
-            cache-on-failure: true
         - name: Build Reth Binary
           run: make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
 
@@ -81,15 +76,14 @@ jobs:
             mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts
             mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts
 
-
         - name: gcloud auth
           id: 'auth'
           uses: google-github-actions/auth@v2
-          with: 
+          with:
             project_id: botanix-391913
             workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
             service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
-        
+
         - name: gcloud setup
           uses: google-github-actions/setup-gcloud@v2
           with:
@@ -101,7 +95,7 @@ jobs:
             tar -cvf ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
             sha256sum ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz > ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
             mv ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum ..
-            
+
         - name: Upload Artifacts
           uses: actions/upload-artifact@v4
           with:
@@ -129,4 +123,3 @@ jobs:
             echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum"
 
 
-  
