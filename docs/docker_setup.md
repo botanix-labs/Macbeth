@@ -9,7 +9,7 @@
 
 To run the stack locally, please go through the following steps to ensure you have all necessary prerequisites:
 
-1. Install `rust` (best way to install it is through the rustup toolchain: [rust](https://rustup.rs/) - depending on your OS). Default to nightly version. Minimum required version is `1.75`.
+1. Install `rust` (best way to install it is through the rustup toolchain: [rust](https://rustup.rs/) - depending on your OS). Default to nightly version. Minimum required version is `1.85`.
 1. Install `docker` on your OS - simply follow the instructions here: [docker](https://docs.docker.com/engine/install/)
 1. Install `foundry/forge` on your system - simply follow the instructions here: [foundry](https://book.getfoundry.sh/getting-started/installation)
 1. Install and set up `git` to use ssh.
