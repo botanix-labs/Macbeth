@@ -36,9 +36,9 @@ runs:
 
     - name: Install Protobuf Compiler
       run: |
-        apt-get update
-        apt-get install -y protobuf-compiler
-      shell: sh
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+      shell: bash
 
     - uses: Swatinem/rust-cache@v2
       with:
