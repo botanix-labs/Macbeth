@@ -7,7 +7,7 @@ use bdk_wallet::coin_selection::{
 };
 use bitcoin::{
     psbt::{Error as PsbtError, ExtractTxError, Psbt},
-    Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
+    Amount, FeeRate, OutPoint, ScriptBuf, TxOut, Weight,
 };
 use std::collections::HashMap;
 use thiserror::Error;
@@ -75,8 +75,27 @@ pub(crate) fn coin_selection(
         }
     };
 
+    // NOTE (lamafab): The coin selection algorithm that we use does not appear
+    // to consider output weights, nor base weights, at all. We hence compute
+    // the estimated fee for all outputs and make that part of the
+    // `target_amount` later on, with the goal that the coin selection algorithm
+    // includes the necessary amount of inputs to cover the final fee. We just
+    // ignore the base weights.
+
+    // Calculate the weight of all the outputs. Do note that we allow different
+    // transaction variants, be it P2SH, P2WPKH, etc.
+    let estimated_output_weight: Weight =
+        // Apply pegouts.
+        outputs.iter().fold(Weight::ZERO, |acc, (tx_out, _)| acc + tx_out.weight())
+        // Apply change output (P2TR), which _might_ not be set.
+        + Weight::from_wu(172);
+
+    let estimated_output_fee =
+        fee_rate.fee_wu(estimated_output_weight).ok_or(CoinSelectionError::FeeRateOverflow)?;
+
     let coin_select =
         bdk_wallet::coin_selection::BranchAndBoundCoinSelection::new(0, OldestFirstCoinSelection);
+
     let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
 
     let mut rng = rand::thread_rng();
@@ -86,7 +105,8 @@ pub(crate) fn coin_selection(
             required_utxos.values().map(to_bdk).collect::<Vec<_>>(),
             available_utxos.values().map(to_bdk).collect::<Vec<_>>(),
             fee_rate,
-            target_amount,
+            // Include the estimated fee for the outputs
+            target_amount + estimated_output_fee,
             &change_script, // drain_script
             &mut rng,
         )
