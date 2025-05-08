@@ -894,23 +894,21 @@ where
                 // now take the entire snapshot data
                 match client.get_snapshot_by_id(snapshot_id) {
                     Ok(Some(snapshot)) => {
-                        let mapped_request_chunk = request.chunk + 1;
-                        // check if the chunk id is found in the snapshot.
-                        // NOTE: we shift by 1 since all mdbx chunks start at 1 and cometbft
-                        // numeration starts at 0
-                        if !snapshot
-                            .chunk_ids()
-                            .iter()
-                            .any(|chunk_id| mapped_request_chunk as u64 == *chunk_id)
-                        {
-                            error!(
-                                "Chunk id {:?} in snapshot with id {:?} not found",
-                                mapped_request_chunk, snapshot_id
-                            );
-                            return ResponseLoadSnapshotChunk::default();
-                        }
+                        // NOTE: all cometbft numeration starts at 0
+                        let requested_chunk_index = request.chunk;
+                        let chunk_id =
+                            match snapshot.chunk_ids().get(requested_chunk_index as usize) {
+                                Some(chunk_id) => *chunk_id,
+                                None => {
+                                    error!(
+                                    "Requested chunk with index {:?} not found in snapshot {:?}",
+                                    request.chunk, snapshot_id
+                                );
+                                    return ResponseLoadSnapshotChunk::default();
+                                }
+                            };
 
-                        match client.get_chunk_by_id(mapped_request_chunk as u64) {
+                        match client.get_chunk_by_id(chunk_id) {
                             Ok(Some(chunk)) => {
                                 let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
                                 let compressor = self.compressor.clone();
@@ -947,13 +945,13 @@ where
                                 res
                             }
                             Ok(None) => {
-                                error!("Chunk with id {:?} not found", mapped_request_chunk);
+                                error!("Chunk with id {:?} not found", chunk_id);
                                 ResponseLoadSnapshotChunk::default()
                             }
                             Err(e) => {
                                 error!(
                                     "DB error getting chunk with id: {:?}. Error = {:?}",
-                                    mapped_request_chunk, e
+                                    chunk_id, e
                                 );
                                 ResponseLoadSnapshotChunk::default()
                             }
