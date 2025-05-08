@@ -1138,7 +1138,8 @@ where
 
         debug!("Cord Fee rate: {:?}", fee_rate);
 
-        // First sync the pegout scheduler as this may add tracked pegouts back to the pending pegouts list
+        // First sync the pegout scheduler as this may add tracked pegouts back to the pending
+        // pegouts list
         self.sync_pegout_scheduler(checkpoint).await.to_status()?;
         let tracked_txs = self.db.get_tracked_txs().to_status()?;
 
