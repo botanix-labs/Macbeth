@@ -144,7 +144,14 @@ pub(crate) fn coin_selection(
     let original_psbt =
         crate::wallet::psbt::create_psbt(selected_inputs.clone(), pegouts.clone(), change.clone());
 
-    let absolute_fee = original_psbt.fee().expect("no missing any txouts");
+    // NOTE (lamafab): This fee calculation does not respect the passed on
+    // `fee_rate`. Technically, this absolute fee should be adjusted such that:
+    //
+    // > absolute_fee = fee_rate * original_psbt.unsigned_tx.weight()
+    //
+    // But we will keep it simple for now without messing with the original
+    // implemenation. We can revisit this later.
+    let absolute_fee = original_psbt.fee().expect("not missing any txouts");
     let fee_per_output = absolute_fee / pegouts.len() as u64;
 
     let pegouts = pegouts
@@ -160,7 +167,7 @@ pub(crate) fn coin_selection(
                     Some((output, _pegout_id))
                 }
                 Err(_) => {
-                    // ignore the pegout
+                    // Ignore the pegout
                     None
                 }
             }
