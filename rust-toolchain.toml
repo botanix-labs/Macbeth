@@ -1,0 +1,5 @@
+[toolchain]
+channel = "1.85.0"
+
+# Extra components that must be present
+components = ["rustc", "rust-std", "cargo", "rustfmt", "clippy"]

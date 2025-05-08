@@ -29,8 +29,8 @@ pub fn validate_header_base_fee(
     header: &Header,
     chain_spec: &ChainSpec,
 ) -> Result<(), ConsensusError> {
-    if chain_spec.is_fork_active_at_block(EthereumHardfork::London, header.number) &&
-        header.base_fee_per_gas.is_none()
+    if chain_spec.is_fork_active_at_block(EthereumHardfork::London, header.number)
+        && header.base_fee_per_gas.is_none()
     {
         return Err(ConsensusError::BaseFeeMissing);
     }
@@ -62,9 +62,9 @@ pub fn validate_block_pre_execution(
 
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
-    if chain_spec.is_shanghai_active_at_timestamp(block.timestamp) &&
-        chain_spec.chain.id() != BOTANIX_TESTNET.chain.id() &&
-        chain_spec.chain.id() != BOTANIX_MAINNET.chain.id()
+    if chain_spec.is_shanghai_active_at_timestamp(block.timestamp)
+        && chain_spec.chain.id() != BOTANIX_TESTNET.chain.id()
+        && chain_spec.chain.id() != BOTANIX_MAINNET.chain.id()
     {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;

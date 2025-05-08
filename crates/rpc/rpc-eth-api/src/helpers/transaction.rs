@@ -109,7 +109,7 @@ pub trait EthTransactions: LoadTransaction {
             if let Some(tx) =
                 self.pool().get_pooled_transaction_element(hash).map(|tx| tx.envelope_encoded())
             {
-                return Ok(Some(tx))
+                return Ok(Some(tx));
             }
 
             self.spawn_blocking_io(move |ref this| {
@@ -211,7 +211,7 @@ pub trait EthTransactions: LoadTransaction {
                         block_number,
                         base_fee_per_gas,
                         index,
-                    )))
+                    )));
                 }
             }
 
@@ -233,7 +233,7 @@ pub trait EthTransactions: LoadTransaction {
         async move {
             if let Some(block) = self.block_with_senders(block_id).await? {
                 if let Some(tx) = block.transactions().nth(index) {
-                    return Ok(Some(tx.envelope_encoded()))
+                    return Ok(Some(tx.envelope_encoded()));
                 }
             }
 
@@ -496,7 +496,7 @@ pub trait EthTransactions: LoadTransaction {
                 return match signer.sign_transaction(request, from) {
                     Ok(tx) => Ok(tx),
                     Err(e) => Err(e.into_eth_err()),
-                }
+                };
             }
         }
         Err(EthApiError::InvalidTransactionSignature.into())

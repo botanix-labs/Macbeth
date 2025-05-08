@@ -96,7 +96,7 @@ impl<'a, TX, SF> UnifiedStorageWriter<'a, TX, SF> {
     #[allow(unused)]
     const fn ensure_static_file(&self) -> Result<(), UnifiedStorageWriterError> {
         if self.static_file.is_none() {
-            return Err(UnifiedStorageWriterError::MissingStaticFileWriter)
+            return Err(UnifiedStorageWriterError::MissingStaticFileWriter);
         }
         Ok(())
     }
@@ -146,7 +146,7 @@ where
     pub fn save_blocks(&self, blocks: &[ExecutedBlock]) -> ProviderResult<()> {
         if blocks.is_empty() {
             debug!(target: "provider::storage_writer", "Attempted to write empty block range");
-            return Ok(())
+            return Ok(());
         }
 
         // NOTE: checked non-empty above
@@ -429,8 +429,8 @@ where
         // * If we are in live sync. In this case, `UnifiedStorageWriter` is built without a static
         //   file writer.
         // * If there is any kind of receipt pruning
-        let mut storage_type = if self.static_file.is_none() ||
-            self.database().prune_modes_ref().has_receipts_pruning()
+        let mut storage_type = if self.static_file.is_none()
+            || self.database().prune_modes_ref().has_receipts_pruning()
         {
             StorageType::Database(self.database().tx_ref().cursor_write::<tables::Receipts>()?)
         } else {

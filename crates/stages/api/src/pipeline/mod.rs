@@ -138,14 +138,14 @@ where
                     PipelineTarget::Sync(tip) => self.set_tip(tip),
                     PipelineTarget::Unwind(target) => {
                         if let Err(err) = self.move_to_static_files() {
-                            return (self, Err(err.into()))
+                            return (self, Err(err.into()));
                         }
                         if let Err(err) = self.unwind(target, None) {
-                            return (self, Err(err))
+                            return (self, Err(err));
                         }
                         self.progress.update(target);
 
-                        return (self, Ok(ControlFlow::Continue { block_number: target }))
+                        return (self, Ok(ControlFlow::Continue { block_number: target }));
                     }
                 }
             }
@@ -166,8 +166,9 @@ where
 
             // Terminate the loop early if it's reached the maximum user
             // configured block.
-            if next_action.should_continue() &&
-                self.progress
+            if next_action.should_continue()
+                && self
+                    .progress
                     .minimum_block_number
                     .zip(self.max_block)
                     .is_some_and(|(progress, target)| progress >= target)
@@ -179,7 +180,7 @@ where
                     max_block = ?self.max_block,
                     "Terminating pipeline."
                 );
-                return Ok(())
+                return Ok(());
             }
         }
     }
@@ -217,7 +218,7 @@ where
                 ControlFlow::Continue { block_number } => self.progress.update(block_number),
                 ControlFlow::Unwind { target, bad_block } => {
                     self.unwind(target, Some(bad_block.number))?;
-                    return Ok(ControlFlow::Unwind { target, bad_block })
+                    return Ok(ControlFlow::Unwind { target, bad_block });
                 }
             }
 
@@ -293,7 +294,7 @@ where
                 );
                 self.event_sender.notify(PipelineEvent::Skipped { stage_id });
 
-                continue
+                continue;
             }
 
             info!(
@@ -339,8 +340,8 @@ where
 
                         // If None, that means the finalized block is not written so we should
                         // always save in that case
-                        if last_saved_finalized_block_number.is_none() ||
-                            Some(checkpoint.block_number) < last_saved_finalized_block_number
+                        if last_saved_finalized_block_number.is_none()
+                            || Some(checkpoint.block_number) < last_saved_finalized_block_number
                         {
                             provider_rw.save_finalized_block_number(BlockNumber::from(
                                 checkpoint.block_number,
@@ -359,7 +360,7 @@ where
                     Err(err) => {
                         self.event_sender.notify(PipelineEvent::Error { stage_id });
 
-                        return Err(PipelineError::Stage(StageError::Fatal(Box::new(err))))
+                        return Err(PipelineError::Stage(StageError::Fatal(Box::new(err))));
                     }
                 }
             }
@@ -399,7 +400,7 @@ where
                 // We reached the maximum block, so we skip the stage
                 return Ok(ControlFlow::NoProgress {
                     block_number: prev_checkpoint.map(|progress| progress.block_number),
-                })
+                });
             }
 
             let exec_input = ExecInput { target, checkpoint: prev_checkpoint };
@@ -469,7 +470,7 @@ where
                             ControlFlow::Continue { block_number }
                         } else {
                             ControlFlow::NoProgress { block_number: Some(block_number) }
-                        })
+                        });
                     }
                 }
                 Err(err) => {
@@ -479,7 +480,7 @@ where
                     if let Some(ctrl) =
                         on_stage_error(&self.provider_factory, stage_id, prev_checkpoint, err)?
                     {
-                        return Ok(ctrl)
+                        return Ok(ctrl);
                     }
                 }
             }

@@ -243,18 +243,18 @@ impl FrostProtoMessage {
                 buf.put_slice(&resource.data);
             }
             FrostProtoMessageKind::Ping | FrostProtoMessageKind::Pong => {}
-            FrostProtoMessageKind::PingMessage(peer_id) |
-            FrostProtoMessageKind::PongMessage(peer_id) => {
+            FrostProtoMessageKind::PingMessage(peer_id)
+            | FrostProtoMessageKind::PongMessage(peer_id) => {
                 // peer id
                 let peer_id_str = peer_id.to_string();
                 let peer_id_bytes = peer_id_str.as_bytes();
                 buf.put_u16_le(peer_id_bytes.len() as u16); // Store the length of the peer_id string
                 buf.put_slice(peer_id_bytes); // Store the peer_id string itself
             }
-            FrostProtoMessageKind::SignerRound1SigningPackage(resource) |
-            FrostProtoMessageKind::SignerRound2SigningPackage(resource) |
-            FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource) |
-            FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
+            FrostProtoMessageKind::SignerRound1SigningPackage(resource)
+            | FrostProtoMessageKind::SignerRound2SigningPackage(resource)
+            | FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource)
+            | FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
                 // signing session id
                 buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.signing_session_id);
@@ -368,10 +368,10 @@ impl FrostProtoMessage {
                 }
             }
 
-            FrostProtoMessageId::SignerRound1SigningPackage |
-            FrostProtoMessageId::CoordinatorRound1SigningPackage |
-            FrostProtoMessageId::SignerRound2SigningPackage |
-            FrostProtoMessageId::CoordinatorRound2SigningPackage => {
+            FrostProtoMessageId::SignerRound1SigningPackage
+            | FrostProtoMessageId::CoordinatorRound1SigningPackage
+            | FrostProtoMessageId::SignerRound2SigningPackage
+            | FrostProtoMessageId::CoordinatorRound2SigningPackage => {
                 // Check if there's enough data for session_id_len
                 if buf.len() < 4 {
                     return None;

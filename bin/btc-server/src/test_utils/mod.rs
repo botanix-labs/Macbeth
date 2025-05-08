@@ -124,8 +124,8 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
             // used by test `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool`
             let error_txid =
                 String::from("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2");
-            if !raw_args.is_empty() &&
-                raw_args[0].get().to_string().trim_matches('\"') == error_txid
+            if !raw_args.is_empty()
+                && raw_args[0].get().to_string().trim_matches('\"') == error_txid
             {
                 return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
                     TX_NOT_IN_MEMPOOL_BITCOIND_ERROR,
@@ -141,8 +141,8 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
             // used by test `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool`
             let error_txid =
                 String::from("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2");
-            if !raw_args.is_empty() &&
-                raw_args[0].get().to_string().trim_matches('\"') == error_txid
+            if !raw_args.is_empty()
+                && raw_args[0].get().to_string().trim_matches('\"') == error_txid
             {
                 return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
                     TX_NOT_FOUND_BITCOIND_ERROR,

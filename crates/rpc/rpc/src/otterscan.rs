@@ -189,7 +189,7 @@ where
         if tx_len != receipts.len() {
             return Err(internal_rpc_err(
                 "the number of transactions does not match the number of receipts",
-            ))
+            ));
         }
 
         // make sure the block is full
@@ -268,7 +268,7 @@ where
     ) -> RpcResult<Option<TxHash>> {
         // Check if the sender is a contract
         if self.has_code(sender, None).await? {
-            return Ok(None)
+            return Ok(None);
         }
 
         let highest =
@@ -277,7 +277,7 @@ where
         // If the nonce is higher or equal to the highest nonce, the transaction is pending or not
         // exists.
         if nonce >= highest {
-            return Ok(None)
+            return Ok(None);
         }
 
         // perform a binary search over the block range to find the block in which the sender's

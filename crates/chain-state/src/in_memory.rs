@@ -521,7 +521,7 @@ impl CanonicalInMemoryState {
     pub fn transaction_by_hash(&self, hash: TxHash) -> Option<TransactionSigned> {
         for block_state in self.canonical_chain() {
             if let Some(tx) = block_state.block().block().body.iter().find(|tx| tx.hash() == hash) {
-                return Some(tx.clone())
+                return Some(tx.clone());
             }
         }
         None
@@ -551,7 +551,7 @@ impl CanonicalInMemoryState {
                     timestamp: block_state.block().block.timestamp,
                     excess_blob_gas: block_state.block().block.excess_blob_gas,
                 };
-                return Some((tx.clone(), meta))
+                return Some((tx.clone(), meta));
             }
         }
         None

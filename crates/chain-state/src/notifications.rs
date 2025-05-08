@@ -58,10 +58,10 @@ impl Stream for CanonStateNotificationStream {
                 Some(Ok(notification)) => Poll::Ready(Some(notification)),
                 Some(Err(err)) => {
                     debug!(%err, "canonical state notification stream lagging behind");
-                    continue
+                    continue;
                 }
                 None => Poll::Ready(None),
-            }
+            };
         }
     }
 }
@@ -221,7 +221,7 @@ impl<T: Clone + Sync + Send + 'static> Stream for BlockStateNotificationStream<T
                     }
                 }
                 None => Poll::Ready(None),
-            }
+            };
         }
     }
 }

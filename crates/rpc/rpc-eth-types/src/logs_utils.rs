@@ -45,9 +45,9 @@ impl From<EthFilterError> for jsonrpsee_types::error::ErrorObject<'static> {
                 rpc_error_with_code(jsonrpsee_types::error::INTERNAL_ERROR_CODE, err.to_string())
             }
             EthFilterError::EthAPIError(err) => err.into(),
-            err @ EthFilterError::InvalidBlockRangeParams |
-            err @ EthFilterError::QueryExceedsMaxBlocks(_) |
-            err @ EthFilterError::QueryExceedsMaxResults(_) => {
+            err @ EthFilterError::InvalidBlockRangeParams
+            | err @ EthFilterError::QueryExceedsMaxBlocks(_)
+            | err @ EthFilterError::QueryExceedsMaxResults(_) => {
                 rpc_error_with_code(jsonrpsee_types::error::INVALID_PARAMS_CODE, err.to_string())
             }
         }
@@ -170,13 +170,13 @@ pub fn log_matches_filter(
     log: &reth_primitives::Log,
     params: &FilteredParams,
 ) -> bool {
-    if params.filter.is_some() &&
-        (!params.filter_block_range(block.number) ||
-            !params.filter_block_hash(block.hash) ||
-            !params.filter_address(&log.address) ||
-            !params.filter_topics(log.topics()))
+    if params.filter.is_some()
+        && (!params.filter_block_range(block.number)
+            || !params.filter_block_hash(block.hash)
+            || !params.filter_address(&log.address)
+            || !params.filter_topics(log.topics()))
     {
-        return false
+        return false;
     }
     true
 }

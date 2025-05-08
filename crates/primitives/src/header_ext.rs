@@ -119,14 +119,18 @@ impl HeaderExt for Header {
         let bitcoin_checkpoint_header = match bitcoind.get_block_header(&edh.bitcoin_block_hash) {
             Ok(header) => header,
             Err(e) => {
-                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(e))
+                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(
+                    e,
+                ))
             }
         };
 
         let bitcoin_checkpoint_height = match bitcoind.get_block_info(&edh.bitcoin_block_hash) {
             Ok(info) => info.height,
             Err(e) => {
-                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeight(e))
+                return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeight(
+                    e,
+                ))
             }
         };
 

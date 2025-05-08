@@ -186,8 +186,8 @@ pub async fn test_conflicting_input(
     if let Err(e) = do_signing(&mut clients, &bitcoind, &[2u8; 32]).await {
         let error_message = e.to_string();
         assert!(
-            error_message.contains("txn-mempool-conflict") ||
-                error_message.contains("insufficient fee, rejecting replacement"),
+            error_message.contains("txn-mempool-conflict")
+                || error_message.contains("insufficient fee, rejecting replacement"),
             "Unexpected error: {}",
             error_message
         );

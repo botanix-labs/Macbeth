@@ -86,9 +86,9 @@ pub async fn await_epoch_block(rx: &mut tokio::sync::broadcast::Receiver<Notific
                 canon_state_notification.engine_index
             );
 
-            if canon_state_notification.block.number.map(|b| b.as_u64()).unwrap_or_default() %
-                EPOCH_LENGTH ==
-                0
+            if canon_state_notification.block.number.map(|b| b.as_u64()).unwrap_or_default()
+                % EPOCH_LENGTH
+                == 0
             {
                 break;
             }

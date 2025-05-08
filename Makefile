@@ -335,7 +335,7 @@ fmt-cargo:
 	cargo sort -w
 
 fmt-rust:
-	cargo +nightly fmt --all -- --color always
+	cargo fmt --all -- --color always
 
 fmt-prettier:
 	pnpm prettier:fix
@@ -729,7 +729,7 @@ start-poa-server-2:
 	--abci-port=36658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" 
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
 
 start-poa-server-3:
 	cd ./bin/reth && \

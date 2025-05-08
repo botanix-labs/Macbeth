@@ -450,10 +450,10 @@ impl InsertBlockErrorKind {
             Self::Canonical(err) => {
                 matches!(
                     err,
-                    CanonicalError::Validation(BlockValidationError::StateRoot { .. }) |
-                        CanonicalError::Provider(
-                            ProviderError::StateRootMismatch(_) |
-                                ProviderError::UnwindStateRootMismatch(_)
+                    CanonicalError::Validation(BlockValidationError::StateRoot { .. })
+                        | CanonicalError::Provider(
+                            ProviderError::StateRootMismatch(_)
+                                | ProviderError::UnwindStateRootMismatch(_)
                         )
                 )
             }
@@ -491,12 +491,12 @@ impl InsertBlockErrorKind {
                         // the block's number is lower than the finalized block's number
                         true
                     }
-                    BlockchainTreeError::BlockSideChainIdConsistency { .. } |
-                    BlockchainTreeError::CanonicalChain { .. } |
-                    BlockchainTreeError::BlockNumberNotFoundInChain { .. } |
-                    BlockchainTreeError::BlockHashNotFoundInChain { .. } |
-                    BlockchainTreeError::BlockBufferingFailed { .. } |
-                    BlockchainTreeError::GenesisBlockHasNoParent => false,
+                    BlockchainTreeError::BlockSideChainIdConsistency { .. }
+                    | BlockchainTreeError::CanonicalChain { .. }
+                    | BlockchainTreeError::BlockNumberNotFoundInChain { .. }
+                    | BlockchainTreeError::BlockHashNotFoundInChain { .. }
+                    | BlockchainTreeError::BlockBufferingFailed { .. }
+                    | BlockchainTreeError::GenesisBlockHasNoParent => false,
                 }
             }
             Self::Provider(_) | Self::Internal(_) => {
@@ -504,11 +504,11 @@ impl InsertBlockErrorKind {
                 false
             }
             Self::Canonical(err) => match err {
-                CanonicalError::BlockchainTree(_) |
-                CanonicalError::CanonicalCommit(_) |
-                CanonicalError::CanonicalRevert(_) |
-                CanonicalError::OptimisticTargetRevert(_) |
-                CanonicalError::Provider(_) => false,
+                CanonicalError::BlockchainTree(_)
+                | CanonicalError::CanonicalCommit(_)
+                | CanonicalError::CanonicalRevert(_)
+                | CanonicalError::OptimisticTargetRevert(_)
+                | CanonicalError::Provider(_) => false,
                 CanonicalError::Validation(_) => true,
             },
         }

@@ -75,7 +75,7 @@ pub trait EthBlocks: LoadBlock {
                 return Ok(LoadBlock::provider(self)
                     .pending_block()
                     .map_err(Self::Error::from_eth_err)?
-                    .map(|block| block.body.len()))
+                    .map(|block| block.body.len()));
             }
 
             let block_hash = match LoadBlock::provider(self)
@@ -135,7 +135,7 @@ pub trait EthBlocks: LoadBlock {
                             .map_err(Self::Error::from_eth_err)
                     })
                     .collect::<Result<Vec<_>, Self::Error>>();
-                return receipts.map(Some)
+                return receipts.map(Some);
             }
 
             Ok(None)
@@ -155,7 +155,7 @@ pub trait EthBlocks: LoadBlock {
                 return Ok(LoadBlock::provider(self)
                     .pending_block_and_receipts()
                     .map_err(Self::Error::from_eth_err)?
-                    .map(|(sb, receipts)| (sb, Arc::new(receipts))))
+                    .map(|(sb, receipts)| (sb, Arc::new(receipts))));
             }
 
             if let Some(block_hash) = LoadBlock::provider(self)
@@ -165,7 +165,7 @@ pub trait EthBlocks: LoadBlock {
                 return LoadReceipt::cache(self)
                     .get_block_and_receipts(block_hash)
                     .await
-                    .map_err(Self::Error::from_eth_err)
+                    .map_err(Self::Error::from_eth_err);
             }
 
             Ok(None)
@@ -250,7 +250,7 @@ pub trait LoadBlock: LoadPendingBlock + SpawnBlocking {
                     Ok(maybe_pending)
                 } else {
                     self.local_pending_block().await
-                }
+                };
             }
 
             let block_hash = match LoadPendingBlock::provider(self)

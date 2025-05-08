@@ -51,8 +51,9 @@ impl<T: TransactionOrdering> Iterator for BestTransactionsWithFees<T> {
             let best = self.best.next()?;
             // If both the base fee and blob fee (if applicable for EIP-4844) are satisfied, return
             // the transaction
-            if best.transaction.max_fee_per_gas() >= self.base_fee as u128 &&
-                best.transaction
+            if best.transaction.max_fee_per_gas() >= self.base_fee as u128
+                && best
+                    .transaction
                     .max_fee_per_blob_gas()
                     .map_or(true, |fee| fee >= self.base_fee_per_blob_gas as u128)
             {
@@ -178,7 +179,7 @@ impl<T: TransactionOrdering> Iterator for BestTransactions<T> {
                     "[{:?}] skipping invalid transaction",
                     hash
                 );
-                continue
+                continue;
             }
 
             // Insert transactions that just got unlocked.
@@ -191,7 +192,7 @@ impl<T: TransactionOrdering> Iterator for BestTransactions<T> {
                 // transactions are returned
                 self.mark_invalid(&best.transaction)
             } else {
-                return Some(best.transaction)
+                return Some(best.transaction);
             }
         }
     }
@@ -225,7 +226,7 @@ where
         loop {
             let best = self.best.next()?;
             if (self.predicate)(&best) {
-                return Some(best)
+                return Some(best);
             } else {
                 self.best.mark_invalid(&best);
             }

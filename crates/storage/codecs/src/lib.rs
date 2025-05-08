@@ -289,7 +289,7 @@ where
     #[inline]
     fn from_compact(buf: &[u8], len: usize) -> (Self, &[u8]) {
         if len == 0 {
-            return (None, buf)
+            return (None, buf);
         }
 
         let (len, mut buf) = decode_varuint(buf);
@@ -318,7 +318,7 @@ where
     #[inline]
     fn specialized_from_compact(buf: &[u8], len: usize) -> (Self, &[u8]) {
         if len == 0 {
-            return (None, buf)
+            return (None, buf);
         }
 
         let (element, buf) = T::from_compact(buf, len);
@@ -341,7 +341,7 @@ impl Compact for U256 {
     #[inline]
     fn from_compact(mut buf: &[u8], len: usize) -> (Self, &[u8]) {
         if len == 0 {
-            return (Self::ZERO, buf)
+            return (Self::ZERO, buf);
         }
 
         let mut arr = [0; 32];
@@ -381,7 +381,7 @@ impl<const N: usize> Compact for [u8; N] {
     #[inline]
     fn from_compact(mut buf: &[u8], len: usize) -> (Self, &[u8]) {
         if len == 0 {
-            return ([0; N], buf)
+            return ([0; N], buf);
         }
 
         let v = buf[..N].try_into().unwrap();
@@ -466,7 +466,7 @@ fn decode_varuint(buf: &[u8]) -> (usize, &[u8]) {
         let byte = buf[i];
         value |= usize::from(byte & 0x7F) << (i * 7);
         if byte < 0x80 {
-            return (value, &buf[i + 1..])
+            return (value, &buf[i + 1..]);
         }
     }
 

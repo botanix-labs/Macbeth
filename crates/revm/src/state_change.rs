@@ -50,10 +50,10 @@ pub fn post_block_balance_increments(
     let fees = total_block_fees.unwrap_or(0);
     let block_fee_recipient = block_fee_recipient_address.unwrap_or(Address::ZERO);
 
-    if fees > 0 &&
-        block_fee_recipient != Address::ZERO &&
-        chain_spec.botanix_fee_recipient.is_some() &&
-        chain_spec.lst_fee_receiver.is_some()
+    if fees > 0
+        && block_fee_recipient != Address::ZERO
+        && chain_spec.botanix_fee_recipient.is_some()
+        && chain_spec.lst_fee_receiver.is_some()
     {
         let (lst_fee_receiver_fees, botanix_fees, block_fee_recipient_fees) =
             utils::block_fees_split(fees);

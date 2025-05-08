@@ -813,7 +813,7 @@ where
                     inconsistent_stage_checkpoint = stage_checkpoint,
                     "Pipeline sync progress is inconsistent"
                 );
-                return self.blockchain_db().block_hash(first_stage_checkpoint)
+                return self.blockchain_db().block_hash(first_stage_checkpoint);
             }
         }
 

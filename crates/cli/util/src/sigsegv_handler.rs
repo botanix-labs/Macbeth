@@ -52,7 +52,7 @@ extern "C" fn print_stack_trace(_: libc::c_int) {
         // Collect return addresses
         let depth = libc::backtrace(STACK_TRACE.as_mut_ptr(), MAX_FRAMES as i32);
         if depth == 0 {
-            return
+            return;
         }
         &STACK_TRACE[..depth as usize]
     };
@@ -70,7 +70,7 @@ extern "C" fn print_stack_trace(_: libc::c_int) {
         let period = period.saturating_add(1); // avoid "what if wrapped?" branches
         let Some(offset) = stack.iter().skip(period).zip(stack).position(cycled) else {
             // impossible.
-            return
+            return;
         };
 
         // Count matching trace slices, else we could miscount "biphasic cycles"

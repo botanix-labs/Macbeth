@@ -281,9 +281,9 @@ impl StageState {
     fn did_round_one_finalize(&self) -> bool {
         matches!(
             self,
-            StageState::RoundTwoActive { .. } |
-                StageState::RoundThreeActive { .. } |
-                StageState::Finalized { .. }
+            StageState::RoundTwoActive { .. }
+                | StageState::RoundThreeActive { .. }
+                | StageState::Finalized { .. }
         )
     }
     fn did_round_two_finalize(&self) -> bool {

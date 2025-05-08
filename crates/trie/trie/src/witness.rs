@@ -229,8 +229,8 @@ where
             match value {
                 Either::Left(branch_hash) => {
                     let parent_branch_path = path.slice(..path.len() - 1);
-                    if hash_builder.key.starts_with(&parent_branch_path) ||
-                        trie_nodes
+                    if hash_builder.key.starts_with(&parent_branch_path)
+                        || trie_nodes
                             .peek()
                             .is_some_and(|next| next.0.starts_with(&parent_branch_path))
                     {
@@ -246,13 +246,13 @@ where
                                     for (child_path, branch_hash) in children {
                                         hash_builder.add_branch(child_path, branch_hash, false);
                                     }
-                                    break
+                                    break;
                                 }
                                 TrieNode::Leaf(leaf) => {
                                     let mut child_path = path;
                                     child_path.extend_from_slice(&leaf.key);
                                     hash_builder.add_leaf(child_path, &leaf.value);
-                                    break
+                                    break;
                                 }
                                 TrieNode::Extension(ext) => {
                                     path.extend_from_slice(&ext.key);

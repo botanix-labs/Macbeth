@@ -44,7 +44,7 @@ impl<DB: Database> Segment<DB> for SenderRecovery {
             Some(range) => range,
             None => {
                 trace!(target: "pruner", "No transaction senders to prune");
-                return Ok(SegmentOutput::done())
+                return Ok(SegmentOutput::done());
             }
         };
         let tx_range_end = *tx_range.end();
@@ -156,8 +156,8 @@ mod tests {
                 .map(|block| block.body.len())
                 .sum::<usize>()
                 .min(
-                    next_tx_number_to_prune as usize +
-                        input.limiter.deleted_entries_limit().unwrap(),
+                    next_tx_number_to_prune as usize
+                        + input.limiter.deleted_entries_limit().unwrap(),
                 )
                 .sub(1);
 

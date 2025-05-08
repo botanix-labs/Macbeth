@@ -31,8 +31,8 @@ pub fn handle_init_config(config_path: Option<&str>) {
 
     let config_path = config_path.map(PathBuf::from).unwrap_or_else(get_default_config_path);
 
-    let config_file_path = if config_path.to_str().map(|s| s.ends_with('/')).unwrap_or(false) ||
-        config_path.extension().is_none()
+    let config_file_path = if config_path.to_str().map(|s| s.ends_with('/')).unwrap_or(false)
+        || config_path.extension().is_none()
     {
         config_path.join("config.toml")
     } else {

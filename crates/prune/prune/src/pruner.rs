@@ -107,13 +107,13 @@ impl<DB: Database, S> Pruner<DB, S> {
         let Some(tip_block_number) =
             self.adjust_tip_block_number_to_finished_exex_height(tip_block_number)
         else {
-            return Ok(PruneProgress::Finished.into())
+            return Ok(PruneProgress::Finished.into());
         };
         if tip_block_number == 0 {
             self.previous_tip_block_number = Some(tip_block_number);
 
             debug!(target: "pruner", %tip_block_number, "Nothing to prune yet");
-            return Ok(PruneProgress::Finished.into())
+            return Ok(PruneProgress::Finished.into());
         }
 
         self.event_sender.notify(PrunerEvent::Started { tip_block_number });
@@ -175,7 +175,7 @@ impl<DB: Database, S> Pruner<DB, S> {
 
         for segment in &self.segments {
             if limiter.is_limit_reached() {
-                break
+                break;
             }
 
             if let Some((to_block, prune_mode)) = segment
@@ -250,14 +250,14 @@ impl<DB: Database, S> Pruner<DB, S> {
         let Some(tip_block_number) =
             self.adjust_tip_block_number_to_finished_exex_height(tip_block_number)
         else {
-            return false
+            return false;
         };
 
         // Saturating subtraction is needed for the case when the chain was reverted, meaning
         // current block number might be less than the previous tip block number.
         // If that's the case, no pruning is needed as outdated data is also reverted.
-        if tip_block_number.saturating_sub(self.previous_tip_block_number.unwrap_or_default()) >=
-            self.min_block_interval as u64
+        if tip_block_number.saturating_sub(self.previous_tip_block_number.unwrap_or_default())
+            >= self.min_block_interval as u64
         {
             debug!(
                 target: "pruner",

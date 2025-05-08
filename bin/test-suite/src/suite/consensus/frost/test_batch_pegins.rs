@@ -314,8 +314,8 @@ pub async fn batch_pegins(
     for pegin in pegins.iter() {
         let utxo = utxos.iter().find(|utxo| {
             bitcoin::Txid::from_slice(utxo.outpoint.as_ref().unwrap().txid.as_slice())
-                .expect("valid txid") ==
-                pegin.meta[0].tx().compute_txid()
+                .expect("valid txid")
+                == pegin.meta[0].tx().compute_txid()
         });
         assert!(utxo.is_some());
     }

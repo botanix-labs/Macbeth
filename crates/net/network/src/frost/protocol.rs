@@ -253,9 +253,9 @@ impl Stream for FrostProtoConnection {
                                 this.commands_rx =
                                     Some(UnboundedReceiverStream::new(remote_peer_rx));
                             }
-                            ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel |
-                            ConnectionEstablishedStatus::NoneAuthority |
-                            ConnectionEstablishedStatus::ConnectedToOurself => {
+                            ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel
+                            | ConnectionEstablishedStatus::NoneAuthority
+                            | ConnectionEstablishedStatus::ConnectedToOurself => {
                                 return Poll::Ready(None);
                             }
                         }
@@ -290,9 +290,9 @@ impl Stream for FrostProtoConnection {
                                 this.commands_rx =
                                     Some(UnboundedReceiverStream::new(remote_peer_rx));
                             }
-                            ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel |
-                            ConnectionEstablishedStatus::NoneAuthority |
-                            ConnectionEstablishedStatus::ConnectedToOurself => {
+                            ConnectionEstablishedStatus::ClosedPeerCommandsCommunicationChannel
+                            | ConnectionEstablishedStatus::NoneAuthority
+                            | ConnectionEstablishedStatus::ConnectedToOurself => {
                                 return Poll::Ready(None);
                             }
                         }
