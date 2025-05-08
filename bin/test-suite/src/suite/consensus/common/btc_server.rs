@@ -71,7 +71,7 @@ fn spawn_btc_server_process(
     let frost_max_signers = global_context.max_signers.to_string();
     let frost_min_signers = global_context.min_signers.to_string();
     let address = format!("0.0.0.0:{}", port);
-    let http_port = (BTC_SERVER_HTTP_PORT + id).to_string();
+    let _http_port = (BTC_SERVER_HTTP_PORT + id).to_string();
 
     let command = "target/debug/btc-server";
     let binary_abs_path = working_directory.join(Path::new(command));

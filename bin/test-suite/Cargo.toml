@@ -71,7 +71,7 @@ strum_macros = "0.25.0"
 tempfile = { workspace = true }
 tendermint-rpc = { workspace = true }
 thiserror = "2.0.11"
-tokio = { version = "1.43.0", features = ["full"] }
+tokio = { version = "1.45.0", features = ["full"] }
 toml = "0.8.0"
 tonic = { version = "0.12.3", features = ["gzip"] }
 tracing = { workspace = true }

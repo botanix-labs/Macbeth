@@ -23,7 +23,7 @@ use serde_json::json;
 use crate::{
     it_info_print,
     suite::consensus::{
-        common::events::{await_botanix_event, BlockWithEDH, GatewayAddressResponse},
+        common::events::{await_botanix_event, BlockWithEDH},
         ConsensusIntegrationTestSuite,
     },
     utils::{generate_blocks, get_gateway_address_with_retry},

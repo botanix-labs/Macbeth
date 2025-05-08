@@ -2196,20 +2196,15 @@ version = "1.0.10"
 dependencies = [
  "anyhow",
  "clap",
- "hex",
- "rand 0.8.5",
  "reth-chainspec",
  "reth-db",
  "reth-node-core",
  "reth-provider",
- "secp256k1 0.29.1",
  "serde",
  "serde_json",
- "test-suite",
  "tokio",
  "toml",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -2976,6 +2971,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "convert_case"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb402b8d4c85569410425650ce3eddc7d698ed96d39a73f941b08fb63082f1e7"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "cookie"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3500,6 +3504,7 @@ version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
 dependencies = [
+ "convert_case 0.7.1",
  "proc-macro2",
  "quote",
  "syn 2.0.101",
@@ -6504,16 +6509,16 @@ dependencies = [
 
 [[package]]
 name = "metrics-exporter-prometheus"
-version = "0.16.2"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd7399781913e5393588a8d8c6a2867bf85fb38eaf2502fdce465aad2dc6f034"
+checksum = "df88858cd28baaaf2cfc894e37789ed4184be0e1351157aec7bf3c2266c793fd"
 dependencies = [
  "base64 0.22.1",
  "indexmap 2.9.0",
  "metrics",
  "metrics-util",
  "quanta",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -8699,7 +8704,7 @@ dependencies = [
  "alloy-genesis",
  "assert_matches",
  "futures",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "metrics",
  "reth-blockchain-tree",
  "reth-blockchain-tree-api",
@@ -8853,7 +8858,7 @@ dependencies = [
  "alloy-signer",
  "alloy-signer-local",
  "auto_impl",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "metrics",
  "parking_lot 0.12.3",
  "pin-project",
@@ -8883,7 +8888,7 @@ dependencies = [
  "alloy-trie",
  "askama",
  "auto_impl",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "once_cell",
  "op-alloy-rpc-types",
  "reth-ethereum-forks",
@@ -9014,7 +9019,7 @@ name = "reth-consensus"
 version = "1.0.10"
 dependencies = [
  "auto_impl",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "reth-primitives",
  "reth-storage-errors",
  "secp256k1 0.29.1",
@@ -9081,7 +9086,7 @@ dependencies = [
  "assert_matches",
  "bytes",
  "criterion",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "eyre",
  "iai-callgrind",
  "metrics",
@@ -9120,7 +9125,7 @@ dependencies = [
  "assert_matches",
  "bytes",
  "criterion",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "iai-callgrind",
  "metrics",
  "modular-bitfield",
@@ -9216,11 +9221,11 @@ version = "1.0.10"
 dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rlp",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "discv5",
  "enr 0.12.1",
  "futures",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "libp2p-identity",
  "metrics",
  "multiaddr",
@@ -9272,7 +9277,7 @@ dependencies = [
  "assert_matches",
  "futures",
  "futures-util",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "metrics",
  "pin-project",
  "rand 0.8.5",
@@ -9450,7 +9455,7 @@ version = "1.0.10"
 dependencies = [
  "eyre",
  "futures",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "pin-project",
  "reth-beacon-consensus",
  "reth-engine-primitives",
@@ -9492,7 +9497,7 @@ dependencies = [
  "arbitrary",
  "async-stream",
  "bytes",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "futures",
  "pin-project",
  "proptest",
@@ -9526,7 +9531,7 @@ dependencies = [
  "alloy-rlp",
  "arbitrary",
  "bytes",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "proptest",
  "proptest-arbitrary-interop",
  "rand 0.8.5",
@@ -9678,7 +9683,7 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives 0.7.7",
  "alloy-rlp",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "nybbles",
  "reth-consensus",
  "reth-primitives",
@@ -9812,7 +9817,7 @@ dependencies = [
  "byteorder",
  "criterion",
  "dashmap 6.1.0",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "indexmap 2.9.0",
  "parking_lot 0.12.3",
  "pprof",
@@ -9886,12 +9891,12 @@ dependencies = [
  "auto_impl",
  "client",
  "criterion",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "discv5",
  "enr 0.12.1",
  "frost-secp256k1-tr",
  "futures",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "metrics",
  "parking_lot 0.12.3",
  "pin-project",
@@ -9943,7 +9948,7 @@ dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rpc-types-admin",
  "auto_impl",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "enr 0.12.1",
  "futures",
  "reth-eth-wire-types",
@@ -9963,7 +9968,7 @@ name = "reth-network-p2p"
 version = "1.0.10"
 dependencies = [
  "auto_impl",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "futures",
  "parking_lot 0.12.3",
  "reth-consensus",
@@ -10012,7 +10017,7 @@ dependencies = [
  "anyhow",
  "bincode 1.3.3",
  "cuckoofilter",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "lz4_flex",
  "memmap2",
  "ph",
@@ -10111,7 +10116,7 @@ dependencies = [
  "bitcoin 0.32.5",
  "clap",
  "const_format",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "dirs-next",
  "displaydoc",
  "eyre",
@@ -10311,7 +10316,7 @@ dependencies = [
  "bytes",
  "c-kzg",
  "criterion",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "ethabi",
  "ethers",
  "frost-secp256k1-tr",
@@ -10355,7 +10360,7 @@ dependencies = [
  "arbitrary",
  "byteorder",
  "bytes",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "modular-bitfield",
  "proptest",
  "proptest-arbitrary-interop",
@@ -10379,7 +10384,7 @@ dependencies = [
  "auto_impl",
  "dashmap 6.1.0",
  "eyre",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "metrics",
  "once_cell",
  "parking_lot 0.12.3",
@@ -10420,7 +10425,7 @@ version = "1.0.10"
 dependencies = [
  "alloy-primitives 0.7.7",
  "assert_matches",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "metrics",
  "rayon",
  "reth-chainspec",
@@ -10451,7 +10456,7 @@ dependencies = [
  "arbitrary",
  "assert_matches",
  "bytes",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "modular-bitfield",
  "proptest",
  "proptest-arbitrary-interop",
@@ -10489,7 +10494,7 @@ dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rlp",
  "async-trait",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "futures",
  "http 1.3.1",
  "http-body 1.0.1",
@@ -10689,7 +10694,7 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
  "btc-server",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "frost-secp256k1-tr",
  "futures",
  "jsonrpsee-core",
@@ -10796,7 +10801,7 @@ dependencies = [
  "assert_matches",
  "criterion",
  "futures-util",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "num-traits",
  "paste",
  "pprof",
@@ -10911,7 +10916,7 @@ version = "1.0.10"
 dependencies = [
  "alloy-primitives 0.7.7",
  "clap",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "serde",
  "strum 0.26.3",
 ]
@@ -10937,7 +10942,7 @@ name = "reth-storage-errors"
 version = "1.0.10"
 dependencies = [
  "alloy-rlp",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "reth-fs-util",
  "reth-primitives",
 ]
@@ -11042,7 +11047,7 @@ dependencies = [
  "alloy-rlp",
  "auto_impl",
  "criterion",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "metrics",
  "proptest",
  "proptest-arbitrary-interop",
@@ -11076,9 +11081,9 @@ dependencies = [
  "alloy-trie",
  "arbitrary",
  "bytes",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "hash-db",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "nybbles",
  "plain_hasher",
  "proptest",
@@ -11097,7 +11102,7 @@ version = "1.0.10"
 dependencies = [
  "alloy-rlp",
  "criterion",
- "derive_more 1.0.0",
+ "derive_more 2.0.1",
  "metrics",
  "proptest",
  "proptest-arbitrary-interop",
@@ -11127,8 +11132,8 @@ version = "1.0.10"
 dependencies = [
  "alloy-rlp",
  "criterion",
- "derive_more 1.0.0",
- "itertools 0.13.0",
+ "derive_more 2.0.1",
+ "itertools 0.14.0",
  "metrics",
  "proptest",
  "proptest-arbitrary-interop",
@@ -13240,9 +13245,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.44.2"
+version = "1.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6b88822cbe49de4185e3a4cbf8321dd487cf5fe0c5c65695fef6346371e9c48"
+checksum = "2513ca694ef9ede0fb23fe71a4ee4107cb102b9dc1930f6d0fd77aae068ae165"
 dependencies = [
  "backtrace",
  "bytes",
