@@ -2,14 +2,21 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
+    time::Duration,
 };
 
+use crate::{
+    prost_parser::ProstMessageSerdelizer,
+    utils::{get_block_pegouts, EpochPegoutsError},
+    Storage,
+};
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
 };
 use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
+use lazy_static::lazy_static;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as CompressorError, SerializationType};
 use reth_db::{
@@ -31,11 +38,12 @@ use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
-use crate::{
-    prost_parser::ProstMessageSerdelizer,
-    utils::{get_block_pegouts, EpochPegoutsError},
-    Storage,
-};
+const MAX_BLOCK_TS_CUTOFF_DURATION_MS: u64 = 30 * 24 * 60 * 60 * 3; // 3 months
+
+lazy_static! {
+    static ref MAX_BLOCK_TS_CUTOFF_DURATION: Duration =
+        Duration::from_secs(MAX_BLOCK_TS_CUTOFF_DURATION_MS);
+}
 
 #[derive(Debug, thiserror::Error)]
 /// Wallet state synchronization errors
@@ -193,7 +201,9 @@ async fn hydrate_minimum_superset(
     // Create futures for each block
     let futures = superset_map.into_iter().map(|(block, data)| async move {
         // Get valid pegout IDs for this block
-        let pegouts_result = get_block_pegouts(block, client, btc_network).await;
+        let pegouts_result =
+            get_block_pegouts(block, client, btc_network, Some(*MAX_BLOCK_TS_CUTOFF_DURATION))
+                .await;
 
         match pegouts_result {
             Ok(pegouts_in_block) => {

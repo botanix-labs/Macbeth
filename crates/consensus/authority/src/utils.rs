@@ -25,8 +25,11 @@ use reth_primitives::{
 use reth_provider::{BlockReaderIdExt, ReceiptProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
-use std::{fmt::Debug, time::Duration};
-use tracing::{error, info};
+use std::{
+    fmt::Debug,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Checks if the network is undergoing an active sync or not
@@ -271,6 +274,26 @@ pub(crate) async fn epoch_pegouts(
     Ok(pegouts)
 }
 
+/// Checks if the age of a block, based on its timestamp, is within an acceptable duration.
+///
+/// # Arguments
+///
+/// * `timestamp` - The timestamp of the block in seconds since the UNIX epoch.
+/// * `max_age_cutoff` - The maximum acceptable age of the block as a `Duration`.
+///
+/// # Returns
+///
+/// Returns `true` if the block's age is less than the specified max cutoff age, otherwise `false`.
+pub fn is_block_age_acceptable(timestamp: u64, max_age_cutoff: Duration) -> bool {
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(now) => now.as_secs(),
+        Err(_) => return false,
+    };
+
+    let threshold = now.saturating_sub(max_age_cutoff.as_secs());
+    timestamp > threshold
+}
+
 /// Returns all pegouts ids in a given block
 ///
 /// # Arguments
@@ -278,6 +301,7 @@ pub(crate) async fn epoch_pegouts(
 /// * `block` - The block height
 /// * `client` - Reth database client
 /// * `btc_network` - Bitcoin network
+/// * `max_cutoff_age` - Max cutoff age
 ///
 /// # Returns
 ///
@@ -286,10 +310,18 @@ pub(crate) async fn get_block_pegouts(
     block: u64,
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
+    max_cutoff_age: Option<Duration>,
 ) -> Result<Vec<PegoutId>, EpochPegoutsError> {
     let mut pegouts = Vec::new();
     match client.block_by_number(block) {
         Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+            if !is_block_age_acceptable(
+                block.header.timestamp,
+                max_cutoff_age.unwrap_or(Duration::ZERO),
+            ) {
+                warn!("Block number {:?} is too old, ignoring ...", block.header.number);
+                return Ok(pegouts);
+            }
             let transactions_by_block = match client
                 .transactions_by_block(BlockHashOrNumber::Number(block.header.number))
             {
@@ -1406,5 +1438,22 @@ mod tests {
         for (index, &byte) in session_id_array.iter().enumerate() {
             assert_eq!(byte, index as u8, "Byte at position {} should match", index);
         }
+    }
+
+    #[test]
+    fn test_violated_block_age() {
+        // create a timestamp that is 4 months in the past
+        let four_months_ago = SystemTime::now()
+            .checked_sub(Duration::from_secs(30 * 24 * 60 * 60 * 4))
+            .expect("SystemTime underflow");
+
+        let timestamp_secs = four_months_ago.duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+        let three_months_duration = Duration::from_secs(30 * 24 * 60 * 60 * 3); // 3 months
+
+        assert!(
+            !is_block_age_acceptable(timestamp_secs, three_months_duration),
+            "The timestamp should be considered too old"
+        );
     }
 }

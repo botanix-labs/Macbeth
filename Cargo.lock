@@ -8588,6 +8588,7 @@ dependencies = [
  "futures",
  "futures-util",
  "hex",
+ "lazy_static",
  "metrics",
  "metrics-util",
  "prost 0.13.5",
