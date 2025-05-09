@@ -420,6 +420,8 @@ pub enum ValidateOutputsError {
     ExtractTxError(#[from] ExtractTxError),
     #[error("duplicate outputs")]
     DuplicateOutputs,
+    #[error("PSBT outputs length ({0}) does not match unsigned_tx.output length ({1})")]
+    OutputCountMismatch(usize, usize),
 }
 
 /// Check:
@@ -427,6 +429,19 @@ pub enum ValidateOutputsError {
 /// - pegouts have not already been finalized
 /// - there are no duplicate outputs
 pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
+    // Ensure psbt.outputs and psbt.unsigned_tx.output have the same number of elements.
+    // This is critical to prevent a malicious coordinator from adding arbitrary outputs
+    // to psbt.unsigned_tx.output that are not declared in psbt.outputs.
+    if psbt.outputs.len() != psbt.unsigned_tx.output.len() {
+        error!(
+            target: "btc_server::util::validate_outputs",
+            "psbt.outputs length ({}) does not match psbt.unsigned_tx.output length ({})", 
+            psbt.outputs.len(), 
+            psbt.unsigned_tx.output.len()
+        );
+        return Err(ValidateOutputsError::OutputCountMismatch(psbt.outputs.len(), psbt.unsigned_tx.output.len()));
+    }
+
     // check aggregated public key exists
     let public_key_package =
         db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
@@ -1182,6 +1197,62 @@ mod tests {
             res,
             ValidatePSBTError::InvalidOutputs(ValidateOutputsError::InvalidChangeOutput)
         );
+    }
+
+    #[test]
+    fn test_validate_outputs_output_count_mismatch() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages as they are needed by validate_outputs
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        // Create a base PSBT
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db))); // 1 output + 1 change = 2 outputs in psbt.outputs
+        
+        // Simulate a mismatch: psbt.outputs has 2 elements, psbt.unsigned_tx.output will have 1 extra
+        let original_outputs_len = psbt.outputs.len();
+        psbt.unsigned_tx.output.push(bitcoin::TxOut {
+            value: Amount::from_sat(12345),
+            script_pubkey: random_p2wpkh_script(),
+        });
+        let new_unsigned_tx_outputs_len = psbt.unsigned_tx.output.len();
+
+        assert_ne!(original_outputs_len, new_unsigned_tx_outputs_len, "Test setup error: output lengths should be different");
+
+        let res = validate_outputs(&psbt, &db);
+        assert!(res.is_err(), "validate_outputs should fail due to output count mismatch");
+        match res.unwrap_err() {
+            ValidateOutputsError::OutputCountMismatch(len_psbt_outputs, len_unsigned_tx_output) => {
+                assert_eq!(len_psbt_outputs, original_outputs_len);
+                assert_eq!(len_unsigned_tx_output, new_unsigned_tx_outputs_len);
+            }
+            other_error => {
+                panic!("Expected OutputCountMismatch, got {:?}", other_error);
+            }
+        }
+
+        // Test the other way around: psbt.outputs is longer
+        let mut psbt2 = create_psbt(1, 0, None); // 0 outputs in psbt.outputs
+        // psbt2.unsigned_tx.output is initially empty from create_psbt with 0 outputs
+        // Add one to psbt.outputs to create a mismatch where psbt.outputs is longer
+        psbt2.outputs.push(Default::default()); 
+        // Now psbt2.outputs.len() = 1, psbt2.unsigned_tx.output.len() = 0
+
+        let res2 = validate_outputs(&psbt2, &db);
+        assert!(res2.is_err(), "validate_outputs should fail when psbt.outputs is longer");
+        match res2.unwrap_err() {
+            ValidateOutputsError::OutputCountMismatch(len_psbt_outputs, len_unsigned_tx_output) => {
+                assert_eq!(len_psbt_outputs, 1);
+                assert_eq!(len_unsigned_tx_output, 0);
+            }
+            other_error => {
+                panic!("Expected OutputCountMismatch for psbt.outputs longer, got {:?}", other_error);
+            }
+        }
     }
 
     #[test]
