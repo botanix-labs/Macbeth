@@ -1,5 +1,9 @@
 use super::{FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse, WalletStateResponse};
-use crate::{frost::ConnectionEstablishedStatus, session::Direction, NetworkHandle};
+use crate::{
+    frost::{ConnectionEstablishedStatus, PeerMessageStatus},
+    session::Direction,
+    NetworkHandle,
+};
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
 use reth_network_peers::PeerId;
@@ -56,7 +60,7 @@ pub struct PeerMessageContext {
     /// the peer id
     pub peer_id: PeerId,
     /// frost identifier
-    pub frost_identifier: frost::Identifier,
+    pub frost_identifier: Option<frost::Identifier>,
     /// The message itself
     pub message: PeerMessageResponse,
 }
@@ -252,7 +256,7 @@ impl FrostManager {
                     peer_id, direction, peer_commands_tx
                 );
                 if !self.is_authority_peer(&peer_id) {
-                    info!(
+                    warn!(
                         target: "network::frost::on_network_event",
                         "Received FrostProtocolEvent::ConnectionEstablished event from non-authority peer {:?}, protocol_event",
                         peer_id
@@ -268,7 +272,7 @@ impl FrostManager {
 
                 // make sure we ignore our own connection
                 if *self.network.peer_id() == peer_id {
-                    info!(
+                    warn!(
                         target: "network::frost::on_network_event",
                         "Received FrostProtocolEvent::ConnectionEstablished event from our own peer {:?}",
                         peer_id
@@ -345,32 +349,46 @@ impl FrostManager {
                     peer_id, response
                 );
 
-                if !self.is_authority_peer(&peer_id) {
+                let err_auth_peer = if !self.is_authority_peer(&peer_id) {
                     warn!(
                         target: "network::frost::on_network_event",
-                        "Received FrostProtocolEvent::PeerMessage message from non-authority peer {:?}",
+                        "Received FrostProtocolEvent::PeerMessage event from non-authority peer {:?}, protocol_event",
                         peer_id
                     );
-                    return;
-                }
+                    Some(PeerMessageResponse::Error(PeerMessageStatus::NoneAuthority(peer_id)))
+                } else {
+                    None
+                };
 
                 // Check if the peer is in the peer connections. i.e. we have a valid connection to
-                // the peer. it may be find to address this message on the
+                // the peer. It may be fine to address this message on the
                 // application level, but then we cannot respond
-                let Some(peer_data) = self.retrieve_peer_data(&peer_id) else {
-                    warn!(
-                        target: "network::frost::on_network_event",
-                        "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, but the peer has no active connections",
-                        peer_id
-                    );
-                    return;
+                let (peer_data, err_peer_not_found) = match self.retrieve_peer_data(&peer_id) {
+                    Some(peer_data) => (Some(peer_data), None),
+                    None => {
+                        warn!(
+                            target: "network::frost::on_network_event",
+                            "Received FrostProtocolEvent::PeerMessage message from peer with id = {:?}, but the peer has no active connections",
+                            peer_id
+                        );
+                        (
+                            None,
+                            Some(PeerMessageResponse::Error(PeerMessageStatus::PeerIdNotFound(
+                                peer_id,
+                            ))),
+                        )
+                    }
                 };
+
+                let err = err_auth_peer.or(err_peer_not_found);
 
                 for task_forwarder in &self.task_forwarder_txs {
                     if let Err(send_res) = task_forwarder.send(PeerMessageContext {
                         peer_id,
-                        frost_identifier: peer_data.frost_identifier,
-                        message: response.clone(),
+                        frost_identifier: peer_data
+                            .clone()
+                            .map(|peer_data| peer_data.frost_identifier),
+                        message: err.clone().unwrap_or_else(|| response.clone()),
                     }) {
                         error!(
                             target: "network::frost::on_network_event",

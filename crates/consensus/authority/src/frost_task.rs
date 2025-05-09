@@ -447,8 +447,19 @@ where
             while let Ok(message_context) = peer_messages_rx.try_recv() {
                 let peer_message = message_context.message;
                 let peer_id = message_context.peer_id;
-                let frost_identifier = message_context.frost_identifier;
+                let frost_identifier = match message_context.frost_identifier {
+                    Some(frost_identifier) => frost_identifier,
+                    None => {
+                        error!(target: "consensus::authority::frost_task::start_task", "Frost identifier not found for peer id {:?}", peer_id);
+                        continue;
+                    }
+                };
+
                 match peer_message {
+                    PeerMessageResponse::Error(err) => {
+                        error!(target: "consensus::authority::frost_task::start_task", "Received error from peer {:?}: {:?}", peer_id, err);
+                        continue;
+                    }
                     PeerMessageResponse::WalletState(response) => {
                         // Only handle response if it has no state: responses with state are also
                         // sent to WalletStateSyncEngine::sync_wallet_state
