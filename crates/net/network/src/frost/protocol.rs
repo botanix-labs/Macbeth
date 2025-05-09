@@ -327,6 +327,10 @@ impl Stream for FrostProtoConnection {
                     FrostProtoMessage::ping_message(this.my_peer_id)
                 }
                 FrostPeerCommand::PeerMessage(response) => match response {
+                    PeerMessageResponse::Error(e) => {
+                        error!(target: "network::frost::protocol", "Received error: {:?}", e);
+                        return Poll::Ready(None);
+                    }
                     PeerMessageResponse::Dkg(dkg_response) => {
                         let DkgResponse { data, sender, recipient } = dkg_response;
 
