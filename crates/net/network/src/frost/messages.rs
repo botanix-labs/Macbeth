@@ -310,18 +310,49 @@ impl FrostProtoMessage {
         // Decode message based on type
         let message = match message_type {
             FrostProtoMessageId::Dkg => {
-                let id_len = buf[0] as usize;
-                buf.advance(1);
-                let sender = buf[..id_len].to_vec();
-                buf.advance(id_len);
-                //
-                let id_len = buf[0] as usize;
-                buf.advance(1);
-                let recipient = buf[..id_len].to_vec();
-                buf.advance(id_len);
+                // Check if there's enough data for sender_len
+                if buf.is_empty() {
+                    return None;
+                }
 
-                let data_len = u32::from_le_bytes(buf[..4].try_into().unwrap()) as usize;
+                let sender_len = buf[0] as usize;
+                buf.advance(1);
+
+                if buf.len() < sender_len {
+                    return None;
+                }
+                let sender = buf[..sender_len].to_vec();
+                buf.advance(sender_len);
+
+                // Check if there's enough data for recipient_len
+                if buf.is_empty() {
+                    return None;
+                }
+
+                let recipient_len = buf[0] as usize;
+                buf.advance(1);
+
+                if buf.len() < recipient_len {
+                    return None;
+                }
+                let recipient = buf[..recipient_len].to_vec();
+                buf.advance(recipient_len);
+
+                // Check if there's enough data for data_len
+                if buf.len() < 4 {
+                    return None;
+                }
+
+                let data_len = match buf[..4].try_into() {
+                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                    Err(_) => return None,
+                };
                 buf.advance(4);
+
+                if buf.len() < data_len {
+                    return None;
+                }
+
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
