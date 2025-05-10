@@ -1001,6 +1001,9 @@ where
     }
 
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#applysnapshotchunk
+    /// Should only be used for RPC, non-archival, non-federation nodes.
+    /// This method ignores pegins and pegouts which federation nodes must be aware of.
+    /// Archival and federation nodes must use block sync instead.
     fn apply_snapshot_chunk(
         &self,
         request: RequestApplySnapshotChunk,
@@ -1230,6 +1233,12 @@ where
             let chain =
                 Chain::new(vec![sealed_block_with_senders].into_iter(), exec_outcome.clone(), None);
 
+            // Note: we are not parsing the block for pegins and pegouts here.
+            // This is safe for rpc nodes but not for the federation nodes especially the
+            // coordinator: If the coordinator uses snapshots, it will be unaware of
+            // pending pegouts that need to be honored. The coordinator creates pegouts
+            // from pending pegouts in it's database. The coordinator must use block
+            // sync instead of snapshot sync. TODO: refactor to handle pegins/pegouts
             self.blockchain_db.canonical_in_memory_state().notify_canon_state(
                 CanonStateNotification::Commit {
                     new: Arc::new(chain),
