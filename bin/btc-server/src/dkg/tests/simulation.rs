@@ -17,9 +17,29 @@ async fn stage_simulate_random_drops_with_3_members() {
         round1_package_timeout: Duration::from_millis(100),
         round2_package_timeout: Duration::from_millis(100),
         round3_package_timeout: Duration::from_millis(100),
+        pending_session_timeout: None,
     };
 
-    setup_tasks(NUM_MEMBERS, config).await;
+    setup_tasks(NUM_MEMBERS, config, &[]).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn stage_simulate_random_drops_with_one_absent_member() {
+    const NUM_MEMBERS: u16 = 3;
+
+    let config = Config {
+        max_signers: 3,
+        min_signers: 3,
+        round1_package_timeout: Duration::from_millis(100),
+        round2_package_timeout: Duration::from_millis(100),
+        round3_package_timeout: Duration::from_millis(100),
+        // Session resets after 10 seconds.
+        pending_session_timeout: Some(Duration::from_secs(10)),
+    };
+
+    // Id number 2 is absent, the DKG process never completes.
+    setup_tasks(NUM_MEMBERS, config, &[2]).await;
 }
 
 #[tokio::test]
@@ -33,12 +53,13 @@ async fn stage_simulate_random_drops_with_16_members() {
         round1_package_timeout: Duration::from_millis(500),
         round2_package_timeout: Duration::from_millis(500),
         round3_package_timeout: Duration::from_millis(500),
+        pending_session_timeout: None,
     };
 
-    setup_tasks(NUM_MEMBERS, config).await;
+    setup_tasks(NUM_MEMBERS, config, &[]).await;
 }
 
-async fn setup_tasks(num_members: u16, config: Config) {
+async fn setup_tasks(num_members: u16, config: Config, absent_nodes: &[u16]) {
     debug_assert!(config.min_signers <= config.max_signers);
     debug_assert!(config.min_signers <= num_members);
     debug_assert!(config.max_signers == num_members);
@@ -51,6 +72,11 @@ async fn setup_tasks(num_members: u16, config: Config) {
     let mut channels = BTreeMap::new();
     // List of all receiver channels.
     let mut queues = BTreeMap::new();
+
+    let absent_nodes: Vec<frost::Identifier> = absent_nodes
+        .iter()
+        .map(|id| frost::Identifier::derive(id.to_le_bytes().as_slice()).unwrap())
+        .collect();
 
     for num in 0..num_members {
         let id = frost::Identifier::derive(num.to_le_bytes().as_slice()).unwrap();
@@ -69,8 +95,14 @@ async fn setup_tasks(num_members: u16, config: Config) {
 
     // Spawn a task for each member.
     for (id, (static_sec, rx)) in queues {
+        if absent_nodes.contains(&id) {
+            println!("WARNING: Member {} is absent", name_addr(&id));
+            continue;
+        }
+
         let machine =
-            DkgStateMachine::new(id, static_sec, coordinator, members.clone(), config).unwrap();
+            DkgStateMachine::new(id, static_sec, coordinator, members.clone(), config, Some(0))
+                .unwrap();
 
         tokio::spawn(run_dkg(machine, rx, channels.clone(), callback_tx.clone()));
     }
@@ -251,9 +283,10 @@ fn name_payload(msg: &DkgMessage) -> String {
 
 fn name_stage(stage: Stage) -> String {
     match stage {
-        Stage::RoundOneActive => String::from("R1"),
-        Stage::RoundTwoActive => String::from("R2"),
-        Stage::RoundThreeActive => String::from("R3"),
+        Stage::AwaitingInit => String::from("AA"),
+        Stage::RoundOne => String::from("R1"),
+        Stage::RoundTwo => String::from("R2"),
+        Stage::RoundThree => String::from("R3"),
         Stage::Finalized => String::from("FF"),
         Stage::Aborted => String::from("!!"),
     }
