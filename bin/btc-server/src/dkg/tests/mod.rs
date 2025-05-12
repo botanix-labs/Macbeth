@@ -10,13 +10,27 @@ pub use stage_one::complete_stage_one;
 pub use stage_two::complete_stage_two;
 
 mod encryption;
+mod reset;
 mod simulation;
 mod stage_one;
 mod stage_three;
 mod stage_two;
 mod timeout;
 
-fn setup() -> (
+fn test_config() -> Config {
+    Config {
+        max_signers: 3,
+        min_signers: 2,
+        round1_package_timeout: Duration::from_secs(3),
+        round2_package_timeout: Duration::from_secs(4),
+        round3_package_timeout: Duration::from_secs(5),
+        pending_session_timeout: Some(Duration::from_secs(180)),
+    }
+}
+
+fn setup(
+    config: Config,
+) -> (
     frost::Identifier,
     frost::Identifier,
     frost::Identifier,
@@ -45,20 +59,15 @@ fn setup() -> (
     members.insert(bob_addr, bob_pub);
     members.insert(eve_addr, eve_pub);
 
-    let config = Config {
-        max_signers: 3,
-        min_signers: 3,
-        round1_package_timeout: Duration::from_secs(3),
-        round2_package_timeout: Duration::from_secs(4),
-        round3_package_timeout: Duration::from_secs(5),
-    };
-
     let alice =
-        DkgStateMachine::new(alice_addr, alice_sec, alice_addr, members.clone(), config).unwrap();
+        DkgStateMachine::new(alice_addr, alice_sec, alice_addr, members.clone(), config, Some(0))
+            .unwrap();
 
-    let bob = DkgStateMachine::new(bob_addr, bob_sec, alice_addr, members.clone(), config).unwrap();
+    let bob =
+        DkgStateMachine::new(bob_addr, bob_sec, alice_addr, members.clone(), config, None).unwrap();
 
-    let eve = DkgStateMachine::new(eve_addr, eve_sec, alice_addr, members.clone(), config).unwrap();
+    let eve =
+        DkgStateMachine::new(eve_addr, eve_sec, alice_addr, members.clone(), config, None).unwrap();
 
     (alice_addr, bob_addr, eve_addr, alice, bob, eve)
 }

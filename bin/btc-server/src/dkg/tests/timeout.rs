@@ -36,15 +36,8 @@ fn forward_to_timeout(
 
 #[test]
 fn stage_one_resend_round1_packages_on_timeout() {
-    let (alice_addr, bob_addr, eve_addr, mut alice, mut bob, mut eve) = setup();
-
-    let config = Config {
-        max_signers: 3,
-        min_signers: 3,
-        round1_package_timeout: Duration::from_secs(3),
-        round2_package_timeout: Duration::from_secs(4),
-        round3_package_timeout: Duration::from_secs(5),
-    };
+    let config = test_config();
+    let (alice_addr, bob_addr, eve_addr, mut alice, mut bob, mut eve) = setup(config);
 
     let mut now = Instant::now();
 
@@ -96,6 +89,7 @@ fn stage_one_resend_round1_packages_on_timeout() {
 
     // *** Bob resends his round1 package and an ack to Alice
     {
+        // TODO: Shouldn't this be flipped?
         let [b1, b2] = CheckedSend::new(&mut bob, now)
             // round1(Bob) -> Alice
             .round1(bob_addr, alice_addr)
@@ -148,15 +142,8 @@ fn stage_one_resend_round1_packages_on_timeout() {
 
 #[test]
 fn stage_two_resend_round2_packages_on_timeout() {
-    let (alice_addr, bob_addr, eve_addr, alice, bob, eve) = setup();
-
-    let config = Config {
-        max_signers: 3,
-        min_signers: 3,
-        round1_package_timeout: Duration::from_secs(3),
-        round2_package_timeout: Duration::from_secs(4),
-        round3_package_timeout: Duration::from_secs(5),
-    };
+    let config = test_config();
+    let (alice_addr, bob_addr, eve_addr, alice, bob, eve) = setup(config);
 
     let mut now = Instant::now();
 
@@ -271,15 +258,8 @@ fn stage_two_resend_round2_packages_on_timeout() {
 
 #[test]
 fn stage_three_resend_round3_packages_on_timeout() {
-    let (alice_addr, bob_addr, eve_addr, alice, bob, eve) = setup();
-
-    let config = Config {
-        max_signers: 3,
-        min_signers: 3,
-        round1_package_timeout: Duration::from_secs(3),
-        round2_package_timeout: Duration::from_secs(4),
-        round3_package_timeout: Duration::from_secs(5),
-    };
+    let config = test_config();
+    let (alice_addr, bob_addr, eve_addr, alice, bob, eve) = setup(config);
 
     let mut now = Instant::now();
 
