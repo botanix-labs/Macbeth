@@ -17,11 +17,15 @@ mod encryption;
 #[cfg(test)]
 mod tests;
 
+// NOTE: As of now, the session context is always the same constant. In
+// the future this may change, and might be handled differently.
+pub const SESSION_CONTEXT: &[u8] = b"static-dkg-session-context";
+
 /// Wrapper type for FROST identifiers used in the DKG protocol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Initiator(frost::Identifier);
 
-// TODO: Hide behind `#[cfg(test)]`?
+#[cfg(test)]
 impl From<frost::Identifier> for Initiator {
     fn from(id: frost::Identifier) -> Self {
         Initiator(id)
@@ -32,7 +36,7 @@ impl From<frost::Identifier> for Initiator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Target(frost::Identifier);
 
-// TODO: Hide behind `#[cfg(test)]`?
+#[cfg(test)]
 impl From<frost::Identifier> for Target {
     fn from(id: frost::Identifier) -> Self {
         Target(id)
@@ -84,7 +88,6 @@ mod sealed_pkg {
             initiator: Initiator,
             auth: &mut KeyVerificationManager,
         ) -> Result<secp256k1::ecdsa::Signature, encryption::Error> {
-            // TODO: This should take a reference
             auth.validate_round3(initiator, self.0)?;
             Ok(self.0)
         }
@@ -118,6 +121,10 @@ pub enum DkgMessage {
     Round1 {
         /// The original initiator of this package
         initiator: Initiator,
+        // The session context, dictated by the coordinator
+        context: Vec<u8>,
+        // The session nonce, dictated by the coordinator
+        nonce: u64,
         /// The ephemeral public key
         ephemeral_pub: secp256k1::PublicKey,
         /// The signature of the round1 package
@@ -188,21 +195,41 @@ pub struct Config {
     /// The timeout duration for round3 packages. If an acknowledgment isn't
     /// received within this duration, the package will be resent.
     pub round3_package_timeout: Duration,
+
+    /// The optional timeout duration for the entire DKG session. If the session
+    /// isn't completed within this duration, it will be reset. This increments
+    /// the session nonce and creates new round1 packages.
+    pub pending_session_timeout: Option<Duration>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Represents the current stage of the DKG protocol.
 pub enum Stage {
+    /// Waiting for the coordinator to initialize the DKG session.
+    AwaitingInit,
     /// Active exchange of round1 packages between participants.
-    RoundOneActive,
+    RoundOne,
     /// Active exchange of round2 packages between participants.
-    RoundTwoActive,
+    RoundTwo,
     /// Active exchange of round3 packages (aggregated public keys).
-    RoundThreeActive,
+    RoundThree,
     /// The DKG process was aborted.
     Aborted,
     /// DKG protocol finalized successfully.
     Finalized,
+}
+
+impl std::fmt::Display for Stage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Stage::AwaitingInit => write!(f, "Awaiting-Initialization"),
+            Stage::RoundOne => write!(f, "Round-One"),
+            Stage::RoundTwo => write!(f, "Round-Two"),
+            Stage::RoundThree => write!(f, "Round-Three"),
+            Stage::Aborted => write!(f, "Aborted"),
+            Stage::Finalized => write!(f, "Finalized"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -216,7 +243,7 @@ struct OutEntryRoundOne {
 
 #[derive(Debug, Clone)]
 struct OutEntryRoundTwo {
-    nonce: u64,
+    ciphernonce: u64,
     ciphertext: Vec<u8>,
     timer: Option<Instant>,
     attempts: usize,
@@ -232,11 +259,14 @@ struct OutEntryRoundThree {
 #[derive(Debug)]
 /// Represents the current state of the DKG process.
 enum StageState {
+    /// The DKG process is waiting for the coordinator to initialize the session.
+    AwatingInit,
     /// The active stage of round1. Participants are exchanging round1 packages
     /// with each other. The coordinator distributes packages between all
     /// participants.
-    RoundOneActive {
-        pending: bool,
+    RoundOne {
+        context: Vec<u8>,
+        nonce: u64,
         auth: DkgHandshakeManager,
         secret_package: round1::SecretPackage,
         in_round1_packages: BTreeMap<Initiator, round1::Package>,
@@ -246,7 +276,7 @@ enum StageState {
     /// with each other. The coordinator distributes packages between all
     /// participants and tracks which packages have been distributed through the
     /// dist_checklist.
-    RoundTwoActive {
+    RoundTwo {
         pending: bool,
         auth: SecureChannelManager,
         secret_package: round2::SecretPackage,
@@ -257,7 +287,7 @@ enum StageState {
     /// The active stage of round3. Participants are exchanging aggregated
     /// public key packages to ensure everyone has the same final, aggregated
     /// public key.
-    RoundThreeActive {
+    RoundThree {
         pending: bool,
         auth: KeyVerificationManager,
         secret_package: frost::keys::KeyPackage,
@@ -270,24 +300,26 @@ enum StageState {
     /// The DKG process was aborted. This can happen if FROST fails to generate
     /// new rounds, for example if a peer provided an incorrect or malformed
     /// package.
-    // TODO (lamafab): Add a reason and blame indicator for the abort.
     Aborted,
     /// The DKG process completed successfully. All participants have verified
     /// they have the same public key package.
-    Finalized { secret_package: frost::keys::KeyPackage, public_key_package: PublicKeyPackage },
+    Finalized {
+        secret_package: frost::keys::KeyPackage,
+        public_key_package: PublicKeyPackage,
+    },
 }
 
 impl StageState {
     fn did_round_one_finalize(&self) -> bool {
         matches!(
             self,
-            StageState::RoundTwoActive { .. } |
-                StageState::RoundThreeActive { .. } |
+            StageState::RoundTwo { .. } |
+                StageState::RoundThree { .. } |
                 StageState::Finalized { .. }
         )
     }
     fn did_round_two_finalize(&self) -> bool {
-        matches!(self, StageState::RoundThreeActive { .. } | StageState::Finalized { .. })
+        matches!(self, StageState::RoundThree { .. } | StageState::Finalized { .. })
     }
     fn did_round_three_finalize(&self) -> bool {
         matches!(self, StageState::Finalized { .. })
@@ -349,11 +381,14 @@ pub enum Error {
 /// The DKG state machine handles distributed key generation across multiple participants.
 pub struct DkgStateMachine {
     config: Config,
-    members: Vec<frost::Identifier>,
-    coordinator: frost::Identifier,
     my_frost_id: frost::Identifier,
+    my_static_sec: secp256k1::SecretKey,
+    coordinator: frost::Identifier,
+    members: BTreeMap<frost::Identifier, secp256k1::PublicKey>,
     queue: Queue,
     state: StageState,
+    session_nonce: Option<u64>,
+    session_activated: Option<Instant>,
 }
 
 impl DkgStateMachine {
@@ -366,7 +401,7 @@ impl DkgStateMachine {
     /// is the coordinator:
     ///
     /// - If this participant is the coordinator (`my_frost_id == coordinator`), the state machine
-    ///   enters the `RoundOneActive` stage by immediately sending the round1 packages to all other
+    ///   enters the `RoundOne` stage by immediately sending the round1 packages to all other
     ///   participants. These initial packages can be retrieved by calling `send()`.
     ///
     /// - If this participant is not the coordinator, the state machine sets the `pending` flag to
@@ -380,16 +415,17 @@ impl DkgStateMachine {
     /// * `members` - A list of all participant FROST identifiers in the DKG process, including this
     ///   participant and the coordinator.
     /// * `config` - Configuration parameters for the DKG process.
-    ///
-    /// # Returns
-    ///
-    /// A new `DkgStateMachine` instance
+    /// * `session_nonce` - An increasing value that uniquely identifies this DKG session. Only the
+    ///   coordinator should provide this value (typically using Unix time in seconds).
+    ///   Non-coordinators should pass `None` and will accept the nonce from the coordinator's
+    ///   initial message. The nonce increases automatically when sessions timeout and restart.
     pub fn new(
         my_frost_id: frost::Identifier,
         my_static_sec: secp256k1::SecretKey,
         coordinator: frost::Identifier,
         members: BTreeMap<frost::Identifier, secp256k1::PublicKey>,
         config: Config,
+        session_nonce: Option<u64>,
     ) -> Result<Self, Error> {
         if !members.contains_key(&my_frost_id) {
             return Err(Error::BadConfig("my_frost_id not in members".to_string()));
@@ -409,27 +445,74 @@ impl DkgStateMachine {
             return Err(Error::BadConfig("max_signers does not match member size".to_string()));
         }
 
-        // AUTHENTICATION: Setup authentication and encryption layer.
-        let mut auth = DkgHandshakeManager::new(
-            b"CONST-SESSION",
+        if my_frost_id == coordinator && session_nonce.is_none() {
+            return Err(Error::BadConfig("coordinator must provide a session nonce".to_string()));
+        }
+
+        // Setup sending queue.
+        let queue = Queue { i: VecDeque::new(), my_frost_id };
+
+        let mut this = Self {
+            config,
             my_frost_id,
             my_static_sec,
-            members.clone(),
-        )?;
+            coordinator,
+            members,
+            queue,
+            state: StageState::AwatingInit,
+            session_nonce: None,
+            session_activated: None,
+        };
 
-        // Retain only the Frost Ids going forward.
-        let members = members.into_keys().collect::<Vec<_>>();
+        // The coordinator immediately starts the DKG process by sending a
+        // `DkgMessage::NewSession` followed by the actual `DkgMessage::Round1`
+        // package to each participant.
+        //
+        // Non-coordinators wait for the coordinator to send this message, and
+        // initialize the round1 package and authentication layer then.
+        if this.is_coordinator() {
+            let nonce = session_nonce.expect("session nonce must be provided");
+            this.init_new_session(nonce)?;
+
+            debug_assert_eq!(this.stage(), Stage::RoundOne);
+        }
+
+        Ok(this)
+    }
+    /// Initializes a new DKG session with the given nonce by resetting the
+    /// stage, setting up a new authentication layer, generating a new round1
+    /// package, and sending it to all participants.
+    ///
+    /// Only the coordinator must call this method.
+    fn init_new_session(&mut self, nonce: u64) -> Result<(), Error> {
+        debug_assert!(self.is_coordinator());
+
+        let context = SESSION_CONTEXT.to_vec();
+        //
+        self.session_activated = None;
+        self.session_nonce = Some(nonce);
+        self.queue.i.clear();
 
         // Generate the secret package and our round1 package
         let (secret_package, our_round1_package) = frost::keys::dkg::part1(
-            my_frost_id,
-            config.max_signers,
-            config.min_signers,
+            self.my_frost_id,
+            self.config.max_signers,
+            self.config.min_signers,
             thread_rng(),
         )?;
 
+        // AUTHENTICATION: Setup authentication and encryption layer.
+        let mut auth = DkgHandshakeManager::new(
+            &context,
+            nonce,
+            self.my_frost_id,
+            self.my_static_sec,
+            self.members.clone(),
+        )?;
+
+        // Seal our round1 package.
         let (sealed_round1_package, our_eph_pub, our_sig) =
-            sealed_pkg::SealedRoundOnePackage::new(our_round1_package.clone(), &mut auth)?;
+            sealed_pkg::SealedRoundOnePackage::new(our_round1_package, &mut auth)?;
 
         let out_entry = OutEntryRoundOne {
             package: sealed_round1_package.clone(),
@@ -439,101 +522,92 @@ impl DkgStateMachine {
             attempts: 0,
         };
 
-        // Sending queue.
-        let mut queue = Queue { i: VecDeque::new(), my_frost_id };
-
-        let self_is_coordinator = my_frost_id == coordinator;
-        let pending = !self_is_coordinator;
-
         let mut out_round1_packages = BTreeMap::new();
 
-        if self_is_coordinator {
-            // Prepare all outgoing round1 package entries that we need to have
-            // acknowledged, including forwarded messages.
-            //
-            // For example; with three participants Alice (us), Bob, and Eve, we construct:
-            // * Alice -> Bob
-            // * Alice -> Eve
-            // * Bob -> Eve (forwarded)
-            // * Eve -> Bob (forwarded)
-            for initiator in members.iter().cloned() {
-                for recipient in members.iter().cloned() {
-                    // Skip ourself.
-                    if recipient == my_frost_id {
-                        continue;
-                    }
-
-                    if initiator == recipient {
-                        continue;
-                    }
-
-                    // Only set our packages; forwarded packages are set once
-                    // they're received, of course.
-                    let out_entry =
-                        if initiator == my_frost_id { Some(out_entry.clone()) } else { None };
-
-                    // Track outgoing package.
-                    out_round1_packages.insert((Initiator(initiator), recipient), out_entry);
-
-                    if initiator != my_frost_id {
-                        // Skip sending unless it's us.
-                        continue;
-                    }
-
-                    // Push the payload to the queue.
-                    let msg = DkgPayload {
-                        sender: my_frost_id,
-                        recipient,
-                        msg: DkgMessage::Round1 {
-                            initiator: Initiator(my_frost_id),
-                            ephemeral_pub: our_eph_pub,
-                            signature: our_sig,
-                            package: sealed_round1_package.clone(),
-                        },
-                    };
-
-                    queue.i.push_back(msg);
+        // Prepare all outgoing round1 package entries that we need to have
+        // acknowledged, including forwarded messages.
+        //
+        // For example; with three participants Alice (us), Bob, and Eve, we construct:
+        // * Alice -> Bob
+        // * Alice -> Eve
+        // * Bob -> Eve (forwarded)
+        // * Eve -> Bob (forwarded)
+        for initiator in self.members.keys().copied() {
+            for recipient in self.members.keys().copied() {
+                // Skip ourself.
+                if recipient == self.my_frost_id {
+                    continue;
                 }
-            }
-        } else {
-            // Non-coordinators only have one outgoing package to send (to the
-            // coordinator).
-            out_round1_packages.insert((Initiator(my_frost_id), coordinator), Some(out_entry));
-        };
 
-        let state = StageState::RoundOneActive {
-            pending,
+                if initiator == recipient {
+                    continue;
+                }
+
+                // Only set our packages; forwarded packages are set once
+                // they're received, of course.
+                let out_entry =
+                    if initiator == self.my_frost_id { Some(out_entry.clone()) } else { None };
+
+                // Track outgoing package.
+                out_round1_packages.insert((Initiator(initiator), recipient), out_entry);
+
+                if initiator != self.my_frost_id {
+                    // Skip sending unless it's us.
+                    continue;
+                }
+
+                // Push the round1 payload to the queue.
+                let msg = DkgPayload {
+                    sender: self.my_frost_id,
+                    recipient,
+                    msg: DkgMessage::Round1 {
+                        initiator: Initiator(self.my_frost_id),
+                        context: context.clone(),
+                        nonce,
+                        ephemeral_pub: our_eph_pub,
+                        signature: our_sig,
+                        package: sealed_round1_package.clone(),
+                    },
+                };
+
+                self.queue.i.push_back(msg);
+            }
+        }
+
+        self.state = StageState::RoundOne {
+            nonce,
             auth,
             secret_package,
             in_round1_packages: BTreeMap::new(),
             out_round1_packages,
+            context,
         };
 
-        let this = Self { config, members, coordinator, my_frost_id, queue, state };
-        Ok(this)
+        Ok(())
     }
-
     /// Returns the FROST identifier of this participant.
     pub fn frost_id(&self) -> frost::Identifier {
         self.my_frost_id
     }
-
     /// Checks if this participant is the coordinator of the DKG process.
     pub fn is_coordinator(&self) -> bool {
         self.my_frost_id == self.coordinator
     }
-
     /// Returns the current stage of the DKG protocol.
     pub fn stage(&self) -> Stage {
         match &self.state {
-            StageState::RoundOneActive { .. } => Stage::RoundOneActive,
-            StageState::RoundTwoActive { .. } => Stage::RoundTwoActive,
-            StageState::RoundThreeActive { .. } => Stage::RoundThreeActive,
+            StageState::AwatingInit => Stage::AwaitingInit,
+            StageState::RoundOne { .. } => Stage::RoundOne,
+            StageState::RoundTwo { .. } => Stage::RoundTwo,
+            StageState::RoundThree { .. } => Stage::RoundThree,
             StageState::Finalized { .. } => Stage::Finalized,
             StageState::Aborted => Stage::Aborted,
         }
     }
-
+    /// Returns the session nonce, if available.
+    pub fn session_nonce(&self) -> Option<u64> {
+        self.session_nonce
+    }
     /// Returns the final, aggregated key packages if the DKG process has completed successfully.
     pub fn aggregate_key_packages(&self) -> Option<(&KeyPackage, &PublicKeyPackage)> {
         if let StageState::Finalized { secret_package, public_key_package, .. } = &self.state {
@@ -557,26 +631,47 @@ impl DkgStateMachine {
     /// An optional `Duration` until the next timeout event. If `None`, there
     /// are no pending timeout events.
     pub fn timeout(&self, now: Instant) -> Option<Duration> {
-        match &self.state {
-            StageState::RoundOneActive { out_round1_packages, .. } => out_round1_packages
+        let mut session_timeout = None;
+
+        // If we're the coordinator and the DKG session has not been finalized...
+        if self.is_coordinator() && self.stage() != Stage::Finalized {
+            // And if a max session timeout has been configured...
+            if let Some(max) = self.config.pending_session_timeout {
+                // And if a DKG session has started...
+                if let Some(session_activated) = self.session_activated {
+                    let t = (session_activated + max).saturating_duration_since(now);
+                    session_timeout = Some(t);
+                }
+            }
+        }
+
+        let t = match &self.state {
+            StageState::RoundOne { out_round1_packages, .. } => out_round1_packages
                 .values()
-                .filter(|e| e.is_some())
-                .filter_map(|e| e.as_ref().expect("must be available").timer)
+                .filter_map(|e| e.as_ref())
+                .filter_map(|e| e.timer)
                 .map(|t| t.saturating_duration_since(now))
                 .min(),
-            StageState::RoundTwoActive { out_round2_packages, .. } => out_round2_packages
+            StageState::RoundTwo { out_round2_packages, .. } => out_round2_packages
                 .values()
-                .filter(|e| e.is_some())
-                .filter_map(|e| e.as_ref().expect("must be available").timer)
+                .filter_map(|e| e.as_ref())
+                .filter_map(|e| e.timer)
                 .map(|t| t.saturating_duration_since(now))
                 .min(),
-            StageState::RoundThreeActive { out_round3_packages, .. } => out_round3_packages
+            StageState::RoundThree { out_round3_packages, .. } => out_round3_packages
                 .values()
-                .filter(|e| e.is_some())
-                .filter_map(|e| e.as_ref().expect("must be available").timer)
+                .filter_map(|e| e.as_ref())
+                .filter_map(|e| e.timer)
                 .map(|t| t.saturating_duration_since(now))
                 .min(),
             _ => None,
+        };
+
+        match (t, session_timeout) {
+            (Some(t), Some(s)) => Some(t.min(s)),
+            (Some(t), None) => Some(t),
+            (None, Some(x)) => Some(x),
+            (None, None) => None,
         }
     }
     /// Processes timeout events for outgoing messages.
@@ -586,19 +681,33 @@ impl DkgStateMachine {
     /// acknowledged. After calling this method, you should call `send()` in a
     /// loop to get any payloads that need to be re-sent.
     ///
-    /// This implementation uses a small tolerance adjustment of 5 milliseconds
-    /// when checking if timers have expired. This prevents edge cases where
-    /// timing precision might cause a timer to be considered unexpired when it
-    /// should have triggered.
-    ///
     /// # Arguments
     ///
     /// * `now` - The current time
     pub fn on_timeout(&mut self, now: Instant) {
         let self_is_coordinator = self.is_coordinator();
 
+        // If we're the coordinator and the DKG session has not been finalized...
+        if self_is_coordinator && self.stage() != Stage::Finalized {
+            // And if a max session timeout has been configured...
+            if let Some(max) = self.config.pending_session_timeout {
+                // And if a DKG session has started...
+                if let Some(session_activated) = self.session_activated {
+                    // And if the timeout has expired...
+                    if now >= session_activated + max {
+                        // Increment nonce.
+                        let nonce = self.session_nonce.as_ref().expect("nonce tracker must be set");
+                        let nonce = nonce.wrapping_add(1);
+
+                        // Start a new session.
+                        self.init_new_session(nonce).expect("failed to init new session");
+                    }
+                }
+            }
+        }
+
         match &mut self.state {
-            StageState::RoundOneActive { out_round1_packages, .. } => {
+            StageState::RoundOne { context, nonce, out_round1_packages, .. } => {
                 for ((initiator, recipient), entry) in out_round1_packages.iter() {
                     let Some(entry) = entry else {
                         // Package not available.
@@ -612,7 +721,7 @@ impl DkgStateMachine {
 
                     // Check if the timer has expired, with a small tolerance
                     // adjustment.
-                    if timer > now + Duration::from_millis(5) {
+                    if timer > now + Duration::from_millis(1) {
                         continue;
                     }
 
@@ -621,6 +730,8 @@ impl DkgStateMachine {
                         recipient: *recipient,
                         msg: DkgMessage::Round1 {
                             initiator: *initiator,
+                            context: context.clone(),
+                            nonce: *nonce,
                             ephemeral_pub: entry.ephemeral_pub,
                             signature: entry.signature,
                             package: entry.package.clone(),
@@ -630,7 +741,7 @@ impl DkgStateMachine {
                     self.queue.i.push_back(msg);
                 }
             }
-            StageState::RoundTwoActive { out_round2_packages, .. } => {
+            StageState::RoundTwo { out_round2_packages, .. } => {
                 for ((initiator, target), entry) in out_round2_packages.iter() {
                     let Some(entry) = entry else {
                         // Package not available.
@@ -644,7 +755,7 @@ impl DkgStateMachine {
 
                     // Check if the timer has expired, with a small tolerance
                     // adjustment.
-                    if timer > now + Duration::from_millis(5) {
+                    if timer > now + Duration::from_millis(1) {
                         continue;
                     }
 
@@ -656,7 +767,7 @@ impl DkgStateMachine {
                         msg: DkgMessage::Round2 {
                             initiator: *initiator,
                             target: *target,
-                            nonce: entry.nonce,
+                            nonce: entry.ciphernonce,
                             package: entry.ciphertext.clone(),
                         },
                     };
@@ -664,7 +775,7 @@ impl DkgStateMachine {
                     self.queue.i.push_back(msg);
                 }
             }
-            StageState::RoundThreeActive { out_round3_packages, .. } => {
+            StageState::RoundThree { out_round3_packages, .. } => {
                 for ((initiator, recipient), entry) in out_round3_packages.iter() {
                     let Some(entry) = entry else {
                         // Package not available.
@@ -678,7 +789,7 @@ impl DkgStateMachine {
 
                     // Check if the timer has expired, with a small tolerance
                     // adjustment.
-                    if timer > now + Duration::from_millis(5) {
+                    if timer > now + Duration::from_millis(1) {
                         continue;
                     }
 
@@ -716,8 +827,7 @@ impl DkgStateMachine {
 
             match payload.msg {
                 DkgMessage::Round1 { initiator, .. } => {
-                    let StageState::RoundOneActive { out_round1_packages, .. } = &mut self.state
-                    else {
+                    let StageState::RoundOne { out_round1_packages, .. } = &mut self.state else {
                         // Already expired.
                         continue;
                     };
@@ -729,12 +839,16 @@ impl DkgStateMachine {
                         continue;
                     };
 
+                    if self.session_activated.is_none() {
+                        // Track the session start time.
+                        self.session_activated = Some(now);
+                    }
+
                     entry.timer = Some(now + self.config.round1_package_timeout);
                     entry.attempts += 1;
                 }
                 DkgMessage::Round2 { initiator, target, .. } => {
-                    let StageState::RoundTwoActive { out_round2_packages, .. } = &mut self.state
-                    else {
+                    let StageState::RoundTwo { out_round2_packages, .. } = &mut self.state else {
                         // Already expired.
                         continue;
                     };
@@ -749,8 +863,7 @@ impl DkgStateMachine {
                     entry.attempts += 1;
                 }
                 DkgMessage::Round3 { initiator, .. } => {
-                    let StageState::RoundThreeActive { out_round3_packages, .. } = &mut self.state
-                    else {
+                    let StageState::RoundThree { out_round3_packages, .. } = &mut self.state else {
                         // Already expired.
                         continue;
                     };
@@ -787,11 +900,20 @@ impl DkgStateMachine {
             return Ok(());
         }
 
-        let DkgPayload { sender, recipient: _, msg } = payload;
+        let DkgPayload { sender, msg, .. } = payload;
 
         match msg {
-            DkgMessage::Round1 { initiator, ephemeral_pub, signature, package } => {
-                self.on_dkg_msg_round1(initiator, ephemeral_pub, signature, package, sender)?;
+            DkgMessage::Round1 {
+                initiator,
+                context,
+                nonce,
+                ephemeral_pub,
+                signature,
+                package,
+                ..
+            } => {
+                #[rustfmt::skip]
+                self.on_dkg_msg_round1(initiator, context, nonce, ephemeral_pub, signature, package, sender)?;
                 self.transition_stage2_checked()?;
             }
             DkgMessage::AckRound1 { initiator } => {
@@ -823,12 +945,11 @@ impl DkgStateMachine {
         initiator: Initiator,
         sender: frost::Identifier,
     ) -> Result<(), Error> {
-        // Check initiator membership
-        if !self.members.contains(&initiator.0) {
+        if !self.members.contains_key(&initiator.0) {
             return Ok(());
         }
 
-        let StageState::RoundOneActive { out_round1_packages, .. } = &mut self.state else {
+        let StageState::RoundOne { out_round1_packages, .. } = &mut self.state else {
             // Ignore
             return Ok(());
         };
@@ -838,11 +959,11 @@ impl DkgStateMachine {
         Ok(())
     }
     fn on_dkg_msg_ack_round2(&mut self, initiator: Initiator, target: Target) -> Result<(), Error> {
-        if !self.members.contains(&initiator.0) {
+        if !self.members.contains_key(&initiator.0) {
             return Ok(());
         }
 
-        let StageState::RoundTwoActive { out_round2_packages, .. } = &mut self.state else {
+        let StageState::RoundTwo { out_round2_packages, .. } = &mut self.state else {
             // Ignore
             return Ok(());
         };
@@ -856,12 +977,11 @@ impl DkgStateMachine {
         initiator: Initiator,
         sender: frost::Identifier,
     ) -> Result<(), Error> {
-        // Check initiator membership
-        if !self.members.contains(&initiator.0) {
+        if !self.members.contains_key(&initiator.0) {
             return Ok(());
         }
 
-        let StageState::RoundThreeActive { out_round3_packages, .. } = &mut self.state else {
+        let StageState::RoundThree { out_round3_packages, .. } = &mut self.state else {
             // Ignore
             return Ok(());
         };
@@ -870,23 +990,200 @@ impl DkgStateMachine {
 
         Ok(())
     }
+    /// Processes a new session initialization as request by the coordinator by
+    /// validating the request, resetting the stage, setting up a new
+    /// authentication layer, generating a new round1 package, and sending it to
+    /// the coordinator. Returns `true` if the session was successfully
+    /// initialized.
+    ///
+    /// Only non-coordinators should call this method.
+    fn validate_new_session_init(
+        &mut self,
+        initiator: Initiator,
+        their_context: Vec<u8>,
+        their_nonce: u64,
+        their_ephmeral_pub: secp256k1::PublicKey,
+        their_signature: secp256k1::ecdsa::Signature,
+        their_package: sealed_pkg::SealedRoundOnePackage,
+    ) -> Result<bool, Error> {
+        if self.is_coordinator() {
+            return Ok(false);
+        }
+
+        if initiator.0 != self.coordinator {
+            return Ok(false);
+        }
+
+        if their_context != SESSION_CONTEXT {
+            return Ok(false);
+        }
+
+        if let Some(last) = self.session_nonce {
+            if last >= their_nonce {
+                // Outdated or active nonce, ignore.
+                return Ok(false);
+            }
+        }
+
+        // Cannot start a new session if the DKG process has already been
+        // finalized.
+        if self.stage() == Stage::Finalized {
+            return Ok(false);
+        }
+
+        // AUTHENTICATION: Setup new session parameters as-is. We then validate
+        // the coordinators' round1 package, which is inherently tied to those
+        // parameters.
+        let mut auth = DkgHandshakeManager::new(
+            &their_context,
+            their_nonce,
+            self.my_frost_id,
+            self.my_static_sec,
+            self.members.clone(),
+        )?;
+
+        let their_package =
+            their_package.extract(initiator, their_ephmeral_pub, their_signature, &mut auth)?;
+
+        // Verification succeeded, the new session is accepted!
+
+        // Set new session params.
+        let context = their_context;
+        let nonce = their_nonce;
+        //
+        self.session_activated = None;
+        self.session_nonce = Some(nonce);
+        self.queue.i.clear();
+
+        // Track the coordinators' round1 package.
+        let mut in_round1_packages = BTreeMap::new();
+        in_round1_packages.insert(initiator, their_package.clone());
+
+        self.queue.send_round1_ack(initiator, self.coordinator);
+
+        // Generate the new secret package and our round1 package
+        let (secret_package, our_round1_package) = frost::keys::dkg::part1(
+            self.my_frost_id,
+            self.config.max_signers,
+            self.config.min_signers,
+            thread_rng(),
+        )?;
+
+        // Seal our round1 package.
+        let (sealed_round1_package, our_eph_pub, our_sig) =
+            sealed_pkg::SealedRoundOnePackage::new(our_round1_package.clone(), &mut auth)?;
+
+        let out_entry = OutEntryRoundOne {
+            package: sealed_round1_package.clone(),
+            ephemeral_pub: our_eph_pub,
+            signature: our_sig,
+            timer: None,
+            attempts: 0,
+        };
+
+        let mut out_round1_packages = BTreeMap::new();
+
+        // Non-coordinators only have one outgoing package to send (to the
+        // coordinator).
+        out_round1_packages
+            .insert((Initiator(self.my_frost_id), self.coordinator), Some(out_entry));
+
+        // Push the pending, outgoing payload to the queue.
+        let msg = DkgPayload {
+            sender: self.my_frost_id,
+            recipient: self.coordinator,
+            msg: DkgMessage::Round1 {
+                context: context.clone(),
+                nonce,
+                initiator: Initiator(self.my_frost_id),
+                ephemeral_pub: our_eph_pub,
+                signature: our_sig,
+                package: sealed_round1_package,
+            },
+        };
+
+        self.queue.i.push_back(msg);
+
+        self.state = StageState::RoundOne {
+            context,
+            nonce,
+            auth,
+            secret_package,
+            in_round1_packages,
+            out_round1_packages,
+        };
+
+        Ok(true)
+    }
+    #[allow(clippy::too_many_arguments)]
     fn on_dkg_msg_round1(
         &mut self,
         initiator: Initiator,
+        their_context: Vec<u8>,
+        their_nonce: u64,
         their_ephmeral_pub: secp256k1::PublicKey,
         their_signature: secp256k1::ecdsa::Signature,
-        sealed_package: sealed_pkg::SealedRoundOnePackage,
+        their_package: sealed_pkg::SealedRoundOnePackage,
         sender: frost::Identifier,
     ) -> Result<(), Error> {
-        // Check initiator membership
-        if !self.members.contains(&initiator.0) {
+        if !self.members.contains_key(&initiator.0) {
+            return Ok(());
+        }
+
+        if initiator.0 == self.my_frost_id {
+            return Ok(());
+        }
+
+        if their_context != SESSION_CONTEXT {
+            return Ok(());
+        }
+
+        // Do a simple check to determine whether we should start the new
+        // session transition process.
+        let do_new_session_check = if let Some(last) = self.session_nonce {
+            match their_nonce.cmp(&last) {
+                std::cmp::Ordering::Greater => {
+                    // The package is for a new session, do check.
+                    true
+                }
+                std::cmp::Ordering::Equal => {
+                    // The package is for the active session, ignore check.
+                    false
+                }
+                std::cmp::Ordering::Less => {
+                    // Outdated nonce, ignore.
+                    return Ok(());
+                }
+            }
+        } else {
+            // No session active, do check.
+            debug_assert!(!self.is_coordinator());
+            true
+        };
+
+        // Validate the new session request.
+        if do_new_session_check &&
+            self.validate_new_session_init(
+                initiator,
+                their_context,
+                their_nonce,
+                their_ephmeral_pub,
+                their_signature,
+                their_package.clone(),
+            )?
+        {
+            // A coordinator never reaches this point.
+            debug_assert!(!self.is_coordinator());
+
+            // New session accepted!
             return Ok(());
         }
 
         let self_is_coordinator = self.is_coordinator();
 
-        let StageState::RoundOneActive {
-            pending,
+        let StageState::RoundOne {
+            context,
+            nonce,
             auth,
             in_round1_packages,
             out_round1_packages,
@@ -907,46 +1204,15 @@ impl DkgStateMachine {
             return Ok(());
         }
 
-        let their_package =
-            sealed_package.clone().extract(initiator, their_ephmeral_pub, their_signature, auth)?;
+        let extracted_package =
+            their_package.clone().extract(initiator, their_ephmeral_pub, their_signature, auth)?;
 
-        in_round1_packages.insert(initiator, their_package.clone());
+        in_round1_packages.insert(initiator, extracted_package);
         self.queue.send_round1_ack(initiator, sender);
-
-        if *pending {
-            debug_assert!(!self_is_coordinator);
-            debug_assert_eq!(out_round1_packages.len(), 1);
-
-            for ((initiator, recipient), entry) in out_round1_packages.iter() {
-                let Some(entry) = entry else {
-                    // Package not available.
-                    continue;
-                };
-
-                debug_assert_eq!(initiator.0, self.my_frost_id);
-                debug_assert_eq!(recipient, &self.coordinator);
-
-                // Push the pending, outgoing payload to the queue.
-                let msg = DkgPayload {
-                    sender: self.my_frost_id,
-                    recipient: *recipient,
-                    msg: DkgMessage::Round1 {
-                        initiator: *initiator,
-                        ephemeral_pub: entry.ephemeral_pub,
-                        signature: entry.signature,
-                        package: entry.package.clone(),
-                    },
-                };
-
-                self.queue.i.push_back(msg);
-            }
-
-            *pending = false;
-        }
 
         if self_is_coordinator {
             // Forward the round1 package to all other members.
-            for recipient in self.members.iter().cloned() {
+            for recipient in self.members.keys().copied() {
                 if recipient == self.my_frost_id || recipient == sender {
                     continue;
                 }
@@ -957,7 +1223,7 @@ impl DkgStateMachine {
                 };
 
                 *entry = Some(OutEntryRoundOne {
-                    package: sealed_package.clone(),
+                    package: their_package.clone(),
                     ephemeral_pub: their_ephmeral_pub,
                     signature: their_signature,
                     timer: None,
@@ -969,10 +1235,12 @@ impl DkgStateMachine {
                     sender: self.my_frost_id,
                     recipient,
                     msg: DkgMessage::Round1 {
+                        context: context.clone(),
+                        nonce: *nonce,
                         initiator,
                         ephemeral_pub: their_ephmeral_pub,
                         signature: their_signature,
-                        package: sealed_package.clone(),
+                        package: their_package.clone(),
                     },
                 };
 
@@ -986,24 +1254,22 @@ impl DkgStateMachine {
         &mut self,
         initiator: Initiator,
         target: Target,
-        nonce: u64,
+        ciphernonce: u64,
         ciphertext: Vec<u8>,
         sender: frost::Identifier,
     ) -> Result<(), Error> {
-        // Check initiator membership
-        if !self.members.contains(&initiator.0) {
+        if !self.members.contains_key(&initiator.0) {
+            return Ok(());
+        }
+
+        if initiator.0 == self.my_frost_id {
             return Ok(());
         }
 
         let self_is_coordinator = self.is_coordinator();
 
-        let StageState::RoundTwoActive {
-            pending,
-            auth,
-            in_round2_packages,
-            out_round2_packages,
-            ..
-        } = &mut self.state
+        let StageState::RoundTwo { pending, auth, in_round2_packages, out_round2_packages, .. } =
+            &mut self.state
         else {
             if self.state.did_round_two_finalize() {
                 // Send acknowledgments for previous rounds.
@@ -1022,7 +1288,7 @@ impl DkgStateMachine {
                 return Ok(());
             }
 
-            let package = auth.validate_round2(initiator, nonce, &ciphertext)?;
+            let package = auth.validate_round2(initiator, ciphernonce, &ciphertext)?;
 
             // Insert the package.
             in_round2_packages.insert(initiator, package);
@@ -1049,7 +1315,7 @@ impl DkgStateMachine {
                         msg: DkgMessage::Round2 {
                             initiator: *initiator,
                             target: *target,
-                            nonce: entry.nonce,
+                            nonce: entry.ciphernonce,
                             package: entry.ciphertext.clone(),
                         },
                     };
@@ -1075,7 +1341,7 @@ impl DkgStateMachine {
             };
 
             *entry = Some(OutEntryRoundTwo {
-                nonce,
+                ciphernonce,
                 ciphertext: ciphertext.clone(),
                 timer: None,
                 attempts: 0,
@@ -1087,7 +1353,12 @@ impl DkgStateMachine {
             let msg = DkgPayload {
                 sender: self.my_frost_id,
                 recipient: target.0,
-                msg: DkgMessage::Round2 { initiator, target, nonce, package: ciphertext },
+                msg: DkgMessage::Round2 {
+                    initiator,
+                    target,
+                    nonce: ciphernonce,
+                    package: ciphertext,
+                },
             };
 
             self.queue.i.push_back(msg);
@@ -1101,19 +1372,18 @@ impl DkgStateMachine {
         sealed_signature: sealed_pkg::SealedRoundThreeSignature,
         sender: frost::Identifier,
     ) -> Result<(), Error> {
-        // Check initiator membership
-        if !self.members.contains(&initiator.0) {
+        if !self.members.contains_key(&initiator.0) {
+            return Ok(());
+        }
+
+        if initiator.0 == self.my_frost_id {
             return Ok(());
         }
 
         let self_is_coordinator = self.is_coordinator();
 
-        let StageState::RoundThreeActive {
-            pending,
-            auth,
-            in_round3_packages,
-            out_round3_packages,
-            ..
+        let StageState::RoundThree {
+            pending, auth, in_round3_packages, out_round3_packages, ..
         } = &mut self.state
         else {
             if self.state.did_round_three_finalize() {
@@ -1166,7 +1436,7 @@ impl DkgStateMachine {
 
         if self_is_coordinator {
             // Forward the round3 package to all other members.
-            for recipient in self.members.iter().cloned() {
+            for recipient in self.members.keys().copied() {
                 if recipient == self.my_frost_id || recipient == sender {
                     continue;
                 }
@@ -1196,12 +1466,12 @@ impl DkgStateMachine {
         Ok(())
     }
     fn transition_stage2_checked(&mut self) -> Result<(), Error> {
-        let StageState::RoundOneActive {
-            pending,
+        let StageState::RoundOne {
             auth,
             secret_package,
             in_round1_packages,
             out_round1_packages,
+            ..
         } = &mut self.state
         else {
             // Ignore
@@ -1213,8 +1483,6 @@ impl DkgStateMachine {
         if in_round1_packages.len() != self.members.len() - 1 || !out_round1_packages.is_empty() {
             return Ok(());
         }
-
-        debug_assert!(!*pending);
 
         // Start transition.
         let in_round1_packages = std::mem::take(in_round1_packages)
@@ -1230,8 +1498,6 @@ impl DkgStateMachine {
             //
             // TODO (lamafab): We should probably do some extra things here,
             // such as communicating this information to the coordinator/peers.
-            //
-            // TODO (lamafab): Explicitly test this condition.
             self.state = StageState::Aborted;
             return Ok(());
         };
@@ -1248,10 +1514,10 @@ impl DkgStateMachine {
             let target = Target(target);
 
             // AUTHENTICATION: Encrypt the package for the target individually.
-            let (ciphertext, nonce) = auth.commit_round2(&target, &our_package)?;
+            let (ciphertext, ciphernonce) = auth.commit_round2(&target, &our_package)?;
 
             let out_entry = OutEntryRoundTwo {
-                nonce,
+                ciphernonce,
                 ciphertext: ciphertext.clone(),
                 timer: None,
                 attempts: 0,
@@ -1265,7 +1531,12 @@ impl DkgStateMachine {
                 let msg = DkgPayload {
                     sender: self.my_frost_id,
                     recipient: target.0,
-                    msg: DkgMessage::Round2 { initiator, target, nonce, package: ciphertext },
+                    msg: DkgMessage::Round2 {
+                        initiator,
+                        target,
+                        nonce: ciphernonce,
+                        package: ciphertext,
+                    },
                 };
 
                 self.queue.i.push_back(msg);
@@ -1283,13 +1554,13 @@ impl DkgStateMachine {
             // For example; with three participants Alice (us), Bob, and Eve, we construct:
             // * Bob -> Eve (forwarded)
             // * Eve -> Bob (forwarded)
-            for initiator in self.members.iter().cloned() {
+            for initiator in self.members.keys().copied() {
                 // Skip ourself, we set those entries before.
                 if initiator == self.my_frost_id {
                     continue;
                 }
 
-                for target in self.members.iter().cloned() {
+                for target in self.members.keys().copied() {
                     // Skip ourself.
                     if target == self.my_frost_id {
                         continue;
@@ -1306,7 +1577,7 @@ impl DkgStateMachine {
             }
         }
 
-        self.state = StageState::RoundTwoActive {
+        self.state = StageState::RoundTwo {
             auth,
             pending,
             secret_package,
@@ -1318,7 +1589,7 @@ impl DkgStateMachine {
         Ok(())
     }
     fn transition_stage3_checked(&mut self) -> Result<(), Error> {
-        let StageState::RoundTwoActive {
+        let StageState::RoundTwo {
             pending,
             auth,
             secret_package,
@@ -1356,9 +1627,6 @@ impl DkgStateMachine {
             //
             // TODO (lamafab): We should probably do some extra things here,
             // such as communicating this information to the coordinator/peers.
-            //
-            // TODO (lamafab): Explicitly test this condition.
-            self.state = StageState::Aborted;
             return Ok(());
         };
 
@@ -1387,8 +1655,8 @@ impl DkgStateMachine {
             // * Alice -> Eve
             // * Bob -> Eve (forwarded)
             // * Eve -> Bob (forwarded)
-            for initiator in self.members.iter().cloned() {
-                for recipient in self.members.iter().cloned() {
+            for initiator in self.members.keys().copied() {
+                for recipient in self.members.keys().copied() {
                     // Skip ourself.
                     if recipient == self.my_frost_id {
                         continue;
@@ -1429,7 +1697,7 @@ impl DkgStateMachine {
                 .insert((Initiator(self.my_frost_id), self.coordinator), Some(out_entry));
         }
 
-        self.state = StageState::RoundThreeActive {
+        self.state = StageState::RoundThree {
             pending,
             auth,
             public_key_package,
@@ -1443,7 +1711,7 @@ impl DkgStateMachine {
         Ok(())
     }
     fn transition_final_checked(&mut self) -> Result<(), Error> {
-        let StageState::RoundThreeActive {
+        let StageState::RoundThree {
             pending,
             auth,
             public_key_package,
@@ -1467,8 +1735,11 @@ impl DkgStateMachine {
             return Ok(());
         }
 
-        // TODO: Currently unused -> implement a fourth round where this is
-        // signed and verified?
+        // TODO (lamafab): This is currently unused; implement a fourth round
+        // where this is signed and verified? This could be used as a way to
+        // guarantee that the coordinator has reliably forwarded all round3
+        // packages, and that each and every participant has persisted the
+        // aggregated keys on-disk.
         let _auth = auth.finalize()?;
 
         debug_assert!(!*pending);
@@ -1477,6 +1748,10 @@ impl DkgStateMachine {
             secret_package: secret_package.clone(),
             public_key_package: public_key_package.clone(),
         };
+
+        // Reset session parameters.
+        self.session_nonce = None;
+        self.session_activated = None;
 
         Ok(())
     }
