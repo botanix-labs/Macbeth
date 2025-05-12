@@ -23,6 +23,8 @@ pub enum PeerMessageResponse {
     Signing(SigningResponse),
     /// Wallet state response
     WalletState(WalletStateResponse),
+    /// Error response
+    Error(PeerMessageStatus),
 }
 
 impl fmt::Display for PeerMessageResponse {
@@ -31,6 +33,7 @@ impl fmt::Display for PeerMessageResponse {
             Self::Dkg(response) => write!(f, "DKG Response: {}", response),
             Self::Signing(response) => write!(f, "Signing Response: {}", response),
             Self::WalletState(response) => write!(f, "Wallet State Response: {}", response),
+            Self::Error(response) => write!(f, "Error Response: {:?}", response),
         }
     }
 }
@@ -183,6 +186,24 @@ pub enum ConnectionEstablishedStatus {
     NoneAuthority,
     /// Connected to ourself
     ConnectedToOurself,
+}
+
+/// Status enum reporting the status of the peer message to the frost manager.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum PeerMessageStatus {
+    /// Non-authority member sent a message
+    NoneAuthority(PeerId),
+    /// Peer id not found
+    PeerIdNotFound(PeerId),
+}
+
+impl std::fmt::Display for PeerMessageStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoneAuthority(peer_id) => write!(f, "Peer id {} is not an authority", peer_id),
+            Self::PeerIdNotFound(peer_id) => write!(f, "Peer id not found: {}", peer_id),
+        }
+    }
 }
 
 /// All events related to frost events emitted by the network.

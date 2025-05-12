@@ -236,6 +236,7 @@ pub async fn wait_until_genesis_block_exists(client: &BotanixEthClient) -> Resul
 ///     topics,
 ///     RethBytes::from(ethers_log.data.clone().0)
 /// ).expect("To get log");
+#[allow(dead_code)]
 fn convert_topics(h256_vec: Vec<H256>) -> Vec<B256> {
     h256_vec.into_iter().map(|h| B256::from(h.to_fixed_bytes())).collect()
 }
