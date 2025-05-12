@@ -303,10 +303,7 @@ enum StageState {
     Aborted,
     /// The DKG process completed successfully. All participants have verified
     /// they have the same public key package.
-    Finalized {
-        secret_package: frost::keys::KeyPackage,
-        public_key_package: PublicKeyPackage,
-    },
+    Finalized { secret_package: frost::keys::KeyPackage, public_key_package: PublicKeyPackage },
 }
 
 impl StageState {
