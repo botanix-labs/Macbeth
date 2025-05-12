@@ -1583,12 +1583,17 @@ where
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
         trace!(?request, "finalize_block request");
 
+        if request.txs.is_empty() {
+            error!("No transactions in finalize_block request, but expected at least NDD tx");
+            panic!("No transactions in finalize_block request, but expected at least NDD tx");
+        }
+
         let cbft_block_hash = FixedBytes::<32>::from_slice(request.hash.to_vec().as_slice());
         let mut block_cache_write = match self.block_cache.write() {
             Ok(block_cache_write) => block_cache_write,
             Err(e) => {
                 error!("Error getting block cache write lock: {:?}", e);
-                return ResponseFinalizeBlock::default();
+                panic!("Error getting block cache write lock: {:?}", e);
             }
         };
         let block_with_context = match block_cache_write.get(&cbft_block_hash) {
@@ -1615,7 +1620,7 @@ where
                     Some(tx) => tx.clone(),
                     None => {
                         error!("No non-deterministic tx in finalize block request");
-                        return ResponseFinalizeBlock::default();
+                        panic!("No non-deterministic tx in finalize block request");
                     }
                 };
                 let reader_inner: Vec<u8> =
@@ -1626,7 +1631,7 @@ where
                     Ok(data) => data,
                     Err(e) => {
                         error!("Error deserializing non-deterministic data: {:?}", e);
-                        return ResponseFinalizeBlock::default();
+                        panic!("Error deserializing non-deterministic data: {:?}", e);
                     }
                 };
 
@@ -1657,7 +1662,9 @@ where
                         error!(
                             "Block fee recipient address is not set in finalize block for mainnet"
                         );
-                        return ResponseFinalizeBlock::default();
+                        panic!(
+                            "Block fee recipient address is not set in finalize block for mainnet"
+                        );
                     }
                 };
 
@@ -1665,20 +1672,23 @@ where
                     Some(time) => time,
                     None => {
                         error!("Block time is not set in process proposal");
-                        return ResponseFinalizeBlock::default();
+                        panic!("Block time is not set in process proposal");
                     }
                 };
 
                 // get txs skipping the first non-deterministic data tx
-                let txs =
-                    match transactions_signed_from_bytes(txs_bytes.clone().iter().skip(1).cloned())
-                    {
+                let txs_iter = txs_bytes.clone().into_iter().skip(1);
+                let txs = if txs_iter.clone().next().is_none() {
+                    vec![]
+                } else {
+                    match transactions_signed_from_bytes(txs_iter) {
                         Ok(txs) => txs,
                         Err(e) => {
                             error!("Error decoding transactions in finalize block: {:?}", e);
-                            return ResponseFinalizeBlock::default();
+                            panic!("Error decoding transactions in finalize block: {:?}", e);
                         }
-                    };
+                    }
+                };
 
                 match build_and_execute(
                     txs,
@@ -1706,7 +1716,7 @@ where
                     }
                     Err(e) => {
                         error!("Error building block in finalize block: {:?}", e);
-                        return ResponseFinalizeBlock::default();
+                        panic!("Error building block in finalize block: {:?}", e);
                     }
                 }
             }
@@ -1721,7 +1731,7 @@ where
                 Ok(edh) => edh,
                 Err(e) => {
                     error!("Error deserializing extra data header in finalize block: {:?}", e);
-                    return ResponseFinalizeBlock::default();
+                    panic!("Error deserializing extra data header in finalize block: {:?}", e);
                 }
             };
 
@@ -1742,7 +1752,7 @@ where
         }
 
         let mut exec_results = vec![];
-        // insert non-deterministic data tx which is first in the block
+        // insert non-deterministic data tx which is first in the block (already checked above)
         let non_deterministic_data_tx = match request.txs.first() {
             Some(tx) => tx.clone(),
             None => {
