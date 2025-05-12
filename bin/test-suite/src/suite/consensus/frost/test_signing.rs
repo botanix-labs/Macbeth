@@ -1,4 +1,4 @@
-use std::{collections::HashSet, str::FromStr};
+use std::str::FromStr;
 
 use bitcoin::{consensus::Encodable, hashes::Hash, Address};
 use bitcoincore_rpc::RpcApi;
@@ -133,24 +133,11 @@ pub async fn do_signing(
 
 /// Assert that all clients have the same UTXO set
 pub async fn all_clients_have_same_wallet_state(
-    clients: &mut Vec<BtcServerClient<Channel>>,
+    _clients: &mut Vec<BtcServerClient<Channel>>,
 ) -> Result<(), Error> {
     // The coordinator will have a different state than the signers
     // This is b/c the signers are not tracking txs in the current implementation
     // Everntually they will all converge to the same state
-    return Ok(());
-    let mut utxo_merkle_root = HashSet::new();
-    for c in clients.iter_mut() {
-        let root = c
-            .get_wallet_state(tonic::Request::new(client::Empty {}))
-            .await
-            .map_err(Error::Request)?
-            .into_inner()
-            .utxo_root;
-        utxo_merkle_root.insert(root);
-    }
-    it_info_print!("utxo_merkle_root: {:?}", utxo_merkle_root.len());
-    assert_eq!(utxo_merkle_root.len(), 2);
     Ok(())
 }
 

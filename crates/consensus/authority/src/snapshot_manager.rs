@@ -114,10 +114,8 @@ pub enum SnapshotManagerError {
 /// Snapshot manager monitoring trait
 pub trait SnapshotRunnable {
     /// Starts the snapshot runnerable
-    fn run(
-        &mut self,
-        snapshot_signal_tx: tokio::sync::broadcast::Sender<()>,
-    ) -> impl std::future::Future<Output = Result<(), SnapshotManagerError>> + Send;
+    fn run(&mut self)
+        -> impl std::future::Future<Output = Result<(), SnapshotManagerError>> + Send;
 }
 
 /// Snapshot manager is responsible for persisting snapshot chunks to disk
@@ -296,10 +294,7 @@ where
         + Clone
         + 'static,
 {
-    async fn run(
-        &mut self,
-        snapshot_signal_tx: tokio::sync::broadcast::Sender<()>,
-    ) -> Result<(), SnapshotManagerError> {
+    async fn run(&mut self) -> Result<(), SnapshotManagerError> {
         if !self.enable_state_sync {
             tracing::info!("Snapshot manager is disabled. Exiting...");
             return Ok(());
@@ -366,11 +361,6 @@ where
                 futures::stream::empty::<Option<BlockWithSenders>>().boxed()
             }
         };
-
-        // signal to the abci client that it is ready to start now
-        if let Err(_) = snapshot_signal_tx.send(()) {
-            error!(target: "reth::cli", "Failed to send start signal to ABCI server");
-        }
 
         if missing_blocks > 0 {
             info!(target: "consensus::authority::snapshot_manager::run", "Starting historical sync from block {} to block {}", starting_block, latest_block_height);

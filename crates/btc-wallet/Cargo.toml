@@ -21,7 +21,7 @@ rand = { version = "0.6", features = ["std"] }
 secp256k1 = { version = "0.28", features = ["global-context", "rand", "rand-std", "recovery"] }
 serde = "1.0.171"
 thiserror = "1.0.43"
-tokio = { version = "1.37.0", features = ["full"] }
+tokio = { version = "1.45.0", features = ["full"] }
 tracing = "0.1.40"
 
 ## url
