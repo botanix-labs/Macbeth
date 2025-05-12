@@ -264,6 +264,7 @@ where
         tx_pool: Pool,
         abci_host: String,
         abci_port: u16,
+        mut start_signal_rx: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<(), tendermint_abci::Error> {
         let app = ABCIClient::new(
             self.storage.clone(),
@@ -308,6 +309,13 @@ where
         task_executor.spawn_critical(
             "ABCI Client",
             Box::pin(async move {
+                // wait for the signal before starting the server
+                if let Err(e) = start_signal_rx.recv().await {
+                    error!("Start signal channel was closed without sending signal: {:?}", e);
+                    panic!("Start signal channel was closed without sending signal: {:?}", e);
+                }
+
+                info!("Received start signal, starting ABCI server");
                 // we should panic here if cannot launch the ABCI server
                 server.listen().expect("to start server");
             }),

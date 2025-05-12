@@ -790,16 +790,25 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 }
             };
 
+        // create a oneshot channel to pass to the Snapshot Manager
+        let (start_signal_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+        let snapshot_signal_tx = start_signal_tx.clone();
+
         if let Some(mut snapshot_manager) = snapshot_manager {
             tracing::info!("Snapshot manager is enabled.");
             executor.spawn_critical(
                 "Snapshot Manager",
                 Box::pin(async move {
-                    if let Err(e) = snapshot_manager.run().await {
+                    if let Err(e) = snapshot_manager.run(snapshot_signal_tx).await {
                         error!(target: "reth::cli", "Snapshot Manager Error: {:?}", e);
                     }
                 }),
             );
+        } else {
+            // if no snapshot manager, send the signal immediately
+            if let Err(_) = snapshot_signal_tx.send(()) {
+                error!(target: "reth::cli", "Failed to send start signal to ABCI server");
+            }
         }
 
         if let Some(wallet_sync) = wallet_sync {
@@ -848,14 +857,17 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         }
 
         // NOTE: the node will block here until DKG has completed
+        let start_signal_tx_clone = start_signal_tx.clone();
         let abci_client_builder = abci_client_builder.expect("abci client builder exists");
         let fut = || async {
+            let start_signal_rx = start_signal_tx_clone.subscribe();
             abci_client_builder
                 .start_server(
                     &executor.clone(),
                     transaction_pool.clone(),
                     abci_host.to_string(),
                     *abci_port,
+                    start_signal_rx,
                 )
                 .await
         };
