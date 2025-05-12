@@ -1,10 +1,11 @@
-use crate::dkg::encryption::{DkgHandshakeManager, Error};
+use crate::dkg::{
+    encryption::{DkgHandshakeManager, Error},
+    SESSION_CONTEXT,
+};
 use bitcoin::secp256k1;
 use frost::keys::dkg::{round1, round2};
 use frost_secp256k1_tr as frost;
 use std::collections::BTreeMap;
-
-const SESSION_ID: &[u8] = b"test_session_id";
 
 const ROUND1_DKG: &[u8] = &[
     0, 35, 15, 138, 179, 2, 2, 120, 88, 85, 71, 235, 157, 87, 39, 38, 125, 191, 226, 130, 130, 109,
@@ -72,10 +73,37 @@ fn setup() -> (DkgHandshakeManager, DkgHandshakeManager, DkgHandshakeManager) {
     fed_members.insert(eve_addr, eve_pub);
 
     // Setup encryption layer for round one.
-    let alice =
-        DkgHandshakeManager::new(SESSION_ID, alice_addr, alice_sec, fed_members.clone()).unwrap();
-    let bob = DkgHandshakeManager::new(SESSION_ID, bob_addr, bob_sec, fed_members.clone()).unwrap();
-    let eve = DkgHandshakeManager::new(SESSION_ID, eve_addr, eve_sec, fed_members.clone()).unwrap();
+    let nonce = 0;
+
+    #[rustfmt::skip]
+    let alice = DkgHandshakeManager::new(
+        SESSION_CONTEXT,
+        nonce,
+        alice_addr,
+        alice_sec,
+        fed_members.clone(),
+    )
+    .unwrap();
+
+    #[rustfmt::skip]
+    let bob = DkgHandshakeManager::new(
+        SESSION_CONTEXT,
+        nonce, 
+        bob_addr, 
+        bob_sec,
+        fed_members.clone()
+    )
+    .unwrap();
+
+    #[rustfmt::skip]
+    let eve = DkgHandshakeManager::new(
+        SESSION_CONTEXT,
+        nonce,
+        eve_addr,
+        eve_sec,
+        fed_members.clone()
+    )
+    .unwrap();
 
     (alice, bob, eve)
 }
