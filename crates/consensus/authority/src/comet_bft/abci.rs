@@ -1701,9 +1701,6 @@ where
                     block_time,
                 ) {
                     Ok(block_with_context) => {
-                        // let block = block_with_context.sealed_block_with_peg.block();
-                        // let block_hash = block.hash_slow();
-                        // info!("Block built successfully, resulting block hash: {:?}", block_hash);
                         block_cache_write.insert(cbft_block_hash, block_with_context.clone());
 
                         debug!(
@@ -1781,6 +1778,9 @@ where
 
         let block_hash = block_with_context.sealed_block_with_peg.block().hash();
         self.metrics.commet_finalized_blocks.increment(1);
+
+        info!("Finalized block for height {}", request.height);
+
         ResponseFinalizeBlock {
             events: vec![],
             tx_results: exec_results,
