@@ -17,6 +17,7 @@ pub mod rpc {
     pub mod type_extensions;
     pub use btc_server::*;
 }
+pub mod botanix_client;
 pub mod config;
 pub mod federation_args;
 pub mod macros;

@@ -21,6 +21,7 @@ use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btcserverlib::{
     badarg,
+    botanix_client::{BotanixEthClient, Error as BotanixEthClientError},
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self, error::CoordinatorError},
     database, dkg,
@@ -108,6 +109,8 @@ pub enum Error {
     DkgStateMachine(#[from] dkg::Error),
     #[error("Dkg deserialization error: {0}")]
     DkgDeserialization(#[from] ciborium::de::Error<std::io::Error>),
+    #[error("Botanix Ethereum Client Error: {0}")]
+    BotanixEthClient(#[from] BotanixEthClientError),
 }
 
 // To status util to convert Results with top level errors to tonic::Status
@@ -141,6 +144,9 @@ impl<T, S: Into<Error> + Debug> ToStatus<T> for Result<T, S> {
                 Error::DkgStateMachine(dkg) => Err(internal!("Dkg state machine error: {}", dkg)),
                 Error::DkgDeserialization(de) => {
                     Err(internal!("Dkg deserialization error: {}", de))
+                }
+                Error::BotanixEthClient(de) => {
+                    Err(internal!("Botanix Ethereum Client error: {}", de))
                 }
             },
         }
@@ -211,6 +217,8 @@ struct App<BitcoinRpcApi> {
     fall_back_fee_rate: bitcoin::FeeRate,
     /// telemetry
     telemetry: Option<Arc<Telemetry>>,
+    /// Botanix Eth client
+    botanix_eth_client: BotanixEthClient,
 }
 
 impl<BitcoindClient> App<BitcoindClient>
@@ -410,6 +418,7 @@ where
             identifier: frost_identifier,
             dkg,
             frost_round1_nonces: Arc::new(Mutex::new(None)),
+            botanix_eth_client: BotanixEthClient::new(config.rpc_port)?,
             config,
             btc_signing_server_jwt_secret,
             min_signers,
@@ -905,6 +914,7 @@ where
             self.min_signers,
             &self.db,
             &self.identifier,
+            &self.botanix_eth_client,
         )
         .await
         .map_err(SigningError::Round1)
@@ -955,6 +965,7 @@ where
             &self.db,
             &self.identifier,
             &signing_nonces,
+            &self.botanix_eth_client,
         )
         .await
         .map_err(|e| {
@@ -1175,6 +1186,7 @@ where
             &self.db,
             self.min_signers,
             tracked_txs,
+            &self.botanix_eth_client,
         )
         .await
         .to_status()?;
@@ -1217,8 +1229,14 @@ where
             hex::encode(req.signing_session_id.clone())
         );
         let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let psbt = coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
-            .to_status()?;
+        let psbt = coordinator::get_to_sign(
+            &signing_session_id,
+            &self.db,
+            self.min_signers,
+            &self.botanix_eth_client,
+        )
+        .await
+        .to_status()?;
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
@@ -1254,7 +1272,9 @@ where
             &psbt,
             &self.db,
             self.min_signers,
+            &self.botanix_eth_client,
         )
+        .await
         .to_status()?;
 
         // if let Some(telemetry) = self.telemetry.as_ref() {
@@ -1290,7 +1310,9 @@ where
             &psbt,
             &self.db,
             self.min_signers,
+            &self.botanix_eth_client,
         )
+        .await
         .to_status()?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
@@ -1647,6 +1669,7 @@ mod tests {
             metrics_port: Some(8080),
             fee_rate_diff_percentage: 10,
             fall_back_fee_rate_sat_per_vbyte: 1000,
+            rpc_port: 5454,
         };
 
         let app = App::new(config, bitcoind_client, None).expect("btc server");

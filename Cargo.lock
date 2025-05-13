@@ -2323,6 +2323,7 @@ dependencies = [
  "displaydoc",
  "dotenvy",
  "env_logger",
+ "ethers",
  "frost-secp256k1-tr",
  "futures",
  "futures-util",
