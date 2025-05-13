@@ -19,6 +19,7 @@ pub struct LogArgs {
     #[arg(long = "log.stdout.format", value_name = "FORMAT", global = true, default_value_t = LogFormat::Terminal)]
     pub log_stdout_format: LogFormat,
 
+    // TODO: Remove `reth_authority_consensus=trace` when ready for wide audience.
     /// The filter to use for logs written to stdout.
     #[arg(
         long = "log.stdout.filter",
@@ -33,6 +34,7 @@ pub struct LogArgs {
     pub log_file_format: LogFormat,
 
     /// The filter to use for logs written to the log file.
+    // TODO: Remove `reth_authority_consensus=trace` when ready for wide audience.
     #[arg(
         long = "log.file.filter",
         value_name = "FILTER",
