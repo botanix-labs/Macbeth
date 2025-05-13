@@ -24,7 +24,7 @@ pub struct LogArgs {
         long = "log.stdout.filter",
         value_name = "FILTER",
         global = true,
-        default_value = "block_with_context=off"
+        default_value = "reth_authority_consensus=trace,block_with_context=off"
     )]
     pub log_stdout_filter: String,
 
@@ -37,7 +37,7 @@ pub struct LogArgs {
         long = "log.file.filter",
         value_name = "FILTER",
         global = true,
-        default_value = "debug,block_with_context=off"
+        default_value = "reth_authority_consensus=trace,block_with_context=trace"
     )]
     pub log_file_filter: String,
 
