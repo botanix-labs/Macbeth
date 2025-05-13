@@ -114,7 +114,7 @@ use tracing::{debug, error, info, instrument, trace, trace_span, warn};
 
 /// Consts
 const SUCCESS: u32 = 0;
-const ERROR: u32 = 1;
+const _ERROR: u32 = 1;
 
 // https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#verifystatus
 const _VERIFY_UNKNOWN: i32 = 0;
@@ -470,13 +470,6 @@ where
         );
 
         Ok(ndd_bytes)
-    }
-
-    pub(crate) fn non_deterministic_data_bytes(
-        &self,
-    ) -> Result<prost::bytes::Bytes, ConsensusError> {
-        self.non_deterministic_data()
-            .and_then(|ndd| self.serialize_non_deterministic_data_to_bytes(ndd))
     }
 
     pub(crate) fn validate_block(&self, block: &SealedBlock) -> ResponseProcessProposal {
@@ -2109,6 +2102,14 @@ mod tests {
         )
     }
 
+    fn non_deterministic_data_bytes(
+        client: &ABCIClientType,
+    ) -> Result<prost::bytes::Bytes, ConsensusError> {
+        client
+            .non_deterministic_data()
+            .and_then(|ndd| client.serialize_non_deterministic_data_to_bytes(ndd))
+    }
+
     #[test]
     #[should_panic(expected = "Chain ID mismatch")]
     fn test_init_chain_should_panic_if_chain_id_mismatch() {
@@ -2227,7 +2228,7 @@ mod tests {
 
         let mut request = RequestProcessProposal::default();
 
-        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
+        let ndd_bytes = non_deterministic_data_bytes(&abci_client).expect("to have ndd");
 
         request.txs = vec![ndd_bytes];
 
@@ -2247,7 +2248,7 @@ mod tests {
         let abci_client = abci_client_builder();
 
         // first tx should be non-deterministic data
-        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
+        let ndd_bytes = non_deterministic_data_bytes(&abci_client).expect("to have ndd");
 
         // second tx should be a signed transaction
         let mut tx_generator = TransactionGenerator::new(thread_rng());
@@ -2277,7 +2278,7 @@ mod tests {
 
         let mut request = RequestFinalizeBlock::default();
 
-        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
+        let ndd_bytes = non_deterministic_data_bytes(&abci_client).expect("to have ndd");
 
         request.txs = vec![ndd_bytes.clone()];
 
@@ -2314,7 +2315,7 @@ mod tests {
         let mut request = RequestFinalizeBlock::default();
 
         // first tx should be non-deterministic data
-        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
+        let ndd_bytes = non_deterministic_data_bytes(&abci_client).expect("to have ndd");
 
         // second tx should be a signed transaction
         let mut tx_generator = TransactionGenerator::new(thread_rng());
