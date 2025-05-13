@@ -720,7 +720,7 @@ where
             return ResponseOfferSnapshot { result: SnapshotOfferResult::Unknown as i32 };
         };
 
-        span.record("height", snapshot.height);
+        tracing::Span::current().record("height", snapshot.height);
 
         // ensure no historical sync is ongoing
         let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
