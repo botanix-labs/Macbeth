@@ -20,7 +20,12 @@ pub struct LogArgs {
     pub log_stdout_format: LogFormat,
 
     /// The filter to use for logs written to stdout.
-    #[arg(long = "log.stdout.filter", value_name = "FILTER", global = true, default_value = "")]
+    #[arg(
+        long = "log.stdout.filter",
+        value_name = "FILTER",
+        global = true,
+        default_value = "block_with_context=trace"
+    )]
     pub log_stdout_filter: String,
 
     /// The format to use for logs written to the log file.
@@ -28,7 +33,12 @@ pub struct LogArgs {
     pub log_file_format: LogFormat,
 
     /// The filter to use for logs written to the log file.
-    #[arg(long = "log.file.filter", value_name = "FILTER", global = true, default_value = "debug")]
+    #[arg(
+        long = "log.file.filter",
+        value_name = "FILTER",
+        global = true,
+        default_value = "debug,block_with_context=off"
+    )]
     pub log_file_filter: String,
 
     /// The path to put log files in.

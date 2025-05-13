@@ -29,7 +29,7 @@ pub(crate) mod authority_execution_utils {
 
     use std::sync::Arc;
     use tendermint_proto::google::protobuf::Timestamp;
-    use tracing::{info, trace};
+    use tracing::{info, instrument, trace};
 
     use crate::comet_bft::abci::BlockWithContext;
 
@@ -37,6 +37,7 @@ pub(crate) mod authority_execution_utils {
     ///
     /// This returns bundle state, block, and gas used.
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all, level = "trace")]
     pub(crate) fn build_and_execute<BF, DB>(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
@@ -53,6 +54,18 @@ pub(crate) mod authority_execution_utils {
         BF: BitcoindFactory + Clone + Unpin + 'static,
         DB: Database,
     {
+        let start_execution_time = std::time::Instant::now();
+
+        info!(
+            block_time = timestamp.seconds,
+            transactions_count = transactions.len(),
+            block_fee_recipient_address = %block_fee_recipient_address,
+            aggregated_public_key = %agg_pk,
+            %bitcoin_checkpoint_block_hash,
+            "Build and execute block with {} transactions",
+            transactions.len()
+        );
+
         // Construct block and header
         let header = build_header_template(
             &transactions,
@@ -120,6 +133,17 @@ pub(crate) mod authority_execution_utils {
 
         let block_with_context =
             BlockWithContext { sealed_block_with_peg, exec_outcome, trie_updates };
+
+        info!(
+            block_hash = %block_with_context.sealed_block_with_peg.block().hash_slow(),
+            block_time = start_execution_time.elapsed().as_secs_f32(),
+            eth_block_height = block_with_context.sealed_block_with_peg.block().number,
+            transactions_count = block_with_context.sealed_block_with_peg.block().body.len(),
+            "block execution completed in {} seconds",
+            start_execution_time.elapsed().as_secs_f64()
+        );
+
+        trace!(target: "block_with_context", ?block_with_context, "block_with_context");
 
         Ok(block_with_context)
     }
