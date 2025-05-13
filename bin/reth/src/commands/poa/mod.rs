@@ -101,6 +101,17 @@ use crate::{
     payload::PayloadBuilderService,
 };
 
+/// Adds a panic hook to log the panic information
+pub fn set_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        let payload = panic_info.payload().downcast_ref::<&str>().cloned().unwrap_or_default();
+        let location = panic_info.location().map(|l| l.to_string());
+
+        tracing::error!(panic.payload = payload, panic.location = location, "Uncaught panic");
+        std::process::exit(1);
+    }));
+}
+
 /// Start the node
 #[derive(Debug, Parser)]
 pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
@@ -245,6 +256,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     /// Execute `poa` command
     pub async fn execute(&self, ctx: CliContext) -> eyre::Result<()> {
         tracing::info!(target: "reth::cli", version = ?version::SHORT_VERSION, "Starting reth with poa");
+        set_panic_hook();
 
         let Self {
             datadir,
