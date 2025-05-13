@@ -110,7 +110,7 @@ use crate::{
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
     AuthorityConsensus, Storage,
 };
-use tracing::{debug, error, info, instrument, trace, trace_span, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 /// Consts
 const SUCCESS: u32 = 0;
@@ -712,7 +712,6 @@ where
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#offersnapshot
     #[instrument(level = "trace", ret, skip(self, request), fields(height))]
     fn offer_snapshot(&self, request: RequestOfferSnapshot) -> ResponseOfferSnapshot {
-        let span = trace_span!("offer_snapshot").entered();
         trace!(?request, "offer_snapshot request");
 
         let Some(snapshot) = request.snapshot else {
