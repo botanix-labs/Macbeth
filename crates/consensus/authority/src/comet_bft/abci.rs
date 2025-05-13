@@ -2315,7 +2315,9 @@ mod tests {
         let mut request = RequestFinalizeBlock::default();
 
         // first tx should be non-deterministic data
-        let ndd_bytes = abci_client.non_deterministic_data_bytes().expect("to have ndd");
+        let ndd = abci_client.non_deterministic_data().expect("to have ndd");
+        let ndd_bytes =
+            abci_client.serialize_non_deterministic_data_to_bytes(ndd).expect("to serialize ndd");
 
         // second tx should be a signed transaction
         let mut tx_generator = TransactionGenerator::new(thread_rng());
