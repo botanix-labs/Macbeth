@@ -16,7 +16,7 @@ use btcserverlib::{
     pegout_id::PegoutId,
 };
 use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{DataParser, Error as CompressorError, SerializationType};
 use reth_db::{
@@ -40,10 +40,8 @@ use uuid::Uuid;
 
 const MAX_BLOCK_TS_CUTOFF_DURATION_MS: u64 = 30 * 24 * 60 * 60 * 3; // 3 months
 
-lazy_static! {
-    static ref MAX_BLOCK_TS_CUTOFF_DURATION: Duration =
-        Duration::from_secs(MAX_BLOCK_TS_CUTOFF_DURATION_MS);
-}
+static MAX_BLOCK_TS_CUTOFF_DURATION: Lazy<Duration> =
+    Lazy::new(|| Duration::from_secs(MAX_BLOCK_TS_CUTOFF_DURATION_MS));
 
 #[derive(Debug, thiserror::Error)]
 /// Wallet state synchronization errors

@@ -315,12 +315,11 @@ pub(crate) async fn get_block_pegouts(
     let mut pegouts = Vec::new();
     match client.block_by_number(block) {
         Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
-            if !is_block_age_acceptable(
-                block.header.timestamp,
-                max_cutoff_age.unwrap_or(Duration::ZERO),
-            ) {
-                warn!("Block number {:?} is too old, ignoring ...", block.header.number);
-                return Ok(pegouts);
+            if let Some(max_cutoff_age) = max_cutoff_age {
+                if !is_block_age_acceptable(block.header.timestamp, max_cutoff_age) {
+                    warn!("Block number {:?} is too old, ignoring ...", block.header.number);
+                    return Ok(pegouts);
+                }
             }
             let transactions_by_block = match client
                 .transactions_by_block(BlockHashOrNumber::Number(block.header.number))

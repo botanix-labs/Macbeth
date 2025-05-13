@@ -30,9 +30,11 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 hex = "0.4.3"
 
-lazy_static = "1.4.0"
 metrics = { workspace = true }
 metrics-util = { workspace = true }
+
+# lazy
+once_cell = { workspace = true }
 prost = "0.13.3"
 reth-basic-payload-builder = { workspace = true }
 
