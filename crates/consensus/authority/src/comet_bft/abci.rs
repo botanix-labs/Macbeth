@@ -100,6 +100,10 @@ pub enum ApplySnapshotResult {
     RejectSnapshot = 5,
 }
 
+use super::proto_debug::{
+    RequestApplySnapshotChunkTruncatedDebug, RequestProcessProposalTruncatedDebug,
+    ResponseLoadSnapshotChunkTruncatedDebug, ResponsePrepareProposalTruncatedDebug,
+};
 use crate::{
     builder::BitcoinCheckpoint,
     comet_bft::{
@@ -894,7 +898,7 @@ where
 
                 let response = ResponseLoadSnapshotChunk::default();
 
-                trace!(?response, "load_snapshot_chunk response");
+                trace!("return={:?}", response);
 
                 return response;
             }
@@ -906,7 +910,7 @@ where
 
             let response = ResponseLoadSnapshotChunk::default();
 
-            trace!(?response, "load_snapshot_chunk response");
+            trace!("return={:?}", response);
 
             return response;
         }
@@ -924,7 +928,7 @@ where
 
             let response = ResponseLoadSnapshotChunk::default();
 
-            trace!(?response, "load_snapshot_chunk response");
+            trace!("return={:?}", response);
 
             return response;
         }
@@ -950,7 +954,7 @@ where
 
                             let response = ResponseLoadSnapshotChunk::default();
 
-                            trace!(?response, "load_snapshot_chunk response");
+                            trace!("return={:?}", response);
 
                             return response;
                         }
@@ -982,7 +986,7 @@ where
 
                                         let response = ResponseLoadSnapshotChunk::default();
 
-                                        trace!(?response, "load_snapshot_chunk response");
+                                        trace!("return={:?}", response);
 
                                         return response;
                                     }
@@ -1037,17 +1041,7 @@ where
             }
         };
 
-        // TODO: Implement tracing::Value
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let debug_response = format!(
-                "ResponseLoadSnapshotChunk {{ chunk: [{}, {}, ...({} more)] }}",
-                response.chunk[0],
-                response.chunk[1],
-                response.chunk.len() - 2
-            );
-
-            trace!(debug_response, "load_snapshot_chunk response");
-        }
+        trace!("return={:?}", ResponseLoadSnapshotChunkTruncatedDebug(&response));
 
         response
     }
@@ -1058,19 +1052,7 @@ where
         &self,
         request: RequestApplySnapshotChunk,
     ) -> ResponseApplySnapshotChunk {
-        // TODO: Implement tracing::Value
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let debug_request = format!(
-                "ResponseLoadSnapshotChunk {{ index: {}, chunk: [{}, {}, ...({} more)], sender: \"{}\" }}",
-                request.index,
-                request.chunk[0],
-                request.chunk[1],
-                request.chunk.len(),
-                request.sender
-            );
-
-            trace!(debug_request, "apply_snapshot_chunk request");
-        }
+        trace!(debug_request = ?RequestApplySnapshotChunkTruncatedDebug(&request), "apply_snapshot_chunk request");
 
         // ensure no historical sync is ongoing
         let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
@@ -1330,7 +1312,7 @@ where
 
             let response = ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
 
-            trace!(?response, "prepare_proposal response");
+            trace!("return={:?}", response);
 
             return response;
         }
@@ -1401,14 +1383,7 @@ where
 
                         let response = ResponsePrepareProposal { txs };
 
-                        if tracing::enabled!(tracing::Level::TRACE) {
-                            let debug_response = format!(
-                                "ResponsePrepareProposal {{ txs: [ {} ] }}",
-                                response.txs.len()
-                            );
-
-                            trace!(debug_response, "prepare_proposal response");
-                        }
+                        trace!("return={:?}", ResponsePrepareProposalTruncatedDebug(&response));
 
                         response
                     }
@@ -1428,7 +1403,7 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
     #[instrument(level = "trace", ret, skip(self, request), fields(cfbt_block.height = request.height, cfbt_block.hash = hex::encode(&request.hash)))]
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
-        trace!(?request, "process_proposal request");
+        trace!(request = ?RequestProcessProposalTruncatedDebug(&request), "process_proposal request");
 
         let agg_pk = match self.aggregate_public_key() {
             Ok(pk) => pk,
@@ -1552,14 +1527,16 @@ where
                 }
                 match self.block_cache.write() {
                     Ok(mut cache) => {
-                        let eth_block_hash = block.hash_slow();
+                        if tracing::enabled!(tracing::Level::DEBUG) {
+                            let eth_block_hash = block.hash_slow();
 
-                        debug!(
-                            %cbft_block_hash,
-                            eth_block_hash = hex::encode(eth_block_hash),
-                            "update block cache for key {}",
-                            cbft_block_hash,
-                        );
+                            debug!(
+                                %cbft_block_hash,
+                                eth_block_hash = hex::encode(eth_block_hash),
+                                "update block cache for key {}",
+                                cbft_block_hash,
+                            );
+                        }
 
                         cache.insert(cbft_block_hash, block_with_context);
                     }
