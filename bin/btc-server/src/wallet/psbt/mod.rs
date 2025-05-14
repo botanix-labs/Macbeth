@@ -1,3 +1,5 @@
+pub mod validate;
+
 use std::{borrow::BorrowMut, collections::BTreeMap};
 
 use bitcoin::{
@@ -9,6 +11,8 @@ use frost_secp256k1_tr as frost;
 use thiserror::Error;
 
 use crate::database::version::UtxoVersion;
+use crate::pegout_id;
+// TODO: Spilt into modules: output, input, transaction...
 
 // input keys
 const ETH_ADDRESS_KEY_TYPE: u8 = 1;
@@ -199,15 +203,22 @@ pub trait PsbtInputExt: BorrowMut<PsbtInput> {
 }
 impl PsbtInputExt for PsbtInput {}
 
-pub type PegoutId = [u8; 36];
+pub type PegoutIdBytes = [u8; 36];
+
+#[derive(Debug, thiserror::Error)]
+pub enum PsbtOutputExtError {
+    /// Invalid pegout id bytes encoding
+    #[error("Invalid pegout ID bytes")]
+    InvalidPegoutIdBytes,
+}
 
 pub trait PsbtOutputExt: BorrowMut<PsbtOutput> {
-    fn set_pegout_id(&mut self, pegout_id: PegoutId) {
+    fn set_pegout_id_bytes(&mut self, pegout_id: PegoutIdBytes) {
         // Key stores no keydata, only the type value
         self.borrow_mut().proprietary.insert(PEGOUT_ID_KEY.clone(), pegout_id.to_vec());
     }
 
-    fn pegout_id(&self) -> Option<PegoutId> {
+    fn optional_pegout_id_bytes(&self) -> Option<PegoutIdBytes> {
         self.borrow().proprietary.get(&PEGOUT_ID_KEY).and_then(|b| {
             if b.len() == 36 {
                 let mut ret = [0u8; 36];
@@ -218,13 +229,24 @@ pub trait PsbtOutputExt: BorrowMut<PsbtOutput> {
             }
         })
     }
+
+    fn pegout_id_bytes(&self) -> Result<Option<PegoutIdBytes>, PsbtOutputExtError> {
+        self.borrow()
+            .proprietary
+            .get(&PEGOUT_ID_KEY)
+            .map(|b| {
+                PegoutIdBytes::try_from(b.as_slice())
+                    .map_err(|_| PsbtOutputExtError::InvalidPegoutIdBytes)
+            })
+            .transpose()
+    }
 }
 impl PsbtOutputExt for PsbtOutput {}
 
 pub trait PsbtExt: BorrowMut<Psbt> {
     /// Get all pegouts ids from this PSBT
-    fn pegout_ids(&self) -> Vec<PegoutId> {
-        self.borrow().outputs.iter().filter_map(|o| o.pegout_id()).collect()
+    fn pegout_ids(&self) -> Vec<PegoutIdBytes> {
+        self.borrow().outputs.iter().filter_map(|o| o.optional_pegout_id_bytes()).collect()
     }
 
     /// Converts this PSBT into a vector of Frost signing packages.
@@ -315,7 +337,7 @@ pub(crate) struct InputDTO {
 /// Create psbt with proprietary tweak fields
 pub(crate) fn create_psbt(
     inputs: Vec<InputDTO>,
-    outputs: Vec<(TxOut, PegoutId)>,
+    outputs: Vec<(TxOut, PegoutIdBytes)>,
     change: Option<TxOut>,
 ) -> Psbt {
     let mut output: Vec<TxOut> = outputs.iter().map(|(out, _)| out).cloned().collect();
@@ -352,7 +374,7 @@ pub(crate) fn create_psbt(
     for (psbt_output, (_out, pegout_id)) in psbt.outputs.iter_mut().zip(outputs.iter()) {
         // Pegout ids are stored in the proprietary field to be checked and validated
         // by peers
-        psbt_output.set_pegout_id(*pegout_id);
+        psbt_output.set_pegout_id_bytes(*pegout_id);
     }
 
     psbt

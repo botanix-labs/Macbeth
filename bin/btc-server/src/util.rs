@@ -435,11 +435,14 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     if psbt.outputs.len() != psbt.unsigned_tx.output.len() {
         error!(
             target: "btc_server::util::validate_outputs",
-            "psbt.outputs length ({}) does not match psbt.unsigned_tx.output length ({})", 
-            psbt.outputs.len(), 
+            "psbt.outputs length ({}) does not match psbt.unsigned_tx.output length ({})",
+            psbt.outputs.len(),
             psbt.unsigned_tx.output.len()
         );
-        return Err(ValidateOutputsError::OutputCountMismatch(psbt.outputs.len(), psbt.unsigned_tx.output.len()));
+        return Err(ValidateOutputsError::OutputCountMismatch(
+            psbt.outputs.len(),
+            psbt.unsigned_tx.output.len(),
+        ));
     }
 
     // check aggregated public key exists
@@ -450,7 +453,7 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     let mut change_output: Option<usize> = None;
 
     for (idx, output) in psbt.outputs.iter().enumerate() {
-        match output.pegout_id() {
+        match output.optional_pegout_id_bytes() {
             Some(id) => psbt_pegout_ids.push(
                 PegoutId::from_bytes(&id).map_err(|_e| ValidateOutputsError::InvalidPegoutId)?,
             ),
@@ -607,7 +610,7 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
 
@@ -640,7 +643,7 @@ mod tests {
 
         let pegout_id = store_pending_pegout(&db);
         let mut psbt = create_psbt(2, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo1 = database::Utxo {
@@ -671,9 +674,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
-            psbt.unsigned_tx.output.len() as u64 +
-            100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
+            / psbt.unsigned_tx.output.len() as u64
+            + 100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
@@ -695,7 +698,7 @@ mod tests {
 
         let pegout_id = store_pending_pegout(&db);
         let mut psbt = create_psbt(2, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo1 = database::Utxo {
             outpoint: tx.input[0].previous_output,
@@ -761,7 +764,7 @@ mod tests {
         let pegout_id = store_pending_pegout(&db);
 
         let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let res = validate_psbt(&psbt, ROUND1, 2, &db);
         assert!(res.is_err());
@@ -794,7 +797,7 @@ mod tests {
         let pegout_id = store_pending_pegout(&db);
 
         let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let eth = eth_vector_to_fixed_bytes(vec![0u8; 20]);
@@ -829,7 +832,7 @@ mod tests {
         let pegout_id = store_pending_pegout(&db);
 
         let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
         // use utxo value to avoid absurdly high fee rate error
@@ -867,7 +870,7 @@ mod tests {
         let pegout_id = store_pending_pegout(&db);
 
         let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
             outpoint: tx.input[0].previous_output,
@@ -891,7 +894,7 @@ mod tests {
         db.flush().unwrap();
 
         let pegout_id = store_pending_pegout(&db);
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let (shares, _pk_package) = trusted_dealer_setup(2, 3);
         let key_package1 = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -922,7 +925,7 @@ mod tests {
         db.flush().unwrap();
 
         let pegout_id = store_pending_pegout(&db);
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let res = validate_psbt(&psbt, ROUND2, 2, &db);
         assert!(res.is_ok());
@@ -941,7 +944,7 @@ mod tests {
         let pegout_id = store_pending_pegout(&db);
 
         let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
@@ -984,7 +987,7 @@ mod tests {
         db.set_key_package(key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
         psbt.inputs[0].set_partial_signature(frost_id!(1), &sig_share2);
         // restore the utxos
         db.store_utxos(&[&utxo]).unwrap();
@@ -1001,7 +1004,7 @@ mod tests {
         db.set_key_package(key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
@@ -1016,7 +1019,7 @@ mod tests {
         db.set_key_package(key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
@@ -1034,7 +1037,7 @@ mod tests {
         db.set_key_package(key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
@@ -1064,7 +1067,7 @@ mod tests {
         let pegout_id = store_pending_pegout(&db);
 
         let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
         let utxo = database::Utxo {
@@ -1089,8 +1092,8 @@ mod tests {
         };
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
-        dup_psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
-        dup_psbt.outputs[1].set_pegout_id(pegout_id.as_bytes());
+        dup_psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
+        dup_psbt.outputs[1].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db);
         assert!(res.is_err());
@@ -1102,7 +1105,7 @@ mod tests {
         // Its fine for the same exact output to the present multiple times, as a user can have
         // multiple pegouts but they should have different pegout ids
         let pegout_id2 = store_pending_pegout(&db);
-        dup_psbt.outputs[1].set_pegout_id(pegout_id2.as_bytes());
+        dup_psbt.outputs[1].set_pegout_id_bytes(pegout_id2.as_bytes());
         let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
     }
@@ -1120,7 +1123,7 @@ mod tests {
 
         let pegout_id = store_pending_pegout(&db);
         let mut psbt = create_psbt(2, 1, Some(get_change(&db)));
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         // Add a second change output
         let second_change_output = get_change(&db);
@@ -1172,7 +1175,7 @@ mod tests {
 
         // NOTE: We set the pegout destination to the aggregated key package;
         // the validation function must not mistaken it for the change output.
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
         psbt.unsigned_tx.output[0].script_pubkey = get_change(&db).script_pubkey;
 
         let tx = psbt.clone().extract_tx().expect("valid tx");
@@ -1212,7 +1215,7 @@ mod tests {
 
         // Create a base PSBT
         let mut psbt = create_psbt(1, 1, Some(get_change(&db))); // 1 output + 1 change = 2 outputs in psbt.outputs
-        
+
         // Simulate a mismatch: psbt.outputs has 2 elements, psbt.unsigned_tx.output will have 1 extra
         let original_outputs_len = psbt.outputs.len();
         psbt.unsigned_tx.output.push(bitcoin::TxOut {
@@ -1221,7 +1224,10 @@ mod tests {
         });
         let new_unsigned_tx_outputs_len = psbt.unsigned_tx.output.len();
 
-        assert_ne!(original_outputs_len, new_unsigned_tx_outputs_len, "Test setup error: output lengths should be different");
+        assert_ne!(
+            original_outputs_len, new_unsigned_tx_outputs_len,
+            "Test setup error: output lengths should be different"
+        );
 
         let res = validate_outputs(&psbt, &db);
         assert!(res.is_err(), "validate_outputs should fail due to output count mismatch");
@@ -1237,9 +1243,9 @@ mod tests {
 
         // Test the other way around: psbt.outputs is longer
         let mut psbt2 = create_psbt(1, 0, None); // 0 outputs in psbt.outputs
-        // psbt2.unsigned_tx.output is initially empty from create_psbt with 0 outputs
-        // Add one to psbt.outputs to create a mismatch where psbt.outputs is longer
-        psbt2.outputs.push(Default::default()); 
+                                                 // psbt2.unsigned_tx.output is initially empty from create_psbt with 0 outputs
+                                                 // Add one to psbt.outputs to create a mismatch where psbt.outputs is longer
+        psbt2.outputs.push(Default::default());
         // Now psbt2.outputs.len() = 1, psbt2.unsigned_tx.output.len() = 0
 
         let res2 = validate_outputs(&psbt2, &db);
@@ -1250,7 +1256,10 @@ mod tests {
                 assert_eq!(len_unsigned_tx_output, 0);
             }
             other_error => {
-                panic!("Expected OutputCountMismatch for psbt.outputs longer, got {:?}", other_error);
+                panic!(
+                    "Expected OutputCountMismatch for psbt.outputs longer, got {:?}",
+                    other_error
+                );
             }
         }
     }
@@ -1543,7 +1552,7 @@ mod tests {
         // create a psbt with the tracked tx so it has a conflicting input
         let mut psbt = Psbt::from_unsigned_tx(tx).expect("valid psbt");
         // set the tracked pegout id
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let res = has_conflicting_input(&db, &psbt);
         assert!(res.is_ok());
@@ -1575,7 +1584,7 @@ mod tests {
 
         // create a psbt with the pegout request from the tracked tx
         let mut psbt = create_psbt(1, 1, None);
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let res = has_conflicting_input(&db, &psbt);
         // should be an error since the psbt does not have a conflicting input
@@ -1623,7 +1632,7 @@ mod tests {
 
         // create a psbt with the finalized pegout id
         let mut psbt = create_psbt(1, 1, None);
-        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        psbt.outputs[0].set_pegout_id_bytes(pegout_id.as_bytes());
 
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
         let res_error = res.unwrap_err().to_string();

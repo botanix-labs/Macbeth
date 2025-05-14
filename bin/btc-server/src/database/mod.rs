@@ -19,7 +19,9 @@ use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
 pub mod error;
+pub(crate) mod psbt;
 pub mod version;
+
 pub use error::Error;
 use version::UtxoVersion;
 
@@ -701,7 +703,6 @@ impl Db {
     }
 
     /// Get a pending pegout by id
-    #[allow(dead_code)]
     pub fn get_pending_pegout(
         &self,
         id: &PegoutId,
@@ -760,6 +761,14 @@ impl Db {
     /// Clears all pending pegouts from the database.
     pub fn clear_pending_pegouts(&self) -> Result<(), Error> {
         Ok(self.pending_pegouts.clear()?)
+    }
+
+    /// Get a finalized pegout by id
+    pub fn get_finalized_pegout(&self, id: &PegoutId) -> Result<Option<FinalizedPegout>, Error> {
+        Ok(self
+            .finalized_pegout_ids
+            .get(id.as_bytes())?
+            .map(|b| ciborium::de::from_reader(b.as_ref()).expect("corrupt db: finalized pegout")))
     }
 
     /// Get all finalized pegouts

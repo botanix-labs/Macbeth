@@ -1,6 +1,6 @@
 use crate::{
     database::version::UtxoVersion,
-    wallet::{psbt::PegoutId as PegoutIdBytes, TAPROOT_KEYSPEND_SATISFACTION_WEIGHT},
+    wallet::{psbt::PegoutIdBytes, TAPROOT_KEYSPEND_SATISFACTION_WEIGHT},
 };
 use bdk_wallet::coin_selection::{
     CoinSelectionAlgorithm, InsufficientFunds, OldestFirstCoinSelection,

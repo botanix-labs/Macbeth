@@ -994,7 +994,7 @@ where
         let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
         info!("[get_round2_signing_package] Found {} outputs in the psbt", psbt.outputs.len());
         for output in psbt.outputs.iter() {
-            if let Some(pegout_id) = output.pegout_id() {
+            if let Some(pegout_id) = output.optional_pegout_id_bytes() {
                 let pegout_id = PegoutId::from_bytes(&pegout_id)
                     .map_err(|_| {
                         SigningError::Round2(SigningRound2Error::FailedToDeserializePegoutId)
