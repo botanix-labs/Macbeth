@@ -1669,8 +1669,8 @@ where
                 };
 
                 // get txs skipping the first non-deterministic data tx
-                let txs_iter = txs_bytes.clone().into_iter().skip(1);
-                let txs = if txs_iter.clone().next().is_none() {
+                let mut txs_iter = txs_bytes.into_iter();
+                let txs = if txs_iter.next().is_none() {
                     vec![]
                 } else {
                     match transactions_signed_from_bytes(txs_iter) {
