@@ -101,8 +101,9 @@ pub enum ApplySnapshotResult {
 }
 
 use super::proto_debug::{
-    RequestApplySnapshotChunkTruncatedDebug, RequestProcessProposalTruncatedDebug,
-    ResponseLoadSnapshotChunkTruncatedDebug, ResponsePrepareProposalTruncatedDebug,
+    RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
+    RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
+    ResponsePrepareProposalTruncatedDebug,
 };
 use crate::{
     builder::BitcoinCheckpoint,
@@ -1558,7 +1559,7 @@ where
     ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
     #[instrument(level = "trace", skip(self, request), fields(cfbt_block.height = request.height, cfbt_block.hash = hex::encode(&request.hash)))]
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
-        trace!("request={:?}", request);
+        trace!("request={:?}", RequestFinalizeBlockTruncatedDebug(&request));
 
         if request.txs.is_empty() {
             panic!("No transactions in finalize_block request, but expected at least NDD tx");
@@ -1847,13 +1848,20 @@ where
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
                     ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)) => {
+                        let _span = tracing::trace_span!(
+                            "ABCI driver commit block",
+                            eth_block_height =
+                                sealed_block_with_context.sealed_block_with_peg.block().number,
+                            eith_block_hash =
+                                %sealed_block_with_context.sealed_block_with_peg.block().hash(),
+                        )
+                        .entered();
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
                         let sealed_block_with_senders = sealed_block_with_peg.block().to_owned();
                         let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
                         let trie_updates = sealed_block_with_context.trie_updates;
-                        info!("Inserting block into db: {:?}", sealed_block_with_senders.number);
 
                         let executed_block = ExecutedBlock::new(
                             Arc::new(sealed_block_with_senders.block.clone()),
@@ -1893,7 +1901,6 @@ where
                         self.blockchain_provider
                             .on_forkchoice_update_received(&ForkchoiceState::default());
 
-                        info!("Block height from sealed block: {:?}", block_height);
                         self.blockchain_provider.set_canonical_head(new_header.clone());
                         self.blockchain_provider.set_safe(new_header.clone());
                         self.blockchain_provider.set_finalized(new_header.clone());
@@ -1901,6 +1908,8 @@ where
                         self.blockchain_provider
                             .canonical_in_memory_state()
                             .remove_persisted_blocks(block_height - 1);
+
+                        debug!("Ethereum block {} commited to the state", block_height);
 
                         let chain = Chain::new(
                             vec![sealed_block_with_senders].into_iter(),

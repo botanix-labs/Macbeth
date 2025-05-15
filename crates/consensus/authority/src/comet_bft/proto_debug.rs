@@ -24,15 +24,20 @@ where
         let is_truncated = dbg_len < self.inner.len();
 
         f.write_str("[")?;
-        for (i, entry) in self.inner[..dbg_len].iter().enumerate() {
-            f.write_fmt(format_args!("{:?}", &entry))?;
-            if i != dbg_len - 1 {
-                f.write_str(", ")?;
-            }
-        }
 
-        if is_truncated {
-            f.write_fmt(format_args!(", ...({} more)", self.inner.len() - dbg_len))?;
+        if self.max_len == 0 {
+            f.write_fmt(format_args!(" {} items ", self.inner.len()))?;
+        } else {
+            for (i, entry) in self.inner[..dbg_len].iter().enumerate() {
+                f.write_fmt(format_args!("{:?}", &entry))?;
+                if i != dbg_len - 1 {
+                    f.write_str(", ")?;
+                }
+            }
+
+            if is_truncated {
+                f.write_fmt(format_args!(", ...({} more)", self.inner.len() - dbg_len))?;
+            }
         }
 
         f.write_str("]")
@@ -97,5 +102,26 @@ impl Debug for ResponseLoadSnapshotChunkTruncatedDebug<'_> {
         let chunk = TruncatedSlice::new(self.0.chunk.as_ref(), 3);
 
         f.debug_struct("ResponseLoadSnapshotChunk").field("chunk", &chunk).finish()
+    }
+}
+
+pub(crate) struct RequestFinalizeBlockTruncatedDebug<'a>(
+    pub &'a tendermint_proto::abci::RequestFinalizeBlock,
+);
+
+impl Debug for RequestFinalizeBlockTruncatedDebug<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let txs = TruncatedSlice::new(self.0.txs.as_slice(), 0);
+
+        f.debug_struct("RequestFinalizeBlock")
+            .field("txs", &txs)
+            .field("decided_last_commit", &self.0.decided_last_commit)
+            .field("misbehavior", &self.0.misbehavior)
+            .field("hash", &self.0.hash)
+            .field("height", &self.0.height)
+            .field("time", &self.0.time)
+            .field("next_validators_hash", &self.0.next_validators_hash)
+            .field("proposer_address", &self.0.proposer_address)
+            .finish()
     }
 }
