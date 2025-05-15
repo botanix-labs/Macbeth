@@ -1404,6 +1404,7 @@ where
     #[instrument(level = "trace", ret, skip(self, request), fields(cfbt_block.height = request.height, cfbt_block.hash = hex::encode(&request.hash)))]
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
         trace!(request = ?RequestProcessProposalTruncatedDebug(&request), "process_proposal request");
+        info!("process_proposal request.txs.len()={:?}", request.txs.len());
 
         let agg_pk = match self.aggregate_public_key() {
             Ok(pk) => pk,
@@ -1530,7 +1531,7 @@ where
                         if tracing::enabled!(tracing::Level::DEBUG) {
                             let eth_block_hash = block.hash_slow();
 
-                            debug!(
+                            info!(
                                 %cbft_block_hash,
                                 eth_block_hash = hex::encode(eth_block_hash),
                                 "update block cache for key {}",
@@ -1538,6 +1539,10 @@ where
                             );
                         }
 
+                        info!(
+                            "app_hash in process_proposal: {:?}",
+                            hex::encode(block_with_context.sealed_block_with_peg.block().hash())
+                        );
                         cache.insert(cbft_block_hash, block_with_context);
                     }
                     Err(e) => {
@@ -1559,6 +1564,7 @@ where
     #[instrument(level = "trace", skip(self, request), fields(cfbt_block.height = request.height, cfbt_block.hash = hex::encode(&request.hash)))]
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
         trace!("request={:?}", request);
+        info!("txs len={:?}", request.txs.len());
 
         if request.txs.is_empty() {
             panic!("No transactions in finalize_block request, but expected at least NDD tx");
@@ -1748,6 +1754,8 @@ where
         self.metrics.commet_finalized_blocks.increment(1);
 
         info!("Finalized block for height {}", request.height);
+
+        info!("app_hash: {:?}", hex::encode(block_hash.0));
 
         ResponseFinalizeBlock {
             events: vec![],

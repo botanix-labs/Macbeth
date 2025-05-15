@@ -455,6 +455,8 @@ where
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
 
+        info!(tx_hash = %tx_hash, initial_btc_checkpoint_hash = %consensus_pkg.bitcoin_checkpoint.0.block_hash(), initial_btc_checkpoint_height = %consensus_pkg.bitcoin_checkpoint.1, "PeginCheck: Initial Bitcoin Checkpoint for tx");
+
         // Check pegins.
         let mut pegins = vec![];
         let mut pegouts = vec![];
@@ -494,6 +496,7 @@ where
                                         revert_amount: pegin_data.amount,
                                     })?;
                                 bitcoin_checkpoint = package.bitcoin_checkpoint;
+                                info!(tx_hash = %tx_hash, pegin_meta_version = meta.version(), ref_eth_block_hash = %hash, overridden_btc_checkpoint_hash = %bitcoin_checkpoint.0.block_hash(), overridden_btc_checkpoint_height = %bitcoin_checkpoint.1, "PeginCheck: Overridden Bitcoin Checkpoint for V1 Pegin via ref_block_hash");
                             }
                             Ok(None) => {
                                 return Err(MintContractError::InvalidPeginData {
@@ -567,8 +570,10 @@ where
                             revert_amount: pegin_data.amount,
                         });
                     }
+                    info!(tx_hash = %tx_hash, pegin_btc_height = pegin_data.bitcoin_block_height, pegin_amount = %pegin_data.amount, validated_aggregate_value = %aggregate_value, "PeginCheck: PeginData validation SUCCEEDED for tx");
                 }
                 Err(e) => {
+                    info!(tx_hash = %tx_hash, pegin_btc_height = pegin_data.bitcoin_block_height, pegin_amount = %pegin_data.amount, validation_error = ?e, "PeginCheck: PeginData validation FAILED for tx");
                     return Err(MintContractError::InvalidPeginData {
                         error: format!("pegin validation failed: {}", e),
                         revert_address: pegin_data.account,

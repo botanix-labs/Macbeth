@@ -21,6 +21,7 @@ use frost_secp256k1_tr as frost;
 use revm_primitives::B256;
 use secp256k1::PublicKey;
 use thiserror::Error;
+use tracing::info;
 
 /// Version 0 of the pegin metadata format
 pub const PEGIN_META_VERSION_V0: u32 = 0;
@@ -55,6 +56,10 @@ impl PeginData {
         bitcoin_commitment: &(bitcoin::block::Header, u32),
         aggregate_pk: &secp256k1::PublicKey,
     ) -> Result<U256, PeginDataError> {
+        info!(self_btc_height = self.bitcoin_block_height, self_amount = %self.amount, num_meta_proofs = self.meta.len(),
+              input_btc_checkpoint_hash = %bitcoin_commitment.0.block_hash(), input_btc_checkpoint_height = bitcoin_commitment.1,
+              "PeginDataValidate: Starting validation");
+
         // the aggregate value from all the pegin proofs
         let mut aggregate_value = U256::from_str_radix("0", 10).expect("valid amount");
         let commit_hash = bitcoin_commitment.0.block_hash();
@@ -69,6 +74,13 @@ impl PeginData {
                 PeginMeta::V0(meta) => meta,
                 PeginMeta::V1(meta) => &meta.inner,
             };
+
+            let pegin_version_for_log = pegin.version;
+            let pegin_block_headers_len_for_log = pegin.block_headers.len();
+
+            info!(self_btc_height = self.bitcoin_block_height, pegin_version = pegin_version_for_log,
+                  current_commit_hash_for_check = %commit_hash, num_pegin_block_headers = pegin_block_headers_len_for_log,
+                  "PeginDataValidate: About to check for recent block hash mismatch");
 
             // pegin block headers list should contain the commitment header
             if !pegin.block_headers.iter().any(|h| h.block_hash() == commit_hash) {
@@ -134,6 +146,11 @@ impl PeginData {
             if bitcoin_commitment.1 - (diff as u32) != self.bitcoin_block_height {
                 return Err(PeginDataError::InvalidBitcoinBlockHeight);
             }
+
+            info!(self_btc_height = self.bitcoin_block_height, calculated_diff = diff,
+                  bitcoin_commitment_height = bitcoin_commitment.1,
+                  derived_pegin_height_for_check = (bitcoin_commitment.1.saturating_sub(diff as u32)),
+                  "PeginDataValidate: About to check bitcoin_block_height consistency (after diff calc)");
 
             // If any of the inputs are coinbase and the tx is not coinbase, return an error
             if pegin.tx.is_coinbase() && (diff as u32) < COINBASE_MATURITY {
