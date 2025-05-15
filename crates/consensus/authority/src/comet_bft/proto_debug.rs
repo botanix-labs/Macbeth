@@ -105,6 +105,8 @@ impl Debug for ResponseLoadSnapshotChunkTruncatedDebug<'_> {
     }
 }
 
+/// Truncated debug implementation for [RequestFinalizeBlock].
+/// It uses [TruncatedSlice] to limit the number of transactions displayed in the debug output.
 pub(crate) struct RequestFinalizeBlockTruncatedDebug<'a>(
     pub &'a tendermint_proto::abci::RequestFinalizeBlock,
 );
