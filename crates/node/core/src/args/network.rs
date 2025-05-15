@@ -50,85 +50,85 @@ pub struct NetworkArgs {
     /// Comma separated enode URLs of trusted peers for P2P connections.
     ///
     /// --trusted-peers enode://abcd@192.168.0.1:30303
-    #[arg(long, value_delimiter = ',')]
+    #[arg(long, value_delimiter = ',', env = "RETH_TRUSTED_PEERS")]
     pub trusted_peers: Vec<TrustedPeer>,
 
     /// Connect to or accept from trusted peers only
-    #[arg(long)]
+    #[arg(long, env = "RETH_TRUSTED_ONLY")]
     pub trusted_only: bool,
 
     /// Comma separated enode URLs for P2P discovery bootstrap.
     ///
     /// Will fall back to a network-specific default if not specified.
-    #[arg(long, value_delimiter = ',')]
+    #[arg(long, value_delimiter = ',', env = "RETH_BOOTNODES")]
     pub bootnodes: Option<Vec<TrustedPeer>>,
 
     /// Amount of DNS resolution requests retries to perform when peering.
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = 0, env = "RETH_DNS_RETRIES")]
     pub dns_retries: usize,
 
     /// The path to the known peers file. Connected peers are dumped to this file on nodes
     /// shutdown, and read on startup. Cannot be used with `--no-persist-peers`.
-    #[arg(long, value_name = "FILE", verbatim_doc_comment, conflicts_with = "no_persist_peers")]
+    #[arg(long, value_name = "FILE", verbatim_doc_comment, conflicts_with = "no_persist_peers", env = "RETH_PEERS_FILE")]
     pub peers_file: Option<PathBuf>,
 
     /// Custom node identity
-    #[arg(long, value_name = "IDENTITY", default_value = P2P_CLIENT_VERSION)]
+    #[arg(long, value_name = "IDENTITY", default_value = P2P_CLIENT_VERSION, env = "RETH_IDENTITY")]
     pub identity: String,
 
     /// Secret key to use for this node.
     ///
     /// This will also deterministically set the peer ID. If not specified, it will be set in the
     /// data dir for the chain being used.
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", env = "RETH_P2P_SECRET_KEY")]
     pub p2p_secret_key: Option<PathBuf>,
 
     /// Do not persist peers.
-    #[arg(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment, env = "RETH_NO_PERSIST_PEERS")]
     pub no_persist_peers: bool,
 
     /// NAT resolution method (any|none|upnp|publicip|extip:\<IP\>)
-    #[arg(long, default_value = "any")]
+    #[arg(long, default_value = "any", env = "RETH_NAT")]
     pub nat: NatResolver,
 
     /// Network listening address
-    #[arg(long = "addr", value_name = "ADDR", default_value_t = DEFAULT_DISCOVERY_ADDR)]
+    #[arg(long = "addr", value_name = "ADDR", default_value_t = DEFAULT_DISCOVERY_ADDR, env = "RETH_ADDR")]
     pub addr: IpAddr,
 
     /// Network listening port
-    #[arg(long = "port", value_name = "PORT", default_value_t = DEFAULT_DISCOVERY_PORT)]
+    #[arg(long = "port", value_name = "PORT", default_value_t = DEFAULT_DISCOVERY_PORT, env = "RETH_PORT")]
     pub port: u16,
 
     /// Maximum number of outbound requests. default: 100
-    #[arg(long)]
+    #[arg(long, env = "RETH_MAX_OUTBOUND_PEERS")]
     pub max_outbound_peers: Option<usize>,
 
     /// Maximum number of inbound requests. default: 30
-    #[arg(long)]
+    #[arg(long, env = "RETH_MAX_INBOUND_PEERS")]
     pub max_inbound_peers: Option<usize>,
 
     /// Max concurrent `GetPooledTransactions` requests.
-    #[arg(long = "max-tx-reqs", value_name = "COUNT", default_value_t = DEFAULT_MAX_COUNT_CONCURRENT_REQUESTS, verbatim_doc_comment)]
+    #[arg(long = "max-tx-reqs", value_name = "COUNT", default_value_t = DEFAULT_MAX_COUNT_CONCURRENT_REQUESTS, verbatim_doc_comment, env = "RETH_MAX_TX_REQS")]
     pub max_concurrent_tx_requests: u32,
 
     /// Max concurrent `GetPooledTransactions` requests per peer.
-    #[arg(long = "max-tx-reqs-peer", value_name = "COUNT", default_value_t = DEFAULT_MAX_COUNT_CONCURRENT_REQUESTS_PER_PEER, verbatim_doc_comment)]
+    #[arg(long = "max-tx-reqs-peer", value_name = "COUNT", default_value_t = DEFAULT_MAX_COUNT_CONCURRENT_REQUESTS_PER_PEER, verbatim_doc_comment, env = "RETH_MAX_TX_REQS_PEER")]
     pub max_concurrent_tx_requests_per_peer: u8,
 
     /// Max number of seen transactions to remember per peer.
     ///
     /// Default is 320 transaction hashes.
-    #[arg(long = "max-seen-tx-history", value_name = "COUNT", default_value_t = DEFAULT_MAX_COUNT_TRANSACTIONS_SEEN_BY_PEER, verbatim_doc_comment)]
+    #[arg(long = "max-seen-tx-history", value_name = "COUNT", default_value_t = DEFAULT_MAX_COUNT_TRANSACTIONS_SEEN_BY_PEER, verbatim_doc_comment, env = "RETH_MAX_SEEN_TX_HISTORY")]
     pub max_seen_tx_history: u32,
 
-    #[arg(long = "max-pending-imports", value_name = "COUNT", default_value_t = DEFAULT_MAX_COUNT_PENDING_POOL_IMPORTS, verbatim_doc_comment)]
+    #[arg(long = "max-pending-imports", value_name = "COUNT", default_value_t = DEFAULT_MAX_COUNT_PENDING_POOL_IMPORTS, verbatim_doc_comment, env = "RETH_MAX_PENDING_IMPORTS")]
     /// Max number of transactions to import concurrently.
     pub max_pending_pool_imports: usize,
 
     /// Experimental, for usage in research. Sets the max accumulated byte size of transactions
     /// to pack in one response.
     /// Spec'd at 2MiB.
-    #[arg(long = "pooled-tx-response-soft-limit", value_name = "BYTES", default_value_t = SOFT_LIMIT_BYTE_SIZE_POOLED_TRANSACTIONS_RESPONSE, verbatim_doc_comment)]
+    #[arg(long = "pooled-tx-response-soft-limit", value_name = "BYTES", default_value_t = SOFT_LIMIT_BYTE_SIZE_POOLED_TRANSACTIONS_RESPONSE, verbatim_doc_comment, env = "RETH_POOLED_TX_RESPONSE_SOFT_LIMIT")]
     pub soft_limit_byte_size_pooled_transactions_response: usize,
 
     /// Experimental, for usage in research. Sets the max accumulated byte size of transactions to
@@ -142,7 +142,7 @@ pub struct NetworkArgs {
     /// more, up to 2 MiB, a node will answer with more than 128 KiB.
     ///
     /// Default is 128 KiB.
-    #[arg(long = "pooled-tx-pack-soft-limit", value_name = "BYTES", default_value_t = DEFAULT_SOFT_LIMIT_BYTE_SIZE_POOLED_TRANSACTIONS_RESP_ON_PACK_GET_POOLED_TRANSACTIONS_REQ, verbatim_doc_comment)]
+    #[arg(long = "pooled-tx-pack-soft-limit", value_name = "BYTES", default_value_t = DEFAULT_SOFT_LIMIT_BYTE_SIZE_POOLED_TRANSACTIONS_RESP_ON_PACK_GET_POOLED_TRANSACTIONS_REQ, verbatim_doc_comment, env = "RETH_POOLED_TX_PACK_SOFT_LIMIT")]
     pub soft_limit_byte_size_pooled_transactions_response_on_pack_request: usize,
 }
 
@@ -305,65 +305,65 @@ impl Default for NetworkArgs {
 #[derive(Debug, Clone, Args, PartialEq, Eq)]
 pub struct DiscoveryArgs {
     /// Disable the discovery service.
-    #[arg(short, long, default_value_if("dev", "true", "true"))]
+    #[arg(short, long, env = "RETH_DISABLE_DISCOVERY", default_value_if("dev", "true", "true"))]
     pub disable_discovery: bool,
 
     /// Disable the DNS discovery.
-    #[arg(long, conflicts_with = "disable_discovery")]
+    #[arg(long, env = "RETH_DISABLE_DNS_DISCOVERY", conflicts_with = "disable_discovery")]
     pub disable_dns_discovery: bool,
 
     /// Disable Discv4 discovery.
-    #[arg(long, conflicts_with = "disable_discovery")]
+    #[arg(long, env = "RETH_DISABLE_DISCV_4_DISCOVERY", conflicts_with = "disable_discovery")]
     pub disable_discv4_discovery: bool,
 
     /// Enable Discv5 discovery.
-    #[arg(long, conflicts_with = "disable_discovery")]
+    #[arg(long, env = "RETH_ENABLE_DISCV_5_DISCOVERY", conflicts_with = "disable_discovery")]
     pub enable_discv5_discovery: bool,
 
     /// The UDP address to use for devp2p peer discovery version 4.
-    #[arg(id = "discovery.addr", long = "discovery.addr", value_name = "DISCOVERY_ADDR", default_value_t = DEFAULT_DISCOVERY_ADDR)]
+    #[arg(id = "discovery.addr", long = "discovery.addr", value_name = "DISCOVERY_ADDR", env = "RETH_DISCOVERY_ADDR", default_value_t = DEFAULT_DISCOVERY_ADDR)]
     pub addr: IpAddr,
 
     /// The UDP port to use for devp2p peer discovery version 4.
-    #[arg(id = "discovery.port", long = "discovery.port", value_name = "DISCOVERY_PORT", default_value_t = DEFAULT_DISCOVERY_PORT)]
+    #[arg(id = "discovery.port", long = "discovery.port", value_name = "DISCOVERY_PORT", env = "RETH_DISCOVERY_PORT", default_value_t = DEFAULT_DISCOVERY_PORT)]
     pub port: u16,
 
     /// The UDP IPv4 address to use for devp2p peer discovery version 5. Overwritten by `RLPx`
     /// address, if it's also IPv4.
-    #[arg(id = "discovery.v5.addr", long = "discovery.v5.addr", value_name = "DISCOVERY_V5_ADDR", default_value = None)]
+    #[arg(id = "discovery.v5.addr", long = "discovery.v5.addr", value_name = "DISCOVERY_V5_ADDR", env = "RETH_DISCOVERY_V5_ADDR", default_value = None)]
     pub discv5_addr: Option<Ipv4Addr>,
 
     /// The UDP IPv6 address to use for devp2p peer discovery version 5. Overwritten by `RLPx`
     /// address, if it's also IPv6.
-    #[arg(id = "discovery.v5.addr.ipv6", long = "discovery.v5.addr.ipv6", value_name = "DISCOVERY_V5_ADDR_IPV6", default_value = None)]
+    #[arg(id = "discovery.v5.addr.ipv6", long = "discovery.v5.addr.ipv6", value_name = "DISCOVERY_V5_ADDR_IPV6", default_value = None, env = "RETH_DISCOVERY_V5_ADDR_IPV6")]
     pub discv5_addr_ipv6: Option<Ipv6Addr>,
 
     /// The UDP IPv4 port to use for devp2p peer discovery version 5. Not used unless `--addr` is
     /// IPv4, or `--discovery.v5.addr` is set.
     #[arg(id = "discovery.v5.port", long = "discovery.v5.port", value_name = "DISCOVERY_V5_PORT",
-    default_value_t = DEFAULT_DISCOVERY_V5_PORT)]
+    default_value_t = DEFAULT_DISCOVERY_V5_PORT, env = "RETH_DISCOVERY_V5_PORT")]
     pub discv5_port: u16,
 
     /// The UDP IPv6 port to use for devp2p peer discovery version 5. Not used unless `--addr` is
     /// IPv6, or `--discovery.addr.ipv6` is set.
     #[arg(id = "discovery.v5.port.ipv6", long = "discovery.v5.port.ipv6", value_name = "DISCOVERY_V5_PORT_IPV6",
-    default_value = None, default_value_t = DEFAULT_DISCOVERY_V5_PORT)]
+    default_value = None, default_value_t = DEFAULT_DISCOVERY_V5_PORT, env = "RETH_DISCOVERY_V5_PORT_IPV6")]
     pub discv5_port_ipv6: u16,
 
     /// The interval in seconds at which to carry out periodic lookup queries, for the whole
     /// run of the program.
-    #[arg(id = "discovery.v5.lookup-interval", long = "discovery.v5.lookup-interval", value_name = "DISCOVERY_V5_LOOKUP_INTERVAL", default_value_t = DEFAULT_SECONDS_LOOKUP_INTERVAL)]
+    #[arg(id = "discovery.v5.lookup-interval", long = "discovery.v5.lookup-interval", value_name = "DISCOVERY_V5_LOOKUP_INTERVAL", default_value_t = DEFAULT_SECONDS_LOOKUP_INTERVAL, env = "RETH_DISCOVERY_V5_LOOKUP_INTERVAL")]
     pub discv5_lookup_interval: u64,
 
     /// The interval in seconds at which to carry out boost lookup queries, for a fixed number of
     /// times, at bootstrap.
     #[arg(id = "discovery.v5.bootstrap.lookup-interval", long = "discovery.v5.bootstrap.lookup-interval", value_name = "DISCOVERY_V5_BOOTSTRAP_LOOKUP_INTERVAL",
-        default_value_t = DEFAULT_SECONDS_BOOTSTRAP_LOOKUP_INTERVAL)]
+        default_value_t = DEFAULT_SECONDS_BOOTSTRAP_LOOKUP_INTERVAL, env = "RETH_DISCOVERY_V5_BOOTSTRAP_LOOKUP_INTERVAL")]
     pub discv5_bootstrap_lookup_interval: u64,
 
     /// The number of times to carry out boost lookup queries at bootstrap.
     #[arg(id = "discovery.v5.bootstrap.lookup-countdown", long = "discovery.v5.bootstrap.lookup-countdown", value_name = "DISCOVERY_V5_BOOTSTRAP_LOOKUP_COUNTDOWN",
-        default_value_t = DEFAULT_COUNT_BOOTSTRAP_LOOKUPS)]
+        default_value_t = DEFAULT_COUNT_BOOTSTRAP_LOOKUPS, env = "RETH_DISCOVERY_V5_BOOTSTRAP_LOOKUP_COUNTDOWN")]
     pub discv5_bootstrap_lookup_countdown: u64,
 }
 
