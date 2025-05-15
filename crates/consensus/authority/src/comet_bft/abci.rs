@@ -1909,7 +1909,7 @@ where
                             .canonical_in_memory_state()
                             .remove_persisted_blocks(block_height - 1);
 
-                        debug!("Ethereum block {} commited to the state", block_height);
+                        debug!("Ethereum block {} committed to the state", block_height);
 
                         let chain = Chain::new(
                             vec![sealed_block_with_senders].into_iter(),
