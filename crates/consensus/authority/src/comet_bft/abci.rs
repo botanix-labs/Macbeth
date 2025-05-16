@@ -1526,7 +1526,7 @@ where
                     }
                 }
                 match self.block_cache.write() {
-                    Ok(mut cache) => {
+                    Ok(_cache) => {
                         if tracing::enabled!(tracing::Level::DEBUG) {
                             let eth_block_hash = block.hash_slow();
 
@@ -1538,7 +1538,7 @@ where
                             );
                         }
 
-                        cache.insert(cbft_block_hash, block_with_context);
+                        // cache.insert(cbft_block_hash, block_with_context);
                     }
                     Err(e) => {
                         error!("Error getting block cache write lock: {:?}", e);
