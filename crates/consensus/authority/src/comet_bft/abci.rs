@@ -336,6 +336,8 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     pool: Pool,
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, BlockWithContext>>>,
+    // TODO (lamafab): this should be atomic with `block_cache`.
+    last_finalized: Arc<RwLock<Option<BlockHash>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     #[allow(dead_code)]
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -389,6 +391,7 @@ where
             bitcoin_checkpoint,
             // Saving the last 5 blocks that were proposed
             block_cache: Arc::new(RwLock::new(LruMap::new(ByLength::new(5)))),
+            last_finalized: Arc::new(RwLock::new(None)),
             driver_tx,
             cbft_rpc_provider,
             authority_consensus,
@@ -1681,6 +1684,12 @@ where
                     Ok(block_with_context) => {
                         block_cache_write.insert(cbft_block_hash, block_with_context.clone());
 
+                        {
+                            debug!("Saving finalized block hash: {}", hex::encode(cbft_block_hash));
+                            let mut l = self.last_finalized.write().expect("Failed to get last finalized lock");
+                            *l = Some(cbft_block_hash);
+                        }
+
                         debug!(
                             %cbft_block_hash,
                             eth_block_hash = %block_with_context.sealed_block_with_peg.block().hash(),
@@ -1773,27 +1782,31 @@ where
     /// Proceeding after an error will cause the app hash mismatch.
     #[instrument(level = "trace", skip(self), ret)]
     fn commit(&self) -> ResponseCommit {
-        let candidate_blocks = match self.block_cache.write() {
+        let mut candidate_blocks = match self.block_cache.write() {
             Ok(candidate_blocks) => candidate_blocks,
             Err(e) => {
                 panic!("Error getting block cache write lock: {:?}", e);
             }
         };
+
+        let cbft_block_hash = {
+            let mut l = self.last_finalized.write().expect("Failed to get last finalized lock");
+            let cbft_block_hash = *l.expect("Last finalized block not saved");
+            *l = None; // reset
+            cbft_block_hash
+        };
+
+        debug!("Preparing to commit block hash: {}", hex::encode(cbft_block_hash));
+
         // We want to explicitly panic since we cannot get the lock and send the commit message
-        let (cbft_block_hash, sealed_block_with_context) = match candidate_blocks.peek_newest() {
-            Some((cbft_block_hash, sealed_block_with_context)) => {
-                (cbft_block_hash, sealed_block_with_context)
-            }
-            None => {
-                panic!("Error getting block from cache");
-            }
+        let Some(sealed_block_with_context) = candidate_blocks.get(&cbft_block_hash) else {
+            panic!("Error getting block from cache");
         };
 
         // need to clone since `sealed_block_with_context` is behind a lock
         let sealed_block_with_context = sealed_block_with_context.clone();
 
         // We want to explicitly panic if we cannot send the commit message
-        let cbft_block_hash = *cbft_block_hash;
         let (commit_tx, commit_rx) = std::sync::mpsc::channel::<()>();
         let driver_tx = self.driver_tx.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
