@@ -554,7 +554,7 @@ pub async fn validate_psbt_by_ids(
             "Multiple change outputs (non-pegout IDs) found in PSBT outputs",
         )));
     }
-    
+
     // The preceding checks (output length equality, duplicate pegout ID, and change output count)
     // ensure that every entry in `psbt.unsigned_tx.output` (due to the length check)
     // is accounted for as either a pegout (validated in the main loop below)
@@ -1205,7 +1205,8 @@ mod tests {
             validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
 
         assert!(result.is_err());
-        // This error should now be due to duplicate pegout IDs, which is checked before script_pubkey matching.
+        // This error should now be due to duplicate pegout IDs, which is checked before
+        // script_pubkey matching.
         assert_eq!(
             result.unwrap_err(),
             PsbtValidationError::FailedToValidatePsbtByIds(
@@ -1226,7 +1227,8 @@ mod tests {
         {
             let mut psbt = create_psbt_without_fee(1, &base_destination); // Creates 1 output in psbt.outputs and 1 in unsigned_tx.output
 
-            // Make psbt.outputs[0] a valid pegout target for later logic if needed, though this test should fail before that.
+            // Make psbt.outputs[0] a valid pegout target for later logic if needed, though this
+            // test should fail before that.
             let pegout_id_bytes_scenario_a = PegoutId::new([1u8; 32], 0).as_bytes();
             psbt.outputs[0].set_pegout_id(pegout_id_bytes_scenario_a);
 
@@ -1242,7 +1244,8 @@ mod tests {
             assert_eq!(
                 result.unwrap_err(),
                 PsbtValidationError::FailedToValidatePsbtByIds(
-                    "Mismatch between number of PSBT outputs and unsigned transaction outputs".to_string()
+                    "Mismatch between number of PSBT outputs and unsigned transaction outputs"
+                        .to_string()
                 ),
                 "Scenario A: Error message for mismatched lengths was incorrect"
             );
@@ -1254,42 +1257,50 @@ mod tests {
             let tx_three_outputs = Transaction {
                 version: bitcoin::transaction::Version(2),
                 lock_time: LockTime::ZERO,
-                input: vec![TxIn { // A single input
+                input: vec![TxIn {
+                    // A single input
                     previous_output: OutPoint::new(random_txid(), 0),
                     script_sig: bitcoin::ScriptBuf::new(),
                     sequence: Sequence::MAX,
                     witness: Default::default(),
                 }],
                 output: vec![
-                    bitcoin::TxOut { // This will be our pegout
+                    bitcoin::TxOut {
+                        // This will be our pegout
                         value: Amount::from_sat(1000),
                         script_pubkey: base_destination.script_pubkey(),
                     },
-                    bitcoin::TxOut { // This will be change output 1
+                    bitcoin::TxOut {
+                        // This will be change output 1
                         value: Amount::from_sat(2000),
-                        script_pubkey: random_p2wpkh_script(), 
+                        script_pubkey: random_p2wpkh_script(),
                     },
-                    bitcoin::TxOut { // This will be change output 2
+                    bitcoin::TxOut {
+                        // This will be change output 2
                         value: Amount::from_sat(3000),
                         script_pubkey: random_p2wpkh_script(),
                     },
                 ],
             };
 
-            let mut psbt = Psbt::from_unsigned_tx(tx_three_outputs).expect("valid psbt from 3-output tx");
+            let mut psbt =
+                Psbt::from_unsigned_tx(tx_three_outputs).expect("valid psbt from 3-output tx");
             // psbt.outputs and psbt.unsigned_tx.output both have 3 elements.
 
             // Provide a witness_utxo for the input
-            let total_output_value: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
+            let total_output_value: u64 =
+                psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
             psbt.inputs[0].witness_utxo = Some(bitcoin::TxOut {
                 value: Amount::from_sat(total_output_value + 1000), // Cover outputs + some fee
-                script_pubkey: bitcoin::ScriptBuf::new(), // Dummy script pubkey for witness_utxo
+                script_pubkey: bitcoin::ScriptBuf::new(),           /* Dummy script pubkey for
+                                                                     * witness_utxo */
             });
-            
+
             // Set psbt.outputs[0] as a pegout
             let pegout_id_bytes_scenario_b = PegoutId::new([2u8; 32], 0).as_bytes();
             psbt.outputs[0].set_pegout_id(pegout_id_bytes_scenario_b);
-            // psbt.outputs[1] and psbt.outputs[2] have no pegout_id, so they count as change outputs.
+            // psbt.outputs[1] and psbt.outputs[2] have no pegout_id, so they count as change
+            // outputs.
 
             let result = validate_psbt_by_ids(mock_provider.clone(), btc_network, &psbt).await;
             assert!(result.is_err(), "Scenario B: Multiple change outputs should error");

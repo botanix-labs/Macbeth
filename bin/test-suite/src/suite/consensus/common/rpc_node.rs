@@ -37,7 +37,7 @@ use url::Url;
 use super::{
     botanix_client::BotanixEthClient,
     create_temp_working_directory, kill_process_at_port,
-    poa_node::{DISCOVERY_PORT_BASE, RPC_PORT_BASE, WS_PORT_BASE},
+    poa_node::{ABCI_PORT_BASE, DISCOVERY_PORT_BASE, RPC_PORT_BASE, WS_PORT_BASE},
 };
 
 #[derive(Clone, Debug)]
@@ -82,6 +82,7 @@ pub struct NonFederationMemberTestConfig {
     pub rpc_port: u16,
     pub ws_port: u16,
     pub discovery_port: u16,
+    pub abci_port: u16,
     pub bitcoind_url: Url,
     pub bitcoind_username: String,
     pub bitcoind_password: String,
@@ -107,6 +108,7 @@ impl NonFederationMemberTestConfig {
         rpc_port: u16,
         ws_port: u16,
         discovery_port: u16,
+        abci_port: u16,
         lst_fee_receiver: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -116,6 +118,7 @@ impl NonFederationMemberTestConfig {
             rpc_port,
             ws_port,
             discovery_port,
+            abci_port,
             bitcoind_url,
             bitcoind_username,
             bitcoind_password,
@@ -194,6 +197,7 @@ impl NonFederationMemberTestConfig {
             }
         }
 
+        // Need to create a federation.toml in the data dir
         let federation_config = FederationTomlConfig::new(
             edh_authorities,
             self.botanix_fee_recipient.clone(),
@@ -212,8 +216,6 @@ impl NonFederationMemberTestConfig {
         for _ in 0..2 {
             working_directory.pop();
         }
-        working_directory.push("bin");
-        working_directory.push("reth");
 
         let federation_config_path = federation_config_path.display().to_string();
         let rpc_port = self.rpc_port.to_string();
@@ -222,6 +224,7 @@ impl NonFederationMemberTestConfig {
         let bitcoind_username = self.bitcoind_username.clone();
         let bitcoind_password = self.bitcoind_password.clone();
         let discovery_port = self.discovery_port.to_string();
+        let abci_port = self.abci_port.to_string();
 
         // prepare run arguments
         let command = "./target/debug/reth";
@@ -275,6 +278,8 @@ impl NonFederationMemberTestConfig {
             discovery_port.as_str(),
             "--p2p-secret-key",
             discovery_secret_path.to_str().context("discovery secret path to exist")?,
+            "--abci-port",
+            abci_port.as_str(),
             "--sync.enable_state_sync",
             "--sync.enable_historical_sync",
         ];
@@ -369,6 +374,7 @@ pub async fn create_rpc_nodes(
                                                                           * start port assigning
                                                                           * after poa servers */
             DISCOVERY_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we start port assigning after poa servers */
+            ABCI_PORT_BASE + global_context.fed_instances + 1000 * member_index,
             global_context.lst_fee_receiver.clone(),
         ).await?;
         rpc_members.insert(global_context.fed_instances + member_index, rpc_node);
