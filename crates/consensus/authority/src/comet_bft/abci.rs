@@ -1852,7 +1852,7 @@ where
                             "ABCI driver commit block",
                             eth_block_height =
                                 sealed_block_with_context.sealed_block_with_peg.block().number,
-                            eith_block_hash =
+                            eth_block_hash =
                                 %sealed_block_with_context.sealed_block_with_peg.block().hash(),
                         )
                         .entered();
@@ -1909,7 +1909,7 @@ where
                             .canonical_in_memory_state()
                             .remove_persisted_blocks(block_height - 1);
 
-                        debug!("Ethereum block {} committed to the state", block_height);
+                        debug!("Ethereum block {block_height} committed to the state");
 
                         let chain = Chain::new(
                             vec![sealed_block_with_senders].into_iter(),
