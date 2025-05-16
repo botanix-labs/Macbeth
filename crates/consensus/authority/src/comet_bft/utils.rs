@@ -1,4 +1,7 @@
+use reth_consensus_common::utils::UnixTimestamp;
 use reth_primitives::TransactionSigned;
+use std::num::TryFromIntError;
+use tendermint_proto::google::protobuf::Timestamp;
 use tracing::error;
 
 /// Convert bytes to [TransactionSigned] using an iterator
@@ -19,6 +22,26 @@ pub(crate) fn transactions_signed_from_bytes(
     }
 
     Ok(txs)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum TimestampError {
+    /// Timestamp is not present
+    #[error("Timestamp is not set")]
+    NotPresent,
+    /// Invalid timestamp
+    #[error("Invalid timestamp: {0}")]
+    InvalidTimestamp(#[from] TryFromIntError),
+}
+
+pub(crate) fn proto_time_to_timestamp(
+    timestamp: Option<&Timestamp>,
+) -> Result<UnixTimestamp, TimestampError> {
+    let Some(timestamp) = timestamp else {
+        return Err(TimestampError::NotPresent);
+    };
+
+    timestamp.seconds.try_into().map_err(TimestampError::from)
 }
 
 #[cfg(test)]

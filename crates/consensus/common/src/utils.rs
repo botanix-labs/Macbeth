@@ -6,8 +6,11 @@ use reth_primitives::{
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Timestamp in seconds since the Unix epoch
+pub type UnixTimestamp = u64;
+
 /// Returns the unix timestamp in seconds
-pub fn unix_timestamp() -> u64 {
+pub fn unix_timestamp() -> UnixTimestamp {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
