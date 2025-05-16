@@ -218,6 +218,7 @@ where
         mut evm: Evm<'_, Ext, &mut State<DB>>,
         botanix_consensus_pkg: BotanixConsensusPackage,
         provider: Arc<DatabaseProviderRO<RethDB>>,
+        disable_pegin_validation: bool
     ) -> Result<EthExecuteOutput, BlockExecutionError>
     where
         DB: Database,
@@ -317,6 +318,7 @@ where
                         &botanix_consensus_pkg,
                         transaction.hash,
                         provider.clone(),
+                        disable_pegin_validation,
                     ) {
                         Ok((new_pegins, new_pegouts)) => {
                             pegins.extend(new_pegins);
@@ -451,6 +453,7 @@ where
         botanix_consensus_pkg: &BotanixConsensusPackage,
         tx_hash: TxHash,
         provider: Arc<DatabaseProviderRO<RethDB>>,
+        disable_pegin_validation: bool,
     ) -> Result<(Vec<PeginData>, Vec<PegoutWithId>), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
@@ -463,6 +466,11 @@ where
                 None => continue,
                 Some(p) => p,
             };
+
+            if disable_pegin_validation {
+                pegins.push(pegin_data);
+                continue;
+            }
 
             // Get the reference block hash from the pegin metadata.
             // This is used to avoid the growing list of headers in the pegin metadata
@@ -684,6 +692,7 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
+        disable_pegin_validation: bool,
     ) -> Result<EthExecuteOutput, BlockExecutionError> {
         // 1. prepare state on new block
         self.on_new_block(&block.header);
@@ -714,6 +723,7 @@ where
                 evm,
                 botanix_consensus_pkg,
                 self.executor.provider.clone(),
+                disable_pegin_validation,
             )?
         };
 
@@ -791,9 +801,9 @@ where
     ///
     /// Returns an error if the block could not be executed or failed verification.
     fn execute(mut self, input: Self::Input<'_>) -> Result<Self::Output, Self::Error> {
-        let BlockExecutionInput { block, total_difficulty } = input;
+        let BlockExecutionInput { block, total_difficulty, disable_pegin_validation } = input;
         let EthExecuteOutput { receipts, requests, gas_used, total_block_fees, pegins, pegouts } =
-            self.execute_without_verification(block, total_difficulty)?;
+            self.execute_without_verification(block, total_difficulty, disable_pegin_validation)?;
 
         // TODO NOTE: we need to merge keep the reverts for the bundle retention
         self.state.merge_transitions(BundleRetention::Reverts);
@@ -848,7 +858,7 @@ where
     type Error = BlockExecutionError;
 
     fn execute_and_verify_one(&mut self, input: Self::Input<'_>) -> Result<(), Self::Error> {
-        let BlockExecutionInput { block, total_difficulty } = input;
+        let BlockExecutionInput { block, total_difficulty, disable_pegin_validation } = input;
 
         if self.batch_record.first_block().is_none() {
             self.batch_record.set_first_block(block.number);
@@ -861,7 +871,7 @@ where
             total_block_fees: _,
             pegins: _,
             pegouts: _,
-        } = self.executor.execute_without_verification(block, total_difficulty)?;
+        } = self.executor.execute_without_verification(block, total_difficulty, disable_pegin_validation)?;
 
         validate_block_post_execution(block, self.executor.chain_spec(), &receipts, &requests)?;
 
@@ -1032,6 +1042,7 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
+                false,
             )
             .unwrap();
 
