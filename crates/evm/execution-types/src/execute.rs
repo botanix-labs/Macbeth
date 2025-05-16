@@ -11,18 +11,22 @@ pub struct BlockExecutionInput<'a, Block> {
     pub block: &'a Block,
     /// The total difficulty of the block.
     pub total_difficulty: U256,
+    /// Whether to disable peging validation. This MUST be set to `true` during
+    /// the `process_proposal` stage, but can be disabled during the
+    /// `finalize_block` stage.
+    pub disable_pegin_validation: bool,
 }
 
 impl<'a, Block> BlockExecutionInput<'a, Block> {
     /// Creates a new input.
-    pub const fn new(block: &'a Block, total_difficulty: U256) -> Self {
-        Self { block, total_difficulty }
+    pub const fn new(block: &'a Block, total_difficulty: U256, disable_pegin_validation: bool) -> Self {
+        Self { block, total_difficulty, disable_pegin_validation }
     }
 }
 
 impl<'a, Block> From<(&'a Block, U256)> for BlockExecutionInput<'a, Block> {
     fn from((block, total_difficulty): (&'a Block, U256)) -> Self {
-        Self::new(block, total_difficulty)
+        Self::new(block, total_difficulty, false)
     }
 }
 
