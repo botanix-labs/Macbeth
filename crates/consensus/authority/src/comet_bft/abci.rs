@@ -1497,6 +1497,9 @@ where
             }
         };
 
+        let disable_pegin_data = false;
+        assert!(!disable_pegin_data);
+
         // Validation done as a result of this call:
         // - botanix consensus package created on the fly and compared to the incoming block EDH
         // - mint validation checks
@@ -1514,6 +1517,7 @@ where
             &bitcoin_checkpoint_block_hash,
             &agg_pk,
             block_time,
+            disable_pegin_data,
         ) {
             Ok(block_with_context) => {
                 let block = block_with_context.sealed_block_with_peg.block();
@@ -1658,6 +1662,9 @@ where
                     }
                 };
 
+                let disable_pegin_data = true;
+                assert!(disable_pegin_data);
+
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
@@ -1669,6 +1676,7 @@ where
                     &non_deterministic_data.bitcoin_block_hash,
                     &non_deterministic_data.aggregated_public_key,
                     block_time,
+                    disable_pegin_data,
                 ) {
                     Ok(block_with_context) => {
                         block_cache_write.insert(cbft_block_hash, block_with_context.clone());

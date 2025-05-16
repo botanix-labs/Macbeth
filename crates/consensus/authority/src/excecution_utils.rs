@@ -49,6 +49,7 @@ pub(crate) mod authority_execution_utils {
         bitcoin_checkpoint_block_hash: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
         timestamp: Timestamp,
+        disable_pegin_validation: bool,
     ) -> Result<BlockWithContext, BlockExecutionError>
     where
         BF: BitcoindFactory + Clone + Unpin + 'static,
@@ -96,6 +97,7 @@ pub(crate) mod authority_execution_utils {
             bitcoin_network,
             chain_spec,
             evm_config,
+            disable_pegin_validation,
         )?;
 
         let completed_header = complete_header(
@@ -338,7 +340,7 @@ pub(crate) mod authority_execution_utils {
         executor.set_tip(ending_block_number);
         // TODO: set prune modes on executor
         let out = executor.execute_and_verify_batch(
-            blocks.iter().map(|b| BlockExecutionInput::new(b, U256::ZERO)),
+            blocks.iter().map(|b| BlockExecutionInput::new(b, U256::ZERO, false)),
         )?;
 
         Ok(out)
@@ -355,6 +357,7 @@ pub(crate) mod authority_execution_utils {
         bitcoin_network: bitcoin::Network,
         chain_spec: Arc<ChainSpec>,
         evm_config: EthEvmConfig,
+        disable_pegin_validation: bool,
     ) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError>
     where
         BF: BitcoindFactory + Clone + Unpin + 'static,
@@ -383,7 +386,7 @@ pub(crate) mod authority_execution_utils {
             bitcoin_network,
             Arc::new(blockchain_provider),
         );
-        let input = BlockExecutionInput::new(block, U256::ZERO);
+        let input = BlockExecutionInput::new(block, U256::ZERO, disable_pegin_validation);
         let exec_results = executor.execute(input)?;
         Ok(exec_results)
     }
