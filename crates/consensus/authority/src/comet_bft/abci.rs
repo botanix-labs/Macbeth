@@ -1266,7 +1266,7 @@ where
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
-    #[instrument(level = "trace", skip(self, request), fields(cfbt_block_height = request.height))]
+    #[instrument(level = "trace", skip(self, request), fields(cbft_block_height = request.height))]
     fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
         let execution_start_time = std::time::Instant::now();
         trace!("request={:?}", request);
