@@ -1325,11 +1325,13 @@ where
         // Nothing to process if mempool is empty
         // propose an empty block with NDD only
         if self.pool.pool_size().total == 0 {
+            debug!("No transactions in pool, proposing empty block with NDD only");
+
             let response = ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
 
             trace!("return={:?}", response);
 
-            if tracing::enabled!(tracing::Level::TRACE) {
+            if tracing::enabled!(tracing::Level::INFO) {
                 let execution_time = execution_start_time.elapsed().as_secs_f32();
 
                 info!(
