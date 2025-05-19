@@ -1444,7 +1444,7 @@ where
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
-    #[instrument(level = "trace", ret, skip(self, request), fields(cfbt_block_height = request.height, cfbt_block_hash = hex::encode(&request.hash)))]
+    #[instrument(level = "trace", ret, skip(self, request), fields(cfbt_block_height = request.height, cbft_block_hash = hex::encode(&request.hash)))]
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
         let execution_start_time = std::time::Instant::now();
         trace!("request={:?}", RequestProcessProposalTruncatedDebug(&request));
@@ -1775,14 +1775,15 @@ where
 
                 match self.block_cache.write() {
                     Ok(_cache) => {
-                        if tracing::enabled!(tracing::Level::DEBUG) {
-                            let eth_block_hash = block.hash_slow();
+                        let eth_block_hash = block.hash();
 
+                        if tracing::enabled!(tracing::Level::DEBUG) {
+                            let cbft_block_hash_hex = hex::encode(cbft_block_hash);
                             debug!(
-                                %cbft_block_hash,
-                                eth_block_hash = hex::encode(app_hash),
+                                cbft_block_hash = cbft_block_hash_hex,
+                                eth_block_hash = hex::encode(eth_block_hash),
                                 "update block cache for key {}",
-                                cbft_block_hash,
+                                cbft_block_hash_hex,
                             );
                         }
 
@@ -1794,7 +1795,7 @@ where
                             let execution_time = execution_start_time.elapsed().as_secs_f32();
 
                             info!(
-                                app_hash = hex::encode(app_hash),
+                                app_hash = hex::encode(eth_block_hash),
                                 block_time,
                                 execution_time,
                                 cbft_transactions_count = txs_len,
@@ -1868,7 +1869,7 @@ where
     }
 
     ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
-    #[instrument(level = "trace", skip(self, request), fields(cfbt_block_height = request.height, cfbt_block_hash = hex::encode(&request.hash)))]
+    #[instrument(level = "trace", skip(self, request), fields(cbft_block_height = request.height, cbft_block_hash = hex::encode(&request.hash)))]
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
         trace!("request={:?}", request);
 
@@ -1884,24 +1885,33 @@ where
             }
         };
         let block_with_context = match block_cache_write.get(&cbft_block_hash) {
-            Some(block) => {
-                debug!(
-                    %cbft_block_hash,
-                    "read block {} from block cache",
-                    cbft_block_hash,
-                );
+            Some(block_with_context) => {
+                if tracing::enabled!(tracing::Level::DEBUG) {
+                    let cbft_block_hash_hex = hex::encode(cbft_block_hash);
+                    let eth_block_hash = block_with_context.sealed_block_with_peg.block().hash();
 
-                block.clone()
+                    debug!(
+                        cbft_block_hash = cbft_block_hash_hex,
+                        eth_block_hash = hex::encode(eth_block_hash),
+                        "read block {} from block cache",
+                        cbft_block_hash_hex
+                    );
+                }
+
+                block_with_context.clone()
             }
             None => {
                 // No block in cache: this happens during historical (block) sync
                 // Build the block
 
-                debug!(
-                     %cbft_block_hash,
-                    "block {} not found in block cache, building a block",
-                    cbft_block_hash
-                );
+                if tracing::enabled!(tracing::Level::DEBUG) {
+                    let cbft_block_hash_hex = hex::encode(cbft_block_hash);
+
+                    debug!(
+                        cbft_block_hash = cbft_block_hash_hex,
+                        "block {} not found in block cache, building a block", cbft_block_hash_hex
+                    );
+                }
 
                 // get non-deterministic data
                 let txs_bytes = request.txs.clone();
@@ -1993,15 +2003,22 @@ where
 
                         {
                             debug!("Saving finalized block hash: {}", hex::encode(cbft_block_hash));
-                            let mut l = self.last_finalized.write().expect("Failed to get last finalized lock");
+                            let mut l = self
+                                .last_finalized
+                                .write()
+                                .expect("Failed to get last finalized lock");
                             *l = Some(cbft_block_hash);
                         }
 
+                        let cbft_block_hash_hex = hex::encode(cbft_block_hash);
+
                         debug!(
-                            %cbft_block_hash,
-                            eth_block_hash = %block_with_context.sealed_block_with_peg.block().hash(),
+                            cbft_block_hash = cbft_block_hash_hex,
+                            eth_block_hash = hex::encode(
+                                block_with_context.sealed_block_with_peg.block().hash()
+                            ),
                             "update block cache for key {}",
-                            cbft_block_hash,
+                            cbft_block_hash_hex,
                         );
 
                         block_with_context
@@ -2068,13 +2085,13 @@ where
 
         let execution_time = std::time::Instant::now().elapsed().as_secs_f32();
 
-        let eth_block_hash = hex::encode(block_hash);
+        let eth_block_hash_hex = hex::encode(block_hash);
 
         let txs_len = request.txs.len();
 
         info!(
-            app_hash = eth_block_hash,
-            eth_block_hash,
+            app_hash = eth_block_hash_hex,
+            eth_block_hash = eth_block_hash_hex,
             cbft_block_hash = hex::encode(cbft_block_hash),
             cbft_transactions_count = txs_len,
             eth_transactions_count = txs_len - 1, // Minus NDD
@@ -2109,7 +2126,6 @@ where
             }
         };
 
-
         let cbft_block_hash = {
             let mut l = self.last_finalized.write().expect("Failed to get last finalized lock");
             let cbft_block_hash = *l.expect("Last finalized block not saved");
@@ -2117,26 +2133,26 @@ where
             cbft_block_hash
         };
 
-        debug!("Preparing to commit block hash: {}", hex::encode(cbft_block_hash));
+        let cbft_block_hash_hex = hex::encode(cbft_block_hash);
+        debug!("Preparing to commit block hash: {}", cbft_block_hash_hex);
 
         // We want to explicitly panic since we cannot get the lock and send the commit message
         let Some(sealed_block_with_context) = candidate_blocks.get(&cbft_block_hash) else {
             panic!("Error getting block from cache");
         };
 
-        let eth_block_hash = sealed_block_with_context.sealed_block_with_peg.block().hash();
+        let block = sealed_block_with_context.sealed_block_with_peg.block();
+
+        let eth_block_hash_hex = hex::encode(block.hash());
 
         debug!(
-            %cbft_block_hash,
-            %eth_block_hash,
-            "read block {} from cache",
-            cbft_block_hash,
+            cbft_block_hash = cbft_block_hash_hex,
+            eth_block_hash = eth_block_hash_hex,
+            "read finalized block {} from cache",
+            hex::encode(cbft_block_hash),
         );
 
-        trace!(
-            "eth_block_header={:?}",
-            sealed_block_with_context.sealed_block_with_peg.block().header()
-        );
+        trace!("eth_block_header={:?}", block.header());
 
         // need to clone since `sealed_block_with_context` is behind a lock
         let sealed_block_with_context = sealed_block_with_context.clone();
@@ -2161,11 +2177,12 @@ where
 
         info!(
             eth_block_height,
-            %cbft_block_hash,
-            %eth_block_hash,
+            app_hash = eth_block_hash_hex,
+            cbft_block_hash = cbft_block_hash_hex,
+            eth_block_hash = eth_block_hash_hex,
             execution_time,
             "The block {} is committed in {} seconds",
-            cbft_block_hash,
+            cbft_block_hash_hex,
             execution_time,
         );
 

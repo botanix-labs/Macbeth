@@ -218,7 +218,7 @@ where
         mut evm: Evm<'_, Ext, &mut State<DB>>,
         botanix_consensus_pkg: BotanixConsensusPackage,
         provider: Arc<DatabaseProviderRO<RethDB>>,
-        disable_pegin_validation: bool
+        disable_pegin_validation: bool,
     ) -> Result<EthExecuteOutput, BlockExecutionError>
     where
         DB: Database,
@@ -466,6 +466,10 @@ where
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
 
+        if disable_pegin_validation {
+            tracing::debug!(disable_pegin_validation, "skip pegin data validation");
+        }
+
         tracing::trace!("botanix_consensus_package={:?}", botanix_consensus_pkg);
 
         // Check pegins.
@@ -478,7 +482,10 @@ where
             };
 
             if disable_pegin_validation {
+                tracing::trace!(?pegin_data, "skip pegin data validation for tx {}", tx_hash);
+
                 pegins.push(pegin_data);
+
                 continue;
             }
 
@@ -894,7 +901,11 @@ where
             total_block_fees: _,
             pegins: _,
             pegouts: _,
-        } = self.executor.execute_without_verification(block, total_difficulty, disable_pegin_validation)?;
+        } = self.executor.execute_without_verification(
+            block,
+            total_difficulty,
+            disable_pegin_validation,
+        )?;
 
         validate_block_post_execution(block, self.executor.chain_spec(), &receipts, &requests)?;
 
