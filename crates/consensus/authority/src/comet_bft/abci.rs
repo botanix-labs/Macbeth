@@ -1322,7 +1322,7 @@ where
         // Nothing to process if mempool is empty
         // propose an empty block with NDD only
         if self.pool.pool_size().total == 0 {
-            debug!("No transactions in pool, proposing empty block with NDD only");
+            debug!("No transactions in pool, proposing empty cbft block with NDD only");
 
             let response = ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
 
@@ -1498,7 +1498,7 @@ where
         let non_deterministic_data_bytes = match txs_bytes.first() {
             Some(tx) => tx.clone(),
             None => {
-                warn!("No non-deterministic tx in proposal request");
+                warn!("No non-deterministic data in proposal request");
 
                 if tracing::enabled!(tracing::Level::WARN) {
                     let execution_time = execution_start_time.elapsed().as_secs_f32();
@@ -1530,6 +1530,11 @@ where
         let non_deterministic_data = match NonDeterministicData::deserialize(reader) {
             Ok(data) => data,
             Err(e) => {
+                trace!(
+                    "non_deterministic_data_bytes={:?}",
+                    hex::encode(txs_bytes.first().expect("txs_bytes contains first transaction"))
+                );
+
                 warn!("Error deserializing non-deterministic data: {:?}", e);
 
                 if tracing::enabled!(tracing::Level::WARN) {
@@ -1556,6 +1561,8 @@ where
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
+
+        trace!("non_deterministic_data={:?}", non_deterministic_data);
 
         // Only NDD V1 is supported for block production so validate `block_fee_recipient_address`
         // exists
@@ -1626,7 +1633,7 @@ where
 
         // check non-deterministic data: btc block hash and aggregate public key
         if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash {
-            warn!("Bitcoin block hash mismatch");
+            warn!("Bitcoin checkpoint block hash mismatch");
 
             if tracing::enabled!(tracing::Level::WARN) {
                 let execution_time = execution_start_time.elapsed().as_secs_f32();
@@ -1772,15 +1779,11 @@ where
                     Ok(mut cache) => {
                         let eth_block_hash = block.hash();
 
-                        if tracing::enabled!(tracing::Level::DEBUG) {
-                            let cbft_block_hash_hex = hex::encode(cbft_block_hash);
-                            debug!(
-                                cbft_block_hash = cbft_block_hash_hex,
-                                eth_block_hash = hex::encode(eth_block_hash),
-                                "update block cache for key {}",
-                                cbft_block_hash_hex,
-                            );
-                        }
+                        debug!(
+                            cbft_block_hash = hex::encode(cbft_block_hash),
+                            eth_block_hash = hex::encode(eth_block_hash),
+                            "update eth block cache",
+                        );
 
                         cache.insert(cbft_block_hash, block_with_context);
 
@@ -1835,7 +1838,7 @@ where
                 }
             }
             Err(e) => {
-                error!("Error building block: {:?}", e);
+                error!("Error building eth block: {:?}", e);
 
                 if tracing::enabled!(tracing::Level::WARN) {
                     let execution_time = execution_start_time.elapsed().as_secs_f32();
@@ -1876,22 +1879,17 @@ where
         let mut block_cache_write = match self.block_cache.write() {
             Ok(block_cache_write) => block_cache_write,
             Err(e) => {
-                panic!("Error getting block cache write lock: {:?}", e);
+                panic!("Error getting eth block cache write lock: {:?}", e);
             }
         };
         let block_with_context = match block_cache_write.get(&cbft_block_hash) {
             Some(block_with_context) => {
-                if tracing::enabled!(tracing::Level::DEBUG) {
-                    let cbft_block_hash_hex = hex::encode(cbft_block_hash);
-                    let eth_block_hash = block_with_context.sealed_block_with_peg.block().hash();
-
-                    debug!(
-                        cbft_block_hash = cbft_block_hash_hex,
-                        eth_block_hash = hex::encode(eth_block_hash),
-                        "read block {} from block cache",
-                        cbft_block_hash_hex
-                    );
-                }
+                debug!(
+                    cbft_block_hash = hex::encode(cbft_block_hash),
+                    eth_block_hash =
+                        hex::encode(block_with_context.sealed_block_with_peg.block().hash()),
+                    "read eth block from block cache",
+                );
 
                 block_with_context.clone()
             }
@@ -1899,14 +1897,10 @@ where
                 // No block in cache: this happens during historical (block) sync
                 // Build the block
 
-                if tracing::enabled!(tracing::Level::DEBUG) {
-                    let cbft_block_hash_hex = hex::encode(cbft_block_hash);
-
-                    debug!(
-                        cbft_block_hash = cbft_block_hash_hex,
-                        "block {} not found in block cache, building a block", cbft_block_hash_hex
-                    );
-                }
+                debug!(
+                    cbft_block_hash = hex::encode(cbft_block_hash),
+                    "eth block not found in block cache, building a block"
+                );
 
                 // get non-deterministic data
                 let txs_bytes = request.txs.clone();
@@ -1992,15 +1986,12 @@ where
                     Ok(block_with_context) => {
                         block_cache_write.insert(cbft_block_hash, block_with_context.clone());
 
-                        let cbft_block_hash_hex = hex::encode(cbft_block_hash);
-
                         debug!(
-                            cbft_block_hash = cbft_block_hash_hex,
+                            cbft_block_hash = hex::encode(cbft_block_hash),
                             eth_block_hash = hex::encode(
                                 block_with_context.sealed_block_with_peg.block().hash()
                             ),
-                            "update block cache for key {}",
-                            cbft_block_hash_hex,
+                            "update eth block cache",
                         );
 
                         block_with_context
@@ -2078,7 +2069,7 @@ where
             cbft_transactions_count = txs_len,
             eth_transactions_count = txs_len - 1, // Minus NDD
             execution_time,
-            "Finalized block with {} transactions in {} seconds",
+            "Finalized cbft block with {} transactions in {} seconds",
             txs_len,
             execution_time,
         );
@@ -2104,7 +2095,7 @@ where
         let candidate_blocks = match self.block_cache.write() {
             Ok(candidate_blocks) => candidate_blocks,
             Err(e) => {
-                panic!("Error getting block cache write lock: {:?}", e);
+                panic!("Error getting eth block cache write lock: {:?}", e);
             }
         };
 
@@ -2114,7 +2105,7 @@ where
                 (cbft_block_hash, sealed_block_with_context)
             }
             None => {
-                panic!("Error getting block from cache");
+                panic!("Error getting eth block from cache");
             }
         };
 
@@ -2126,8 +2117,7 @@ where
         debug!(
             cbft_block_hash = cbft_block_hash_hex,
             eth_block_hash = eth_block_hash_hex,
-            "read finalized block {} from cache",
-            hex::encode(cbft_block_hash),
+            "read finalized eth block from cache",
         );
 
         trace!("eth_block_header={:?}", block.header());
@@ -2144,11 +2134,11 @@ where
                 .send(ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)))
                 .await
             {
-                panic!("Error sending commit block message: {:?}", e);
+                panic!("Error sending commit eth block message: {:?}", e);
             }
         }));
         if let Err(e) = commit_rx.recv() {
-            panic!("Error receiving commit block response {e:?}");
+            panic!("Error receiving commit eth block response {e:?}");
         }
 
         let execution_time = execution_start_time.elapsed().as_secs_f32();
@@ -2159,7 +2149,7 @@ where
             cbft_block_hash = cbft_block_hash_hex,
             eth_block_hash = eth_block_hash_hex,
             execution_time,
-            "The block {} is committed in {} seconds",
+            "The cbft block {} is committed in {} seconds",
             cbft_block_hash_hex,
             execution_time,
         );
