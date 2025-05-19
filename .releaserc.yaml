@@ -1,0 +1,143 @@
+---
+# Configuration for semantic-release
+
+# Branch configuration
+branches:
+  # main branch for production releases
+  - name: main
+    channel: latest
+  # develop branch for pre-releases
+  - name: alpha
+    channel: next
+    prerelease: true
+  # version branches for hotfixes
+  - name: v+([0-9]).+([0-9]).x
+  # specific version branches
+  - name: v+([0-9]).+([0-9]).+([0-9])
+
+# Format for git tags
+tagFormat: v${version}
+
+# Plugins that control the release process
+plugins:
+  - - "@semantic-release/commit-analyzer"
+    - preset: conventionalcommits
+      releaseRules:
+        - type: feat
+          release: minor
+        - type: fix
+          release: patch
+        - type: docs
+          release: patch
+        - type: style
+          release: patch
+        - type: refactor
+          release: patch
+        - type: test
+          release: patch
+        - type: build
+          release: patch
+        - type: ci
+          release: patch
+        - type: chore
+          scope: release
+          release: false
+        - type: chore
+          release: patch
+
+  - - "@semantic-release/release-notes-generator"
+    - preset: conventionalcommits
+      presetConfig:
+        types:
+          - type: feat
+            section: Features
+          - type: fix
+            section: Bug Fixes
+          - type: perf
+            section: Performance Improvements
+          - type: refactor
+            section: Code Refactoring
+          - type: docs
+            section: Documentation
+          - type: test
+            section: Tests
+          - type: build
+            section: Build System
+          - type: ci
+            section: Continuous Integration
+
+  # Update version in Cargo.toml and prepare for release
+  - - "@semantic-release/exec"
+    - prepareCmd: |
+        .github/scripts/release.sh update ${nextRelease.version}
+
+        # Trigger binary builds workflow
+        curl -X POST \
+          -H "Authorization: token ${process.env.GITHUB_TOKEN}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/binary-release.yml/dispatches \
+          -d '{"ref": "${process.env.GITHUB_REF}", "inputs": {"version": "v${nextRelease.version}", "engineer": "semantic-release"}}'
+      successCmd: git push origin HEAD:${branch.name} --tags
+
+  # Build and publish Docker images for BTC Server
+  - - "semantic-release-docker"
+    - name: botanix-btc-server
+      dockerTags:
+        - latest
+        - "{{version}}"
+        - "{{major}}.{{minor}}"
+        - "{{major}}"
+      dockerFile: Dockerfile.btc_server
+      registryUrl: ghcr.io/botanix-labs/Macbeth/botanix-btc-server
+      buildArgs:
+        - "--platform=linux/amd64"
+        - "--label=org.opencontainers.image.version={{version}}"
+        - "--label=org.opencontainers.image.created={{date}}"
+        - "--label=org.opencontainers.image.revision={{hash}}"
+
+  # Build and publish Docker images for PoA Node
+  - - "semantic-release-docker"
+    - name: botanix-reth-node
+      dockerTags:
+        - latest
+        - "{{version}}"
+        - "{{major}}.{{minor}}"
+        - "{{major}}"
+      dockerFile: Dockerfile
+      registryUrl: ghcr.io/botanix-labs/Macbeth/botanix-reth-node
+      buildArgs:
+        - "--platform=linux/amd64"
+        - "--label=org.opencontainers.image.version={{version}}"
+        - "--label=org.opencontainers.image.created={{date}}"
+        - "--label=org.opencontainers.image.revision={{hash}}"
+
+  # Publish to Google Container Registry
+  - - "semantic-release-gcr"
+    - image: botanix-btc-server/signing-server
+      registry: us-central1-docker.pkg.dev/botanix-391913
+      preset: extended
+
+  - - "semantic-release-gcr"
+    - image: botanix-reth-node/reth-node
+      registry: us-central1-docker.pkg.dev/botanix-391913
+      preset: extended
+
+  # Create GitHub release and attach binary assets
+  - - "@semantic-release/github"
+    - assets:
+        - path: "reth-x86_64-unknown-linux-gnu.tar.gz"
+          label: "reth-linux-x86_64"
+        - path: "reth-aarch64-unknown-linux-gnu.tar.gz"
+          label: "reth-linux-arm64"
+        - path: "btc-server-x86_64-unknown-linux-gnu.tar.gz"
+          label: "btc-server-linux-x86_64"
+        - path: "btc-server-aarch64-unknown-linux-gnu.tar.gz"
+          label: "btc-server-linux-arm64"
+        - path: "reth-x86_64-unknown-linux-gnu.tar.gz.sha256sum"
+          label: "reth-linux-x86_64-checksum"
+        - path: "reth-aarch64-unknown-linux-gnu.tar.gz.sha256sum"
+          label: "reth-linux-arm64-checksum"
+        - path: "btc-server-x86_64-unknown-linux-gnu.tar.gz.sha256sum"
+          label: "btc-server-linux-x86_64-checksum"
+        - path: "btc-server-aarch64-unknown-linux-gnu.tar.gz.sha256sum"
+          label: "btc-server-linux-arm64-checksum"

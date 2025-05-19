@@ -7,15 +7,24 @@
         "prettier:fix": "prettier --write \"**/*.@(json|md|sh|toml)\"",
         "prettier:validate": "prettier --check \"**/*.@(json|md|sh|toml)\"",
         "md:lint": "markdownlint -c .markdownlint.json \"**/*.md\" \".github/**/*.md\" -i \"target\" -i \"node_modules\" -i \"CHANGELOG.md\"",
-        "md:fix": "pnpm md:lint --fix"
+        "md:fix": "pnpm md:lint --fix",
+        "release": "semantic-release"
     },
     "devDependencies": {
         "@commitlint/config-conventional": "^19.2.2",
+        "@semantic-release/commit-analyzer": "^11.1.0",
+        "@semantic-release/exec": "^6.0.3",
+        "@semantic-release/github": "^9.0.5",
+        "@semantic-release/release-notes-generator": "^12.1.0",
         "commitlint": "^19.4.0",
+        "conventional-changelog-conventionalcommits": "^7.0.2",
         "markdownlint": "^0.38.0",
         "markdownlint-cli": "^0.44.0",
         "prettier": "^3.3.3",
         "prettier-plugin-sh": "^0.17.2",
-        "prettier-plugin-toml": "^2.0.1"
+        "prettier-plugin-toml": "^2.0.1",
+        "semantic-release": "^23.0.0",
+        "semantic-release-docker": "^2.2.0",
+        "semantic-release-gcr": "^1.1.2"
     }
 }
