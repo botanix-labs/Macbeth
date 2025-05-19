@@ -63,7 +63,7 @@ where
             provider.tx_ref(),
             provider.static_file_provider().clone(),
         )))
-        .execute(BlockExecutionInput { block, total_difficulty: U256::ZERO, disable_pegin_validation: false })?;
+        .execute(BlockExecutionInput { block, total_difficulty: U256::ZERO })?;
     block_execution_output.state.reverts.sort();
 
     // Convert the block execution output to an execution outcome for committing to the database

@@ -218,7 +218,6 @@ where
         mut evm: Evm<'_, Ext, &mut State<DB>>,
         botanix_consensus_pkg: BotanixConsensusPackage,
         provider: Arc<DatabaseProviderRO<RethDB>>,
-        disable_pegin_validation: bool,
     ) -> Result<EthExecuteOutput, BlockExecutionError>
     where
         DB: Database,
@@ -318,7 +317,6 @@ where
                         &botanix_consensus_pkg,
                         transaction.hash,
                         provider.clone(),
-                        disable_pegin_validation,
                     ) {
                         Ok((new_pegins, new_pegouts)) => {
                             pegins.extend(new_pegins);
@@ -461,14 +459,9 @@ where
         botanix_consensus_pkg: &BotanixConsensusPackage,
         tx_hash: TxHash,
         provider: Arc<DatabaseProviderRO<RethDB>>,
-        disable_pegin_validation: bool,
     ) -> Result<(Vec<PeginData>, Vec<PegoutWithId>), MintContractError> {
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
-
-        if disable_pegin_validation {
-            tracing::debug!(disable_pegin_validation, "skip pegin data validation");
-        }
 
         tracing::trace!("botanix_consensus_package={:?}", botanix_consensus_pkg);
 
@@ -480,14 +473,6 @@ where
                 None => continue,
                 Some(p) => p,
             };
-
-            if disable_pegin_validation {
-                tracing::trace!(?pegin_data, "skip pegin data validation for tx {}", tx_hash);
-
-                pegins.push(pegin_data);
-
-                continue;
-            }
 
             tracing::trace!(?pegin_data, "validate pegin data for tx {}", tx_hash);
 
@@ -722,7 +707,6 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        disable_pegin_validation: bool,
     ) -> Result<EthExecuteOutput, BlockExecutionError> {
         // 1. prepare state on new block
         self.on_new_block(&block.header);
@@ -753,7 +737,6 @@ where
                 evm,
                 botanix_consensus_pkg,
                 self.executor.provider.clone(),
-                disable_pegin_validation,
             )?
         };
 
@@ -831,9 +814,9 @@ where
     ///
     /// Returns an error if the block could not be executed or failed verification.
     fn execute(mut self, input: Self::Input<'_>) -> Result<Self::Output, Self::Error> {
-        let BlockExecutionInput { block, total_difficulty, disable_pegin_validation } = input;
+        let BlockExecutionInput { block, total_difficulty } = input;
         let EthExecuteOutput { receipts, requests, gas_used, total_block_fees, pegins, pegouts } =
-            self.execute_without_verification(block, total_difficulty, disable_pegin_validation)?;
+            self.execute_without_verification(block, total_difficulty)?;
 
         // TODO NOTE: we need to merge keep the reverts for the bundle retention
         self.state.merge_transitions(BundleRetention::Reverts);
@@ -888,7 +871,7 @@ where
     type Error = BlockExecutionError;
 
     fn execute_and_verify_one(&mut self, input: Self::Input<'_>) -> Result<(), Self::Error> {
-        let BlockExecutionInput { block, total_difficulty, disable_pegin_validation } = input;
+        let BlockExecutionInput { block, total_difficulty } = input;
 
         if self.batch_record.first_block().is_none() {
             self.batch_record.set_first_block(block.number);
@@ -901,11 +884,7 @@ where
             total_block_fees: _,
             pegins: _,
             pegouts: _,
-        } = self.executor.execute_without_verification(
-            block,
-            total_difficulty,
-            disable_pegin_validation,
-        )?;
+        } = self.executor.execute_without_verification(block, total_difficulty)?;
 
         validate_block_post_execution(block, self.executor.chain_spec(), &receipts, &requests)?;
 
@@ -1076,7 +1055,6 @@ mod tests {
                     senders: vec![],
                 },
                 U256::ZERO,
-                false,
             )
             .unwrap();
 

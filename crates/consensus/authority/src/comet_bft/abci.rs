@@ -336,8 +336,6 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     pool: Pool,
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, BlockWithContext>>>,
-    // TODO (lamafab): this should be atomic with `block_cache`.
-    last_finalized: Arc<RwLock<Option<BlockHash>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     #[allow(dead_code)]
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -391,7 +389,6 @@ where
             bitcoin_checkpoint,
             // Saving the last 5 blocks that were proposed
             block_cache: Arc::new(RwLock::new(LruMap::new(ByLength::new(5)))),
-            last_finalized: Arc::new(RwLock::new(None)),
             driver_tx,
             cbft_rpc_provider,
             authority_consensus,
@@ -1484,6 +1481,7 @@ where
             }
         };
 
+        // Extract block time: this must come from the CBFT block header NOT the system time
         // As that will be underministic
         let block_time = match request.time {
             Some(time) => time,
@@ -1732,7 +1730,6 @@ where
             &bitcoin_checkpoint_block_hash,
             &agg_pk,
             block_time,
-            disable_pegin_data,
         ) {
             Ok(block_with_context) => {
                 let block = block_with_context.sealed_block_with_peg.block();
@@ -1772,7 +1769,7 @@ where
                 }
 
                 match self.block_cache.write() {
-                    Ok(_cache) => {
+                    Ok(mut cache) => {
                         let eth_block_hash = block.hash();
 
                         if tracing::enabled!(tracing::Level::DEBUG) {
@@ -1785,7 +1782,7 @@ where
                             );
                         }
 
-                        // cache.insert(cbft_block_hash, block_with_context);
+                        cache.insert(cbft_block_hash, block_with_context);
 
                         self.metrics.commet_processed_proposals.increment(1);
 
@@ -1968,8 +1965,8 @@ where
                 };
 
                 // get txs skipping the first non-deterministic data tx
-                let mut txs_iter = txs_bytes.into_iter();
-                let txs = if txs_iter.next().is_none() {
+                let txs_iter = txs_bytes.clone().into_iter().skip(1);
+                let txs = if txs_iter.clone().next().is_none() {
                     vec![]
                 } else {
                     match transactions_signed_from_bytes(txs_iter) {
@@ -1979,9 +1976,6 @@ where
                         }
                     }
                 };
-
-                let disable_pegin_data = true;
-                assert!(disable_pegin_data);
 
                 match build_and_execute(
                     txs,
@@ -1994,19 +1988,9 @@ where
                     &non_deterministic_data.bitcoin_block_hash,
                     &non_deterministic_data.aggregated_public_key,
                     block_time,
-                    disable_pegin_data,
                 ) {
                     Ok(block_with_context) => {
                         block_cache_write.insert(cbft_block_hash, block_with_context.clone());
-
-                        {
-                            debug!("Saving finalized block hash: {}", hex::encode(cbft_block_hash));
-                            let mut l = self
-                                .last_finalized
-                                .write()
-                                .expect("Failed to get last finalized lock");
-                            *l = Some(cbft_block_hash);
-                        }
 
                         let cbft_block_hash_hex = hex::encode(cbft_block_hash);
 
@@ -2117,30 +2101,26 @@ where
     fn commit(&self) -> ResponseCommit {
         let execution_start_time = std::time::Instant::now();
 
-        let mut candidate_blocks = match self.block_cache.write() {
+        let candidate_blocks = match self.block_cache.write() {
             Ok(candidate_blocks) => candidate_blocks,
             Err(e) => {
                 panic!("Error getting block cache write lock: {:?}", e);
             }
         };
 
-        let cbft_block_hash = {
-            let mut l = self.last_finalized.write().expect("Failed to get last finalized lock");
-            let cbft_block_hash = *l.expect("Last finalized block not saved");
-            *l = None; // reset
-            cbft_block_hash
-        };
-
-        let cbft_block_hash_hex = hex::encode(cbft_block_hash);
-        debug!("Preparing to commit block hash: {}", cbft_block_hash_hex);
-
         // We want to explicitly panic since we cannot get the lock and send the commit message
-        let Some(sealed_block_with_context) = candidate_blocks.get(&cbft_block_hash) else {
-            panic!("Error getting block from cache");
+        let (cbft_block_hash, sealed_block_with_context) = match candidate_blocks.peek_newest() {
+            Some((cbft_block_hash, sealed_block_with_context)) => {
+                (cbft_block_hash, sealed_block_with_context)
+            }
+            None => {
+                panic!("Error getting block from cache");
+            }
         };
 
         let block = sealed_block_with_context.sealed_block_with_peg.block();
 
+        let cbft_block_hash_hex = hex::encode(cbft_block_hash);
         let eth_block_hash_hex = hex::encode(block.hash());
 
         debug!(

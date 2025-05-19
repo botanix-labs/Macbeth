@@ -221,6 +221,6 @@ mod tests {
             requests: None,
         };
         let block = BlockWithSenders::new(block, Default::default()).unwrap();
-        let _ = executor.execute(BlockExecutionInput::new(&block, U256::ZERO, false));
+        let _ = executor.execute(BlockExecutionInput::new(&block, U256::ZERO));
     }
 }
