@@ -373,7 +373,9 @@ where
                                         info!(target: "consensus::authority::frost_task::start_task", "Sent checkpoint to btc server");
                                     }
                                     Err(err) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Error sending checkpoint to btc server: {}", err);
+                                        // We need to panic bc we have no way to recover any missed pegouts and they won't be sent to the btc server.
+                                        // We could rollback and sync to reprocess the pegouts but we would intentionally be replaying old pegouts.
+                                        panic!("Error sending checkpoint to btc server: {}", err);
                                     }
                                 }
                             }
