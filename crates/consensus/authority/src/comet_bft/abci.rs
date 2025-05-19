@@ -100,6 +100,11 @@ pub enum ApplySnapshotResult {
     RejectSnapshot = 5,
 }
 
+use super::proto_debug::{
+    RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
+    RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
+    ResponsePrepareProposalTruncatedDebug,
+};
 use crate::{
     builder::BitcoinCheckpoint,
     comet_bft::{
@@ -597,7 +602,7 @@ where
     // to unexpected behavior.
     #[instrument(level = "trace", ret, skip(self, request))]
     fn init_chain(&self, request: RequestInitChain) -> ResponseInitChain {
-        trace!(?request, "init_chain request");
+        trace!("request={:?}", request);
 
         // check chain ids match
         let cometbft_chain_id = match request.chain_id.parse::<u64>() {
@@ -621,7 +626,7 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#info
     #[instrument(level = "trace", ret, skip(self, request))]
     fn info(&self, request: RequestInfo) -> ResponseInfo {
-        trace!(?request, "info request");
+        trace!("request={:?}", request);
 
         let client = self.storage.client.clone();
 
@@ -712,7 +717,7 @@ where
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#offersnapshot
     #[instrument(level = "trace", ret, skip(self, request), fields(height))]
     fn offer_snapshot(&self, request: RequestOfferSnapshot) -> ResponseOfferSnapshot {
-        trace!(?request, "offer_snapshot request");
+        trace!("request={:?}", request);
 
         let Some(snapshot) = request.snapshot else {
             error!("received empty snapshot");
@@ -885,7 +890,7 @@ where
     /// https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#loadsnapshotchunk
     #[instrument(level = "trace", skip(self, request), fields(height = request.height, chunk = request.chunk))]
     fn load_snapshot_chunk(&self, request: RequestLoadSnapshotChunk) -> ResponseLoadSnapshotChunk {
-        trace!(?request, "load_snapshot_chunk request");
+        trace!("request={:?}", request);
 
         let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
             Ok(snapshot_manager_state_lock) => snapshot_manager_state_lock,
@@ -894,7 +899,7 @@ where
 
                 let response = ResponseLoadSnapshotChunk::default();
 
-                trace!(?response, "load_snapshot_chunk response");
+                trace!("return={:?}", response);
 
                 return response;
             }
@@ -906,7 +911,7 @@ where
 
             let response = ResponseLoadSnapshotChunk::default();
 
-            trace!(?response, "load_snapshot_chunk response");
+            trace!("return={:?}", response);
 
             return response;
         }
@@ -924,7 +929,7 @@ where
 
             let response = ResponseLoadSnapshotChunk::default();
 
-            trace!(?response, "load_snapshot_chunk response");
+            trace!("return={:?}", response);
 
             return response;
         }
@@ -950,7 +955,7 @@ where
 
                             let response = ResponseLoadSnapshotChunk::default();
 
-                            trace!(?response, "load_snapshot_chunk response");
+                            trace!("return={:?}", response);
 
                             return response;
                         }
@@ -982,7 +987,7 @@ where
 
                                         let response = ResponseLoadSnapshotChunk::default();
 
-                                        trace!(?response, "load_snapshot_chunk response");
+                                        trace!("return={:?}", response);
 
                                         return response;
                                     }
@@ -1037,17 +1042,7 @@ where
             }
         };
 
-        // TODO: Implement tracing::Value
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let debug_response = format!(
-                "ResponseLoadSnapshotChunk {{ chunk: [{}, {}, ...({} more)] }}",
-                response.chunk[0],
-                response.chunk[1],
-                response.chunk.len() - 2
-            );
-
-            trace!(debug_response, "load_snapshot_chunk response");
-        }
+        trace!("return={:?}", ResponseLoadSnapshotChunkTruncatedDebug(&response));
 
         response
     }
@@ -1058,19 +1053,7 @@ where
         &self,
         request: RequestApplySnapshotChunk,
     ) -> ResponseApplySnapshotChunk {
-        // TODO: Implement tracing::Value
-        if tracing::enabled!(tracing::Level::TRACE) {
-            let debug_request = format!(
-                "ResponseLoadSnapshotChunk {{ index: {}, chunk: [{}, {}, ...({} more)], sender: \"{}\" }}",
-                request.index,
-                request.chunk[0],
-                request.chunk[1],
-                request.chunk.len(),
-                request.sender
-            );
-
-            trace!(debug_request, "apply_snapshot_chunk request");
-        }
+        trace!("request={:?}", RequestApplySnapshotChunkTruncatedDebug(&request));
 
         // ensure no historical sync is ongoing
         let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
@@ -1274,7 +1257,7 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
     #[instrument(level = "trace", skip(self, request), fields(cfbt_block.height = request.height))]
     fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
-        trace!(?request, "prepare_proposal request");
+        trace!("request={:?}", request);
 
         if !request.txs.is_empty() {
             panic!(
@@ -1330,7 +1313,7 @@ where
 
             let response = ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
 
-            trace!(?response, "prepare_proposal response");
+            trace!("return={:?}", response);
 
             return response;
         }
@@ -1401,14 +1384,7 @@ where
 
                         let response = ResponsePrepareProposal { txs };
 
-                        if tracing::enabled!(tracing::Level::TRACE) {
-                            let debug_response = format!(
-                                "ResponsePrepareProposal {{ txs: [ {} ] }}",
-                                response.txs.len()
-                            );
-
-                            trace!(debug_response, "prepare_proposal response");
-                        }
+                        trace!("return={:?}", ResponsePrepareProposalTruncatedDebug(&response));
 
                         response
                     }
@@ -1428,7 +1404,7 @@ where
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
     #[instrument(level = "trace", ret, skip(self, request), fields(cfbt_block.height = request.height, cfbt_block.hash = hex::encode(&request.hash)))]
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
-        trace!(?request, "process_proposal request");
+        trace!(request = ?RequestProcessProposalTruncatedDebug(&request), "process_proposal request");
 
         let agg_pk = match self.aggregate_public_key() {
             Ok(pk) => pk,
@@ -1552,14 +1528,16 @@ where
                 }
                 match self.block_cache.write() {
                     Ok(mut cache) => {
-                        let eth_block_hash = block.hash_slow();
+                        if tracing::enabled!(tracing::Level::DEBUG) {
+                            let eth_block_hash = block.hash_slow();
 
-                        debug!(
-                            %cbft_block_hash,
-                            eth_block_hash = hex::encode(eth_block_hash),
-                            "update block cache for key {}",
-                            cbft_block_hash,
-                        );
+                            debug!(
+                                %cbft_block_hash,
+                                eth_block_hash = hex::encode(eth_block_hash),
+                                "update block cache for key {}",
+                                cbft_block_hash,
+                            );
+                        }
 
                         cache.insert(cbft_block_hash, block_with_context);
                     }
@@ -1581,7 +1559,7 @@ where
     ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
     #[instrument(level = "trace", skip(self, request), fields(cfbt_block.height = request.height, cfbt_block.hash = hex::encode(&request.hash)))]
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
-        trace!(?request, "finalize_block request");
+        trace!("request={:?}", RequestFinalizeBlockTruncatedDebug(&request));
 
         if request.txs.is_empty() {
             panic!("No transactions in finalize_block request, but expected at least NDD tx");
@@ -1870,13 +1848,20 @@ where
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
                     ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)) => {
+                        let _span = tracing::trace_span!(
+                            "ABCI driver commit block",
+                            eth_block_height =
+                                sealed_block_with_context.sealed_block_with_peg.block().number,
+                            eth_block_hash =
+                                %sealed_block_with_context.sealed_block_with_peg.block().hash(),
+                        )
+                        .entered();
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
                         let sealed_block_with_senders = sealed_block_with_peg.block().to_owned();
                         let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
                         let trie_updates = sealed_block_with_context.trie_updates;
-                        info!("Inserting block into db: {:?}", sealed_block_with_senders.number);
 
                         let executed_block = ExecutedBlock::new(
                             Arc::new(sealed_block_with_senders.block.clone()),
@@ -1916,7 +1901,6 @@ where
                         self.blockchain_provider
                             .on_forkchoice_update_received(&ForkchoiceState::default());
 
-                        info!("Block height from sealed block: {:?}", block_height);
                         self.blockchain_provider.set_canonical_head(new_header.clone());
                         self.blockchain_provider.set_safe(new_header.clone());
                         self.blockchain_provider.set_finalized(new_header.clone());
@@ -1924,6 +1908,8 @@ where
                         self.blockchain_provider
                             .canonical_in_memory_state()
                             .remove_persisted_blocks(block_height - 1);
+
+                        debug!("Ethereum block {block_height} committed to the state");
 
                         let chain = Chain::new(
                             vec![sealed_block_with_senders].into_iter(),
