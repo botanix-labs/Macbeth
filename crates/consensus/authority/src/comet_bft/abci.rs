@@ -1717,9 +1717,6 @@ where
             }
         };
 
-        let disable_pegin_data = false;
-        assert!(!disable_pegin_data);
-
         // Validation done as a result of this call:
         // - botanix consensus package created on the fly and compared to the incoming block EDH
         // - mint validation checks
