@@ -28,8 +28,8 @@ pub(crate) mod authority_execution_utils {
     use reth_trie_db::DatabaseStateRoot;
 
     use crate::comet_bft::abci::BlockWithContext;
-    use reth_consensus_common::utils::UnixTimestamp;
     use std::sync::Arc;
+    use tendermint_proto::google::protobuf::Timestamp;
 
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
@@ -46,7 +46,7 @@ pub(crate) mod authority_execution_utils {
         bitcoin_network: bitcoin::Network,
         bitcoin_checkpoint_block_hash: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
-        timestamp: UnixTimestamp,
+        timestamp: Timestamp,
         disable_pegin_validation: bool,
     ) -> Result<BlockWithContext, BlockExecutionError>
     where
@@ -56,7 +56,7 @@ pub(crate) mod authority_execution_utils {
         let start_execution_time = std::time::Instant::now();
 
         tracing::info!(
-            block_time = timestamp,
+            block_time = timestamp.seconds,
             transactions_count = transactions.len(),
             block_fee_recipient_address = %block_fee_recipient_address,
             aggregated_public_key = %agg_pk,
@@ -184,111 +184,113 @@ pub(crate) mod authority_execution_utils {
     /// Fills in pre-execution header fields based on the current best block and given
     /// transactions.
     fn build_header_template<DB: Database>(
-    transactions: &[TransactionSigned],
-    database_provider: &ProviderFactory<DB>,
-    bitcoin_checkpoint: &bitcoin::BlockHash,
-    chain_spec: Arc<ChainSpec>,
-    agg_pk: &secp256k1::PublicKey,
-    timestamp: UnixTimestamp,
-    block_fee_recipient_address: &Address,
-) -> Result<Header, BlockExecutionError> {
-    let client = database_provider.provider()?;
-    let best_block = client.best_block_number().map_err(|e| {
-        BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
-    })?;
-    let best_hash = client
-        .block_hash(best_block)
-        .map_err(|e| {
+        transactions: &[TransactionSigned],
+        database_provider: &ProviderFactory<DB>,
+        bitcoin_checkpoint: &bitcoin::BlockHash,
+        chain_spec: Arc<ChainSpec>,
+        agg_pk: &secp256k1::PublicKey,
+        timestamp: Timestamp,
+        block_fee_recipient_address: &Address,
+    ) -> Result<Header, BlockExecutionError> {
+        let client = database_provider.provider()?;
+        let best_block = client.best_block_number().map_err(|e| {
             BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
-        })?
-        .unwrap_or_else(|| {
-            panic!("best block hash not found for block number: {}", best_block);
-        });
+        })?;
+        let best_hash = client
+            .block_hash(best_block)
+            .map_err(|e| {
+                BlockExecutionError::Internal(InternalBlockExecutionError::LatestBlock(e))
+            })?
+            .unwrap_or_else(|| {
+                panic!("best block hash not found for block number: {}", best_block);
+            });
 
-    // check previous block for base fee
-    let base_fee_per_gas = client
-        .header_by_hash_or_number(BlockHashOrNumber::Number(best_block))
-        .expect("header to exist")
-        .and_then(|parent| {
-            parent.next_block_base_fee(chain_spec.base_fee_params_at_timestamp(timestamp))
-        });
+        let timestamp = timestamp.seconds as u64;
 
-    // copied from `build_header_template` in autoseal
-    let blob_gas_used = if chain_spec.is_cancun_active_at_timestamp(timestamp) {
-        let mut sum_blob_gas_used = 0;
-        for tx in transactions {
-            if let Some(blob_tx) = tx.transaction.as_eip4844() {
-                sum_blob_gas_used += blob_tx.blob_gas();
+        // check previous block for base fee
+        let base_fee_per_gas = client
+            .header_by_hash_or_number(BlockHashOrNumber::Number(best_block))
+            .expect("header to exist")
+            .and_then(|parent| {
+                parent.next_block_base_fee(chain_spec.base_fee_params_at_timestamp(timestamp))
+            });
+
+        // copied from `build_header_template` in autoseal
+        let blob_gas_used = if chain_spec.is_cancun_active_at_timestamp(timestamp) {
+            let mut sum_blob_gas_used = 0;
+            for tx in transactions {
+                if let Some(blob_tx) = tx.transaction.as_eip4844() {
+                    sum_blob_gas_used += blob_tx.blob_gas();
+                }
             }
-        }
-        Some(sum_blob_gas_used)
-    } else {
-        None
-    };
-
-    // Construct [ExtraDataHeader] with the bitcoin checkpoint and aggregated public key
-    // so the botanix consensus package can be constructed from the EDH
-    let edh = ExtraDataHeader::new(
-        EXTRA_HEADER_VERSION,
-        CHAIN_VERSION,
-        *bitcoin_checkpoint,
-        *agg_pk,
-        *block_fee_recipient_address,
-    );
-    let mut header = Header {
-        parent_hash: best_hash,
-        ommers_hash: EMPTY_OMMER_ROOT_HASH,
-        beneficiary: Address::ZERO, // burn the block reward so not to increase ether supply
-        state_root: Default::default(),
-        transactions_root: Default::default(),
-        receipts_root: Default::default(),
-        withdrawals_root: None,
-        logs_bloom: Default::default(),
-        difficulty: Default::default(),
-        number: best_block + 1,
-        gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
-        gas_used: 0,
-        timestamp,
-        mix_hash: Default::default(),
-        nonce: 0,
-        base_fee_per_gas,
-        blob_gas_used,
-        excess_blob_gas: None,
-        extra_data: Bytes::from(edh.serialize()),
-        parent_beacon_block_root: None,
-        requests_root: None,
-    };
-
-    // copied from `build_header_template` in autoseal
-    if chain_spec.is_cancun_active_at_timestamp(timestamp) {
-        let parent = client.header(&best_hash).expect("header to be found");
-        header.parent_beacon_block_root =
-            parent.clone().and_then(|parent| parent.parent_beacon_block_root);
-        header.blob_gas_used = Some(0);
-
-        let (parent_excess_blob_gas, parent_blob_gas_used) = match parent {
-            Some(parent_block)
-                if chain_spec.is_cancun_active_at_timestamp(parent_block.timestamp) =>
-            {
-                (
-                    parent_block.excess_blob_gas.unwrap_or_default(),
-                    parent_block.blob_gas_used.unwrap_or_default(),
-                )
-            }
-            _ => (0, 0),
+            Some(sum_blob_gas_used)
+        } else {
+            None
         };
-        header.excess_blob_gas =
-            Some(calculate_excess_blob_gas(parent_excess_blob_gas, parent_blob_gas_used))
+
+        // Construct [ExtraDataHeader] with the bitcoin checkpoint and aggregated public key
+        // so the botanix consensus package can be constructed from the EDH
+        let edh = ExtraDataHeader::new(
+            EXTRA_HEADER_VERSION,
+            CHAIN_VERSION,
+            *bitcoin_checkpoint,
+            *agg_pk,
+            *block_fee_recipient_address,
+        );
+        let mut header = Header {
+            parent_hash: best_hash,
+            ommers_hash: EMPTY_OMMER_ROOT_HASH,
+            beneficiary: Address::ZERO, // burn the block reward so not to increase ether supply
+            state_root: Default::default(),
+            transactions_root: Default::default(),
+            receipts_root: Default::default(),
+            withdrawals_root: None,
+            logs_bloom: Default::default(),
+            difficulty: Default::default(),
+            number: best_block + 1,
+            gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
+            gas_used: 0,
+            timestamp,
+            mix_hash: Default::default(),
+            nonce: 0,
+            base_fee_per_gas,
+            blob_gas_used,
+            excess_blob_gas: None,
+            extra_data: Bytes::from(edh.serialize()),
+            parent_beacon_block_root: None,
+            requests_root: None,
+        };
+
+        // copied from `build_header_template` in autoseal
+        if chain_spec.is_cancun_active_at_timestamp(timestamp) {
+            let parent = client.header(&best_hash).expect("header to be found");
+            header.parent_beacon_block_root =
+                parent.clone().and_then(|parent| parent.parent_beacon_block_root);
+            header.blob_gas_used = Some(0);
+
+            let (parent_excess_blob_gas, parent_blob_gas_used) = match parent {
+                Some(parent_block)
+                    if chain_spec.is_cancun_active_at_timestamp(parent_block.timestamp) =>
+                {
+                    (
+                        parent_block.excess_blob_gas.unwrap_or_default(),
+                        parent_block.blob_gas_used.unwrap_or_default(),
+                    )
+                }
+                _ => (0, 0),
+            };
+            header.excess_blob_gas =
+                Some(calculate_excess_blob_gas(parent_excess_blob_gas, parent_blob_gas_used))
+        }
+
+        header.transactions_root = if transactions.is_empty() {
+            EMPTY_TRANSACTIONS
+        } else {
+            proofs::calculate_transaction_root(transactions)
+        };
+
+        Ok(header)
     }
-
-    header.transactions_root = if transactions.is_empty() {
-        EMPTY_TRANSACTIONS
-    } else {
-        proofs::calculate_transaction_root(transactions)
-    };
-
-    Ok(header)
-}
 
     /// Fills in the post-execution header fields based on the given PostState and gas used.
     /// In doing this, the state root is calculated and the final header is returned.
@@ -380,44 +382,44 @@ pub(crate) mod authority_execution_utils {
     ///
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
     fn execute<BF, DB>(
-    block: &BlockWithSenders,
-    database_provider: &ProviderFactory<DB>,
-    _block_fee_recipient_address: Option<Address>,
-    bitcoind_factory: &BF,
-    bitcoin_network: bitcoin::Network,
-    chain_spec: Arc<ChainSpec>,
-    evm_config: EthEvmConfig,
-    disable_pegin_validation: bool,
-) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError>
-where
-    BF: BitcoindFactory + Clone + Unpin + 'static,
-    DB: Database,
-{
-    // We cannot call `execute_and_verify_receipt()` here as we dont know the gas used yet
-    // We must set those values on the executor after the execution
-    // This is only an execution for the block builder, all other executing operations
-    // should use `execute_and_verify_receipt`
-    let provider =
-        database_provider.provider()?.state_provider_by_block_number(block.number - 1)?;
+        block: &BlockWithSenders,
+        database_provider: &ProviderFactory<DB>,
+        _block_fee_recipient_address: Option<Address>,
+        bitcoind_factory: &BF,
+        bitcoin_network: bitcoin::Network,
+        chain_spec: Arc<ChainSpec>,
+        evm_config: EthEvmConfig,
+        disable_pegin_validation: bool,
+    ) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError>
+    where
+        BF: BitcoindFactory + Clone + Unpin + 'static,
+        DB: Database,
+    {
+        // We cannot call `execute_and_verify_receipt()` here as we dont know the gas used yet
+        // We must set those values on the executor after the execution
+        // This is only an execution for the block builder, all other executing operations
+        // should use `execute_and_verify_receipt`
+        let provider =
+            database_provider.provider()?.state_provider_by_block_number(block.number - 1)?;
 
-    let blockchain_provider: DatabaseProviderRO<DB> =
-        database_provider.database_provider_ro()?;
+        let blockchain_provider: DatabaseProviderRO<DB> =
+            database_provider.database_provider_ro()?;
 
-    let db = State::builder()
-        .with_database_boxed(Box::new(StateProviderDatabase::new(provider)))
-        .with_bundle_update()
-        .build();
+        let db = State::builder()
+            .with_database_boxed(Box::new(StateProviderDatabase::new(provider)))
+            .with_bundle_update()
+            .build();
 
-    let executor = EthBlockExecutor::<EthEvmConfig, _, BF, DB>::new(
-        chain_spec,
-        evm_config,
-        db,
-        bitcoind_factory.clone(),
-        bitcoin_network,
-        Arc::new(blockchain_provider),
-    );
-    let input = BlockExecutionInput::new(block, U256::ZERO, disable_pegin_validation);
-    let exec_results = executor.execute(input)?;
-    Ok(exec_results)
-}
+        let executor = EthBlockExecutor::<EthEvmConfig, _, BF, DB>::new(
+            chain_spec,
+            evm_config,
+            db,
+            bitcoind_factory.clone(),
+            bitcoin_network,
+            Arc::new(blockchain_provider),
+        );
+        let input = BlockExecutionInput::new(block, U256::ZERO, disable_pegin_validation);
+        let exec_results = executor.execute(input)?;
+        Ok(exec_results)
+    }
 }

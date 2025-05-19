@@ -104,7 +104,6 @@ use super::proto_debug::{
     RequestApplySnapshotChunkTruncatedDebug, RequestProcessProposalTruncatedDebug,
     ResponseLoadSnapshotChunkTruncatedDebug, ResponsePrepareProposalTruncatedDebug,
 };
-use crate::comet_bft::utils::proto_time_to_timestamp;
 use crate::{
     builder::BitcoinCheckpoint,
     comet_bft::{
@@ -1281,10 +1280,7 @@ where
             );
         }
 
-        let block_time = match proto_time_to_timestamp(request.time.as_ref()) {
-            Ok(time) => time,
-            Err(e) => panic!("block time is not set in the request: {e}"),
-        };
+        let block_time = request.time.expect("block time is not set in the request");
 
         let max_tx_bytes: usize =
             request.max_tx_bytes.try_into().expect("Invalid request proposal max_tx_bytes value");
@@ -1337,7 +1333,7 @@ where
                 let execution_time = execution_start_time.elapsed().as_secs_f32();
 
                 info!(
-                    block_time,
+                    block_time = block_time.seconds,
                     cbft_transactions_count = 1,
                     eth_transactions_count = 0,
                     execution_time,
@@ -1418,7 +1414,7 @@ where
                             let execution_time = execution_start_time.elapsed().as_secs_f32();
 
                             info!(
-                                block_time,
+                                block_time = block_time.seconds,
                                 execution_time,
                                 cbft_transactions_count = txs_len,
                                 eth_transactions_count = txs_len - 1, // Minus NDD
@@ -1486,12 +1482,12 @@ where
             }
         };
 
-        // Extract block time: this must come from the CBFT block header NOT the system time
-        // As that will be non-deterministic
-        let block_time = match proto_time_to_timestamp(request.time.as_ref()) {
-            Ok(time) => time,
-            Err(e) => {
-                panic!("invalid block time in prepare proposal request: {e}")
+        // As that will be underministic
+        let block_time = match request.time {
+            Some(time) => time,
+            None => {
+                error!("Block time is not set in process proposal");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
 
@@ -1515,7 +1511,7 @@ where
 
                     warn!(
                         app_hash = hex::encode(&app_hash),
-                        block_time,
+                        block_time = block_time.seconds,
                         execution_time,
                         cbft_transactions_count = txs_len,
                         eth_transactions_count = txs_len - 1,
@@ -1547,7 +1543,7 @@ where
 
                     warn!(
                         app_hash = hex::encode(&app_hash),
-                        block_time,
+                        block_time = block_time.seconds,
                         execution_time,
                         cbft_transactions_count = txs_len,
                         eth_transactions_count = txs_len - 1,
@@ -1579,7 +1575,7 @@ where
 
                     warn!(
                         app_hash = hex::encode(&app_hash),
-                        block_time,
+                        block_time = block_time.seconds,
                         execution_time,
                         cbft_transactions_count = txs_len,
                         eth_transactions_count = txs_len - 1,
@@ -1614,7 +1610,7 @@ where
 
                     warn!(
                         app_hash = hex::encode(&app_hash),
-                        block_time,
+                        block_time = block_time.seconds,
                         execution_time,
                         cbft_transactions_count = txs_len,
                         eth_transactions_count = txs_len - 1,
@@ -1643,7 +1639,7 @@ where
 
                 warn!(
                     app_hash = hex::encode(&app_hash),
-                    block_time,
+                    block_time = block_time.seconds,
                     execution_time,
                     cbft_transactions_count = txs_len,
                     eth_transactions_count = txs_len - 1,
@@ -1670,7 +1666,7 @@ where
 
                 warn!(
                     app_hash = hex::encode(&app_hash),
-                    block_time,
+                    block_time = block_time.seconds,
                     execution_time,
                     cbft_transactions_count = txs_len,
                     eth_transactions_count = txs_len - 1,
@@ -1700,7 +1696,7 @@ where
 
                     warn!(
                         app_hash = hex::encode(&app_hash),
-                        block_time,
+                        block_time = block_time.seconds,
                         execution_time,
                         cbft_transactions_count = txs_len,
                         eth_transactions_count = txs_len - 1,
@@ -1760,7 +1756,7 @@ where
 
                         warn!(
                             app_hash = hex::encode(&app_hash),
-                            block_time,
+                            block_time = block_time.seconds,
                             execution_time,
                             cbft_transactions_count = txs_len,
                             eth_transactions_count = txs_len - 1,
@@ -1796,7 +1792,7 @@ where
 
                             info!(
                                 app_hash = hex::encode(eth_block_hash),
-                                block_time,
+                                block_time = block_time.seconds,
                                 execution_time,
                                 cbft_transactions_count = txs_len,
                                 eth_transactions_count = txs_len - 1, // Minus NDD
@@ -1825,7 +1821,7 @@ where
 
                             warn!(
                                 app_hash = hex::encode(&app_hash),
-                                block_time,
+                                block_time = block_time.seconds,
                                 execution_time,
                                 cbft_transactions_count = txs_len,
                                 eth_transactions_count = txs_len - 1,
@@ -1853,7 +1849,7 @@ where
 
                     warn!(
                         app_hash = hex::encode(&app_hash),
-                        block_time,
+                        block_time = block_time.seconds,
                         execution_time,
                         cbft_transactions_count = txs_len,
                         eth_transactions_count = txs_len - 1,
@@ -1962,10 +1958,10 @@ where
                     }
                 };
 
-                let block_time = match proto_time_to_timestamp(request.time.as_ref()) {
-                    Ok(time) => time,
-                    Err(e) => {
-                        panic!("Block time is not set in finalize block request: {e}");
+                let block_time = match request.time {
+                    Some(time) => time,
+                    None => {
+                        panic!("Block time is not set in process proposal");
                     }
                 };
 
