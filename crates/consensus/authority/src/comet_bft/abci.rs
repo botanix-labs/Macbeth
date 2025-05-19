@@ -1867,7 +1867,7 @@ where
     ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
     #[instrument(level = "trace", skip(self, request), fields(cbft_block_height = request.height, cbft_block_hash = hex::encode(&request.hash)))]
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
-        trace!("request={:?}", request);
+        trace!("request={:?}", RequestFinalizeBlockTruncatedDebug(&request));
 
         if request.txs.is_empty() {
             panic!("No transactions in finalize_block request, but expected at least NDD tx");
