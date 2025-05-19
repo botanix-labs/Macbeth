@@ -118,7 +118,7 @@ jobs:
           done
           
       - name: Upload Assets to GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: ./release-assets/*
           tag_name: v${{ needs.semantic-release.outputs.new_release_version }}
