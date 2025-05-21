@@ -254,6 +254,7 @@ impl PoaNodeCommand {
 
 impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     /// Execute `poa` command
+    #[tracing::instrument(skip_all, err)]
     pub async fn execute(&self, ctx: CliContext) -> eyre::Result<()> {
         tracing::info!(target: "reth::cli", version = ?version::SHORT_VERSION, "Starting reth with poa");
         set_panic_hook();
