@@ -1,0 +1,4 @@
+- how we release
+- semantic versioning
+- networks deployment
+- testing
