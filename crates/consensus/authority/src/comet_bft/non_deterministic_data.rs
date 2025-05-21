@@ -151,14 +151,19 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk);
-        assert_eq!(ndd.version, VERSION_0);
+        let block_fee_recipient_address =
+            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
+                .expect("valid address");
+
+        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk, block_fee_recipient_address);
+        assert_eq!(ndd.version, VERSION_1);
         assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
         assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, block_fee_recipient_address);
     }
 
     #[test]
-    fn test_non_deterministic_data_new_v1() {
+    fn test_non_deterministic_data_serde() {
         let bitcoin_block_hash = BlockHash::all_zeros();
         let pk = secp256k1::PublicKey::from_slice(
             hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
@@ -169,33 +174,22 @@ mod tests {
         let block_fee_recipient_address =
             Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
                 .expect("valid address");
-        let ndd = NonDeterministicData::new_v1(bitcoin_block_hash, pk, block_fee_recipient_address);
-        assert_eq!(ndd.version, VERSION_1);
-        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
-        assert_eq!(ndd.aggregated_public_key, pk);
-        assert_eq!(ndd.block_fee_recipient_address, Some(block_fee_recipient_address));
-    }
 
-    #[test]
-    fn test_non_deterministic_data_serde_v0() {
-        let bitcoin_block_hash = BlockHash::all_zeros();
-        let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
-            hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
-                .unwrap()
-                .as_slice(),
-        )
-        .unwrap();
-        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk);
+        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk, block_fee_recipient_address);
         let res = ndd.serialize().unwrap();
         let mut reader = io::Cursor::new(res);
+
         let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
         assert_eq!(deserialized.version, ndd.version);
         assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
         assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
+        assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
     }
 
     #[test]
-    fn test_non_deterministic_data_serde_v1() {
+    /// Attempts to deserialize a NDD with an unknown version containing some
+    /// tailing data.
+    fn test_non_deterministic_data_serde_unknown_version() {
         let bitcoin_block_hash = BlockHash::all_zeros();
         let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
             hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
@@ -206,13 +200,53 @@ mod tests {
         let block_fee_recipient_address =
             Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
                 .expect("valid address");
-        let ndd = NonDeterministicData::new_v1(bitcoin_block_hash, pk, block_fee_recipient_address);
-        let res = ndd.serialize().unwrap();
-        let mut reader = io::Cursor::new(res);
-        let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
-        assert_eq!(deserialized.version, ndd.version);
-        assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
-        assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
-        assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
+
+        // NOTE: The last 32 bytes (all 1's) are ignored.
+        let bytes = hex::decode(
+            "0000000000000000000000000000000000000000000000000000000000000000\
+             039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d\
+             6300\
+             43c8bdcb9afebb1d834a7de18cc214a6fd1632d9\
+             1111111111111111111111111111111111111111111111111111111111111111",
+        )
+        .unwrap();
+        let mut reader = io::Cursor::new(bytes);
+        let ndd = NonDeterministicData::deserialize(&mut reader).unwrap();
+
+        assert_eq!(ndd.version, 99); // Version 99 is unknown
+        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
+        assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, block_fee_recipient_address);
+    }
+
+    #[test]
+    /// Attempts to deserialize a NDD from a deprecated implementation that
+    /// still used version 0.
+    fn test_non_deterministic_data_serde_from_deprecated_impl() {
+        let bitcoin_block_hash = BlockHash::all_zeros();
+        let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
+            hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let block_fee_recipient_address =
+            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
+                .expect("valid address");
+
+        let bytes = hex::decode(
+            "0000000000000000000000000000000000000000000000000000000000000000\
+             039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d\
+             0100\
+             43c8bdcb9afebb1d834a7de18cc214a6fd1632d9",
+        )
+        .unwrap();
+        let mut reader = io::Cursor::new(bytes);
+        let ndd = NonDeterministicData::deserialize(&mut reader).unwrap();
+
+        assert_eq!(ndd.version, VERSION_1);
+        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
+        assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, block_fee_recipient_address);
     }
 }
