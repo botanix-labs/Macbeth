@@ -13,55 +13,28 @@ pub(crate) enum NonDeterministicDataDeserializeError {
     #[error("invalid data format")]
     /// Invalid data format
     Decoding(#[from] encode::Error),
-    #[error("invalid version")]
-    /// Invalid NonDeterministicData, version
-    InvalidVersion,
 }
 
-// Does not require `block_fee_recipient_address` to be present in NDD
-// Only supported on testnet for historical syncing purposes
-const VERSION_0: u16 = 0;
-// Requires `block_fee_recipient_address` to be present in NDD
-// Supported on testnet and mainnet
-const VERSION_1: u16 = 1;
+// The default NDD version.
+pub(crate) const VERSION_1: u16 = 1;
 
 /// Type that encapsulates non-deterministic data needed for consensus.
-/// When `block_fee_recipient_address` is `None`, the instance corresponds to VERSION_0.
-/// Otherwise VERSION_1.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NonDeterministicData {
     pub(crate) version: u16,
     pub(crate) bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     pub(crate) aggregated_public_key: secp256k1::PublicKey,
-    pub(crate) block_fee_recipient_address: Option<Address>,
+    pub(crate) block_fee_recipient_address: Address,
 }
 
 impl NonDeterministicData {
     /// Returns the version based on whether a fee recipient address is present.
     pub(crate) fn version(&self) -> u16 {
-        match self.block_fee_recipient_address {
-            Some(_) => VERSION_1,
-            None => VERSION_0,
-        }
+        self.version
     }
 
-    /// Constructor for version 0 (without a fee recipient).
-    /// Deprecated in favor of `new_v1`.
-    #[allow(dead_code)]
+    /// Constructor for the NDD.
     pub(crate) fn new(
-        bitcoin_block_hash: bitcoin::hash_types::BlockHash,
-        aggregated_public_key: secp256k1::PublicKey,
-    ) -> Self {
-        Self {
-            version: VERSION_0,
-            bitcoin_block_hash,
-            aggregated_public_key,
-            block_fee_recipient_address: None,
-        }
-    }
-
-    /// Constructor for version 1 (with a fee recipient).
-    pub(crate) fn new_v1(
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
         aggregated_public_key: secp256k1::PublicKey,
         block_fee_recipient_address: Address,
@@ -70,7 +43,7 @@ impl NonDeterministicData {
             version: VERSION_1,
             bitcoin_block_hash,
             aggregated_public_key,
-            block_fee_recipient_address: Some(block_fee_recipient_address),
+            block_fee_recipient_address,
         }
     }
 
@@ -80,10 +53,7 @@ impl NonDeterministicData {
         self.bitcoin_block_hash.consensus_encode(&mut writer)?;
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
         self.version().consensus_encode(&mut writer)?;
-        // Version 1 has a block fee recipient address.
-        if let Some(ref address) = self.block_fee_recipient_address {
-            writer.write_all(address.as_slice())?;
-        }
+        writer.write_all(self.block_fee_recipient_address.as_slice())?;
 
         Ok(writer)
     }
@@ -92,38 +62,53 @@ impl NonDeterministicData {
     pub(crate) fn deserialize(
         reader: &mut impl bitcoin::io::Read,
     ) -> Result<Self, NonDeterministicDataDeserializeError> {
+        // Read the bitcoin block hash.
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
 
+        // Read the aggregated public key.
         let pk_bytes = <[u8; 33]>::consensus_decode(reader)?;
         let aggregated_public_key = secp256k1::PublicKey::from_slice(&pk_bytes)
             .map_err(|_e| encode::Error::ParseFailed("malformed aggregate public key"))?;
 
         // Read the version and conditionally read the address.
         let version = u16::consensus_decode(reader)?;
+
+        // Read the block fee recipient address.
+        let mut address_bytes = [0u8; 20];
+        reader
+            .read_exact(&mut address_bytes)
+            .map_err(|_e| encode::Error::ParseFailed("malformed block fee recipient address"))?;
+        let block_fee_recipient_address = Address::from(address_bytes);
+
+        let this = Self {
+            version,
+            bitcoin_block_hash,
+            aggregated_public_key,
+            block_fee_recipient_address,
+        };
+
         match version {
-            VERSION_0 => {
-                // No block fee recipient expected.
-                Ok(Self {
-                    version,
-                    bitcoin_block_hash,
-                    aggregated_public_key,
-                    block_fee_recipient_address: None,
-                })
-            }
             VERSION_1 => {
-                let mut address_bytes = [0u8; 20];
-                reader.read_exact(&mut address_bytes).map_err(|_e| {
-                    encode::Error::ParseFailed("malformed block fee recipient address")
-                })?;
-                let block_fee_recipient_address = Address::from(address_bytes);
-                Ok(Self {
-                    version,
-                    bitcoin_block_hash,
-                    aggregated_public_key,
-                    block_fee_recipient_address: Some(block_fee_recipient_address),
-                })
+                // The expected version 1 NDD.
+                Ok(this)
             }
-            _ => Err(NonDeterministicDataDeserializeError::InvalidVersion),
+            _ => {
+                // IMPORTANT: This is a versioning mechanism designed for
+                // forward compatibility. We want to support new,
+                // backwards-compatible versions with enhanced functionality
+                // without requiring coordinated upgrades or hard-forks.
+                //
+                // When an older node encounters a newer, unknown version:
+                // 1. It extracts the data it can understand based on the known structure
+                // 2. It ignores any trailing data that may be present in newer versions
+                // 3. It continues to function normally despite version differences
+                //
+                // By design, encountering an unknown version alone MUST NEVER
+                // cause an error. The caller is responsible for validating
+                // whether the returned NDD is appropriate for their specific
+                // business logic requirements.
+                Ok(this)
+            }
         }
     }
 }
