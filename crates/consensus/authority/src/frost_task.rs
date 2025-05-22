@@ -230,16 +230,24 @@ where
     pub async fn start_task(&mut self, mut abci_started_rx: tokio::sync::oneshot::Receiver<()>) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
-        if let Err(e) =
-            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
+
+        let mut peer_messages_rx = match self
+            .frost_handle
+            .send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
         {
-            error!(target: "consensus::authority::frost_task::start_task", "Failed to send GetPeerMessagesStream frost command {}", e);
-        }
-        let mut peer_messages_rx = match peer_messages_rx.await {
-            Ok(peer_messages_rx) => peer_messages_rx,
+            Ok(_) => {
+                // only await on the receiver if the send was successful
+                match peer_messages_rx.await {
+                    Ok(rx) => rx,
+                    Err(e) => {
+                        error!(target: "consensus::authority::frost_task::start_task", "Error getting receiver handle = {:?}", e);
+                        panic!("Error getting receiver handle. Error - {e:?}");
+                    }
+                }
+            }
             Err(e) => {
-                error!(target: "consensus::authority::frost_task::start_task", "Error getting receiver handle = {:?}", e);
-                panic!("Error getting receiver handle");
+                error!(target: "consensus::authority::frost_task::start_task", "Failed to send GetPeerMessagesStream frost command {}", e);
+                panic!("Failed to send GetPeerMessagesStream frost command - {e:?}");
             }
         };
 
@@ -365,7 +373,11 @@ where
                                         info!(target: "consensus::authority::frost_task::start_task", "Sent checkpoint to btc server");
                                     }
                                     Err(err) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Error sending checkpoint to btc server: {}", err);
+                                        // We need to panic bc we have no way to recover any missed
+                                        // pegouts and they won't be sent to the btc server.
+                                        // We could rollback and sync to reprocess the pegouts but
+                                        // we would intentionally be replaying old pegouts.
+                                        panic!("Error sending checkpoint to btc server: {}", err);
                                     }
                                 }
                             }

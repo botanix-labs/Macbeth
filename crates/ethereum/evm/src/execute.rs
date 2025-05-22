@@ -445,6 +445,14 @@ where
     }
 
     /// Performs additional checks on mint contract transactions.
+    #[tracing::instrument(
+        level = "trace",
+        skip(self, result, botanix_consensus_pkg, provider),
+        fields(
+            bitcoin_checkpoint_hash = %botanix_consensus_pkg.bitcoin_checkpoint.0.block_hash(),
+            bitcoin_checkpoint_height = botanix_consensus_pkg.bitcoin_checkpoint.1,
+        )
+    )]
     fn botanix_mint_contract_checks(
         &self,
         result: &ExecutionResult,
@@ -455,6 +463,8 @@ where
         let consensus_pkg = botanix_consensus_pkg;
         let btc_network = consensus_pkg.btc_network;
 
+        tracing::trace!("botanix_consensus_package={:?}", botanix_consensus_pkg);
+
         // Check pegins.
         let mut pegins = vec![];
         let mut pegouts = vec![];
@@ -463,6 +473,8 @@ where
                 None => continue,
                 Some(p) => p,
             };
+
+            tracing::trace!(?pegin_data, "validate pegin data for tx {}", tx_hash);
 
             // Get the reference block hash from the pegin metadata.
             // This is used to avoid the growing list of headers in the pegin metadata
@@ -494,6 +506,14 @@ where
                                         revert_amount: pegin_data.amount,
                                     })?;
                                 bitcoin_checkpoint = package.bitcoin_checkpoint;
+
+                                tracing::debug!(
+                                    pegin_meta_version = meta.version(),
+                                    ref_eth_block_hash = %hash,
+                                    overridden_btc_checkpoint_hash = %bitcoin_checkpoint.0.block_hash(),
+                                    overridden_btc_checkpoint_height = %bitcoin_checkpoint.1,
+                                    "overridden bitcoin checkpoint for V1 pegin via ref_block_hash"
+                                );
                             }
                             Ok(None) => {
                                 return Err(MintContractError::InvalidPeginData {
@@ -567,8 +587,11 @@ where
                             revert_amount: pegin_data.amount,
                         });
                     }
+
+                    tracing::debug!(validated_aggregate_value = %aggregate_value, "pegin data validation succeeded");
                 }
                 Err(e) => {
+                    tracing::debug!(error = ?e, ?pegin_data, "pegin data validation failed: {e}");
                     return Err(MintContractError::InvalidPeginData {
                         error: format!("pegin validation failed: {}", e),
                         revert_address: pegin_data.account,

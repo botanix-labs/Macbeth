@@ -47,8 +47,8 @@ pub const SNAPSHOT_SIZE_LIMITS_TEST: SnapshotSizeLimits = SnapshotSizeLimits {
 
 /// Snapshot size limits for state sync prod
 pub const SNAPSHOT_SIZE_LIMITS_PROD: SnapshotSizeLimits = SnapshotSizeLimits {
-    snapshot_max_size: 1024 * 1024 * 100,  // 100 MB
-    snapshot_chunk_size: 1024 * 1024 * 10, // 10 MB
+    snapshot_max_size: 1024 * 1024 * 15,  // ~15 MB
+    snapshot_chunk_size: 1024 * 1024 * 3, // ~3 MB
 };
 
 /// Snapshot Manager State Lock

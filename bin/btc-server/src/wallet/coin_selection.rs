@@ -7,7 +7,7 @@ use bdk_wallet::coin_selection::{
 };
 use bitcoin::{
     psbt::{Error as PsbtError, ExtractTxError, Psbt},
-    Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
+    Amount, FeeRate, OutPoint, ScriptBuf, TxOut, Weight,
 };
 use std::collections::HashMap;
 use thiserror::Error;
@@ -30,6 +30,28 @@ pub enum CoinSelectionError {
     AvailableUtxosCannotBeEmpty,
     #[error("Pegout value is smaller than pegout fee")]
     PegoutFeeOverflow,
+    #[error("Fee rate overflow")]
+    FeeRateOverflow,
+    #[error("Sanity check error - SHOULD NOT HAPPEN: {0}")]
+    SanityCheckError(#[from] SanityCheckError),
+}
+
+#[derive(Debug, Error)]
+pub enum SanityCheckError {
+    #[error("Absolute fee not evenly distributed among pegouts")]
+    /// Failed validation: `total_pegout_value + absolute_fee == target_amount`
+    AbsoluteFeeNotDistributed {
+        total_pegout_value: Amount,
+        absolute_fee: Amount,
+        target_amount: Amount,
+    },
+    #[error("Bad refund balance in change output")]
+    /// Failed validation: `change_output_value == total_input_value - target_amount`
+    BadRefundBalance {
+        change_output_value: Amount,
+        total_input_value: Amount,
+        target_amount: Amount,
+    },
 }
 
 impl PartialEq for CoinSelectionError {
@@ -75,8 +97,27 @@ pub(crate) fn coin_selection(
         }
     };
 
+    // NOTE (lamafab): The coin selection algorithm that we use does not appear
+    // to consider output weights, nor base weights, at all. We hence compute
+    // the estimated fee for all outputs and make that part of the
+    // `target_amount` later on, with the goal that the coin selection algorithm
+    // includes the necessary amount of inputs to cover the final fee. We just
+    // ignore the base weights.
+
+    // Calculate the weight of all the outputs. Do note that we allow different
+    // transaction variants, be it P2SH, P2WPKH, etc.
+    let estimated_output_weight: Weight =
+        // Apply pegouts.
+        outputs.iter().fold(Weight::ZERO, |acc, (tx_out, _)| acc + tx_out.weight())
+        // Apply change output (P2TR), which _might_ not be set.
+        + Weight::from_wu(172);
+
+    let estimated_output_fee =
+        fee_rate.fee_wu(estimated_output_weight).ok_or(CoinSelectionError::FeeRateOverflow)?;
+
     let coin_select =
         bdk_wallet::coin_selection::BranchAndBoundCoinSelection::new(0, OldestFirstCoinSelection);
+
     let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
 
     let mut rng = rand::thread_rng();
@@ -86,7 +127,8 @@ pub(crate) fn coin_selection(
             required_utxos.values().map(to_bdk).collect::<Vec<_>>(),
             available_utxos.values().map(to_bdk).collect::<Vec<_>>(),
             fee_rate,
-            target_amount,
+            // Include the estimated fee for the outputs
+            target_amount + estimated_output_fee,
             &change_script, // drain_script
             &mut rng,
         )
@@ -124,7 +166,14 @@ pub(crate) fn coin_selection(
     let original_psbt =
         crate::wallet::psbt::create_psbt(selected_inputs.clone(), pegouts.clone(), change.clone());
 
-    let absolute_fee = original_psbt.fee().expect("no missing any txouts");
+    // NOTE (lamafab): This fee calculation does not respect the passed on
+    // `fee_rate`. Technically, this absolute fee should be adjusted such that:
+    //
+    // > absolute_fee = fee_rate * original_psbt.unsigned_tx.weight()
+    //
+    // But we will keep it simple for now without messing with the original
+    // implementation. We can revisit this later.
+    let absolute_fee = original_psbt.fee().expect("not missing any txouts");
     let fee_per_output = absolute_fee / pegouts.len() as u64;
 
     let pegouts = pegouts
@@ -140,7 +189,7 @@ pub(crate) fn coin_selection(
                     Some((output, _pegout_id))
                 }
                 Err(_) => {
-                    // ignore the pegout
+                    // Ignore the pegout
                     None
                 }
             }
@@ -158,14 +207,51 @@ pub(crate) fn coin_selection(
         }
     };
 
+    let change_available = updated_changed.is_some();
+
+    // The total input value, as selected by the coin selection algorithm.
+    let total_input_value =
+        selected_inputs.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
+
+    // The total pegouts value, excluding the change output, and with the
+    // absolute fee evenly distributed among each pegouts.
+    let total_pegout_value = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
+
     let updated_psbt = crate::wallet::psbt::create_psbt(selected_inputs, pegouts, updated_changed);
 
     // Lets extract the tx, doing so will do some fee sanity checks
     // Better to catch them here than later in signing
-    let _tx = updated_psbt.clone().extract_tx()?;
+    let tx = updated_psbt.clone().extract_tx()?;
 
-    // TODO should check that min relay fee rate is met
-    // TODO should check that none of the outputs are now dust
+    {
+        let absolute_fee = updated_psbt.fee().expect("not missing any txouts");
+
+        // VALIDATE: Total pegout value plus absolute fee must be equal to target amount
+        if total_pegout_value + absolute_fee != target_amount {
+            return Err(SanityCheckError::AbsoluteFeeNotDistributed {
+                total_pegout_value,
+                absolute_fee,
+                target_amount,
+            }
+            .into());
+        }
+
+        // VALIDATE: Change output value must be equal the total input value
+        // minus the target amount. Notably, the pegouts cover all the fees.
+        if change_available {
+            let change_output = tx.output.last().expect("change output not included");
+            let change_output_value = change_output.value;
+
+            if change_output_value != total_input_value - target_amount {
+                return Err(SanityCheckError::BadRefundBalance {
+                    change_output_value,
+                    total_input_value,
+                    target_amount,
+                }
+                .into());
+            }
+        }
+    }
 
     Ok(updated_psbt)
 }
@@ -352,5 +438,69 @@ mod tests {
         // Assert that the response is ok and we have filtered the outputs to 1
         assert!(result.is_ok());
         assert!(result.unwrap().outputs.len() == 1);
+    }
+
+    #[test]
+    fn should_consider_large_outputs() {
+        let (db, _) = setup_db();
+        // Add 15 utxos
+        let tx = create_tx(15, 1, None);
+        let change_script = random_p2tr_keyspend_script();
+        let output_script = random_p2wpkh_script();
+        let mut utxos = vec![];
+        for i in 0..5 {
+            let utxo = crate::database::Utxo::new(
+                OutPoint::new(tx.input[i].previous_output.txid, i as u32),
+                TxOut {
+                    value: Amount::from_sat(40_000),
+                    script_pubkey: random_p2tr_keyspend_script(),
+                },
+                None,
+                None,
+            );
+            utxos.push(utxo.clone());
+        }
+
+        let available_utxos = utxos.iter().map(|u| u).collect::<Vec<_>>();
+        db.store_utxos(&available_utxos).expect("add pegins");
+
+        let mut available_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
+        for utxo in db.get_all_utxos().unwrap() {
+            available_utxos.insert(utxo.outpoint, utxo);
+        }
+
+        let mut outputs = vec![];
+        for _ in 0..123 {
+            outputs.push((
+                TxOut { script_pubkey: output_script.clone(), value: Amount::from_sat(1000) },
+                create_random_pegout_id(),
+            ));
+        }
+
+        let required_utxos = HashMap::new();
+        let desired_fee_rate = FeeRate::from_sat_per_vb(3).unwrap();
+
+        let psbt = coin_selection(
+            available_utxos,
+            required_utxos,
+            outputs,
+            desired_fee_rate,
+            change_script.clone(),
+        )
+        .unwrap();
+
+        let tx = psbt.clone().extract_tx().unwrap();
+        let fee_rate = psbt.fee_rate().unwrap();
+
+        let pegout_outputs =
+            tx.output.iter().filter(|o| o.script_pubkey != change_script).collect::<Vec<_>>();
+
+        assert_eq!(tx.input.len(), 4);
+        assert_eq!(pegout_outputs.len(), 123);
+
+        // NOTE: Slight inconsistency here, described more in the
+        // `coin_selection` function.
+        assert_eq!(fee_rate, FeeRate::from_sat_per_kwu(761));
+        assert_eq!(desired_fee_rate, FeeRate::from_sat_per_kwu(750));
     }
 }
