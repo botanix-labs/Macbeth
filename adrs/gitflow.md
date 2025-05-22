@@ -10,6 +10,8 @@ main
 <type>/[scope]/<name>
 ```
 
+WE CAN'T MERGE INTO `main` WITHOUT PRE-REVIEW
+
 - `main` - The latest stable version of the code. It must be production ready and can be deployed to production at any time.
 - `develop` - Integration branch for a new release. It contains all the new features and bug fixes. This is the default branch for the repository.
 - `<type>/[scope]/<name>` - A new change branch that should be created and merged back to `main` or `develop`.
@@ -21,6 +23,7 @@ To choose the base branch for your PR, consider the following:
 - If you are fixing a bug in the latest stable version, create a new branch from `main`.
 
 New branch name must have a format of `<type>/[scope]/<name>` and follow [commit rules](#commits).
+The `name` must be alphanumeric and can contain dashes. It should be descriptive enough to understand the purpose of the branch.
 
 **Examples:**
 - `feat/consensus/implement-attestation` - Adding a new attestation feature to the consensus module
@@ -52,6 +55,7 @@ Commits messages must follow [the conventional commits](https://www.conventional
     - `refactor` - a code refactoring
     - `perf` - a code change that improves performance
     - `test` - adding missing tests or correcting existing tests
+    - `revert` - reverting a commit
 - `!` is used to indicate a breaking change:
    - any user-facing API has incompatible changes
    - previously created data is no longer valid
@@ -97,7 +101,7 @@ Frequently commit and push your changes to ensure your work is backed up and vis
    - Breaking changes, if any
 4. The PR should be marked as a draft if it's under development.
 5. The PR must be assigned to at least one responsible developer ("Assignees").
-6. The PR must be assigned to at least one reviewer ("Reviewers"). SHALL WE DO CODE OWNERS NOW OR LATER?
+6. The PR must be assigned to at least one reviewer ("Reviewers").
 7. The PR must be added to the project board ("Project") or linked to an issue from the board ("Development").
 
 **Example PR Description Template:**
@@ -129,7 +133,7 @@ None
 6. All tests are passing
 7. Code is formatted and linted
 8. Pre-review with AI is done
-9. At least one reviewer approved the PR
+9. At least one code owner (team member(s) responsible for code base) approved the PR
 10. The PR is not rejected by any reviewer
 11. All comments are resolved
 
