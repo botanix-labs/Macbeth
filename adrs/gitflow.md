@@ -1,34 +1,32 @@
 # Git Workflow
 
+This document describes our Git workflow from a developer perspective, including branch management, commit message format, and pull request guidelines.
+
 ## Branches
 
 ```
-main
-↑  ↑
-↑  develop
-↑  ↑
+hotfix      develop
+  ↑           ↑
 <type>/[scope]/<name>
 ```
 
-WE CAN'T MERGE INTO `main` WITHOUT PRE-REVIEW
+- `hotfix` - The latest stable version. This branch is used to test hotfixes before release. Only critical bug fixes should be merged into this branch.
+- `develop` - Integration branch for a new release. It contains all the new features and bug fixes.
+- `<type>/[scope]/<name>` - A new change branch that should be created and merged back to `hotfix` or `develop`.
 
-- `main` - The latest stable version of the code. It must be production ready and can be deployed to production at any time.
-- `develop` - Integration branch for a new release. It contains all the new features and bug fixes. This is the default branch for the repository.
-- `<type>/[scope]/<name>` - A new change branch that should be created and merged back to `main` or `develop`.
-
-All changes to `main` and `develop` branches should be done through pull requests (PRs).
+All changes to `hotfix` and `develop` branches should be done through pull requests (PRs).
 
 To choose the base branch for your PR, consider the following:
 - If you are working on a new feature or bug fix for a future version, create a new branch from `develop`.
-- If you are fixing a bug in the latest stable version, create a new branch from `main`.
+- If you are fixing a bug in the latest stable version, create a new branch from `hotfix`.
 
 New branch name must have a format of `<type>/[scope]/<name>` and follow [commit rules](#commits).
 The `name` must be alphanumeric and can contain dashes. It should be descriptive enough to understand the purpose of the branch.
 
 **Examples:**
-- `feat/consensus/implement-attestation` - Adding a new attestation feature to the consensus module
+- `feat/implement-attestation` - Adding a new attestation feature
 - `fix/pegin/handle-transaction-error` - Fixing an error in the pegin transaction handling
-- `docs/readme/update-quickstart` - Updating the quickstart section in the readme
+- `docs/update-quickstart` - Updating the quickstart section in the readme
 
 ## Commits
 
