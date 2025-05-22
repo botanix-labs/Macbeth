@@ -110,12 +110,14 @@ impl DkgHandshakeManager {
     ///
     /// # Arguments
     ///
-    /// * `session_id` - Unique identifier for this DKG session
+    /// * `context` - Unique identifier for this DKG session
+    /// * `nonce` - Unique nonce for this DKG session
     /// * `my_frost_id` - The FROST identifier of this participant
     /// * `my_static_sec` - The static secret key of this participant
     /// * `fed_members` - Map of all federation members' FROST IDs to their public keys
     pub fn new(
-        session_id: &[u8],
+        context: &[u8],
+        nonce: u64,
         my_frost_id: frost::Identifier,
         my_static_sec: secp256k1::SecretKey,
         fed_members: BTreeMap<frost::Identifier, secp256k1::PublicKey>,
@@ -124,9 +126,9 @@ impl DkgHandshakeManager {
             return Err(Error::SelfNotInFederation);
         }
 
-        // Setup the base transcript tied to a session Id.
         let mut t = Transcript::new(b"Botanix_Macbeth_DKG_Setup_v1");
-        t.append_message(b"session_id", session_id);
+        t.append_message(b"context", context);
+        t.append_u64(b"nonce", nonce);
 
         let secp = secp256k1::Secp256k1::new();
         let my_eph_sec = secp256k1::SecretKey::new(&mut rand::thread_rng());

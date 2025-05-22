@@ -21,22 +21,21 @@ pub(crate) mod authority_execution_utils {
     use reth_provider::{
         BlockExecutionInput, BlockExecutionOutput, BlockHashReader, BlockNumReader,
         DatabaseProviderFactory, DatabaseProviderRO, ExecutionOutcome, HeaderProvider,
-        ProviderFactory,
+        OriginalValuesKnown, ProviderFactory,
     };
     use reth_revm::{database::StateProviderDatabase, db::State};
     use reth_trie::StateRoot;
     use reth_trie_db::DatabaseStateRoot;
 
+    use crate::comet_bft::abci::BlockWithContext;
     use std::sync::Arc;
     use tendermint_proto::google::protobuf::Timestamp;
-    use tracing::{info, trace};
-
-    use crate::comet_bft::abci::BlockWithContext;
 
     /// Builds and executes a new block with the given transactions, on the provided [Executor].
     ///
     /// This returns bundle state, block, and gas used.
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, level = "trace")]
     pub(crate) fn build_and_execute<BF, DB>(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
@@ -53,6 +52,18 @@ pub(crate) mod authority_execution_utils {
         BF: BitcoindFactory + Clone + Unpin + 'static,
         DB: Database,
     {
+        let start_execution_time = std::time::Instant::now();
+
+        tracing::info!(
+            block_time = timestamp.seconds,
+            transactions_count = transactions.len(),
+            block_fee_recipient_address = %block_fee_recipient_address,
+            aggregated_public_key = %agg_pk,
+            %bitcoin_checkpoint_block_hash,
+            "Build and execute an ethereum block with {} transactions",
+            transactions.len()
+        );
+
         // Construct block and header
         let header = build_header_template(
             &transactions,
@@ -72,9 +83,9 @@ pub(crate) mod authority_execution_utils {
         let block_with_senders =
             BlockWithSenders::new(block.clone(), senders.clone()).expect("senders are valid");
 
-        trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
+        tracing::trace!(target: "consensus::authority", transactions=?&block.body, "executing transactions");
 
-        info!(target: "consensus::authority", "block_fee_recipient_address: {:?}", block_fee_recipient_address);
+        tracing::info!(target: "consensus::authority", "block_fee_recipient_address: {:?}", block_fee_recipient_address);
         let block_exec_output = execute(
             &block_with_senders,
             database_provider,
@@ -121,6 +132,50 @@ pub(crate) mod authority_execution_utils {
         let block_with_context =
             BlockWithContext { sealed_block_with_peg, exec_outcome, trie_updates };
 
+        if tracing::enabled!(tracing::Level::INFO) {
+            let block_with_pegs = &block_with_context.sealed_block_with_peg;
+            let block = block_with_pegs.block();
+
+            let execution_time = start_execution_time.elapsed().as_secs_f32();
+
+            tracing::info!(
+                eth_block_hash = %block.hash(),
+                eth_block_height = block.number,
+                eth_transactions_count = block.body.len(),
+                execution_time,
+                "The ethereum block execution completed in {} seconds",
+                execution_time
+            );
+
+            // Heavy logging for non-deterministic issues debugging
+            // it should be disabled by default even for the trace level
+            // To enable pass `block_with_context=trace` to log filter.
+            if tracing::enabled!(tracing::Level::TRACE, target: "block_with_context") {
+                let exec_outcome = &block_with_context.exec_outcome;
+                let state_changes_size = exec_outcome.bundle.state_size;
+                let state_changes_set = block_with_context
+                    .exec_outcome
+                    .bundle
+                    .clone()
+                    .into_plain_state(OriginalValuesKnown::No);
+
+                tracing::trace!(
+                    target: "block_with_context",
+                    block_slow_hash = ?block.hash_slow(),
+                    block_sealed_hash = ?block.hash(),
+                    eth_block = ?block,
+                    pegins = ?block_with_pegs.pegins(),
+                    pegouts = ?block_with_pegs.pegouts(),
+                    receipts = ?exec_outcome.receipts,
+                    transaction_requests = ?exec_outcome.requests,
+                    state_changes_hash = ?hashed_state.into_sorted(),
+                    state_changes_size,
+                    ?state_changes_set,
+                    "ethereum block execution results"
+                );
+            }
+        }
+
         Ok(block_with_context)
     }
 
@@ -147,6 +202,7 @@ pub(crate) mod authority_execution_utils {
             .unwrap_or_else(|| {
                 panic!("best block hash not found for block number: {}", best_block);
             });
+
         let timestamp = timestamp.seconds as u64;
 
         // check previous block for base fee
