@@ -10,9 +10,11 @@ on:
   merge_group:
     branches:
       - main
+      - dev
   push:
     branches:
       - main
+      - dev
 
 env:
   CARGO_TERM_COLOR: always
