@@ -101,8 +101,9 @@ pub enum ApplySnapshotResult {
 }
 
 use super::proto_debug::{
-    RequestApplySnapshotChunkTruncatedDebug, RequestProcessProposalTruncatedDebug,
-    ResponseLoadSnapshotChunkTruncatedDebug, ResponsePrepareProposalTruncatedDebug,
+    RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
+    RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
+    ResponsePrepareProposalTruncatedDebug,
 };
 use crate::{
     builder::BitcoinCheckpoint,
@@ -601,6 +602,7 @@ where
     // to unexpected behavior.
     #[instrument(level = "trace", ret, skip(self, request))]
     fn init_chain(&self, request: RequestInitChain) -> ResponseInitChain {
+        let execution_start_time = std::time::Instant::now();
         trace!("request={:?}", request);
 
         // check chain ids match
@@ -619,6 +621,16 @@ where
                 panic!("Error getting application hash: {:?}", e);
             }
         };
+
+        let execution_time = execution_start_time.elapsed().as_secs_f32();
+
+        info!(
+            app_hash = hex::encode(&app_hash),
+            chain_id = cometbft_chain_id,
+            execution_time,
+            "Chain {cometbft_chain_id} is initialized in {execution_time} secs",
+        );
+
         ResponseInitChain { app_hash, ..Default::default() }
     }
 
@@ -1254,8 +1266,9 @@ where
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareProposal
-    #[instrument(level = "trace", skip(self, request), fields(cfbt_block.height = request.height))]
+    #[instrument(level = "trace", skip(self, request), fields(cbft_block_height = request.height))]
     fn prepare_proposal(&self, request: RequestPrepareProposal) -> ResponsePrepareProposal {
+        let execution_start_time = std::time::Instant::now();
         trace!("request={:?}", request);
 
         if !request.txs.is_empty() {
@@ -1264,6 +1277,8 @@ where
                 request.height
             );
         }
+
+        let block_time = request.time.expect("block time is not set in the request");
 
         let max_tx_bytes: usize =
             request.max_tx_bytes.try_into().expect("Invalid request proposal max_tx_bytes value");
@@ -1279,7 +1294,7 @@ where
             }
         };
 
-        trace!(?non_deterministic_data, "Prepared non-deterministic data tx for historical sync");
+        trace!("non_deterministic_data={:?}", non_deterministic_data);
 
         // serialize non-deterministic data tx to bytes
         let non_deterministic_data_bytes = match self
@@ -1308,11 +1323,24 @@ where
         // Nothing to process if mempool is empty
         // propose an empty block with NDD only
         if self.pool.pool_size().total == 0 {
-            debug!("No transactions in pool, proposing empty block with NDD only");
+            debug!("No transactions in pool, proposing empty cbft block with NDD only");
 
             let response = ResponsePrepareProposal { txs: vec![non_deterministic_data_bytes] };
 
             trace!("return={:?}", response);
+
+            if tracing::enabled!(tracing::Level::INFO) {
+                let execution_time = execution_start_time.elapsed().as_secs_f32();
+
+                info!(
+                    block_time = block_time.seconds,
+                    cbft_transactions_count = 1,
+                    eth_transactions_count = 0,
+                    execution_time,
+                    "Prepared a proposal with 1 transaction in {} seconds",
+                    execution_time,
+                );
+            }
 
             return response;
         }
@@ -1360,19 +1388,14 @@ where
                     } => {
                         let block = payload.block();
 
+                        trace!("eth_block_header={:?}", block.header);
+
                         // These are bytes of [SignedTransaction]
                         let mut txs: Vec<_> = block
                             .raw_transactions()
                             .iter()
                             .map(|tx| prost::bytes::Bytes::copy_from_slice(tx))
                             .collect::<_>();
-
-                        info!("prepared a proposal with {} transactions", txs.len());
-
-                        trace!(
-                            header = ?block.header,
-                            "proposed an eth block",
-                        );
 
                         // insert non-deterministic data tx at index 0 so historical sync will pass
                         // verification
@@ -1381,9 +1404,25 @@ where
 
                         self.metrics.commet_prepared_proposals.increment(1);
 
+                        let txs_len = txs.len();
+
                         let response = ResponsePrepareProposal { txs };
 
                         trace!("return={:?}", ResponsePrepareProposalTruncatedDebug(&response));
+
+                        if tracing::enabled!(tracing::Level::INFO) {
+                            let execution_time = execution_start_time.elapsed().as_secs_f32();
+
+                            info!(
+                                block_time = block_time.seconds,
+                                execution_time,
+                                cbft_transactions_count = txs_len,
+                                eth_transactions_count = txs_len - 1, // Minus NDD
+                                "Prepared a proposal with {} transactions in {} seconds",
+                                txs_len,
+                                execution_time,
+                            );
+                        }
 
                         response
                     }
@@ -1401,9 +1440,12 @@ where
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
-    #[instrument(level = "trace", ret, skip(self, request), fields(cfbt_block.height = request.height, cfbt_block.hash = hex::encode(&request.hash)))]
+    #[instrument(level = "trace", ret, skip(self, request), fields(cfbt_block_height = request.height, cbft_block_hash = hex::encode(&request.hash)))]
     fn process_proposal(&self, request: RequestProcessProposal) -> ResponseProcessProposal {
-        trace!(request = ?RequestProcessProposalTruncatedDebug(&request), "process_proposal request");
+        let execution_start_time = std::time::Instant::now();
+        trace!("request={:?}", RequestProcessProposalTruncatedDebug(&request));
+
+        let txs_len = request.txs.len();
 
         let agg_pk = match self.aggregate_public_key() {
             Ok(pk) => pk,
@@ -1416,6 +1458,24 @@ where
                 // Rpc nodes will have an aggregate public key above block height 1
                 if request.height > 1 {
                     warn!("Aggregate public key for rpc node is not set in process proposal");
+                }
+
+                if tracing::enabled!(tracing::Level::WARN) {
+                    let execution_time = execution_start_time.elapsed().as_secs_f32();
+                    let app_hash = match self.application_hash(&self.storage.client) {
+                        Ok(app_hash) => app_hash,
+                        Err(e) => {
+                            panic!("failed to get application hash on process proposal: {:?}", e);
+                        }
+                    };
+
+                    warn!(
+                        app_hash = hex::encode(&app_hash),
+                        execution_time,
+                        "A proposal with {} transactions is rejected in {} seconds",
+                        request.txs.len(),
+                        execution_time
+                    );
                 }
 
                 return ResponseProcessProposal { status: VERIFY_REJECT };
@@ -1439,7 +1499,29 @@ where
         let non_deterministic_data_bytes = match txs_bytes.first() {
             Some(tx) => tx.clone(),
             None => {
-                warn!("No non-deterministic tx in proposal request");
+                warn!("No non-deterministic data in proposal request");
+
+                if tracing::enabled!(tracing::Level::WARN) {
+                    let execution_time = execution_start_time.elapsed().as_secs_f32();
+                    let app_hash = match self.application_hash(&self.storage.client) {
+                        Ok(app_hash) => app_hash,
+                        Err(e) => {
+                            panic!("failed to get application hash on process proposal: {:?}", e);
+                        }
+                    };
+
+                    warn!(
+                        app_hash = hex::encode(&app_hash),
+                        block_time = block_time.seconds,
+                        execution_time,
+                        cbft_transactions_count = txs_len,
+                        eth_transactions_count = txs_len - 1,
+                        "A proposal with {} transactions is rejected in {} seconds",
+                        txs_len,
+                        execution_time
+                    );
+                }
+
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
@@ -1449,10 +1531,39 @@ where
         let non_deterministic_data = match NonDeterministicData::deserialize(reader) {
             Ok(data) => data,
             Err(e) => {
+                trace!(
+                    "non_deterministic_data_bytes={:?}",
+                    hex::encode(txs_bytes.first().expect("txs_bytes contains first transaction"))
+                );
+
                 warn!("Error deserializing non-deterministic data: {:?}", e);
+
+                if tracing::enabled!(tracing::Level::WARN) {
+                    let execution_time = execution_start_time.elapsed().as_secs_f32();
+                    let app_hash = match self.application_hash(&self.storage.client) {
+                        Ok(app_hash) => app_hash,
+                        Err(e) => {
+                            panic!("failed to get application hash on process proposal: {:?}", e);
+                        }
+                    };
+
+                    warn!(
+                        app_hash = hex::encode(&app_hash),
+                        block_time = block_time.seconds,
+                        execution_time,
+                        cbft_transactions_count = txs_len,
+                        eth_transactions_count = txs_len - 1,
+                        "A proposal with {} transactions is rejected in {} seconds",
+                        txs_len,
+                        execution_time
+                    );
+                }
+
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
+
+        trace!("non_deterministic_data={:?}", non_deterministic_data);
 
         // Only NDD V1 is supported for block production so validate `block_fee_recipient_address`
         // exists
@@ -1460,6 +1571,28 @@ where
             Some(address) => address,
             None => {
                 warn!("Block fee recipient address is not set in process proposal");
+
+                if tracing::enabled!(tracing::Level::WARN) {
+                    let execution_time = execution_start_time.elapsed().as_secs_f32();
+                    let app_hash = match self.application_hash(&self.storage.client) {
+                        Ok(app_hash) => app_hash,
+                        Err(e) => {
+                            panic!("failed to get application hash on process proposal: {:?}", e);
+                        }
+                    };
+
+                    warn!(
+                        app_hash = hex::encode(&app_hash),
+                        block_time = block_time.seconds,
+                        execution_time,
+                        cbft_transactions_count = txs_len,
+                        eth_transactions_count = txs_len - 1,
+                        "A proposal with {} transactions is rejected in {} seconds",
+                        txs_len,
+                        execution_time
+                    );
+                }
+
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
@@ -1473,18 +1606,84 @@ where
             Some(bitcoin_checkpoint_block_hash) => bitcoin_checkpoint_block_hash,
             None => {
                 warn!("No bitcoin checkpoint found");
+
+                if tracing::enabled!(tracing::Level::WARN) {
+                    let execution_time = execution_start_time.elapsed().as_secs_f32();
+                    let app_hash = match self.application_hash(&self.storage.client) {
+                        Ok(app_hash) => app_hash,
+                        Err(e) => {
+                            panic!("failed to get application hash on process proposal: {:?}", e);
+                        }
+                    };
+
+                    warn!(
+                        app_hash = hex::encode(&app_hash),
+                        block_time = block_time.seconds,
+                        execution_time,
+                        cbft_transactions_count = txs_len,
+                        eth_transactions_count = txs_len - 1,
+                        "A proposal with {} transactions is rejected in {} seconds",
+                        txs_len,
+                        execution_time
+                    );
+                }
+
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
 
         // check non-deterministic data: btc block hash and aggregate public key
         if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash {
-            warn!("Bitcoin block hash mismatch");
+            warn!("Bitcoin checkpoint block hash mismatch");
+
+            if tracing::enabled!(tracing::Level::WARN) {
+                let execution_time = execution_start_time.elapsed().as_secs_f32();
+                let app_hash = match self.application_hash(&self.storage.client) {
+                    Ok(app_hash) => app_hash,
+                    Err(e) => {
+                        panic!("failed to get application hash on process proposal: {:?}", e);
+                    }
+                };
+
+                warn!(
+                    app_hash = hex::encode(&app_hash),
+                    block_time = block_time.seconds,
+                    execution_time,
+                    cbft_transactions_count = txs_len,
+                    eth_transactions_count = txs_len - 1,
+                    "A proposal with {} transactions is rejected in {} seconds",
+                    txs_len,
+                    execution_time
+                );
+            }
+
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
         if agg_pk != non_deterministic_data.aggregated_public_key {
             warn!("Aggregate public key mismatch");
+
+            if tracing::enabled!(tracing::Level::WARN) {
+                let execution_time = execution_start_time.elapsed().as_secs_f32();
+                let app_hash = match self.application_hash(&self.storage.client) {
+                    Ok(app_hash) => app_hash,
+                    Err(e) => {
+                        panic!("failed to get application hash on process proposal: {:?}", e);
+                    }
+                };
+
+                warn!(
+                    app_hash = hex::encode(&app_hash),
+                    block_time = block_time.seconds,
+                    execution_time,
+                    cbft_transactions_count = txs_len,
+                    eth_transactions_count = txs_len - 1,
+                    "A proposal with {} transactions is rejected in {} seconds",
+                    txs_len,
+                    execution_time
+                );
+            }
+
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
@@ -1493,6 +1692,28 @@ where
             Ok(txs) => txs,
             Err(e) => {
                 error!("Error decoding transactions: {:?}", e);
+
+                if tracing::enabled!(tracing::Level::WARN) {
+                    let execution_time = execution_start_time.elapsed().as_secs_f32();
+                    let app_hash = match self.application_hash(&self.storage.client) {
+                        Ok(app_hash) => app_hash,
+                        Err(e) => {
+                            panic!("failed to get application hash on process proposal: {:?}", e);
+                        }
+                    };
+
+                    warn!(
+                        app_hash = hex::encode(&app_hash),
+                        block_time = block_time.seconds,
+                        execution_time,
+                        cbft_transactions_count = txs_len,
+                        eth_transactions_count = txs_len - 1,
+                        "A proposal with {} transactions is rejected in {} seconds",
+                        txs_len,
+                        execution_time
+                    );
+                }
+
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
@@ -1519,46 +1740,134 @@ where
                 let block = block_with_context.sealed_block_with_peg.block();
 
                 // validate block before caching
-                match self.validate_block(block) {
-                    ResponseProcessProposal { status: VERIFY_ACCEPTED } => {}
-                    _ => {
-                        return ResponseProcessProposal { status: VERIFY_REJECT };
-                    }
-                }
-                match self.block_cache.write() {
-                    Ok(_cache) => {
-                        if tracing::enabled!(tracing::Level::DEBUG) {
-                            let eth_block_hash = block.hash_slow();
+                if !matches!(
+                    self.validate_block(block),
+                    ResponseProcessProposal { status: VERIFY_ACCEPTED }
+                ) {
+                    // we have logs inside validate_block so no need to repeat error here
 
-                            debug!(
-                                %cbft_block_hash,
-                                eth_block_hash = hex::encode(eth_block_hash),
-                                "update block cache for key {}",
-                                cbft_block_hash,
+                    if tracing::enabled!(tracing::Level::WARN) {
+                        let execution_time = execution_start_time.elapsed().as_secs_f32();
+                        let app_hash = match self.application_hash(&self.storage.client) {
+                            Ok(app_hash) => app_hash,
+                            Err(e) => {
+                                panic!(
+                                    "failed to get application hash on process proposal: {:?}",
+                                    e
+                                );
+                            }
+                        };
+
+                        warn!(
+                            app_hash = hex::encode(&app_hash),
+                            block_time = block_time.seconds,
+                            execution_time,
+                            cbft_transactions_count = txs_len,
+                            eth_transactions_count = txs_len - 1,
+                            "A proposal with {} transactions is rejected in {} seconds",
+                            txs_len,
+                            execution_time
+                        );
+                    }
+
+                    return ResponseProcessProposal { status: VERIFY_REJECT };
+                }
+
+                match self.block_cache.write() {
+                    Ok(mut cache) => {
+                        let eth_block_hash = block.hash();
+
+                        debug!(
+                            cbft_block_hash = hex::encode(cbft_block_hash),
+                            eth_block_hash = hex::encode(eth_block_hash),
+                            "update eth block cache",
+                        );
+
+                        cache.insert(cbft_block_hash, block_with_context);
+
+                        self.metrics.commet_processed_proposals.increment(1);
+
+                        if tracing::enabled!(tracing::Level::INFO) {
+                            let execution_time = execution_start_time.elapsed().as_secs_f32();
+
+                            info!(
+                                app_hash = hex::encode(eth_block_hash),
+                                block_time = block_time.seconds,
+                                execution_time,
+                                cbft_transactions_count = txs_len,
+                                eth_transactions_count = txs_len - 1, // Minus NDD
+                                "Processed a proposal with {} transactions in {} seconds",
+                                txs_len,
+                                execution_time,
                             );
                         }
 
-                        // cache.insert(cbft_block_hash, block_with_context);
+                        ResponseProcessProposal { status: VERIFY_ACCEPTED }
                     }
                     Err(e) => {
                         error!("Error getting block cache write lock: {:?}", e);
-                        return ResponseProcessProposal { status: VERIFY_REJECT };
+
+                        if tracing::enabled!(tracing::Level::WARN) {
+                            let execution_time = execution_start_time.elapsed().as_secs_f32();
+                            let app_hash = match self.application_hash(&self.storage.client) {
+                                Ok(app_hash) => app_hash,
+                                Err(e) => {
+                                    panic!(
+                                        "failed to get application hash on process proposal: {:?}",
+                                        e
+                                    );
+                                }
+                            };
+
+                            warn!(
+                                app_hash = hex::encode(&app_hash),
+                                block_time = block_time.seconds,
+                                execution_time,
+                                cbft_transactions_count = txs_len,
+                                eth_transactions_count = txs_len - 1,
+                                "A proposal with {} transactions is rejected in {} seconds",
+                                txs_len,
+                                execution_time
+                            );
+                        }
+
+                        ResponseProcessProposal { status: VERIFY_REJECT }
                     }
                 }
             }
             Err(e) => {
-                error!("Error building block: {:?}", e);
-                return ResponseProcessProposal { status: VERIFY_REJECT };
+                error!("Error building eth block: {:?}", e);
+
+                if tracing::enabled!(tracing::Level::WARN) {
+                    let execution_time = execution_start_time.elapsed().as_secs_f32();
+                    let app_hash = match self.application_hash(&self.storage.client) {
+                        Ok(app_hash) => app_hash,
+                        Err(e) => {
+                            panic!("failed to get application hash on process proposal: {:?}", e);
+                        }
+                    };
+
+                    warn!(
+                        app_hash = hex::encode(&app_hash),
+                        block_time = block_time.seconds,
+                        execution_time,
+                        cbft_transactions_count = txs_len,
+                        eth_transactions_count = txs_len - 1,
+                        "A proposal with {} transactions is rejected in {} seconds",
+                        txs_len,
+                        execution_time
+                    );
+                }
+
+                ResponseProcessProposal { status: VERIFY_REJECT }
             }
         }
-        self.metrics.commet_processed_proposals.increment(1);
-        ResponseProcessProposal { status: VERIFY_ACCEPTED }
     }
 
     ///docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#finalizeblock
-    #[instrument(level = "trace", skip(self, request), fields(cfbt_block.height = request.height, cfbt_block.hash = hex::encode(&request.hash)))]
+    #[instrument(level = "trace", skip(self, request), fields(cbft_block_height = request.height, cbft_block_hash = hex::encode(&request.hash)))]
     fn finalize_block(&self, request: RequestFinalizeBlock) -> ResponseFinalizeBlock {
-        trace!("request={:?}", request);
+        trace!("request={:?}", RequestFinalizeBlockTruncatedDebug(&request));
 
         if request.txs.is_empty() {
             panic!("No transactions in finalize_block request, but expected at least NDD tx");
@@ -1568,25 +1877,27 @@ where
         let mut block_cache_write = match self.block_cache.write() {
             Ok(block_cache_write) => block_cache_write,
             Err(e) => {
-                panic!("Error getting block cache write lock: {:?}", e);
+                panic!("Error getting eth block cache write lock: {:?}", e);
             }
         };
         let block_with_context = match block_cache_write.get(&cbft_block_hash) {
-            Some(block) => {
+            Some(block_with_context) => {
                 debug!(
-                    block_hash = %cbft_block_hash,
-                    "read block from block cache",
+                    cbft_block_hash = hex::encode(cbft_block_hash),
+                    eth_block_hash =
+                        hex::encode(block_with_context.sealed_block_with_peg.block().hash()),
+                    "read eth block from block cache",
                 );
 
-                block.clone()
+                block_with_context.clone()
             }
             None => {
                 // No block in cache: this happens during historical (block) sync
                 // Build the block
 
                 debug!(
-                     block_hash = %cbft_block_hash,
-                    "block not found in block cache, building a block",
+                    cbft_block_hash = hex::encode(cbft_block_hash),
+                    "eth block not found in block cache, building a block"
                 );
 
                 // get non-deterministic data
@@ -1646,8 +1957,8 @@ where
                 };
 
                 // get txs skipping the first non-deterministic data tx
-                let mut txs_iter = txs_bytes.into_iter();
-                let txs = if txs_iter.next().is_none() {
+                let txs_iter = txs_bytes.clone().into_iter().skip(1);
+                let txs = if txs_iter.clone().next().is_none() {
                     vec![]
                 } else {
                     match transactions_signed_from_bytes(txs_iter) {
@@ -1674,10 +1985,11 @@ where
                         block_cache_write.insert(cbft_block_hash, block_with_context.clone());
 
                         debug!(
-                            %cbft_block_hash,
-                            eth_block_hash = %block_with_context.sealed_block_with_peg.block().hash(),
-                            "update block cache for key {}",
-                            cbft_block_hash,
+                            cbft_block_hash = hex::encode(cbft_block_hash),
+                            eth_block_hash = hex::encode(
+                                block_with_context.sealed_block_with_peg.block().hash()
+                            ),
+                            "update eth block cache",
                         );
 
                         block_with_context
@@ -1693,6 +2005,7 @@ where
         let block_height = block_with_context.sealed_block_with_peg.block().number;
         let sealed_block_with_peg_binding = block_with_context.sealed_block_with_peg.clone();
         let sealed_block_with_senders = sealed_block_with_peg_binding.block();
+        // TODO: Shouldn't it be done on block commit?
         if !self.is_fed_node && block_height == 1 {
             let edh = match sealed_block_with_senders.deserialize_extra_data_header() {
                 Ok(edh) => edh,
@@ -1709,12 +2022,7 @@ where
             self.validate_block(block_with_context.sealed_block_with_peg.block()),
             ResponseProcessProposal { status: VERIFY_REJECT }
         ) {
-            let err: String = format!(
-                "Block validation failed in method finalize block for block number {:?}",
-                block_with_context.sealed_block_with_peg.block().header().number
-            );
-            error!(err);
-            return ResponseFinalizeBlock::default();
+            panic!("failed to finalize invalid block block {:?}", request.height);
         }
 
         let mut exec_results = vec![];
@@ -1722,8 +2030,7 @@ where
         let non_deterministic_data_tx = match request.txs.first() {
             Some(tx) => tx.clone(),
             None => {
-                error!("Expected first tx to exist in the finalize_block request");
-                return ResponseFinalizeBlock::default();
+                panic!("failed to finalize block {} without NDD", request.height);
             }
         };
         let first_exec_tx_result =
@@ -1747,7 +2054,23 @@ where
         let block_hash = block_with_context.sealed_block_with_peg.block().hash();
         self.metrics.commet_finalized_blocks.increment(1);
 
-        info!("Finalized block for height {}", request.height);
+        let execution_time = std::time::Instant::now().elapsed().as_secs_f32();
+
+        let eth_block_hash_hex = hex::encode(block_hash);
+
+        let txs_len = request.txs.len();
+
+        info!(
+            app_hash = eth_block_hash_hex,
+            eth_block_hash = eth_block_hash_hex,
+            cbft_block_hash = hex::encode(cbft_block_hash),
+            cbft_transactions_count = txs_len,
+            eth_transactions_count = txs_len - 1, // Minus NDD
+            execution_time,
+            "Finalized cbft block with {} transactions in {} seconds",
+            txs_len,
+            execution_time,
+        );
 
         ResponseFinalizeBlock {
             events: vec![],
@@ -1765,27 +2088,43 @@ where
     /// Proceeding after an error will cause the app hash mismatch.
     #[instrument(level = "trace", skip(self), ret)]
     fn commit(&self) -> ResponseCommit {
+        let execution_start_time = std::time::Instant::now();
+
         let candidate_blocks = match self.block_cache.write() {
             Ok(candidate_blocks) => candidate_blocks,
             Err(e) => {
-                panic!("Error getting block cache write lock: {:?}", e);
+                panic!("Error getting eth block cache write lock: {:?}", e);
             }
         };
+
         // We want to explicitly panic since we cannot get the lock and send the commit message
         let (cbft_block_hash, sealed_block_with_context) = match candidate_blocks.peek_newest() {
             Some((cbft_block_hash, sealed_block_with_context)) => {
                 (cbft_block_hash, sealed_block_with_context)
             }
             None => {
-                panic!("Error getting block from cache");
+                panic!("Error getting eth block from cache");
             }
         };
 
+        let block = sealed_block_with_context.sealed_block_with_peg.block();
+
+        let cbft_block_hash_hex = hex::encode(cbft_block_hash);
+        let eth_block_hash_hex = hex::encode(block.hash());
+
+        debug!(
+            cbft_block_hash = cbft_block_hash_hex,
+            eth_block_hash = eth_block_hash_hex,
+            "read finalized eth block from cache",
+        );
+
+        trace!("eth_block_header={:?}", block.header());
+
         // need to clone since `sealed_block_with_context` is behind a lock
         let sealed_block_with_context = sealed_block_with_context.clone();
+        let eth_block_height = sealed_block_with_context.sealed_block_with_peg.block().number;
 
         // We want to explicitly panic if we cannot send the commit message
-        let cbft_block_hash = *cbft_block_hash;
         let (commit_tx, commit_rx) = std::sync::mpsc::channel::<()>();
         let driver_tx = self.driver_tx.clone();
         self.task_executor.spawn_blocking(Box::pin(async move {
@@ -1793,14 +2132,26 @@ where
                 .send(ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)))
                 .await
             {
-                panic!("Error sending commit block message: {:?}", e);
+                panic!("Error sending commit eth block message: {:?}", e);
             }
         }));
         if let Err(e) = commit_rx.recv() {
-            panic!("Error receiving commit block response {e:?}");
+            panic!("Error receiving commit eth block response {e:?}");
         }
 
-        info!("Block committed: {:?}", cbft_block_hash);
+        let execution_time = execution_start_time.elapsed().as_secs_f32();
+
+        info!(
+            eth_block_height,
+            app_hash = eth_block_hash_hex,
+            cbft_block_hash = cbft_block_hash_hex,
+            eth_block_hash = eth_block_hash_hex,
+            execution_time,
+            "The cbft block {} is committed in {} seconds",
+            cbft_block_hash_hex,
+            execution_time,
+        );
+
         self.metrics.commet_committed_blocks.increment(1);
 
         ResponseCommit::default()
@@ -1847,13 +2198,20 @@ where
             if let Some(message) = self.driver_rx.lock().await.recv().await {
                 match message {
                     ABCIDriverMessage::CommitBlock((sealed_block_with_context, commit_tx)) => {
+                        let _span = tracing::trace_span!(
+                            "ABCI driver commit block",
+                            eth_block_height =
+                                sealed_block_with_context.sealed_block_with_peg.block().number,
+                            eth_block_hash =
+                                %sealed_block_with_context.sealed_block_with_peg.block().hash(),
+                        )
+                        .entered();
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
                         let sealed_block_with_senders = sealed_block_with_peg.block().to_owned();
                         let hashed_state = sealed_block_with_context.exec_outcome.hash_state_slow();
                         let trie_updates = sealed_block_with_context.trie_updates;
-                        info!("Inserting block into db: {:?}", sealed_block_with_senders.number);
 
                         let executed_block = ExecutedBlock::new(
                             Arc::new(sealed_block_with_senders.block.clone()),
@@ -1893,7 +2251,6 @@ where
                         self.blockchain_provider
                             .on_forkchoice_update_received(&ForkchoiceState::default());
 
-                        info!("Block height from sealed block: {:?}", block_height);
                         self.blockchain_provider.set_canonical_head(new_header.clone());
                         self.blockchain_provider.set_safe(new_header.clone());
                         self.blockchain_provider.set_finalized(new_header.clone());
@@ -1901,6 +2258,8 @@ where
                         self.blockchain_provider
                             .canonical_in_memory_state()
                             .remove_persisted_blocks(block_height - 1);
+
+                        debug!("eth block {block_height} committed to the state");
 
                         let chain = Chain::new(
                             vec![sealed_block_with_senders].into_iter(),
@@ -2141,7 +2500,12 @@ mod tests {
     fn test_prepare_proposal_empty_mempool() {
         let abci_client = abci_client_builder();
 
-        let request = RequestPrepareProposal { max_tx_bytes: 100, ..Default::default() };
+        let request = RequestPrepareProposal {
+            max_tx_bytes: 100,
+            time: Some(Default::default()),
+            ..Default::default()
+        };
+
         let response = abci_client.prepare_proposal(request);
 
         let expected_ndd = NonDeterministicData::new_v1(

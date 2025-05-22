@@ -1,14 +1,13 @@
-use bitcoincore_rpc::{Error as BitcoindError, RpcApi};
-use revm_primitives::Address;
-use secp256k1::ecdsa::RecoverableSignature;
-use thiserror::Error;
-
 use crate::{
     botanix::consensus_package::{BotanixConsensusPackage, RecentHeader},
     extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
     Bytes, Header,
 };
+use bitcoincore_rpc::{Error as BitcoindError, RpcApi};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
+use revm_primitives::Address;
+use secp256k1::ecdsa::RecoverableSignature;
+use thiserror::Error;
 
 /// Authority Block signatures
 pub type BlockWitness = Vec<RecoverableSignature>;
@@ -99,6 +98,7 @@ impl HeaderExt for Header {
     }
 
     /// Creates a Botanix consensus package
+    #[tracing::instrument(level = "trace", skip_all, ret, err)]
     fn botanix_consensus_package(
         &self,
         btc_network: bitcoin::Network,
@@ -111,6 +111,8 @@ impl HeaderExt for Header {
             }
         };
 
+        tracing::trace!("edh={:?}", edh);
+
         let bitcoind = match bitcoind_factory.build_and_connect() {
             Ok(bitcoind) => bitcoind,
             Err(e) => return Err(BotanixConsensusPackageError::FailedToCreateBitcoindClient(e)),
@@ -122,6 +124,8 @@ impl HeaderExt for Header {
                 return Err(BotanixConsensusPackageError::FailedToRetrieveBitcoinCheckpointHeader(e))
             }
         };
+
+        tracing::trace!("bitcoin_checkpoint_header={:?}", bitcoin_checkpoint_header);
 
         let bitcoin_checkpoint_height = match bitcoind.get_block_info(&edh.bitcoin_block_hash) {
             Ok(info) => info.height,
