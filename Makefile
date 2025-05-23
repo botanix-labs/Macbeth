@@ -610,6 +610,7 @@ start-btc-server-1:
 	--db "./db1" \
 	--min-signers 2 \
 	--max-signers 2 \
+	--rpc-port 8545 \
 	--toml ./config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -630,6 +631,7 @@ start-btc-server-2:
 	--db "./db2" \
 	--min-signers 2 \
 	--max-signers 2 \
+	--rpc-port 8546 \
 	--toml ./config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -650,6 +652,7 @@ start-btc-server-3:
 	--db "./db3" \
 	--min-signers 3 \
 	--max-signers 3 \
+	--rpc-port 8547 \
 	--toml ./config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network "${BITCOIND_NETWORK}" \
@@ -729,7 +732,7 @@ start-poa-server-2:
 	--abci-port=36658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" 
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
 
 start-poa-server-3:
 	cd ./bin/reth && \
@@ -902,6 +905,7 @@ PROFILE_BTC_SERVER_ARGS := \
 	--bitcoind-url ${BITCOIND_URL} \
 	--bitcoind-user ${BITCOIND_USER} \
 	--bitcoind-pass ${BITCOIND_PWD} \
+	--rpc-port ${PROFILER_POA_HTTP_PORT} \
 	--btc-signing-server-jwt-secret ${PROFILER_NODE_DIR}/bjwt.hex \
 	--fall-back-fee-rate-sat-per-vbyte 5
 

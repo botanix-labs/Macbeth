@@ -1,5 +1,5 @@
 use crate::{
-    botanix_client::BotanixEthClient,
+    botanix_client::BotanixEthClientTrait,
     database::{self, Db, Utxo},
     pegout_id::PegoutId,
     wallet::{
@@ -24,7 +24,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
-
 lazy_static! {
     static ref MAX_FEERATE: bitcoin::FeeRate =
         bitcoin::FeeRate::from_sat_per_vb(300).expect("valid feerate");
@@ -304,7 +303,7 @@ pub async fn validate_psbt(
     flags: u8,
     min_signers: u16,
     db: &database::Db,
-    botanix_eth_client: &BotanixEthClient,
+    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<(), ValidatePSBTError> {
     // Sanity check for # of inputs and outputs
     if psbt.inputs.is_empty() {
@@ -465,7 +464,7 @@ pub enum ValidateOutputsError {
 pub(crate) async fn validate_outputs(
     psbt: &Psbt,
     db: &database::Db,
-    botanix_eth_client: &BotanixEthClient,
+    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<(), ValidateOutputsError> {
     // Ensure psbt.outputs and psbt.unsigned_tx.output have the same number of elements.
     // This is critical to prevent a malicious coordinator from adding arbitrary outputs
@@ -519,16 +518,13 @@ pub(crate) async fn validate_outputs(
             .ok_or_else(|| ValidateOutputsError::PegoutIdTxHashNotFound(vec![*id]))?
             .block_number
             .ok_or_else(|| ValidateOutputsError::PegoutIdNotFoundInBlock(vec![*id]))?;
-
         let block = botanix_eth_client
             .get_block_by_id(block_number.into())
             .await
             .map_err(ValidateOutputsError::BotanixEthClient)?;
-
         if !is_block_age_acceptable(block.timestamp.as_u64(), *MAX_BLOCK_TS_CUTOFF_DURATION) {
             return Err(ValidateOutputsError::PegoutIdTooOld(vec![*id]));
         }
-
         if finalized_pegouts_id.contains(id) {
             return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
         }
@@ -618,6 +614,7 @@ mod tests {
     use std::time::SystemTime;
 
     use crate::{
+        botanix_client::MockBotanixEthClient,
         database::{version::UtxoVersion, FinalizedPegout},
         frost_id,
         wallet::psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
@@ -667,14 +664,17 @@ mod tests {
         db.flush().unwrap();
 
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await;
         assert!(res.is_ok());
 
         // No inputs
         let db = db_setup();
         let mut psbt = create_psbt(2, 1, None);
         psbt.inputs.clear();
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).await;
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await;
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "inputs cannot be 0");
 
@@ -682,7 +682,7 @@ mod tests {
         let db = db_setup();
         let mut psbt = create_psbt(2, 1, None);
         psbt.outputs.clear();
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).await;
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await;
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "outputs cannot be 0");
     }
@@ -738,7 +738,10 @@ mod tests {
         for output in psbt.unsigned_tx.output.iter_mut() {
             output.value = output.value.checked_add(Amount::from_sat(diff)).unwrap_or_default();
         }
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await;
         assert_eq!(res.unwrap_err(), ValidatePSBTError::NegativeFee);
     }
 
@@ -797,7 +800,10 @@ mod tests {
         });
         assert!(total_outputs == Amount::ZERO);
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await;
         assert_eq!(
             res.unwrap_err(),
             ValidatePSBTError::FeeSanityCheck(Amount::from_sat(2346), Amount::ZERO)
@@ -822,7 +828,10 @@ mod tests {
         let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&psbt, ROUND1, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db, &mock_client).await;
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "cannot find UTXO in db");
 
@@ -836,7 +845,10 @@ mod tests {
 
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db, &mock_client).await;
         assert!(res.is_ok());
     }
 
@@ -867,11 +879,14 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND1, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db, &mock_client).await;
         assert_eq!(res.unwrap_err().to_string(), "eth tweak mismatch");
 
         psbt.inputs[0].set_eth_address(eth);
-        let res = validate_psbt(&psbt, ROUND1, 2, &db).await;
+        let res = validate_psbt(&psbt, ROUND1, 2, &db, &mock_client).await;
         assert!(res.is_ok());
     }
 
@@ -908,7 +923,10 @@ mod tests {
 
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND1, 2, &db, &mock_client).await;
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "txout mismatch");
     }
@@ -937,7 +955,10 @@ mod tests {
 
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db, &mock_client).await;
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of signing commitments");
 
@@ -967,7 +988,10 @@ mod tests {
         psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1);
         psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits2);
 
-        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 101)
+            .with_recent_block(101);
+        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db, &mock_client).await;
         assert!(res.is_ok());
 
         // Round 2 at this point should pass as well. B/c we have not hit a limit in the number of
@@ -983,7 +1007,10 @@ mod tests {
         let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&psbt, ROUND2, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 102)
+            .with_recent_block(102);
+        let res = validate_psbt(&psbt, ROUND2, 2, &db, &mock_client).await;
         assert!(res.is_ok());
     }
 
@@ -1033,7 +1060,10 @@ mod tests {
         psbt.inputs[0].set_partial_signature(frost_id!(0), &sig_share1);
 
         // Should pass with 1 signature
-        let res = validate_psbt(&psbt, ROUND2, 1, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND2, 1, &db, &mock_client).await;
         assert!(res.is_ok());
 
         // Should fail with two signatures
@@ -1049,7 +1079,10 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND2, 1, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND2, 1, &db, &mock_client).await;
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
 
@@ -1064,7 +1097,10 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 1, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 1, &db, &mock_client).await;
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
 
@@ -1080,9 +1116,12 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
         let (_, signing_commits2) = frost::round1::commit(key_package2.signing_share(), rng);
         psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits2);
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db).await;
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db, &mock_client).await;
         assert!(res.is_ok());
 
         // Should fail if there is another signer as the number of signatures on a input is greater
@@ -1106,7 +1145,10 @@ mod tests {
         let sig = frost::round2::SignatureShare::deserialize(&[2u8; 32]).expect("valid sig share");
         psbt.inputs[0].set_partial_signature(frost_id!(2), &sig);
 
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db, &mock_client).await;
         assert_eq!(res.unwrap_err(), ValidatePSBTError::InvalidNumberOfPartialSignatures);
     }
 
@@ -1135,7 +1177,10 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        validate_psbt(&psbt, NO_FLAGS, 2, &db).expect("valid psbt").await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 101)
+            .with_recent_block(101);
+        validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await.expect("valid psbt");
 
         let mut dup_psbt = create_psbt(1, 2, Some(get_change(&db)));
 
@@ -1151,7 +1196,10 @@ mod tests {
         dup_psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         dup_psbt.outputs[1].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 102)
+            .with_recent_block(102);
+        let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db, &mock_client).await;
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
@@ -1162,7 +1210,12 @@ mod tests {
         // multiple pegouts but they should have different pegout ids
         let pegout_id2 = store_pending_pegout(&db);
         dup_psbt.outputs[1].set_pegout_id(pegout_id2.as_bytes());
-        let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id2.txid.into(), 103)
+            .with_recent_block(103)
+            .with_transaction(pegout_id.txid.into(), 102)
+            .with_recent_block(102);
+        let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db, &mock_client).await;
         assert!(res.is_ok());
     }
 
@@ -1203,7 +1256,10 @@ mod tests {
         db.store_utxos(&[&utxo1, &utxo2]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).await.unwrap_err();
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 101)
+            .with_recent_block(101);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await.unwrap_err();
         assert_eq!(
             res,
             ValidatePSBTError::InvalidOutputs(ValidateOutputsError::ExpectingOnlyOneChangeOutput)
@@ -1251,15 +1307,18 @@ mod tests {
         db.store_utxos(&[&utxo1, &utxo2]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).await.unwrap_err();
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 101)
+            .with_recent_block(101);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await.unwrap_err();
         assert_eq!(
             res,
             ValidatePSBTError::InvalidOutputs(ValidateOutputsError::InvalidChangeOutput)
         );
     }
 
-    #[test]
-    fn test_validate_outputs_output_count_mismatch() {
+    #[tokio::test]
+    async fn test_validate_outputs_output_count_mismatch() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -1286,7 +1345,8 @@ mod tests {
             "Test setup error: output lengths should be different"
         );
 
-        let res = validate_outputs(&psbt, &db);
+        let mock_client = MockBotanixEthClient::new();
+        let res = validate_outputs(&psbt, &db, &mock_client).await;
         assert!(res.is_err(), "validate_outputs should fail due to output count mismatch");
         match res.unwrap_err() {
             ValidateOutputsError::OutputCountMismatch(len_psbt_outputs, len_unsigned_tx_output) => {
@@ -1305,7 +1365,8 @@ mod tests {
         psbt2.outputs.push(Default::default());
         // Now psbt2.outputs.len() = 1, psbt2.unsigned_tx.output.len() = 0
 
-        let res2 = validate_outputs(&psbt2, &db);
+        let mock_client = MockBotanixEthClient::new();
+        let res2 = validate_outputs(&psbt2, &db, &mock_client).await;
         assert!(res2.is_err(), "validate_outputs should fail when psbt.outputs is longer");
         match res2.unwrap_err() {
             ValidateOutputsError::OutputCountMismatch(len_psbt_outputs, len_unsigned_tx_output) => {
@@ -1691,7 +1752,10 @@ mod tests {
         let mut psbt = create_psbt(1, 1, None);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).await;
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_recent_block(100);
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db, &mock_client).await;
         let res_error = res.unwrap_err().to_string();
         assert!(res_error
             .contains("error validating outputs: found already finalized psbt pegouts in db"));
