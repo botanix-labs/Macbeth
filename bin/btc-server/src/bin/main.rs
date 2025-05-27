@@ -256,8 +256,6 @@ struct App<BitcoinRpcApi> {
     fall_back_fee_rate: bitcoin::FeeRate,
     /// telemetry
     telemetry: Option<Arc<Telemetry>>,
-    /// Botanix Eth client
-    botanix_eth_client: BotanixEthClient,
 }
 
 impl<BitcoindClient> App<BitcoindClient>
@@ -479,7 +477,6 @@ where
             identifier: frost_identifier,
             dkg,
             frost_round1_nonces: Arc::new(Mutex::new(None)),
-            botanix_eth_client: BotanixEthClient::new(config.rpc_port)?,
             config,
             btc_signing_server_jwt_secret,
             min_signers,
@@ -970,12 +967,15 @@ where
 
         let mut psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
 
+        let botanix_eth_client = BotanixEthClient::new(self.config.rpc_port).ok();
         let nonces = signer::get_round1_signing_package(
             &mut psbt,
             self.min_signers,
             &self.db,
             &self.identifier,
-            &self.botanix_eth_client,
+            botanix_eth_client
+                .as_ref()
+                .map(|c| c as &dyn btcserverlib::botanix_client::BotanixEthClientTrait),
         )
         .await
         .map_err(SigningError::Round1)
@@ -1020,13 +1020,16 @@ where
 
         let mut psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
 
+        let botanix_eth_client = BotanixEthClient::new(self.config.rpc_port).ok();
         signer::get_round2_signing_package(
             &mut psbt,
             self.min_signers,
             &self.db,
             &self.identifier,
             &signing_nonces,
-            &self.botanix_eth_client,
+            botanix_eth_client
+                .as_ref()
+                .map(|c| c as &dyn btcserverlib::botanix_client::BotanixEthClientTrait),
         )
         .await
         .map_err(|e| {
@@ -1240,6 +1243,7 @@ where
             .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
         let change_script = wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
+        let botanix_eth_client = BotanixEthClient::new(self.config.rpc_port).ok();
         let psbt = coordinator::make_tx(
             outputs,
             fee_rate,
@@ -1247,7 +1251,9 @@ where
             &self.db,
             self.min_signers,
             tracked_txs,
-            &self.botanix_eth_client,
+            botanix_eth_client
+                .as_ref()
+                .map(|c| c as &dyn btcserverlib::botanix_client::BotanixEthClientTrait),
         )
         .await
         .to_status()?;
@@ -1289,12 +1295,15 @@ where
             "Received to sign package request, signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
+        let botanix_eth_client = BotanixEthClient::new(self.config.rpc_port).ok();
         let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
         let psbt = coordinator::get_to_sign(
             &signing_session_id,
             &self.db,
             self.min_signers,
-            &self.botanix_eth_client,
+            botanix_eth_client
+                .as_ref()
+                .map(|c| c as &dyn btcserverlib::botanix_client::BotanixEthClientTrait),
         )
         .await
         .to_status()?;
@@ -1327,13 +1336,16 @@ where
         let frost_id = deserialize_frost_peer_id(req.identifier).to_status()?;
         let psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
 
+        let botanix_eth_client = BotanixEthClient::new(self.config.rpc_port).ok();
         coordinator::add_round1_signing(
             &signing_session_id,
             frost_id,
             &psbt,
             &self.db,
             self.min_signers,
-            &self.botanix_eth_client,
+            botanix_eth_client
+                .as_ref()
+                .map(|c| c as &dyn btcserverlib::botanix_client::BotanixEthClientTrait),
         )
         .await
         .to_status()?;
@@ -1365,13 +1377,16 @@ where
         let frost_id = deserialize_frost_peer_id(req.identifier).to_status()?;
         let psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
 
+        let botanix_eth_client = BotanixEthClient::new(self.config.rpc_port).ok();
         coordinator::add_round2_signing(
             &signing_session_id,
             frost_id,
             &psbt,
             &self.db,
             self.min_signers,
-            &self.botanix_eth_client,
+            botanix_eth_client
+                .as_ref()
+                .map(|c| c as &dyn btcserverlib::botanix_client::BotanixEthClientTrait),
         )
         .await
         .to_status()?;

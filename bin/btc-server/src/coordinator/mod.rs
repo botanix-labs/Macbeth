@@ -1,7 +1,7 @@
 use log::{debug, error, info};
 
 use crate::{
-    botanix_client::BotanixEthClient,
+    botanix_client::BotanixEthClientTrait,
     coordinator::error::CoordinatorError,
     database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
@@ -30,7 +30,7 @@ pub async fn add_round1_signing(
     psbt: &Psbt,
     db: &Db,
     min_signers: u16,
-    botanix_eth_client: &BotanixEthClient,
+    botanix_eth_client: Option<&dyn BotanixEthClientTrait>,
 ) -> Result<(), CoordinatorError> {
     let _start = Instant::now();
     validate_psbt(psbt, ROUND1, min_signers, db, botanix_eth_client).await?;
@@ -64,7 +64,7 @@ pub async fn add_round2_signing(
     psbt: &Psbt,
     db: &Db,
     min_signers: u16,
-    botanix_eth_client: &BotanixEthClient,
+    botanix_eth_client: Option<&dyn BotanixEthClientTrait>,
 ) -> Result<(), CoordinatorError> {
     // validate PSBT
     validate_psbt(psbt, ROUND2, min_signers, db, botanix_eth_client).await?;
@@ -93,7 +93,7 @@ pub async fn make_tx(
     db: &Db,
     min_signers: u16,
     tracked_txs: Vec<Tx>,
-    botanix_eth_client: &BotanixEthClient,
+    botanix_eth_client: Option<&dyn BotanixEthClientTrait>,
 ) -> Result<Psbt, CoordinatorError> {
     // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate
@@ -201,7 +201,7 @@ pub async fn get_to_sign(
     signing_session_id: &[u8; 32],
     db: &Db,
     min_signers: u16,
-    botanix_eth_client: &BotanixEthClient,
+    botanix_eth_client: Option<&dyn BotanixEthClientTrait>,
 ) -> Result<Psbt, CoordinatorError> {
     // Note that the tweaks and signing commitments should be explicitly verified by the signers
     // before signing Instead we can add it to the psbt as a proprietary field for each
