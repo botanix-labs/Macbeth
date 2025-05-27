@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use displaydoc::Display as DisplayDoc;
 use ethers::{
     core::types::{Address as EtherAddress, BlockNumber},
@@ -17,9 +19,12 @@ pub enum Error {
 
 /// Trait defining the interface for Ethereum client operations
 #[async_trait::async_trait]
-pub trait BotanixEthClientTrait: Send + Sync {
+pub trait BotanixEthClientTrait: Send + Sync + Debug {
     /// Get the HTTP provider reference
     fn http_provider(&self) -> &Provider<Http>;
+
+    /// Check if the client is connected to the Ethereum network
+    async fn is_connected(&self) -> bool;
 
     /// Get the nonce for an address (string format)
     async fn nonce(&self, address: &str) -> U256;
@@ -69,7 +74,7 @@ pub struct BotanixEthClient {
 impl BotanixEthClient {
     pub fn new(rpc_port: u16) -> Result<Self, Error> {
         // Connect to the network
-        let http_url = format!("http://127.0.0.1:{}", rpc_port);
+        let http_url = format!("http://localhost:{}", rpc_port);
         let http_client = Provider::<Http>::try_from(&http_url).map_err(Error::UrlParse)?;
 
         Ok(Self { http_client })
@@ -80,6 +85,10 @@ impl BotanixEthClient {
 impl BotanixEthClientTrait for BotanixEthClient {
     fn http_provider(&self) -> &Provider<Http> {
         self.http_client.provider()
+    }
+
+    async fn is_connected(&self) -> bool {
+        self.http_client.get_block_number().await.is_ok()
     }
 
     async fn nonce(&self, address: &str) -> U256 {
@@ -261,6 +270,13 @@ impl MockBotanixEthClient {
 impl BotanixEthClientTrait for MockBotanixEthClient {
     fn http_provider(&self) -> &Provider<Http> {
         panic!("http_provider() not supported in mock - consider refactoring the trait")
+    }
+
+    async fn is_connected(&self) -> bool {
+        if self.should_fail {
+            panic!("Mock configured to fail");
+        }
+        true
     }
 
     async fn nonce(&self, address: &str) -> U256 {

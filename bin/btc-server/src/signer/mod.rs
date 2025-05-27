@@ -23,7 +23,7 @@ pub async fn get_round1_signing_package(
     min_signers: u16,
     db: &Database,
     my_identifier: &Identifier,
-    botanix_eth_client: Option<&dyn BotanixEthClientTrait>,
+    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<Vec<(SigningNonces, SigningCommitments)>, SigningRound1Error> {
     // TODO: re-enable this check
     // check fee is within acceptable range
@@ -92,7 +92,7 @@ pub async fn get_round2_signing_package(
     identifier: &Identifier,
     // Each nonce pair is commitment to a input of the tx
     signing_nonces: &[(SigningNonces, SigningCommitments)],
-    botanix_eth_client: Option<&dyn BotanixEthClientTrait>,
+    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<(), SigningRound2Error> {
     validate_psbt(psbt, ROUND1, min_signers, db, botanix_eth_client).await?;
 
