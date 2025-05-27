@@ -352,12 +352,21 @@ enum PayloadBuilderError {
     ParentBlockDoesNotExist,
 }
 
+struct BlockCache {
+    /// Cached blocks, inserted after execution in either `process_proposal` or
+    /// `finalize_block`.
+    cache: LruMap<BlockHash, BlockWithContext>,
+    /// The finalized block hash tracked by `finalize_block`, and then consumed
+    /// by `commit`.
+    tracked_final: Option<BlockHash>,
+}
+
 #[derive(Clone)]
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
     pool: Pool,
     bitcoin_checkpoint: BitcoinCheckpoint,
-    block_cache: Arc<RwLock<LruMap<BlockHash, BlockWithContext>>>,
+    block_cache: Arc<RwLock<BlockCache>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     #[allow(dead_code)]
     cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -407,12 +416,18 @@ where
         block_fee_recipient_address: Option<reth_primitives::Address>,
         blockchain_db: BlockchainProvider2<Arc<DatabaseEnv>>,
     ) -> Self {
+        // Saving the last 5 blocks that were proposed
+        let block_cache = Arc::new(RwLock::new(BlockCache {
+            cache: LruMap::new(ByLength::new(5)),
+            tracked_final: None,
+        }));
+
         Self {
             storage: storage.clone(),
             pool,
             bitcoin_checkpoint,
             // Saving the last 5 blocks that were proposed
-            block_cache: Arc::new(RwLock::new(LruMap::new(ByLength::new(5)))),
+            block_cache,
             driver_tx,
             cbft_rpc_provider,
             authority_consensus,
@@ -1587,9 +1602,11 @@ where
                 return ResponseProcessProposal { status: VERIFY_REJECT };
             }
         };
+
         let reader_inner: Vec<u8> =
             vec![non_deterministic_data_bytes].into_iter().flatten().collect();
         let reader = &mut io::Cursor::new(reader_inner);
+
         let non_deterministic_data = match NonDeterministicData::deserialize(reader) {
             Ok(data) => data,
             Err(e) => {
@@ -1836,7 +1853,7 @@ where
                 }
 
                 match self.block_cache.write() {
-                    Ok(mut cache) => {
+                    Ok(mut block_cache_write) => {
                         let eth_block_hash = block.hash();
 
                         debug!(
@@ -1845,7 +1862,7 @@ where
                             "update eth block cache",
                         );
 
-                        cache.insert(cbft_block_hash, block_with_context);
+                        block_cache_write.cache.insert(cbft_block_hash, block_with_context);
 
                         self.metrics.commet_processed_proposals.increment(1);
 
@@ -1942,7 +1959,8 @@ where
                 panic!("Error getting eth block cache write lock: {:?}", e);
             }
         };
-        let block_with_context = match block_cache_write.get(&cbft_block_hash) {
+
+        let block_with_context = match block_cache_write.cache.get(&cbft_block_hash) {
             Some(block_with_context) => {
                 debug!(
                     cbft_block_hash = hex::encode(cbft_block_hash),
@@ -2044,7 +2062,7 @@ where
                     block_time,
                 ) {
                     Ok(block_with_context) => {
-                        block_cache_write.insert(cbft_block_hash, block_with_context.clone());
+                        block_cache_write.cache.insert(cbft_block_hash, block_with_context.clone());
 
                         debug!(
                             cbft_block_hash = hex::encode(cbft_block_hash),
@@ -2062,6 +2080,9 @@ where
                 }
             }
         };
+
+        // Track the finalized block hash for the commit stage.
+        block_cache_write.tracked_final = Some(cbft_block_hash);
 
         // Rpc node needs to store aggregate public key from block height 1
         let block_height = block_with_context.sealed_block_with_peg.block().number;
@@ -2095,6 +2116,7 @@ where
                 panic!("failed to finalize block {} without NDD", request.height);
             }
         };
+
         let first_exec_tx_result =
             ExecTxResult { code: SUCCESS, data: non_deterministic_data_tx, ..Default::default() };
         exec_results.push(first_exec_tx_result);
@@ -2152,21 +2174,17 @@ where
     fn commit(&self) -> ResponseCommit {
         let execution_start_time = std::time::Instant::now();
 
-        let candidate_blocks = match self.block_cache.write() {
-            Ok(candidate_blocks) => candidate_blocks,
-            Err(e) => {
-                panic!("Error getting eth block cache write lock: {:?}", e);
-            }
+        let Ok(mut block_cache_write) = self.block_cache.write() else {
+            panic!("Error getting block cache write lock");
         };
 
-        // We want to explicitly panic since we cannot get the lock and send the commit message
-        let (cbft_block_hash, sealed_block_with_context) = match candidate_blocks.peek_newest() {
-            Some((cbft_block_hash, sealed_block_with_context)) => {
-                (cbft_block_hash, sealed_block_with_context)
-            }
-            None => {
-                panic!("Error getting eth block from cache");
-            }
+        // Retrieve the finalized block via hash.
+        let cbft_block_hash =
+            block_cache_write.tracked_final.take().expect("No tracked final block hash");
+
+        let Some(sealed_block_with_context) = block_cache_write.cache.remove(&cbft_block_hash)
+        else {
+            panic!("Error getting block from cache");
         };
 
         let block = sealed_block_with_context.sealed_block_with_peg.block();
@@ -2182,8 +2200,6 @@ where
 
         trace!("eth_block_header={:?}", block.header());
 
-        // need to clone since `sealed_block_with_context` is behind a lock
-        let sealed_block_with_context = sealed_block_with_context.clone();
         let eth_block_height = sealed_block_with_context.sealed_block_with_peg.block().number;
 
         // We want to explicitly panic if we cannot send the commit message
@@ -2694,7 +2710,7 @@ mod tests {
 
         // get newly made block from cache to recreate expected app hash
         let mut rw_lock = abci_client.block_cache.write().expect("should get lock");
-        let sealed_block_with_context = rw_lock.pop_newest().expect("to have block").1;
+        let sealed_block_with_context = rw_lock.cache.pop_newest().expect("to have block").1;
         let expected_app_hash = prost::bytes::Bytes::copy_from_slice(
             &sealed_block_with_context.sealed_block_with_peg.block().hash().0,
         );

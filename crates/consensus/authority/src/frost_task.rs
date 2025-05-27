@@ -304,7 +304,7 @@ where
                         }
                     }
                     Err(e) => {
-                        info!(target: "consensus::authority::frost_task::start_task", "Error getting block sync status {:?}", e);
+                        warn!(target: "consensus::authority::frost_task::start_task", "Error getting block sync status {:?}", e);
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         continue;
                     }
