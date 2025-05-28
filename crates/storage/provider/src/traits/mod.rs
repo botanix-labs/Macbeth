@@ -55,3 +55,6 @@ pub use tree_viewer::TreeViewer;
 
 mod finalized_block;
 pub use finalized_block::{FinalizedBlockReader, FinalizedBlockWriter};
+
+mod staged_header;
+pub use staged_header::StagedHeader;
