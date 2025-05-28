@@ -89,40 +89,40 @@ We follow [Semantic Versioning 2.0.0](https://semver.org/) with the format `MAJO
 
 ### Stable Release
 
-1. Merge `hotfix` or `rc` branches into `main`
+1. Merge `hotfix` or `rc` branches into `main` (fast-forward merge)
 2. Bump package versions (e.g., `v1.1.0`)
 3. Update change log
-4. Back-merge changes to `develop`,
+4. Back-merge changes to `develop` (fast-forward merge)
 5. Force-merge `main` to `rc` and `hotfix`
-6. Create release on GitHub from `main` branch with the version number (e.g., `v1.1.0`).
+6. Create release on GitHub from `main` branch with the version number (e.g., `v1.1.0`)
 7. Build artifacts
 8. Push artifacts
 
 ### Release Candidate Release
-1. Merge `develop` branch into `rc`
+1. Merge `develop` branch into `rc` (fast-forward merge)
 2. Bump package versions (e.g., v1.1.0-rc.1)
 3. Update change log
-4. Create release on GitHub from `rc` branch with the `rc` pre-release (e.g., `v1.1.0-rc.1`).
+4. Create release on GitHub from `rc` branch with the `rc` pre-release (e.g., `v1.1.0-rc.1`)
 5. Build artifacts
 6. Push artifacts
 
 ### Hotfix Release
 1. Bump package versions (e.g., `v1.0.1-hotfix.1`)
 2. Update change log
-3. Create release on GitHub from `hotfix` branch with the `hotfix` pre-release (e.g., `v1.0.1-hotfix.1`).
+3. Create release on GitHub from `hotfix` branch with the `hotfix` pre-release (e.g., `v1.0.1-hotfix.1`)
 4. Build artifacts
 5. Push artifacts
 
 ### Alpha Release
 1. Bump package versions with `alpha` pre-release segment and commit SHA (e.g., `v1.1.0-alpha.1+a30ddd1`)
 2. Update change log
-3. Create release on GitHub from `develop` branch with the `alpha` pre-release and commit SHA (e.g., `v1.1.0-alpha.1+a30ddd1`).
+3. Create release on GitHub from `develop` branch with the `alpha` pre-release and commit SHA (e.g., `v1.1.0-alpha.1+a30ddd1`)
 4. Build artifacts
 5. Push artifacts
 
 ### Other pre-releases
 Other pre-releases (e.g., `beta`, `pr`) should be released on demand.
-They should follow the same process as alpha releases but with different pre-release segments (e.g., `-beta.1`, `-gamma.1`).
+They should follow the same process as alpha releases but with different pre-release segments (e.g., `-beta.1`, `-gamma.1`)
 
 ## Release Notes
 
