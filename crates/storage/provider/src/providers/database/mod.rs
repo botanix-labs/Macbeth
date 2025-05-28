@@ -5,16 +5,16 @@ use crate::{
     BlockHashReader, BlockNumReader, BlockReader, ChainSpecProvider, DatabaseProviderFactory,
     EvmEnvProvider, HeaderProvider, HeaderSyncGap, HeaderSyncGapProvider, ProviderError,
     PruneCheckpointReader, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
-    StateProviderBox, StaticFileProviderFactory, TransactionVariant, TransactionsProvider,
-    WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
+    StagedHeader, StateProviderBox, StaticFileProviderFactory, TransactionVariant,
+    TransactionsProvider, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 use reth_chainspec::{ChainInfo, ChainSpec, EthChainSpec};
 use reth_db::{
     init_db,
     mdbx::DatabaseArguments,
     models::{
-        ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
-        WalletStateSyncRecord,
+        ChunkId, HeaderWithPegs, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
+        SnapshotSyncId, UuidID, WalletStateSyncRecord,
     },
     DatabaseEnv,
 };
@@ -826,6 +826,21 @@ impl<DB, Spec> Clone for ProviderFactory<DB, Spec> {
         }
     }
 }
+
+impl<DB: Database> StagedHeader for ProviderFactory<DB> {
+    fn insert_staged_header(&self, id: B256, header: HeaderWithPegs) -> ProviderResult<()> {
+        self.provider_rw()?.insert_staged_header(id, header)
+    }
+
+    fn remove_staged_header(&self, id: B256) -> ProviderResult<bool> {
+        self.provider_rw()?.remove_staged_header(id)
+    }
+
+    fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
+        self.provider_rw()?.get_staged_headers()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
