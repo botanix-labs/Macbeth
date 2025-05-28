@@ -6,7 +6,7 @@ use super::{
 use crate::{
     to_range, BlockHashReader, BlockNumReader, BlockReader, BlockSource, DatabaseProvider,
     HeaderProvider, ReceiptProvider, RequestsProvider, SnapshotReader, SnapshotWriter,
-    StageCheckpointReader, StatsReader, TransactionVariant, TransactionsProvider,
+    StageCheckpointReader, StagedHeader, StatsReader, TransactionVariant, TransactionsProvider,
     TransactionsProviderExt, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 use dashmap::DashMap;
@@ -15,8 +15,8 @@ use reth_chainspec::ChainInfo;
 use reth_db::{
     lockfile::StorageLock,
     models::{
-        ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
-        WalletStateSyncRecord,
+        ChunkId, HeaderWithPegs, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
+        SnapshotSyncId, UuidID, WalletStateSyncRecord,
     },
     static_file::{iter_static_files, HeaderMask, ReceiptMask, StaticFileCursor, TransactionMask},
     tables,
@@ -1740,6 +1740,20 @@ impl WalletStateSyncReader for StaticFileProvider {
         &self,
         _min_required_criterion: u64,
     ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+}
+
+impl StagedHeader for StaticFileProvider {
+    fn insert_staged_header(&self, _id: B256, _header: HeaderWithPegs) -> ProviderResult<()> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn remove_staged_header(&self, _id: B256) -> ProviderResult<bool> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
         Err(ProviderError::UnsupportedProvider)
     }
 }
