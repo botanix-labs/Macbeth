@@ -25,6 +25,7 @@ use reth_db_api::{
         blocks::{HeaderHash, StoredBlockOmmers},
         chunks::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
         client_version::ClientVersion,
+        staged_header::HeaderWithPegs,
         storage_sharded_key::StorageShardedKey,
         AccountBeforeTx, CompactU256, PeerID, ShardedKey, StoredBlockBodyIndices,
         StoredBlockWithdrawals, WalletStateSyncRecord,
@@ -314,6 +315,10 @@ tables! {
 
     /// Store wallet state sync record id to wallet state sync data.
     table WalletStateSyncs<Key = PeerID, Value = WalletStateSyncRecord>;
+
+    /// Store staged headers, used to persist pegins and pegouts after
+    /// finalizing a block.
+    table StagedHeader<Key = B256, Value = HeaderWithPegs>;
 
     /// Store chunk id to chunk data.
     table Chunks<Key = ChunkId, Value = SnapshotChunk>;
