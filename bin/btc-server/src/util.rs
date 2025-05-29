@@ -291,6 +291,7 @@ impl PartialEq for ValidatePSBTError {
 /// * `flags` - Flags indicating the validation criteria and actions to be performed.
 /// * `min_signers` - The minimum number of signers required for certain validations.
 /// * `db` - Database reference used for UTXO lookups.
+/// * `botanix_eth_client` - Botanix ethereum client.
 ///
 /// `NO_FLAGS`: Performs basic sanity checks only.
 /// `ROUND1`: Validates witnes_UTXO and UTXO existence in the database. Also checks the validity of
@@ -1761,5 +1762,44 @@ mod tests {
         let res_error = res.unwrap_err().to_string();
         assert!(res_error
             .contains("error validating outputs: found already finalized psbt pegouts in db"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_outputs_should_return_pegout_id_too_old() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        let pegout_id = store_pending_pegout(&db);
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        // Create a mock client with a transaction that has a very old timestamp
+        // The MAX_BLOCK_TS_CUTOFF_DURATION is 3 months, so we'll use a timestamp from 6 months ago
+        let six_months_ago_seconds = 6 * 30 * 24 * 60 * 60; // 6 months in seconds
+        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let old_timestamp = current_time - six_months_ago_seconds;
+
+        let mock_client = MockBotanixEthClient::new()
+            .with_transaction(pegout_id.txid.into(), 100)
+            .with_block_timestamp(100, old_timestamp);
+
+        let res = validate_outputs(&psbt, &db, &mock_client).await;
+
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            ValidateOutputsError::PegoutIdTooOld(pegout_ids) => {
+                assert_eq!(pegout_ids.len(), 1);
+                assert_eq!(pegout_ids[0], pegout_id);
+            }
+            other_error => {
+                panic!("Expected PegoutIdTooOld error, got {:?}", other_error);
+            }
+        }
     }
 }

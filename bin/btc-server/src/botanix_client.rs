@@ -247,6 +247,16 @@ impl MockBotanixEthClient {
         self
     }
 
+    /// Helper method to add a block with a specific timestamp
+    pub fn with_block_timestamp(mut self, block_number: u64, timestamp: u64) -> Self {
+        let mut block = Block::default();
+        block.number = Some(block_number.into());
+        block.timestamp = timestamp.into();
+        block.hash = Some(H256::from_low_u64_be(block_number)); // Simple hash for testing
+        self.blocks.insert(block.hash.unwrap(), block);
+        self
+    }
+
     /// Helper method to add a block
     pub fn with_block(mut self, block_number: u64, timestamp: u64) -> Self {
         let mut block = Block::default();
