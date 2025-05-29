@@ -159,10 +159,10 @@ This schedule balances rapid feature delivery with adequate testing time to ensu
                                │ vX.Y.0-rc.Z │ ◄───────────────┘
                                └─────────────┘
                                      │
-                                     │
-                                     ▼
- ┌───────────┐               ┌─────────────┐
- │ Hotfix    │   if needed   │ Stable      │
+                                     │             ┌───────────────────────┐ 
+                                     ▼             │ Next version vX.Y+1.0 │ Next cycle
+ ┌───────────┐               ┌─────────────┐       │ Development           │───────────>
+ │ Hotfix    │   if needed   │ Stable      │        └───────────────────────┘ 
  │ v(N).0.1  │◄──────────────┤ v(N).0.0    │
  └───────────┘               └─────────────┘
 ```
@@ -182,13 +182,14 @@ This schedule balances rapid feature delivery with adequate testing time to ensu
   - Focused on comprehensive testing of release candidates on testnet
   - Additional RC releases (`rc.N`) as needed based on testing results
   - Only critical fixes merged to `rc` branch
-  - New version development (N+1) begins in `develop` branch
+  - New version development (N+1) begins in `develop` branch as soon as the first RC is released
 
-3. **Stable Release (End of Week 4)**
+4. **Stable Release (End of Week 4)**
   - Testing and release validation are finished
   - [Release stable version](#stable-release)
+  - New version development (N+1) in `develop` branch
 
-4. **Hotfix Process (As Needed)**
+5. **Hotfix Process (As Needed)**
   - For critical production issues
   - Create a fix
   - [Release a hotfix](#hotfix-release)
