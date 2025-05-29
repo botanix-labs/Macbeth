@@ -136,60 +136,51 @@ Release notes should include:
 
 ## Release Schedule
 
-We follow a four-week release cycle with 1-3 weeks of development and alpha testing, followed by 1 week of release candidate testing.
+We follow a four-week release cycle with weeks 1-2 focused on development, week 3 dedicated to alpha testing and code freeze, and week 4 focused on RC testing.
 This schedule balances rapid feature delivery with adequate testing time to ensure stability.
 
 ```
-Week 1-3                                    Week 4
-┌─────────────────────────────────────┐   ┌─────────────────────┐
-│ Version N                           │   │ Version N           │
-│ Development Sprint                  │   │ RC Testing          │
-│ & Alpha Testing                     │   │                     │
-└─────────────────────────────────────┘   └─────────────────────┘
-       │                                          │
-       ▼                                          ▼
-┌─────────────┐                            ┌─────────────┐
-│ Alpha       │                            │ RC Release  │
-│ v(N)-alpha.1│                            │ v(N)-rc.1   │
-└─────────────┘                            └─────────────┘
-       │                                          │
-       │                                          │
-       │                                          ▼
-       │                                    ┌─────────────┐
-       │                                    │ Stable      │
-       │                                    │ v(N)        │
-       │                                    └─────────────┘
-       │                                          ▲
-       │                                          │
-       │             ┌─────────────────────────┐  │
-       │             │ Hotfix (as needed)      │  │
-       │             │ from main branch        │  │
-       │             └─────────────────────────┘  │
-       │                                          │
-       │                                    ┌─────────────┐
-       │                                    │ Hotfix       │
-       │                                    │ v(N).0.1    │
-       │                                    └─────────────┘
-       │
-       │                    ┌─────────────────────────────────────┐
-       └──────────────────►│ Version N+1                         │
-                           │ Development Sprint                  │
-                           │ & Alpha Testing                     │
-                           └─────────────────────────────────────┘
+Week 1-2                      Week 3                    Week 4
+┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+│ Version vX.Y.0      │   │ Version vX.Y.0      │   │ Version vX.Y.0      │
+│ Development         │   │ Alpha Testing       │   │ RC Testing          │
+│ & Initial Testing   │   │ & Code Freeze       │   │                     │
+└─────────────────────┘   └─────────────────────┘   └─────────────────────┘
+           │                         │                         │
+           ▼                         ▼                         │
+   ┌────────────────┐         ┌───────────────┐                │
+   │ Alpha          │         │ Alpha         │                │
+   │ vX.Y.0-alpha.1 │         │ vX.Y.0-alpha.Z│                │
+   └────────────────┘         └───────────────┘                │
+                                     │                         │
+                                     ▼                         │
+                               ┌─────────────┐                 │
+                               │ RC Release  │                 │
+                               │ vX.Y.0-rc.Z │ ◄───────────────┘
+                               └─────────────┘
+                                     │
+                                     │
+                                     ▼
+ ┌───────────┐               ┌─────────────┐
+ │ Hotfix     │   if needed   │ Stable      │
+ │ v(N).0.1  │◄──────────────┤ v(N).0.0    │
+ └───────────┘               └─────────────┘
 ```
 
-### Development Cycle Details
-
-1. **Development & Alpha Phase (Weeks 1-3)**
-  - Active development of new features in the `develop` branch
+1. **Development (Weeks 1-2)**
+  - Focused on development of new features in the `develop` branch
   - Regular [alpha releases](#alpha-release) for internal testing
-  - Developers conduct initial testing and validation
-  - Release candidate preparation by the end of Week 3
+  - Developers conduct initial alpha testing and validation
 
-2. **Release Candidate Phase (Week 4)**
-  - Code freeze at the end of Week 3
-  - [Release a release candidate](#release-candidate-release)
-  - Focus on stabilization, regression testing, and bug fixing
+2. **Alpha Testing & Code Freeze (Week 3)**
+  - Dedicated focus on alpha testing of all features
+  - Feature finalization and bug fixing
+  - Code freeze by the end of week 3
+  - [Release of first Release Candidate](#release-candidate-release) (`rc.1`) at the end of week 3
+
+3. **Release Testing (Week 4)**
+  - Focused on comprehensive testing of release candidates on testnet
+  - Additional RC releases (`rc.N`) as needed based on testing results
   - Only critical fixes merged to `rc` branch
   - New version development (N+1) begins in `develop` branch
 
