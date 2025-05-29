@@ -6,14 +6,14 @@ naming conventions, commit messages, and the pull‑request life‑cycle.
 ## Branches
 
 ```
-  ┌──────────┐    ┌──────────┐
-  │  hotfix   │    |  develop │
-  └──────────┘    └──────────┘
-       ▲               ▲
-       │               │
-  ┌────┴───────────────┴─────┐
-  │  <type>/[scope]/<name>   │
-  └──────────────────────────┘
+  ┌──────────┐    ┌───────────┐
+  │  hotfix  │    |  develop  │
+  └──────────┘    └───────────┘
+       ▲                ▲
+       │                │
+  ┌────┴────────────────┴─────┐
+  │   <type>/[scope]/<name>   │
+  └───────────────────────────┘
 ```
 
 - `hotfix` - The latest stable version. This branch is used to test hotfixes before release. Only critical bug fixes should be merged into this branch.
