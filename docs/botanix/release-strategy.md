@@ -140,7 +140,7 @@ We follow a four-week release cycle with weeks 1-2 focused on development, week 
 This schedule balances rapid feature delivery with adequate testing time to ensure stability.
 
 ```
-Week 1-2                      Week 3                    Week 4
+       Week 1-2                  Week 3                   Week 4
 ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
 │ Version vX.Y.0      │   │ Version vX.Y.0      │   │ Version vX.Y.0      │
 │ Development         │   │ Alpha Testing       │   │ RC Testing          │
