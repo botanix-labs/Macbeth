@@ -1502,7 +1502,12 @@ where
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#checktx
     fn check_tx(&self, _request: RequestCheckTx) -> ResponseCheckTx {
-        unreachable!("check_tx is not supported to be called. CometBFT mempool is not used");
+        error!("check_tx method is called. CometBFT mempool is not supported.");
+        ResponseCheckTx {
+            code: 1,
+            log: "CometBFT mempool is not supported".to_string(),
+            ..Default::default()
+        }
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
