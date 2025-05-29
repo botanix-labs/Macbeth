@@ -136,55 +136,62 @@ Release notes should include:
 
 ## Release Schedule
 
-We follow a predictable four-week release cycle, composed of two consecutive two-week sprints.
-This schedule balances regular feature delivery with adequate testing time to ensure stability.
+We follow a four-week release cycle with 1-3 weeks of development and alpha testing, followed by 1 week of release candidate testing.
+This schedule balances rapid feature delivery with adequate testing time to ensure stability.
 
 ```
-Week 1-2                  Week 3-4                  Week 5-6                  Week 7-8
-┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
-│ Version N           │   │ Version N           │   │ Version N+1         │   │ Version N+1         │
-│ Development Sprint  │   │ RC Testing Sprint   │   │ Development Sprint  │   │ RC Testing Sprint   │
-│ & Alpha Testing     │   │                     │   │ & Alpha Testing     │   │                     │
-└─────────────────────┘   └─────────────────────┘   └─────────────────────┘   └─────────────────────┘
-       │                          │                        │                          │
-       ▼                          ▼                        ▼                          ▼
-┌─────────────┐            ┌─────────────┐          ┌───────────────┐            ┌─────────────┐
-│ Alpha       │            │ RC Release  │          │ Alpha         │            │ RC Release  │
-│ v(N)-alpha.1│            │ v(N)-rc.1   │          │ v(N+1)-alpha.1│            │ v(N+1)-rc.1 │
-└─────────────┘            └─────────────┘          └───────────────┘            └─────────────┘
-                                  │                                                    │
-                                  │                                                    │
-                                  ▼                                                    ▼
-                            ┌─────────────┐                                      ┌─────────────┐
-                            │ Stable      │                                      │ Stable      │
-                            │ v(N)        │                                      │ v(N+1)      │
-                            └─────────────┘                                      └─────────────┘
-                                  ▲
-                                  │
-       ┌─────────────────────────┐│
-       │ Hotfix (as needed)       ││
-       │ from main branch        ││
-       └─────────────────────────┘│
-                                  │
-                            ┌─────────────┐
-                            │ Hotfix       │
-                            │ v(N).0.1    │
-                            └─────────────┘
+Week 1-3                                    Week 4
+┌─────────────────────────────────────┐   ┌─────────────────────┐
+│ Version N                           │   │ Version N           │
+│ Development Sprint                  │   │ RC Testing          │
+│ & Alpha Testing                     │   │                     │
+└─────────────────────────────────────┘   └─────────────────────┘
+       │                                          │
+       ▼                                          ▼
+┌─────────────┐                            ┌─────────────┐
+│ Alpha       │                            │ RC Release  │
+│ v(N)-alpha.1│                            │ v(N)-rc.1   │
+└─────────────┘                            └─────────────┘
+       │                                          │
+       │                                          │
+       │                                          ▼
+       │                                    ┌─────────────┐
+       │                                    │ Stable      │
+       │                                    │ v(N)        │
+       │                                    └─────────────┘
+       │                                          ▲
+       │                                          │
+       │             ┌─────────────────────────┐  │
+       │             │ Hotfix (as needed)      │  │
+       │             │ from main branch        │  │
+       │             └─────────────────────────┘  │
+       │                                          │
+       │                                    ┌─────────────┐
+       │                                    │ Hotfix       │
+       │                                    │ v(N).0.1    │
+       │                                    └─────────────┘
+       │
+       │                    ┌─────────────────────────────────────┐
+       └──────────────────►│ Version N+1                         │
+                           │ Development Sprint                  │
+                           │ & Alpha Testing                     │
+                           └─────────────────────────────────────┘
 ```
 
 ### Development Cycle Details
 
-1. **Development & Alpha Phase (Weeks 1-2)**
+1. **Development & Alpha Phase (Weeks 1-3)**
   - Active development of new features in the `develop` branch
-  - Daily [alpha releases](#alpha-release) for internal testing
+  - Regular [alpha releases](#alpha-release) for internal testing
   - Developers conduct initial testing and validation
+  - Release candidate preparation by the end of Week 3
 
-2. **Release Candidate Phase (Weeks 3-4)**
-  - Code freeze at the end of Week 2
+2. **Release Candidate Phase (Week 4)**
+  - Code freeze at the end of Week 3
   - [Release a release candidate](#release-candidate-release)
   - Focus on stabilization, regression testing, and bug fixing
   - Only critical fixes merged to `rc` branch
-  - New feature development for the next version begins in `develop` branch
+  - New version development (N+1) begins in `develop` branch
 
 3. **Stable Release (End of Week 4)**
   - Testing and release validation are finished
@@ -197,5 +204,5 @@ Week 1-2                  Week 3-4                  Week 5-6                  We
   - Test and validate the issue
   - [Release stable version](#stable-release) with the hotfix included
 
-This release cycle ensures a predictable cadence of stable releases while maintaining development velocity and providing a framework for addressing critical issues as they arise.
+This release cycle ensures a predictable cadence of stable releases while maintaining development velocity and providing a framework for addressing critical issues as they arise. The ability to start new version development in the 4th week allows for continuous progress without waiting for the release to be finalized.
 
