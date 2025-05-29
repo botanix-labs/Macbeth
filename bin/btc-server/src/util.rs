@@ -435,11 +435,14 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     if psbt.outputs.len() != psbt.unsigned_tx.output.len() {
         error!(
             target: "btc_server::util::validate_outputs",
-            "psbt.outputs length ({}) does not match psbt.unsigned_tx.output length ({})", 
-            psbt.outputs.len(), 
+            "psbt.outputs length ({}) does not match psbt.unsigned_tx.output length ({})",
+            psbt.outputs.len(),
             psbt.unsigned_tx.output.len()
         );
-        return Err(ValidateOutputsError::OutputCountMismatch(psbt.outputs.len(), psbt.unsigned_tx.output.len()));
+        return Err(ValidateOutputsError::OutputCountMismatch(
+            psbt.outputs.len(),
+            psbt.unsigned_tx.output.len(),
+        ));
     }
 
     // check aggregated public key exists
@@ -1212,8 +1215,9 @@ mod tests {
 
         // Create a base PSBT
         let mut psbt = create_psbt(1, 1, Some(get_change(&db))); // 1 output + 1 change = 2 outputs in psbt.outputs
-        
-        // Simulate a mismatch: psbt.outputs has 2 elements, psbt.unsigned_tx.output will have 1 extra
+
+        // Simulate a mismatch: psbt.outputs has 2 elements, psbt.unsigned_tx.output will have 1
+        // extra
         let original_outputs_len = psbt.outputs.len();
         psbt.unsigned_tx.output.push(bitcoin::TxOut {
             value: Amount::from_sat(12345),
@@ -1221,7 +1225,10 @@ mod tests {
         });
         let new_unsigned_tx_outputs_len = psbt.unsigned_tx.output.len();
 
-        assert_ne!(original_outputs_len, new_unsigned_tx_outputs_len, "Test setup error: output lengths should be different");
+        assert_ne!(
+            original_outputs_len, new_unsigned_tx_outputs_len,
+            "Test setup error: output lengths should be different"
+        );
 
         let res = validate_outputs(&psbt, &db);
         assert!(res.is_err(), "validate_outputs should fail due to output count mismatch");
@@ -1237,9 +1244,9 @@ mod tests {
 
         // Test the other way around: psbt.outputs is longer
         let mut psbt2 = create_psbt(1, 0, None); // 0 outputs in psbt.outputs
-        // psbt2.unsigned_tx.output is initially empty from create_psbt with 0 outputs
-        // Add one to psbt.outputs to create a mismatch where psbt.outputs is longer
-        psbt2.outputs.push(Default::default()); 
+                                                 // psbt2.unsigned_tx.output is initially empty from create_psbt with 0 outputs
+                                                 // Add one to psbt.outputs to create a mismatch where psbt.outputs is longer
+        psbt2.outputs.push(Default::default());
         // Now psbt2.outputs.len() = 1, psbt2.unsigned_tx.output.len() = 0
 
         let res2 = validate_outputs(&psbt2, &db);
@@ -1250,7 +1257,10 @@ mod tests {
                 assert_eq!(len_unsigned_tx_output, 0);
             }
             other_error => {
-                panic!("Expected OutputCountMismatch for psbt.outputs longer, got {:?}", other_error);
+                panic!(
+                    "Expected OutputCountMismatch for psbt.outputs longer, got {:?}",
+                    other_error
+                );
             }
         }
     }
