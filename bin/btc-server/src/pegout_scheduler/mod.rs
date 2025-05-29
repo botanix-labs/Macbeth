@@ -441,7 +441,8 @@ impl PegoutScheduler {
         // first try store the new finalized UTXOs to the db, then update the index.
         let mut all_inputs = block.relevant_inputs.iter().copied().collect::<HashSet<_>>();
         for txid in &block.relevant_txs {
-            let tx = self.txs.get(txid).expect("corrupt db");
+            let tx =
+                self.txs.get(txid).ok_or(database::Error::TrackedTxNotFoundInPegoutScheduler)?;
             // Add back the change to the utxo set
             let mut change_utxos = vec![];
             if let Ok(ref change_spk) = change_spk_res {
