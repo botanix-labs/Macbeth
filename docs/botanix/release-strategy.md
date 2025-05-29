@@ -12,7 +12,7 @@ This document describes our release strategy: release branch-topology, branch ma
                   │            │ 
                   ▼            │ 
   ┌────────────────────────┐   │ 
-  │         hotfix          │   │     v1.0.1-hotfix.1
+  │         hotfix         │   │     v1.0.1-hotfix.1
   └───────────┬────────────┘   │
               │                │
               │                │
@@ -162,7 +162,7 @@ Week 1-2                      Week 3                    Week 4
                                      │
                                      ▼
  ┌───────────┐               ┌─────────────┐
- │ Hotfix     │   if needed   │ Stable      │
+ │ Hotfix    │   if needed   │ Stable      │
  │ v(N).0.1  │◄──────────────┤ v(N).0.0    │
  └───────────┘               └─────────────┘
 ```
