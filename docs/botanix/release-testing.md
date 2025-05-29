@@ -1,5 +1,7 @@
 # Release Testing Strategy
 
+TODO: We should express that devs should lead testing of their PRs
+
 ## Test Types
 
 ### Smoke Tests
