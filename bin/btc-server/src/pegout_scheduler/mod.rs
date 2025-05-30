@@ -621,7 +621,8 @@ impl PegoutScheduler {
         // Check if tx still exists
         for txid in maybe_dropped_txs {
             // Check if the tx is on chain and is actually deeply confirmed.
-            // We use the tracked_tx.created timestamp but we don't know when the tx was actually included in a block.
+            // We use the tracked_tx.created timestamp but we don't know when the tx was actually
+            // included in a block.
             let onchain_tx = bitcoind.get_raw_transaction_info(&txid, None);
             if let Ok(onchain_tx) = onchain_tx {
                 // Check if the tx is deeply confirmed
@@ -631,7 +632,8 @@ impl PegoutScheduler {
                 if actual_height > checkpoint.height {
                     info!("Tx {} is confirmed in block {} at height {}, but is not deeply confirmed (checkpoint height {}).",
                         txid, blockhash, actual_height, checkpoint.height);
-                    // Continue so sync_until will finalize the block and tracked tx once it is deeply confirmed
+                    // Continue so sync_until will finalize the block and tracked tx once it is
+                    // deeply confirmed
                     continue;
                 }
 
@@ -903,7 +905,8 @@ mod tests {
 
     // A test transaction when you need a deterministic txid which is:
     // ("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2")
-    // This is currently used to test `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool()`
+    // This is currently used to test
+    // `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool()`
     pub static TEST_TRANSACTION_1: Lazy<Transaction> = Lazy::new(|| Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
@@ -921,7 +924,8 @@ mod tests {
 
     // A test transaction when you need a deterministic txid which is:
     // ("26bbaab2e585d465cceecc2acc7b398069aa85fc4dd1f52e39666a65e54a4569")
-    // This is currently used to test `track_mempool_should_not_add_back_pegout_when_still_in_mempool()`
+    // This is currently used to test
+    // `track_mempool_should_not_add_back_pegout_when_still_in_mempool()`
     pub static TEST_TRANSACTION_2: Lazy<Transaction> = Lazy::new(|| Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
