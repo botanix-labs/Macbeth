@@ -902,13 +902,31 @@ mod tests {
     const MAX_SIGNERS: u16 = 3;
 
     // A test transaction when you need a deterministic txid which is:
-    // (855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2)
-    // This is currently used to test `track_mempool()`
-    pub static TEST_TRANSACTION: Lazy<Transaction> = Lazy::new(|| Transaction {
+    // ("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2")
+    // This is currently used to test `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool()`
+    pub static TEST_TRANSACTION_1: Lazy<Transaction> = Lazy::new(|| Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::new(Txid::from_byte_array([123u8; 32]), 0),
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::MAX,
+            witness: Default::default(),
+        }],
+        output: vec![TxOut {
+            value: Amount::from_sat(1000),
+            script_pubkey: ScriptBuf::with_capacity(0),
+        }],
+    });
+
+    // A test transaction when you need a deterministic txid which is:
+    // ("26bbaab2e585d465cceecc2acc7b398069aa85fc4dd1f52e39666a65e54a4569")
+    // This is currently used to test `track_mempool_should_not_add_back_pegout_when_still_in_mempool()`
+    pub static TEST_TRANSACTION_2: Lazy<Transaction> = Lazy::new(|| Transaction {
+        version: Version(2),
+        lock_time: LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([45u8; 32]), 0),
             script_sig: ScriptBuf::new(),
             sequence: Sequence::MAX,
             witness: Default::default(),
@@ -1377,7 +1395,8 @@ mod tests {
     }
 
     #[test]
-    fn track_mempool_should_not_add_back_pegout_when_still_in_mempool() {
+    // mock_bitcoind is set up so the tracked tx is confirmed but not deeply confirmed.
+    fn track_mempool_should_not_add_back_pegout_when_not_deeply_confirmed() {
         let db = setup_db().0;
         let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
@@ -1407,6 +1426,39 @@ mod tests {
     }
 
     #[test]
+    fn track_mempool_should_not_add_back_pegout_when_still_in_mempool() {
+        let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
+        let mut pegout_scheduler =
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+        // mock bitcoind will trigger error path for `getmempoolentry` for specific txids
+        // so pass true to create_tx() to make it deterministic which is
+        // "26bbaab2e585d465cceecc2acc7b398069aa85fc4dd1f52e39666a65e54a4569" for this test
+        // this txid will result in the tx not being on chain but in the mempool
+        let pegouts = pegout_requests_from_tx(&TEST_TRANSACTION_2, &[0]);
+        pegout_scheduler.add_tx(TEST_TRANSACTION_2.clone(), &pegouts, SystemTime::now());
+
+        let mock_bitcoind = MockBitcoind::new();
+        let mut checkpoint = mock_bitcoind
+            .get_block_header_info(&bitcoin::BlockHash::all_zeros())
+            .expect("valid checkpoint");
+        // increase time for checkpoint block so tracked tx is older
+        checkpoint.time += 5;
+
+        let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
+        assert!(result.is_ok());
+
+        // assert the pegout was added to pending pegouts
+        let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
+        assert_eq!(pending_pegouts.len(), 0);
+    }
+
+    #[test]
     fn track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool() {
         let db = setup_db().0;
         let mut pegout_scheduler =
@@ -1414,8 +1466,9 @@ mod tests {
         // mock bitcoind will trigger error path for `getmempoolentry` for a specific txid
         // so pass true to create_tx() to make it deterministic which is
         // "855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2" for this test
-        let pegouts = pegout_requests_from_tx(&TEST_TRANSACTION, &[0]);
-        pegout_scheduler.add_tx(TEST_TRANSACTION.clone(), &pegouts, SystemTime::now());
+        // this txid will result in the tx not being on chain nor in the mempool
+        let pegouts = pegout_requests_from_tx(&TEST_TRANSACTION_1, &[0]);
+        pegout_scheduler.add_tx(TEST_TRANSACTION_1.clone(), &pegouts, SystemTime::now());
 
         let mock_bitcoind = MockBitcoind::new();
         let mut checkpoint = mock_bitcoind
