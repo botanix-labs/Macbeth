@@ -988,11 +988,7 @@ where
                                     "Requested chunk with index {:?} not found in snapshot {:?}",
                                     request.chunk, snapshot_id
                                 );
-                                    let response = ResponseLoadSnapshotChunk::default();
-
-                                    trace!("return={:?}", response);
-
-                                    return response;
+                                    return ResponseLoadSnapshotChunk::default();
                                 }
                             };
 
