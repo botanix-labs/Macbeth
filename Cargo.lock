@@ -2332,7 +2332,6 @@ dependencies = [
  "log",
  "merlin",
  "miniscript 12.3.2",
- "once_cell",
  "parking_lot 0.12.3",
  "prometheus",
  "prost 0.13.5",

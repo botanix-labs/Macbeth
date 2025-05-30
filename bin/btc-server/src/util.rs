@@ -16,18 +16,13 @@ use bitcoin::{
 };
 use frost_secp256k1_tr as frost;
 use futures_util::Future;
-use lazy_static::lazy_static;
 use log::{error, info};
-use once_cell::sync::Lazy;
 use std::{
     collections::{HashMap, HashSet},
+    sync::LazyLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
-lazy_static! {
-    static ref MAX_FEERATE: bitcoin::FeeRate =
-        bitcoin::FeeRate::from_sat_per_vb(300).expect("valid feerate");
-}
 
 // Psbt validation flags
 pub(crate) const NO_FLAGS: u8 = 0u8;
@@ -38,8 +33,8 @@ pub(crate) const ROUND2_TRANSITION: u8 = (1u8 << 3) | ROUND1_TRANSITION;
 
 const MAX_BLOCK_TS_CUTOFF_DURATION_MS: u64 = 30 * 24 * 60 * 60 * 3; // 3 months
 
-static MAX_BLOCK_TS_CUTOFF_DURATION: Lazy<Duration> =
-    Lazy::new(|| Duration::from_secs(MAX_BLOCK_TS_CUTOFF_DURATION_MS));
+static MAX_BLOCK_TS_CUTOFF_DURATION: LazyLock<Duration> =
+    LazyLock::new(|| Duration::from_secs(MAX_BLOCK_TS_CUTOFF_DURATION_MS));
 
 /// Checks if the age of a block, based on its timestamp, is within an acceptable duration.
 /// # Arguments
