@@ -606,7 +606,7 @@ impl PegoutScheduler {
             "PegoutScheduler::track_mempool: Checking tracked txs older than checkpoint time {:?}",
             cp_time
         );
-        // Get txs older than timestamp
+        // Get txs older than the checkpoint time
         let maybe_dropped_txs = self
             .txs
             .values()
@@ -620,8 +620,30 @@ impl PegoutScheduler {
 
         // Check if tx still exists
         for txid in maybe_dropped_txs {
-            // TODO(scott): first check if tx is in the `finalized outputs` if we implement this
-            // see Updates section in `https://github.com/botanix-labs/botanix/issues/701`
+            // Check if the tx is on chain and is actually deeply confirmed.
+            // We use the tracked_tx.created timestamp but we don't know when the tx was actually included in a block.
+            let onchain_tx = bitcoind.get_raw_transaction_info(&txid, None);
+            if let Ok(onchain_tx) = onchain_tx {
+                // Check if the tx is deeply confirmed
+                let blockhash = onchain_tx.blockhash.ok_or(SyncError::TrackedTxNotInBlock(txid))?;
+                let actual_height =
+                    bitcoind.get_block_info(&blockhash).map_err(SyncError::Rpc)?.height;
+                if actual_height > checkpoint.height {
+                    info!("Tx {} is confirmed in block {} at height {}, but is not deeply confirmed (checkpoint height {}).",
+                        txid, blockhash, actual_height, checkpoint.height);
+                    // Continue so sync_until will finalize the block and tracked tx once it is deeply confirmed
+                    continue;
+                }
+
+                // This should not happen if sync_until functions correctly
+                warn!(
+                    "Tx {} is on-chain but not handled by sync_until: {:?}",
+                    &onchain_tx.txid, onchain_tx
+                );
+                // TODO: should we finalize the block here?
+                // For now we continue since hitting this indicates a bug in the sync logic.
+                continue;
+            }
 
             // a tx that is in a deeply confirmed block should have been handled already
             // so check if still in mempool
@@ -644,19 +666,6 @@ impl PegoutScheduler {
                     info!("PegoutScheduler::track_mempool: Tx {} confirmed not on chain. Untracking and adding back to pending.", txid);
                     self.un_track_tx(&txid)?;
                 }
-            }
-
-            // sanity check that the tx is not on-chain and `fn sync_until`` hasn't handled it
-            let onchain_tx = bitcoind.get_raw_transaction(&txid, None);
-            if let Ok(onchain_tx) = onchain_tx {
-                // intentionally not erroring here because there's no action to take other than not
-                // adding it back to pending pegouts
-                warn!(
-                    "Tx {} is on-chain but not handled by sync_until: {:?}",
-                    &onchain_tx.compute_txid(),
-                    onchain_tx
-                );
-                continue;
             }
 
             // add the tx back to pending pegouts so it can be retried
@@ -792,7 +801,7 @@ impl PegoutScheduler {
         // handle txs that are still in the mempool, have been dropped or there was a reorg
         // this must be done after `finalize_block` which updates the db and pegout scheduler state
         info!("PegoutScheduler::sync_until: Finished block processing loop. Tracking mempool...");
-        match self.track_mempool(bitcoind, cp_result.clone()) {
+        match self.track_mempool(bitcoind, cp_result) {
             Ok(_) => info!("PegoutScheduler::sync_until: Mempool tracking successful."),
             Err(e) => {
                 error!("PegoutScheduler::sync_until: Error during mempool tracking: {}. Propagating error.", e);
@@ -854,6 +863,8 @@ pub enum SyncError {
     Block(BlockError),
     #[error("database error: {0}")]
     Db(#[from] database::Error),
+    #[error("tracked tx not included in a block: {0}")]
+    TrackedTxNotInBlock(Txid),
 }
 
 #[derive(Debug, Error)]
