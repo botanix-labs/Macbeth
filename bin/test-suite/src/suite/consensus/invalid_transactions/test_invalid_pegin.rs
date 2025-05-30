@@ -510,7 +510,7 @@ pub async fn invalid_pegin(
             .mint_attack(
                 eth_destination.clone(),
                 amount1, // Use amount from the first pegin for the call
-                bitcoin_block_height as u32,
+                bitcoin_block_height,
                 metadata,
                 ethers::core::types::Address::random(),
             )

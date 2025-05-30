@@ -4,9 +4,7 @@ use crate::{
 };
 use std::{str::FromStr, time::Duration};
 
-use bitcoin::{
-    blockdata::block::Header, hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid,
-};
+use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid};
 use bitcoincore_rpc::RpcApi;
 use ethers::{prelude::Provider, providers::Http};
 use reth_primitives::{

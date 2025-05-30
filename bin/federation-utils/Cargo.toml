@@ -24,7 +24,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-tokio = { version = "1.43.0", features = ["full"] }
+tokio = { version = "1.45.0", features = ["full"] }
 toml = "0.8.19"
 tracing = { workspace = true }
 url = "2.5.0"

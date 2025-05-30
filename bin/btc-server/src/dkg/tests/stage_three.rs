@@ -12,11 +12,15 @@ pub fn complete_stage_three(
     //
     now: Instant,
 ) -> (DkgStateMachine, DkgStateMachine, DkgStateMachine) {
+    assert_eq!(alice.stage(), Stage::RoundThree);
+    assert_eq!(bob.stage(), Stage::RoundThree);
+    assert_eq!(eve.stage(), Stage::RoundThree);
+
     // Bob and Eve are waiting for Alice to send the initial message.
     assert!(bob.send(now).is_none());
     assert!(eve.send(now).is_none());
 
-    assert!(alice.timeout(now).is_none());
+    assert!(alice.timeout(now).is_some());
     assert!(bob.timeout(now).is_none());
     assert!(eve.timeout(now).is_none());
 
@@ -31,6 +35,10 @@ pub fn complete_stage_three(
         eve.recv(a1).unwrap();
         bob.recv(a2).unwrap();
     }
+
+    assert!(alice.timeout(now).is_some());
+    assert!(bob.timeout(now).is_none());
+    assert!(eve.timeout(now).is_none());
 
     {
         let [b1, b2] = CheckedSend::new(&mut bob, now)
@@ -55,6 +63,10 @@ pub fn complete_stage_three(
         alice.recv(e1).unwrap();
         alice.recv(e2).unwrap();
     }
+
+    assert!(alice.timeout(now).is_some());
+    assert!(bob.timeout(now).is_some());
+    assert!(eve.timeout(now).is_some());
 
     {
         let [a1, a2, a3, a4] = CheckedSend::new(&mut alice, now)
@@ -92,11 +104,17 @@ pub fn complete_stage_three(
         alice.recv(e1).unwrap();
     }
 
-    // TODO: Check that no other messages are sent.
-
     assert_eq!(alice.stage(), Stage::Finalized);
     assert_eq!(bob.stage(), Stage::Finalized);
     assert_eq!(eve.stage(), Stage::Finalized);
+
+    assert!(alice.send(now).is_none());
+    assert!(bob.send(now).is_none());
+    assert!(eve.send(now).is_none());
+
+    assert!(alice.timeout(now).is_none());
+    assert!(bob.timeout(now).is_none());
+    assert!(eve.timeout(now).is_none());
 
     // All member reproduced the same public key!
     let (_, alice_pub) = alice.aggregate_key_packages().unwrap();
@@ -111,8 +129,8 @@ pub fn complete_stage_three(
 }
 
 #[test]
-fn test_complete_stage_three() {
-    let (alice_addr, bob_addr, eve_addr, alice, bob, eve) = setup();
+fn dkg_complete_stage_three() {
+    let (alice_addr, bob_addr, eve_addr, alice, bob, eve) = setup(test_config());
 
     let now = Instant::now();
 

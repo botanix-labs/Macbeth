@@ -183,8 +183,47 @@ impl<T> ToStatus<T> for Result<T, hex::FromHexError> {
     }
 }
 
+/// Print logs about the DKG state machine, for informal or debugging purposes.
+fn print_dkg_state_log(dkg: &mut DkgState) {
+    // Check session changes.
+    if let Some(current) = dkg.machine.session_nonce() {
+        if let Some(tracked) = dkg.session_nonce {
+            if tracked != current {
+                info!("DKG session nonce changed to: {}", current);
+                dkg.session_nonce = Some(current);
+                dkg.stage = None;
+            }
+        } else {
+            info!("DKG session nonce set to: {}", current);
+            dkg.session_nonce = Some(current);
+        }
+    }
+
+    // Check DKG state changes.
+    let stage = dkg.machine.stage();
+    if let Some(tracked) = dkg.stage {
+        if tracked != stage {
+            info!("DKG stage changed to: {}", stage);
+            dkg.stage = Some(stage);
+        }
+    } else {
+        info!("DKG stage set to: {}", stage);
+        dkg.stage = Some(stage);
+    }
+}
+
 type SigningNoncesCommitmentsMap =
     Arc<Mutex<Option<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>>>>;
+
+/// The DKG state machine is responsible for managing the DKG process.
+struct DkgState {
+    // The DKG state machine
+    machine: dkg::DkgStateMachine,
+    // The current stage of the DKG process, used for logging purposes.
+    stage: Option<dkg::Stage>,
+    // The current session nonce, used for logging purposes.
+    session_nonce: Option<u64>,
+}
 
 struct App<BitcoinRpcApi> {
     db: database::Db,
@@ -197,7 +236,7 @@ struct App<BitcoinRpcApi> {
     #[cfg(test)]
     max_signers: u16,
     min_signers: u16,
-    dkg: Mutex<Option<dkg::DkgStateMachine>>,
+    dkg: Mutex<Option<DkgState>>,
     /// The signing nonces for the current signing session
     /// We will replace this value in the case of a new signing session
     frost_round1_nonces: SigningNoncesCommitmentsMap,
@@ -377,6 +416,8 @@ where
                 round1_package_timeout: Duration::from_secs(3),
                 round2_package_timeout: Duration::from_secs(3),
                 round3_package_timeout: Duration::from_secs(3),
+                // Start a new DKG session if not completed in 5 minutes.
+                pending_session_timeout: Some(Duration::from_secs(60 * 5)),
             };
 
             let mut members = BTreeMap::new();
@@ -389,15 +430,35 @@ where
                 members.insert(id, pubkey);
             }
 
-            let dkg = dkg::DkgStateMachine::new(
+            // As the coordinator, we simply use the system time as the session
+            // nonce. This value doesn't need to be precisely synchronized - it
+            // simply ensures that each server restart produces a higher nonce
+            // than previous sessions, removing the need to persist this value
+            // in the database.
+            //
+            // Non-coordinators automatically discard this value and use `None`,
+            // and let the coordinator dictate the nonce.
+            #[cfg(not(test))]
+            let session_nonce = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("bad system time")
+                .as_secs();
+
+            #[cfg(test)]
+            let session_nonce = 0;
+
+            let machine = dkg::DkgStateMachine::new(
                 frost_identifier,
                 secret_key,
                 coordinator,
                 members,
                 dkg_config,
+                Some(session_nonce),
             )?;
 
-            Mutex::new(Some(dkg))
+            let state = DkgState { machine, stage: None, session_nonce: None };
+
+            Mutex::new(Some(state))
         } else {
             Mutex::new(None)
         };
@@ -992,6 +1053,7 @@ where
             return Err(badarg!("Too many pegouts in the psbt"));
         }
         let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
+        info!("[get_round2_signing_package] Found {} outputs in the psbt", psbt.outputs.len());
         for output in psbt.outputs.iter() {
             if let Some(pegout_id) = output.pegout_id() {
                 let pegout_id = PegoutId::from_bytes(&pegout_id)
@@ -1002,13 +1064,26 @@ where
                 psbt_pegout_ids.push(pegout_id);
             }
         }
+        info!(
+            "[get_round2_signing_package] Found {} pegout ids in the psbt",
+            psbt_pegout_ids.len()
+        );
+
         // Get the matching pending pegouts
         let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+        info!(
+            "[get_round2_signing_package] Found {} pending pegouts in the DB",
+            pending_pegouts.len()
+        );
         let psbt_pending_pegouts = pending_pegouts
             .into_iter()
             .filter(|p| psbt_pegout_ids.contains(&p.id))
             .collect::<Vec<_>>();
 
+        info!(
+            "[get_round2_signing_package] Found {} matching pending pegouts in the psbt",
+            psbt_pending_pegouts.len()
+        );
         self.add_tracked_tx(signed_tx.clone(), &psbt_pending_pegouts, SystemTime::now())
             .await
             .to_status()?;
@@ -1124,6 +1199,11 @@ where
 
         debug!("Cord Fee rate: {:?}", fee_rate);
 
+        // First sync the pegout scheduler as this may add tracked pegouts back to the pending
+        // pegouts list
+        self.sync_pegout_scheduler(checkpoint).await.to_status()?;
+        let tracked_txs = self.db.get_tracked_txs().to_status()?;
+
         // Select up to `UPPER_PEGOUT_BOUND` pegouts, sorted by age in ascending
         // order. Respectively, the oldest pegouts come first.
         let pending_pegouts = self.db.coord_pending_pegouts(UPPER_PEGOUT_BOUND).to_status()?;
@@ -1148,10 +1228,6 @@ where
             .to_secp_pk()
             .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
         let change_script = wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
-
-        // First sync the pegout scheduler
-        self.sync_pegout_scheduler(checkpoint).await.to_status()?;
-        let tracked_txs = self.db.get_tracked_txs().to_status()?;
 
         let psbt = coordinator::make_tx(
             outputs,
@@ -1345,11 +1421,14 @@ where
 
         // Generate responses on potential timeout events; if no timers expired,
         // then this is simply a no-op call.
-        dkg.on_timeout(Instant::now());
+        dkg.machine.on_timeout(Instant::now());
+
+        // Logging DKG state.
+        print_dkg_state_log(dkg);
 
         // Process response (or initial) payloads.
         let mut payloads = vec![];
-        while let Some(p) = dkg.send(Instant::now()) {
+        while let Some(p) = dkg.machine.send(Instant::now()) {
             // Encode the payload.
             let mut bytes = vec![];
             ciborium::into_writer(&p.msg, &mut bytes).expect("failed to encode Dkg payload");
@@ -1361,10 +1440,8 @@ where
             });
         }
 
-        debug_assert!(dkg.aggregate_key_packages().is_none());
-
         // Set any timers, and retrieve next timeout event.
-        let timeout = dkg.timeout(Instant::now());
+        let timeout = dkg.machine.timeout(Instant::now());
 
         let resp = rpc::DkgPayloads {
             // TODO (lamafab): Option?
@@ -1402,11 +1479,14 @@ where
         };
 
         // Process the payload.
-        dkg.recv(payload).to_status()?;
+        dkg.machine.recv(payload).to_status()?;
+
+        // Logging DKG state.
+        print_dkg_state_log(dkg);
 
         // Process response (or initial) payloads.
         let mut payloads = vec![];
-        while let Some(p) = dkg.send(Instant::now()) {
+        while let Some(p) = dkg.machine.send(Instant::now()) {
             // Encode the payload.
             let mut bytes = vec![];
             ciborium::into_writer(&p.msg, &mut bytes).expect("failed to encode Dkg payload");
@@ -1418,7 +1498,7 @@ where
             });
         }
 
-        if let Some((sec_key, pub_key)) = dkg.aggregate_key_packages() {
+        if let Some((sec_key, pub_key)) = dkg.machine.aggregate_key_packages() {
             if self.db.get_key_package().to_status()?.is_none() {
                 info!("DKG completed successfully, saving key packages...");
 
@@ -1438,7 +1518,7 @@ where
         }
 
         // Set any timers, and retrieve next timeout event.
-        let timeout = dkg.timeout(Instant::now());
+        let timeout = dkg.machine.timeout(Instant::now());
 
         let resp = rpc::DkgPayloads {
             // TODO (lamafab): Option?
@@ -1716,8 +1796,8 @@ mod tests {
         ];
 
         const SAMPLE_EPH_PUB: &[u8] = &[
-            2, 198, 219, 42, 125, 89, 147, 102, 157, 74, 46, 224, 42, 39, 110, 178, 212, 193, 93,
-            218, 129, 115, 234, 83, 4, 112, 112, 91, 211, 159, 17, 242, 104,
+            3, 132, 131, 44, 133, 229, 63, 171, 246, 209, 196, 34, 121, 0, 121, 231, 3, 132, 160,
+            221, 29, 145, 119, 9, 4, 200, 46, 76, 45, 21, 99, 42, 11,
         ];
 
         // Sample signature generated with private key:
@@ -1728,10 +1808,10 @@ mod tests {
         //
         // Respectively, the second entry in the temporary federation config.
         const SAMPLE_SIG: &[u8] = &[
-            97, 239, 21, 245, 44, 204, 59, 181, 45, 16, 126, 138, 167, 239, 21, 148, 68, 161, 34,
-            248, 114, 159, 47, 193, 213, 231, 26, 188, 130, 189, 194, 170, 81, 206, 79, 29, 88, 63,
-            16, 16, 216, 150, 235, 150, 162, 151, 101, 80, 158, 18, 54, 0, 96, 94, 93, 138, 216,
-            83, 148, 67, 125, 184, 148, 215,
+            82, 169, 233, 140, 210, 93, 174, 189, 154, 236, 130, 97, 121, 221, 140, 74, 98, 56,
+            114, 223, 112, 103, 88, 29, 209, 127, 21, 46, 128, 93, 97, 170, 15, 165, 91, 19, 97,
+            103, 12, 84, 50, 209, 217, 240, 124, 55, 62, 188, 29, 90, 73, 22, 206, 224, 205, 49,
+            218, 85, 134, 54, 192, 124, 24, 125,
         ];
 
         // Setup Alice (coordinator), Bob, and Eve.
@@ -1741,7 +1821,7 @@ mod tests {
         let ephemeral_pub = secp256k1::PublicKey::from_slice(SAMPLE_EPH_PUB).unwrap();
         let signature = secp256k1::ecdsa::Signature::from_compact(SAMPLE_SIG).unwrap();
 
-        // Alice generates two round1 packages, one for Bob and one for Eve.
+        // Alice generates two packages, one for Bob and one for Eve.
         {
             let req = tonic::Request::new(rpc::Empty {});
             let payloads = app.get_dkg_payloads(req).await.unwrap();
@@ -1750,18 +1830,24 @@ mod tests {
 
             let p1 = &inner.payloads[0];
             let msg: DkgMessage = ciborium::from_reader(p1.payload.as_slice()).unwrap();
-            let DkgMessage::Round1 { .. } = msg else {
+            let DkgMessage::Round1 { context, nonce, .. } = msg else {
                 panic!("Expected Round1 message");
             };
+
+            assert_eq!(context, dkg::SESSION_CONTEXT);
+            assert_eq!(nonce, 0);
+            //
+            assert_eq!(p1.sender, frost_id!(0).serialize());
+            assert_eq!(p1.recipient, frost_id!(2).serialize());
 
             let p2 = &inner.payloads[1];
             let msg: DkgMessage = ciborium::from_reader(p2.payload.as_slice()).unwrap();
-            let DkgMessage::Round1 { .. } = msg else {
+            let DkgMessage::Round1 { context, nonce, .. } = msg else {
                 panic!("Expected Round1 message");
             };
 
-            assert_eq!(p1.sender, frost_id!(0).serialize());
-            assert_eq!(p1.recipient, frost_id!(2).serialize());
+            assert_eq!(context, dkg::SESSION_CONTEXT);
+            assert_eq!(nonce, 0);
             //
             assert_eq!(p2.sender, frost_id!(0).serialize());
             assert_eq!(p2.recipient, frost_id!(1).serialize());
@@ -1774,6 +1860,8 @@ mod tests {
             #[derive(serde::Serialize, serde::Deserialize)]
             enum Embedded {
                 Round1 {
+                    context: Vec<u8>,
+                    nonce: u64,
                     initiator: frost::Identifier,
                     ephemeral_pub: secp256k1::PublicKey,
                     signature: secp256k1::ecdsa::Signature,
@@ -1782,7 +1870,9 @@ mod tests {
             }
 
             let msg = Embedded::Round1 {
-                initiator: frost_id!(1).into(),
+                context: dkg::SESSION_CONTEXT.to_vec(),
+                nonce: 0,
+                initiator: frost_id!(1),
                 ephemeral_pub,
                 signature,
                 package: round1_pkg,
@@ -1809,15 +1899,15 @@ mod tests {
                 panic!("Expected AckRound1 message");
             };
 
+            assert_eq!(p1.sender, frost_id!(0).serialize());
+            assert_eq!(p1.recipient, frost_id!(1).serialize());
+
             let p2 = &inner.payloads[1];
             let msg: DkgMessage = ciborium::from_reader(p2.payload.as_slice()).unwrap();
             let DkgMessage::Round1 { .. } = msg else {
                 panic!("Expected Round1 message");
             };
 
-            assert_eq!(p1.sender, frost_id!(0).serialize());
-            assert_eq!(p1.recipient, frost_id!(1).serialize());
-            //
             assert_eq!(p2.sender, frost_id!(0).serialize());
             assert_eq!(p2.recipient, frost_id!(2).serialize());
         }

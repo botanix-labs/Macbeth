@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use crate::{
     metrics::AuthorityMetrics,
@@ -23,7 +23,10 @@ use reth_chainspec::ChainSpec;
 use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_network::{
     frost::{
-        manager::{FrostCommand, FrostConfig, PeerData, ToFrostManager},
+        manager::{
+            authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData,
+            ToFrostManager,
+        },
         DkgResponse, FrostPeerCommand, PeerMessageResponse, SigningEventResponseType,
         SigningResponse, WalletStateResponse,
     },
@@ -35,9 +38,10 @@ use reth_provider::{
 };
 use reth_revm::primitives::FixedBytes;
 use tendermint_rpc::client::HttpClient;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::SendError};
 use tracing::{error, info, warn};
 
+// TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]
 /// Errors that can occur during synchronization.
 pub(crate) enum SyncError {
@@ -49,6 +53,7 @@ pub(crate) enum SyncError {
     TendermintRpc(#[from] tendermint_rpc::Error),
 }
 
+// TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FinalizedPegoutIdsSyncSerializationError {
     #[error("Received a grpc client error {0}")]
@@ -71,6 +76,9 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
     /// Shared storage to insert aggregate public key
     pub(crate) storage: Storage<EF, BF, DB>,
+    /// A handle to the `DkgRunnerTask` task. This is only `Some` if no
+    /// aggregate public key is available, and the `start_task` method has hence
+    /// started the DKG process.
     dkg_task: Option<mpsc::Sender<DkgResponse>>,
     /// Pre-configured data-parser
     compressor: DataParser,
@@ -80,6 +88,12 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     metrics: Arc<AuthorityMetrics>,
     /// cometbft light client provider
     cbft_rpc_provider: HttpClient,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum FrostTaskError {
+    #[error("Unable to get all connected peers {0}")]
+    UnableToGetAllConnectedPeers(#[from] SendError<FrostCommand>),
 }
 
 impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
@@ -216,16 +230,24 @@ where
     pub async fn start_task(&mut self, mut abci_started_rx: tokio::sync::oneshot::Receiver<()>) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
-        if let Err(e) =
-            self.frost_handle.send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
+
+        let mut peer_messages_rx = match self
+            .frost_handle
+            .send_command(FrostCommand::GetPeerMessagesStream(peer_messages_tx))
         {
-            error!(target: "consensus::authority::frost_task::start_task", "Failed to send GetPeerMessagesStream frost command {}", e);
-        }
-        let mut peer_messages_rx = match peer_messages_rx.await {
-            Ok(peer_messages_rx) => peer_messages_rx,
+            Ok(_) => {
+                // only await on the receiver if the send was successful
+                match peer_messages_rx.await {
+                    Ok(rx) => rx,
+                    Err(e) => {
+                        error!(target: "consensus::authority::frost_task::start_task", "Error getting receiver handle = {:?}", e);
+                        panic!("Error getting receiver handle. Error - {e:?}");
+                    }
+                }
+            }
             Err(e) => {
-                error!(target: "consensus::authority::frost_task::start_task", "Error getting receiver handle = {:?}", e);
-                panic!("Error getting receiver handle");
+                error!(target: "consensus::authority::frost_task::start_task", "Failed to send GetPeerMessagesStream frost command {}", e);
+                panic!("Failed to send GetPeerMessagesStream frost command - {e:?}");
             }
         };
 
@@ -234,7 +256,9 @@ where
         if let Ok(public_key) = self.btc_server.get_public_key(client::Empty {}).await {
             info!(target: "consensus::authority::frost_task::start_task", " received aggregate public key from dkg state machine {:?}", public_key);
             if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
-                hex::decode(public_key.publickey).unwrap().as_slice(),
+                hex::decode(public_key.publickey)
+                    .expect("invalid aggregated public key")
+                    .as_slice(),
             ) {
                 let mut storage = self.storage.inner.write().await;
                 storage.aggregate_public_key = Some(secp_pk);
@@ -251,6 +275,7 @@ where
             // Start the dkg state machine task runner.
             let tx = DkgRunnerTask::new(
                 self.frost_handle.clone(),
+                self.frost_config.authorities.as_ref(),
                 self.storage.clone(),
                 self.btc_server.clone(),
                 Arc::clone(&self.metrics),
@@ -279,7 +304,7 @@ where
                         }
                     }
                     Err(e) => {
-                        info!(target: "consensus::authority::frost_task::start_task", "Error getting block sync status {:?}", e);
+                        warn!(target: "consensus::authority::frost_task::start_task", "Error getting block sync status {:?}", e);
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         continue;
                     }
@@ -348,7 +373,11 @@ where
                                         info!(target: "consensus::authority::frost_task::start_task", "Sent checkpoint to btc server");
                                     }
                                     Err(err) => {
-                                        error!(target: "consensus::authority::frost_task::start_task", "Error sending checkpoint to btc server: {}", err);
+                                        // We need to panic bc we have no way to recover any missed
+                                        // pegouts and they won't be sent to the btc server.
+                                        // We could rollback and sync to reprocess the pegouts but
+                                        // we would intentionally be replaying old pegouts.
+                                        panic!("Error sending checkpoint to btc server: {}", err);
                                     }
                                 }
                             }
@@ -430,8 +459,19 @@ where
             while let Ok(message_context) = peer_messages_rx.try_recv() {
                 let peer_message = message_context.message;
                 let peer_id = message_context.peer_id;
-                let frost_identifier = message_context.frost_identifier;
+                let frost_identifier = match message_context.frost_identifier {
+                    Some(frost_identifier) => frost_identifier,
+                    None => {
+                        error!(target: "consensus::authority::frost_task::start_task", "Frost identifier not found for peer id {:?}", peer_id);
+                        continue;
+                    }
+                };
+
                 match peer_message {
+                    PeerMessageResponse::Error(err) => {
+                        error!(target: "consensus::authority::frost_task::start_task", "Received error from peer {:?}: {:?}", peer_id, err);
+                        continue;
+                    }
                     PeerMessageResponse::WalletState(response) => {
                         // Only handle response if it has no state: responses with state are also
                         // sent to WalletStateSyncEngine::sync_wallet_state
@@ -450,6 +490,7 @@ where
                             let cmd = FrostCommand::GetAllConnectedPeers(tx);
                             if let Err(e) = self.frost_handle.send_command(cmd) {
                                 error!(target: "consensus::authority::frost_task::start_task", "Error getting all peers handle {:?}", e);
+                                continue;
                             }
 
                             rx.await.expect("expect all peers handle to exist")
@@ -653,6 +694,8 @@ struct DkgRunnerTask<EF, BF, DB, ToFrostMan, BtcServerClient> {
     rx: mpsc::Receiver<DkgResponse>,
     // Frost network Handler
     frost_handle: ToFrostMan,
+    // Frost Id lookup table
+    frost_ids: HashMap<frost_secp256k1_tr::Identifier, secp256k1::PublicKey>,
     // Shared storage to insert aggregate public key
     storage: Storage<EF, BF, DB>,
     // btc-server client
@@ -678,13 +721,23 @@ where
     #[allow(clippy::new_ret_no_self)]
     fn new(
         frost_handle: ToFrostMan,
+        authorities: &[secp256k1::PublicKey],
         storage: Storage<EF, BF, DB>,
         btc_server: BtcServerClient,
         metrics: Arc<AuthorityMetrics>,
     ) -> mpsc::Sender<DkgResponse> {
         let (tx, rx) = mpsc::channel(100);
 
-        let this = DkgRunnerTask { rx, frost_handle, storage, btc_server, metrics };
+        let frost_ids = authorities
+            .iter()
+            .enumerate()
+            .map(|(index, pk)| {
+                let frost_id = authority_index_to_frost_identifier(index as u16);
+                (frost_id, *pk)
+            })
+            .collect();
+
+        let this = DkgRunnerTask { rx, frost_handle, frost_ids, storage, btc_server, metrics };
 
         // Spawn-off the task, which will keep interacting with the btc-server.
         tokio::spawn(this.run());
@@ -692,11 +745,13 @@ where
         tx
     }
     async fn run(mut self) {
+        const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
         // On startup, we call the btc-server immediately to get the initial
         // payloads. Only the coordinator will have something to send at this
         // point, while non-coordinators wait for the coordinators first message
         // before any messages get sent.
-        let mut timeout = std::time::Duration::from_millis(0);
+        let mut timeout = Duration::from_millis(0);
 
         loop {
             match tokio::time::timeout(timeout, self.rx.recv()).await {
@@ -708,14 +763,22 @@ where
                         payload: dkg.data,
                     };
 
-                    let resp = self.btc_server.new_dkg_payload(req).await.unwrap();
+                    let resp = match self.btc_server.new_dkg_payload(req).await {
+                        Ok(r) => r,
+                        Err(err) => {
+                            timeout = DEFAULT_TIMEOUT;
+                            error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error sending dkg payload to btc server {:?}", err);
+                            continue;
+                        }
+                    };
 
                     if let Ok(resp) = self.btc_server.get_public_key(client::Empty {}).await {
                         self.metrics.created_agg_pub_keys.increment(1);
 
                         // decode the public key and assign it to the self variable
-                        let public_key_package =
-                            secp256k1::PublicKey::from_str(&resp.publickey).unwrap();
+                        let public_key_package = secp256k1::PublicKey::from_str(&resp.publickey)
+                            .expect("invalid aggregated public key");
+
                         let mut storage = self.storage.write().await;
                         storage.aggregate_public_key = Some(public_key_package);
                     }
@@ -723,7 +786,11 @@ where
                     // Update timeout at which point the btc-server should be called again.
                     timeout = Duration::from_millis(resp.timeout);
 
-                    self.gossip_payloads(resp.payloads).await;
+                    // Gossip the payloads to all frost peers.
+                    if self.gossip_payloads(resp.payloads).await.is_err() {
+                        error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Failed to gossip payloads. Wait for the next message");
+                        continue;
+                    }
                 }
                 // Frost task dropped the handle, exiting...
                 Ok(None) => {
@@ -734,19 +801,32 @@ where
                 Err(_) => {
                     warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "DKG timeout triggered");
 
-                    let resp = self.btc_server.get_dkg_payloads(client::Empty {}).await.unwrap();
+                    let resp = match self.btc_server.get_dkg_payloads(client::Empty {}).await {
+                        Ok(r) => r,
+                        Err(err) => {
+                            timeout = DEFAULT_TIMEOUT;
+                            error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error getting dkg payloads from btc server {:?}", err);
+                            continue;
+                        }
+                    };
 
                     // Update timeout at which point the btc-server should be called again.
                     timeout = Duration::from_millis(resp.timeout);
 
-                    self.gossip_payloads(resp.payloads).await;
+                    if self.gossip_payloads(resp.payloads).await.is_err() {
+                        error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Failed to gossip payloads. Wait for the next message");
+                        continue;
+                    }
                 }
             }
         }
     }
-    async fn gossip_payloads(&self, payloads: Vec<client::DkgPayload>) {
+    async fn gossip_payloads(
+        &self,
+        payloads: Vec<client::DkgPayload>,
+    ) -> Result<(), FrostTaskError> {
         if payloads.is_empty() {
-            return;
+            return Ok(());
         }
 
         info!(target: "consensus::authority::frost_task::DkgRunnerTask", "Ready to gossip {} generated DKG payload(s)", payloads.len());
@@ -758,13 +838,22 @@ where
             let cmd = FrostCommand::GetAllConnectedPeers(tx);
             if let Err(e) = self.frost_handle.send_command(cmd) {
                 error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Failed to send GetAllConnectedPeers frost command {}", e);
+                return Err(FrostTaskError::UnableToGetAllConnectedPeers(e));
             }
 
             rx.await.expect("expect all peers handle to exist")
         };
 
         for payload in payloads {
-            let recipient = frost_id_from_bytes(&payload.recipient).unwrap();
+            let recipient = frost_id_from_bytes(&payload.recipient).expect("valid frost id");
+
+            // Lookup the public key of the recipient.
+            let Some(pk) = self.frost_ids.get(&recipient) else {
+                error!(target: "consensus::authority::frost_task::DkgRunnerTask", "No Frost Id lookup available for recipient {:?}, dropping DKG payload...", recipient);
+                continue;
+            };
+
+            let pk_string = pk.to_string();
 
             // TODO (lamafab): This could be improved, by using a hashmap or so.
             let Some(peer_data) = all_peers_handles
@@ -772,7 +861,7 @@ where
                 .find(|(_, peer_data)| peer_data.frost_identifier == recipient)
                 .map(|(_, peer_data)| peer_data)
             else {
-                warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "Peer handle not found for recipient {:?}, dropping DKG payload...", payload.recipient);
+                warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "Peer handle not found for recipient {}, dropping DKG payload...", pk_string);
                 continue;
             };
 
@@ -782,7 +871,16 @@ where
                 recipient: payload.recipient,
             });
 
-            peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(resp)).unwrap();
+            match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(resp)) {
+                Ok(_) => {
+                    info!(target: "consensus::authority::frost_task::DkgRunnerTask", "Gossiping DKG payload to peer {}", pk_string);
+                }
+                Err(err) => {
+                    error!(target: "consensus::authority::frost_task::DkgRunnerTask", "Error sending DKG payload to recipient {}: {:?}", pk_string, err);
+                }
+            }
         }
+
+        Ok(())
     }
 }

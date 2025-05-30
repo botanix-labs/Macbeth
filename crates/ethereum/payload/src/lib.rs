@@ -261,7 +261,15 @@ where
     Client: StateProviderFactory,
     Pool: TransactionPool,
 {
-    let BuildArguments { client, pool, mut cached_reads, config, cancel, best_payload } = args;
+    let BuildArguments {
+        client,
+        pool,
+        mut cached_reads,
+        config,
+        cancel,
+        best_payload,
+        max_tx_bytes,
+    } = args;
 
     let state_provider = client.state_by_block_hash(config.parent_block.hash())?;
     let state = StateProviderDatabase::new(state_provider);
@@ -290,6 +298,10 @@ where
         base_fee,
         initialized_block_env.get_blob_gasprice().map(|gasprice| gasprice as u64),
     ));
+
+    // TODO: Shall we use no_updates() to freeze the view of the mempool
+    //  so new arrivals don’t change the order mid-build. This ensures stable iteration and block
+    // creation time.
 
     let mut total_fees = U256::ZERO;
 
@@ -326,6 +338,7 @@ where
     .map_err(|err| PayloadBuilderError::Internal(err.into()))?;
 
     let mut receipts = Vec::new();
+    let mut total_bytes = 0;
     while let Some(pool_tx) = best_txs.next() {
         // ensure we still have capacity for this transaction
         if cumulative_gas_used + pool_tx.gas_limit() > block_gas_limit {
@@ -333,12 +346,20 @@ where
             // which also removes all dependent transaction from the iterator before we can
             // continue
             best_txs.mark_invalid(&pool_tx);
-            continue
+            continue;
         }
 
         // check if the job was cancelled, if so we can exit early
         if cancel.is_cancelled() {
-            return Ok(BuildOutcome::Cancelled)
+            return Ok(BuildOutcome::Cancelled);
+        }
+
+        // ensure max transaction bytes limit if set
+        if let Some(max_bytes) = max_tx_bytes {
+            if pool_tx.encoded_length() + total_bytes > max_bytes {
+                // Check other txs if they could fit in the block
+                continue;
+            }
         }
 
         // convert tx to a signed transaction
@@ -355,7 +376,7 @@ where
                 // for regular transactions above.
                 trace!(target: "payload_builder", tx=?tx.hash, ?sum_blob_gas_used, ?tx_blob_gas, "skipping blob transaction because it would exceed the max data gas per block");
                 best_txs.mark_invalid(&pool_tx);
-                continue
+                continue;
             }
         }
 
@@ -383,11 +404,11 @@ where
                             best_txs.mark_invalid(&pool_tx);
                         }
 
-                        continue
+                        continue;
                     }
                     err => {
                         // this is an error that we should treat as fatal for this attempt
-                        return Err(PayloadBuilderError::EvmExecutionError(err))
+                        return Err(PayloadBuilderError::EvmExecutionError(err));
                     }
                 }
             }
@@ -429,6 +450,11 @@ where
             .expect("fee is always valid; execution succeeded");
         total_fees += U256::from(miner_fee) * U256::from(gas_used);
 
+        // update the total bytes used if we need this to limit the size of the payload
+        if max_tx_bytes.is_some() {
+            total_bytes += pool_tx.encoded_length();
+        }
+
         // append transaction to the list of executed transactions
         executed_txs.push(tx.into_signed());
     }
@@ -436,7 +462,7 @@ where
     // check if we have a better block
     if !is_better_payload(best_payload.as_ref(), total_fees) {
         // can skip building the block
-        return Ok(BuildOutcome::Aborted { fees: total_fees, cached_reads })
+        return Ok(BuildOutcome::Aborted { fees: total_fees, cached_reads });
     }
 
     // calculate the requests and the requests root

@@ -350,6 +350,13 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
         self.provider_rw()?.create_new_snapshot_sync(block_id, snapshot_hash, total_chunks, format)
     }
 
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()> {
+        self.provider_rw()?.remove_block_snapshot_id_mapping(range)
+    }
+
     fn create_new_snapshot(
         &self,
         block_id: BlockNumber,

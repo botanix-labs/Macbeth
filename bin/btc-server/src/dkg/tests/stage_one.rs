@@ -12,11 +12,6 @@ pub fn complete_stage_one(
     //
     now: Instant,
 ) -> (DkgStateMachine, DkgStateMachine, DkgStateMachine) {
-    // TODO: check pending state.
-    assert_eq!(alice.stage(), Stage::RoundOneActive);
-    assert_eq!(bob.stage(), Stage::RoundOneActive);
-    assert_eq!(eve.stage(), Stage::RoundOneActive);
-
     // Bob and Eve are waiting for Alice to send the initial message.
     assert!(bob.send(now).is_none());
     assert!(eve.send(now).is_none());
@@ -36,6 +31,14 @@ pub fn complete_stage_one(
         eve.recv(a1).unwrap();
         bob.recv(a2).unwrap();
     }
+
+    assert_eq!(alice.stage(), Stage::RoundOne);
+    assert_eq!(bob.stage(), Stage::RoundOne);
+    assert_eq!(eve.stage(), Stage::RoundOne);
+
+    assert!(alice.timeout(now).is_some());
+    assert!(bob.timeout(now).is_none());
+    assert!(eve.timeout(now).is_none());
 
     {
         let [b1, b2] = CheckedSend::new(&mut bob, now)
@@ -60,6 +63,10 @@ pub fn complete_stage_one(
         alice.recv(e1).unwrap();
         alice.recv(e2).unwrap();
     }
+
+    assert!(alice.timeout(now).is_some());
+    assert!(bob.timeout(now).is_some());
+    assert!(eve.timeout(now).is_some());
 
     {
         let [a1, a2, a3, a4] = CheckedSend::new(&mut alice, now)
@@ -97,16 +104,20 @@ pub fn complete_stage_one(
         alice.recv(e1).unwrap();
     }
 
-    assert_eq!(alice.stage(), Stage::RoundTwoActive);
-    assert_eq!(bob.stage(), Stage::RoundTwoActive);
-    assert_eq!(eve.stage(), Stage::RoundTwoActive);
+    assert_eq!(alice.stage(), Stage::RoundTwo);
+    assert_eq!(bob.stage(), Stage::RoundTwo);
+    assert_eq!(eve.stage(), Stage::RoundTwo);
 
     (alice, bob, eve)
 }
 
 #[test]
-fn test_complete_stage_one() {
-    let (alice_addr, bob_addr, eve_addr, alice, bob, eve) = setup();
+fn dkg_complete_stage_one() {
+    let (alice_addr, bob_addr, eve_addr, alice, bob, eve) = setup(test_config());
+
+    assert_eq!(alice.stage(), Stage::RoundOne);
+    assert_eq!(bob.stage(), Stage::AwaitingInit);
+    assert_eq!(eve.stage(), Stage::AwaitingInit);
 
     let now = Instant::now();
 

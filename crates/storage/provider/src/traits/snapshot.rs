@@ -108,6 +108,12 @@ pub trait SnapshotWriter: Send + Sync {
         updated_snapshot: SnapshotSync,
     ) -> ProviderResult<()>;
 
+    /// Removes block snapshot id mapping
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()>;
+
     /// Inserts block to snapshot id mapping
     fn insert_block_snapshot_id_mapping(
         &self,

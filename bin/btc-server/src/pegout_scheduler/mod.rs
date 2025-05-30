@@ -293,6 +293,11 @@ impl PegoutScheduler {
     ) -> &Tx {
         let pegout_idxs = {
             let mut ret = Vec::with_capacity(pegouts.len());
+            info!(
+                "PegoutScheduler::add_tx: tx output length: {}, pegouts length: {}",
+                tx.output.len(),
+                pegouts.len()
+            );
             // TODO: the same pegout could be in the tx multiple times
             for pegout in pegouts {
                 let pegout_txout = pegout.txout();
@@ -400,9 +405,9 @@ impl PegoutScheduler {
     /// This should be called when a tracked tx is reorged or dropped from the mempool.
     /// Its expected the caller will remove the tx from the tracked set
     fn add_tx_back_to_pending(&mut self, tx: &Tx) -> Result<(), database::Error> {
-        for pegout in tx.pegout_requests.iter() {
-            self.db.store_pending_pegout(pegout)?;
-        }
+        let pegout_refs: Vec<&PegoutRequest> = tx.pegout_requests.iter().collect();
+        self.db.store_pending_pegouts(&pegout_refs)?;
+
         Ok(())
     }
 
@@ -1406,6 +1411,10 @@ mod tests {
             .expect("valid checkpoint");
         // increase time for checkpoint block so tracked tx is older
         checkpoint.time += 5;
+
+        // assert pending pegouts is empty
+        let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
+        assert!(pending_pegouts.is_empty());
 
         let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
         assert!(result.is_ok());

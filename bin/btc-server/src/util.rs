@@ -78,11 +78,23 @@ where
 /// With a pegout bound of 500, we can conclude: (32 + 110) * 500 = 71_000
 pub const UPPER_PEGOUT_BOUND: usize = 500;
 
+/// Converts the BTC/kB fee rate as returned by the Bitcoin Core API endpoint
+/// `estimatesmartfee` to sat/vB.
+///
+/// https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
+///
+/// > Estimates the approximate fee per kilobyte needed for a transaction to
+/// > begin confirmation within conf_target blocks if possible and return the
+/// > number of blocks for which the estimate is valid. Uses virtual transaction
+/// > size as defined in BIP 141 (witness data is discounted).
 pub fn btc_per_kb_to_sat_per_vb(btc_per_kb: bitcoin::Amount) -> FeeRate {
     let sats = btc_per_kb.to_sat();
     info!("fee rate sats: {:?}", sats);
 
     // Conversion formula
+    //
+    // To convert BTC/kB to sat/vB:
+    // (BTC * 100_000_000) / 1_000 = BTC * 100_000
     let sat_per_vb = btc_per_kb.to_float_in(bitcoin::Denomination::Bitcoin) * 100_000.0;
     info!("fee rate sat_per_vb: {:?}", sat_per_vb);
 
@@ -408,6 +420,8 @@ pub enum ValidateOutputsError {
     ExtractTxError(#[from] ExtractTxError),
     #[error("duplicate outputs")]
     DuplicateOutputs,
+    #[error("PSBT outputs length ({0}) does not match unsigned_tx.output length ({1})")]
+    OutputCountMismatch(usize, usize),
 }
 
 /// Check:
@@ -415,6 +429,22 @@ pub enum ValidateOutputsError {
 /// - pegouts have not already been finalized
 /// - there are no duplicate outputs
 pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
+    // Ensure psbt.outputs and psbt.unsigned_tx.output have the same number of elements.
+    // This is critical to prevent a malicious coordinator from adding arbitrary outputs
+    // to psbt.unsigned_tx.output that are not declared in psbt.outputs.
+    if psbt.outputs.len() != psbt.unsigned_tx.output.len() {
+        error!(
+            target: "btc_server::util::validate_outputs",
+            "psbt.outputs length ({}) does not match psbt.unsigned_tx.output length ({})",
+            psbt.outputs.len(),
+            psbt.unsigned_tx.output.len()
+        );
+        return Err(ValidateOutputsError::OutputCountMismatch(
+            psbt.outputs.len(),
+            psbt.unsigned_tx.output.len(),
+        ));
+    }
+
     // check aggregated public key exists
     let public_key_package =
         db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
@@ -1173,6 +1203,69 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_outputs_output_count_mismatch() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages as they are needed by validate_outputs
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        // Create a base PSBT
+        let mut psbt = create_psbt(1, 1, Some(get_change(&db))); // 1 output + 1 change = 2 outputs in psbt.outputs
+
+        // Simulate a mismatch: psbt.outputs has 2 elements, psbt.unsigned_tx.output will have 1
+        // extra
+        let original_outputs_len = psbt.outputs.len();
+        psbt.unsigned_tx.output.push(bitcoin::TxOut {
+            value: Amount::from_sat(12345),
+            script_pubkey: random_p2wpkh_script(),
+        });
+        let new_unsigned_tx_outputs_len = psbt.unsigned_tx.output.len();
+
+        assert_ne!(
+            original_outputs_len, new_unsigned_tx_outputs_len,
+            "Test setup error: output lengths should be different"
+        );
+
+        let res = validate_outputs(&psbt, &db);
+        assert!(res.is_err(), "validate_outputs should fail due to output count mismatch");
+        match res.unwrap_err() {
+            ValidateOutputsError::OutputCountMismatch(len_psbt_outputs, len_unsigned_tx_output) => {
+                assert_eq!(len_psbt_outputs, original_outputs_len);
+                assert_eq!(len_unsigned_tx_output, new_unsigned_tx_outputs_len);
+            }
+            other_error => {
+                panic!("Expected OutputCountMismatch, got {:?}", other_error);
+            }
+        }
+
+        // Test the other way around: psbt.outputs is longer
+        let mut psbt2 = create_psbt(1, 0, None); // 0 outputs in psbt.outputs
+                                                 // psbt2.unsigned_tx.output is initially empty from create_psbt with 0 outputs
+                                                 // Add one to psbt.outputs to create a mismatch where psbt.outputs is longer
+        psbt2.outputs.push(Default::default());
+        // Now psbt2.outputs.len() = 1, psbt2.unsigned_tx.output.len() = 0
+
+        let res2 = validate_outputs(&psbt2, &db);
+        assert!(res2.is_err(), "validate_outputs should fail when psbt.outputs is longer");
+        match res2.unwrap_err() {
+            ValidateOutputsError::OutputCountMismatch(len_psbt_outputs, len_unsigned_tx_output) => {
+                assert_eq!(len_psbt_outputs, 1);
+                assert_eq!(len_unsigned_tx_output, 0);
+            }
+            other_error => {
+                panic!(
+                    "Expected OutputCountMismatch for psbt.outputs longer, got {:?}",
+                    other_error
+                );
+            }
+        }
+    }
+
+    #[test]
     fn convert_bdk_fee_rate() {
         let bdk_fee = bdk_wallet::bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
         let rust_bitcoin_fee = bitcoin::FeeRate::from_sat_per_vb(10).unwrap();
@@ -1410,11 +1503,26 @@ mod tests {
 
     #[test]
     fn test_btc_per_kb_to_sat_per_vb() {
+        // 0.000_5 BTC = 50_000 sats
+        // 50_000 sats/kb = 50 sats/vb
+
         let btc_per_kb =
-            bitcoin::Amount::from_float_in(0.0005, bitcoin::Denomination::Bitcoin).unwrap();
+            bitcoin::Amount::from_float_in(0.000_5, bitcoin::Denomination::Bitcoin).unwrap();
         let sat_per_vb = btc_per_kb_to_sat_per_vb(btc_per_kb);
 
         assert_eq!(sat_per_vb.to_sat_per_vb_ceil(), 50);
+    }
+
+    #[test]
+    fn test_btc_per_kb_to_sat_per_vb_min_fee_rate() {
+        // 0.000_005 BTC = 500 sats
+        // 500 sats/kb = 0.5 sats/vb => 1 sat/vb
+
+        let btc_per_kb =
+            bitcoin::Amount::from_float_in(0.000_005, bitcoin::Denomination::Bitcoin).unwrap();
+        let sat_per_vb = btc_per_kb_to_sat_per_vb(btc_per_kb);
+
+        assert_eq!(sat_per_vb.to_sat_per_vb_ceil(), 1);
     }
 
     #[tokio::test]

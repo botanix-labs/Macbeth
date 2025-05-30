@@ -1621,6 +1621,13 @@ impl SnapshotWriter for StaticFileProvider {
         Err(ProviderError::UnsupportedProvider)
     }
 
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        _range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
     fn create_new_chunk(
         &self,
         _snapshot_id: SnapshotId,
