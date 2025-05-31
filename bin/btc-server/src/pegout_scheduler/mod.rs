@@ -637,14 +637,9 @@ impl PegoutScheduler {
                     continue;
                 }
 
+                // TODO(scott): finalize this tracked tx
                 // This should not happen if sync_until functions correctly
-                warn!(
-                    "Tx {} is on-chain but not handled by sync_until: {:?}",
-                    &onchain_tx.txid, onchain_tx
-                );
-                // TODO: should we finalize the block here?
-                // For now we continue since hitting this indicates a bug in the sync logic.
-                continue;
+                return Err(SyncError::DeeplyConfirmedTxNotFinalized(txid));
             }
 
             // a tx that is in a deeply confirmed block should have been handled already
@@ -867,6 +862,8 @@ pub enum SyncError {
     Db(#[from] database::Error),
     #[error("tracked tx not included in a block: {0}")]
     TrackedTxNotInBlock(Txid),
+    #[error("deeply confirumed tx not finalized: {0}")]
+    DeeplyConfirmedTxNotFinalized(Txid),
 }
 
 #[derive(Debug, Error)]
