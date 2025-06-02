@@ -18,6 +18,7 @@ pub mod chunks;
 pub mod client_version;
 pub mod integer_list;
 pub mod sharded_key;
+pub mod staged_header;
 pub mod storage_sharded_key;
 pub mod wallet_sync;
 
@@ -28,6 +29,7 @@ pub use chunks::*;
 pub use client_version::ClientVersion;
 pub use reth_db_models::{AccountBeforeTx, StoredBlockBodyIndices};
 pub use sharded_key::ShardedKey;
+pub use staged_header::*;
 pub use wallet_sync::*;
 
 /// Macro that implements [`Encode`] and [`Decode`] for uint types.
@@ -228,6 +230,7 @@ impl_compression_for_compact!(
     Snapshot,
     SnapshotChunk,
     SnapshotSync,
+    HeaderWithPegs,
     WalletStateSyncRecord,
     Log,
     Receipt,
