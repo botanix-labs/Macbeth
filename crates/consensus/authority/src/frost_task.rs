@@ -16,7 +16,7 @@ use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     wallet::psbt::frost_id_from_bytes,
 };
-use client::ConsensusCheckpointRequest;
+use client::{ConsensusCheckpointRequest, PendingPegout, Utxo};
 use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use futures::{pin_mut, StreamExt};
 use reth_chainspec::ChainSpec;
@@ -32,9 +32,10 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_primitives::header_ext::HeaderExt;
+use reth_primitives::{header_ext::HeaderExt, Header, B256};
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StagedHeader,
+    StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use tendermint_rpc::client::HttpClient;
@@ -84,6 +85,12 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     compressor: DataParser,
     /// btc server client
     btc_server: BtcServerClient,
+    /// Indicates whether staged headers should be checked by the Frost task and
+    /// submitted to the btc-server to initiate a checkpoint. This is `true` in
+    /// two scenarios:
+    /// 1. On initial startup.
+    /// 2. The connection to the btc-server has been interrupted.
+    check_staged_headers: bool,
     /// Authority Metrics
     metrics: Arc<AuthorityMetrics>,
     /// cometbft light client provider
@@ -101,7 +108,12 @@ impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: 'static + Send + Sync + ToFrostManager + Clone,
     BF: Clone + 'static + Send + Sync,
-    DB: BlockReaderIdExt + StateProviderFactory + CanonStateSubscriptions + Clone + 'static,
+    DB: BlockReaderIdExt
+        + StateProviderFactory
+        + CanonStateSubscriptions
+        + StagedHeader
+        + Clone
+        + 'static,
     EF: Clone + 'static + Send + Sync,
     Source: RandomSource,
     BtcServerClient: BtcServerExtendedApi + Clone,
@@ -141,6 +153,7 @@ where
             signing_state_machine,
             storage,
             btc_server,
+            check_staged_headers: true,
             dkg_task: None,
             compressor,
             metrics,
@@ -227,6 +240,183 @@ where
         !response.finalized_pegout_ids.is_empty()
     }
 
+    /// Handles the canon state commit notification by submitting the pegins and
+    /// pegouts to the btc-server and initiating a checkpoint and signing
+    /// session, if necessary.
+    async fn handle_canon_state_commit(
+        &mut self,
+        // Note: `header_hash` is the hash of the header that is being
+        // committed. We pass this on such that calling `header.hash_slow()` can
+        // be avoided. Ideally, this is already precomputed when passed on.
+        header_hash: B256,
+        header: &Header,
+        pegins: Vec<Utxo>,
+        pending_pegouts: Vec<PendingPegout>,
+    ) {
+        debug_assert_eq!(header_hash, header.hash_slow());
+
+        info!(
+            target: "consensus::authority::frost_task::handle_canon_state_commit",
+            "Handling canon state commit for block number {:?}", header.number
+        );
+
+        let edh = match header.deserialize_extra_data_header() {
+            Ok(edh) => edh,
+            Err(e) => {
+                error!(
+                    target: "consensus::authority::frost_task::handle_canon_state_commit",
+                    "Error deserializing extra data header: {}", e
+                );
+
+                return;
+            }
+        };
+
+        let cp_block_hash = edh.bitcoin_block_hash;
+        let mut block_hash_writer = vec![];
+
+        if let Err(e) = cp_block_hash.consensus_encode(&mut block_hash_writer) {
+            error!(
+                target: "consensus::authority::frost_task::handle_canon_state_commit",
+                "Error encoding checkpoint block hash: {}", e
+            );
+
+            return;
+        }
+
+        let btc_server_capture = self.btc_server.clone();
+        let block_hash_writer = block_hash_writer.clone();
+        let pegins = pegins.clone();
+        let pending_pegouts = pending_pegouts.clone();
+
+        let fut = move || {
+            let mut btc_server = btc_server_capture.clone();
+            let block_hash = block_hash_writer.clone();
+            let pegins_data = pegins.clone();
+            let pending_data = pending_pegouts.clone();
+
+            async move {
+                btc_server
+                    .new_consensus_checkpoint(ConsensusCheckpointRequest {
+                        checkpoint_block_hash: block_hash,
+                        pegins: pegins_data,
+                        pending_pegouts: pending_data,
+                    })
+                    .await
+            }
+        };
+
+        // (Re-)try initiating a checkpoint on the btc-server.
+        match retry_exec("new_consensus_checkpoint", fut, 3, Duration::from_secs(2)).await {
+            Ok(_) => {
+                info!(
+                    target: "consensus::authority::frost_task::handle_canon_state_commit",
+                    "Sent checkpoint to btc server"
+                );
+
+                // Remove staged entries for this block hash; it's now the
+                // responsibility of the btc-server to keep track of the pegins
+                // and pegouts.
+                let existed = self
+                    .storage
+                    .client
+                    .remove_staged_header(header_hash)
+                    .expect("to remove staged header");
+
+                debug_assert!(existed, "Staged header should exist for the given header hash");
+            }
+            Err(err) => {
+                error!(
+                    target: "consensus::authority::frost_task::handle_canon_state_commit",
+                    "Failed to send checkpoint to btc server: {}", err
+                );
+
+                // Indicate to the Frost task that we should check staged
+                // headers on the next iteration. Ideally, the connection to the
+                // btc-server is restored at some point later and the staged
+                // headers can be processed.
+                self.check_staged_headers = true;
+
+                return;
+            }
+        }
+
+        // Check if this is an epoch block and if we are the coordinator. If
+        // yes, initiate signing session.
+        if !header.is_poa_epoch() {
+            return;
+        }
+
+        if !self.signing_state_machine.is_coordinator() {
+            info!(
+                target: "consensus::authority::frost_task::handle_canon_state_commit",
+                "Received canon state notification during epoch block but we're not the coordinator"
+            );
+
+            return;
+        }
+
+        // Create psbt and send init signing message.
+        let psbt_payload =
+            match crate::utils::get_psbt(&mut self.btc_server, &header_hash, cp_block_hash).await {
+                Ok(p) => p,
+                Err(e) => {
+                    error!(
+                        target: "consensus::authority::frost_task::handle_canon_state_commit",
+                        "Failed to get psbt {:?}", e
+                    );
+
+                    return;
+                }
+            };
+
+        // Validate psbt.
+        let psbt = match bitcoin::Psbt::deserialize(psbt_payload.psbt.as_slice()) {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                error!(
+                    target: "consensus::authority::frost_task::handle_canon_state_commit",
+                    "Error deserializing psbt {:?}", e
+                );
+
+                return;
+            }
+        };
+
+        if let Err(e) =
+            validate_psbt_by_ids(self.storage.client.clone(), self.storage.btc_network, &psbt).await
+        {
+            error!(
+                target: "consensus::authority::frost_task::handle_canon_state_commit",
+                "Error validating psbt {:?}", e
+            );
+
+            return;
+        };
+
+        info!(
+            target: "consensus::authority::frost_task::handle_canon_state_commit",
+            "Validated psbt successfully"
+        );
+
+        // Initiate signing session.
+        if let Err(e) =
+            self.signing_state_machine.initate_signing_session(header_hash, psbt_payload.psbt).await
+        {
+            error!(
+                target: "consensus::authority::frost_task::handle_canon_state_commit",
+                "Error starting new signing session {:?}", e
+            );
+
+            return;
+        };
+
+        info!(
+            target: "consensus::authority::frost_task::handle_canon_state_commit",
+            "Started new signing session successfully"
+        );
+    }
+
     pub async fn start_task(&mut self, mut abci_started_rx: tokio::sync::oneshot::Receiver<()>) {
         // before we start get a proper event receiver
         let (peer_messages_tx, peer_messages_rx) = tokio::sync::oneshot::channel();
@@ -287,6 +477,7 @@ where
         let mut canon_state_notifs = self.storage.client.subscribe_to_canonical_state();
 
         let mut abci_started = false;
+
         loop {
             // check if abci has started
             if abci_started_rx.try_recv().is_ok() {
@@ -312,149 +503,38 @@ where
             }
 
             // Receive canon state notifications
-            while let Ok(ref notification) = canon_state_notifs.try_recv() {
+            while let Ok(notification) = canon_state_notifs.try_recv() {
                 info!(target: "consensus::authority::frost_task::start_task", "canon state notification received for block number {:?}", notification.tip().number);
                 match notification {
                     CanonStateNotification::Commit { new, pegins, pegouts } => {
                         let tip = new.tip();
-                        // TODO(armins) make this block of code more readable by removing all the
-                        // matches
-                        let edh = match tip.header().deserialize_extra_data_header() {
-                            Ok(edh) => edh,
-                            Err(e) => {
-                                error!(target: "consensus::authority::frost_task::start_task", "Error deserializing extra data header: {}", e);
-                                continue;
-                            }
-                        };
+                        let header_hash = tip.hash();
+                        let header = tip.header();
 
-                        let pegins = pegins
-                            .as_ref()
-                            .map_or_else(Vec::new, |pegins| get_utxos_from_pegin_meta(pegins));
-
-                        // convert pegouts into correct format
-                        let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {
-                            get_pending_pegouts_from_pegout_data(pegouts, tip.number)
+                        // Convert pegins into correct format
+                        let pegins = pegins.as_ref().map_or_else(Vec::new, |pegins| {
+                            get_utxos_from_pegin_meta(pegins.as_slice())
                         });
 
-                        let cp_block_hash = edh.bitcoin_block_hash;
-                        let mut block_hash_writer = vec![];
-                        match cp_block_hash.consensus_encode(&mut block_hash_writer) {
-                            Ok(_) => {
-                                let btc_server_capture = self.btc_server.clone();
-                                let block_hash_writer = block_hash_writer.clone();
-                                let pegins = pegins.clone();
-                                let pending_pegouts = pending_pegouts.clone();
+                        // Convert pegouts into correct format
+                        let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {
+                            get_pending_pegouts_from_pegout_data(pegouts.as_slice(), header.number)
+                        });
 
-                                let fut = move || {
-                                    let mut btc_server = btc_server_capture.clone();
-                                    let block_hash = block_hash_writer.clone();
-                                    let pegins_data = pegins.clone();
-                                    let pending_data = pending_pegouts.clone();
-
-                                    async move {
-                                        btc_server
-                                            .new_consensus_checkpoint(ConsensusCheckpointRequest {
-                                                checkpoint_block_hash: block_hash,
-                                                pegins: pegins_data,
-                                                pending_pegouts: pending_data,
-                                            })
-                                            .await
-                                    }
-                                };
-                                match retry_exec(
-                                    "new_consensus_checkpoint",
-                                    fut,
-                                    3,
-                                    Duration::from_secs(2),
-                                )
-                                .await
-                                {
-                                    Ok(_) => {
-                                        info!(target: "consensus::authority::frost_task::start_task", "Sent checkpoint to btc server");
-                                    }
-                                    Err(err) => {
-                                        // We need to panic bc we have no way to recover any missed
-                                        // pegouts and they won't be sent to the btc server.
-                                        // We could rollback and sync to reprocess the pegouts but
-                                        // we would intentionally be replaying old pegouts.
-                                        panic!("Error sending checkpoint to btc server: {}", err);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                error!(target: "consensus::authority::frost_task::start_task", "Error encoding checkpoint block hash: {}", e);
-                            }
-                        }
-
-                        // check if epoch block and if we are the coordinator
-                        // if so, initiate signing session
-
-                        if tip.is_poa_epoch() {
-                            if !self.signing_state_machine.is_coordinator() {
-                                info!("Received canon state notification during epoch block but we're not the coordinator");
-                                continue;
-                            } else {
-                                // create psbt and send init signing message
-                                match crate::utils::get_psbt(
-                                    &mut self.btc_server,
-                                    &tip.hash(),
-                                    cp_block_hash,
-                                )
-                                .await
-                                {
-                                    Ok(psbt_payload) => {
-                                        // validate psbt
-                                        let psbt = match bitcoin::Psbt::deserialize(
-                                            psbt_payload.psbt.as_slice(),
-                                        ) {
-                                            Ok(psbt) => psbt,
-                                            Err(e) => {
-                                                error!(target: "consensus::authority::frost_task::start_task", "Error deserializing psbt {:?}", e);
-                                                continue;
-                                            }
-                                        };
-                                        match validate_psbt_by_ids(
-                                            self.storage.client.clone(),
-                                            self.storage.btc_network,
-                                            &psbt,
-                                        )
-                                        .await
-                                        {
-                                            Ok(_) => {
-                                                info!(target: "consensus::authority::frost_task::start_task", "Validated psbt successfully")
-                                            }
-                                            Err(e) => {
-                                                error!(target: "consensus::authority::frost_task::start_task", "Error validating psbt {:?}", e);
-                                                continue;
-                                            }
-                                        }
-
-                                        match self
-                                            .signing_state_machine
-                                            .initate_signing_session(tip.hash(), psbt_payload.psbt)
-                                            .await
-                                        {
-                                            Ok(_) => {
-                                                info!(target: "consensus::authority::frost_task::start_task", "Started new signing session successfully")
-                                            }
-                                            Err(e) => {
-                                                error!(target: "consensus::authority::frost_task::start_task", "Error starting new signing session {:?}", e);
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        error!(target: "consensus::authority", ?e, "Failed to get psbt");
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
+                        self.handle_canon_state_commit(
+                            header_hash,
+                            header,
+                            pegins,
+                            pending_pegouts,
+                        )
+                        .await;
                     }
                     _ => {
                         // Ignore other notifications
                     }
                 }
             }
+
             // receive over a channel message from other peers and update our state machine
             while let Ok(message_context) = peer_messages_rx.try_recv() {
                 let peer_message = message_context.message;
