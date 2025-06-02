@@ -16,12 +16,12 @@ use crate::{
 pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<()> {
     it_info_print!("Running rpc node test");
     // subscribe to rpc node events
-    let _rx = suite
-        .local_context
-        .rpc_notification
-        .as_ref()
-        .expect("broadcast sender to be set")
-        .subscribe();
+    // let _rx = suite
+    //     .local_context
+    //     .rpc_notification
+    //     .as_ref()
+    //     .expect("broadcast sender to be set")
+    //     .subscribe();
     let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
 
     // create botanix clients
