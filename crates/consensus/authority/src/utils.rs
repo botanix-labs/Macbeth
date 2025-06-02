@@ -131,7 +131,7 @@ pub(crate) fn get_pending_pegouts_from_pegout_data(
         .iter()
         .map(|pegout| PendingPegout {
             pegout_id: pegout.id.as_bytes().to_vec(),
-            spk: pegout.data.destination.script_pubkey().to_bytes().to_vec(),
+            spk: pegout.data.destination.script_pubkey().into_bytes(),
             amount: pegout.data.amount.to_sat(),
             height,
         })
@@ -142,6 +142,7 @@ fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
     let tx_out =
         pegin_meta.tx().output.get(pegin_meta.outpoint().vout as usize).expect("valid vout");
     let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+
     Utxo {
         outpoint: Some(client::OutPoint {
             txid: bitcoin::consensus::serialize(&pegin_meta.outpoint().txid),
