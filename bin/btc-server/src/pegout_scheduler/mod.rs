@@ -637,9 +637,14 @@ impl PegoutScheduler {
                     continue;
                 }
 
-                // TODO(scott): finalize this tracked tx
                 // This should not happen if sync_until functions correctly
-                return Err(SyncError::DeeplyConfirmedTxNotFinalized(txid));
+                error!(
+                    "PegoutScheduler::track_mempool: {:?}.",
+                    SyncError::DeeplyConfirmedTxNotFinalized(txid)
+                );
+                // Intentionally not untracking the tx here since this should not happen.
+                // If it does, the underlying issue should be fixed and the tracked tx handled.
+                continue;
             }
 
             // a tx that is in a deeply confirmed block should have been handled already
@@ -862,7 +867,7 @@ pub enum SyncError {
     Db(#[from] database::Error),
     #[error("tracked tx not included in a block: {0}")]
     TrackedTxNotInBlock(Txid),
-    #[error("deeply confirumed tx not finalized: {0}")]
+    #[error("deeply confirmed tx not finalized: {0}")]
     DeeplyConfirmedTxNotFinalized(Txid),
 }
 
