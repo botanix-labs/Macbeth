@@ -77,6 +77,30 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
         })
     }
 
+    /// Mocks Bitcoin Core RPC calls by returning fixed or error responses for supported methods.
+    ///
+    /// This function simulates the behavior of various Bitcoin Core RPC methods, returning static or
+    /// dynamically generated JSON responses for use in tests. Certain transaction IDs trigger specific
+    /// error responses to facilitate testing of error handling logic. Supported methods include
+    /// `getblockchaininfo`, `getbestblockhash`, `getblockheaderinfo`, `getblockheader`,
+    /// `getmempoolentry`, `getrawtransaction`, and `getblock`. All other methods are unimplemented.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - The type to deserialize the RPC response into.
+    ///
+    /// # Returns
+    ///
+    /// Returns a deserialized response of type `T` on success, or a `bitcoincore_rpc::Error` if an error
+    /// condition is triggered or the method is not implemented.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mock = MockBitcoind::default();
+    /// let info: serde_json::Value = mock.call("getblockchaininfo", &[]).unwrap();
+    /// assert_eq!(info["initialblockdownload"], false);
+    /// ```
     fn call<T: for<'a> serde::de::Deserialize<'a>>(
         &self,
         method: &str,

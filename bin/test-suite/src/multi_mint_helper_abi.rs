@@ -11,6 +11,17 @@ pub use multi_mint_helper_contract::*;
 )]
 pub mod multi_mint_helper_contract {
     #[allow(deprecated)]
+    /// Returns the ABI definition for the MultiMintHelperContract smart contract.
+    ///
+    /// The ABI describes the contract's constructor and functions, including their input and output types. This is used for encoding and decoding contract calls and events.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let abi = __abi();
+    /// assert!(abi.constructor.is_some());
+    /// assert!(abi.functions.contains_key("multiMintTwo"));
+    /// ```
     fn __abi() -> ::ethers::core::abi::Abi {
         ::ethers::core::abi::ethabi::Contract {
             constructor: ::core::option::Option::Some(::ethers::core::abi::ethabi::Constructor {
@@ -161,6 +172,9 @@ pub mod multi_mint_helper_contract {
     );
     pub struct MultiMintHelperContract<M>(::ethers::contract::Contract<M>);
     impl<M> ::core::clone::Clone for MultiMintHelperContract<M> {
+        /// Creates a copy of the contract instance.
+        ///
+        /// The cloned instance shares the same contract address and client as the original.
         fn clone(&self) -> Self {
             Self(::core::clone::Clone::clone(&self.0))
         }
@@ -185,7 +199,18 @@ pub mod multi_mint_helper_contract {
     }
     impl<M: ::ethers::providers::Middleware> MultiMintHelperContract<M> {
         /// Creates a new contract instance with the specified `ethers` client at
-        /// `address`. The contract derefs to a `ethers::Contract` object.
+        /// Creates a new instance of the MultiMintHelperContract at the specified address.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use ethers::providers::{Provider, Http};
+        /// use std::sync::Arc;
+        /// let provider = Provider::<Http>::try_from("http://localhost:8545").unwrap();
+        /// let client = Arc::new(provider);
+        /// let contract_address = "0x0000000000000000000000000000000000000000".parse().unwrap();
+        /// let contract = MultiMintHelperContract::new(contract_address, client);
+        /// ```
         pub fn new<T: Into<::ethers::core::types::Address>>(
             address: T,
             client: ::std::sync::Arc<M>,
@@ -237,7 +262,15 @@ pub mod multi_mint_helper_contract {
             let deployer = ::ethers::contract::ContractDeployer::new(deployer);
             Ok(deployer)
         }
-        ///Calls the contract's `mintingContract` (0xd2f6f67d) function
+        /// Returns the address of the associated minting contract.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let contract = MultiMintHelperContract::new(address, client);
+        /// let call = contract.minting_contract();
+        /// let minting_address = call.call().await?;
+        /// ```
         pub fn minting_contract(
             &self,
         ) -> ::ethers::contract::builders::ContractCall<
@@ -248,7 +281,35 @@ pub mod multi_mint_helper_contract {
                 .method_hash([210, 246, 246, 125], ())
                 .expect("method not found (this should never happen)")
         }
-        ///Calls the contract's `multiMintTwo` (0xe39bfe46) function
+        /// Executes two mint operations in a single transaction.
+        ///
+        /// Calls the contract's `multiMintTwo` function, minting tokens to two separate destinations with specified amounts, Bitcoin block heights, metadata, and refund addresses.
+        ///
+        /// # Parameters
+        /// - `destination_1`: Address to receive the first mint.
+        /// - `amount_1`: Amount to mint for the first destination.
+        /// - `bitcoin_block_height_1`: Bitcoin block height associated with the first mint.
+        /// - `metadata_1`: Arbitrary metadata for the first mint.
+        /// - `refund_address_1`: Address to receive any refund from the first mint.
+        /// - `destination_2`: Address to receive the second mint.
+        /// - `amount_2`: Amount to mint for the second destination.
+        /// - `bitcoin_block_height_2`: Bitcoin block height associated with the second mint.
+        /// - `metadata_2`: Arbitrary metadata for the second mint.
+        /// - `refund_address_2`: Address to receive any refund from the second mint.
+        ///
+        /// # Returns
+        /// A contract call builder for executing the `multiMintTwo` transaction.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let call = contract.multi_mint_two(
+        ///     addr1, amount1, block_height1, metadata1, refund1,
+        ///     addr2, amount2, block_height2, metadata2, refund2,
+        /// );
+        /// // To send the transaction:
+        /// // let pending_tx = call.send().await?;
+        /// ```
         pub fn multi_mint_two(
             &self,
             destination_1: ::ethers::core::types::Address,
@@ -283,6 +344,14 @@ pub mod multi_mint_helper_contract {
     }
     impl<M: ::ethers::providers::Middleware> From<::ethers::contract::Contract<M>>
     for MultiMintHelperContract<M> {
+        /// Creates a `MultiMintHelperContract` instance from an existing ethers-rs `Contract`.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let ethers_contract = Contract::new(address, client, abi);
+        /// let helper = MultiMintHelperContract::from(ethers_contract);
+        /// ```
         fn from(contract: ::ethers::contract::Contract<M>) -> Self {
             Self::new(contract.address(), contract.client())
         }
@@ -334,6 +403,18 @@ pub mod multi_mint_helper_contract {
         MultiMintTwo(MultiMintTwoCall),
     }
     impl ::ethers::core::abi::AbiDecode for MultiMintHelperContractCalls {
+        /// Decodes ABI-encoded call data into a `MultiMintHelperContractCalls` enum variant.
+        ///
+        /// Attempts to decode the provided data as either a `MintingContractCall` or a `MultiMintTwoCall`.
+        /// Returns the corresponding enum variant if successful, or an error if the data does not match either call type.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let call_data = /* ABI-encoded call data as bytes */;
+        /// let decoded = MultiMintHelperContractCalls::decode(call_data);
+        /// assert!(decoded.is_ok() || decoded.is_err());
+        /// ```
         fn decode(
             data: impl AsRef<[u8]>,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::AbiError> {
@@ -352,6 +433,19 @@ pub mod multi_mint_helper_contract {
         }
     }
     impl ::ethers::core::abi::AbiEncode for MultiMintHelperContractCalls {
+        /// Encodes the enum variant into ABI-compliant bytes for contract interaction.
+        ///
+        /// # Returns
+        ///
+        /// A vector of bytes representing the ABI-encoded data of the selected call variant.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let call = MultiMintHelperContractCalls::MintingContract(MintingContractCall {});
+        /// let encoded = call.encode();
+        /// assert!(!encoded.is_empty());
+        /// ```
         fn encode(self) -> Vec<u8> {
             match self {
                 Self::MintingContract(element) => {
@@ -377,6 +471,7 @@ pub mod multi_mint_helper_contract {
         }
     }
     impl ::core::convert::From<MultiMintTwoCall> for MultiMintHelperContractCalls {
+        /// Creates a `MultiMintHelperContractCalls` enum variant from a `MultiMintTwoCall` value.
         fn from(value: MultiMintTwoCall) -> Self {
             Self::MultiMintTwo(value)
         }

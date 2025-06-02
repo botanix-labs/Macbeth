@@ -11,6 +11,16 @@ pub use mint_attack_contract::*;
 )]
 pub mod mint_attack_contract {
     #[allow(deprecated)]
+    /// Returns the ABI definition for the MintAttackContract smart contract.
+    ///
+    /// This function provides the contract's ABI, including all functions, their inputs, outputs, and state mutability. It does not include events or errors.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let abi = __abi();
+    /// assert!(abi.functions().contains_key("mintingContract"));
+    /// ```
     fn __abi() -> ::ethers::core::abi::Abi {
         ::ethers::core::abi::ethabi::Contract {
             constructor: ::core::option::Option::None,
@@ -141,6 +151,9 @@ pub mod mint_attack_contract {
     );
     pub struct MintAttackContract<M>(::ethers::contract::Contract<M>);
     impl<M> ::core::clone::Clone for MintAttackContract<M> {
+        /// Creates a copy of the contract instance.
+        ///
+        /// The cloned instance shares the same contract address and client as the original.
         fn clone(&self) -> Self {
             Self(::core::clone::Clone::clone(&self.0))
         }
@@ -157,6 +170,7 @@ pub mod mint_attack_contract {
         }
     }
     impl<M> ::core::fmt::Debug for MintAttackContract<M> {
+        /// Formats the `MintAttackContract` for debugging, displaying its address.
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             f.debug_tuple(::core::stringify!(MintAttackContract))
                 .field(&self.address())
@@ -165,7 +179,18 @@ pub mod mint_attack_contract {
     }
     impl<M: ::ethers::providers::Middleware> MintAttackContract<M> {
         /// Creates a new contract instance with the specified `ethers` client at
-        /// `address`. The contract derefs to a `ethers::Contract` object.
+        /// Creates a new `MintAttackContract` instance bound to the specified address and client.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use ethers::providers::{Provider, Http};
+        /// use std::sync::Arc;
+        /// let provider = Provider::<Http>::try_from("http://localhost:8545").unwrap();
+        /// let client = Arc::new(provider);
+        /// let contract_address = "0x0000000000000000000000000000000000000000".parse().unwrap();
+        /// let contract = MintAttackContract::new(contract_address, client);
+        /// ```
         pub fn new<T: Into<::ethers::core::types::Address>>(
             address: T,
             client: ::std::sync::Arc<M>,
@@ -217,7 +242,17 @@ pub mod mint_attack_contract {
             let deployer = ::ethers::contract::ContractDeployer::new(deployer);
             Ok(deployer)
         }
-        ///Calls the contract's `mintingContract` (0xd2f6f67d) function
+        /// Returns the address of the underlying minting contract.
+        ///
+        /// Calls the `mintingContract()` view function on the smart contract to retrieve the associated `IMintable` contract address.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let contract = MintAttackContract::new(address, client);
+        /// let call = contract.minting_contract();
+        /// let minting_address = call.call().await?;
+        /// ```
         pub fn minting_contract(
             &self,
         ) -> ::ethers::contract::builders::ContractCall<
@@ -238,7 +273,33 @@ pub mod mint_attack_contract {
                 .method_hash([203, 172, 127, 246], (destination, data))
                 .expect("method not found (this should never happen)")
         }
-        ///Calls the contract's `passThroughMint` (0x03568012) function
+        /// Initiates a `passThroughMint` transaction on the contract.
+        ///
+        /// Calls the `passThroughMint` function, minting tokens to a specified destination with associated metadata and refund address. The minting is linked to a specific Bitcoin block height.
+        ///
+        /// # Parameters
+        /// - `destination`: The address to receive the minted tokens.
+        /// - `amount`: The amount of tokens to mint.
+        /// - `bitcoin_block_height`: The Bitcoin block height associated with the minting operation.
+        /// - `metadata`: Arbitrary metadata to include with the mint request.
+        /// - `refund_address`: The address to receive a refund if the minting fails.
+        ///
+        /// # Returns
+        /// A contract call builder for the `passThroughMint` transaction.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let call = contract.pass_through_mint(
+        ///     destination_address,
+        ///     amount,
+        ///     bitcoin_block_height,
+        ///     metadata_bytes,
+        ///     refund_address,
+        /// );
+        /// // To send the transaction:
+        /// // let pending_tx = call.send().await?;
+        /// ```
         pub fn pass_through_mint(
             &self,
             destination: ::ethers::core::types::Address,
@@ -257,6 +318,14 @@ pub mod mint_attack_contract {
     }
     impl<M: ::ethers::providers::Middleware> From<::ethers::contract::Contract<M>>
     for MintAttackContract<M> {
+        /// Creates a `MintAttackContract` instance from a generic ethers contract by extracting its address and client.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let ethers_contract = Contract::new(address, client, abi);
+        /// let mint_attack = MintAttackContract::from(ethers_contract);
+        /// ```
         fn from(contract: ::ethers::contract::Contract<M>) -> Self {
             Self::new(contract.address(), contract.client())
         }
@@ -320,6 +389,23 @@ pub mod mint_attack_contract {
         PassThroughMint(PassThroughMintCall),
     }
     impl ::ethers::core::abi::AbiDecode for MintAttackContractCalls {
+        /// Attempts to decode ABI-encoded data into one of the `MintAttackContractCalls` variants.
+        ///
+        /// Tries to decode the input as each supported contract call in order. Returns an error if the data does not match any known call type.
+        ///
+        /// # Parameters
+        /// - `data`: ABI-encoded bytes representing a contract call.
+        ///
+        /// # Returns
+        /// A `Result` containing the decoded `MintAttackContractCalls` variant on success, or an `AbiError` if decoding fails.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// let call_data = /* ABI-encoded bytes for a contract call */;
+        /// let decoded = MintAttackContractCalls::decode(call_data);
+        /// assert!(decoded.is_ok() || decoded.is_err());
+        /// ```
         fn decode(
             data: impl AsRef<[u8]>,
         ) -> ::core::result::Result<Self, ::ethers::core::abi::AbiError> {
@@ -343,6 +429,9 @@ pub mod mint_attack_contract {
         }
     }
     impl ::ethers::core::abi::AbiEncode for MintAttackContractCalls {
+        /// Encodes the contract call variant into ABI-encoded bytes.
+        ///
+        /// Returns the ABI-encoded representation of the contained contract call input.
         fn encode(self) -> Vec<u8> {
             match self {
                 Self::MintingContract(element) => {
@@ -377,6 +466,7 @@ pub mod mint_attack_contract {
         }
     }
     impl ::core::convert::From<PassThroughMintCall> for MintAttackContractCalls {
+        /// Converts a `PassThroughMintCall` into the corresponding `MintAttackContractCalls` enum variant.
         fn from(value: PassThroughMintCall) -> Self {
             Self::PassThroughMint(value)
         }

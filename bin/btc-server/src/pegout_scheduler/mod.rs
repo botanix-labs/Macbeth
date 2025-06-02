@@ -431,7 +431,21 @@ impl PegoutScheduler {
     }
 
     /// Finalize a block by adding the UTXOs that are deeply confirmed back to the database.
-    /// This is also where we remove tracked transactions
+    /// Finalizes a deeply confirmed block by updating UTXO and pegout tracking state.
+    ///
+    /// Adds change outputs from relevant transactions back to the UTXO set, removes spent inputs and tracked transactions, and stores finalized pegout IDs in the database. Updates the last finalized block hash. Handles conflicting transactions by removing them from tracking without finalizing their pegouts.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if any database operation fails or if a tracked transaction is missing.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut scheduler = PegoutScheduler::new(...);
+    /// let block_info = BlockInfo { ... };
+    /// scheduler.finalize_block(&block_info)?;
+    /// ```
     fn finalize_block(&mut self, block: &BlockInfo) -> Result<(), database::Error> {
         info!("PegoutScheduler::finalize_block: Finalizing block {}", block.hash);
         let change_spk_res = self.get_change_spk(); // Get result first
@@ -594,7 +608,14 @@ impl PegoutScheduler {
         self.last_blocks.push_back(BlockInfo { hash, relevant_txs, relevant_inputs });
     }
 
-    /// Check if tx is in the mempool, has been dropped or there was a reorg.
+    /// Checks tracked transactions older than the checkpoint time to determine if they are still in the mempool, have been dropped, or have experienced a reorg.
+    ///
+    /// For each tracked transaction created before the checkpoint block's timestamp, this method:
+    /// - Skips transactions still in the mempool or not yet deeply confirmed.
+    /// - Logs an error if a transaction is deeply confirmed but not finalized.
+    /// - If a transaction is neither in the mempool nor confirmed on-chain, untracks it and adds its pegout requests back to the pending set for retry.
+    ///
+    /// Returns an error if untracking or database operations fail.
     pub fn track_mempool(
         &mut self,
         bitcoind: &impl RpcApi,
@@ -689,7 +710,13 @@ impl PegoutScheduler {
 
     /// Sync with new blocks and stop when the [checkpoint] block gets finalized.
     ///
-    /// We take the database closure to reduce coupling with database module.
+    /// Synchronizes the pegout scheduler state with the Bitcoin blockchain up to a specified checkpoint block.
+    ///
+    /// This method ensures that all relevant blocks from the last finalized block to the given checkpoint are processed in order, handling reorgs, finalizing deeply confirmed blocks, and updating the internal state and database accordingly. It also checks for node synchronization status and tracks the mempool for any tracked transactions that may have been dropped or reorged. If the checkpoint is not reached or an error occurs during synchronization, an appropriate `SyncError` is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `SyncError` if the node is still syncing, a deep reorg is detected, the checkpoint is not reached, a tracked transaction is missing or not finalized, or if there are database or RPC errors.
     pub fn sync_until(
         &mut self,
         bitcoind: &impl RpcApi,
@@ -1387,6 +1414,7 @@ mod tests {
     }
 
     #[test]
+    /// Tests that `tracked_pegout_request_ids` returns the correct pegout request IDs from tracked transactions.
     fn tracked_pegout_request_ids_should_return_ids() {
         let db = setup_db().0;
         let tx = create_tx(1, 2, None);
@@ -1408,7 +1436,9 @@ mod tests {
     }
 
     #[test]
-    // mock_bitcoind is set up so the tracked tx is confirmed but not deeply confirmed.
+    /// Tests that a pegout is not added back to pending when its transaction is confirmed but not deeply confirmed.
+    ///
+    /// This ensures that the pegout scheduler does not incorrectly re-add pegout requests to the pending set if the tracked transaction is included in a block but has not yet reached the required confirmation depth.
     fn track_mempool_should_not_add_back_pegout_when_not_deeply_confirmed() {
         let db = setup_db().0;
         let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
@@ -1439,6 +1469,15 @@ mod tests {
     }
 
     #[test]
+    /// Tests that a pegout is not added back to pending when its transaction is still present in the mempool.
+    ///
+    /// This ensures that the pegout scheduler does not incorrectly re-add pegout requests to the pending set if the tracked transaction has not been dropped from the mempool or confirmed on-chain.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// track_mempool_should_not_add_back_pegout_when_still_in_mempool();
+    /// ```
     fn track_mempool_should_not_add_back_pegout_when_still_in_mempool() {
         let db = setup_db().0;
         let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
@@ -1472,6 +1511,9 @@ mod tests {
     }
 
     #[test]
+    /// Tests that a tracked pegout transaction is untracked and its pegout request is added back to pending when the transaction is neither in the mempool nor on-chain.
+    ///
+    /// This ensures that pegout requests are not lost if their transaction drops out of both the mempool and the blockchain.
     fn track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool() {
         let db = setup_db().0;
         let mut pegout_scheduler =
