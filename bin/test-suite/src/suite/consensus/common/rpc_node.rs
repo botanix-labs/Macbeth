@@ -19,11 +19,10 @@ use reth::args::FedMemberPubKey;
 use reth_primitives::{
     constants::nums_secp256k1_pk,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    hex::encode as hex_encode,
     Address,
 };
 use reth_rpc_types::PeerId;
-use secp256k1::{PublicKey, SECP256K1};
+use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
     collections::BTreeMap,
     io::Write,
@@ -37,7 +36,7 @@ use url::Url;
 use super::{
     botanix_client::BotanixEthClient,
     create_temp_working_directory, kill_process_at_port,
-    poa_node::{DISCOVERY_PORT_BASE, RPC_PORT_BASE, WS_PORT_BASE},
+    poa_node::{ABCI_PORT_BASE, DISCOVERY_PORT_BASE, RPC_PORT_BASE, WS_PORT_BASE},
 };
 
 #[derive(Clone, Debug)]
@@ -78,10 +77,11 @@ impl SpawnedRpcServerProcess {
 pub struct NonFederationMemberTestConfig {
     pub index: u16,
     pub temp_path: PathBuf,
-    pub secret_key: String,
+    pub secret_key: SecretKey,
     pub rpc_port: u16,
     pub ws_port: u16,
     pub discovery_port: u16,
+    pub abci_port: u16,
     pub bitcoind_url: Url,
     pub bitcoind_username: String,
     pub bitcoind_password: String,
@@ -97,7 +97,7 @@ impl NonFederationMemberTestConfig {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         index: u16,
-        secret_key: String,
+        secret_key: SecretKey,
         sender: tokio::sync::broadcast::Sender<Notifications>,
         bitcoind_url: Url,
         bitcoind_username: String,
@@ -107,6 +107,7 @@ impl NonFederationMemberTestConfig {
         rpc_port: u16,
         ws_port: u16,
         discovery_port: u16,
+        abci_port: u16,
         lst_fee_receiver: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -116,6 +117,7 @@ impl NonFederationMemberTestConfig {
             rpc_port,
             ws_port,
             discovery_port,
+            abci_port,
             bitcoind_url,
             bitcoind_username,
             bitcoind_password,
@@ -137,7 +139,7 @@ impl NonFederationMemberTestConfig {
         edh_authorities_list: Arc<Vec<PublicKey>>,
         poa_nodes: Vec<FederationMemberTestConfig>,
     ) -> anyhow::Result<SpawnedRpcServerProcess> {
-        it_info_print!(format!("RPC Engine {} secret key = {}", self.index, &self.secret_key));
+        it_info_print!(format!("RPC Engine {} secret key = {:?}", self.index, &self.secret_key));
         self.insert_peers_list(poa_nodes.clone());
 
         let datadir = self.temp_path.to_str().context("created temp path is unparsable")?;
@@ -148,7 +150,7 @@ impl NonFederationMemberTestConfig {
             .open(discovery_secret_path.clone())
             .context("discovery secret file cannot be created/opened")?;
         let _ = file
-            .write_all(&self.secret_key.as_bytes())
+            .write_all(&self.secret_key.display_secret().to_string().as_bytes())
             .context("error writing secret key to file")?;
 
         // now create the edh
@@ -180,6 +182,12 @@ impl NonFederationMemberTestConfig {
             };
             fed_member_pks.push(pk);
         }
+        // add ourselves
+        let my_pk = FedMemberPubKey {
+            key: self.secret_key.public_key(SECP256K1).to_string(),
+            socket_addr: format!("127.0.0.1:{}", self.discovery_port),
+        };
+        fed_member_pks.push(my_pk);
 
         // NOTE: fed members have already created their EDH with the correct authorities
         // but the order may not be the same as fed_member_pks since we added ourselves last
@@ -194,6 +202,7 @@ impl NonFederationMemberTestConfig {
             }
         }
 
+        // Need to create a federation.toml in the data dir
         let federation_config = FederationTomlConfig::new(
             edh_authorities,
             self.botanix_fee_recipient.clone(),
@@ -212,8 +221,6 @@ impl NonFederationMemberTestConfig {
         for _ in 0..2 {
             working_directory.pop();
         }
-        working_directory.push("bin");
-        working_directory.push("reth");
 
         let federation_config_path = federation_config_path.display().to_string();
         let rpc_port = self.rpc_port.to_string();
@@ -222,6 +229,7 @@ impl NonFederationMemberTestConfig {
         let bitcoind_username = self.bitcoind_username.clone();
         let bitcoind_password = self.bitcoind_password.clone();
         let discovery_port = self.discovery_port.to_string();
+        let abci_port = self.abci_port.to_string();
 
         // prepare run arguments
         let command = "./target/debug/reth";
@@ -275,6 +283,8 @@ impl NonFederationMemberTestConfig {
             discovery_port.as_str(),
             "--p2p-secret-key",
             discovery_secret_path.to_str().context("discovery secret path to exist")?,
+            "--abci-port",
+            abci_port.as_str(),
             "--sync.enable_state_sync",
             "--sync.enable_historical_sync",
         ];
@@ -349,13 +359,11 @@ pub async fn create_rpc_nodes(
     for member_index in 0..global_context.rpc_instances {
         let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-        let rpc_secret_key = hex_encode(secret_key.as_ref());
         let rpc_peer_id = pk2id(&pk);
 
         let rpc_node = NonFederationMemberTestConfig::new(
-            global_context.fed_instances + member_index, /* indexing follows up from poa nodes
-                                                          * onwards */
-            rpc_secret_key,
+            global_context.fed_instances + member_index, // indexing follows up from poa nodes onwards
+            secret_key,
             tx.clone(),
             global_context.bitcoind_url.clone(),
             global_context.bitcoind_user.clone(),
@@ -369,6 +377,7 @@ pub async fn create_rpc_nodes(
                                                                           * start port assigning
                                                                           * after poa servers */
             DISCOVERY_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we start port assigning after poa servers */
+            ABCI_PORT_BASE + 1000 * (global_context.fed_instances + member_index),
             global_context.lst_fee_receiver.clone(),
         ).await?;
         rpc_members.insert(global_context.fed_instances + member_index, rpc_node);
