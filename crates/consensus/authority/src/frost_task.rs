@@ -6,8 +6,8 @@ use crate::{
     random_source_provider::RandomSource,
     signing::SigningStateMachine,
     utils::{
-        get_pending_pegouts_from_pegout_data, get_utxos_from_pegin_meta, retry_exec,
-        validate_psbt_by_ids,
+        get_pending_pegouts_from_pegout_data, get_pending_pegouts_from_staged_pegouts,
+        get_utxos_from_pegin_meta, get_utxos_from_staged_pegins, retry_exec, validate_psbt_by_ids,
     },
     Storage,
 };
@@ -499,6 +499,40 @@ where
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         continue;
                     }
+                }
+            }
+
+            // We check the local database for any staged headers; a presence of
+            // staged headers indicates that the pegins and pegouts of a
+            // specific block have been correctly extracted during finalization,
+            // but the checkpoint has not yet been created on the btc-server.
+            //
+            // This can happen if the connection to the btc-server has been
+            // interrupted while block production is continuing.
+            if self.check_staged_headers {
+                let mut staged_headers =
+                    self.storage.client.get_staged_headers().expect("to get staged headers");
+
+                if staged_headers.is_empty() {
+                    info!(target: "consensus::authority::frost_task::start_task", "No staged headers found, proceeding with frost task");
+                } else {
+                    warn!(target: "consensus::authority::frost_task::start_task", "Found {} staged headers, proceeding with btc-server checkpoint reconstruction", staged_headers.len());
+                }
+
+                // Sort staged headers by block number in ascending order.
+                staged_headers.sort_by(|(_, a), (_, b)| a.header.number.cmp(&b.header.number));
+
+                // NOTE: This flag might be overridden by the
+                // `handle_canon_state_commit` method.
+                self.check_staged_headers = false;
+
+                for (header_hash, entry) in staged_headers {
+                    let header = entry.header;
+
+                    let pegins = get_utxos_from_staged_pegins(entry.pegins);
+                    let pegouts = get_pending_pegouts_from_staged_pegouts(entry.pegouts);
+
+                    self.handle_canon_state_commit(header_hash, &header, pegins, pegouts).await;
                 }
             }
 
