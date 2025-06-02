@@ -626,7 +626,11 @@ impl PegoutScheduler {
             let onchain_tx = bitcoind.get_raw_transaction_info(&txid, None);
             if let Ok(onchain_tx) = onchain_tx {
                 // Check if the tx is deeply confirmed
-                let blockhash = onchain_tx.blockhash.ok_or(SyncError::TrackedTxNotInBlock(txid))?;
+                let Some(blockhash) = onchain_tx.blockhash else {
+                    // Still in the mempool since blockhash is None
+                    info!("PegoutScheduler::track_mempool: Tx {} is still in the mempool.", txid);
+                    continue;
+                };
                 let actual_height =
                     bitcoind.get_block_info(&blockhash).map_err(SyncError::Rpc)?.height;
                 if actual_height > checkpoint.height {
@@ -657,7 +661,10 @@ impl PegoutScheduler {
                     continue;
                 }
                 Err(e) => {
-                    info!("PegoutScheduler::track_mempool: Tx {} not found in mempool (Error: {}). Checking chain...", txid, e);
+                    info!(
+                        "PegoutScheduler::track_mempool: Tx {} not found in mempool (Error: {}).",
+                        txid, e
+                    );
                     // check error message to confirm the tx is not in the mempool
                     if !e.to_string().to_lowercase().contains(TX_NOT_IN_MEMPOOL_BITCOIND_ERROR) {
                         warn!("Error checking mempool for tx {}: {}", &txid, e);
