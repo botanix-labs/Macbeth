@@ -13,6 +13,7 @@ use btcserverlib::{
 };
 use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
+use reth_db::models;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{
     botanix::{
@@ -152,6 +153,67 @@ fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
         }),
         eth_address: hex::encode(pegin_meta.address()),
     }
+}
+
+pub(crate) fn get_staged_pegins_from_pegin_meta(pegins: &[PeginMeta]) -> Vec<models::PeginData> {
+    pegins
+        .iter()
+        .map(|pegin| {
+            let tx_out = pegin.txout();
+
+            let txid = bitcoin::consensus::serialize(&pegin.outpoint().txid);
+            let vout = pegin.outpoint().vout as u64;
+            let value = tx_out.value.to_sat();
+            let script_pubkey = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+            let eth_address = pegin.address().to_vec();
+
+            models::PeginData { txid, vout, value, script_pubkey, eth_address }
+        })
+        .collect()
+}
+
+pub(crate) fn get_utxos_from_staged_pegins(pegins: Vec<models::PeginData>) -> Vec<Utxo> {
+    pegins
+        .into_iter()
+        .map(|pegin| Utxo {
+            outpoint: Some(client::OutPoint { txid: pegin.txid, vout: pegin.vout as u32 }),
+            output: Some(TxOut {
+                value: pegin.value,
+                script_pubkey: Some(ScriptBuf { script: pegin.script_pubkey }),
+            }),
+            eth_address: hex::encode(pegin.eth_address),
+        })
+        .collect()
+}
+
+pub(crate) fn get_staged_pegouts_from_pegout_data(
+    pegouts: &[PegoutWithId],
+    height: u64,
+) -> Vec<models::PegoutData> {
+    pegouts
+        .iter()
+        .map(|pegout| {
+            let pegout_id = pegout.id.as_bytes().to_vec();
+            let script_pubkey = pegout.data.destination.script_pubkey().into_bytes();
+            let amount = pegout.data.amount.to_sat();
+
+            models::PegoutData { pegout_id, script_pubkey, amount, height }
+        })
+        .collect()
+}
+
+pub(crate) fn get_pending_pegouts_from_staged_pegouts(
+    pegouts: Vec<models::PegoutData>,
+) -> Vec<PendingPegout> {
+    pegouts
+        .into_iter()
+        .map(|pegout| PendingPegout {
+            pegout_id: pegout.pegout_id,
+            spk: pegout.script_pubkey,
+            amount: pegout.amount,
+            height: pegout.height,
+        })
+        .collect()
 }
 
 fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
