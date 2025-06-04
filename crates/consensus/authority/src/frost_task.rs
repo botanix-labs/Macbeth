@@ -333,7 +333,11 @@ where
 
                         // convert pegouts into correct format
                         let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {
-                            get_pending_pegouts_from_pegout_data(pegouts, tip.number)
+                            get_pending_pegouts_from_pegout_data(
+                                pegouts,
+                                tip.number,
+                                tip.header().timestamp,
+                            )
                         });
 
                         let cp_block_hash = edh.bitcoin_block_hash;

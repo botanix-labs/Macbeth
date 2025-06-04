@@ -1,7 +1,4 @@
-use crate::{
-    botanix_client::BotanixEthClientTrait,
-    wallet::psbt::{PsbtExt, PsbtInputExt},
-};
+use crate::wallet::psbt::{PsbtExt, PsbtInputExt};
 use bitcoin::psbt::Psbt;
 use error::{SigningRound1Error, SigningRound2Error};
 use frost_secp256k1_tr::{
@@ -18,12 +15,11 @@ use crate::{
 
 pub mod error;
 
-pub async fn get_round1_signing_package(
+pub fn get_round1_signing_package(
     psbt: &mut Psbt,
     min_signers: u16,
     db: &Database,
     my_identifier: &Identifier,
-    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<Vec<(SigningNonces, SigningCommitments)>, SigningRound1Error> {
     // TODO: re-enable this check
     // check fee is within acceptable range
@@ -59,7 +55,7 @@ pub async fn get_round1_signing_package(
     // }
 
     // Validate PSBT
-    validate_psbt(psbt, ROUND1, min_signers, db, botanix_eth_client).await?;
+    validate_psbt(psbt, ROUND1, min_signers, db)?;
 
     let num_inputs = psbt.inputs.len();
 
@@ -85,16 +81,15 @@ pub async fn get_round1_signing_package(
 /// Important note here is that we never reuse the same nonce pairs for a different signing
 /// request Should always generate new ones or if we are in a signing session refuse
 /// to provide new ones
-pub async fn get_round2_signing_package(
+pub fn get_round2_signing_package(
     psbt: &mut Psbt,
     min_signers: u16,
     db: &Database,
     identifier: &Identifier,
     // Each nonce pair is commitment to a input of the tx
     signing_nonces: &[(SigningNonces, SigningCommitments)],
-    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<(), SigningRound2Error> {
-    validate_psbt(psbt, ROUND1, min_signers, db, botanix_eth_client).await?;
+    validate_psbt(psbt, ROUND1, min_signers, db)?;
 
     let tx = psbt.clone().extract_tx()?;
     let num_inputs = tx.input.len();

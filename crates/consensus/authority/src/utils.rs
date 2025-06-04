@@ -125,6 +125,7 @@ pub(crate) fn get_utxos_from_pegin_meta(pegins: &[PeginMeta]) -> Vec<Utxo> {
 pub(crate) fn get_pending_pegouts_from_pegout_data(
     pegouts: &[PegoutWithId],
     height: u64,
+    timestamp: u64,
 ) -> Vec<PendingPegout> {
     if pegouts.is_empty() {
         return vec![];
@@ -136,6 +137,7 @@ pub(crate) fn get_pending_pegouts_from_pegout_data(
             spk: pegout.data.destination.script_pubkey().to_bytes().to_vec(),
             amount: pegout.data.amount.to_sat(),
             height,
+            timestamp,
         })
         .collect::<Vec<_>>()
 }
@@ -311,12 +313,13 @@ pub(crate) async fn get_block_pegouts(
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
     max_cutoff_age: Option<Duration>,
-) -> Result<Vec<PegoutId>, EpochPegoutsError> {
-    let mut pegouts = Vec::new();
+) -> Result<Vec<(PegoutId, u64)>, EpochPegoutsError> {
+    let mut pegouts: Vec<(PegoutId, u64)> = Vec::new();
     match client.block_by_number(block) {
         Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+            let block_timestamp = block.header.timestamp;
             if let Some(max_cutoff_age) = max_cutoff_age {
-                if !is_block_age_acceptable(block.header.timestamp, max_cutoff_age) {
+                if !is_block_age_acceptable(block_timestamp, max_cutoff_age) {
                     warn!("Block number {:?} is too old, ignoring ...", block.header.number);
                     return Ok(pegouts);
                 }
@@ -350,7 +353,7 @@ pub(crate) async fn get_block_pegouts(
                                 let mut tx_hash_array = [0u8; 32];
                                 tx_hash_array.copy_from_slice(tx.hash().as_slice());
                                 let pegout_id = PegoutId::new(tx_hash_array, index as u32);
-                                pegouts.push(pegout_id);
+                                pegouts.push((pegout_id, block_timestamp));
                             }
                         }
                     }

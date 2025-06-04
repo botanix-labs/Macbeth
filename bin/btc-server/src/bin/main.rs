@@ -21,7 +21,6 @@ use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btcserverlib::{
     badarg,
-    botanix_client::{BotanixEthClient, Error as BotanixEthClientError},
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self, error::CoordinatorError},
     database, dkg,
@@ -109,8 +108,6 @@ pub enum Error {
     DkgStateMachine(#[from] dkg::Error),
     #[error("Dkg deserialization error: {0}")]
     DkgDeserialization(#[from] ciborium::de::Error<std::io::Error>),
-    #[error("Botanix Ethereum Client Error: {0}")]
-    BotanixEthClient(#[from] BotanixEthClientError),
 }
 
 // To status util to convert Results with top level errors to tonic::Status
@@ -144,9 +141,6 @@ impl<T, S: Into<Error> + Debug> ToStatus<T> for Result<T, S> {
                 Error::DkgStateMachine(dkg) => Err(internal!("Dkg state machine error: {}", dkg)),
                 Error::DkgDeserialization(de) => {
                     Err(internal!("Dkg deserialization error: {}", de))
-                }
-                Error::BotanixEthClient(de) => {
-                    Err(internal!("Botanix Ethereum Client error: {}", de))
                 }
             },
         }
@@ -256,8 +250,6 @@ struct App<BitcoinRpcApi> {
     fall_back_fee_rate: bitcoin::FeeRate,
     /// telemetry
     telemetry: Option<Arc<Telemetry>>,
-    /// Botanix Ethereum client
-    botanix_eth_client: BotanixEthClient,
 }
 
 impl<BitcoindClient> App<BitcoindClient>
@@ -479,7 +471,6 @@ where
             identifier: frost_identifier,
             dkg,
             frost_round1_nonces: Arc::new(Mutex::new(None)),
-            botanix_eth_client: BotanixEthClient::new(config.rpc_port)?,
             config,
             btc_signing_server_jwt_secret,
             min_signers,
@@ -673,6 +664,7 @@ where
                     spk,
                     value: Amount::from_sat(p.amount),
                     botanix_height: p.height,
+                    timestamp: Some(p.timestamp),
                 })
             })
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
@@ -734,6 +726,12 @@ where
                     spk: p.spk.into_bytes().to_vec(),
                     amount: p.value.to_sat(),
                     height: p.botanix_height,
+                    timestamp: p.timestamp.unwrap_or(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .expect("valid duration")
+                            .as_secs() as u64,
+                    ),
                 })
                 .collect(),
         });
@@ -777,6 +775,13 @@ where
                                 .map(|p| rpc::FinalizedPegout {
                                     id: p.id.as_bytes().to_vec(),
                                     botanix_block_height: p.block_number,
+                                    botanix_block_timestamp: p.timestamp.unwrap_or(
+                                        std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .expect("valid duration")
+                                            .as_secs()
+                                            as u64,
+                                    ),
                                 })
                                 .collect(),
                             chunk_index,
@@ -910,6 +915,7 @@ where
                 Ok(btcserverlib::database::FinalizedPegout {
                     id: PegoutId::from_bytes(&v.id)?,
                     block_number: v.botanix_block_height,
+                    timestamp: Some(v.botanix_block_timestamp),
                 })
             })
             .collect::<Result<Vec<btcserverlib::database::FinalizedPegout>, ()>>()
@@ -975,9 +981,7 @@ where
             self.min_signers,
             &self.db,
             &self.identifier,
-            &self.botanix_eth_client,
         )
-        .await
         .map_err(SigningError::Round1)
         .to_status()?;
 
@@ -1026,9 +1030,7 @@ where
             &self.db,
             &self.identifier,
             &signing_nonces,
-            &self.botanix_eth_client,
         )
-        .await
         .map_err(|e| {
             if let Some(telemetry) = self.telemetry.as_ref() {
                 telemetry.update_signing_error_metrics(
@@ -1247,9 +1249,7 @@ where
             &self.db,
             self.min_signers,
             tracked_txs,
-            &self.botanix_eth_client,
         )
-        .await
         .to_status()?;
 
         // Log the outputs of the generated PSBT for debugging
@@ -1290,14 +1290,8 @@ where
             hex::encode(req.signing_session_id.clone())
         );
         let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let psbt = coordinator::get_to_sign(
-            &signing_session_id,
-            &self.db,
-            self.min_signers,
-            &self.botanix_eth_client,
-        )
-        .await
-        .to_status()?;
+        let psbt = coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
+            .to_status()?;
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
@@ -1333,9 +1327,7 @@ where
             &psbt,
             &self.db,
             self.min_signers,
-            &self.botanix_eth_client,
         )
-        .await
         .to_status()?;
 
         // if let Some(telemetry) = self.telemetry.as_ref() {
@@ -1371,9 +1363,7 @@ where
             &psbt,
             &self.db,
             self.min_signers,
-            &self.botanix_eth_client,
         )
-        .await
         .to_status()?;
 
         Ok(tonic::Response::new(rpc::Empty {}))
@@ -1734,7 +1724,6 @@ mod tests {
             metrics_port: Some(8080),
             fee_rate_diff_percentage: 10,
             fall_back_fee_rate_sat_per_vbyte: 1000,
-            rpc_port: 5454,
         };
 
         let app = App::new(config, bitcoind_client, None).expect("btc server");
@@ -2023,6 +2012,10 @@ mod tests {
                 spk: spk.clone().as_bytes().to_vec(),
                 amount: 100_000, // sats
                 height: 1,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("valid duration")
+                    .as_secs() as u64,
             });
         }
 
@@ -2069,8 +2062,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout =
-                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout = btcserverlib::database::FinalizedPegout {
+                id: pegout_id,
+                block_number: 100,
+                timestamp: None,
+            };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =
@@ -2098,8 +2094,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout =
-                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout = btcserverlib::database::FinalizedPegout {
+                id: pegout_id,
+                block_number: 100,
+                timestamp: None,
+            };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =

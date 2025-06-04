@@ -187,6 +187,7 @@ pub fn pegout_requests_from_tx(tx: &Transaction, pegout_idxs: &[usize]) -> Vec<P
             value: tx.output[*idx].value,
             id: create_random_pegout_id(),
             botanix_height: 0,
+            timestamp: None,
         });
     }
     pegout_requests
@@ -340,6 +341,7 @@ pub fn store_pending_pegout(db: &database::Db) -> PegoutId {
         value: Amount::from_sat(1000),
         spk: random_p2wpkh_script(),
         botanix_height: 0,
+        timestamp: None,
     };
     let _ = db.store_pending_pegout(&pegout_request);
 

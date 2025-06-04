@@ -197,9 +197,6 @@ pub struct CliConfig {
     /// http port
     #[arg(long)]
     metrics_port: Option<u16>,
-    /// rpc port
-    #[arg(long)]
-    rpc_port: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -242,8 +239,6 @@ pub struct Config {
     pub fee_rate_diff_percentage: u32,
     /// Fall back fee rate expressed in sat per vbyte
     pub fall_back_fee_rate_sat_per_vbyte: u64,
-    /// Rpc port
-    pub rpc_port: u16,
 }
 
 pub fn load_config() -> Result<Config, Error> {
@@ -268,7 +263,6 @@ pub fn load_config() -> Result<Config, Error> {
         metrics_port: cli_config.metrics_port,
         fee_rate_diff_percentage: cli_config.fee_rate_diff_percentage.unwrap_or(2),
         fall_back_fee_rate_sat_per_vbyte: cli_config.fall_back_fee_rate_sat_per_vbyte.unwrap_or(10),
-        rpc_port: cli_config.rpc_port,
     };
     Ok(config)
 }

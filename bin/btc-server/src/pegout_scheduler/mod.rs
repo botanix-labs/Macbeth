@@ -127,6 +127,8 @@ pub struct PegoutRequest {
     pub value: Amount,
     /// L2 block height this pegout was requested at.
     pub botanix_height: u64,
+    /// L2 block timestamp this pegout was requested at.
+    pub timestamp: Option<u64>,
 }
 
 impl PegoutRequest {
@@ -144,6 +146,7 @@ impl TryFrom<rpc::PendingPegout> for PegoutRequest {
             spk: ScriptBuf::from_bytes(pegout.spk),
             value: Amount::from_sat(pegout.amount),
             botanix_height: pegout.height,
+            timestamp: Some(pegout.timestamp),
         })
     }
 }
@@ -517,6 +520,7 @@ impl PegoutScheduler {
                     .map(|pegout_request| FinalizedPegout {
                         id: pegout_request.id,
                         block_number: pegout_request.botanix_height,
+                        timestamp: pegout_request.timestamp,
                     })
                     .collect();
 
@@ -863,6 +867,8 @@ pub enum BlockError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use bitcoin::{
         absolute::LockTime,
         blockdata::{
@@ -874,7 +880,6 @@ mod tests {
         TxIn,
     };
     use frost_secp256k1_tr as frost;
-    use once_cell::sync::Lazy;
 
     use crate::{
         frost_id,
@@ -892,7 +897,7 @@ mod tests {
     // A test transaction when you need a deterministic txid which is:
     // (855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2)
     // This is currently used to test `track_mempool()`
-    pub static TEST_TRANSACTION: Lazy<Transaction> = Lazy::new(|| Transaction {
+    pub static TEST_TRANSACTION: LazyLock<Transaction> = LazyLock::new(|| Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
@@ -973,6 +978,7 @@ mod tests {
                 value: tx.output[*i].value,
                 id: create_random_pegout_id(),
                 botanix_height: 0,
+                timestamp: None,
             };
             pegouts.push(pegout_req);
         }

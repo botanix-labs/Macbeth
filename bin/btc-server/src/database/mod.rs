@@ -82,11 +82,14 @@ pub struct FinalizedPegout {
     pub id: PegoutId,
     /// The Botanix block number.
     pub block_number: u64,
+    /// The timestamp of the pegout, if available.
+    #[serde(default)]
+    pub timestamp: Option<u64>,
 }
 
 impl FinalizedPegout {
-    pub fn new(id: PegoutId, block_number: u64) -> Self {
-        FinalizedPegout { id, block_number }
+    pub fn new(id: PegoutId, block_number: u64, timestamp: Option<u64>) -> Self {
+        FinalizedPegout { id, block_number, timestamp }
     }
 }
 
@@ -1032,6 +1035,13 @@ mod tests {
     use super::*;
     use crate::pegout_id::PegoutId;
 
+    // Original structure (simulating old version)
+    #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+    struct OldFinalizedPegout {
+        pub id: PegoutId,
+        pub block_number: u64,
+    }
+
     #[test]
     fn can_save_and_read_pegout_reqs() {
         let (db, _temp_dir) = setup_db();
@@ -1042,6 +1052,7 @@ mod tests {
             spk: ScriptBuf::from_bytes(vec![0x01, 0x02, 0x03]),
             value: Amount::from_sat(1000),
             botanix_height: 1,
+            timestamp: None,
         };
         db.store_pending_pegout(&req).unwrap();
         let pegouts = db.get_pending_pegouts().unwrap();
@@ -1077,6 +1088,7 @@ mod tests {
                 spk: random_p2wpkh_script(),
                 value: Amount::from_sat(100_000),
                 botanix_height: 50 - i,
+                timestamp: None,
             };
             db.store_pending_pegout(&req).unwrap();
         }
@@ -1123,6 +1135,7 @@ mod tests {
                 spk: random_p2wpkh_script(),
                 value: Amount::from_sat(100_000),
                 botanix_height: 1,
+                timestamp: None,
             };
             pegouts.push(req);
         }
@@ -1152,6 +1165,7 @@ mod tests {
                 spk: random_p2wpkh_script(),
                 value: Amount::from_sat(100_000),
                 botanix_height: 1,
+                timestamp: None,
             };
             pegouts.push(req);
         }
@@ -1180,6 +1194,7 @@ mod tests {
                 spk: random_p2wpkh_script(),
                 value: Amount::from_sat(100_000),
                 botanix_height: 1,
+                timestamp: None,
             };
             db.store_pending_pegout(&req).unwrap();
         }
@@ -1413,7 +1428,8 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout =
+                FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =
@@ -1431,7 +1447,8 @@ mod tests {
 
         // // Adding an additional pegout id should change the merkle root
         let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), num_txs + 1 as u32);
-        let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+        let finalized_pegout =
+            FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
         db.store_finalized_pegout_id(&finalized_pegout).unwrap();
         db.update_finalized_pegout_ids_merkle_root().unwrap();
         db.flush().unwrap();
@@ -1447,7 +1464,8 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout =
+                FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =
@@ -1486,7 +1504,8 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout =
+                FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =
@@ -1524,7 +1543,8 @@ mod tests {
         let mut pegouts = vec![];
         for _ in 0..num_pegout_ids {
             let pegout_id = create_random_pegout_id();
-            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout =
+                FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
             pegouts.push(finalized_pegout);
         }
         let pegout_slice = pegouts.iter().collect::<Vec<&FinalizedPegout>>();
@@ -1547,7 +1567,8 @@ mod tests {
         let mut pegouts = vec![];
         for _ in 0..num_pegout_ids {
             let pegout_id = create_random_pegout_id();
-            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout =
+                FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
             pegouts.push(finalized_pegout);
         }
         let pegout_slice = pegouts.iter().collect::<Vec<&FinalizedPegout>>();
@@ -1613,6 +1634,7 @@ mod tests {
             value: tx.output[0].value,
             id: create_random_pegout_id(),
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx = Tx {
             txid: tx.compute_txid(),
@@ -1653,6 +1675,7 @@ mod tests {
                 value: tx.output[0].value,
                 id: create_random_pegout_id(),
                 botanix_height: 0,
+                timestamp: None,
             }];
             let tracked_tx = Tx {
                 txid: tx.compute_txid(),
@@ -1690,6 +1713,7 @@ mod tests {
                 value: tx.output[0].value,
                 id: create_random_pegout_id(),
                 botanix_height: 0,
+                timestamp: None,
             }];
             let tracked_tx = Tx {
                 txid: tx.compute_txid(),
@@ -1723,6 +1747,7 @@ mod tests {
             value: tx.output[0].value,
             id: create_random_pegout_id(),
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx = Tx {
             txid: tx.compute_txid(),
@@ -1749,6 +1774,7 @@ mod tests {
             value: tx.output[0].value,
             id: create_random_pegout_id(),
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx2 = Tx {
             txid: tx2.compute_txid(),
@@ -1782,6 +1808,7 @@ mod tests {
             id: create_random_pegout_id(),
             spk: tx.output[0].script_pubkey.clone(),
             value: tx.output[0].value,
+            timestamp: None,
         };
         db.store_pending_pegout(&pegout_req).unwrap();
         db.flush().unwrap();
@@ -1800,6 +1827,7 @@ mod tests {
             id: create_random_pegout_id(),
             spk: tx.output[1].script_pubkey.clone(),
             value: tx.output[1].value,
+            timestamp: None,
         };
         db.store_pending_pegout(&pegout_req2).unwrap();
         db.flush().unwrap();
@@ -1818,6 +1846,7 @@ mod tests {
             id: create_random_pegout_id(),
             spk: tx.output[0].script_pubkey.clone(),
             value: tx.output[0].value,
+            timestamp: None,
         };
         db.store_pending_pegout(&pegout_req).unwrap();
         db.flush().unwrap();
@@ -1839,6 +1868,7 @@ mod tests {
             id: create_random_pegout_id(),
             spk: tx.output[0].script_pubkey.clone(),
             value: tx.output[0].value,
+            timestamp: None,
         };
         db.store_pending_pegout(&pegout_req).unwrap();
         db.flush().unwrap();
@@ -1849,6 +1879,7 @@ mod tests {
             id: create_random_pegout_id(),
             spk: tx2.output[0].script_pubkey.clone(),
             value: tx2.output[0].value,
+            timestamp: None,
         };
         db.reset_pending_pegouts(&[&pegout_req2]).unwrap();
         db.flush().unwrap();
@@ -1867,6 +1898,7 @@ mod tests {
             value: tx.output[0].value,
             id: create_random_pegout_id(),
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx = Tx {
             txid: tx.compute_txid(),
@@ -1895,6 +1927,7 @@ mod tests {
             value: tx.output[0].value,
             id: create_random_pegout_id(),
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx = Tx {
             txid: tx.compute_txid(),
@@ -1913,6 +1946,7 @@ mod tests {
             value: tx2.output[0].value,
             id: create_random_pegout_id(),
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx2 = Tx {
             txid: tx2.compute_txid(),
@@ -1928,5 +1962,43 @@ mod tests {
         let tracked_txs = db.get_tracked_txs().unwrap();
         assert_eq!(tracked_txs.len(), 1);
         assert_eq!(tracked_txs[0], tracked_tx2);
+    }
+
+    #[test]
+    fn test_deserialize_old_data_with_json() {
+        let mut rng = thread_rng();
+        // Simulate old serialized data (without timestamp field)
+        let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), 1 as u32);
+        let old_pegout = OldFinalizedPegout { id: pegout_id.clone(), block_number: 100 };
+
+        // Serialize with old structure
+        let serialized_old = serde_json::to_vec(&old_pegout).unwrap();
+
+        // Deserialize with new structure - should have timestamp = None
+        let deserialized_new: FinalizedPegout = serde_json::from_slice(&serialized_old).unwrap();
+
+        assert_eq!(deserialized_new.id, pegout_id);
+        assert_eq!(deserialized_new.block_number, 100);
+        assert_eq!(deserialized_new.timestamp, None);
+    }
+
+    #[test]
+    fn test_deserialize_new_data_with_some_timestamp() {
+        let mut rng = thread_rng();
+        // Simulate new serialized data (with timestamp field)
+        let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), 1 as u32);
+        // Test new data with explicit Some timestamp
+        let new_pegout = FinalizedPegout {
+            id: pegout_id.clone(),
+            block_number: 200,
+            timestamp: Some(1234567890), // Example timestamp
+        };
+
+        // Serialize and deserialize to old finalized pegout
+        let serialized = serde_json::to_vec(&new_pegout).unwrap();
+        let deserialized: OldFinalizedPegout = serde_json::from_slice(&serialized).unwrap();
+
+        assert_eq!(deserialized.id, pegout_id);
+        assert_eq!(deserialized.block_number, 200);
     }
 }

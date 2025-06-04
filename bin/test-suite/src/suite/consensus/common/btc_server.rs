@@ -56,7 +56,6 @@ fn spawn_btc_server_process(
     members_keypairs: &Vec<(secp256k1::SecretKey, secp256k1::PublicKey, PeerId, Address)>,
     id: u16,
     btc_server_port: u16,
-    rpc_port: u16,
     db_path: PathBuf,
 ) -> anyhow::Result<SpawnedBtcServerProcess> {
     let db_path_arg = db_path.display().to_string();
@@ -73,7 +72,6 @@ fn spawn_btc_server_process(
     let frost_min_signers = global_context.min_signers.to_string();
     let address = format!("0.0.0.0:{}", btc_server_port);
     let _http_port = (BTC_SERVER_HTTP_PORT + id).to_string();
-    let rpc_port = rpc_port.to_string();
 
     let command = "target/debug/btc-server";
     let binary_abs_path = working_directory.join(Path::new(command));
@@ -148,8 +146,6 @@ fn spawn_btc_server_process(
         global_context.bitcoind_user.as_str(),
         "--bitcoind-pass",
         global_context.bitcoind_pass.as_str(),
-        "--rpc-port",
-        rpc_port.as_str(),
         "--fee-rate-diff-percentage",
         "50",
         "--fall-back-fee-rate-sat-per-vbyte",
@@ -182,13 +178,11 @@ pub fn spawn_n_btc_server_processes(
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
         std::fs::create_dir_all(&db_path).context("failed to create tempdir with db subdir")?;
         let btc_server_port = BTC_SERVER_START_PORT + i;
-        let rpc_port = RPC_PORT_BASE + i;
         let child_process = spawn_btc_server_process(
             global_context.clone(),
             members_keypairs,
             i,
             btc_server_port,
-            rpc_port,
             db_path.clone(),
         )?;
         processes.push(child_process);

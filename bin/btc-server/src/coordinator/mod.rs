@@ -1,7 +1,6 @@
 use log::{debug, error, info};
 
 use crate::{
-    botanix_client::BotanixEthClientTrait,
     coordinator::error::CoordinatorError,
     database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
@@ -24,16 +23,15 @@ pub mod error;
 #[allow(dead_code)]
 const MIN_RELAY_FEE_RATE_SAT_VB: u64 = 1;
 
-pub async fn add_round1_signing(
+pub fn add_round1_signing(
     signing_session_id: &[u8; 32],
     frost_id: frost::Identifier,
     psbt: &Psbt,
     db: &Db,
     min_signers: u16,
-    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<(), CoordinatorError> {
     let _start = Instant::now();
-    validate_psbt(psbt, ROUND1, min_signers, db, botanix_eth_client).await?;
+    validate_psbt(psbt, ROUND1, min_signers, db)?;
 
     info!("psbt() = {}", psbt);
 
@@ -58,16 +56,15 @@ pub async fn add_round1_signing(
     Ok(())
 }
 
-pub async fn add_round2_signing(
+pub fn add_round2_signing(
     signing_session_id: &[u8; 32],
     frost_id: frost::Identifier,
     psbt: &Psbt,
     db: &Db,
     min_signers: u16,
-    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<(), CoordinatorError> {
     // validate PSBT
-    validate_psbt(psbt, ROUND2, min_signers, db, botanix_eth_client).await?;
+    validate_psbt(psbt, ROUND2, min_signers, db)?;
 
     db.update_psbt(signing_session_id, psbt)?;
     db.flush()?;
@@ -86,14 +83,13 @@ pub async fn add_round2_signing(
     Ok(())
 }
 
-pub async fn make_tx(
+pub fn make_tx(
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
     change_script: ScriptBuf,
     db: &Db,
     min_signers: u16,
     tracked_txs: Vec<Tx>,
-    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<Psbt, CoordinatorError> {
     // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate
@@ -189,7 +185,7 @@ pub async fn make_tx(
 
     // Sanity check that we created a valid PSBT
     // This should not fail
-    validate_psbt(&psbt, NO_FLAGS, min_signers, db, botanix_eth_client).await?;
+    validate_psbt(&psbt, NO_FLAGS, min_signers, db)?;
 
     Ok(psbt)
 }
@@ -197,11 +193,10 @@ pub async fn make_tx(
 /// If no Err is return the original psbt served to this function is good to go out to the
 /// signers nothing needs to be added to it as the signers all provided their signing
 /// commitments already and the coordinator just need to verify them
-pub async fn get_to_sign(
+pub fn get_to_sign(
     signing_session_id: &[u8; 32],
     db: &Db,
     min_signers: u16,
-    botanix_eth_client: &dyn BotanixEthClientTrait,
 ) -> Result<Psbt, CoordinatorError> {
     // Note that the tweaks and signing commitments should be explicitly verified by the signers
     // before signing Instead we can add it to the psbt as a proprietary field for each
@@ -216,7 +211,7 @@ pub async fn get_to_sign(
             }
         }
 
-        validate_psbt(&psbt, ROUND1_TRANSITION, min_signers, db, botanix_eth_client).await?;
+        validate_psbt(&psbt, ROUND1_TRANSITION, min_signers, db)?;
         return Ok(psbt);
     }
 
