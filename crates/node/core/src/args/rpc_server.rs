@@ -267,11 +267,21 @@ pub struct RpcServerArgs {
     pub btc_network: bitcoin::Network,
 
     /// The minimum number required for frost signing.
-    #[arg(long = "frost.min_signers", name = "frost.min_signers", value_name = "MIN_SIGNERS", env = "RETH_FROST_MIN_SIGNERS")]
+    #[arg(
+        long = "frost.min_signers",
+        name = "frost.min_signers",
+        value_name = "MIN_SIGNERS",
+        env = "RETH_FROST_MIN_SIGNERS"
+    )]
     pub min_signers: Option<u16>,
 
     /// The maximum number required for frost signing.
-    #[arg(long = "frost.max_signers", name = "frost.max_signers", value_name = "MAX_SIGNERS", env = "RETH_FROST_MAX_SIGNERS")]
+    #[arg(
+        long = "frost.max_signers",
+        name = "frost.max_signers",
+        value_name = "MAX_SIGNERS",
+        env = "RETH_FROST_MAX_SIGNERS"
+    )]
     pub max_signers: Option<u16>,
 }
 

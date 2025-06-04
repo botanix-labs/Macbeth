@@ -22,12 +22,12 @@ pub struct LogArgs {
     // TODO: Remove `reth_authority_consensus=trace` when ready for wide audience.
     /// The filter to use for logs written to stdout.
     #[arg(
-    long = "log.stdout.filter",
-    value_name = "FILTER",
-    global = true,
-    env = "RETH_LOG_STDOUT_FILTER",
-    default_value = "block_with_context=off"
-)]
+        long = "log.stdout.filter",
+        value_name = "FILTER",
+        global = true,
+        env = "RETH_LOG_STDOUT_FILTER",
+        default_value = "block_with_context=off"
+    )]
     pub log_stdout_filter: String,
 
     /// The format to use for logs written to the log file.
@@ -47,33 +47,33 @@ pub struct LogArgs {
 
     /// The path to put log files in.
     #[arg(
-    long = "log.file.directory",
-    value_name = "PATH",
-    global = true,
-    default_value_t,
-    env = "RETH_LOG_FILE_DIRECTORY"
-)]
+        long = "log.file.directory",
+        value_name = "PATH",
+        global = true,
+        default_value_t,
+        env = "RETH_LOG_FILE_DIRECTORY"
+    )]
     pub log_file_directory: PlatformPath<LogsDir>,
 
     /// The maximum size (in MB) of one log file.
     #[arg(
-    long = "log.file.max-size",
-    value_name = "SIZE",
-    global = true,
-    default_value_t = 200,
-    env = "RETH_LOG_FILE_MAX_SIZE"
-)]
+        long = "log.file.max-size",
+        value_name = "SIZE",
+        global = true,
+        default_value_t = 200,
+        env = "RETH_LOG_FILE_MAX_SIZE"
+    )]
     pub log_file_max_size: u64,
 
     /// The maximum amount of log files that will be stored. If set to 0, background file logging
     /// is disabled.
     #[arg(
-    long = "log.file.max-files",
-    value_name = "COUNT",
-    global = true,
-    default_value_t = 5,
-    env = "RETH_LOG_FILE_MAX_FILES"
-)]
+        long = "log.file.max-files",
+        value_name = "COUNT",
+        global = true,
+        default_value_t = 5,
+        env = "RETH_LOG_FILE_MAX_FILES"
+    )]
     pub log_file_max_files: usize,
 
     /// Write logs to journald.
@@ -82,12 +82,12 @@ pub struct LogArgs {
 
     /// The filter to use for logs written to journald.
     #[arg(
-    long = "log.journald.filter",
-    value_name = "FILTER",
-    global = true,
-    env = "RETH_LOG_JOURNALD_FILTER",
-    default_value = "error"
-)]
+        long = "log.journald.filter",
+        value_name = "FILTER",
+        global = true,
+        env = "RETH_LOG_JOURNALD_FILTER",
+        default_value = "error"
+    )]
     pub journald_filter: String,
 
     /// Sets whether or not the formatter emits ANSI terminal escape codes for colors and other

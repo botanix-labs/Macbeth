@@ -69,7 +69,13 @@ pub struct NetworkArgs {
 
     /// The path to the known peers file. Connected peers are dumped to this file on nodes
     /// shutdown, and read on startup. Cannot be used with `--no-persist-peers`.
-    #[arg(long, value_name = "FILE", verbatim_doc_comment, conflicts_with = "no_persist_peers", env = "RETH_PEERS_FILE")]
+    #[arg(
+        long,
+        value_name = "FILE",
+        verbatim_doc_comment,
+        conflicts_with = "no_persist_peers",
+        env = "RETH_PEERS_FILE"
+    )]
     pub peers_file: Option<PathBuf>,
 
     /// Custom node identity

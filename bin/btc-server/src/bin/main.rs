@@ -1296,6 +1296,7 @@ where
         &self,
         req: tonic::Request<rpc::SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        let start = Instant::now();
         self.validate_jwt(&req)?;
         // Ensure we have a key package
         self.db.get_key_package().to_status()?;
@@ -1318,15 +1319,15 @@ where
         )
         .to_status()?;
 
-        // if let Some(telemetry) = self.telemetry.as_ref() {
-        //     telemetry.update_round1_signing_metrics(
-        //         self.btc_network,
-        //         self.config.identifier,
-        //         &signing_session_id,
-        //         written_data,
-        //         start.elapsed().as_millis(),
-        //     )
-        // }
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_round1_signing_metrics(
+                self.btc_network,
+                self.config.identifier,
+                &signing_session_id,
+                req.psbt.as_slice().len(),
+                start.elapsed().as_millis(),
+            )
+        }
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -1335,6 +1336,7 @@ where
         &self,
         req: tonic::Request<rpc::SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        let start = Instant::now();
         self.validate_jwt(&req)?;
         // Ensure we have a key package
         self.db.get_key_package().to_status()?;
@@ -1353,6 +1355,16 @@ where
             self.min_signers,
         )
         .to_status()?;
+
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_round2_signing_metrics(
+                self.btc_network,
+                self.config.identifier,
+                &signing_session_id,
+                req.psbt.as_slice().len(),
+                start.elapsed().as_millis(),
+            )
+        }
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
