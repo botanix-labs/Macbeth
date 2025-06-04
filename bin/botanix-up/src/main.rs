@@ -249,7 +249,7 @@ fn create_docker_compose_dot_env_file(
     comet_configs: &[comet_node::CometBftNodeConfig],
 ) -> AnyResult<()> {
     for config in comet_configs {
-        let project_name = format!("botanix{}", config.index + 1);
+        let project_name = format!("{}{}", cli.project_name_prefix, config.index + 1);
 
         let node_path = cli.output_path.join(format!("node-{}", config.index + 1));
 
