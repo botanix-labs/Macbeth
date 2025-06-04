@@ -339,12 +339,10 @@ async fn inner_main() -> AnyResult<()> {
     // Basic sanity checks
     cli.validate()?;
 
-    let output_path = &cli.output_path;
-
-    println!("Output path: {:?}", output_path);
+    println!("Output path: {:?}", &cli.output_path);
 
     // Create the output directory
-    fs::create_dir_all(output_path)?;
+    fs::create_dir_all(&cli.output_path)?;
 
     let comet_configs = create_cometbft_node_configs(&cli)
         .await
@@ -354,7 +352,7 @@ async fn inner_main() -> AnyResult<()> {
 
     create_federation_config(&poa_configs).context("creating federation config")?;
 
-    copy_poa_configs_to_btc_server(&poa_configs, output_path)
+    copy_poa_configs_to_btc_server(&poa_configs, &cli.output_path)
         .context("copying poa configs to btc server")?;
 
     if !cli.non_docker {
