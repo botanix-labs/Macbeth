@@ -24,7 +24,9 @@ use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader, SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader, WalletStateSyncWriter
+    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
+    SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader,
+    WalletStateSyncWriter,
 };
 
 use reth_tasks::TaskExecutor;
