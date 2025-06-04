@@ -31,6 +31,8 @@ pub enum Error {
     HashEngine(#[from] std::io::Error),
     #[error("Invalid UTXO version number {0}")]
     InvalidUTXOVersion(u32),
+    #[error("Tracked tx not found in Pegout Scheduler")]
+    TrackedTxNotFoundInPegoutScheduler,
 }
 
 impl PartialEq for Error {

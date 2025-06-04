@@ -2,13 +2,13 @@
 //! state
 use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::ExecutedBlock;
-use reth_chainspec::{ChainSpec, BOTANIX_TESTNET_CHAIN_ID};
+use reth_chainspec::ChainSpec;
 use reth_db::{
-    models::{SnapshotSync, SnapshotSyncId},
+    models::{self, SnapshotSync, SnapshotSyncId},
     Database, DatabaseEnv,
 };
 use reth_provider::{
-    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome, StagedHeader,
 };
 use reth_trie::{updates::TrieUpdates, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
@@ -108,11 +108,13 @@ use super::proto_debug::{
 use crate::{
     builder::BitcoinCheckpoint,
     comet_bft::{
-        non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
+        non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
+        utils::transactions_signed_from_bytes,
     },
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     metrics::AuthorityMetrics,
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
+    utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
     AuthorityConsensus, Storage,
 };
 use tracing::{debug, error, info, instrument, trace, warn};
@@ -212,6 +214,7 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
     snapshot_format: u32,
     block_fee_recipient_address: Option<reth_primitives::Address>,
+    blockchain_db: BlockchainProvider2<Arc<DatabaseEnv>>,
 }
 
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
@@ -242,6 +245,16 @@ where
         snapshot_format: u32,
         block_fee_recipient_address: Option<reth_primitives::Address>,
     ) -> Self {
+        let latest_sealed_header = storage
+            .client
+            .latest_header()
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| storage.chain_spec.sealed_genesis_header());
+        let blockchain_db =
+            BlockchainProvider2::with_latest(provider_factory.clone(), latest_sealed_header)
+                .expect("blockchain db to exist");
+
         Self {
             storage,
             bitcoin_checkpoint,
@@ -257,6 +270,7 @@ where
             snapshot_sync_state_lock: Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
             snapshot_format,
             block_fee_recipient_address,
+            blockchain_db,
         }
     }
 
@@ -284,6 +298,7 @@ where
             self.snapshot_sync_state_lock.clone(),
             self.snapshot_format,
             self.block_fee_recipient_address,
+            self.blockchain_db.clone(),
         );
 
         let server_builder = ServerBuilder::default();
@@ -359,7 +374,7 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
     snapshot_format: u32,
     block_fee_recipient_address: Option<reth_primitives::Address>,
-    is_testnet: bool,
+    blockchain_db: BlockchainProvider2<Arc<DatabaseEnv>>,
 }
 
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
@@ -392,6 +407,7 @@ where
         snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
         snapshot_format: u32,
         block_fee_recipient_address: Option<reth_primitives::Address>,
+        blockchain_db: BlockchainProvider2<Arc<DatabaseEnv>>,
     ) -> Self {
         // Saving the last 5 blocks that were proposed
         let block_cache = Arc::new(RwLock::new(BlockCache {
@@ -417,7 +433,7 @@ where
             snapshot_sync_state_lock,
             snapshot_format,
             block_fee_recipient_address,
-            is_testnet: storage.chain_spec.chain.id() == BOTANIX_TESTNET_CHAIN_ID,
+            blockchain_db,
         }
     }
 
@@ -468,9 +484,7 @@ where
             .block_fee_recipient_address
             .ok_or(ConsensusError::MissingBlockFeeRecipientAddress)?;
 
-        // Only v1 is supported for block production
-        // v0 is only used for historical syncing in testnet
-        let ndd = NonDeterministicData::new_v1(
+        let ndd = NonDeterministicData::new(
             self.bitcoin_blockhash()?,
             aggregate_public_key,
             block_fee_recipient_address,
@@ -965,28 +979,26 @@ where
                 // now take the entire snapshot data
                 match client.get_snapshot_by_id(snapshot_id) {
                     Ok(Some(snapshot)) => {
-                        let mapped_request_chunk = request.chunk + 1;
-                        // check if the chunk id is found in the snapshot.
-                        // NOTE: we shift by 1 since all mdbx chunks start at 1 and cometbft
-                        // numeration starts at 0
-                        if !snapshot
-                            .chunk_ids()
-                            .iter()
-                            .any(|chunk_id| mapped_request_chunk as u64 == *chunk_id)
-                        {
-                            error!(
-                                "Chunk id {:?} in snapshot with id {:?} not found",
-                                mapped_request_chunk, snapshot_id
-                            );
+                        // NOTE: all cometbft numeration starts at 0
+                        let requested_chunk_index = request.chunk;
+                        let chunk_id =
+                            match snapshot.chunk_ids().get(requested_chunk_index as usize) {
+                                Some(chunk_id) => *chunk_id,
+                                None => {
+                                    error!(
+                                    "Requested chunk with index {:?} not found in snapshot {:?}",
+                                    request.chunk, snapshot_id
+                                );
 
-                            let response = ResponseLoadSnapshotChunk::default();
+                                    let response = ResponseLoadSnapshotChunk::default();
 
-                            trace!("return={:?}", response);
+                                    trace!("return={:?}", response);
 
-                            return response;
-                        }
+                                    return response;
+                                }
+                            };
 
-                        match client.get_chunk_by_id(mapped_request_chunk as u64) {
+                        match client.get_chunk_by_id(chunk_id) {
                             Ok(Some(chunk)) => {
                                 let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
                                 let compressor = self.compressor.clone();
@@ -1028,14 +1040,13 @@ where
                                 res
                             }
                             Ok(None) => {
-                                error!("Chunk with id {:?} not found", mapped_request_chunk);
-
+                                error!("Chunk with id {:?} not found", chunk_id);
                                 ResponseLoadSnapshotChunk::default()
                             }
                             Err(e) => {
                                 error!(
                                     "DB error getting chunk with id: {:?}. Error = {:?}",
-                                    mapped_request_chunk, e
+                                    chunk_id, e
                                 );
                                 ResponseLoadSnapshotChunk::default()
                             }
@@ -1245,10 +1256,10 @@ where
             blocks_with_senders.into_iter().map(|block| block.seal_slow()).collect::<Vec<_>>();
 
         if let Err(e) = provider.append_blocks_with_state(
-            sealed_blocks_with_senders,
-            exec_outcome,
+            sealed_blocks_with_senders.clone(),
+            exec_outcome.clone(),
             hashed_state.into_sorted(),
-            trie_updates,
+            trie_updates.clone(),
         ) {
             error!(
                 "Error appending blocks with state {:?} in the db. error = {:?}",
@@ -1272,6 +1283,52 @@ where
                 reject_senders: vec![],
             };
         };
+
+        for sealed_block_with_senders in sealed_blocks_with_senders.into_iter() {
+            let senders = sealed_block_with_senders.senders().unwrap_or_default();
+            let hashed_state = exec_outcome.hash_state_slow();
+            let block_height = sealed_block_with_senders.block.number;
+            let new_header = sealed_block_with_senders.block.header.clone();
+            let sealed_block = sealed_block_with_senders.block.clone();
+
+            let executed_block = ExecutedBlock::new(
+                Arc::new(sealed_block),
+                Arc::new(senders),
+                Arc::new(exec_outcome.clone()),
+                Arc::new(hashed_state.clone()),
+                Arc::new(trie_updates.clone()),
+            );
+
+            let new_chain =
+                reth_chain_state::NewCanonicalChain::Commit { new: vec![executed_block] };
+            self.blockchain_db.canonical_in_memory_state().update_chain(new_chain);
+
+            self.blockchain_db.on_forkchoice_update_received(&ForkchoiceState::default());
+            self.blockchain_db.set_canonical_head(new_header.clone());
+            self.blockchain_db.set_safe(new_header.clone());
+            self.blockchain_db.set_finalized(new_header.clone());
+
+            self.blockchain_db
+                .canonical_in_memory_state()
+                .remove_persisted_blocks(block_height - 1);
+
+            let chain =
+                Chain::new(vec![sealed_block_with_senders].into_iter(), exec_outcome.clone(), None);
+
+            // Note: we are not parsing the block for pegins and pegouts here.
+            // This is safe for rpc nodes but not for the federation nodes especially the
+            // coordinator: If the coordinator uses snapshots, it will be unaware of
+            // pending pegouts that need to be honored. The coordinator creates pegouts
+            // from pending pegouts in it's database. The coordinator must use block
+            // sync instead of snapshot sync. TODO: refactor to handle pegins/pegouts
+            self.blockchain_db.canonical_in_memory_state().notify_canon_state(
+                CanonStateNotification::Commit {
+                    new: Arc::new(chain),
+                    pegins: None,
+                    pegouts: None,
+                },
+            );
+        }
 
         ResponseApplySnapshotChunk {
             result: ApplySnapshotResult::Accept as i32,
@@ -1451,7 +1508,12 @@ where
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#checktx
     fn check_tx(&self, _request: RequestCheckTx) -> ResponseCheckTx {
-        unreachable!("check_tx is not supported to be called. CometBFT mempool is not used");
+        error!("check_tx method is called. CometBFT mempool is not supported.");
+        ResponseCheckTx {
+            code: 1,
+            log: "CometBFT mempool is not supported".to_string(),
+            ..Default::default()
+        }
     }
 
     /// docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#prepareproposal
@@ -1580,39 +1642,14 @@ where
             }
         };
 
+        if non_deterministic_data.version() != LATEST_NDD_VERSION {
+            warn!(
+                ?non_deterministic_data,
+                "processing block with unknown non-deterministic data version"
+            );
+        }
+
         trace!("non_deterministic_data={:?}", non_deterministic_data);
-
-        // Only NDD V1 is supported for block production so validate `block_fee_recipient_address`
-        // exists
-        let block_fee_recipient_address = match non_deterministic_data.block_fee_recipient_address {
-            Some(address) => address,
-            None => {
-                warn!("Block fee recipient address is not set in process proposal");
-
-                if tracing::enabled!(tracing::Level::WARN) {
-                    let execution_time = execution_start_time.elapsed().as_secs_f32();
-                    let app_hash = match self.application_hash(&self.storage.client) {
-                        Ok(app_hash) => app_hash,
-                        Err(e) => {
-                            panic!("failed to get application hash on process proposal: {:?}", e);
-                        }
-                    };
-
-                    warn!(
-                        app_hash = hex::encode(&app_hash),
-                        block_time = block_time.seconds,
-                        execution_time,
-                        cbft_transactions_count = txs_len,
-                        eth_transactions_count = txs_len - 1,
-                        "A proposal with {} transactions is rejected in {} seconds",
-                        txs_len,
-                        execution_time
-                    );
-                }
-
-                return ResponseProcessProposal { status: VERIFY_REJECT };
-            }
-        };
 
         let bitcoin_checkpoint_block_hash = match self
             .bitcoin_checkpoint
@@ -1744,7 +1781,7 @@ where
         match build_and_execute(
             txs,
             self.storage.chain_spec.clone(),
-            &block_fee_recipient_address,
+            &non_deterministic_data.block_fee_recipient_address,
             self.storage.evm_config,
             &self.provider_factory,
             &self.storage.bitcoind_factory,
@@ -1937,36 +1974,6 @@ where
                     }
                 };
 
-                // NDD V0 (no block_fee_recipient_address) is supported only for historical sync on
-                // testnet
-                let block_fee_recipient_address = match non_deterministic_data
-                    .block_fee_recipient_address
-                {
-                    Some(address) => {
-                        debug!(%address, "use proposed block fee recipient address");
-                        address
-                    }
-                    // Need to extract from `request.proposer_address` which is legacy block
-                    // building behavior
-                    None if self.is_testnet => {
-                        let address = Address::new(
-                            FixedBytes::<20>::from_slice(
-                                request.proposer_address.to_vec().as_slice(),
-                            )
-                            .0,
-                        );
-
-                        debug!(%address, "use a proposer address as the block fee recipient address (testnet)");
-
-                        address
-                    }
-                    None => {
-                        panic!(
-                            "Block fee recipient address is not set in finalize block for mainnet"
-                        );
-                    }
-                };
-
                 let block_time = match request.time {
                     Some(time) => time,
                     None => {
@@ -1990,7 +1997,7 @@ where
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
-                    &block_fee_recipient_address,
+                    &non_deterministic_data.block_fee_recipient_address,
                     self.storage.evm_config,
                     &self.provider_factory,
                     &self.storage.bitcoind_factory,
@@ -2222,6 +2229,7 @@ where
                                 %sealed_block_with_context.sealed_block_with_peg.block().hash(),
                         )
                         .entered();
+
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
                         let block_height = sealed_block_with_peg.block().number;
@@ -2236,6 +2244,34 @@ where
                             Arc::new(hashed_state.clone()),
                             Arc::new(trie_updates.clone()),
                         );
+
+                        let pegins = sealed_block_with_peg
+                            .pegins()
+                            .iter()
+                            .flat_map(|p| p.meta.clone())
+                            .collect::<Vec<_>>();
+
+                        let pegouts = sealed_block_with_peg.pegouts().to_vec();
+
+                        // Prepare the staged entries for insertion into the
+                        // database; this ensures that no pegins or pegouts are
+                        // ever accidentally dropped during a shutdown or
+                        // interruption.
+                        //
+                        // Those staged entries are removed from the database
+                        // once the Frost task has successfully initiated a new
+                        // checkpoint on the btc-server.
+
+                        let staged_pegins: Vec<models::PeginData> =
+                            get_staged_pegins_from_pegin_meta(&pegins);
+                        let staged_pegouts: Vec<models::PegoutData> =
+                            get_staged_pegouts_from_pegout_data(&pegouts, new_header.number);
+
+                        let header_with_pegs = models::HeaderWithPegs {
+                            pegins: staged_pegins,
+                            pegouts: staged_pegouts,
+                            header: new_header.header().clone(),
+                        };
 
                         let db_rw = match self.database_provider.provider_rw() {
                             Ok(db_rw) => db_rw,
@@ -2255,6 +2291,9 @@ where
                             hashed_state.into_sorted(),
                             trie_updates,
                         )?;
+
+                        db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
+
                         db_rw.commit()?;
 
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
@@ -2282,13 +2321,6 @@ where
                             sealed_block_with_context.exec_outcome.clone(),
                             None,
                         );
-
-                        let pegins = sealed_block_with_peg
-                            .pegins()
-                            .iter()
-                            .flat_map(|p| p.meta.clone())
-                            .collect::<Vec<_>>();
-                        let pegouts = sealed_block_with_peg.pegouts().to_vec();
 
                         self.blockchain_provider.canonical_in_memory_state().notify_canon_state(
                             CanonStateNotification::Commit {
@@ -2449,6 +2481,7 @@ mod tests {
             Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
             1,
             Some(Address::ZERO),
+            client,
         )
     }
 
@@ -2524,7 +2557,7 @@ mod tests {
 
         let response = abci_client.prepare_proposal(request);
 
-        let expected_ndd = NonDeterministicData::new_v1(
+        let expected_ndd = NonDeterministicData::new(
             abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
@@ -2561,7 +2594,7 @@ mod tests {
         let request = RequestPrepareProposal::default();
         let response = abci_client.prepare_proposal(request);
 
-        let expected_ndd = NonDeterministicData::new_v1(
+        let expected_ndd = NonDeterministicData::new(
             abci_client.bitcoin_blockhash().expect("to have agg bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
