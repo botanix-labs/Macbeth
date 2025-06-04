@@ -109,6 +109,7 @@ pub struct CometBftNodeConfig {
     pub peer_id: String,
     pub test_signal_tx: Sender<TestSignal>,
     pub is_state_syncing: bool,
+    pub is_rpc_node: bool,
 }
 
 impl CometBftNodeConfig {
@@ -122,6 +123,7 @@ impl CometBftNodeConfig {
         test_signal_tx: Sender<TestSignal>,
         working_directory: PathBuf,
         is_state_syncing: bool,
+        is_rpc_node: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             index,
@@ -134,6 +136,7 @@ impl CometBftNodeConfig {
             cometbft_p2p_app_port,
             test_signal_tx,
             is_state_syncing,
+            is_rpc_node,
         })
     }
 
@@ -395,6 +398,7 @@ pub fn update_config_toml_with_trusted_height_and_hash(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub async fn create_cometbft_nodes(
     global_context: Arc<GlobalContext>,
 ) -> anyhow::Result<(
@@ -405,8 +409,10 @@ pub async fn create_cometbft_nodes(
     let mut cometbft_nodes: BTreeMap<u16, CometBftNodeConfig> = BTreeMap::new();
 
     // loop and create all cometbft nodes
-    let poa_instances = global_context.fed_instances - global_context.syncing_instances;
-    for member_index in 0..global_context.fed_instances {
+    let fed_instances_non_syncing = global_context.fed_instances - global_context.syncing_instances;
+    let syncing_instances_range =
+        fed_instances_non_syncing..(fed_instances_non_syncing + global_context.syncing_instances);
+    for member_index in 0..global_context.fed_instances + global_context.rpc_instances {
         // allocate ports
         let cometbft_proxy_app_port = ABCI_PORT_BASE + 1000 * member_index;
         let cometbft_rpc_app_port = cometbft_proxy_app_port - 1;
@@ -480,7 +486,8 @@ pub async fn create_cometbft_nodes(
             cometbft_p2p_app_port,
             test_signal_tx,
             working_directory,
-            member_index > poa_instances - 1,
+            syncing_instances_range.contains(&member_index),
+            member_index >= global_context.fed_instances,
         )
         .await?;
 
@@ -488,14 +495,15 @@ pub async fn create_cometbft_nodes(
         cometbft_nodes.insert(member_index, cometbft_node);
     }
 
-    // extract validators set
+    // extract validators set and filter out rpc nodes
     let all_genesis_validators = cometbft_nodes
         .iter()
+        .filter(|(_, config)| !config.is_rpc_node)
         .map(|(_, config)| GenesisValidator::from(&config.validator))
         .collect::<Vec<GenesisValidator>>();
 
     // now insert peers into each cometbft member
-    for member_index in 0..global_context.fed_instances {
+    for member_index in 0..global_context.fed_instances + global_context.rpc_instances {
         // get the cometbft node
         let cometbft_node = cometbft_nodes
             .get(&member_index)
