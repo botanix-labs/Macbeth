@@ -370,6 +370,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         "ConsensusIntegrationTestSuite"
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn run(&mut self, test_to_run: String) -> Vec<Outcome> {
         self.set_panic_hook();
         match test_to_run.as_str() {
@@ -779,6 +780,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn create_new_local_context(
         &mut self,
         create_test_config: CreateTestConfig,

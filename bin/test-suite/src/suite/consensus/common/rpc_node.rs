@@ -134,6 +134,7 @@ impl NonFederationMemberTestConfig {
         self.peers_list = peers;
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn spawn_service(
         &mut self,
         edh_authorities_list: Arc<Vec<PublicKey>>,
@@ -182,16 +183,7 @@ impl NonFederationMemberTestConfig {
             };
             fed_member_pks.push(pk);
         }
-        // add ourselves
-        let my_pk = FedMemberPubKey {
-            key: self.secret_key.public_key(SECP256K1).to_string(),
-            socket_addr: format!("127.0.0.1:{}", self.discovery_port),
-        };
-        fed_member_pks.push(my_pk);
 
-        // NOTE: fed members have already created their EDH with the correct authorities
-        // but the order may not be the same as fed_member_pks since we added ourselves last
-        // so compare the EDH authorities list and build a new list in the correct order
         let mut edh_authorities = vec![];
         for authority in edh_authorities_list.to_vec().iter() {
             for pk in fed_member_pks.iter() {
