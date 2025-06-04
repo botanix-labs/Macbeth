@@ -26,8 +26,11 @@ use reth_primitives::{
 use reth_provider::{BlockReaderIdExt, ReceiptProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
-use std::{fmt::Debug, time::Duration};
-use tracing::{error, info};
+use std::{
+    fmt::Debug,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Checks if the network is undergoing an active sync or not
@@ -123,6 +126,7 @@ pub(crate) fn get_utxos_from_pegin_meta(pegins: &[PeginMeta]) -> Vec<Utxo> {
 pub(crate) fn get_pending_pegouts_from_pegout_data(
     pegouts: &[PegoutWithId],
     height: u64,
+    timestamp: u64,
 ) -> Vec<PendingPegout> {
     if pegouts.is_empty() {
         return vec![];
@@ -134,6 +138,7 @@ pub(crate) fn get_pending_pegouts_from_pegout_data(
             spk: pegout.data.destination.script_pubkey().into_bytes(),
             amount: pegout.data.amount.to_sat(),
             height,
+            timestamp,
         })
         .collect::<Vec<_>>()
 }
@@ -205,6 +210,7 @@ pub(crate) fn get_staged_pegouts_from_pegout_data(
 
 pub(crate) fn get_pending_pegouts_from_staged_pegouts(
     pegouts: Vec<models::PegoutData>,
+    timestamp: u64,
 ) -> Vec<PendingPegout> {
     pegouts
         .into_iter()
@@ -213,6 +219,7 @@ pub(crate) fn get_pending_pegouts_from_staged_pegouts(
             spk: pegout.script_pubkey,
             amount: pegout.amount,
             height: pegout.height,
+            timestamp,
         })
         .collect()
 }
@@ -222,14 +229,14 @@ fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
 }
 
 pub(crate) fn bloom_contains_pegout(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(BURN_TOPIC.as_ref()))
 }
 
 #[allow(dead_code)]
 pub(crate) fn bloom_contains_pegin(bloom: Bloom) -> bool {
-    bloom_contains_minting_contract_address(bloom) &&
-        bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
+    bloom_contains_minting_contract_address(bloom)
+        && bloom.contains_input(BloomInput::Raw(MINT_TOPIC.as_ref()))
 }
 
 /// Finds the starting block number for the current epoch based on the current block number
@@ -334,6 +341,26 @@ pub(crate) async fn epoch_pegouts(
     Ok(pegouts)
 }
 
+/// Checks if the age of a block, based on its timestamp, is within an acceptable duration.
+///
+/// # Arguments
+///
+/// * `timestamp` - The timestamp of the block in seconds since the UNIX epoch.
+/// * `max_age_cutoff` - The maximum acceptable age of the block as a `Duration`.
+///
+/// # Returns
+///
+/// Returns `true` if the block's age is less than the specified max cutoff age, otherwise `false`.
+pub fn is_block_age_acceptable(timestamp: u64, max_age_cutoff: Duration) -> bool {
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(now) => now.as_secs(),
+        Err(_) => return false,
+    };
+
+    let threshold = now.saturating_sub(max_age_cutoff.as_secs());
+    timestamp > threshold
+}
+
 /// Returns all pegouts ids in a given block
 ///
 /// # Arguments
@@ -341,6 +368,7 @@ pub(crate) async fn epoch_pegouts(
 /// * `block` - The block height
 /// * `client` - Reth database client
 /// * `btc_network` - Bitcoin network
+/// * `max_cutoff_age` - Max cutoff age
 ///
 /// # Returns
 ///
@@ -349,10 +377,18 @@ pub(crate) async fn get_block_pegouts(
     block: u64,
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
-) -> Result<Vec<PegoutId>, EpochPegoutsError> {
-    let mut pegouts = Vec::new();
+    max_cutoff_age: Option<Duration>,
+) -> Result<Vec<(PegoutId, u64)>, EpochPegoutsError> {
+    let mut pegouts: Vec<(PegoutId, u64)> = Vec::new();
     match client.block_by_number(block) {
         Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+            let block_timestamp = block.header.timestamp;
+            if let Some(max_cutoff_age) = max_cutoff_age {
+                if !is_block_age_acceptable(block_timestamp, max_cutoff_age) {
+                    warn!("Block number {:?} is too old, ignoring ...", block.header.number);
+                    return Ok(pegouts);
+                }
+            }
             let transactions_by_block = match client
                 .transactions_by_block(BlockHashOrNumber::Number(block.header.number))
             {
@@ -382,7 +418,7 @@ pub(crate) async fn get_block_pegouts(
                                 let mut tx_hash_array = [0u8; 32];
                                 tx_hash_array.copy_from_slice(tx.hash().as_slice());
                                 let pegout_id = PegoutId::new(tx_hash_array, index as u32);
-                                pegouts.push(pegout_id);
+                                pegouts.push((pegout_id, block_timestamp));
                             }
                         }
                     }
@@ -1712,9 +1748,10 @@ mod tests {
         let height = 100;
 
         let staged = get_staged_pegouts_from_pegout_data(&pegouts, height);
-        let pending1 = get_pending_pegouts_from_staged_pegouts(staged);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let pending1 = get_pending_pegouts_from_staged_pegouts(staged, now);
 
-        let pending2 = get_pending_pegouts_from_pegout_data(&pegouts, height);
+        let pending2 = get_pending_pegouts_from_pegout_data(&pegouts, height, now);
 
         assert_eq!(pending1, pending2);
     }

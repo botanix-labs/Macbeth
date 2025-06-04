@@ -530,7 +530,8 @@ where
                     let header = entry.header;
 
                     let pegins = get_utxos_from_staged_pegins(entry.pegins);
-                    let pegouts = get_pending_pegouts_from_staged_pegouts(entry.pegouts);
+                    let pegouts =
+                        get_pending_pegouts_from_staged_pegouts(entry.pegouts, header.timestamp);
 
                     self.handle_canon_state_commit(header_hash, &header, pegins, pegouts).await;
                 }
@@ -550,9 +551,13 @@ where
                             get_utxos_from_pegin_meta(pegins.as_slice())
                         });
 
-                        // Convert pegouts into correct format
+                        // convert pegouts into correct format
                         let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {
-                            get_pending_pegouts_from_pegout_data(pegouts.as_slice(), header.number)
+                            get_pending_pegouts_from_pegout_data(
+                                pegouts,
+                                tip.number,
+                                tip.header().timestamp,
+                            )
                         });
 
                         self.handle_canon_state_commit(

@@ -1,7 +1,11 @@
-use crate::wallet::{
-    address::generate_taproot_change_scriptpubkey,
-    psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
-    util::VerifyingKeyExt,
+use crate::{
+    database::{self, Db, Utxo},
+    pegout_id::PegoutId,
+    wallet::{
+        address::generate_taproot_change_scriptpubkey,
+        psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
+        util::VerifyingKeyExt,
+    },
 };
 use bitcoin::{
     consensus::encode as btcencode,
@@ -11,23 +15,12 @@ use bitcoin::{
 };
 use frost_secp256k1_tr as frost;
 use futures_util::Future;
-use lazy_static::lazy_static;
 use log::{error, info};
 use std::{
     collections::{HashMap, HashSet},
-    time::Duration,
-};
-
-use crate::{
-    database::{self, Db, Utxo},
-    pegout_id::PegoutId,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
-
-lazy_static! {
-    static ref MAX_FEERATE: bitcoin::FeeRate =
-        bitcoin::FeeRate::from_sat_per_vb(300).expect("valid feerate");
-}
 
 // Psbt validation flags
 pub(crate) const NO_FLAGS: u8 = 0u8;
@@ -35,6 +28,25 @@ pub(crate) const ROUND1: u8 = 1u8;
 pub(crate) const ROUND1_TRANSITION: u8 = (1u8 << 1) | ROUND1;
 pub(crate) const ROUND2: u8 = (1u8 << 2) | ROUND1_TRANSITION;
 pub(crate) const ROUND2_TRANSITION: u8 = (1u8 << 3) | ROUND1_TRANSITION;
+
+/// Checks if the age of a block, based on its timestamp, is within an acceptable duration.
+/// # Arguments
+///
+/// * `timestamp` - The timestamp of the block in seconds since the UNIX epoch.
+/// * `max_age_cutoff` - The maximum acceptable age of the block as a `Duration`.
+///
+/// # Returns
+///
+/// Returns `true` if the block's age is less than the specified max cutoff age, otherwise `false`.
+pub fn is_block_age_acceptable(timestamp: u64, max_age_cutoff: Duration) -> bool {
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(now) => now.as_secs(),
+        Err(_) => return false,
+    };
+
+    let threshold = now.saturating_sub(max_age_cutoff.as_secs());
+    timestamp > threshold
+}
 
 /// Function for retrying an async closure with retries and delays
 pub async fn retry_exec<T, E, F, Fut>(
@@ -267,6 +279,7 @@ impl PartialEq for ValidatePSBTError {
 /// * `flags` - Flags indicating the validation criteria and actions to be performed.
 /// * `min_signers` - The minimum number of signers required for certain validations.
 /// * `db` - Database reference used for UTXO lookups.
+/// * `botanix_eth_client` - Botanix ethereum client.
 ///
 /// `NO_FLAGS`: Performs basic sanity checks only.
 /// `ROUND1`: Validates witnes_UTXO and UTXO existence in the database. Also checks the validity of
@@ -400,7 +413,7 @@ pub fn validate_psbt(
     Ok(())
 }
 
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error)]
 pub enum ValidateOutputsError {
     #[error("missing key package {0}")]
     DbError(#[from] database::Error),
@@ -412,6 +425,10 @@ pub enum ValidateOutputsError {
     MissingPsbtPegout(PegoutId),
     #[error("found already finalized psbt pegouts in db {0:?}")]
     AlreadyFinalizedPegouts(Vec<PegoutId>),
+    #[error("pegout id tx hash not found {0:?}")]
+    PegoutIdTxHashNotFound(Vec<PegoutId>),
+    #[error("pegout id not found in block {0:?}")]
+    PegoutIdNotFoundInBlock(Vec<PegoutId>),
     #[error("expecting only one change output")]
     ExpectingOnlyOneChangeOutput,
     #[error("invalid change output")]
@@ -420,6 +437,8 @@ pub enum ValidateOutputsError {
     ExtractTxError(#[from] ExtractTxError),
     #[error("duplicate outputs")]
     DuplicateOutputs,
+    #[error("pegout id is too old {0:?}")]
+    PegoutIdTooOld(Vec<PegoutId>),
     #[error("PSBT outputs length ({0}) does not match unsigned_tx.output length ({1})")]
     OutputCountMismatch(usize, usize),
 }
@@ -469,11 +488,20 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         };
     }
 
-    // check outputs are not in finalized pegouts list
-    let finalized_pegouts_id =
-        db.get_finalized_pegout_ids()?.into_iter().map(|id| id.id).collect::<Vec<_>>();
+    // check outputs are not in finalized pegouts list and not too old
+    let finalized_pegouts_ids = db
+        .get_finalized_pegout_ids()?
+        .into_iter()
+        .map(|id| (id.id, id.timestamp))
+        .collect::<Vec<_>>();
+
     for id in &psbt_pegout_ids {
-        if finalized_pegouts_id.contains(id) {
+        let finalized_pegouts_id = finalized_pegouts_ids
+            .iter()
+            .find(|(finalized_pegouts_id, _)| finalized_pegouts_id == id)
+            .cloned();
+
+        if finalized_pegouts_id.is_some() {
             return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
         }
     }
@@ -586,8 +614,8 @@ mod tests {
         database::Db::open(dbdir).unwrap()
     }
 
-    #[test]
-    fn should_perform_general_sanity_checks() {
+    #[tokio::test]
+    async fn should_perform_general_sanity_checks() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -631,8 +659,8 @@ mod tests {
         assert_eq!(res.unwrap_err().to_string(), "outputs cannot be 0");
     }
 
-    #[test]
-    fn should_perform_sanity_negative_fee_check() {
+    #[tokio::test]
+    async fn should_perform_sanity_negative_fee_check() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -674,9 +702,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
-            psbt.unsigned_tx.output.len() as u64 +
-            100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
+            / psbt.unsigned_tx.output.len() as u64
+            + 100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
@@ -686,8 +714,8 @@ mod tests {
         assert_eq!(res.unwrap_err(), ValidatePSBTError::NegativeFee);
     }
 
-    #[test]
-    fn should_perform_sanity_total_outputs_value() {
+    #[tokio::test]
+    async fn should_perform_sanity_total_outputs_value() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -748,11 +776,11 @@ mod tests {
         );
     }
 
-    #[test]
+    #[tokio::test]
     #[ignore]
     /// We do not enforce signers have the psbt utxos in their db.
     /// Leaving test here in case this logic is reverted.
-    fn should_look_for_utxo_in_db() {
+    async fn should_look_for_utxo_in_db() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -784,8 +812,8 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[test]
-    fn should_fail_if_eth_tweak_missing() {
+    #[tokio::test]
+    async fn should_fail_if_eth_tweak_missing() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -819,8 +847,8 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[test]
-    fn should_fail_if_tx_out_mismatch() {
+    #[tokio::test]
+    async fn should_fail_if_tx_out_mismatch() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -857,8 +885,8 @@ mod tests {
         assert_eq!(res.unwrap_err().to_string(), "txout mismatch");
     }
 
-    #[test]
-    fn round_1_transition_tests() {
+    #[tokio::test]
+    async fn round_1_transition_tests() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -931,8 +959,8 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[test]
-    fn round2_psbt_validation_checks() {
+    #[tokio::test]
+    async fn round2_psbt_validation_checks() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(0)].clone())
@@ -1054,8 +1082,8 @@ mod tests {
         assert_eq!(res.unwrap_err(), ValidatePSBTError::InvalidNumberOfPartialSignatures);
     }
 
-    #[test]
-    fn test_duplicate_output() {
+    #[tokio::test]
+    async fn test_duplicate_output() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -1110,8 +1138,8 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[test]
-    fn test_expecting_only_one_change_output() {
+    #[tokio::test]
+    async fn test_expecting_only_one_change_output() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -1154,8 +1182,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_validate_change_output_destination() {
+    #[tokio::test]
+    async fn test_validate_change_output_destination() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -1202,8 +1230,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_validate_outputs_output_count_mismatch() {
+    #[tokio::test]
+    async fn test_validate_outputs_output_count_mismatch() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -1538,6 +1566,7 @@ mod tests {
             value: tx.output[0].value,
             id: pegout_id,
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx = Tx {
             txid: tx.compute_txid(),
@@ -1571,6 +1600,7 @@ mod tests {
             value: tx.output[0].value,
             id: pegout_id,
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx = Tx {
             txid: tx.compute_txid(),
@@ -1604,6 +1634,7 @@ mod tests {
             value: tx.output[0].value,
             id: pegout_id,
             botanix_height: 0,
+            timestamp: None,
         };
         db.store_pending_pegout(&pegout_request).unwrap();
         db.flush().unwrap();
@@ -1615,8 +1646,8 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[test]
-    fn test_validate_outputs_should_check_for_finalized_pegouts() {
+    #[tokio::test]
+    async fn test_validate_outputs_should_check_for_finalized_pegouts() {
         let (db, _temp_dir) = setup_db();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
@@ -1628,7 +1659,8 @@ mod tests {
 
         // store finalized pegout
         let pegout_id = PegoutId::new(rand::thread_rng().gen::<[u8; 32]>(), 0);
-        let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+        let finalized_pegout =
+            FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
         db.store_finalized_pegout_ids_atomically(vec![&finalized_pegout].as_slice()).unwrap();
 
         // create a psbt with the finalized pegout id
@@ -1640,4 +1672,76 @@ mod tests {
         assert!(res_error
             .contains("error validating outputs: found already finalized psbt pegouts in db"));
     }
+
+    #[tokio::test]
+    async fn test_validate_outputs_should_return_already_finalized_pegout_id() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        // store finalized pegout
+        let pegout_id = PegoutId::new(rand::thread_rng().gen::<[u8; 32]>(), 0);
+        let finalized_pegout =
+            FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
+        db.store_finalized_pegout_ids_atomically(vec![&finalized_pegout].as_slice()).unwrap();
+
+        // create a psbt with the finalized pegout id
+        let mut psbt = create_psbt(1, 1, None);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let res = validate_outputs(&psbt, &db);
+
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            ValidateOutputsError::AlreadyFinalizedPegouts(pegout_ids) => {
+                assert_eq!(pegout_ids.len(), 1);
+                assert_eq!(pegout_ids[0], pegout_id);
+            }
+            other_error => {
+                panic!("Expected AlreadyFinalizedPegouts error, got {:?}", other_error);
+            }
+        }
+    }
+
+    // #[tokio::test]
+    // async fn test_validate_outputs_should_return_pegout_id_too_old() {
+    //     let db = db_setup();
+    //     let (shares, pk_package) = trusted_dealer_setup(2, 2);
+    //     let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+    //         .expect("valid key package");
+
+    //     // Add the key packages
+    //     db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+    //     db.set_key_package(key_package.clone()).expect("set key package");
+
+    //     // store finalized pegout
+    //     let six_months_ago_seconds = 6 * 30 * 24 * 60 * 60; // 6 months in seconds
+    //     let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    //     let old_timestamp = current_time - six_months_ago_seconds;
+    //     let pegout_id = PegoutId::new(rand::thread_rng().gen::<[u8; 32]>(), 0);
+    //     let finalized_pegout =
+    //         FinalizedPegout { id: pegout_id, block_number: 100, timestamp: Some(old_timestamp) };
+
+    //     // create a psbt with the finalized pegout id
+    //     let mut psbt = create_psbt(1, 1, None);
+    //     psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+    //     let res = validate_outputs(&psbt, &db);
+
+    //     assert!(res.is_err());
+    //     match res.unwrap_err() {
+    //         ValidateOutputsError::PegoutIdTooOld(pegout_ids) => {
+    //             assert_eq!(pegout_ids.len(), 1);
+    //             assert_eq!(pegout_ids[0], pegout_id);
+    //         }
+    //         other_error => {
+    //             panic!("Expected PegoutIdTooOld error, got {:?}", other_error);
+    //         }
+    //     }
+    // }
 }

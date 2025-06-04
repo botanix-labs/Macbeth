@@ -91,6 +91,12 @@ impl TryFrom<PegoutRequest> for PendingPegout {
             spk: pegout.spk.into_bytes(),
             amount: pegout.value.to_sat(),
             height: pegout.botanix_height,
+            timestamp: pegout.timestamp.unwrap_or(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("valid duration")
+                    .as_secs(),
+            ),
         })
     }
 }

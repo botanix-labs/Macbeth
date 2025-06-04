@@ -15,7 +15,7 @@ use crate::{
 
 pub mod error;
 
-pub async fn get_round1_signing_package(
+pub fn get_round1_signing_package(
     psbt: &mut Psbt,
     min_signers: u16,
     db: &Database,
@@ -81,7 +81,7 @@ pub async fn get_round1_signing_package(
 /// Important note here is that we never reuse the same nonce pairs for a different signing
 /// request Should always generate new ones or if we are in a signing session refuse
 /// to provide new ones
-pub async fn get_round2_signing_package(
+pub fn get_round2_signing_package(
     psbt: &mut Psbt,
     min_signers: u16,
     db: &Database,

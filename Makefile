@@ -729,7 +729,7 @@ start-poa-server-2:
 	--abci-port=36658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" 
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
 
 start-poa-server-3:
 	cd ./bin/reth && \

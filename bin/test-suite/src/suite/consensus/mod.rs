@@ -106,7 +106,7 @@ impl LocalContext {
     pub fn get_btc_server_process_port(&self, instance: usize) -> Option<u16> {
         self.btc_processes
             .as_ref()
-            .and_then(|processes| processes.iter().nth(instance).map(|val| val.port))
+            .and_then(|processes| processes.iter().nth(instance).map(|val| val.btc_server_port))
     }
 
     pub fn get_btc_server_processes_ids(&self) -> Vec<u32> {
@@ -129,7 +129,7 @@ impl LocalContext {
             .btc_processes
             .as_ref()
             .map(|btc_processes| {
-                btc_processes.iter().map(|process| process.port).collect::<Vec<u16>>()
+                btc_processes.iter().map(|process| process.btc_server_port).collect::<Vec<u16>>()
             })
             .unwrap_or_default();
 

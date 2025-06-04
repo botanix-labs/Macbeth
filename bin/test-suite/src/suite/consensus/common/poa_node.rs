@@ -716,8 +716,10 @@ pub async fn create_poa_nodes(
     let poa_instances = global_context.fed_instances - global_context.syncing_instances;
 
     for member_index in 0..global_context.fed_instances {
-        let port = btc_server_processes
-            .and_then(|processes| processes.iter().nth(member_index as usize).map(|val| val.port))
+        let btc_server_port = btc_server_processes
+            .and_then(|processes| {
+                processes.iter().nth(member_index as usize).map(|val| val.btc_server_port)
+            })
             .context("Btc server process port must already exist")?;
 
         let (member_secretkey, _, member_peerid, _) = members_keypairs
@@ -734,7 +736,7 @@ pub async fn create_poa_nodes(
             global_context.bitcoind_url.clone(),
             global_context.bitcoind_user.clone(),
             global_context.bitcoind_pass.clone(),
-            format!("localhost:{}", port),
+            format!("localhost:{}", btc_server_port),
             global_context.min_signers,
             global_context.max_signers,
             global_context.num_snapshots_to_keep,

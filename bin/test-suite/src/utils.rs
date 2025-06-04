@@ -12,6 +12,7 @@ use ethers::{
     providers::{JsonRpcClient, Provider, ProviderError},
     types::H256,
 };
+use reth::consensus_common::utils::unix_timestamp;
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::{Address as EthAddress, B256};
 use serde::Deserialize;
@@ -56,6 +57,7 @@ pub async fn send_pegout_notification(
         spk: spk.to_bytes().to_vec(),
         amount,
         height: bitcoin_height,
+        timestamp: unix_timestamp(),
     }];
 
     client

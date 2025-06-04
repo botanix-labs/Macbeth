@@ -28,10 +28,13 @@ frost-secp256k1-tr = { workspace = true }
 futures = { workspace = true }
 # async
 futures-util = { workspace = true }
-
 hex = "0.4.3"
+
 metrics = { workspace = true }
 metrics-util = { workspace = true }
+
+# lazy
+once_cell = { workspace = true }
 prost = "0.13.3"
 reth-basic-payload-builder = { workspace = true }
 
