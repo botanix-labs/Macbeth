@@ -18,7 +18,6 @@ use futures_util::Future;
 use log::{error, info};
 use std::{
     collections::{HashMap, HashSet},
-    sync::LazyLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
@@ -29,11 +28,6 @@ pub(crate) const ROUND1: u8 = 1u8;
 pub(crate) const ROUND1_TRANSITION: u8 = (1u8 << 1) | ROUND1;
 pub(crate) const ROUND2: u8 = (1u8 << 2) | ROUND1_TRANSITION;
 pub(crate) const ROUND2_TRANSITION: u8 = (1u8 << 3) | ROUND1_TRANSITION;
-
-const MAX_BLOCK_TS_CUTOFF_DURATION_SECS: u64 = 30 * 24 * 60 * 60 * 3; // 3 months
-
-static MAX_BLOCK_TS_CUTOFF_DURATION: LazyLock<Duration> =
-    LazyLock::new(|| Duration::from_secs(MAX_BLOCK_TS_CUTOFF_DURATION_SECS));
 
 /// Checks if the age of a block, based on its timestamp, is within an acceptable duration.
 /// # Arguments
@@ -510,12 +504,6 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         if finalized_pegouts_id.is_some() {
             return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
         }
-
-        // if let Some((id, Some(timestamp))) = finalized_pegouts_id {
-        //     if !is_block_age_acceptable(timestamp, *MAX_BLOCK_TS_CUTOFF_DURATION) {
-        //         return Err(ValidateOutputsError::PegoutIdTooOld(vec![id]));
-        //     }
-        // }
     }
 
     // check for duplicate outputs by pegout ids
@@ -714,9 +702,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
-            psbt.unsigned_tx.output.len() as u64 +
-            100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
+            / psbt.unsigned_tx.output.len() as u64
+            + 100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
