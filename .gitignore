@@ -93,3 +93,5 @@ node_modules/
 
 # profiling files
 profile.json
+
+CometBFT-*.txt

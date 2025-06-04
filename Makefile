@@ -40,6 +40,13 @@ DOCKER_IMAGE_NAME ?= ghcr.io/paradigmxyz/reth
 # Features in reth/op-reth binary crate other than "ethereum"
 BIN_OTHER_FEATURES := asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs
 
+# Botanix local network configuration
+NODES_DIR ?= ~/.botanix-local
+# Number of nodes to run in the Botanix local network
+NODES_NUMBER ?= 2
+# Resolve NODES_DIR to absolute path, expanding ~ properly
+NODES_DIR_ABS := $(shell bash -c 'echo $(NODES_DIR)')
+
 ##@ Help
 
 .PHONY: help
@@ -729,7 +736,7 @@ start-poa-server-2:
 	--abci-port=36658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" 
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
 
 start-poa-server-3:
 	cd ./bin/reth && \
@@ -845,42 +852,85 @@ check-features:
 		--package reth-rpc-types \
 		--feature-powerset
 
-start-docker-bitcoin:
-	cd ./docker-local && \
-	docker compose --env-file .bitcoin.env -f bitcoin.docker-compose.yml up -d
+bitcoin-cli:
+	@if [ -z "$(CMD)" ]; then \
+		echo "Usage: make bitcoin-cli CMD='<command>'"; \
+		echo "Example: make bitcoin-cli CMD='getblockchaininfo'"; \
+		exit 0; \
+	fi; \
+	docker compose -f docker-local/docker-compose.bitcoin.yml exec bitcoin-core bitcoin-cli $(CMD);
+
+init-docker-local:
+	# Generate network configs
+	cargo run -p botanix-up -- --num-nodes=${NODES_NUMBER} --output-path=${NODES_DIR}
+
+	# Create shared docker network
+	docker network create botanix-local
+
+	make start-docker-local
+
+	# Create a bitcoin wallet and generate some blocks
+	make bitcoin-cli CMD='--rpcwait createwallet local'
+	make bitcoin-cli CMD='-generate 10'
 
 start-docker-local:
-	cd ./docker-local && \
-	docker-compose --env-file .bitcoin.env -f docker-compose.yml up -d
+	# Start single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
 
-build-docker-local:
-	cd ./docker-local && \
-	docker-compose --env-file .bitcoin.env -f docker-compose.yml up --build -d
-
-clean-docker-poa:
-	cd ./docker-local && \
-	sudo rm -rf ./poa-1/db && \
-	sudo rm -rf ./poa-1/static_files && \
-	sudo rm -rf ./poa-2/db && \
-	sudo rm -rf ./poa-2/static_files
-
-clean-docker-btc:
-	cd ./docker-local && \
-	sudo rm -rf ./btc-server-1/db && \
-	sudo rm -rf ./btc-server-2/db
-
-clean-docker-comet:
-	cd ./docker-local && \
-	sudo rm -rf ./consensus-node-1/data/*.db && \
-	sudo rm -rf ./consensus-node-2/data/*.db
+	# Start nodes defined in the NODES_DIR
+	make build-docker-local
 
 stop-docker-local:
-	cd ./docker-local && \
-	docker-compose --env-file .bitcoin.env -f docker-compose.yml down && \
-	cd ../ && \
-	make clean-docker-poa && \
-	make clean-docker-btc && \
-	make clean-docker-comet
+	# Start single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml stop
+
+	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
+		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
+		exit 1; \
+	fi; \
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ ! -f "$$DIR.env" ]; then \
+			echo "Error: Environment file does not exist: $$DIR.env"; \
+		fi; \
+		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml stop; \
+	done
+
+build-docker-local:
+	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
+		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
+		exit 1; \
+	fi; \
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ ! -f "$$DIR.env" ]; then \
+			echo "Error: Environment file does not exist: $$DIR.env"; \
+		fi; \
+		COMPOSE_BAKE=true docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d --build; \
+	done
+
+reset-docker-local:
+	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
+
+	# Down nodes defined in the NODES_DIR
+	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
+		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
+		exit 1; \
+	fi; \
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ ! -f "$$DIR.env" ]; then \
+        	echo "Error: Environment file does not exist: $$DIR.env"; \
+		fi; \
+		docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
+		rm -rf ${$DIR}cometbft/data/*.db; \
+	done
+
+clean-docker-local:
+	make reset-docker-local
+
+	# Remove docker network
+	docker network rm botanix-local
+
+	# Remove NODES_DIR
+	rm -rf ${NODES_DIR_ABS}
 
 clean-test-suite:
 	cd bin/test-suite && \

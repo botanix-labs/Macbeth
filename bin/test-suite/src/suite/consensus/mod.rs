@@ -903,8 +903,8 @@ impl Suite for ConsensusIntegrationTestSuite {
 
                 // create cometbft client
                 let cometbft_client = HttpCometBFTRpcClientFactory::new(
-                    "0.0.0.0".to_string(),
-                    cometbft_node.cometbft_rpc_app_port,
+                    cometbft_node.rpc_listen_address.ip().to_string(),
+                    cometbft_node.rpc_listen_address.port(),
                 );
                 let _cometbft_http_client = cometbft_client.build_and_connect()?;
                 cometbft_rpc_clients.push(cometbft_client);

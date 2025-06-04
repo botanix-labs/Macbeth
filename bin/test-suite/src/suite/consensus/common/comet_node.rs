@@ -9,6 +9,9 @@ use anyhow::Context;
 use reth_chainspec::BOTANIX_TESTNET;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::fmt::Display;
+use std::net::SocketAddr;
+use std::str::FromStr;
 use std::{
     collections::BTreeMap,
     fs,
@@ -20,6 +23,7 @@ use tokio::{
     process::Child,
     sync::broadcast::{channel, Sender},
 };
+use url::{Host, Url};
 
 #[derive(Clone, Debug)]
 pub enum Notifications {}
@@ -46,7 +50,7 @@ impl From<&PrivValidator> for GenesisValidator {
             address: priv_validator.address.clone(),
             pub_key: priv_validator.pub_key.clone(),
             power: "10".to_string(),
-            name: "".to_string(),
+            name: String::new(),
         }
     }
 }
@@ -97,30 +101,60 @@ impl SpawnedCometBftProcess {
     }
 }
 
+// TODO: Move to utils
+#[derive(Clone, Debug)]
+pub struct HostAndPort {
+    pub host: Host,
+    pub port: u16,
+}
+
+impl Display for HostAndPort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.host, self.port)
+    }
+}
+
+impl FromStr for HostAndPort {
+    type Err = url::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // schema is a workaround for parsing url
+        let url = format!("schema://{s}").parse::<Url>()?;
+        let host = url.host().ok_or(url::ParseError::EmptyHost)?.to_owned();
+        let port = url.port().ok_or(url::ParseError::InvalidPort)?;
+        Ok(Self { host, port })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CometBftNodeConfig {
     pub index: u16,
     pub working_directory: PathBuf,
     pub validator: PrivValidator,
-    pub cometbft_proxy_app_port: u16,
-    pub cometbft_rpc_app_port: u16,
-    pub cometbft_p2p_app_port: u16,
+    pub proxy_app_address: HostAndPort,
+    pub rpc_listen_address: SocketAddr,
+    pub p2p_listen_address: SocketAddr,
     pub peers_list: Vec<CometBftNodeConfig>,
-    pub peer_id: String,
+    pub node_id: String,
+    /// Node external address
+    /// Used by other nodes to connect to it
+    pub node_external_address: HostAndPort,
     pub test_signal_tx: Sender<TestSignal>,
     pub is_state_syncing: bool,
 }
 
 impl CometBftNodeConfig {
+    // TODO: Refactor it using builder pattern
     pub async fn new(
         index: u16,
         validator: PrivValidator,
-        peer_id: String,
-        cometbft_proxy_app_port: u16,
-        cometbft_rpc_app_port: u16,
-        cometbft_p2p_app_port: u16,
+        node_id: String,
+        proxy_app_address: HostAndPort,
+        rpc_listen_address: SocketAddr,
+        p2p_listen_address: SocketAddr,
         test_signal_tx: Sender<TestSignal>,
         working_directory: PathBuf,
+        node_external_address: HostAndPort,
         is_state_syncing: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -128,11 +162,12 @@ impl CometBftNodeConfig {
             working_directory,
             validator,
             peers_list: vec![],
-            peer_id,
-            cometbft_proxy_app_port,
-            cometbft_rpc_app_port,
-            cometbft_p2p_app_port,
+            node_id,
+            proxy_app_address,
+            rpc_listen_address,
+            p2p_listen_address,
             test_signal_tx,
+            node_external_address,
             is_state_syncing,
         })
     }
@@ -159,9 +194,9 @@ impl CometBftNodeConfig {
                 args,
                 self.working_directory.clone(),
             )?,
-            cometbft_proxy_app_port: self.cometbft_proxy_app_port,
-            cometbft_rpc_app_port: self.cometbft_rpc_app_port,
-            cometbft_p2p_app_port: self.cometbft_p2p_app_port,
+            cometbft_proxy_app_port: self.proxy_app_address.port,
+            cometbft_rpc_app_port: self.rpc_listen_address.port(),
+            cometbft_p2p_app_port: self.p2p_listen_address.port(),
         })
     }
 }
@@ -219,9 +254,12 @@ pub fn updated_genesis_file(
 ) -> anyhow::Result<()> {
     // read genesis.json file and update some keys
     let genesis_file = Path::new(&working_directory).join("config").join("genesis.json");
-    let mut genesis_object =
-        serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&genesis_file)?)
-            .context("Error reading genesis.json file")?;
+
+    let genesis_file_str =
+        fs::read_to_string(&genesis_file).context("Error reading genesis.json file")?;
+
+    let mut genesis_object = serde_json::from_str::<serde_json::Value>(&genesis_file_str)
+        .context("Error parsing genesis.json file")?;
 
     if let Some(chain_id) = genesis_object.get_mut("chain_id") {
         *chain_id = serde_json::Value::String(BOTANIX_TESTNET.chain().id().to_string());
@@ -264,22 +302,20 @@ pub fn updated_genesis_file(
 }
 
 pub fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<()> {
-    let config_file =
-        Path::new(&cometbft_node.working_directory).join("config").join("config.toml");
-    let mut toml: toml::Value = toml::from_str(&fs::read_to_string(&config_file)?)
-        .context("Unable to parse toml config file")?;
+    let config_file = cometbft_node.working_directory.join("config").join("config.toml");
+
+    let config_file_str = fs::read_to_string(&config_file)?;
+
+    let mut toml: toml::Value =
+        toml::from_str(&config_file_str).context("Unable to parse toml config file")?;
     if let Some(proxy_app_port) = toml.get_mut("proxy_app") {
-        *proxy_app_port = toml::value::Value::String(format!(
-            "tcp://127.0.0.1:{}",
-            cometbft_node.cometbft_proxy_app_port.to_string()
-        ));
+        *proxy_app_port =
+            toml::value::Value::String(format!("tcp://{}", cometbft_node.proxy_app_address));
     }
     if let Some(rpc) = toml.get_mut("rpc") {
         if let Some(laddr) = rpc.get_mut("laddr") {
-            *laddr = toml::value::Value::String(format!(
-                "tcp://127.0.0.1:{}",
-                cometbft_node.cometbft_rpc_app_port.to_string()
-            ));
+            *laddr =
+                toml::value::Value::String(format!("tcp://{}", cometbft_node.rpc_listen_address));
         }
     }
     if let Some(rpc) = toml.get_mut("p2p") {
@@ -290,16 +326,14 @@ pub fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<
             *addr_book_strict = toml::value::Value::Boolean(false);
         }
         if let Some(cometbft_p2p_app_port) = rpc.get_mut("laddr") {
-            *cometbft_p2p_app_port = toml::value::Value::String(format!(
-                "tcp://0.0.0.0:{}",
-                cometbft_node.cometbft_p2p_app_port.to_string()
-            ));
+            *cometbft_p2p_app_port =
+                toml::value::Value::String(format!("tcp://{}", cometbft_node.p2p_listen_address));
         }
         if let Some(persistent_peers) = rpc.get_mut("persistent_peers") {
             let peer_ids = cometbft_node
                 .peers_list
                 .iter()
-                .map(|peer| format!("{}@127.0.0.1:{}", peer.peer_id, peer.cometbft_p2p_app_port))
+                .map(|peer| format!("{}@{}", peer.node_id, peer.node_external_address))
                 .collect::<Vec<String>>()
                 .join(",");
             *persistent_peers = toml::value::Value::String(peer_ids);
@@ -318,9 +352,7 @@ pub fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<
                 let rpc_state_sync_servers = cometbft_node
                     .peers_list
                     .iter()
-                    .map(|peer| {
-                        format!("http://localhost:{}", peer.cometbft_rpc_app_port.to_string())
-                    })
+                    .map(|peer| format!("http://localhost:{}", peer.rpc_listen_address))
                     .collect::<Vec<String>>()
                     .join(",");
                 *rpc_servers = toml::value::Value::String(rpc_state_sync_servers);
@@ -408,9 +440,16 @@ pub async fn create_cometbft_nodes(
     let poa_instances = global_context.fed_instances - global_context.syncing_instances;
     for member_index in 0..global_context.fed_instances {
         // allocate ports
-        let cometbft_proxy_app_port = ABCI_PORT_BASE + 1000 * member_index;
-        let cometbft_rpc_app_port = cometbft_proxy_app_port - 1;
-        let cometbft_p2p_app_port = cometbft_rpc_app_port - 1;
+        let proxy_app_port = ABCI_PORT_BASE + 1000 * member_index;
+        let proxy_app_address = format!("127.0.0.1:{proxy_app_port}").parse()?;
+        let rpc_listen_port = proxy_app_port - 1;
+        let rpc_listen_address = format!("127.0.0.1:{rpc_listen_port}").parse()?;
+        let p2p_listen_port = rpc_listen_port - 1;
+        let p2p_listen_address = format!("127.0.0.1:{p2p_listen_port}").parse()?;
+
+        let node_external_address = format!("127.0.0.1:{p2p_listen_port}")
+            .parse()
+            .context("Failed to parse node external address")?;
 
         // init working directory
         let working_directory = create_temp_working_directory()?;
@@ -464,8 +503,8 @@ pub async fn create_cometbft_nodes(
             ));
         }
         let output_parts = stdout.split("\n").filter(|x| !x.is_empty()).collect::<Vec<&str>>();
-        let enode = output_parts[output_parts.len() - 1].trim().to_string();
-        tracing::info!("CometBFT enode: {:?}", enode);
+        let node_id = output_parts[output_parts.len() - 1].trim().to_string();
+        tracing::info!("CometBFT enode: {:?}", node_id);
 
         // prepare test signal
         let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
@@ -474,12 +513,13 @@ pub async fn create_cometbft_nodes(
         let cometbft_node = CometBftNodeConfig::new(
             member_index,
             validator,
-            enode,
-            cometbft_proxy_app_port,
-            cometbft_rpc_app_port,
-            cometbft_p2p_app_port,
+            node_id,
+            proxy_app_address,
+            rpc_listen_address,
+            p2p_listen_address,
             test_signal_tx,
             working_directory,
+            node_external_address,
             member_index > poa_instances - 1,
         )
         .await?;
@@ -490,8 +530,8 @@ pub async fn create_cometbft_nodes(
 
     // extract validators set
     let all_genesis_validators = cometbft_nodes
-        .iter()
-        .map(|(_, config)| GenesisValidator::from(&config.validator))
+        .values()
+        .map(|config| GenesisValidator::from(&config.validator))
         .collect::<Vec<GenesisValidator>>();
 
     // now insert peers into each cometbft member
@@ -523,8 +563,8 @@ pub async fn create_cometbft_nodes(
         if let Some(cometbft_node) = cometbft_nodes.get_mut(&member_index) {
             cometbft_node.insert_peers_list(validator_peer_members);
             // update config.toml file
-            update_config_toml(&cometbft_node).context("Error updating config toml file")?;
-        };
+            update_config_toml(cometbft_node).context("Error updating config toml file")?;
+        }
     }
 
     Ok((cometbft_nodes, tx))

@@ -1,28 +1,95 @@
-# Stage 1: Build the Rust application
-FROM rust:1.74.0 AS builder
+# syntax = docker/dockerfile:1.7-labs
+
+# TODO: Make base image or combine into one multistage image for DRY
+
+FROM rust:1.85 AS base
+
+ARG TARGETARCH
+ARG TARGETOS
+
+# Download and install cargo-binstall
+ENV BINSTALL_VERSION=1.12.6
+RUN set -ex; \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    fi; \
+    # Construct download URL
+    DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
+    # Download and extract the cargo-binstall binary
+    curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
+    ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
+    rm ./cargo-binstall; \
+    cargo binstall -V
+
+RUN cargo binstall --locked cargo-chef sccache
+
+RUN apt-get update && apt-get install -y \
+    libclang-dev \
+    pkg-config \
+    build-essential \
+    libssl-dev \
+    protobuf-compiler \
+    libprotobuf-dev
+
+ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
+
+FROM base AS planner
 
 WORKDIR /app
 
-COPY . .
+COPY --parents bin crates testing Cargo.toml Cargo.lock .cargo ./
+
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM base AS builder
+
+ARG BUILD_PROFILE=release
+ENV BUILD_PROFILE=$BUILD_PROFILE
 
 WORKDIR /app
 
-# Install necessary dependencies in the runtime stage
-RUN apt-get update && apt-get install -y libclang-dev pkg-config build-essential libssl-dev protobuf-compiler
+COPY --from=planner /app/recipe.json recipe.json
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    cargo chef cook --profile $BUILD_PROFILE \
+                    --package btc-server \
+                    --bin btc-server \
+                    --recipe-path recipe.json \
+                    --locked
+
+COPY --parents bin crates testing Cargo.toml Cargo.lock .cargo ./
 
 # Build only btc-server package
-RUN rustup toolchain install stable && \
-    rustup default stable && \
-    cd bin/btc-server && \
-    cargo build --release --package btc-server 
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    cargo build --profile $BUILD_PROFILE \
+                --package btc-server \
+                --bin btc-server \
+                --locked
 
-# Stage 2: Create the final lightweight image
+RUN if [[ "${BUILD_PROFILE}" == "release" ]] ; then \
+      OUT_DIRECTORY=release; \
+    else \
+      OUT_DIRECTORY=debug; \
+    fi && \
+    cp /app/target/$OUT_DIRECTORY/btc-server /app/server
+
+# TODO: Use alpine for a lightweight image
 FROM ubuntu AS runtime
 
 WORKDIR /app
 
+# TODO Create a non-root user
+
 # Copy the built artifacts from the builder stage
-COPY --from=builder /app/target/release/btc-server /usr/local/bin/server
+COPY --from=builder /app/server /usr/local/bin/server
 
 EXPOSE 8080
 

@@ -1,51 +1,86 @@
 use anyhow::Result;
 use clap::Parser;
+use resolve_path::PathResolveExt;
+use std::env;
+use std::path::PathBuf;
+
 #[derive(Parser, Debug)]
 #[command(name = "Botanix Up")]
 pub(crate) struct Cli {
-    /// Config.toml path (default path is home directory)
-    #[arg(short = 'o', long)]
-    pub output_path: Option<String>,
+    /// Config.toml path (default path is HOME/.botanix-local)
+    #[arg(
+        short = 'o',
+        long,
+        default_value = "~/.botanix-local",
+        value_parser = resolve_path
+    )]
+    pub(crate) output_path: PathBuf,
+
+    /// Docker compose project name prefix. The full name will be [prefix][NodeIndex]
+    #[arg(long, default_value = "botanix")]
+    pub(crate) project_name_prefix: String,
+
+    /// Generate configs for non-docker environment (localhost networking)
+    #[arg(long, default_value_t = false)]
+    pub(crate) non_docker: bool,
 
     /// numbers of nodes
     #[arg(short = 'n', long)]
     pub(crate) num_nodes: u16,
 
-    /// multisig min signers
+    /// Multisig min signers. It equals to the number of nodes by default.
     #[arg(short = 'm', long)]
-    pub(crate) multisig_min_signers: u16,
+    multisig_min_signers: Option<u16>,
 
-    /// multisig max signers
+    /// Multisig max signers. It equals to the number of nodes by default.
     #[arg(short = 't', long)]
-    pub(crate) multisig_max_signers: u16,
+    multisig_max_signers: Option<u16>,
 }
 
 impl Cli {
+    pub(crate) fn multisig_min_signers(&self) -> u16 {
+        self.multisig_min_signers.unwrap_or(self.num_nodes)
+    }
+
+    pub(crate) fn multisig_max_signers(&self) -> u16 {
+        self.multisig_min_signers.unwrap_or(self.num_nodes)
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         if self.num_nodes == 0 {
             return Err(anyhow::anyhow!("Number of nodes must be greater than 0"));
         }
 
-        if self.multisig_max_signers == 0 {
+        if self.multisig_max_signers() == 0 {
             return Err(anyhow::anyhow!("Max signers must be greater than 0"));
         }
 
-        if self.multisig_min_signers == 0 {
+        if self.multisig_min_signers() == 0 {
             return Err(anyhow::anyhow!("Min signers must be greater than 0"));
         }
 
-        if self.multisig_min_signers > self.num_nodes || self.multisig_max_signers > self.num_nodes
+        if self.multisig_min_signers() > self.num_nodes
+            || self.multisig_max_signers() > self.num_nodes
         {
             return Err(anyhow::anyhow!(
                 "Min signers and max signers must be less than or equal to the number of nodes"
             ));
         }
 
-        if self.multisig_max_signers < self.multisig_min_signers {
+        if self.multisig_max_signers() < self.multisig_min_signers() {
             return Err(anyhow::anyhow!(
                 "Max signers must be greater than or equal to the min signers"
             ));
         }
+
+        if self.output_path.exists() {
+            return Err(anyhow::anyhow!("Output path already exists: {:?}", self.output_path));
+        }
+
         Ok(())
     }
+}
+
+fn resolve_path(s: &str) -> Result<PathBuf, String> {
+    s.try_resolve().map(|path| path.into_owned()).map_err(|e| e.to_string())
 }
