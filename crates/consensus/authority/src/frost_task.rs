@@ -530,7 +530,8 @@ where
                     let header = entry.header;
 
                     let pegins = get_utxos_from_staged_pegins(entry.pegins);
-                    let pegouts = get_pending_pegouts_from_staged_pegouts(entry.pegouts);
+                    let pegouts =
+                        get_pending_pegouts_from_staged_pegouts(entry.pegouts, header.timestamp);
 
                     self.handle_canon_state_commit(header_hash, &header, pegins, pegouts).await;
                 }

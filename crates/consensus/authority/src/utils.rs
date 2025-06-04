@@ -210,6 +210,7 @@ pub(crate) fn get_staged_pegouts_from_pegout_data(
 
 pub(crate) fn get_pending_pegouts_from_staged_pegouts(
     pegouts: Vec<models::PegoutData>,
+    timestamp: u64,
 ) -> Vec<PendingPegout> {
     pegouts
         .into_iter()
@@ -218,6 +219,7 @@ pub(crate) fn get_pending_pegouts_from_staged_pegouts(
             spk: pegout.script_pubkey,
             amount: pegout.amount,
             height: pegout.height,
+            timestamp,
         })
         .collect()
 }
@@ -1746,10 +1748,10 @@ mod tests {
         let height = 100;
 
         let staged = get_staged_pegouts_from_pegout_data(&pegouts, height);
-        let pending1 = get_pending_pegouts_from_staged_pegouts(staged);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let pending1 = get_pending_pegouts_from_staged_pegouts(staged, now);
 
-        let pending2 =
-            get_pending_pegouts_from_pegout_data(&pegouts, height, pending1[0].timestamp);
+        let pending2 = get_pending_pegouts_from_pegout_data(&pegouts, height, now);
 
         assert_eq!(pending1, pending2);
     }
