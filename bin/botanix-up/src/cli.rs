@@ -43,7 +43,7 @@ impl Cli {
     }
 
     pub(crate) fn multisig_max_signers(&self) -> u16 {
-        self.multisig_min_signers.unwrap_or(self.num_nodes)
+        self.multisig_max_signers.unwrap_or(self.num_nodes)
     }
 
     pub(crate) fn validate(&self) -> Result<()> {
