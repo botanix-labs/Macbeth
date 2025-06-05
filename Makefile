@@ -852,7 +852,7 @@ check-features:
 		--package reth-rpc-types \
 		--feature-powerset
 
-bitcoin-cli:
+.PHONY: bitcoin-cli:
 	@if [ -z "$(CMD)" ]; then \
 		echo "Usage: make bitcoin-cli CMD='<command>'"; \
 		echo "Example: make bitcoin-cli CMD='getblockchaininfo'"; \
@@ -860,7 +860,7 @@ bitcoin-cli:
 	fi; \
 	docker compose -f docker-local/docker-compose.bitcoin.yml exec bitcoin-core bitcoin-cli $(CMD);
 
-init-docker-local:
+.PHONY: init-docker-local:
 	# Generate network configs
 	cargo run -p botanix-up -- --num-nodes=${NODES_NUMBER} --output-path=${NODES_DIR}
 
@@ -874,14 +874,14 @@ init-docker-local:
 	make bitcoin-cli CMD='--rpcwait createwallet local'
 	make bitcoin-cli CMD='-generate 10'
 
-start-docker-local:
+.PHONY: start-docker-local:
 	# Start single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
 
 	# Start nodes defined in the NODES_DIR
 	make build-docker-local
 
-stop-docker-local:
+.PHONY: stop-docker-local:
 	# Start single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml stop
 
@@ -897,7 +897,7 @@ stop-docker-local:
 		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml stop; \
 	done
 
-build-docker-local:
+.PHONY: build-docker-local:
 	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
 		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
 		exit 1; \
@@ -910,7 +910,7 @@ build-docker-local:
 		COMPOSE_BAKE=true docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d --build; \
 	done
 
-reset-docker-local:
+.PHONY: reset-docker-local:
 	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
 
 	# Down nodes defined in the NODES_DIR
@@ -921,7 +921,7 @@ reset-docker-local:
 		rm -rf "$$DIR""cometbft/data/*.db"; \
 	done
 
-clean-docker-local:
+.PHONY: clean-docker-local:
 	make reset-docker-local
 
 	# Remove docker network
