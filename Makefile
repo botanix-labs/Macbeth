@@ -918,9 +918,10 @@ reset-docker-local:
 	for DIR in $(NODES_DIR_ABS)/*/; do \
 		if [ ! -f "$$DIR.env" ]; then \
         	echo "Error: Environment file does not exist: $$DIR.env"; \
+        	exit 1; \
 		fi; \
 		docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
-		rm -rf ${$DIR}cometbft/data/*.db; \
+		rm -rf "$$DIR""cometbft/data/*.db"; \
 	done
 
 clean-docker-local:
