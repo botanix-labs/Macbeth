@@ -865,7 +865,8 @@ init-docker-local:
 	cargo run -p botanix-up -- --num-nodes=${NODES_NUMBER} --output-path=${NODES_DIR}
 
 	# Create shared docker network
-	docker network create botanix-local
+	docker network inspect botanix-local >/dev/null 2>&1 || \
+		docker network create botanix-local
 
 	make start-docker-local
 
@@ -913,16 +914,10 @@ reset-docker-local:
 	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
 
 	# Down nodes defined in the NODES_DIR
-	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
-		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
-		exit 1; \
-	fi; \
 	for DIR in $(NODES_DIR_ABS)/*/; do \
-		if [ ! -f "$$DIR.env" ]; then \
-        	echo "Error: Environment file does not exist: $$DIR.env"; \
-        	exit 1; \
+		if [ -f "$$DIR.env" ]; then \
+			docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
 		fi; \
-		docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
 		rm -rf "$$DIR""cometbft/data/*.db"; \
 	done
 
@@ -930,7 +925,7 @@ clean-docker-local:
 	make reset-docker-local
 
 	# Remove docker network
-	docker network rm botanix-local
+	docker network rm -f botanix-local
 
 	# Remove NODES_DIR
 	rm -rf ${NODES_DIR_ABS}
