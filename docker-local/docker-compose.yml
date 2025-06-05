@@ -4,10 +4,12 @@ services:
   btc_server:
     build:
       context: ../
-      dockerfile: Dockerfile.btc_server
+      dockerfile: Dockerfile
       args:
         # This compose file meant to be used only for local development and testing
-        BUILD_PROFILE: dev
+        PROFILE: dev
+        PACKAGE: btc-server
+        BIN: btc-server
     command:
       - --identifier=${BTC_SERVER_ID:?err}
       - --coordinator=0
@@ -41,7 +43,9 @@ services:
       dockerfile: Dockerfile
       args:
         # This compose file meant to be used only for local development and testing
-        BUILD_PROFILE: dev
+        PROFILE: dev
+        PACKAGE: reth
+        BIN: reth
     command:
       - poa
       - --is-testnet

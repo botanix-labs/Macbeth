@@ -904,6 +904,7 @@ build-docker-local:
 	for DIR in $(NODES_DIR_ABS)/*/; do \
 		if [ ! -f "$$DIR.env" ]; then \
 			echo "Error: Environment file does not exist: $$DIR.env"; \
+			exit 1; \
 		fi; \
 		COMPOSE_BAKE=true docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d --build; \
 	done

@@ -1,8 +1,7 @@
 # syntax = docker/dockerfile:1.7-labs
 
+# Build deps
 FROM rust:1.85 AS base
-
-# TODO: Make base image or combine into one multistage image for DRY
 
 ARG TARGETARCH
 ARG TARGETOS
@@ -46,6 +45,7 @@ COPY --parents bin crates testing Cargo.toml Cargo.lock .cargo ./
 
 RUN cargo chef prepare --recipe-path recipe.json
 
+# Builds an application
 FROM base AS builder
 
 WORKDIR /app
@@ -53,45 +53,51 @@ WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
 
 # Build profile, release by default
-ARG BUILD_PROFILE=release
-ENV BUILD_PROFILE=$BUILD_PROFILE
+ARG PROFILE=release
 
-# Extra Cargo flags
+# rustc flags
 ARG RUSTFLAGS=""
 ENV RUSTFLAGS="$RUSTFLAGS"
 
-# Extra Cargo features
+# Features to enable
 ARG FEATURES=""
-ENV FEATURES=$FEATURES
+
+# Package to build. This image builds the reth package by default.
+ARG PACKAGE="reth"
+
+# Binary to build. This image builds the reth binary by default.
+ARG BIN="reth"
 
 # Builds dependencies
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     cargo chef cook \
-    --profile $BUILD_PROFILE \
+    --profile $PROFILE \
     --features "$FEATURES" \
     --recipe-path recipe.json \
-    --bin reth \
+    --package "$PACKAGE" \
+    --bin "$BIN" \
     --locked
 
 # Build application
 COPY --parents bin crates testing Cargo.toml Cargo.lock .cargo ./
 
-RUN cargo build \
-    --profile $BUILD_PROFILE \
-    --features "$FEATURES" \
-    --bin reth \
-    --locked
-
-# ARG is not resolved in COPY so we have to hack around it by copying the
-# binary to a temporary location
-RUN if [[ "${BUILD_PROFILE}" == "release" ]] ; then \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    if [[ "${PROFILE}" == "release" ]] ; then \
       OUT_DIRECTORY=release; \
     else \
       OUT_DIRECTORY=debug; \
     fi && \
-    cp /app/target/$OUT_DIRECTORY/reth /app/reth
+    cargo build \
+    --profile $PROFILE \
+    --features "$FEATURES" \
+    --package "$PACKAGE" \
+    --bin "$BIN" \
+    --locked && \
+    cp target/$OUT_DIRECTORY/$BIN /usr/local/bin/app
 
 # Use Ubuntu as the release image
 FROM ubuntu AS runtime
@@ -99,10 +105,10 @@ FROM ubuntu AS runtime
 WORKDIR /app
 
 # Copy reth over from the build stage
-COPY --from=builder /app/reth /usr/local/bin
+COPY --from=builder /usr/local/bin/app /usr/local/bin/
 
 # Copy licenses
 COPY LICENSE-* ./
 
-EXPOSE 30303 30303/udp 9001 8545 8546
-ENTRYPOINT ["/usr/local/bin/reth"]
+EXPOSE 30303 30303/udp 9001 8545 8546 8080
+ENTRYPOINT ["/usr/local/bin/app"]
