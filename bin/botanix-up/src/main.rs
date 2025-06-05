@@ -255,11 +255,7 @@ fn create_docker_compose_dot_env_file(
 
         let env_config = HashMap::from([
             ("COMPOSE_PROJECT_NAME", project_name),
-            (
-                "BLOCK_FEE_RECIPIENT_ADDRESS",
-                // Prefunded balance for testnet
-                "0xF27a6Ea4a1d5f7341Da7EDAaa47C5C933b738f4F".to_string(),
-            ),
+            ("BLOCK_FEE_RECIPIENT_ADDRESS", cli.block_fee_recipient.clone()),
             ("BOTANIX_HOME", node_path.to_str().unwrap().to_string()),
             ("NTP_SERVER_URL", "time.cloudflare.com".to_string()),
             ("BITCOIND_NETWORK", "regtest".to_string()),

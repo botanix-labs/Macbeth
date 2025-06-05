@@ -35,6 +35,10 @@ pub(crate) struct Cli {
     /// Multisig max signers. It equals to the number of nodes by default.
     #[arg(short = 't', long)]
     multisig_max_signers: Option<u16>,
+
+    /// Block fee recipient address. Default is the prefunded balance for testnet.
+    #[arg(long, default_value = "0xF27a6Ea4a1d5f7341Da7EDAaa47C5C933b738f4F")]
+    pub(crate) block_fee_recipient: String,
 }
 
 impl Cli {
