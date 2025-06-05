@@ -17,7 +17,7 @@ pub(crate) struct Cli {
     pub(crate) output_path: PathBuf,
 
     /// Docker compose project name prefix. The full name will be [prefix][NodeIndex]
-    #[arg(long, default_value = "botanix")]
+    #[arg(long, default_value = "botanix", value_parser = validate_project_name_prefix)]
     pub(crate) project_name_prefix: String,
 
     /// Generate configs for non-docker environment (localhost networking)
@@ -87,4 +87,12 @@ impl Cli {
 
 fn resolve_path(s: &str) -> Result<PathBuf, String> {
     s.try_resolve().map(|path| path.into_owned()).map_err(|e| e.to_string())
+}
+
+fn validate_project_name_prefix(s: &str) -> Result<String, String> {
+    if s.chars().all(|c| c.is_ascii_alphanumeric()) {
+        Ok(s.to_string())
+    } else {
+        Err("Project name prefix must contain only alphanumeric characters".to_string())
+    }
 }
