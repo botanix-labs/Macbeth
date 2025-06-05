@@ -313,7 +313,10 @@ fn copy_poa_configs_to_btc_server(
 
         // Copy config.toml file
         let current_crate_dir = env!("CARGO_MANIFEST_DIR");
-        let workspace_root = Path::new(current_crate_dir).parent().unwrap().parent().unwrap(); // Go up from bin/botanix-up to workspace root
+        let workspace_root = Path::new(current_crate_dir)
+            .parent()
+            .and_then(|p| p.parent())
+            .ok_or_else(|| anyhow::anyhow!("Failed to find workspace root"))?;
         let btc_server_config_toml =
             workspace_root.join("bin").join("btc-server").join("config.toml");
         let config_toml_destination = btc_server_path.join("config.toml");
