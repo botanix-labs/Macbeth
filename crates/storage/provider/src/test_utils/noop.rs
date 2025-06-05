@@ -38,7 +38,7 @@ use crate::{
     AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
     ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider, PruneCheckpointReader,
     ReceiptProviderIdExt, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
-    StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
+    StagedHeader, StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
     StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WalletStateSyncReader,
     WalletStateSyncWriter, WithdrawalsProvider,
 };
@@ -308,6 +308,24 @@ impl SnapshotWriter for NoopProvider {
 
     fn delete_chunks_in_blocks(&self, _range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
         Ok(())
+    }
+}
+
+impl StagedHeader for NoopProvider {
+    fn insert_staged_header(
+        &self,
+        _id: B256,
+        _header: reth_db::models::HeaderWithPegs,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn remove_staged_header(&self, _id: B256) -> ProviderResult<bool> {
+        Ok(false)
+    }
+
+    fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, reth_db::models::HeaderWithPegs)>> {
+        Ok(vec![])
     }
 }
 

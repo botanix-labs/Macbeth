@@ -70,16 +70,6 @@ pub fn add_round2_signing(
     db.flush()?;
     debug!("Stored round2 signing from peer: {:?}", frost_id);
 
-    // if let Some(telemetry) = self.telemetry.as_ref() {
-    //     telemetry.update_round2_signing_metrics(
-    //         self.btc_network,
-    //         self.config.identifier,
-    //         signing_session_id,
-    //         written_data,
-    //         start.elapsed().as_millis(),
-    //     )
-    // }
-
     Ok(())
 }
 

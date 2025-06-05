@@ -4,11 +4,11 @@ use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::ExecutedBlock;
 use reth_chainspec::ChainSpec;
 use reth_db::{
-    models::{SnapshotSync, SnapshotSyncId},
+    models::{self, SnapshotSync, SnapshotSyncId},
     Database, DatabaseEnv,
 };
 use reth_provider::{
-    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome, StagedHeader,
 };
 use reth_trie::{updates::TrieUpdates, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
@@ -114,6 +114,7 @@ use crate::{
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     metrics::AuthorityMetrics,
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
+    utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
     AuthorityConsensus, Storage,
 };
 use tracing::{debug, error, info, instrument, trace, warn};
@@ -988,7 +989,12 @@ where
                                     "Requested chunk with index {:?} not found in snapshot {:?}",
                                     request.chunk, snapshot_id
                                 );
-                                    return ResponseLoadSnapshotChunk::default();
+
+                                    let response = ResponseLoadSnapshotChunk::default();
+
+                                    trace!("return={:?}", response);
+
+                                    return response;
                                 }
                             };
 
@@ -2238,6 +2244,34 @@ where
                             Arc::new(trie_updates.clone()),
                         );
 
+                        let pegins = sealed_block_with_peg
+                            .pegins()
+                            .iter()
+                            .flat_map(|p| p.meta.clone())
+                            .collect::<Vec<_>>();
+
+                        let pegouts = sealed_block_with_peg.pegouts().to_vec();
+
+                        // Prepare the staged entries for insertion into the
+                        // database; this ensures that no pegins or pegouts are
+                        // ever accidentally dropped during a shutdown or
+                        // interruption.
+                        //
+                        // Those staged entries are removed from the database
+                        // once the Frost task has successfully initiated a new
+                        // checkpoint on the btc-server.
+
+                        let staged_pegins: Vec<models::PeginData> =
+                            get_staged_pegins_from_pegin_meta(&pegins);
+                        let staged_pegouts: Vec<models::PegoutData> =
+                            get_staged_pegouts_from_pegout_data(&pegouts, new_header.number);
+
+                        let header_with_pegs = models::HeaderWithPegs {
+                            pegins: staged_pegins,
+                            pegouts: staged_pegouts,
+                            header: new_header.header().clone(),
+                        };
+
                         let db_rw = match self.database_provider.provider_rw() {
                             Ok(db_rw) => db_rw,
                             Err(e) => {
@@ -2256,6 +2290,9 @@ where
                             hashed_state.into_sorted(),
                             trie_updates,
                         )?;
+
+                        db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
+
                         db_rw.commit()?;
 
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
@@ -2283,13 +2320,6 @@ where
                             sealed_block_with_context.exec_outcome.clone(),
                             None,
                         );
-
-                        let pegins = sealed_block_with_peg
-                            .pegins()
-                            .iter()
-                            .flat_map(|p| p.meta.clone())
-                            .collect::<Vec<_>>();
-                        let pegouts = sealed_block_with_peg.pegouts().to_vec();
 
                         self.blockchain_provider.canonical_in_memory_state().notify_canon_state(
                             CanonStateNotification::Commit {
