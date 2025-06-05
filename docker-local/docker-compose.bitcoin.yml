@@ -1,6 +1,6 @@
 services:
   bitcoin-core:
-    image: ruimarinho/bitcoin-core:latest
+    image: ruimarinho/bitcoin-core:24
     hostname: bitcoin-core
     container_name: bitcoin-core
     volumes:
