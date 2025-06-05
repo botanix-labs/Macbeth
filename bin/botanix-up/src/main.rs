@@ -103,8 +103,14 @@ async fn create_cometbft_node_configs(cli: &Cli) -> AnyResult<Vec<comet_node::Co
                 stderr
             ));
         }
-        let output_parts = stdout.split('\n').filter(|x| !x.is_empty()).collect::<Vec<&str>>();
-        let enode = output_parts[output_parts.len() - 1].trim().to_string();
+        let enode = stdout
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .next_back()
+            .ok_or_else(|| anyhow::anyhow!("Empty stdout from cometbft show-node-id command"))?
+            .trim()
+            .to_string();
+
         tracing::info!("CometBFT enode: {:?}", enode);
 
         // prepare test signal
