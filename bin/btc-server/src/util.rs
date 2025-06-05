@@ -425,7 +425,7 @@ pub enum ValidateOutputsError {
 }
 
 /// Check:
-/// - there is only one change output
+/// - additional outputs are change outputs
 /// - pegouts have not already been finalized
 /// - there are no duplicate outputs
 pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
@@ -674,9 +674,9 @@ mod tests {
                 .unwrap_or_default()
         });
 
-        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat()
-            / psbt.unsigned_tx.output.len() as u64
-            + 100;
+        let diff = total_inputs.checked_sub(total_outputs).unwrap_or_default().to_sat() /
+            psbt.unsigned_tx.output.len() as u64 +
+            100;
 
         // increase each output accordingly to cause negative fee
         for output in psbt.unsigned_tx.output.iter_mut() {
