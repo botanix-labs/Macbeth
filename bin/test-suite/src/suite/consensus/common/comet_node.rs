@@ -352,7 +352,7 @@ pub fn update_config_toml(cometbft_node: &CometBftNodeConfig) -> anyhow::Result<
                 let rpc_state_sync_servers = cometbft_node
                     .peers_list
                     .iter()
-                    .map(|peer| format!("http://localhost:{}", peer.rpc_listen_address))
+                    .map(|peer| format!("http://{}", peer.rpc_listen_address))
                     .collect::<Vec<String>>()
                     .join(",");
                 *rpc_servers = toml::value::Value::String(rpc_state_sync_servers);
