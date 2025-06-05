@@ -367,5 +367,6 @@ async fn inner_main() -> AnyResult<()> {
 async fn main() {
     if let Err(e) = inner_main().await {
         eprintln!("ERROR: {:?}", e);
+        std::process::exit(1);
     }
 }
