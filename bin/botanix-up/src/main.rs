@@ -172,6 +172,10 @@ fn create_poa_node_configs(cli: &Cli) -> AnyResult<Vec<FederationMemberConfig>> 
         let node_path = cli.output_path.join(format!("node-{}", i + 1)).join("poa");
         fs::create_dir_all(&node_path)?;
 
+        // Create logs directory
+        let logs_path = node_path.join("logs");
+        fs::create_dir_all(logs_path)?;
+
         // Create the secret key
         let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk = sk.public_key(SECP256K1);
