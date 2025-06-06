@@ -128,6 +128,7 @@ async fn create_cometbft_node_configs(cli: &Cli) -> AnyResult<Vec<comet_node::Co
             cometbft_path,
             node_external_address,
             false,
+            false,
         )
         .await?;
 
