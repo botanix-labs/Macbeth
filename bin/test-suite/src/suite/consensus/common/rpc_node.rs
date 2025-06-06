@@ -154,25 +154,6 @@ impl NonFederationMemberTestConfig {
             .write_all(&self.secret_key.display_secret().to_string().as_bytes())
             .context("error writing secret key to file")?;
 
-        // now create the edh
-        let edh = ExtraDataHeader::new(
-            EXTRA_HEADER_VERSION,
-            CHAIN_VERSION,
-            BlockHash::hash(&[1]),
-            nums_secp256k1_pk(),
-            Address::ZERO,
-        );
-
-        // update genesis config with edh and render file
-        let _botanix_testnet_config_genesis = {
-            let edh = hex::encode(edh.serialize());
-            let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
-            let rendered_json = botanix_testnet_config_genesis
-                .render()
-                .context("error rendering botanix testnet genesis config")?;
-            rendered_json
-        };
-
         // Need to create a chain.toml in the data dir
         // Need to zip together the soc address and pk
         let mut fed_member_pks = vec![];
@@ -372,7 +353,7 @@ pub async fn create_rpc_nodes(
             ABCI_PORT_BASE + 1000 * (global_context.fed_instances + member_index),
             global_context.lst_fee_receiver.clone(),
         ).await?;
-        rpc_members.insert(global_context.fed_instances + member_index, rpc_node);
+        rpc_members.insert(member_index, rpc_node);
     }
 
     // Note: before we create the chain.toml edh and authorities list need to be set
