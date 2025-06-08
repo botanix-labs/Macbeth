@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - v*
-    
+
 jobs:
   build_and_deploy_btc_server:
     runs-on: botanix-actions-runner
@@ -23,7 +23,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build --platform linux/amd64 -t botanix_btc_server -f Dockerfile.btc_server .
+          docker build \
+            --platform linux/amd64 \
+            -t botanix_btc_server \
+            -f Dockerfile \
+            --build-arg PACKAGE=btc-server \
+            --build-arg BIN=btc-server \
+            .
         working-directory: ./
 
       - name: Get short SHA
@@ -77,7 +83,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build --platform linux/amd64 -t botanix_reth -f Dockerfile .
+          docker build \
+            --platform linux/amd64 \
+            -t botanix_reth \
+            -f Dockerfile \
+            --build-arg PACKAGE=reth \
+            --build-arg BIN=reth \
+            .
         working-directory: ./
 
       - name: Get short SHA
@@ -113,12 +125,12 @@ jobs:
           docker push us-central1-docker.pkg.dev/botanix-391913/botanix-mainnet-node/botanix-reth:${{ steps.sha.outputs.short_sha }}
           docker push us-central1-docker.pkg.dev/botanix-391913/botanix-mainnet-node/botanix-reth:${{ steps.tag.outputs.tag }}
           docker push us-central1-docker.pkg.dev/botanix-391913/botanix-mainnet-node/botanix-reth:latest
-  
+
   dispatch_testnet:
     runs-on: botanix-actions-runner
     name: Dispatch to Botanix Testnet v1 internal deployment
     needs: [build_and_deploy_btc_server, build_and_deploy_reth_node]
-    steps: 
+    steps:
       - name: Dispatch event
         run: |
           curl -L \

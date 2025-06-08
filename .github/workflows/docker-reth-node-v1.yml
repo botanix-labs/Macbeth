@@ -2,7 +2,7 @@ name: Docker Build Test for PoA Node
 
 on:
   pull_request:
-    branches: 
+    branches:
       - main
     types: [opened]
 
@@ -23,7 +23,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build --platform linux/amd64 -t botanix_testnet_v1 -f Dockerfile .
+          docker build \
+            --platform linux/amd64 \
+            -t botanix_testnet_v1 \
+            -f Dockerfile \
+            --build-arg PACKAGE=reth \
+            --build-arg BIN=reth \
+            .
           docker tag botanix_testnet_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-v1/botanix-poa-node:${{ steps.sha.outputs.short_sha }}
         working-directory: ./
 
