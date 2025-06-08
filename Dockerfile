@@ -2,7 +2,6 @@
 FROM rust:1.85 AS base
 
 ARG TARGETARCH
-ARG TARGETOS
 
 # Download and install cargo-binstall
 ENV BINSTALL_VERSION=1.12.6
