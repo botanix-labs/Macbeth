@@ -84,7 +84,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    if [[ "${PROFILE}" == "release" ]] ; then \
+    if [ "${PROFILE}" = "release" ] ; then \
       OUT_DIRECTORY=release; \
     else \
       OUT_DIRECTORY=debug; \
