@@ -2,6 +2,7 @@
 
 services:
   btc_server:
+    image: botanix-local-btc-server:latest
     build:
       context: ../
       dockerfile: Dockerfile
@@ -37,6 +38,7 @@ services:
       - botanix-local
 
   poa:
+    image: botanix-local-poa:latest
     build:
       context: ../
       dockerfile: Dockerfile
