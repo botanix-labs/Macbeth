@@ -923,13 +923,22 @@ build-docker-local:
 		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
 		exit 1; \
 	fi; \
+	FIRST_RUN=true; \
 	for DIR in $(NODES_DIR_ABS)/*/; do \
 		if [ ! -f "$$DIR.env" ]; then \
 			echo "Error: Environment file does not exist: $$DIR.env"; \
 			exit 1; \
 		fi; \
-		COMPOSE_BAKE=true docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d --build; \
+		if [ "$$FIRST_RUN" = "true" ]; then \
+			echo "Building images for first compose project: $$DIR"; \
+			COMPOSE_BAKE=true docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d --build; \
+			FIRST_RUN=false; \
+		else \
+			echo "Using existing images for subsequent project: $$DIR"; \
+			docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d; \
+		fi; \
 	done
+
 
 reset-docker-local:
 	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
