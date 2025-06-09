@@ -41,7 +41,7 @@ DOCKER_IMAGE_NAME ?= ghcr.io/paradigmxyz/reth
 BIN_OTHER_FEATURES := asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs
 
 # Botanix local network configuration
-NODES_DIR ?= ~/.botanix-local
+NODES_DIR ?= .botanix-local
 # Resolve NODES_DIR to absolute path, expanding ~ properly
 NODES_DIR_ABS := $(shell bash -c 'echo $(NODES_DIR)')
 

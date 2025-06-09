@@ -10,7 +10,7 @@ pub(crate) struct Cli {
     #[arg(
         short = 'o',
         long,
-        default_value = "~/.botanix-local",
+        default_value = ".botanix-local",
         value_parser = resolve_path
     )]
     pub(crate) output_path: PathBuf,
