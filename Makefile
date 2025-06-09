@@ -939,7 +939,7 @@ reset-docker-local:
 		if [ -f "$$DIR.env" ]; then \
 			docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
 		fi; \
-		rm -rf "$$DIR""cometbft/data/*.db"; \
+		rm -rf $${DIR}cometbft/data/*.db; \
 	done
 
 	# Start single bitcoin-core node
@@ -961,7 +961,7 @@ clean-docker-local:
 		if [ -f "$$DIR.env" ]; then \
 			docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
 		fi; \
-		rm -rf "$$DIR""cometbft/data/*.db"; \
+		rm -rf $${DIR}cometbft/data/*.db; \
 	done
 
 	# Remove docker network
