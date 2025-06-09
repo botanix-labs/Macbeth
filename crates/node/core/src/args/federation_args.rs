@@ -97,6 +97,7 @@ impl FederationTomlConfig {
     /// Extracts federation public keys and socket addresses from the config
     pub async fn get_federation_pks_from_path(
         &self,
+        resolve_hostnames: bool,
     ) -> Result<Vec<(secp256k1::PublicKey, SocketAddr)>, Error> {
         let mut federation_members = Vec::new();
 
@@ -106,7 +107,11 @@ impl FederationTomlConfig {
             // Try to parse as SocketAddr first (for IP addresses)
             let socket_addr = match key.socket_addr.parse::<SocketAddr>() {
                 Ok(addr) => addr,
-                Err(_) => {
+                Err(e) => {
+                    if !resolve_hostnames {
+                        return Err(Error::InvalidSocketAddress(e));
+                    }
+
                     // If parsing as SocketAddr fails, try async DNS resolution
                     let mut addrs = tokio::net::lookup_host(&key.socket_addr)
                         .await
