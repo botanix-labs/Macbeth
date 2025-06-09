@@ -1,3 +1,5 @@
+#syntax=docker/dockerfile:1.7-labs
+
 # Build deps
 FROM rust:1.85 AS base
 
@@ -38,7 +40,7 @@ FROM base AS planner
 
 WORKDIR /app
 
-COPY . .
+COPY --parents .cargo bin crates testing Cargo.toml Cargo.lock  ./
 
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -77,7 +79,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --bin "$BIN" \
     --locked
 
-COPY . .
+COPY --parents .cargo bin crates testing Cargo.toml Cargo.lock  ./
 
 # Build application
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
