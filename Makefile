@@ -883,6 +883,23 @@ start-docker-local:
 		make bitcoin-cli CMD='-generate 10'; \
 	fi
 
+restart-docker-local:
+	# Restart single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml restart
+
+	# Restart nodes defined in the NODES_DIR
+	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
+		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
+		exit 1; \
+	fi; \
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ ! -f "$$DIR.env" ]; then \
+			echo "Error: Environment file does not exist: $$DIR.env"; \
+			exit 1; \
+		fi; \
+		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml restart; \
+	done
+
 stop-docker-local:
 	# Start single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml stop
