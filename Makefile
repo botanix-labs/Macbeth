@@ -952,7 +952,6 @@ build-docker-local:
 		fi; \
 	done
 
-
 reset-docker-local:
 	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
 
