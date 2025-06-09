@@ -109,5 +109,5 @@ COPY --from=builder /usr/local/bin/app /usr/local/bin/
 # Copy licenses
 COPY LICENSE-* ./
 
-EXPOSE 30303 30303/udp 9001 8545 8546 8080
+EXPOSE 30303 30303/udp 9001 8545 8546 8080 7000
 ENTRYPOINT ["/usr/local/bin/app"]
