@@ -158,10 +158,13 @@ async fn create_cometbft_node_configs(cli: &Cli) -> AnyResult<Vec<comet_node::Co
 
 struct FederationMemberConfig {
     index: u16,
+    #[allow(dead_code)]
     secret_key: secp256k1::SecretKey,
     public_key: secp256k1::PublicKey,
     path: PathBuf,
+    #[allow(dead_code)]
     discovery_secret_path: PathBuf,
+    #[allow(dead_code)]
     jwt_secret_path: PathBuf,
     socket_address: HostAndPort,
 }

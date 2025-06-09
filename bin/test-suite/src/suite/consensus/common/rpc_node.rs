@@ -9,18 +9,10 @@ use crate::{
     },
 };
 use anyhow::Context;
-use reth_chainspec::BotanixTestnetGenesisConfig;
 use reth_network_peers::pk2id;
 use reth_node_core::args::FederationTomlConfig;
 
-use askama::Template;
-use bitcoin::{hashes::Hash, BlockHash};
 use reth::args::FedMemberPubKey;
-use reth_primitives::{
-    constants::nums_secp256k1_pk,
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    Address,
-};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{

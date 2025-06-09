@@ -1,7 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
 use resolve_path::PathResolveExt;
-use std::env;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
