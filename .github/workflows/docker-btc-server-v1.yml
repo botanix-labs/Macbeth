@@ -26,7 +26,7 @@ jobs:
           docker build \
             --platform linux/amd64 \
             -t botanix_testnet_btc_server_v1 \
-            -f Dockerfile.btc_server \
+            -f Dockerfile \
             --build-arg PACKAGE=btc-server \
             --build-arg BIN=btc-server \
             .
