@@ -868,18 +868,20 @@ init-docker-local:
 	docker network inspect botanix-local >/dev/null 2>&1 || \
 		docker network create botanix-local
 
-	make start-docker-local
-
-	# Create a bitcoin wallet and generate some blocks
-	make bitcoin-cli CMD='--rpcwait createwallet local'
-	make bitcoin-cli CMD='-generate 10'
-
 start-docker-local:
 	# Start single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
 
 	# Start nodes defined in the NODES_DIR
 	make build-docker-local
+
+	# Try to load existing wallet, if it fails then create a new one
+	make bitcoin-cli CMD='--rpcwait loadwallet local'
+	@if [ $$? -ne 0 ]; then \
+		echo "Wallet doesn't exist, attempting to create a new wallet..."; \
+		make bitcoin-cli CMD='--rpcwait createwallet local'; \
+		make bitcoin-cli CMD='-generate 10'; \
+	fi
 
 stop-docker-local:
 	# Start single bitcoin-core node
