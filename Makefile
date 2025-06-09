@@ -857,6 +857,7 @@ check-features:
 		--package reth-rpc-types \
 		--feature-powerset
 
+.PHONY: bitcoin-cli
 bitcoin-cli:
 	@if [ -z "$(CMD)" ]; then \
 		echo "Usage: make bitcoin-cli CMD='<command>'"; \
@@ -865,6 +866,7 @@ bitcoin-cli:
 	fi; \
 	docker compose -f docker-local/docker-compose.bitcoin.yml exec bitcoin-core bitcoin-cli $(CMD);
 
+.PHONY: init-docker-local
 init-docker-local:
 	# Generate network configs
 	cargo run -p botanix-up -- \
@@ -891,6 +893,7 @@ init-docker-local:
 	# Stop the bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml stop
 
+.PHONY: start-docker-local
 start-docker-local:
 	# Start single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
@@ -898,6 +901,7 @@ start-docker-local:
 	# Start nodes defined in the NODES_DIR
 	make build-docker-local
 
+.PHONY: restart-docker-local
 restart-docker-local:
 	# Restart single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml restart
@@ -915,6 +919,7 @@ restart-docker-local:
 		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml restart; \
 	done
 
+.PHONY: stop-docker-local
 stop-docker-local:
 	# Stop the bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml stop
@@ -931,6 +936,7 @@ stop-docker-local:
 		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml stop; \
 	done
 
+.PHONY: build-docker-local
 build-docker-local:
 	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
 		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
@@ -952,6 +958,7 @@ build-docker-local:
 		fi; \
 	done
 
+.PHONY: reset-docker-local
 reset-docker-local:
 	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
 
@@ -973,6 +980,7 @@ reset-docker-local:
 	# Stop bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml stop
 
+.PHONY: clean-docker-local
 clean-docker-local:
 	# Drop bitcoin-core data
 	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
