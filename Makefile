@@ -868,20 +868,22 @@ init-docker-local:
 	docker network inspect botanix-local >/dev/null 2>&1 || \
 		docker network create botanix-local
 
+	# Start single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
+
+	# Create a wallet
+	make bitcoin-cli CMD="--rpcwait createwallet local";
+	make bitcoin-cli CMD="-generate 10";
+
+	# Stop the bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml stop
+
 start-docker-local:
 	# Start single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
 
 	# Start nodes defined in the NODES_DIR
 	make build-docker-local
-
-	# Try to load existing wallet, if it fails then create a new one
-	make bitcoin-cli CMD='--rpcwait loadwallet local'
-	@if [ $$? -ne 0 ]; then \
-		echo "Wallet doesn't exist, attempting to create a new wallet..."; \
-		make bitcoin-cli CMD='--rpcwait createwallet local'; \
-		make bitcoin-cli CMD='-generate 10'; \
-	fi
 
 restart-docker-local:
 	# Restart single bitcoin-core node
@@ -940,8 +942,27 @@ reset-docker-local:
 		rm -rf "$$DIR""cometbft/data/*.db"; \
 	done
 
+	# Start single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
+
+	# Create wallet
+	make bitcoin-cli CMD="--rpcwait createwallet local";
+	make bitcoin-cli CMD="-generate 10";
+
+	# Stop bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml stop
+
 clean-docker-local:
-	make reset-docker-local
+	# Drop bitcoin-core data
+	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
+
+	# Down nodes defined in the NODES_DIR
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ -f "$$DIR.env" ]; then \
+			docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
+		fi; \
+		rm -rf "$$DIR""cometbft/data/*.db"; \
+	done
 
 	# Remove docker network
 	docker network rm -f botanix-local
