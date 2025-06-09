@@ -942,20 +942,13 @@ build-docker-local:
 		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
 		exit 1; \
 	fi; \
-	FIRST_RUN=true; \
+	COMPOSE_BAKE=true docker compose --env-file "${NODES_DIR_ABS}/node-1/.env" -f docker-local/docker-compose.yml build; \
 	for DIR in $(NODES_DIR_ABS)/*/; do \
 		if [ ! -f "$$DIR.env" ]; then \
 			echo "Error: Environment file does not exist: $$DIR.env"; \
 			exit 1; \
 		fi; \
-		if [ "$$FIRST_RUN" = "true" ]; then \
-			echo "Building images for first compose project: $$DIR"; \
-			COMPOSE_BAKE=true docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d --build; \
-			FIRST_RUN=false; \
-		else \
-			echo "Using existing images for subsequent project: $$DIR"; \
-			docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d; \
-		fi; \
+		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d; \
 	done
 
 .PHONY: reset-docker-local
