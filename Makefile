@@ -903,7 +903,7 @@ restart-docker-local:
 	done
 
 stop-docker-local:
-	# Start single bitcoin-core node
+	# Stop the bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml stop
 
 	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
