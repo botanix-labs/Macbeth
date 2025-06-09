@@ -44,39 +44,56 @@ onto which the pod traffic is to be forwarded. Usually that is `38332`.
 
 ## Run a local federation (Docker-Compose)
 
-1. Change directory to `docker-local` and configure `.bitcoin.env` file adjusting the values of the bitcoind server in the docker-compose.
-
-2. Start the bitcoind server using `make start-docker-bitcoin`.
-
-3. Copy `federation.template.toml` to the `docker-local/poa-1 && docker-local/poa-2` directory using:
+1. Generate network configs with 2/2/2 nodes:
 
 ```bash
-cp federation.template.toml docker-local/poa-1/chain.toml
-cp federation.template.toml docker-local/poa-2/chain.toml
+make init-docker-local
 ```
 
-4. Update the `chain.toml` federation members ip addresses to host machine ip to avoid network connectivity issues.
+Use `NODES_NUMBER` to specify the number of nodes in the federation.
+For example, to create a 3/3/3 federation, set `NODES_NUMBER=3`.
 
-5. Start local-federation with 2/2/2 nodes using:
+Use `botanix-up` directly to specify max/min signers count.
+
+```bash
+
+2. Start local-federation:
 
 ```bash
 make start-docker-local
 ```
 
-6. Update the `genesis.json` for cometbft nodes with the appropriate validator keys
-
-7. Update the `PERSISTENT_PEERS` value for cometbft nodes with the appropriate id. To get the peer id run:
+3. To stop the local federation, use:
 
 ```bash
-docker exec -it consensus-node-1 cometbft show-node-id --home /cometbft
-docker exec -it consensus-node-2 cometbft show-node-id --home /cometbft
+make stop-docker-local
 ```
 
-**_Notes_**
+4. To drop all data and configs of the local federation:
+
+```bash
+make clean-docker-local
+```
+
+5. To rebuild docker images for the local federation:
+
+```bash
+make build-docker-local
+```
+
+6. To reset data in local federation:
+
+```bash
+make reset-docker-local
+```
 
 > > To build poa-node locally for feature or refactor testing use `make build-docker-local`
 
-> > you need cast installed via [forge](https://book.getfoundry.sh/getting-started/installation) in order to use `cast`.
+## Known issues
+
+- This setup is not tested on Windows.
+- You may see `permission denied` errors running `make clean-docker-local` on Ubuntu.
+  Please use `sudo` to remove CometBFT data files.
 
 ## Getting Help
 
