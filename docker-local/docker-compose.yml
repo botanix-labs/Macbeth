@@ -37,7 +37,6 @@ services:
       - botanix-local
 
   poa:
-    image: us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node
     build:
       context: ../
       dockerfile: Dockerfile
