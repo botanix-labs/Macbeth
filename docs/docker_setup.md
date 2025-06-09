@@ -93,7 +93,7 @@ make reset-docker-local
 
 - This setup is not tested on Windows.
 - You may see `permission denied` errors running `make clean-docker-local` on Ubuntu.
-  Use `sudo` to remove CometBFT data files.
+  Please use `sudo` to remove CometBFT data files.
 
 ## Getting Help
 
