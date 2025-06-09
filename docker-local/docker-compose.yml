@@ -100,7 +100,8 @@ services:
     restart: on-failure
     hostname: ${COMPOSE_PROJECT_NAME?:err}-poa
     networks:
-      - botanix-local
+      botanix-local:
+        ipv4_address: ${POA_IP4_ADDRESS:?err}
 
   cometbft:
     image: us-central1-docker.pkg.dev/botanix-391913/botanix-betanet-cometbft/botanix-betanet-cometbft:v1

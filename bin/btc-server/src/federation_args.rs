@@ -38,8 +38,6 @@ pub enum Error {
     /// Failed to read config socket address: {0}
     #[allow(dead_code)]
     InvalidSocketAddress(#[from] std::net::AddrParseError),
-    /// Failed to resolve hostname: {0}
-    FailedToResolveHostname(std::io::Error),
 }
 
 /// Federation member public key and socket address
@@ -99,39 +97,20 @@ impl FederationTomlConfig {
     }
 
     /// Extracts federation public keys and socket addresses from the config
-    pub async fn get_federation_pks_from_path(
+    pub fn get_federation_pks_from_path(
         &self,
-        resolve_hostnames: bool,
     ) -> Result<Vec<(secp256k1::PublicKey, SocketAddr)>, Error> {
-        let mut federation_members = Vec::new();
+        let federation_members = self
+            .federation_member_public_key
+            .iter()
+            .map(|key| {
+                let public_key = secp256k1::PublicKey::from_str(&key.key).map_err(Error::from)?;
 
-        for key in &self.federation_member_public_key {
-            let public_key = secp256k1::PublicKey::from_str(&key.key).map_err(Error::from)?;
+                let soc_addr = key.socket_addr.parse::<SocketAddr>().map_err(Error::from)?;
 
-            // Try to parse as SocketAddr first (for IP addresses)
-            let socket_addr = match key.socket_addr.parse::<SocketAddr>() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    if !resolve_hostnames {
-                        return Err(Error::InvalidSocketAddress(e));
-                    }
-
-                    // If parsing as SocketAddr fails, try async DNS resolution
-                    let mut addrs = tokio::net::lookup_host(&key.socket_addr)
-                        .await
-                        .map_err(Error::FailedToResolveHostname)?;
-
-                    addrs.next().ok_or_else(|| {
-                        Error::FailedToResolveHostname(std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            format!("Could not resolve hostname: {}", key.socket_addr),
-                        ))
-                    })?
-                }
-            };
-
-            federation_members.push((public_key, socket_addr));
-        }
+                Ok((public_key, soc_addr))
+            })
+            .collect::<Result<Vec<(secp256k1::PublicKey, SocketAddr)>, Error>>()?;
 
         Ok(federation_members)
     }

@@ -12,8 +12,6 @@ workspace = true
 
 [dependencies]
 
-tokio = { workspace = true }
-
 # ethereum
 alloy-genesis = { workspace = true }
 alloy-rpc-types-engine = { workspace = true }

@@ -590,11 +590,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 return Err(eyre::eyre!("Failed to read federation config file"));
             }
         };
-
-        // Allow hostname resolution only for testnet
-        // mainnet requires IP addresses for security reasons
-        let federation_authorities =
-            federation_config.get_federation_pks_from_path(*is_testnet).await?;
+        let federation_authorities = federation_config.get_federation_pks_from_path()?;
 
         if let Some(max_signers) = rpc.max_signers {
             if federation_authorities.len() != max_signers as usize {

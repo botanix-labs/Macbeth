@@ -871,11 +871,15 @@ init-docker-local:
 		--num-nodes=${NODES_NUMBER} \
 		--output-path=${NODES_DIR} \
 		--multisig-min-signers=${FROST_MIN_SIGNERS} \
-		--multisig-max-signers=${FROST_MAX_SIGNERS}
+		--multisig-max-signers=${FROST_MAX_SIGNERS} \
+		--docker-subnet=172.22.0.1/16
 
 	# Create shared docker network
-	docker network inspect botanix-local >/dev/null 2>&1 || \
-		docker network create botanix-local
+	docker network create \
+      --subnet=172.22.0.0/16 \
+      --ip-range=172.22.0.0/24 \
+      --gateway=172.22.0.1 \
+      botanix-local
 
 	# Start single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml up -d

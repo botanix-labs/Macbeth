@@ -23,6 +23,10 @@ pub(crate) struct Cli {
     #[arg(long, default_value_t = false)]
     pub(crate) non_docker: bool,
 
+    /// Docker subnet for the network. Default is 172.20.0.0/16
+    #[arg(long, default_value = "172.22.0.0/16")]
+    pub(crate) docker_subnet: String,
+
     /// numbers of nodes
     #[arg(short = 'n', long)]
     pub(crate) num_nodes: u16,

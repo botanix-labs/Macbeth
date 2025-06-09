@@ -12,12 +12,12 @@ use reth_node_core::{
 };
 use secp256k1::SECP256K1;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
 };
-use test_suite::suite::consensus::common::comet_node::HostAndPort;
 use test_suite::suite::consensus::common::{
     comet_node::{self, updated_genesis_file, GenesisValidator, PrivValidator},
     poa_node::{ABCI_PORT_BASE, DISCOVERY_PORT_BASE},
@@ -166,7 +166,7 @@ struct FederationMemberConfig {
     discovery_secret_path: PathBuf,
     #[allow(dead_code)]
     jwt_secret_path: PathBuf,
-    socket_address: HostAndPort,
+    socket_address: SocketAddr,
 }
 fn create_poa_node_configs(cli: &Cli) -> AnyResult<Vec<FederationMemberConfig>> {
     let mut configs = Vec::new();
@@ -210,7 +210,13 @@ fn create_poa_node_configs(cli: &Cli) -> AnyResult<Vec<FederationMemberConfig>> 
         let socket_address = if cli.non_docker {
             format!("127.0.0.1:{}", DISCOVERY_PORT_BASE + 1000 * i)
         } else {
-            format!("{}{}-poa-1:{}", cli.project_name_prefix, i + 1, DISCOVERY_PORT_BASE)
+            // Extract base subnet (e.g., "172.22" from "172.22.0.0/16")
+            let subnet_parts: Vec<&str> = cli.docker_subnet.split('.').collect();
+            if subnet_parts.len() < 4 {
+                return Err(anyhow::anyhow!("Invalid docker subnet format: {}", cli.docker_subnet));
+            }
+
+            format!("{}.{}.{}.1:{}", subnet_parts[0], subnet_parts[1], i + 1, DISCOVERY_PORT_BASE)
         }
         .parse()?;
 
@@ -260,23 +266,32 @@ fn create_federation_config(members: &[FederationMemberConfig]) -> AnyResult<Fed
 
 fn create_docker_compose_dot_env_file(
     cli: &Cli,
+    federation_members: &[FederationMemberConfig],
     comet_configs: &[comet_node::CometBftNodeConfig],
 ) -> AnyResult<()> {
-    for config in comet_configs {
+    for (i, config) in comet_configs.iter().enumerate() {
         let project_name = format!("{}{}", cli.project_name_prefix, config.index + 1);
 
         let node_path = cli.output_path.join(format!("node-{}", config.index + 1));
 
+        let botanix_home = node_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in node path"))?
+            .to_string();
+
+        let poa_ip4_address = federation_members
+            .get(i)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Federation members are't matching to cometbft configs")
+            })?
+            .socket_address
+            .ip()
+            .to_string();
+
         let env_config = HashMap::from([
             ("COMPOSE_PROJECT_NAME", project_name),
             ("BLOCK_FEE_RECIPIENT_ADDRESS", cli.block_fee_recipient.clone()),
-            (
-                "BOTANIX_HOME",
-                node_path
-                    .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in node path"))?
-                    .to_string(),
-            ),
+            ("BOTANIX_HOME", botanix_home),
             ("NTP_SERVER_URL", "time.cloudflare.com".to_string()),
             ("BITCOIND_NETWORK", "regtest".to_string()),
             ("BITCOIND_URL", "http://bitcoin-core:8332".to_string()),
@@ -291,6 +306,7 @@ fn create_docker_compose_dot_env_file(
             ("BTC_SERVER_ID", config.index.to_string()),
             ("COMET_BFT_RPC_PORT", (26657 + config.index * 100).to_string()),
             ("COMET_BFT_METRICS_PORT", (26658 + config.index * 100).to_string()),
+            ("POA_IP4_ADDRESS", poa_ip4_address),
         ]);
 
         let env_file = node_path.join(".env");
@@ -376,7 +392,7 @@ async fn inner_main() -> AnyResult<()> {
 
     if !cli.non_docker {
         // Create the docker-compose.yml file
-        create_docker_compose_dot_env_file(&cli, &comet_configs)
+        create_docker_compose_dot_env_file(&cli, &poa_configs, &comet_configs)
             .context("creating docker compose .env file")?;
     }
 
