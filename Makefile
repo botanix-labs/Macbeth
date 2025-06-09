@@ -42,10 +42,15 @@ BIN_OTHER_FEATURES := asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-
 
 # Botanix local network configuration
 NODES_DIR ?= ~/.botanix-local
-# Number of nodes to run in the Botanix local network
-NODES_NUMBER ?= 2
 # Resolve NODES_DIR to absolute path, expanding ~ properly
 NODES_DIR_ABS := $(shell bash -c 'echo $(NODES_DIR)')
+
+# Number of nodes to run in the Botanix local network
+NODES_NUMBER ?= 2
+# Number of min signers
+FROST_MIN_SIGNERS ?= 2
+# Number of max signers
+FROST_MAX_SIGNERS ?= 2
 
 ##@ Help
 
@@ -862,7 +867,11 @@ bitcoin-cli:
 
 init-docker-local:
 	# Generate network configs
-	cargo run -p botanix-up -- --num-nodes=${NODES_NUMBER} --output-path=${NODES_DIR}
+	cargo run -p botanix-up -- \
+		--num-nodes=${NODES_NUMBER} \
+		--output-path=${NODES_DIR} \
+		--multisig-min-signers=${FROST_MIN_SIGNERS} \
+		--multisig-max-signers=${FROST_MAX_SIGNERS}
 
 	# Create shared docker network
 	docker network inspect botanix-local >/dev/null 2>&1 || \
