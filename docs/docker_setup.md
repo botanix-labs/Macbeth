@@ -89,6 +89,12 @@ make reset-docker-local
 
 > > To build poa-node locally for feature or refactor testing use `make build-docker-local`
 
+## Known issues
+
+- This setup is not tested on Windows.
+- You may see `permission denied` errors running `make clean-docker-local` on Ubuntu.
+  Use `sudo` to remove CometBFT data files.
+
 ## Getting Help
 
 If you have any questions, first see if the answer to your question can be found in the [book][https://docs.botanixlabs.xyz/botanix-labs/].

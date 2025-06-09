@@ -28,7 +28,7 @@ services:
       - --btc-signing-server-jwt-secret=/app/config/bjwt.hex
       - --fall-back-fee-rate-sat-per-vbyte=5
     volumes:
-      - ${BOTANIX_HOME:?err}/btc_server:/app/config:r
+      - ${BOTANIX_HOME:?err}/btc_server:/app/config:ro
       - btc_server_db:/app/db:rw
     ports:
       - 127.0.0.1:${BTC_SERVER_PORT}:8080
@@ -94,11 +94,10 @@ services:
       - btc_server
       - cometbft
     volumes:
-      - ${BOTANIX_HOME:?err}/poa:/app/config:r
+      - ${BOTANIX_HOME:?err}/poa:/app/config:ro
       - poa_db:/app/db:rw
       - poa_logs:/root/.cache/reth/logs:rw
     restart: on-failure
-    hostname: ${COMPOSE_PROJECT_NAME?:err}-poa
     networks:
       botanix-local:
         ipv4_address: ${POA_IP4_ADDRESS:?err}
@@ -109,7 +108,7 @@ services:
       - ${COMET_BFT_RPC_PORT:?err}:26657 # RPC
       - ${COMET_BFT_METRICS_PORT:?err}:26660 # Metrics
     volumes:
-      - ${BOTANIX_HOME:?err}/cometbft/config:/home/nonroot/.cometbft/config:r
+      - ${BOTANIX_HOME:?err}/cometbft/config:/home/nonroot/.cometbft/config:ro
       - cometbft_db:/home/nonroot/.cometbft/data:rw
     restart: on-failure
     networks:

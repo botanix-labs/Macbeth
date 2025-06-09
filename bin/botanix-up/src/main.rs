@@ -13,6 +13,7 @@ use reth_node_core::{
 use secp256k1::SECP256K1;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
     io::Write,
@@ -69,6 +70,15 @@ async fn create_cometbft_node_configs(cli: &Cli) -> AnyResult<Vec<comet_node::Co
         let (exit_status, _stdout, stderr) = comet_node::init_cometbft_node(i, &cometbft_path)
             .await
             .context("failed to init cometbft node")?;
+
+        // Add read permissions node_key.json and priv_validator_key.json files
+        let node_key_file = cometbft_path.join("config").join("node_key.json");
+        let priv_validator_key_file = cometbft_path.join("config").join("priv_validator_key.json");
+        let permissions = fs::Permissions::from_mode(0o644);
+        fs::set_permissions(&node_key_file, permissions.clone())
+            .context("failed to set read permissions for node_key.json")?;
+        fs::set_permissions(&priv_validator_key_file, permissions)
+            .context("failed to set read permissions for priv_validator_key.json")?;
 
         if !exit_status.success() {
             return Err(anyhow::anyhow!(
