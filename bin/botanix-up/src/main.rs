@@ -270,7 +270,13 @@ fn create_docker_compose_dot_env_file(
         let env_config = HashMap::from([
             ("COMPOSE_PROJECT_NAME", project_name),
             ("BLOCK_FEE_RECIPIENT_ADDRESS", cli.block_fee_recipient.clone()),
-            ("BOTANIX_HOME", node_path.to_str().unwrap().to_string()),
+            (
+                "BOTANIX_HOME",
+                node_path
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in node path"))?
+                    .to_string(),
+            ),
             ("NTP_SERVER_URL", "time.cloudflare.com".to_string()),
             ("BITCOIND_NETWORK", "regtest".to_string()),
             ("BITCOIND_URL", "http://bitcoin-core:8332".to_string()),
