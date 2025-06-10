@@ -40,6 +40,18 @@ DOCKER_IMAGE_NAME ?= ghcr.io/paradigmxyz/reth
 # Features in reth/op-reth binary crate other than "ethereum"
 BIN_OTHER_FEATURES := asm-keccak jemalloc jemalloc-prof min-error-logs min-warn-logs min-info-logs min-debug-logs min-trace-logs
 
+# Botanix local network configuration
+NODES_DIR ?= .botanix-local
+# Resolve NODES_DIR to absolute path, expanding ~ properly
+NODES_DIR_ABS := $(shell bash -c 'echo $(NODES_DIR)')
+
+# Number of nodes to run in the Botanix local network
+NODES_NUMBER ?= 2
+# Number of min signers
+FROST_MIN_SIGNERS ?= 2
+# Number of max signers
+FROST_MAX_SIGNERS ?= 2
+
 ##@ Help
 
 .PHONY: help
@@ -729,7 +741,7 @@ start-poa-server-2:
 	--abci-port=36658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" 
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
 
 start-poa-server-3:
 	cd ./bin/reth && \
@@ -845,42 +857,140 @@ check-features:
 		--package reth-rpc-types \
 		--feature-powerset
 
-start-docker-bitcoin:
-	cd ./docker-local && \
-	docker compose --env-file .bitcoin.env -f bitcoin.docker-compose.yml up -d
+.PHONY: bitcoin-cli
+bitcoin-cli:
+	@if [ -z "$(CMD)" ]; then \
+		echo "Usage: make bitcoin-cli CMD='<command>'"; \
+		echo "Example: make bitcoin-cli CMD='getblockchaininfo'"; \
+		exit 0; \
+	fi; \
+	docker compose -f docker-local/docker-compose.bitcoin.yml exec bitcoin-core bitcoin-cli $(CMD);
 
+.PHONY: init-docker-local
+init-docker-local:
+	# Generate network configs
+	cargo run -p botanix-up -- \
+		--num-nodes=${NODES_NUMBER} \
+		--output-path=${NODES_DIR} \
+		--multisig-min-signers=${FROST_MIN_SIGNERS} \
+		--multisig-max-signers=${FROST_MAX_SIGNERS} \
+		--docker-subnet=172.22.0.1/16
+
+	# Create shared docker network
+	docker network create \
+      --subnet=172.22.0.0/16 \
+      --ip-range=172.22.0.0/24 \
+      --gateway=172.22.0.1 \
+      botanix-local
+
+	# Start single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
+
+	# Create a wallet
+	make bitcoin-cli CMD="--rpcwait createwallet local";
+	make bitcoin-cli CMD="-generate 10";
+
+	# Stop the bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml stop
+
+.PHONY: start-docker-local
 start-docker-local:
-	cd ./docker-local && \
-	docker-compose --env-file .bitcoin.env -f docker-compose.yml up -d
+	# Start single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
 
-build-docker-local:
-	cd ./docker-local && \
-	docker-compose --env-file .bitcoin.env -f docker-compose.yml up --build -d
+	# Start nodes defined in the NODES_DIR
+	make build-docker-local
 
-clean-docker-poa:
-	cd ./docker-local && \
-	sudo rm -rf ./poa-1/db && \
-	sudo rm -rf ./poa-1/static_files && \
-	sudo rm -rf ./poa-2/db && \
-	sudo rm -rf ./poa-2/static_files
+.PHONY: restart-docker-local
+restart-docker-local:
+	# Restart single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml restart
 
-clean-docker-btc:
-	cd ./docker-local && \
-	sudo rm -rf ./btc-server-1/db && \
-	sudo rm -rf ./btc-server-2/db
+	# Restart nodes defined in the NODES_DIR
+	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
+		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
+		exit 1; \
+	fi; \
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ ! -f "$$DIR.env" ]; then \
+			echo "Error: Environment file does not exist: $$DIR.env"; \
+			exit 1; \
+		fi; \
+		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml restart; \
+	done
 
-clean-docker-comet:
-	cd ./docker-local && \
-	sudo rm -rf ./consensus-node-1/data/*.db && \
-	sudo rm -rf ./consensus-node-2/data/*.db
-
+.PHONY: stop-docker-local
 stop-docker-local:
-	cd ./docker-local && \
-	docker-compose --env-file .bitcoin.env -f docker-compose.yml down && \
-	cd ../ && \
-	make clean-docker-poa && \
-	make clean-docker-btc && \
-	make clean-docker-comet
+	# Stop the bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml stop
+
+	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
+		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
+		exit 1; \
+	fi; \
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ ! -f "$$DIR.env" ]; then \
+			echo "Error: Environment file does not exist: $$DIR.env"; \
+			exit 1; \
+		fi; \
+		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml stop; \
+	done
+
+.PHONY: build-docker-local
+build-docker-local:
+	@if [ ! -d "$(NODES_DIR_ABS)" ]; then \
+		echo "Error: Nodes directory does not exist: $(NODES_DIR)"; \
+		exit 1; \
+	fi; \
+	COMPOSE_BAKE=true docker compose --env-file "${NODES_DIR_ABS}/node-1/.env" -f docker-local/docker-compose.yml build; \
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ ! -f "$$DIR.env" ]; then \
+			echo "Error: Environment file does not exist: $$DIR.env"; \
+			exit 1; \
+		fi; \
+		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d; \
+	done
+
+.PHONY: reset-docker-local
+reset-docker-local:
+	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
+
+	# Down nodes defined in the NODES_DIR
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ -f "$$DIR.env" ]; then \
+			docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
+		fi; \
+		rm -rf $${DIR}cometbft/data/*.db; \
+	done
+
+	# Start single bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
+
+	# Create wallet
+	make bitcoin-cli CMD="--rpcwait createwallet local";
+	make bitcoin-cli CMD="-generate 10";
+
+	# Stop bitcoin-core node
+	docker compose --file docker-local/docker-compose.bitcoin.yml stop
+
+.PHONY: clean-docker-local
+clean-docker-local:
+	# Drop bitcoin-core data
+	docker compose -f docker-local/docker-compose.bitcoin.yml down -v
+
+	# Down nodes defined in the NODES_DIR
+	for DIR in $(NODES_DIR_ABS)/*/; do \
+		if [ -f "$$DIR.env" ]; then \
+			docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
+		fi; \
+		rm -rf $${DIR}cometbft/data/*.db; \
+	done
+
+	# Remove docker network
+	docker network rm -f botanix-local
+
+	# Remove NODES_DIR
+	rm -rf ${NODES_DIR_ABS}
 
 clean-test-suite:
 	cd bin/test-suite && \

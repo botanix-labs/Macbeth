@@ -137,30 +137,50 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub datadir: DatadirArgs,
 
     /// The path to the configuration file to use for network properties.
-    #[arg(long, value_name = "NETWORK_CONFIG_FILE", verbatim_doc_comment)]
+    #[arg(
+        long,
+        value_name = "NETWORK_CONFIG_FILE",
+        env = "RETH_NETWORK_CONFIG_PATH",
+        verbatim_doc_comment
+    )]
     pub network_config_path: Option<PathBuf>,
 
     /// Indicates whether we are running in testnet or not.
-    #[arg(long, value_name = "IS_TESTNET")]
+    #[arg(long, value_name = "IS_TESTNET", env = "RETH_TESTNET")]
     pub is_testnet: bool,
 
     /// The NTP server url
-    #[arg(long, value_name = "NTP_SERVER", default_value = "time.cloudflare.com")]
+    #[arg(
+        long,
+        value_name = "NTP_SERVER",
+        env = "RETH_NTP_SERVER",
+        default_value = "time.cloudflare.com"
+    )]
     pub ntp_server: String,
 
     /// The path to the configuration file for the federation setup.
-    #[arg(long, value_name = "FEDERATION_CONFIG_FILE", verbatim_doc_comment)]
+    #[arg(
+        long,
+        value_name = "FEDERATION_CONFIG_FILE",
+        env = "RETH_FEDERATION_CONFIG_FILE",
+        verbatim_doc_comment
+    )]
     pub federation_config_path: PathBuf,
 
     /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
     /// Only nodes defined in chain.toml can enable this flag
-    #[arg(long, value_name = "FEDERATION_MODE", default_value = "false")]
+    #[arg(
+        long,
+        value_name = "FEDERATION_MODE",
+        env = "RETH_FEDERATION_MODE",
+        default_value = "false"
+    )]
     pub federation_mode: bool,
 
     /// Enable Prometheus metrics.
     ///
     /// The metrics will be served at the given interface and port.
-    #[arg(long, value_name = "SOCKET", value_parser = parse_socket_address, help_heading = "Metrics")]
+    #[arg(long, value_name = "SOCKET", env = "RETH_METRICS_ADDRESS", value_parser = parse_socket_address, help_heading = "Metrics")]
     pub metrics: Option<SocketAddr>,
 
     /// Add a new instance of a node.
@@ -176,14 +196,14 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// - `AUTH_PORT`: default + `instance` * 100 - 100
     /// - `HTTP_RPC_PORT`: default - `instance` + 1
     /// - `WS_RPC_PORT`: default + `instance` * 2 - 2
-    #[arg(long, value_name = "INSTANCE", global = true, default_value_t = 1, value_parser = value_parser!(u16).range(..=200))]
+    #[arg(long, value_name = "INSTANCE", global = true, default_value_t = 1, env="RETH_INSTANCE", value_parser = value_parser!(u16).range(..=200))]
     pub instance: u16,
 
     /// Sets all ports to unused, allowing the OS to choose random unused ports when sockets are
     /// bound.
     ///
     /// Mutually exclusive with `--instance`.
-    #[arg(long, conflicts_with = "instance", global = true)]
+    #[arg(long, conflicts_with = "instance", env = "RETH_UNUSED_PORTS", global = true)]
     pub with_unused_ports: bool,
 
     /// All networking related arguments
@@ -211,7 +231,12 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub db: DatabaseArgs,
 
     /// The path to the configuration file to use for network properties.
-    #[arg(long, value_name = "BITCOIND_CONFIG_FILE", verbatim_doc_comment)]
+    #[arg(
+        long,
+        value_name = "BITCOIND_CONFIG_FILE",
+        env = "RETH_BITCOIND_CONFIG_PATH",
+        verbatim_doc_comment
+    )]
     pub bitcoind_config_path: Option<PathBuf>,
 
     /// Additional cli arguments
@@ -219,20 +244,25 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub ext: Ext,
 
     /// ABCI client host to listen on
-    #[arg(long, value_name = "ABCI_HOST", default_value_t = String::from("0.0.0.0"))]
+    #[arg(long, value_name = "ABCI_HOST", env = "RETH_ABCI_HOST", default_value_t = String::from("0.0.0.0"))]
     pub abci_host: String,
 
     /// ABCI client port to listen on
-    #[arg(long, value_name = "ABCI_PORT", default_value_t = 26658)]
+    #[arg(long, value_name = "ABCI_PORT", env = "RETH_ABCI_PORT", default_value_t = 26658)]
     pub abci_port: u16,
 
     /// `CometBFT` RPC Port
-    #[arg(long, value_name = "COMETBFT_RPC_PORT", default_value_t = 26657)]
+    #[arg(
+        long,
+        value_name = "COMETBFT_RPC_PORT",
+        env = "RETH_COMETBFT_RPC_PORT",
+        default_value_t = 26657
+    )]
     pub cometbft_rpc_port: u16,
 
     // TODO parse to a better type
     /// `CometBFT` RPC Host
-    #[arg(long, value_name = "COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
+    #[arg(long, value_name = "COMETBFT_RPC_HOST", env = "RETH_COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
     pub cometbft_rpc_host: String,
 
     /// Block fee recipient address.
@@ -242,6 +272,7 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(
         long,
         value_name = "BLOCK_FEE_RECIPIENT_ADDRESS",
+        env = "RETH_BLOCK_FEE_RECIPIENT_ADDRESS",
         value_parser = parse_ethereum_address,
     )]
     pub block_fee_recipient_address: Option<Address>,

@@ -370,6 +370,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         "ConsensusIntegrationTestSuite"
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn run(&mut self, test_to_run: String) -> Vec<Outcome> {
         self.set_panic_hook();
         match test_to_run.as_str() {
@@ -779,6 +780,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn create_new_local_context(
         &mut self,
         create_test_config: CreateTestConfig,
@@ -886,7 +888,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
 
-        // =================== COMMETBFT NODES ================== //
+        // =================== COMETBFT NODES ================== //
         let mut cometbft_rpc_clients = vec![];
         let mut spawned_cometbft_processes = vec![];
         if create_test_config.create_cometbft_nodes {
@@ -894,8 +896,23 @@ impl Suite for ConsensusIntegrationTestSuite {
             let (cometbft_nodes, tx) = create_cometbft_nodes(self.global_context.clone()).await?;
             let poa_instances =
                 self.global_context.fed_instances - self.global_context.syncing_instances;
-            let (cometbft_nodes, cometbft_nodes_syncing) =
+            // split cometbft nodes into syncing and non-syncing or rpc nodes
+            // then create 2 separate BTreeMaps:
+            // 1. cometbft_nodes - nodes that are fed members (non-syncing) or rpc nodes
+            // 2. cometbft_nodes_syncing - nodes that are fed members (syncing)
+            // These maps are added to the local context and used later in tests
+            let (mut cometbft_nodes, mut cometbft_nodes_syncing_and_rpcs) =
                 split_members_at(cometbft_nodes, poa_instances as usize);
+            // get cometbft rpc nodes
+            let cometbft_rpc_nodes = cometbft_nodes_syncing_and_rpcs
+                .iter()
+                .filter(|(_, node)| node.is_rpc_node)
+                .collect::<Vec<_>>();
+            // add to cometbft nodes so they will be spawned
+            cometbft_nodes.extend(cometbft_rpc_nodes.iter().map(|(&k, &ref v)| (k, v.clone())));
+            // remove rpc cometbft nodes
+            cometbft_nodes_syncing_and_rpcs.retain(|_, node| !node.is_rpc_node);
+            let cometbft_nodes_syncing = cometbft_nodes_syncing_and_rpcs;
 
             for (_, cometbft_node) in cometbft_nodes.iter() {
                 // spawn cometbft node as a process
@@ -903,10 +920,9 @@ impl Suite for ConsensusIntegrationTestSuite {
 
                 // create cometbft client
                 let cometbft_client = HttpCometBFTRpcClientFactory::new(
-                    "0.0.0.0".to_string(),
-                    cometbft_node.cometbft_rpc_app_port,
+                    cometbft_node.rpc_listen_address.ip().to_string(),
+                    cometbft_node.rpc_listen_address.port(),
                 );
-                let _cometbft_http_client = cometbft_client.build_and_connect()?;
                 cometbft_rpc_clients.push(cometbft_client);
 
                 // await initialization
@@ -1037,7 +1053,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
 
-            // loop over the poa nodes and wait until they become initialized so the eth clients can
+            // loop over the rpc nodes and wait until they become initialized so the eth clients can
             // connect with them
             for (index, rpc_node) in rpc_nodes.iter_mut() {
                 // create botanix client and await initialization
@@ -1062,7 +1078,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 };
                 rpc_node.botanix_eth_client = Some(botanix_eth_client.clone());
                 rpc_botanix_clients.push(botanix_eth_client);
-                it_info_print!("Botanix client created for poa member {}", index);
+                it_info_print!("Botanix client created for rpc member {}", index);
 
                 // await initialization
                 rpc_node.await_initialization()?;
@@ -1070,7 +1086,7 @@ impl Suite for ConsensusIntegrationTestSuite {
 
             // update local context
             self.local_context.rpc_processes = Some(spawned_rpc_processes);
-            self.local_context.rpc_nodes = Some(rpc_nodes);
+            self.local_context.rpc_nodes = Some(rpc_nodes.clone());
             self.local_context.rpc_notification = Some(tx);
             self.local_context.rpc_eth_providers = Some(rpc_botanix_clients);
         }

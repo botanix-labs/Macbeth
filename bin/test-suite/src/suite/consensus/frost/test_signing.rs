@@ -300,7 +300,7 @@ pub async fn test_many_inputs_signing(
         rand.fill_bytes(&mut pegout_id_bytes);
         let pegout_id = PegoutId::from_bytes(&pegout_id_bytes)
             .map_err(|_| anyhow::anyhow!("invalid pegout id"))?;
-        let rand_amount = rand.gen::<u64>() % 75_000;
+        let rand_amount = rand.gen_range(25_000..50_000); // Range: 25,000 to 49,999 sats
         let amount = bitcoin::Amount::from_sat(rand_amount);
 
         // get new a key
@@ -411,7 +411,7 @@ pub async fn test_many_inputs_signing(
     let mut pegout_id_bytes = [0u8; 36];
     rand.fill_bytes(&mut pegout_id_bytes);
     let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
-    let rand_amount = 100_000;
+    let rand_amount = rand.gen_range(25_000..50_000); // Range: 25,000 to 49,999 sats
     // get new a key
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);

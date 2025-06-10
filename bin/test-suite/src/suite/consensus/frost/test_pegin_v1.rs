@@ -105,35 +105,127 @@ pub async fn test_pegin_v1(
     it_info_print!("Btc Amount", amount);
 
     // Create a Pegin V1 transaction
-
     // get the latest L2 block so we can use the btc checkpoint in the EDH
-    let latest_block_with_edh = provider
-        .request::<Vec<serde_json::Value>, BlockWithEDH>(
-            "eth_getBlockByNumber",
-            vec![json!("latest"), json!(false), json!(true)],
-        )
-        .await;
-    let latest_block_with_edh = latest_block_with_edh.expect("valid block with edh");
+    let mut latest_block_with_edh;
+    let mut btc_checkpoint_hash;
+    let mut checkpoint_block_height;
+    let conf_hash = tx_res.info.blockhash.expect("pegin confirmed");
+    let conf_block_info = bitcoind_rpc.get_block_info(&conf_hash).expect("valid block info");
+    let bitcoin_block_height = conf_block_info.height;
+    it_info_print!("Pegin confirmed at Bitcoin height", bitcoin_block_height);
+    
+    // Retry until L2 checkpoint covers our pegin block
+    let mut retry_count = 0;
+    loop {
+        let latest_block_result = provider
+            .request::<Vec<serde_json::Value>, BlockWithEDH>(
+                "eth_getBlockByNumber",
+                vec![json!("latest"), json!(false), json!(true)],
+            )
+            .await;
+        latest_block_with_edh = latest_block_result.expect("valid block with edh");
+        let btc_checkpoint = latest_block_with_edh.extra_data_header.bitcoin_block_hash;
+        btc_checkpoint_hash =
+            bitcoin::BlockHash::from_str(btc_checkpoint.as_str()).expect("valid hash");
+        checkpoint_block_height =
+            bitcoind_rpc.get_block_info(&btc_checkpoint_hash).expect("valid block info").height;
+        
+        it_info_print!("L2 checkpoint height", checkpoint_block_height);
+        
+        if checkpoint_block_height >= bitcoin_block_height {
+            it_info_print!("L2 checkpoint now covers pegin block");
+            break;
+        }
+        
+        retry_count += 1;
+        if retry_count > 30 {
+            panic!("L2 checkpoint did not advance to cover pegin block after 30 retries");
+        }
+        
+        it_info_print!("Waiting for L2 to advance checkpoint...", retry_count);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    
+    // The L2 block hash from eth_getBlockByNumber becomes the ref_block_hash for pegin v1
     let latest_block_hash = latest_block_with_edh.hash;
-    let btc_checkpoint = latest_block_with_edh.extra_data_header.bitcoin_block_hash;
-    let btc_checkpoint_hash =
-        bitcoin::BlockHash::from_str(btc_checkpoint.as_str()).expect("valid hash");
     it_info_print!("BTC checkpoint hash:", btc_checkpoint_hash);
+    it_info_print!("L2 ref_block_hash:", latest_block_hash);
 
     // get the block hash of the block with the confirmed pegin tx
-    let conf_hash = tx_res.info.blockhash.expect("pegin confirmed");
-    let checkpoint_block_height =
-        bitcoind_rpc.get_block_info(&btc_checkpoint_hash).expect("valid block info").height;
     let checkpoint_header =
         bitcoind_rpc.get_block_header(&btc_checkpoint_hash).expect("valid header");
 
-    let conf_block_info = bitcoind_rpc.get_block_info(&conf_hash).expect("valid block info");
     it_info_print!("Block info", conf_block_info);
 
     let pmt = PartialMerkleTree::from_txids(&conf_block_info.tx, &[false, true]);
 
     // create pegin meta
-    let bitcoin_block_height = conf_block_info.height;
+    // Ensure the pegin confirmation block is not newer than the BTC checkpoint.
+    assert!(
+        bitcoin_block_height <= checkpoint_block_height,
+        "Pegin confirmation block height ({}) is greater than BTC checkpoint block height ({}). The pegin should be confirmed before or at the checkpoint.",
+        bitcoin_block_height,
+        checkpoint_block_height
+    );
+
+    let mut bitcoin_headers_chain: Vec<bitcoin::block::Header> = Vec::new();
+    
+    let log_msg_start = format!("Starting to build bitcoin_headers_chain. Initial conf_hash: {}, btc_checkpoint_hash: {}, bitcoin_block_height: {}, checkpoint_block_height: {}", conf_hash, btc_checkpoint_hash, bitcoin_block_height, checkpoint_block_height);
+    it_info_print!(&log_msg_start);
+
+    // Build headers from pegin confirmation block towards checkpoint block
+    let mut current_block_iter_hash = conf_hash;
+    for i in 0..=(checkpoint_block_height - bitcoin_block_height) {
+        let effective_height = bitcoin_block_height + i;
+        let log_msg_fetch = format!("Fetching header for block hash (current_block_iter_hash): {} (iteration {} - effective height {})", current_block_iter_hash, i, effective_height);
+        it_info_print!(&log_msg_fetch);
+
+        let header_to_add = bitcoind_rpc
+            .get_block_header(&current_block_iter_hash)
+            .expect(&format!(
+                "Failed to get block header for hash {} at effective height {}",
+                current_block_iter_hash,
+                effective_height
+            ));
+        
+        let log_msg_fetched = format!("Fetched header: hash {}, prev_blockhash {}", header_to_add.block_hash(), header_to_add.prev_blockhash);
+        it_info_print!(&log_msg_fetched);
+        
+        // Verify hash-chain continuity starting from the second iteration
+        if i > 0 {
+            let last_header = bitcoin_headers_chain.last().expect("bitcoin_headers_chain should not be empty");
+            assert_eq!(
+                header_to_add.prev_blockhash,
+                last_header.block_hash(),
+                "Chain discontinuity detected: header at height {} has prev_blockhash {} but previous header hash is {}",
+                effective_height,
+                header_to_add.prev_blockhash,
+                last_header.block_hash()
+            );
+        }
+        
+        bitcoin_headers_chain.push(header_to_add);
+
+        if i < (checkpoint_block_height - bitcoin_block_height) {
+            // If not the last header, get the next block hash for next iteration
+            let next_block_height = effective_height + 1;
+            current_block_iter_hash = bitcoind_rpc
+                .get_block_hash(next_block_height as u64)
+                .expect(&format!("Failed to get block hash for height {}", next_block_height));
+        } else {
+            // This was the last header fetched, it should correspond to the checkpoint block
+            assert_eq!(
+                header_to_add.block_hash(),
+                btc_checkpoint_hash,
+                "The last header fetched in the chain does not match the expected btc_checkpoint_hash."
+            );
+        }
+    }
+
+    let final_chain_hashes_str = format!("{:?}", bitcoin_headers_chain.iter().map(|h| h.block_hash()).collect::<Vec<_>>());
+    let log_msg_final = format!("Final bitcoin_headers_chain ({} headers): {}", bitcoin_headers_chain.len(), final_chain_hashes_str);
+    it_info_print!(&log_msg_final);
+
     let meta = PeginMeta::V1(PeginMetaV1 {
         inner: PeginMetaV0 {
             version: 1,
@@ -145,7 +237,7 @@ pub async fn test_pegin_v1(
             .expect("valid public key"),
             tx: pegin_tx.clone(),
             merkle_proof: pmt,
-            block_headers: vec![checkpoint_header],
+            block_headers: bitcoin_headers_chain,
         },
         ref_block_hash: FixedBytes::<32>::from_str(&latest_block_hash.as_str())
             .expect("valid hash"),

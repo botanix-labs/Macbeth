@@ -25,7 +25,8 @@ use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
-    SnapshotWriter, StateProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
+    SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader,
+    WalletStateSyncWriter,
 };
 
 use crate::bitcoin_checkpoint::BitcoinCheckpointsChain;
@@ -78,6 +79,7 @@ where
         + WalletStateSyncReader
         + CanonChainTracker
         + CanonStateSubscriptions
+        + StagedHeader
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
