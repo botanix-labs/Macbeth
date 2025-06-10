@@ -100,6 +100,14 @@ pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Res
         it_info_print!("RPC node tx hash", rpc_tx_receipt.transaction_hash);
 
         assert_eq!(*tx_hash, rpc_tx_receipt.transaction_hash);
+
+        // assert tx_receipt has correct block number
+        // this test a previous bug where the tx_receipt block number was sometimes 0
+        let rpc_tx_block_number = rpc_tx_receipt.block_number.expect("block number to exist");
+        let fed_block_number = block.number.expect("block number to exist");
+        it_info_print!("RPC tx block number", rpc_tx_block_number);
+        it_info_print!("Fed block number", fed_block_number);
+        assert_eq!(rpc_tx_block_number, fed_block_number);
     }
 
     Ok(())
