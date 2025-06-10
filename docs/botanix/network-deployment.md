@@ -50,7 +50,7 @@ These are internal networks that engineering teams can configure according to th
                               │                      │
                        ┌─────────────┐               │
                        │             │               │
-                       │    Hotfix    │───────────────┘
+                       │    Hotfix   │───────────────┘
                        │             │
                        └─────────────┘
 ```
