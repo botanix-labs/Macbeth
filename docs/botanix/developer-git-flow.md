@@ -149,17 +149,17 @@ None
 5. Self-review has been completed
 6. The change is tested on a local network and works as expected
 7. All tests are passing
-   * Rust unit tests
-   * Rust integration tests
-   * Minting contract tests
+   - Rust unit tests
+   - Rust integration tests
+   - Minting contract tests
 8. Code is formatted
 9. Code is linted
-   * Cargo check
-   * Grafana a dashboard JSON structure
-   * Cargo lock file
-   * GitHub actions
-   * Misspellings
-   * Clippy warnings
+   - Cargo check
+   - Grafana a dashboard JSON structure
+   - Cargo lock file
+   - GitHub actions
+   - Misspellings
+   - Clippy warnings
 10. Pre-review with AI is done
 11. At least two code owners (team member(s) responsible for codebase) have approved the PR
 12. The PR has not been rejected by any reviewer
