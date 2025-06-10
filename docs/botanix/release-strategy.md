@@ -157,7 +157,7 @@ This schedule balances rapid feature delivery with adequate testing time to ensu
                                      │             ┌───────────────────────┐ 
                                      ▼             │ Next version vX.Y+1.0 │ Next cycle
   ┌───────────┐              ┌────────────────┐    │ Development           │───────────>
-  │ Hotfix    │   if needed   │    Stable      │    └───────────────────────┘ 
+  │ Hotfix    │   if needed  │    Stable      │    └───────────────────────┘ 
   │ v(N).0.1  │◄─────────────┤    v(N).0.0    │
   └───────────┘              └────────────────┘
 ```
