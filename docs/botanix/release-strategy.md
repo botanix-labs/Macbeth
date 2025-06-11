@@ -12,7 +12,7 @@ This document describes our release strategy: branch topology, branch management
   │           │               │ 
   |           │               ▼ 
   │           |        ┌─────────────┐
-  │           |        │    hotfix   |   v1.0.0-hotfix.1+a30ddd1, v1.0.0-hotix.2+da23f3b
+  │           |        │    hotfix   |   v1.0.0-hotfix.1+a30ddd1, v1.0.0-hotfix.2+da23f3b
   │           |        └─────────────┘
   │           |               ▲        
   │           |               |                 
