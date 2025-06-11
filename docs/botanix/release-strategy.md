@@ -1,6 +1,6 @@
 # Release Strategy
 
-This document describes our release strategy: release branch-topology, branch management, versioning, and release schedule.
+This document describes our release strategy: branch topology, branch management, versioning, and release schedule.
 
 ## Branch flow
 
