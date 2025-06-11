@@ -127,7 +127,7 @@ Release notes should include:
 - Upgrade instructions if needed
 - Known issues or limitations
 - Link to the full change log
-- 3-rd party contributors acknowledgment
+- Third-party contributors acknowledgment
 
 ## Release Schedule
 
