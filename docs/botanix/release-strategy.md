@@ -35,7 +35,7 @@ This document describes our release strategy: branch topology, branch management
 
 ## Semantic Versioning
 
-We follow [Semantic Versioning 2.0.0](https://semver.org/) with the format `MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]`:
+We follow [Semantic Versioning 2.0.0](https://semver.org/) with the format `MAJOR.MINOR.PATCH[-PRE-RELEASE][+BUILD]`:
 
 - **MAJOR**: Incremented for incompatible user-facing API changes
 - **MINOR**: Incremented for backward-compatible functionality additions
