@@ -497,12 +497,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let bitcoin_zmq_block_hash_stream = match timeout(
             connection_timeout.clone(),
-            subscribe_async_wait_handshake(&[rpc.bitcoind.zmq_hashblock_address.as_str()]),
+            subscribe_async_wait_handshake(&[rpc.bitcoind.zmq_hash_block_address.as_str()]),
         )
         .await
         {
             Ok(Ok(stream)) => {
-                info!(target: "reth::cli", "Connected to bitcoind ZMQ hashblock socket {}", rpc.bitcoind.zmq_hashblock_address);
+                info!(target: "reth::cli", "Connected to bitcoind ZMQ hashblock socket {}", rpc.bitcoind.zmq_hash_block_address);
 
                 stream
             }
@@ -510,7 +510,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 // Ok from `timeout` but an error from the subscribe function.
                 return Err(eyre::eyre!(
                     "Failed to subscribe to bitcoind ZMQ hashblock socket {}: {}",
-                    rpc.bitcoind.zmq_hashblock_address,
+                    rpc.bitcoind.zmq_hash_block_address,
                     err
                 ));
             }
@@ -518,7 +518,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 // Timeout error
                 return Err(eyre::eyre!(
                     "Timeout to subscribe to bitcoind ZMQ hashblock socket {} after {} secs",
-                    rpc.bitcoind.zmq_hashblock_address,
+                    rpc.bitcoind.zmq_hash_block_address,
                     connection_timeout.as_secs_f64(),
                 ));
             }

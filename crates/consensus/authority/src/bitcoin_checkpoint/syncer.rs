@@ -208,6 +208,7 @@ where
         Ok(synced_checkpoints)
     }
 
+    // TODO: Update this
     /// Runs the synchronizer indefinitely.
     ///
     /// # Arguments

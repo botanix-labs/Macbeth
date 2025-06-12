@@ -8,7 +8,7 @@ use url::Url;
 pub(crate) const DEFAULT_BITCOIND_URL: &str = "localhost:18443";
 
 /// Default bitcoind ZMQ address
-pub(crate) const DEFAULT_BITCOIND_ZMQ_HASHBLOCK_ADDRESS: &str = "tcp://localhost:28332";
+pub(crate) const DEFAULT_BITCOIND_ZMQ_HASH_BLOCK_ADDRESS: &str = "tcp://localhost:28332";
 
 /// Default bitcoind username
 pub(crate) const DEFAULT_BITCOIND_USERNAME: &str = "foo";
@@ -53,13 +53,13 @@ pub struct BitcoindArgs {
 
     /// ZMQ address for bitcoind
     #[arg(
-        default_value_t = Url::parse(DEFAULT_BITCOIND_ZMQ_HASHBLOCK_ADDRESS).expect("valid url"),
-        long = "bitcoind.zmq.hashblock-address",
-        name = "bitcoind.zmq.hashblock-address",
-        value_name = "BITCOIND_ZMQ_HASHBLOCK_ADDRESS",
-        env = "BITCOIND_ZMQ_HASHBLOCK_ADDRESS"
+        default_value_t = Url::parse(DEFAULT_BITCOIND_ZMQ_HASH_BLOCK_ADDRESS).expect("valid url"),
+        long = "bitcoind.zmq.hash-block-address",
+        name = "bitcoind.zmq.hash-block-address",
+        value_name = "BITCOIND_ZMQ_HASH_BLOCK_ADDRESS",
+        env = "BITCOIND_ZMQ_HASH_BLOCK_ADDRESS"
     )]
-    pub zmq_hashblock_address: Url,
+    pub zmq_hash_block_address: Url,
 }
 
 impl Default for BitcoindArgs {
@@ -68,7 +68,7 @@ impl Default for BitcoindArgs {
             url: Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"),
             username: DEFAULT_BITCOIND_USERNAME.into(),
             password: DEFAULT_BITCOIND_PASSWORD.into(),
-            zmq_hashblock_address: DEFAULT_BITCOIND_ZMQ_HASHBLOCK_ADDRESS
+            zmq_hash_block_address: DEFAULT_BITCOIND_ZMQ_HASH_BLOCK_ADDRESS
                 .parse()
                 .expect("valid url"),
         }

@@ -307,7 +307,7 @@ fn create_docker_compose_dot_env_file(
             ("BITCOIND_URL", "http://bitcoin-core:8332".to_string()),
             ("BITCOIND_USER", "foo".to_string()),
             ("BITCOIND_PASSWORD", "bar".to_string()),
-            ("BITCOIND_ZMQ_HASHBLOCK_ADDRESS", "tcp://bitcoin-core:28332".to_string()),
+            ("BITCOIND_ZMQ_HASH_BLOCK_ADDRESS", "tcp://bitcoin-core:28332".to_string()),
             ("FROST_MIN_SIGNERS", cli.multisig_min_signers().to_string()),
             ("FROST_MAX_SIGNERS", cli.multisig_max_signers().to_string()),
             ("POA_RPC_PORT", (8545 + config.index * 100).to_string()),

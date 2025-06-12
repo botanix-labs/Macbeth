@@ -20,7 +20,7 @@ use super::{
     bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
     BitcoindArgs,
 };
-use crate::args::bitcoind_args::DEFAULT_BITCOIND_ZMQ_HASHBLOCK_ADDRESS;
+use crate::args::bitcoind_args::DEFAULT_BITCOIND_ZMQ_HASH_BLOCK_ADDRESS;
 use crate::{
     args::{
         types::{MaxU32, ZeroAsNoneU64},
@@ -674,7 +674,7 @@ impl Default for RpcServerArgs {
                 url: "localhost:18443".parse::<Url>().expect("valid bitcoind address"),
                 username: DEFAULT_BITCOIND_USERNAME.to_string(),
                 password: DEFAULT_BITCOIND_PASSWORD.to_string(),
-                zmq_hashblock_address: DEFAULT_BITCOIND_ZMQ_HASHBLOCK_ADDRESS
+                zmq_hash_block_address: DEFAULT_BITCOIND_ZMQ_HASH_BLOCK_ADDRESS
                     .parse()
                     .expect("valid zmq address"),
             },
