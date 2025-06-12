@@ -887,7 +887,7 @@ init-docker-local:
 	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
 
 	# Create a wallet
-	make bitcoin-cli CMD="--rpcwait createwallet local";
+	make bitcoin-cli CMD='--rpcwait createwallet local false false "" false false true';
 	make bitcoin-cli CMD="-generate 10";
 
 	# Stop the bitcoin-core node
@@ -967,7 +967,7 @@ reset-docker-local:
 	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
 
 	# Create wallet
-	make bitcoin-cli CMD="--rpcwait createwallet local";
+	make bitcoin-cli CMD='--rpcwait createwallet local false false "" false false true';
 	make bitcoin-cli CMD="-generate 10";
 
 	# Stop bitcoin-core node
