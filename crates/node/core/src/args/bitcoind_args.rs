@@ -7,6 +7,9 @@ use url::Url;
 /// Default bitcoind url
 pub(crate) const DEFAULT_BITCOIND_URL: &str = "localhost:18443";
 
+/// Default bitcoind ZMQ address
+pub(crate) const DEFAULT_BITCOIND_ZMQ_HASHBLOCK_ADDRESS: &str = "tcp://localhost:28332";
+
 /// Default bitcoind username
 pub(crate) const DEFAULT_BITCOIND_USERNAME: &str = "foo";
 
@@ -20,7 +23,8 @@ pub struct BitcoindArgs {
     /// bitcoind RPC url
     ///
     /// The url of the bitcoind server.
-    #[arg(default_value_t=Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"), value_parser = parse_url, long = "bitcoind.url", name = "bitcoind.url", value_name = "BITCOIND_URL", env = "RETH_BITCOIND_URL")]
+    #[arg(default_value_t=Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"), value_parser = parse_url, long = "bitcoind.url", name = "bitcoind.url", value_name = "BITCOIND_URL", env = "RETH_BITCOIND_URL"
+    )]
     pub url: Url,
 
     /// Btcd username
@@ -46,6 +50,16 @@ pub struct BitcoindArgs {
         env = "RETH_BITCOIND_PASSWORD"
     )]
     pub password: String,
+
+    /// ZMQ address for bitcoind
+    #[arg(
+        default_value_t = Url::parse(DEFAULT_BITCOIND_ZMQ_HASHBLOCK_ADDRESS).expect("valid url"),
+        long = "bitcoind.zmq.hashblock-address",
+        name = "bitcoind.zmq.hashblock-address",
+        value_name = "BITCOIND_ZMQ_HASHBLOCK_ADDRESS",
+        env = "BITCOIND_ZMQ_HASHBLOCK_ADDRESS"
+    )]
+    pub zmq_hashblock_address: Url,
 }
 
 impl Default for BitcoindArgs {
@@ -54,6 +68,9 @@ impl Default for BitcoindArgs {
             url: Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"),
             username: DEFAULT_BITCOIND_USERNAME.into(),
             password: DEFAULT_BITCOIND_PASSWORD.into(),
+            zmq_hashblock_address: DEFAULT_BITCOIND_ZMQ_HASHBLOCK_ADDRESS
+                .parse()
+                .expect("valid url"),
         }
     }
 }

@@ -1,5 +1,6 @@
 //! POA node command
 
+use bitcoincore_zmq::subscribe_async_wait_handshake;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -47,6 +48,14 @@ use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
 
+use crate::{
+    args::{DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs},
+    cli::NoArgs,
+    payload::PayloadBuilderService,
+};
+use reth_authority_consensus::bitcoin_checkpoint::{
+    BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer,
+};
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
@@ -86,18 +95,10 @@ use reth_transaction_pool::{
     blobstore::InMemoryBlobStore, TransactionPoolExt, TransactionValidationTaskExecutor,
 };
 use rsntp::AsyncSntpClient;
+use tokio::time::timeout;
 use tokio::{
     sync::{mpsc::unbounded_channel, oneshot},
     time::Duration,
-};
-
-use crate::{
-    args::{DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs},
-    cli::NoArgs,
-    payload::PayloadBuilderService,
-};
-use reth_authority_consensus::bitcoin_checkpoint::{
-    BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer,
 };
 use tracing::{debug, error, info};
 
@@ -489,7 +490,39 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }
         }
 
-        // Synchronize the bitcoin checkpoints chain with the bitcoind node
+        // Connect to Bitcoin ZMQ socket to receive new block notifications
+        // to synchronize the bitcoin checkpoints chain with the bitcoind node
+
+        let connection_timeout = Duration::from_secs(5);
+
+        let bitcoin_zmq_block_hash_stream = match timeout(
+            connection_timeout.clone(),
+            subscribe_async_wait_handshake(&[rpc.bitcoind.zmq_hashblock_address.as_str()]),
+        )
+        .await
+        {
+            Ok(Ok(stream)) => {
+                info!(target: "reth::cli", "Connected to bitcoind ZMQ hashblock socket {}", rpc.bitcoind.zmq_hashblock_address);
+
+                stream
+            }
+            Ok(Err(err)) => {
+                // Ok from `timeout` but an error from the subscribe function.
+                return Err(eyre::eyre!(
+                    "Failed to subscribe to bitcoind ZMQ hashblock socket {}: {}",
+                    rpc.bitcoind.zmq_hashblock_address,
+                    err
+                ));
+            }
+            Err(_) => {
+                // Timeout error
+                return Err(eyre::eyre!(
+                    "Timeout to subscribe to bitcoind ZMQ hashblock socket {} after {} secs",
+                    rpc.bitcoind.zmq_hashblock_address,
+                    connection_timeout.as_secs_f64(),
+                ));
+            }
+        };
 
         let bitcoin_checkpoints = Arc::new(BitcoinCheckpointsChain::try_new(
             chain.bitcoin_checkpoint_confirmation_depth as usize,
@@ -502,9 +535,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             bitcoind_client,
         );
 
+        // Synchronize the local bitcoin checkpoints chain with the bitcoind node
+
         executor.spawn_critical(
             "async bitcoin checkpoint chain synchronization task",
-            checkpoints_synchronizer.sync(),
+            checkpoints_synchronizer.sync(bitcoin_zmq_block_hash_stream),
         );
 
         info!(target: "reth::cli", "Spawned async bitcoin task for block headers");

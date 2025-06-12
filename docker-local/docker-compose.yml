@@ -71,6 +71,7 @@ services:
       - --bitcoind.url=${BITCOIND_URL:?err}
       - --bitcoind.username=${BITCOIND_USER:?err}
       - --bitcoind.password=${BITCOIND_PASSWORD:?err}
+      - --bitcoind.zmq.hashblock-address=${BITCOIND_ZMQ_HASHBLOCK_ADDRESS:?err}
       - --frost.min_signers=${FROST_MIN_SIGNERS:?err}
       - --frost.max_signers=${FROST_MAX_SIGNERS:?err}
       - --sync.num_snapshots_to_keep=3
