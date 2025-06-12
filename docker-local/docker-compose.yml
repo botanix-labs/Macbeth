@@ -65,6 +65,7 @@ services:
       - --ws.addr=0.0.0.0
       - --ws.api=eth,net,trace,txpool,web3,rpc,admin
       - -vvv
+      - --log.stdout.filter=${POA_LOG_STDOUT_FILTER:-block_with_context=off}
       - --btc-server=${COMPOSE_PROJECT_NAME?:err}-btc_server-1:8080
       - --btc-network=${BITCOIND_NETWORK:?err}
       - --btc-signing-server-jwt-secret=/app/config/bjwt.hex

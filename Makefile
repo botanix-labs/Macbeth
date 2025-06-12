@@ -916,7 +916,11 @@ restart-docker-local:
 			echo "Error: Environment file does not exist: $$DIR.env"; \
 			exit 1; \
 		fi; \
-		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml restart; \
+		docker compose \
+		--env-file=.env
+		--env-file "$$DIR.env" \
+		-f docker-local/docker-compose.yml \
+		restart; \
 	done
 
 .PHONY: stop-docker-local
@@ -933,7 +937,11 @@ stop-docker-local:
 			echo "Error: Environment file does not exist: $$DIR.env"; \
 			exit 1; \
 		fi; \
-		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml stop; \
+		docker compose \
+		--env-file=.env \
+		--env-file "$$DIR.env" \
+		-f docker-local/docker-compose.yml \
+		stop; \
 	done
 
 .PHONY: build-docker-local
@@ -948,7 +956,11 @@ build-docker-local:
 			echo "Error: Environment file does not exist: $$DIR.env"; \
 			exit 1; \
 		fi; \
-		docker compose --env-file "$$DIR.env" -f docker-local/docker-compose.yml up -d; \
+		docker compose \
+		--env-file=.env \
+		--env-file "$$DIR.env" \
+		-f docker-local/docker-compose.yml \
+		up -d; \
 	done
 
 .PHONY: reset-docker-local
@@ -958,7 +970,11 @@ reset-docker-local:
 	# Down nodes defined in the NODES_DIR
 	for DIR in $(NODES_DIR_ABS)/*/; do \
 		if [ -f "$$DIR.env" ]; then \
-			docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
+			docker compose \
+			--env-file=.env \
+			--env-file $$DIR.env \
+			-f docker-local/docker-compose.yml \
+			down -v; \
 		fi; \
 		rm -rf $${DIR}cometbft/data/*.db; \
 	done
@@ -981,7 +997,11 @@ clean-docker-local:
 	# Down nodes defined in the NODES_DIR
 	for DIR in $(NODES_DIR_ABS)/*/; do \
 		if [ -f "$$DIR.env" ]; then \
-			docker compose --env-file $$DIR.env -f docker-local/docker-compose.yml down -v; \
+			docker compose \
+			--env-file=.env \
+			--env-file $$DIR.env \
+			-f docker-local/docker-compose.yml \
+			down -v; \
 		fi; \
 		rm -rf $${DIR}cometbft/data/*.db; \
 	done
