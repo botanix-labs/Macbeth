@@ -179,7 +179,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         // Signet confirmation depth requirement
         bitcoin_checkpoint_confirmation_depth: 1,
         weak_bitcoin_checkpoints_count: 0,
-        historical_bitcoin_checkpoints_count: 0,
+        historical_bitcoin_checkpoints_count: 1,
         leader_selection_window: Some(20),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
