@@ -264,7 +264,7 @@ impl Display for BitcoinCheckpointsChain {
             let shift = self.confirmation_window_size - checkpoints.len();
 
             for (i, checkpoint) in checkpoints.iter().enumerate() {
-                let confirmations = self.confirmation_window.end() - i - shift;
+                let confirmations = self.confirmation_window.end().saturating_sub(i + shift);
 
                 writeln!(f, "  {}: {}", confirmations, checkpoint)?;
             }
