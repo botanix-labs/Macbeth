@@ -23,7 +23,7 @@ use reth_primitives::{
     constants::EPOCH_LENGTH,
     Bloom, BloomInput,
 };
-use reth_provider::{BlockReaderIdExt, ReceiptProvider};
+use reth_provider::{BlockReaderIdExt, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
 use std::{
@@ -32,6 +32,8 @@ use std::{
 };
 use tracing::{error, info, warn};
 use uuid::Uuid;
+
+use crate::wallet_state_sync::MAX_BLOCK_TS_CUTOFF_DURATION;
 
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
@@ -530,9 +532,18 @@ pub fn is_known_minting_contract(
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 /// Represents errors that can occur during psbt validation
 pub enum PsbtValidationError {
-    #[error("Failed to validate psbt by ids: {0}")]
     /// Failed to validate psbt by ids
+    #[error("Failed to validate psbt by ids: {0}")]
     FailedToValidatePsbtByIds(String),
+    /// Failed to get transaction by pegout id
+    #[error("Failed to get transaction by pegout id: {0}")]
+    FailedToGetTransactionByPegoutId(String),
+    /// Failed to get block for pegout id
+    #[error("Failed to get block for pegout id: {0}")]
+    FailedToGetBlockForPegoutId(String),
+    /// Failed to validate pegout id by maximum cutoff age
+    #[error("Pegout ID outside the maximum cutoff age: {0}")]
+    PegoutIdOutsideMaximumCutoffAge(String),
 }
 
 /// Extract pegouts ids from psbt
@@ -584,8 +595,8 @@ pub fn validate_psbt_by_output(
 /// receipt database.
 ///
 /// This function extracts pegout IDs from the PSBT, retrieves the corresponding
-/// pegout data from the database, and validates each output's destination and
-/// amount.
+/// pegout data from the database, validates each output's destination and
+/// amount, and enforces a maximum age for pending pegouts in the psbt.
 ///
 /// # Warning
 ///
@@ -600,7 +611,7 @@ pub fn validate_psbt_by_output(
 // TODO(lamafab): All those responsibilities SHOULD be handled in one place,
 // ideally by a single function.
 pub async fn validate_psbt_by_ids(
-    client: impl ReceiptProvider + Clone,
+    client: &(impl ReceiptProvider + TransactionsProvider + BlockReaderIdExt + Clone),
     btc_network: bitcoin::Network,
     psbt: &Psbt,
 ) -> Result<(), PsbtValidationError> {
@@ -630,6 +641,15 @@ pub async fn validate_psbt_by_ids(
             )));
         }
     }
+
+    // Verify that each pegout is within the maximum cutoff age.
+    // The coordinator and signers should not create nor sign a PSBT if any of the pending pegouts
+    // are older than the maximum cutoff age. The coordinator and signers only store the most recent
+    // maximum cutoff age of finalized pegouts against which the PSBT is validated. This
+    // prevents having to store an unbounded list of finalized pegouts.
+    pegout_ids
+        .iter()
+        .try_for_each(|(_, pegout_id)| validate_psbt_id_by_maximum_cutoff_age(pegout_id, client))?;
 
     // Verify that there is at most one change output
     // and that all outputs are either a validated pegout or the single change output.
@@ -700,6 +720,64 @@ pub async fn validate_psbt_by_ids(
         )?;
 
         validate_psbt_by_output(tx_out, &destination, amount, fee_per_output)?;
+    }
+
+    Ok(())
+}
+
+/// Validates the pegout ID against the maximum cutoff age.
+/// This function checks if the pegout ID's transaction is within the acceptable age limit.
+/// # Arguments
+/// * `pegout_id` - The pegout ID to validate.
+/// * `client` - The client to use for fetching the transaction by pegout ID.
+/// # Returns
+/// Returns `Ok(())` if the pegout ID is valid, otherwise returns a `PsbtValidationError`.
+pub fn validate_psbt_id_by_maximum_cutoff_age(
+    pegout_id: &PegoutId,
+    client: &(impl ReceiptProvider + TransactionsProvider + BlockReaderIdExt + Clone),
+) -> Result<(), PsbtValidationError> {
+    // Get the transaction by pegout id
+    let (_, tx) = client
+        .transaction_by_hash_with_meta(pegout_id.txid.into())
+        .map_err(|e| {
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Failed to get transaction by pegout id {:?}: {:?}", pegout_id, e);
+            PsbtValidationError::FailedToGetTransactionByPegoutId(format!(
+                "Failed to get transaction by pegout id from database {:?}",
+                pegout_id.txid
+            ))
+        })?
+        .ok_or_else(|| {
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Transaction not found for pegout id {:?}", pegout_id);
+            PsbtValidationError::FailedToGetTransactionByPegoutId(format!(
+                "Transaction not found for pegout id {:?}",
+                pegout_id.txid
+            ))
+        })?;
+
+    // Get the timestamp of the block that contains the transaction
+    let block_timestamp = client
+        .block_by_number(tx.block_number)
+        .map_err(|e| {
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Failed to get block by number {:?}: {:?}", tx.block_number, e);
+            PsbtValidationError::FailedToGetBlockForPegoutId(format!(
+                "Failed to get block by number from database {:?}",
+                tx.block_number
+            ))
+        })?
+        .ok_or_else(|| {
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Block not found for transaction {:?}", tx);
+            PsbtValidationError::FailedToGetBlockForPegoutId(format!(
+                "Block not found for pegout id {:?}",
+                tx.tx_hash
+            ))
+        })?.timestamp;
+
+    if !is_block_age_acceptable(block_timestamp, *MAX_BLOCK_TS_CUTOFF_DURATION) {
+        error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Pegout id: {:?} is outside the maximum cutoff range", tx.tx_hash);
+        return Err(PsbtValidationError::PegoutIdOutsideMaximumCutoffAge(format!(
+            "Pegout id: {:?} is outside the maximum cutoff range",
+            tx.tx_hash
+        )));
     }
 
     Ok(())

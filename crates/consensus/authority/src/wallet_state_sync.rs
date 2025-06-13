@@ -40,7 +40,9 @@ use uuid::Uuid;
 
 const MAX_BLOCK_TS_CUTOFF_DURATION_SECS: u64 = 30 * 24 * 60 * 60 * 3; // 3 months
 
-static MAX_BLOCK_TS_CUTOFF_DURATION: Lazy<Duration> =
+/// Maximum duration for block timestamp cutoff
+/// This is used to determine how far back we should consider finalized pegouts when syncing.
+pub static MAX_BLOCK_TS_CUTOFF_DURATION: Lazy<Duration> =
     Lazy::new(|| Duration::from_secs(MAX_BLOCK_TS_CUTOFF_DURATION_SECS));
 
 #[derive(Debug, thiserror::Error)]

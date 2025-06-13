@@ -384,7 +384,8 @@ where
         };
 
         if let Err(e) =
-            validate_psbt_by_ids(self.storage.client.clone(), self.storage.btc_network, &psbt).await
+            validate_psbt_by_ids(&self.storage.client.clone(), self.storage.btc_network, &psbt)
+                .await
         {
             error!(
                 target: "consensus::authority::frost_task::handle_canon_state_commit",
@@ -668,7 +669,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    self.storage.client.clone(),
+                                    &self.storage.client.clone(),
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -700,7 +701,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    self.storage.client.clone(),
+                                    &self.storage.client.clone(),
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -732,7 +733,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    self.storage.client.clone(),
+                                    &self.storage.client.clone(),
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -764,7 +765,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    self.storage.client.clone(),
+                                    &self.storage.client.clone(),
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
