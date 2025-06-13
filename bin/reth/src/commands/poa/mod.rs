@@ -548,6 +548,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             // ZMQ socket for block hash notifications
             // is not provided. Fall back to an interval update logic
 
+            // TODO: Remove this fallback and make zmq socket mandatory when we release
+            //  version 2
+
             let update_interval = Duration::from_secs(5);
 
             tracing::warn!(target: "reth::cli", "No ZMQ hash block address provided. Using dummy block hash stream with checkpoints update interval of {} seconds", update_interval.as_secs_f64());
