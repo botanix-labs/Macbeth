@@ -23,7 +23,7 @@ use reth_primitives::{
     constants::EPOCH_LENGTH,
     Bloom, BloomInput,
 };
-use reth_provider::{BlockReaderIdExt, ReceiptProvider, TransactionsProvider};
+use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
 use std::{
@@ -611,7 +611,7 @@ pub fn validate_psbt_by_output(
 // TODO(lamafab): All those responsibilities SHOULD be handled in one place,
 // ideally by a single function.
 pub async fn validate_psbt_by_ids(
-    client: &(impl ReceiptProvider + TransactionsProvider + BlockReaderIdExt + Clone),
+    client: &(impl ReceiptProvider + TransactionsProvider + HeaderProvider + Clone),
     btc_network: bitcoin::Network,
     psbt: &Psbt,
 ) -> Result<(), PsbtValidationError> {
@@ -734,7 +734,7 @@ pub async fn validate_psbt_by_ids(
 /// Returns `Ok(())` if the pegout ID is valid, otherwise returns a `PsbtValidationError`.
 pub fn validate_psbt_id_by_maximum_cutoff_age(
     pegout_id: &PegoutId,
-    client: &(impl ReceiptProvider + TransactionsProvider + BlockReaderIdExt + Clone),
+    client: &(impl ReceiptProvider + TransactionsProvider + HeaderProvider + Clone),
 ) -> Result<(), PsbtValidationError> {
     // Get the transaction by pegout id
     let (_, tx) = client
@@ -756,7 +756,7 @@ pub fn validate_psbt_id_by_maximum_cutoff_age(
 
     // Get the timestamp of the block that contains the transaction
     let block_timestamp = client
-        .block_by_number(tx.block_number)
+        .header_by_number(tx.block_number)
         .map_err(|e| {
             error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Failed to get block by number {:?}: {:?}", tx.block_number, e);
             PsbtValidationError::FailedToGetBlockForPegoutId(format!(
@@ -793,13 +793,8 @@ mod tests {
     };
     use btcserverlib::{test_utils::random_p2wpkh_script, wallet::psbt::PsbtOutputExt};
     use rand::{thread_rng, Rng, RngCore};
-    use reth_primitives::{
-        address, b256, bytes, hex_literal::hex, Bytes, Header, Log, LogData, Receipt, TxHash,
-        TxNumber, TxType, B256, U256,
-    };
-    use reth_provider::ProviderResult;
+    use reth_primitives::{address, b256, bytes, Header, B256, U256};
     use std::{
-        ops::RangeBounds,
         str::FromStr,
         sync::{
             atomic::{AtomicUsize, Ordering},
@@ -807,85 +802,11 @@ mod tests {
         },
     };
 
+    use crate::test_utils::MockProvider;
+
     use super::*;
 
     const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
-
-    #[derive(Clone)]
-    struct MockProvider {}
-
-    impl MockProvider {
-        fn new() -> Self {
-            Self {}
-        }
-
-        fn receipt() -> Receipt {
-            Receipt {
-                tx_type: TxType::Legacy,
-                cumulative_gas_used: 0x1u64,
-                logs: vec![Log::new_unchecked(
-                    address!("0000000000000000000000000000000000000011"),
-                    vec![
-                        b256!("000000000000000000000000000000000000000000000000000000000000dead"),
-                        b256!("000000000000000000000000000000000000000000000000000000000000beef"),
-                    ],
-                    bytes!("0100ff"),
-                )],
-                success: false,
-            }
-        }
-    }
-
-    impl ReceiptProvider for MockProvider {
-        fn receipt(&self, _id: TxNumber) -> ProviderResult<Option<Receipt>> {
-            Ok(Some(MockProvider::receipt()))
-        }
-
-        // return receipt with burn log
-        fn receipt_by_hash(&self, _hash: TxHash) -> ProviderResult<Option<Receipt>> {
-            // encoded values (amount, destination, version)
-            let amount =
-                ethabi::Token::Uint(ethabi::ethereum_types::U256::from(10_000_000_000_000_u64));
-            let destination =
-                ethabi::Token::String("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string());
-            let version = ethabi::Token::Bytes(vec![0]);
-            let payload = ethabi::encode(&[amount, destination, version]);
-
-            let log = Log {
-                address: *MINT_CONTRACT_ADDRESS,
-                data: LogData::new(
-                    vec![
-                        *BURN_TOPIC,
-                        // msg.sender
-                        B256::from(hex!(
-                            "000000000000000000000000a65812bac44dadb79c3e4930dbd98d5a75376b2a"
-                        )),
-                    ],
-                    Bytes::copy_from_slice(payload.as_slice()),
-                )
-                .unwrap(),
-            };
-
-            let mut receipt = MockProvider::receipt();
-            receipt.logs = vec![log];
-
-            Ok(Some(receipt))
-        }
-
-        fn receipts_by_block(
-            &self,
-            _block: BlockHashOrNumber,
-        ) -> ProviderResult<Option<Vec<Receipt>>> {
-            Ok(Some(vec![MockProvider::receipt()]))
-        }
-
-        fn receipts_by_tx_range(
-            &self,
-            _range: impl RangeBounds<TxNumber>,
-        ) -> ProviderResult<Vec<Receipt>> {
-            Ok(vec![MockProvider::receipt()])
-        }
-    }
 
     fn create_random_pegout_id() -> PegoutId {
         let mut rng = thread_rng();
@@ -1346,7 +1267,7 @@ mod tests {
         psbt.outputs[0].set_pegout_id(pegout_id);
 
         let result =
-            validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
+            validate_psbt_by_ids(&MockProvider::default(), bitcoin::Network::Regtest, &psbt).await;
         println!("Result: {:?}", result);
         assert!(result.is_ok());
     }
@@ -1379,7 +1300,7 @@ mod tests {
         psbt.outputs[1].set_pegout_id(pegout_id);
 
         let result =
-            validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
+            validate_psbt_by_ids(&MockProvider::default(), bitcoin::Network::Regtest, &psbt).await;
 
         assert!(result.is_err());
         // This error should now be due to duplicate pegout IDs, which is checked before
@@ -1395,7 +1316,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_psbt_by_ids_mismatched_lengths_and_multiple_change() {
         let btc_network = bitcoin::Network::Regtest;
-        let mock_provider = MockProvider::new();
+        let mock_provider = MockProvider::default();
         let base_destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
@@ -1416,7 +1337,7 @@ mod tests {
             });
             // Now psbt.outputs.len() == 1, but psbt.unsigned_tx.output.len() == 2
 
-            let result = validate_psbt_by_ids(mock_provider.clone(), btc_network, &psbt).await;
+            let result = validate_psbt_by_ids(&mock_provider, btc_network, &psbt).await;
             assert!(result.is_err(), "Scenario A: Mismatched lengths should error");
             assert_eq!(
                 result.unwrap_err(),
@@ -1479,7 +1400,7 @@ mod tests {
             // psbt.outputs[1] and psbt.outputs[2] have no pegout_id, so they count as change
             // outputs.
 
-            let result = validate_psbt_by_ids(mock_provider.clone(), btc_network, &psbt).await;
+            let result = validate_psbt_by_ids(&mock_provider, btc_network, &psbt).await;
             assert!(result.is_err(), "Scenario B: Multiple change outputs should error");
             assert_eq!(
                 result.unwrap_err(),
