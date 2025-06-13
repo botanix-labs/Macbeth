@@ -1783,7 +1783,7 @@ mod tests {
     fn test_validate_psbt_id_by_maximum_cutoff_age_outside_cutoff() {
         let pegout_id = PegoutId::new([0; 32], 0);
 
-        // Inalid case: MockProvider::default() returns a timestamp of 0
+        // Invalid case: MockProvider::default() returns a timestamp of 0
         assert!(
             validate_psbt_id_by_maximum_cutoff_age(&pegout_id, &MockProvider::default()).is_err()
         );
