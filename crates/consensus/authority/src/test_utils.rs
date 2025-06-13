@@ -14,14 +14,22 @@ use reth_provider::{
     TransactionsProvider,
 };
 use reth_rpc_types::BlockHashOrNumber;
-use std::{
-    ops::RangeBounds,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::ops::RangeBounds;
 
 /// A mock provider for testing purposes.
 #[derive(Default, Clone)]
-pub struct MockProvider {}
+pub struct MockProvider {
+    /// The timestamp used for mock headers
+    pub timestamp: u64,
+}
+
+impl MockProvider {
+    /// Sets the timestamp used for mock headers.
+    pub fn set_timestamp(mut self, timestamp: u64) -> Self {
+        self.timestamp = timestamp;
+        self
+    }
+}
 
 impl MockProvider {
     fn receipt() -> Receipt {
@@ -213,13 +221,7 @@ impl BlockNumReader for MockProvider {
 
 impl HeaderProvider for MockProvider {
     fn header_by_number(&self, _num: u64) -> ProviderResult<Option<Header>> {
-        Ok(Some(Header {
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_else(|_| Duration::from_secs(0))
-                .as_secs(),
-            ..Default::default()
-        }))
+        Ok(Some(Header { timestamp: self.timestamp, ..Default::default() }))
     }
 
     fn header(&self, _block_hash: &reth_primitives::BlockHash) -> ProviderResult<Option<Header>> {

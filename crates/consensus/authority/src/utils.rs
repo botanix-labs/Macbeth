@@ -1266,8 +1266,14 @@ mod tests {
         let pegout_id = PegoutId::new([0u8; 32], 0).as_bytes();
         psbt.outputs[0].set_pegout_id(pegout_id);
 
-        let result =
-            validate_psbt_by_ids(&MockProvider::default(), bitcoin::Network::Regtest, &psbt).await;
+        let mock_provider = MockProvider::default().set_timestamp(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_secs(),
+        );
+
+        let result = validate_psbt_by_ids(&mock_provider, bitcoin::Network::Regtest, &psbt).await;
         println!("Result: {:?}", result);
         assert!(result.is_ok());
     }
@@ -1316,7 +1322,12 @@ mod tests {
     #[tokio::test]
     async fn test_validate_psbt_by_ids_mismatched_lengths_and_multiple_change() {
         let btc_network = bitcoin::Network::Regtest;
-        let mock_provider = MockProvider::default();
+        let mock_provider = MockProvider::default().set_timestamp(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_secs(),
+        );
         let base_destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
@@ -1753,5 +1764,28 @@ mod tests {
         let pending2 = get_pending_pegouts_from_pegout_data(&pegouts, height, now);
 
         assert_eq!(pending1, pending2);
+    }
+
+    #[test]
+    fn test_validate_psbt_id_by_maximum_cutoff_age_within_cutoff() {
+        let pegout_id = PegoutId::new([0; 32], 0);
+        let mock_provider = MockProvider::default().set_timestamp(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_secs(),
+        );
+
+        assert!(validate_psbt_id_by_maximum_cutoff_age(&pegout_id, &mock_provider).is_ok());
+    }
+
+    #[test]
+    fn test_validate_psbt_id_by_maximum_cutoff_age_outside_cutoff() {
+        let pegout_id = PegoutId::new([0; 32], 0);
+
+        // Inalid case: MockProvider::default() returns a timestamp of 0
+        assert!(
+            validate_psbt_id_by_maximum_cutoff_age(&pegout_id, &MockProvider::default()).is_err()
+        );
     }
 }
