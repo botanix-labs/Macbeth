@@ -7,12 +7,15 @@ use super::chain::BitcoinCheckpointsChain;
 use super::checkpoint::BitcoinCheckpoint;
 use super::error::BitcoinCheckpointError;
 use bitcoin::block::BlockHash as BitcoinBlockHash;
-use bitcoincore_zmq::{subscribe_async_monitor_stream, Message, SocketEvent, SocketMessage};
+use bitcoincore_zmq::{Message, SocketEvent, SocketMessage};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex as TokioMutex, Mutex};
+
+pub type BitcoinHashBlockStream =
+    Box<dyn Stream<Item = Result<SocketMessage, bitcoincore_zmq::Error>> + Send + Unpin + 'static>;
 
 /// A delay to avoid busy loops
 const SAFE_DELAY: Duration = Duration::from_secs(1);
@@ -208,27 +211,33 @@ where
         Ok(synced_checkpoints)
     }
 
-    // TODO: Update this
-    /// Runs the synchronizer indefinitely.
+    /// Runs the checkpoint chain synchronizer in a continuous loop, monitoring the Bitcoin chain and updating checkpoints as new blocks arrive.
     ///
     /// # Arguments
     ///
-    /// * `block_hash_stream` - A stream of block hash messages from the Bitcoin node.
+    /// * `bitcoin_block_hash_stream` — A stream of messages related to Bitcoin block hashes. This stream can originate from a real ZMQ source (such as a Bitcoin Core node) or a test/dummy source emitting simulated block hash notifications.
     ///
-    /// This method continuously monitors the Bitcoin blockchain and updates the checkpoints chain.
-    /// It will periodically:
-    /// 1. Query the Bitcoin node for the latest block height
-    /// 2. Calculate which blocks need to be fetched based on confirmation depths
-    /// 3. Fetch block headers and add them to the checkpoints chain
-    /// 4. Sleep for a configured duration before repeating
+    /// # Behavior
     ///
-    /// If an RPC error occurs, the method will log the error and retry after sleeping.
+    /// This method orchestrates the following workflow in an infinite loop:
+    /// 1. Listens for events from the provided block hash stream to detect when new Bitcoin blocks are mined.
+    /// 2. On each trigger (block event or startup), spawns a background task to:
+    ///     - Query the current Bitcoin tip via the provided RPC interface
+    ///     - Determine which blocks (if any) require new checkpoints, based on configured confirmation rules
+    ///     - Fetch block headers and append them to the checkpoint chain
+    ///     - Handle any RPC errors, retrying after a delay as needed
+    /// 3. Ensures at most one sync is running at once, throttling excessive triggers until in-flight sync completes
+    /// 4. Sleeps for a short, configured delay between sync cycles to avoid excessive polling
     ///
-    /// This method runs in a loop and never returns, so it should be run in a separate task or thread.
-    pub async fn sync(
-        self,
-        bitcoin_block_hash_stream: subscribe_async_monitor_stream::MessageStream,
-    ) {
+    /// All relevant errors (such as RPC failures) are logged and automatically retried as part of the loop.  
+    /// This method is designed to run forever; it returns only if the stream ends or a fatal error is encountered.
+    ///
+    /// # Notes
+    ///
+    /// - Intended to be run as a background task (e.g., via `tokio::spawn`), since it never returns.
+    /// - Uses interior mutability to safely share state between async tasks that may signal or run synchronizations.
+    /// - Synces at startup to ensure no missed blocks prior to beginning event stream consumption.
+    pub async fn sync(self, bitcoin_block_hash_stream: BitcoinHashBlockStream) {
         // We need interior mutability so that we can move `self` into spawn_blocking
         let syncer_lock = Arc::new(TokioMutex::new(self));
 
@@ -564,11 +573,10 @@ mod tests {
             let syncer_lock = Arc::new(Mutex::new(syncer));
 
             // Create successful result with two checkpoints
-            let h1 = BitcoinBlockHash::from_byte_array([1u8; 32]);
+            let h1 = BitcoinBlockHash::all_zeros();
             let h2 = BitcoinBlockHash::from_byte_array([2u8; 32]);
-            let checkpoint1 =
-                BitcoinCheckpoint::new(create_header(BitcoinBlockHash::all_zeros()), 100);
-            let checkpoint2 = BitcoinCheckpoint::new(create_header(h1), 101);
+            let checkpoint1 = BitcoinCheckpoint::new(create_header(h1), 100);
+            let checkpoint2 = BitcoinCheckpoint::new(create_header(h2), 101);
 
             let checkpoints = vec![
                 SyncedCheckpointInfo::from(&checkpoint1),
@@ -652,8 +660,7 @@ mod tests {
         use bitcoincore_zmq::MonitorMessage;
         use std::pin::Pin;
         use std::task::{Context, Poll};
-        use std::time::Instant;
-        use tokio::sync::mpsc::{self, Receiver};
+        use tokio::sync::mpsc;
 
         /// Mock MessageStream for testing
         struct MockMessageStream {

@@ -1,6 +1,6 @@
 //! POA node command
 
-use bitcoincore_zmq::subscribe_async_wait_handshake;
+use bitcoincore_zmq::{subscribe_async_wait_handshake, SocketMessage};
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -10,7 +10,7 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
-use futures::TryFutureExt;
+use futures::{Stream, TryFutureExt};
 use reth_authority_consensus::{
     comet_bft::abci::ABCIDriver,
     random_source_provider::RandomSourceProvider,
@@ -54,7 +54,8 @@ use crate::{
     payload::PayloadBuilderService,
 };
 use reth_authority_consensus::bitcoin_checkpoint::{
-    BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer,
+    BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
+    DummyHashBlockStream,
 };
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_btc_wallet::bitcoind::{
@@ -490,40 +491,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }
         }
 
-        // Connect to Bitcoin ZMQ socket to receive new block notifications
-        // to synchronize the bitcoin checkpoints chain with the bitcoind node
-
-        let connection_timeout = Duration::from_secs(5);
-
-        let bitcoin_zmq_block_hash_stream = match timeout(
-            connection_timeout.clone(),
-            subscribe_async_wait_handshake(&[rpc.bitcoind.zmq_hash_block_address.as_str()]),
-        )
-        .await
-        {
-            Ok(Ok(stream)) => {
-                info!(target: "reth::cli", "Connected to bitcoind ZMQ hashblock socket {}", rpc.bitcoind.zmq_hash_block_address);
-
-                stream
-            }
-            Ok(Err(err)) => {
-                // Ok from `timeout` but an error from the subscribe function.
-                return Err(eyre::eyre!(
-                    "Failed to subscribe to bitcoind ZMQ hashblock socket {}: {}",
-                    rpc.bitcoind.zmq_hash_block_address,
-                    err
-                ));
-            }
-            Err(_) => {
-                // Timeout error
-                return Err(eyre::eyre!(
-                    "Timeout to subscribe to bitcoind ZMQ hashblock socket {} after {} secs",
-                    rpc.bitcoind.zmq_hash_block_address,
-                    connection_timeout.as_secs_f64(),
-                ));
-            }
-        };
-
         let bitcoin_checkpoints = Arc::new(BitcoinCheckpointsChain::try_new(
             chain.bitcoin_checkpoint_confirmation_depth as usize,
             chain.historical_bitcoin_checkpoints_count,
@@ -534,6 +501,61 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             Arc::clone(&bitcoin_checkpoints),
             bitcoind_client,
         );
+
+        // Connect to Bitcoin ZMQ socket to receive new block notifications
+        // to synchronize the bitcoin checkpoints chain with the bitcoind node
+
+        let bitcoin_zmq_block_hash_stream: BitcoinHashBlockStream = if let Some(
+            zmq_hash_block_address,
+        ) =
+            &rpc.bitcoind.zmq_hash_block_address
+        {
+            // Connect to the ZMQ socket for block hash notifications
+            // if the zmq hash block address is provided
+
+            // Timeout if we cannot connect to the ZMQ socket after 5 seconds
+            let connection_timeout = Duration::from_secs(5);
+
+            match timeout(
+                connection_timeout.clone(),
+                subscribe_async_wait_handshake(&[zmq_hash_block_address.as_str()]),
+            )
+            .await
+            {
+                Ok(Ok(stream)) => {
+                    info!(target: "reth::cli", "Connected to bitcoind ZMQ hashblock socket {}", zmq_hash_block_address);
+
+                    Box::new(stream)
+                }
+                Ok(Err(err)) => {
+                    // Ok from `timeout` but an error from the subscribe function.
+                    return Err(eyre::eyre!(
+                        "Failed to subscribe to bitcoind ZMQ hashblock socket {}: {}",
+                        zmq_hash_block_address,
+                        err
+                    ));
+                }
+                Err(_) => {
+                    // Timeout error
+                    return Err(eyre::eyre!(
+                        "Timeout to subscribe to bitcoind ZMQ hashblock socket {} after {} secs",
+                        zmq_hash_block_address,
+                        connection_timeout.as_secs_f64(),
+                    ));
+                }
+            }
+        } else {
+            // ZMQ socket for block hash notifications
+            // is not provided. Fall back to an interval update logic
+
+            let update_interval = Duration::from_secs(5);
+
+            tracing::warn!(target: "reth::cli", "No ZMQ hash block address provided. Using dummy block hash stream with checkpoints update interval of {} seconds", update_interval.as_secs_f64());
+
+            let stream = DummyHashBlockStream::new(update_interval);
+
+            Box::new(stream)
+        };
 
         // Synchronize the local bitcoin checkpoints chain with the bitcoind node
 
