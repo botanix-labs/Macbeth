@@ -540,7 +540,7 @@ pub enum PsbtValidationError {
     FailedToGetTransactionByPegoutId(String),
     /// Failed to get block for pegout id
     #[error("Failed to get block for pegout id: {0}")]
-    FailedToGetBlockForPegoutId(String),
+    FailedToGetHeaderForPegoutId(String),
     /// Failed to validate pegout id by maximum cutoff age
     #[error("Pegout ID outside the maximum cutoff age: {0}")]
     PegoutIdOutsideMaximumCutoffAge(String),
@@ -754,25 +754,25 @@ pub fn validate_psbt_id_by_maximum_cutoff_age(
             ))
         })?;
 
-    // Get the timestamp of the block that contains the transaction
-    let block_timestamp = client
+    // Get the timestamp of the header that contains the transaction
+    let header_timestamp = client
         .header_by_number(tx.block_number)
         .map_err(|e| {
-            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Failed to get block by number {:?}: {:?}", tx.block_number, e);
-            PsbtValidationError::FailedToGetBlockForPegoutId(format!(
-                "Failed to get block by number from database {:?}",
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Failed to get header by number {:?}: {:?}", tx.block_number, e);
+            PsbtValidationError::FailedToGetHeaderForPegoutId(format!(
+                "Failed to get header by number from database {:?}",
                 tx.block_number
             ))
         })?
         .ok_or_else(|| {
-            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Block not found for transaction {:?}", tx);
-            PsbtValidationError::FailedToGetBlockForPegoutId(format!(
-                "Block not found for pegout id {:?}",
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Header not found for transaction {:?}", tx);
+            PsbtValidationError::FailedToGetHeaderForPegoutId(format!(
+                "Header not found for pegout id {:?}",
                 tx.tx_hash
             ))
         })?.timestamp;
 
-    if !is_block_age_acceptable(block_timestamp, *MAX_BLOCK_TS_CUTOFF_DURATION) {
+    if !is_block_age_acceptable(header_timestamp, *MAX_BLOCK_TS_CUTOFF_DURATION) {
         error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Pegout id: {:?} is outside the maximum cutoff range", tx.tx_hash);
         return Err(PsbtValidationError::PegoutIdOutsideMaximumCutoffAge(format!(
             "Pegout id: {:?} is outside the maximum cutoff range",
