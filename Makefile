@@ -916,11 +916,11 @@ restart-docker-local:
 			echo "Error: Environment file does not exist: $$DIR.env"; \
 			exit 1; \
 		fi; \
-		docker compose \
-		--env-file=.env
-		--env-file "$$DIR.env" \
-		-f docker-local/docker-compose.yml \
-		restart; \
+        docker compose \
+        --env-file=.env \
+        --env-file "$$DIR.env" \
+        -f docker-local/docker-compose.yml \
+        restart; \
 	done
 
 .PHONY: stop-docker-local
