@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex as TokioMutex, Mutex};
 
+/// Bitcoin block hash stream
 pub type BitcoinHashBlockStream =
     Box<dyn Stream<Item = Result<SocketMessage, bitcoincore_zmq::Error>> + Send + Unpin + 'static>;
 
@@ -229,7 +230,7 @@ where
     /// 3. Ensures at most one sync is running at once, throttling excessive triggers until in-flight sync completes
     /// 4. Sleeps for a short, configured delay between sync cycles to avoid excessive polling
     ///
-    /// All relevant errors (such as RPC failures) are logged and automatically retried as part of the loop.  
+    /// All relevant errors (such as RPC failures) are logged and automatically retried as part of the loop.
     /// This method is designed to run forever; it returns only if the stream ends or a fatal error is encountered.
     ///
     /// # Notes
