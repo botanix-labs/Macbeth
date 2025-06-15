@@ -883,11 +883,19 @@ init-docker-local:
       --gateway=172.22.0.1 \
       botanix-local
 
+	make init-bitcoin-core
+
+.PHONY: init-bitcoin-core
+init-bitcoin-core:
 	# Start single bitcoin-core node
 	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
 
 	# Create a wallet
+	# https://developer.bitcoin.org/reference/rpc/createwallet.html
+	# createwallet "wallet_name" ( disable_private_keys blank "passphrase" avoid_reuse descriptors load_on_startup )
 	make bitcoin-cli CMD='--rpcwait createwallet local false false "" false false true';
+
+	# Generate 10 blocks
 	make bitcoin-cli CMD="-generate 10";
 
 	# Stop the bitcoin-core node
@@ -963,15 +971,7 @@ reset-docker-local:
 		rm -rf $${DIR}cometbft/data/*.db; \
 	done
 
-	# Start single bitcoin-core node
-	docker compose --file docker-local/docker-compose.bitcoin.yml up -d
-
-	# Create wallet
-	make bitcoin-cli CMD='--rpcwait createwallet local false false "" false false true';
-	make bitcoin-cli CMD="-generate 10";
-
-	# Stop bitcoin-core node
-	docker compose --file docker-local/docker-compose.bitcoin.yml stop
+	make init-bitcoin-core
 
 .PHONY: clean-docker-local
 clean-docker-local:
