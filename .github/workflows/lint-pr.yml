@@ -56,13 +56,13 @@ jobs:
           fi
 
   linked-issues:
-    name: Assignees
+    name: Linked issues
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
       issues: read
     steps:
-      - name: Check PR has assignees
+      - name: Check PR is in a project board or linked to an issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
