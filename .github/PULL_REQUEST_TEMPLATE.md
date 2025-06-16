@@ -21,7 +21,7 @@
 <!--- the title includes "!" following the conventional commit type (e.g. "feat!: ..."-->
 - 
 
-## Checklist:
+## Checklist
 <!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
 - [ ] I have added or updated relevant unit/integration/functional/e2e tests
 - [ ] I have tested my changes running a local network, and they work as expected
