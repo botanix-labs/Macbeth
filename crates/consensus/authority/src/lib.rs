@@ -57,6 +57,7 @@ pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
 pub mod metrics;
 pub mod random_source_provider;
+pub mod test_utils;
 pub mod wallet_state_sync;
 
 /// Max EDH size; for specific details see [ExtraDataHeader]
