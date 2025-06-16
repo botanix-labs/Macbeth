@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Check branches
         run: |
-          if [ ${{ github.head_ref }} = "main" ]; then
+          if [ "$GITHUB_HEAD_REF" = "main" ]; then
             echo "Pull requests to main branch are not allowed. Base branch must be either `develop` or `hotfix`."
             exit 1
           fi
