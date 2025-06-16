@@ -29,5 +29,5 @@
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have added "!" to the title and described breaking changes in the corresponding section if my code contains any
 - [ ] I have made corresponding changes to the documentation if needed
-- [ ] I have added assigners and reviewers to this pull request
+- [ ] I have added assignees and reviewers to this pull request
 - [ ] I have added the PR to the project board or linked it to an issue from the board
