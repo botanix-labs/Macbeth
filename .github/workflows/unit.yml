@@ -3,9 +3,11 @@ name: Botanix Unit Tests
 
 on:
   pull_request:
+    branches:
+      - develop
+      - hotfix
   merge_group:
     branches:
-      - main
       - develop
       - hotfix
   push:

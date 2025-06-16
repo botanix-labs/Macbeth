@@ -4,9 +4,14 @@ name: book
 
 on:
   push:
-    branches: [main, develop, hotfix]
+    branches:
+      - main
+      - develop
+      - hotfix
   pull_request:
-    branches: [main, develop, hotfix]
+    branches:
+      - develop
+      - hotfix
   merge_group:
 
 jobs:
