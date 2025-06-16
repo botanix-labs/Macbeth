@@ -3,9 +3,6 @@ name: Botanix Integration Tests
 
 on:
   pull_request:
-    branches:
-      - develop
-      - hotfix
   merge_group:
     branches:
       - develop

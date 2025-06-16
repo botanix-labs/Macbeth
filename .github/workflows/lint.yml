@@ -2,9 +2,6 @@ name: lint
 
 on:
   pull_request:
-    branches:
-      - develop
-      - hotfix
     types:
       - opened
       - synchronize

@@ -1,9 +1,6 @@
 name: Lint GitHub Actions workflows
 on:
   pull_request:
-    branches:
-      - develop
-      - hotfix
     paths:
     - '.github/**'
   merge_group:
