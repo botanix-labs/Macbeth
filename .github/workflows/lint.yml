@@ -16,6 +16,10 @@ on:
       - main
       - dev
 
+permissions:
+  contents: read
+  pull-requests: write
+
 env:
   CARGO_TERM_COLOR: always
   CLICOLOR: 1
@@ -254,14 +258,30 @@ jobs:
         with:
           cmd: jq empty etc/grafana/dashboards/overview.json
 
+  check-commits:
+    name: Check commits are signed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commits are signed
+        uses: 1Password/check-signed-commits-action@v1
+
   lint-success:
     name: lint success
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - clippy
       - crate-checks
+      - lockfile
       - fmt
+      - codespell
       - grafana
+      - check-commits
       # - cargo-verifications
     timeout-minutes: 30
     steps:
