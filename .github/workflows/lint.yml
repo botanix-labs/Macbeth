@@ -9,12 +9,13 @@ on:
       - reopened
   merge_group:
     branches:
-      - main
-      - dev
+      - develop
+      - hotfix
   push:
     branches:
       - main
-      - dev
+      - develop
+      - hotfix
 
 env:
   CARGO_TERM_COLOR: always

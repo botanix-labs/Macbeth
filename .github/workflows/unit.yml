@@ -5,12 +5,13 @@ on:
   pull_request:
   merge_group:
     branches:
-      - main
-      - dev
+      - develop
+      - hotfix
   push:
     branches:
       - main
-      - dev
+      - develop
+      - hotfix
 
 env:
   CARGO_TERM_COLOR: always
@@ -47,7 +48,7 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-          
+
       - name: Ensure registry is up to date
         run: cargo fetch
 
@@ -57,7 +58,7 @@ jobs:
             --locked --features "ethereum" \
             --workspace --exclude example-custom-evm --exclude example-stateful-precompile --exclude ef-tests \
             -E "kind(lib) | kind(bin) | kind(proc-macro)"
-  
+
   # Commented out till we fix the test harness
   # state:
   #   name: Ethereum state tests

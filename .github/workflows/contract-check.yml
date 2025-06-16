@@ -6,7 +6,8 @@ on:
   push:
     branches:
       - main
-      - dev
+      - develop
+      - hotfix
 
 jobs:
   contract-build:
@@ -21,7 +22,7 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v1
 
-      - name: Build contract 
+      - name: Build contract
         working-directory: ./contracts
         run: forge build --sizes
 
@@ -78,8 +79,8 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout code
-  #       uses: actions/checkout@v4 
-      
+  #       uses: actions/checkout@v4
+
   #     - name: Run eburger contract analysis
   #       id: eburger-contract-analysis
   #       uses: forefy/eburger-action@main
@@ -110,12 +111,12 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout code
-  #       uses: actions/checkout@v4 
-      
+  #       uses: actions/checkout@v4
+
   #     - name: Run slither contract analysis
   #       id: slither-contract-analysis
   #       uses: crytic/slither-action@v0.4.0
-  #       with: 
+  #       with:
   #         target: ./contracts
   #         sarif: results.sarif
   #         fail-on: none
