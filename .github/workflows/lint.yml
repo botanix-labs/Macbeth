@@ -58,8 +58,9 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-      - run: cargo clippy -p reth-authority-consensus -p reth-network -p reth-primitives -p reth-rpc --lib
-          --tests --benches --all-features --locked
+      - uses: clechasseur/rs-clippy-check@23f6dcf86d7e4e0d98b000bba0bb81ac587c44aa
+        with:
+          args: -p reth-authority-consensus -p reth-network --lib --tests --benches --all-features --locked -- --no-deps
         env:
           RUSTFLAGS: -D warnings
 
@@ -204,6 +205,21 @@ jobs:
       - name: Format project
         run: make fmt
 
+  rust-fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+          toolchain: nightly
+
+      - name: Check formatting
+        uses: clechasseur/rs-fmt-check@e1bd0f5c24ced02542ed905bde212ffc9c324863
+
   # cargo-verifications:
   #   name: Cargo verifications
   #   needs:
@@ -263,6 +279,7 @@ jobs:
       - crate-checks
       - fmt
       - grafana
+      - rust-fmt
       # - cargo-verifications
     timeout-minutes: 30
     steps:
