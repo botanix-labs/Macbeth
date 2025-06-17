@@ -1,4 +1,4 @@
-name: lint
+name: Lints
 
 on:
   pull_request:
@@ -65,7 +65,7 @@ jobs:
   crate-checks:
     name: Crate checks
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -82,7 +82,7 @@ jobs:
           RUSTFLAGS: -D warnings
 
   lockfile:
-    name: Cargo lock updated
+    name: Cargo lock freshness
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -171,14 +171,11 @@ jobs:
     #           --cfg docsrs --show-type-layout --generate-link-to-definition --enable-index-page
     #           -Zunstable-options -D warnings
 
+  # TODO: Why do we just format code without any checks?
   fmt:
     name: Project formatting
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-      - lockfile
-      - codespell
-      - grafana
     steps:
       - uses: actions/checkout@v4
 
@@ -276,11 +273,13 @@ jobs:
           cmd: jq empty etc/grafana/dashboards/overview.json
 
   lint-success:
-    name: lint success
+    name: All green
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - clippy
       - crate-checks
+      - lockfile
       - fmt
       - grafana
       - rust-fmt
