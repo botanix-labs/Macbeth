@@ -43,7 +43,7 @@ jobs:
     #         RUSTFLAGS: -D warnings
 
   clippy:
-    name: clippy-checks
+    name: Clippy
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -63,6 +63,7 @@ jobs:
           args: -p reth-authority-consensus -p reth-network --lib --tests --benches --all-features --locked -- --no-deps
 
   crate-checks:
+    name: Crate checks
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -75,12 +76,13 @@ jobs:
           cache-all-crates: true
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile
+      - uses: olix0r/cargo-action-fmt/setup@v2
+      - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile --message-format json | cargo-action-fmt
         env:
           RUSTFLAGS: -D warnings
 
   lockfile:
-    name: Validate Lockfile
+    name: Cargo lock updated
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -170,7 +172,7 @@ jobs:
     #           -Zunstable-options -D warnings
 
   fmt:
-    name: fmt
+    name: Project formatting
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
@@ -206,7 +208,7 @@ jobs:
         run: make fmt
 
   rust-fmt:
-    name: fmt
+    name: Rust formatting
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -253,6 +255,7 @@ jobs:
   #       run: make lint
 
   codespell:
+    name: Codespell
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -262,6 +265,7 @@ jobs:
           skip: "*.json"
 
   grafana:
+    name: Grafana dashboard JSON validation
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
