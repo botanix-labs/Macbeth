@@ -346,7 +346,7 @@ pub fn validate_psbt(
     }
 
     // Check if we have enough round 2 partial sigs
-    // TODO is this necessary? Will signing fail?
+    // TODO: Is this check necessary?
     let sigs = psbt.inputs.iter().map(|i| i.all_partial_signatures()).collect::<Vec<_>>();
     if flags & ROUND2 == ROUND2 {
         // if any of the maps have min signers we should fail
@@ -357,7 +357,9 @@ pub fn validate_psbt(
         }
     }
 
-    // validate partial sigs in round 2
+    // Validate partial sigs in round 2
+    // The ROUND2_TRANSITION flag is currently not being used.
+    // TODO: Is this check necessary?
     if flags & ROUND2_TRANSITION == ROUND2_TRANSITION {
         if sigs.len() != psbt.inputs.len() {
             return Err(ValidatePSBTError::InvalidNumberOfPartialSignatures);
