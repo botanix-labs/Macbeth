@@ -76,7 +76,6 @@ jobs:
           cache-all-crates: true
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: olix0r/cargo-action-fmt/setup@v2
       - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile
         env:
           RUSTFLAGS: -D warnings
