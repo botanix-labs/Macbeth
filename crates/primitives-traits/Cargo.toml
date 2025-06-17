@@ -30,6 +30,7 @@ modular-bitfield = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-arbitrary-interop = { workspace = true, optional = true }
 reth-codecs = { workspace = true }
+reth-rpc-types = { workspace = true, optional = true }
 revm-primitives = { workspace = true, features = ["serde"] }
 
 # misc
@@ -60,4 +61,4 @@ arbitrary = [
     "dep:proptest",
     "dep:proptest-arbitrary-interop",
 ]
-alloy-compat = ["alloy-rpc-types-eth"]
+alloy-compat = ["dep:alloy-rpc-types-eth", "dep:reth-rpc-types"]
