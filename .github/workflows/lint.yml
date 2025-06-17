@@ -78,7 +78,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile
         env:
-          RUSTFLAGS: -D warnings
+          CARGO_HACK_DENY_WARNINGS: 1
 
   lockfile:
     name: Cargo lock freshness
