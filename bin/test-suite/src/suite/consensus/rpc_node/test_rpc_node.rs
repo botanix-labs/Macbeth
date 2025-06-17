@@ -16,8 +16,8 @@ pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Res
     it_info_print!("Running rpc node test");
     let mut test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap().clone();
     // Remove syncing nodes: syncing nodes are the last entries in the map
-    let num_to_keep = test_fed_members.len()
-        - suite.local_context.cometbft_nodes_syncing.clone().unwrap_or_default().len();
+    let num_to_keep = test_fed_members.len() -
+        suite.local_context.cometbft_nodes_syncing.clone().unwrap_or_default().len();
     test_fed_members = test_fed_members.into_iter().take(num_to_keep).collect();
     it_info_print!("Test federation members", test_fed_members.len());
 

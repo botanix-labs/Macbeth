@@ -412,7 +412,7 @@ pub async fn test_many_inputs_signing(
     rand.fill_bytes(&mut pegout_id_bytes);
     let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
     let rand_amount = rand.gen_range(25_000..50_000); // Range: 25,000 to 49,999 sats
-    // get new a key
+                                                      // get new a key
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
     let spk = pk.p2wpkh_script_code().expect("valid pk");

@@ -66,8 +66,8 @@ impl Cli {
             return Err(anyhow::anyhow!("Min signers must be greater than 0"));
         }
 
-        if self.multisig_min_signers() > self.num_nodes
-            || self.multisig_max_signers() > self.num_nodes
+        if self.multisig_min_signers() > self.num_nodes ||
+            self.multisig_max_signers() > self.num_nodes
         {
             return Err(anyhow::anyhow!(
                 "Min signers and max signers must be less than or equal to the number of nodes"
