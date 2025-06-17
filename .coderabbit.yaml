@@ -1,0 +1,21 @@
+language: "en-US"
+early_access: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: true
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: true
+  path_instructions:
+    - path: "**/*.js"
+      instructions: |
+        PR should be atomic and focused on a single change and doesn't contain a mix of different types of changes (new feature, refactoring and fix in existing code).
+        Check new changes are covered by tests and/or existing tests are updated
+        Check that existing documentation is updated for new changes
+        New changes has enough comments to understand the logic
+chat:
+  auto_reply: true
