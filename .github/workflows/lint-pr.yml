@@ -30,8 +30,8 @@ jobs:
     steps:
       - name: Check base branch
         run: |
-          if [ "$GITHUB_HEAD_REF" = "main" ]; then
-            echo "Pull requests to main branch are not allowed. Base branch must be either `develop` or `hotfix`."
+          if [ "$GITHUB_HEAD_REF" = "main" ] || [ "$GITHUB_HEAD_REF" = "rc" ]; then
+            echo "Pull requests to ${GITHUB_HEAD_REF} branch are not allowed. Base branch must be either `develop`, `hotfix` or other feature branch."
             exit 1
           fi
 
