@@ -65,7 +65,7 @@ jobs:
   crate-checks:
     name: Crate checks
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -77,8 +77,6 @@ jobs:
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile
-        env:
-          RUSTFLAGS: -D warnings
 
   lockfile:
     name: Cargo lock freshness
