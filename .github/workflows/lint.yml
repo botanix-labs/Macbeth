@@ -61,8 +61,6 @@ jobs:
       - uses: clechasseur/rs-clippy-check@23f6dcf86d7e4e0d98b000bba0bb81ac587c44aa
         with:
           args: -p reth-authority-consensus -p reth-network --lib --tests --benches --all-features --locked -- --no-deps
-        env:
-          RUSTFLAGS: -D warnings
 
   crate-checks:
     runs-on: ubuntu-latest
@@ -78,6 +76,8 @@ jobs:
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile
+        env:
+          RUSTFLAGS: -D warnings
 
   lockfile:
     name: Validate Lockfile
