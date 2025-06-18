@@ -61,4 +61,4 @@ arbitrary = [
     "dep:proptest",
     "dep:proptest-arbitrary-interop",
 ]
-alloy-compat = ["dep:alloy-rpc-types-eth"] # , "dep:reth-rpc-types"
+alloy-compat = ["dep:alloy-rpc-types-eth", "dep:reth-rpc-types"]

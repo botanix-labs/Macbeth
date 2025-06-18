@@ -66,6 +66,9 @@ jobs:
     name: Crate checks
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # We should set it here so the rust-cache action can see it too
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -77,8 +80,6 @@ jobs:
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo hack check --workspace
-        env:
-          CARGO_HACK_DENY_WARNINGS: 1
 
   lockfile:
     name: Cargo lock freshness
