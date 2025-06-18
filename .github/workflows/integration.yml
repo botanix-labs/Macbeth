@@ -227,7 +227,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs: [e2e-tests]
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Decide whether the needed jobs succeeded or failed
         uses: re-actors/alls-green@release/v1

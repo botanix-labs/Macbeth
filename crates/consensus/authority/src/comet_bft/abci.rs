@@ -105,8 +105,8 @@ use super::proto_debug::{
     RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
     ResponsePrepareProposalTruncatedDebug,
 };
+use crate::bitcoin_checkpoint::BitcoinCheckpointsChain;
 use crate::{
-    builder::BitcoinCheckpoint,
     comet_bft::{
         non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
         utils::transactions_signed_from_bytes,
@@ -201,7 +201,7 @@ pub struct BlockWithContext {
 #[derive(Clone)]
 pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
-    bitcoin_checkpoint: BitcoinCheckpoint,
+    bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     authority_consensus: AuthorityConsensus,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
     is_fed_node: bool,
@@ -232,7 +232,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
-        bitcoin_checkpoint: BitcoinCheckpoint,
+        bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         authority_consensus: AuthorityConsensus,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
         is_fed_node: bool,
@@ -257,7 +257,7 @@ where
 
         Self {
             storage,
-            bitcoin_checkpoint,
+            bitcoin_checkpoints,
             authority_consensus,
             cbft_rpc_client_factory,
             is_fed_node,
@@ -285,7 +285,7 @@ where
         let app = ABCIClient::new(
             self.storage.clone(),
             tx_pool,
-            self.bitcoin_checkpoint.clone(),
+            self.bitcoin_checkpoints.clone(),
             self.abci_driver_tx.clone(),
             self.cbft_rpc_client_factory.clone(),
             self.authority_consensus.clone(),
@@ -359,7 +359,7 @@ struct BlockCache {
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
     pool: Pool,
-    bitcoin_checkpoint: BitcoinCheckpoint,
+    bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     block_cache: Arc<RwLock<BlockCache>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
     #[allow(dead_code)]
@@ -394,7 +394,7 @@ where
     fn new(
         storage: Storage<EF, BF, DB>,
         pool: Pool,
-        bitcoin_checkpoint: BitcoinCheckpoint,
+        bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
         authority_consensus: AuthorityConsensus,
@@ -418,7 +418,7 @@ where
         Self {
             storage: storage.clone(),
             pool,
-            bitcoin_checkpoint,
+            bitcoin_checkpoints,
             // Saving the last 5 blocks that were proposed
             block_cache,
             driver_tx,
@@ -559,13 +559,10 @@ where
     }
 
     pub(crate) fn bitcoin_blockhash(&self) -> Result<bitcoin::BlockHash, ConsensusError> {
-        Ok(self
-            .bitcoin_checkpoint
-            .blocking_read()
-            .as_ref()
-            .ok_or(ConsensusError::MissingBitcoinCheckpoint)?
-            .0
-            .block_hash())
+        self.bitcoin_checkpoints
+            .strong()
+            .ok_or(ConsensusError::MissingBitcoinCheckpoint)
+            .map(|checkpoint| checkpoint.hash)
     }
 
     pub(crate) fn application_hash(
@@ -1651,44 +1648,13 @@ where
 
         trace!("non_deterministic_data={:?}", non_deterministic_data);
 
-        let bitcoin_checkpoint_block_hash = match self
-            .bitcoin_checkpoint
-            .blocking_read()
-            .as_ref()
-            .map(|(header, _)| header.block_hash())
-        {
-            Some(bitcoin_checkpoint_block_hash) => bitcoin_checkpoint_block_hash,
-            None => {
-                warn!("No bitcoin checkpoint found");
-
-                if tracing::enabled!(tracing::Level::WARN) {
-                    let execution_time = execution_start_time.elapsed().as_secs_f32();
-                    let app_hash = match self.application_hash(&self.storage.client) {
-                        Ok(app_hash) => app_hash,
-                        Err(e) => {
-                            panic!("failed to get application hash on process proposal: {:?}", e);
-                        }
-                    };
-
-                    warn!(
-                        app_hash = hex::encode(&app_hash),
-                        block_time = block_time.seconds,
-                        execution_time,
-                        cbft_transactions_count = txs_len,
-                        eth_transactions_count = txs_len - 1,
-                        "A proposal with {} transactions is rejected in {} seconds",
-                        txs_len,
-                        execution_time
-                    );
-                }
-
-                return ResponseProcessProposal { status: VERIFY_REJECT };
-            }
-        };
-
         // check non-deterministic data: btc block hash and aggregate public key
-        if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash {
-            warn!("Bitcoin checkpoint block hash mismatch");
+        if !self.bitcoin_checkpoints.contains_by_hash(non_deterministic_data.bitcoin_block_hash) {
+            warn!(
+                checkpoints_chain = %self.bitcoin_checkpoints,
+                proposed_checkpoint_hash = %non_deterministic_data.bitcoin_block_hash,
+                "A proposed bitcoin checkpoint is not a part of local checkpoint chain. Most probably a proposer's or local bitcoin node is out of sync."
+            );
 
             if tracing::enabled!(tracing::Level::WARN) {
                 let execution_time = execution_start_time.elapsed().as_secs_f32();
@@ -1786,7 +1752,7 @@ where
             &self.provider_factory,
             &self.storage.bitcoind_factory,
             self.storage.btc_network,
-            &bitcoin_checkpoint_block_hash,
+            &non_deterministic_data.bitcoin_block_hash,
             &agg_pk,
             block_time,
         ) {
@@ -2350,7 +2316,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{builder::BitcoinCheckpoint, Storage};
+    use crate::bitcoin_checkpoint::BitcoinCheckpoint;
+    use crate::Storage;
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,
@@ -2381,7 +2348,6 @@ mod tests {
     use tempfile::tempdir;
     use tendermint_abci::Application;
     use tendermint_proto::google::protobuf::Timestamp;
-    use tokio::sync::RwLock as TokioRwLock;
 
     type ABCIClientType = ABCIClient<
         MockExecutorProvider,
@@ -2449,6 +2415,9 @@ mod tests {
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
 
+        let bitcoin_checkpoints_chain =
+            BitcoinCheckpointsChain::try_new(1, 0, 0).expect("create a valid chain");
+
         let bitcoin_header = Header {
             version: Version::default(),
             prev_blockhash: BlockHash::all_zeros(),
@@ -2458,8 +2427,9 @@ mod tests {
             bits: CompactTarget::from_consensus(0),
             nonce: 0,
         };
-        let bitcoin_checkpoint: BitcoinCheckpoint =
-            Arc::new(TokioRwLock::new(Some((bitcoin_header, 0))));
+
+        let bitcoin_checkpoint = BitcoinCheckpoint::new(bitcoin_header, 0);
+        bitcoin_checkpoints_chain.push(bitcoin_checkpoint).expect("push a checkpoint");
 
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default();
 
@@ -2468,7 +2438,7 @@ mod tests {
         ABCIClient::new(
             storage,
             transaction_pool,
-            bitcoin_checkpoint,
+            Arc::new(bitcoin_checkpoints_chain),
             driver_tx,
             cometbft_rpc_factory,
             AuthorityConsensus::new(spec),

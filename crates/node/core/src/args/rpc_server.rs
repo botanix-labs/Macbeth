@@ -16,17 +16,16 @@ use reth_cli_util::parsers::parse_grpc_address;
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
 use url::Url;
 
+use super::{
+    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
+    BitcoindArgs,
+};
 use crate::{
     args::{
         types::{MaxU32, ZeroAsNoneU64},
         GasPriceOracleArgs, RpcStateCacheArgs,
     },
     cli::config::BtcServerConfig,
-};
-
-use super::{
-    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
-    BitcoindArgs,
 };
 
 /// Default max number of subscriptions per connection.
@@ -674,6 +673,7 @@ impl Default for RpcServerArgs {
                 url: "localhost:18443".parse::<Url>().expect("valid bitcoind address"),
                 username: DEFAULT_BITCOIND_USERNAME.to_string(),
                 password: DEFAULT_BITCOIND_PASSWORD.to_string(),
+                zmq_hash_block_address: None,
             },
             btc_network: bitcoin::Network::Regtest,
             min_signers: Some(2),

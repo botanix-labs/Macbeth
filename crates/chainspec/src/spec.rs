@@ -55,7 +55,9 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 20000,
-        parent_confirmation_depth: 0,
+        bitcoin_checkpoint_confirmation_depth: 0,
+        weak_bitcoin_checkpoints_count: 0,
+        historical_bitcoin_checkpoints_count: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
@@ -83,7 +85,9 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 10000,
-        parent_confirmation_depth: 0,
+        bitcoin_checkpoint_confirmation_depth: 0,
+        weak_bitcoin_checkpoints_count: 0,
+        historical_bitcoin_checkpoints_count: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
@@ -109,7 +113,9 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 10000,
-        parent_confirmation_depth: 0,
+        bitcoin_checkpoint_confirmation_depth: 0,
+        weak_bitcoin_checkpoints_count: 0,
+        historical_bitcoin_checkpoints_count: 0,
         leader_selection_window: None,
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
@@ -171,7 +177,9 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         hardforks: EthereumHardfork::botanix().into(),
         deposit_contract: None, // only relevant for PoS chains
         // Signet confirmation depth requirement
-        parent_confirmation_depth: 1,
+        bitcoin_checkpoint_confirmation_depth: 1,
+        weak_bitcoin_checkpoints_count: 0,
+        historical_bitcoin_checkpoints_count: 1,
         leader_selection_window: Some(20),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
@@ -193,7 +201,9 @@ pub static BOTANIX_MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
         hardforks: EthereumHardfork::botanix().into(),
         deposit_contract: None, // only relevant for PoS chains
-        parent_confirmation_depth: 18,
+        bitcoin_checkpoint_confirmation_depth: 18,
+        weak_bitcoin_checkpoints_count: 1,
+        historical_bitcoin_checkpoints_count: 1,
         leader_selection_window: Some(20),
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
@@ -221,7 +231,7 @@ pub fn create_botanix_config_with_genesis(
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
         hardforks: EthereumHardfork::botanix().into(),
         deposit_contract: None, // Only relevant for PoS chains
-        parent_confirmation_depth: pegin_conf_depth,
+        bitcoin_checkpoint_confirmation_depth: pegin_conf_depth,
         leader_selection_window: Some(20),
         botanix_fee_recipient: Some(botanix_fee_recipient),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
@@ -314,7 +324,14 @@ pub struct ChainSpec {
     pub prune_delete_limit: usize,
 
     /// The number of confirmations we require for pegins from the mainchain.
-    pub parent_confirmation_depth: u32,
+    pub bitcoin_checkpoint_confirmation_depth: u32,
+
+    /// How many checkpoints before the strong confirmation depth to keep (depth < strong)
+    /// for validation
+    pub historical_bitcoin_checkpoints_count: usize,
+
+    /// How many historical checkpoints to keep (depth > strong) for validation
+    pub weak_bitcoin_checkpoints_count: usize,
 
     /// Block times in seconds
     pub leader_selection_window: Option<u64>,
@@ -339,7 +356,9 @@ impl Default for ChainSpec {
             base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
             max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
             prune_delete_limit: MAINNET.prune_delete_limit,
-            parent_confirmation_depth: 0,
+            bitcoin_checkpoint_confirmation_depth: 0,
+            weak_bitcoin_checkpoints_count: 0,
+            historical_bitcoin_checkpoints_count: 0,
             leader_selection_window: None,
             botanix_fee_recipient: None,
             lst_fee_receiver: None,
@@ -359,14 +378,14 @@ impl ChainSpec {
         matches!(
             self.chain.kind(),
             ChainKind::Named(
-                NamedChain::Mainnet |
-                    NamedChain::Morden |
-                    NamedChain::Ropsten |
-                    NamedChain::Rinkeby |
-                    NamedChain::Goerli |
-                    NamedChain::Kovan |
-                    NamedChain::Holesky |
-                    NamedChain::Sepolia
+                NamedChain::Mainnet
+                    | NamedChain::Morden
+                    | NamedChain::Ropsten
+                    | NamedChain::Rinkeby
+                    | NamedChain::Goerli
+                    | NamedChain::Kovan
+                    | NamedChain::Holesky
+                    | NamedChain::Sepolia
             )
         )
     }
@@ -581,8 +600,8 @@ impl ChainSpec {
             // We filter out TTD-based forks w/o a pre-known block since those do not show up in the
             // fork filter.
             Some(match condition {
-                ForkCondition::Block(block) |
-                ForkCondition::TTD { fork_block: Some(block), .. } => ForkFilterKey::Block(block),
+                ForkCondition::Block(block)
+                | ForkCondition::TTD { fork_block: Some(block), .. } => ForkFilterKey::Block(block),
                 ForkCondition::Timestamp(time) => ForkFilterKey::Time(time),
                 _ => return None,
             })
@@ -600,8 +619,8 @@ impl ChainSpec {
         for (_, cond) in self.hardforks.forks_iter() {
             // handle block based forks and the sepolia merge netsplit block edge case (TTD
             // ForkCondition with Some(block))
-            if let ForkCondition::Block(block) |
-            ForkCondition::TTD { fork_block: Some(block), .. } = cond
+            if let ForkCondition::Block(block)
+            | ForkCondition::TTD { fork_block: Some(block), .. } = cond
             {
                 if cond.active_at_head(head) {
                     if block != current_applied {
