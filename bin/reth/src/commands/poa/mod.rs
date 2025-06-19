@@ -1,6 +1,6 @@
 //! POA node command
 
-use bitcoincore_zmq::{subscribe_async_wait_handshake, SocketMessage};
+use bitcoincore_zmq::subscribe_async_wait_handshake;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -10,7 +10,7 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
-use futures::{Stream, TryFutureExt};
+use futures::TryFutureExt;
 use reth_authority_consensus::{
     comet_bft::abci::ABCIDriver,
     random_source_provider::RandomSourceProvider,
