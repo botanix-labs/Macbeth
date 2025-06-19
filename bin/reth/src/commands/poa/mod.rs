@@ -96,10 +96,9 @@ use reth_transaction_pool::{
     blobstore::InMemoryBlobStore, TransactionPoolExt, TransactionValidationTaskExecutor,
 };
 use rsntp::AsyncSntpClient;
-use tokio::time::timeout;
 use tokio::{
     sync::{mpsc::unbounded_channel, oneshot},
-    time::Duration,
+    time::{timeout, Duration},
 };
 use tracing::{debug, error, info};
 
