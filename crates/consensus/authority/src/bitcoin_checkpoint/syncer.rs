@@ -3,15 +3,14 @@
 //! This module handles synchronization of Bitcoin checkpoints chain with the Bitcoin network
 //! using a Bitcoin RPC connection.
 
-use super::chain::BitcoinCheckpointsChain;
-use super::checkpoint::BitcoinCheckpoint;
-use super::error::BitcoinCheckpointError;
+use super::{
+    chain::BitcoinCheckpointsChain, checkpoint::BitcoinCheckpoint, error::BitcoinCheckpointError,
+};
 use bitcoin::block::BlockHash as BitcoinBlockHash;
 use bitcoincore_zmq::{Message, SocketEvent, SocketMessage};
 use futures::Stream;
 use futures_util::StreamExt;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex as TokioMutex, Mutex};
 
 /// Bitcoin block hash stream
@@ -53,9 +52,9 @@ impl From<&BitcoinCheckpoint> for SyncedCheckpointInfo {
     }
 }
 
-/// The [BitcoinCheckpointsChainSynchronizer::handle_new_blocks_sync_result] returns `SyncLoopControl` to signal
-/// to the main sync loop do we need to start the sync process right away
-/// or sleep before the next sync
+/// The [BitcoinCheckpointsChainSynchronizer::handle_new_blocks_sync_result] returns
+/// `SyncLoopControl` to signal to the main sync loop do we need to start the sync process right
+/// away or sleep before the next sync
 #[derive(Debug, Clone, Copy)]
 enum SyncLoopControl {
     /// Wait for a new block to arrive and then sync again
@@ -121,7 +120,8 @@ where
     ///
     /// # Errors
     ///
-    /// It will return [BitcoinCheckpointError::StaleBlockAdded] error if a new block arrives during sync.
+    /// It will return [BitcoinCheckpointError::StaleBlockAdded] error if a new block arrives during
+    /// sync.
     fn sync_new_blocks(&mut self) -> Result<Vec<SyncedCheckpointInfo>, BitcoinCheckpointError> {
         let tip_height = map_rpc_error!(self.rpc, get_block_count())?;
 
@@ -212,31 +212,40 @@ where
         Ok(synced_checkpoints)
     }
 
-    /// Runs the checkpoint chain synchronizer in a continuous loop, monitoring the Bitcoin chain and updating checkpoints as new blocks arrive.
+    /// Runs the checkpoint chain synchronizer in a continuous loop, monitoring the Bitcoin chain
+    /// and updating checkpoints as new blocks arrive.
     ///
     /// # Arguments
     ///
-    /// * `bitcoin_block_hash_stream` — A stream of messages related to Bitcoin block hashes. This stream can originate from a real ZMQ source (such as a Bitcoin Core node) or a test/dummy source emitting simulated block hash notifications.
+    /// * `bitcoin_block_hash_stream` — A stream of messages related to Bitcoin block hashes. This
+    ///   stream can originate from a real ZMQ source (such as a Bitcoin Core node) or a test/dummy
+    ///   source emitting simulated block hash notifications.
     ///
     /// # Behavior
     ///
     /// This method orchestrates the following workflow in an infinite loop:
-    /// 1. Listens for events from the provided block hash stream to detect when new Bitcoin blocks are mined.
+    /// 1. Listens for events from the provided block hash stream to detect when new Bitcoin blocks
+    ///    are mined.
     /// 2. On each trigger (block event or startup), spawns a background task to:
     ///     - Query the current Bitcoin tip via the provided RPC interface
-    ///     - Determine which blocks (if any) require new checkpoints, based on configured confirmation rules
+    ///     - Determine which blocks (if any) require new checkpoints, based on configured
+    ///       confirmation rules
     ///     - Fetch block headers and append them to the checkpoint chain
     ///     - Handle any RPC errors, retrying after a delay as needed
-    /// 3. Ensures at most one sync is running at once, throttling excessive triggers until in-flight sync completes
+    /// 3. Ensures at most one sync is running at once, throttling excessive triggers until
+    ///    in-flight sync completes
     /// 4. Sleeps for a short, configured delay between sync cycles to avoid excessive polling
     ///
-    /// All relevant errors (such as RPC failures) are logged and automatically retried as part of the loop.
-    /// This method is designed to run forever; it returns only if the stream ends or a fatal error is encountered.
+    /// All relevant errors (such as RPC failures) are logged and automatically retried as part of
+    /// the loop. This method is designed to run forever; it returns only if the stream ends or
+    /// a fatal error is encountered.
     ///
     /// # Notes
     ///
-    /// - Intended to be run as a background task (e.g., via `tokio::spawn`), since it never returns.
-    /// - Uses interior mutability to safely share state between async tasks that may signal or run synchronizations.
+    /// - Intended to be run as a background task (e.g., via `tokio::spawn`), since it never
+    ///   returns.
+    /// - Uses interior mutability to safely share state between async tasks that may signal or run
+    ///   synchronizations.
     /// - Synces at startup to ensure no missed blocks prior to beginning event stream consumption.
     pub async fn sync(self, bitcoin_block_hash_stream: BitcoinHashBlockStream) {
         // We need interior mutability so that we can move `self` into spawn_blocking
@@ -332,8 +341,9 @@ async fn handle_hash_block_stream_messages<S, E>(
                             );
                         }
                         SocketEvent::HandshakeSucceeded => {
-                            // We can say "reconnected" because subscribe_async_wait_handshake waits on
-                            // the first connections of each endpoint before returning.
+                            // We can say "reconnected" because subscribe_async_wait_handshake waits
+                            // on the first connections of each endpoint
+                            // before returning.
                             tracing::info!(
                                 "Successfully reconnected to bitcoin zmq hash block socket {}",
                                 message.source_url
@@ -381,8 +391,8 @@ async fn handle_new_blocks_sync_result<R>(
             expected_prev_block_hash,
             received_prev_block_hash,
         }) => {
-            // if we are getting a stale block, which is not corresponding to the existing checkpoint chain
-            // let's clean up the chain and start syncing from scratch.
+            // if we are getting a stale block, which is not corresponding to the existing
+            // checkpoint chain let's clean up the chain and start syncing from scratch.
             let mut syncer = syncer_lock.lock().await;
             syncer.checkpoints_chain.clear();
             syncer.last_synced_height = None;
@@ -659,8 +669,10 @@ mod tests {
         use super::*;
         use bitcoin::Txid;
         use bitcoincore_zmq::MonitorMessage;
-        use std::pin::Pin;
-        use std::task::{Context, Poll};
+        use std::{
+            pin::Pin,
+            task::{Context, Poll},
+        };
         use tokio::sync::mpsc;
 
         /// Mock MessageStream for testing
@@ -842,8 +854,9 @@ mod tests {
         }
     }
 
-    // Mockall doesn't allow to mock `call` method because it has a generic parameter without 'static lifetime.
-    // So to satisfy the `RpcApi` trait, we need to implement the `call` method directly in generated MockRpc
+    // Mockall doesn't allow to mock `call` method because it has a generic parameter without
+    // 'static lifetime. So to satisfy the `RpcApi` trait, we need to implement the `call`
+    // method directly in generated MockRpc
     impl reth_btc_wallet::bitcoind::RpcApi for MockRpc {
         // Generic method we never need in the synchroniser tests,
         // but it used by others

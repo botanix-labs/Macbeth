@@ -3,8 +3,7 @@
 //! A checkpoint represents a specific block in the Bitcoin blockchain that can be used
 //! for cross-chain verification and network consensus on Bitcoin state.
 
-use bitcoin::block::BlockHash as BitcoinBlockHash;
-use bitcoin::block::Header as BitcoinHeader;
+use bitcoin::block::{BlockHash as BitcoinBlockHash, Header as BitcoinHeader};
 use std::fmt::Display;
 
 /// Represents a Bitcoin block that serves as a checkpoint.

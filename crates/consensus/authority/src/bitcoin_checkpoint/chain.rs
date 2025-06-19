@@ -3,14 +3,10 @@
 //! This module provides functionality to maintain a chain of Bitcoin checkpoints
 //! with configurable confirmation depths and size limits.
 
-use super::checkpoint::BitcoinCheckpoint;
-use super::error::BitcoinCheckpointError;
+use super::{checkpoint::BitcoinCheckpoint, error::BitcoinCheckpointError};
 use arc_swap::ArcSwap;
 use bitcoin::block::BlockHash as BitcoinBlockHash;
-use std::collections::VecDeque;
-use std::fmt::Display;
-use std::ops::Deref;
-use std::sync::Arc;
+use std::{collections::VecDeque, fmt::Display, ops::Deref, sync::Arc};
 
 /// Maintains a chain of Bitcoin checkpoints with configurable confirmation depths.
 ///
@@ -38,16 +34,19 @@ impl BitcoinCheckpointsChain {
     /// Creates a new BitcoinCheckpointsChain with the specified parameters.
     ///
     /// ## Parameters
-    /// * `strong_confirmation_depth` - How many confirmations are needed to consider a checkpoint strong
+    /// * `strong_confirmation_depth` - How many confirmations are needed to consider a checkpoint
+    ///   strong
     /// * `historical_checkpoints_count` - How many historical checkpoints to keep (depth > strong)
-    /// * `weak_checkpoints_count` - How many checkpoints before the strong confirmation depth to keep (depth < strong)
+    /// * `weak_checkpoints_count` - How many checkpoints before the strong confirmation depth to
+    ///   keep (depth < strong)
     ///
     /// ## Returns
     /// A new `BitcoinCheckpointsChain` or an error if the parameters are invalid
     ///
     /// ## Errors
     /// * `ZeroStrongConfirmationDepth` - If strong confirmation depth is zero
-    /// * `WeakCheckpointsCountTooBig` - If weak checkpoints count is greater than strong confirmation depth
+    /// * `WeakCheckpointsCountTooBig` - If weak checkpoints count is greater than strong
+    ///   confirmation depth
     /// * `ChainParamsTooLarge` - If the parameters would cause numeric overflow
     pub fn try_new(
         strong_confirmation_depth: usize,
@@ -277,9 +276,7 @@ impl Display for BitcoinCheckpointsChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::block::Header as BitcoinHeader;
-    use bitcoin::hashes::Hash;
-    use bitcoin::TxMerkleNode;
+    use bitcoin::{block::Header as BitcoinHeader, hashes::Hash, TxMerkleNode};
     use std::str::FromStr;
 
     mod try_new {

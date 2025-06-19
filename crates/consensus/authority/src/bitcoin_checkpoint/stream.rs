@@ -1,18 +1,20 @@
-use bitcoin::hashes::Hash;
-use bitcoin::BlockHash as BitcoinBlockHash;
+use bitcoin::{hashes::Hash, BlockHash as BitcoinBlockHash};
 use bitcoincore_zmq::{Message, SocketMessage};
 use futures::Stream;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::time::Duration;
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+    time::Duration,
+};
 use tokio::time::Sleep;
 
-/// A stream for testing or simulation that emits dummy Bitcoin block hash messages at regular time intervals.
+/// A stream for testing or simulation that emits dummy Bitcoin block hash messages at regular time
+/// intervals.
 ///
 /// This stream mimics a ZMQ block notification feed by periodically yielding
-/// dummy `SocketMessage::Message(Message::HashBlock)` items with a placeholder (all zeros) block hash.
-/// It can be used in tests or in scenarios where a real ZMQ connection is not available.
+/// dummy `SocketMessage::Message(Message::HashBlock)` items with a placeholder (all zeros) block
+/// hash. It can be used in tests or in scenarios where a real ZMQ connection is not available.
 ///
 /// - The first message is emitted immediately upon the first poll.
 /// - Each subsequent message is emitted after the configured `interval` elapses.
@@ -31,7 +33,8 @@ impl DummyHashBlockStream {
     ///
     /// # Arguments
     ///
-    /// * `interval` — Minimum duration to wait between consecutive messages (except the first, which is immediate).
+    /// * `interval` — Minimum duration to wait between consecutive messages (except the first,
+    ///   which is immediate).
     pub fn new(interval: Duration) -> Self {
         Self { interval, first_poll: true, sleep: None }
     }
