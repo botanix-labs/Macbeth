@@ -54,34 +54,3 @@ jobs:
           else
             echo "✅ PR has $ASSIGNEES assignee(s)"
           fi
-
-  linked-issues:
-    name: Linked issues
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-      issues: read
-    steps:
-      - name: Check PR is in a project board or linked to an issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          # Check if PR is in a project
-          PROJECTS=$(gh pr view $PR_NUMBER --repo $REPO --json projectCards -q '.projectCards | length')
-
-          # Check if PR is linked to an issue (Development tab)
-          LINKED_ISSUES=$(gh pr view $PR_NUMBER --repo $REPO --json closingIssuesReferences -q '.closingIssuesReferences | length')
-
-          if [ "$PROJECTS" -lt 1 ] && [ "$LINKED_ISSUES" -lt 1 ]; then
-            echo "::error::PR must be added to a project board (Project) or linked to an issue from the board (Development)"
-            exit 1
-          else
-            if [ "$PROJECTS" -ge 1 ]; then
-              echo "✅ PR is in $PROJECTS project(s)"
-            fi
-            if [ "$LINKED_ISSUES" -ge 1 ]; then
-              echo "✅ PR is linked to $LINKED_ISSUES issue(s)"
-            fi
-          fi

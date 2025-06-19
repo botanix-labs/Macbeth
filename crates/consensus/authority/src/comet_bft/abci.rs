@@ -105,8 +105,8 @@ use super::proto_debug::{
     RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
     ResponsePrepareProposalTruncatedDebug,
 };
-use crate::bitcoin_checkpoint::BitcoinCheckpointsChain;
 use crate::{
+    bitcoin_checkpoint::BitcoinCheckpointsChain,
     comet_bft::{
         non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
         utils::transactions_signed_from_bytes,
@@ -2316,8 +2316,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::bitcoin_checkpoint::BitcoinCheckpoint;
-    use crate::Storage;
+    use crate::{bitcoin_checkpoint::BitcoinCheckpoint, Storage};
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,

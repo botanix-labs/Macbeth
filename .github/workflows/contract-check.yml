@@ -1,4 +1,4 @@
-name: "Mint Contract Check"
+name: "Mint Contract"
 
 on:
   workflow_dispatch:
@@ -11,6 +11,7 @@ on:
 
 jobs:
   contract-build:
+    name: "Build"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -33,6 +34,7 @@ jobs:
           echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
 
   contract-test:
+    name: "Test"
     needs: ["contract-build"]
     runs-on: "ubuntu-latest"
     env:

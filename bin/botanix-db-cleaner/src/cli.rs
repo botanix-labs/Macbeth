@@ -33,13 +33,6 @@ impl Cli {
             return Err(anyhow::anyhow!("Database path '{}' is not a directory", self.db_path));
         }
 
-        match &self.entity {
-            Entity::Snapshots => {
-                // currently allowed
-            }
-            _ => return Err(anyhow::anyhow!("Unsupported entity")),
-        }
-
         Ok(())
     }
 }

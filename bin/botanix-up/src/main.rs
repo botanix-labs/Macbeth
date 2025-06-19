@@ -11,12 +11,12 @@ use reth_node_core::{
     primitives::Address,
 };
 use secp256k1::SECP256K1;
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::os::unix::fs::PermissionsExt;
 use std::{
+    collections::HashMap,
     fs,
     io::Write,
+    net::SocketAddr,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 use test_suite::suite::consensus::common::{

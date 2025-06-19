@@ -15,5 +15,4 @@ pub use chain::BitcoinCheckpointsChain;
 pub use checkpoint::BitcoinCheckpoint;
 pub use error::BitcoinCheckpointError;
 pub use stream::DummyHashBlockStream;
-pub use syncer::BitcoinCheckpointsChainSynchronizer;
-pub use syncer::BitcoinHashBlockStream;
+pub use syncer::{BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream};
