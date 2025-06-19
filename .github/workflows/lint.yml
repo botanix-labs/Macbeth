@@ -17,6 +17,10 @@ on:
       - develop
       - hotfix
 
+permissions:
+  contents: read
+  pull-requests: write
+
 env:
   CARGO_TERM_COLOR: always
   CLICOLOR: 1
@@ -272,6 +276,18 @@ jobs:
         with:
           cmd: jq empty etc/grafana/dashboards/overview.json
 
+  signed-commits:
+    name: Signed commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commits are signed
+        uses: 1Password/check-signed-commits-action@v1
+
   lint-success:
     name: All green
     runs-on: ubuntu-latest
@@ -281,8 +297,10 @@ jobs:
       - crate-checks
       - lockfile
       - fmt
-      - grafana
       - rust-fmt
+      - codespell
+      - grafana
+      - signed-commits
       # - cargo-verifications
     timeout-minutes: 30
     steps:

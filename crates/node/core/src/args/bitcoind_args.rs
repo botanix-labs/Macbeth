@@ -20,7 +20,8 @@ pub struct BitcoindArgs {
     /// bitcoind RPC url
     ///
     /// The url of the bitcoind server.
-    #[arg(default_value_t=Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"), value_parser = parse_url, long = "bitcoind.url", name = "bitcoind.url", value_name = "BITCOIND_URL", env = "RETH_BITCOIND_URL")]
+    #[arg(default_value_t=Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"), value_parser = parse_url, long = "bitcoind.url", name = "bitcoind.url", value_name = "BITCOIND_URL", env = "RETH_BITCOIND_URL"
+    )]
     pub url: Url,
 
     /// Btcd username
@@ -46,6 +47,15 @@ pub struct BitcoindArgs {
         env = "RETH_BITCOIND_PASSWORD"
     )]
     pub password: String,
+
+    /// ZMQ address for bitcoind
+    #[arg(
+        long = "bitcoind.zmq.hash-block-address",
+        name = "bitcoind.zmq.hash-block-address",
+        value_name = "BITCOIND_ZMQ_HASH_BLOCK_ADDRESS",
+        env = "BITCOIND_ZMQ_HASH_BLOCK_ADDRESS"
+    )]
+    pub zmq_hash_block_address: Option<Url>,
 }
 
 impl Default for BitcoindArgs {
@@ -54,6 +64,7 @@ impl Default for BitcoindArgs {
             url: Url::parse(DEFAULT_BITCOIND_URL).expect("valid url"),
             username: DEFAULT_BITCOIND_USERNAME.into(),
             password: DEFAULT_BITCOIND_PASSWORD.into(),
+            zmq_hash_block_address: None,
         }
     }
 }
