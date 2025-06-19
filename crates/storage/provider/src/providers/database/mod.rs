@@ -219,7 +219,7 @@ impl<DB: Database> HeaderProvider for ProviderFactory<DB> {
         if let Some(td) = self.chain_spec.final_paris_total_difficulty(number) {
             // if this block is higher than the final paris(merge) block, return the final paris
             // difficulty
-            return Ok(Some(td))
+            return Ok(Some(td));
         }
 
         self.static_file_provider.get_with_static_file_or_database(
@@ -347,14 +347,14 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
         total_chunks: u64,
         format: u64,
     ) -> ProviderResult<SnapshotId> {
-        self.provider_rw()?.create_new_snapshot_sync(block_id, snapshot_hash, total_chunks, format)
-    }
+        let provider = self.provider_rw()?;
 
-    fn remove_block_snapshot_id_mapping(
-        &self,
-        range: RangeInclusive<BlockNumber>,
-    ) -> ProviderResult<()> {
-        self.provider_rw()?.remove_block_snapshot_id_mapping(range)
+        let snapshot_id =
+            provider.create_new_snapshot_sync(block_id, snapshot_hash, total_chunks, format)?;
+
+        provider.commit()?;
+
+        Ok(snapshot_id)
     }
 
     fn create_new_snapshot(
@@ -362,7 +362,28 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
         block_id: BlockNumber,
         block_hash: B256,
     ) -> ProviderResult<SnapshotId> {
-        self.provider_rw()?.create_new_snapshot(block_id, block_hash)
+        let provider = self.provider_rw()?;
+
+        let snapshot_id = provider.create_new_snapshot(block_id, block_hash)?;
+
+        provider.commit()?;
+
+        Ok(snapshot_id)
+    }
+
+    fn create_new_chunk(
+        &self,
+        snapshot_id: SnapshotId,
+        block_id: BlockNumber,
+        chunk_data: Vec<u8>,
+    ) -> ProviderResult<ChunkId> {
+        let provider = self.provider_rw()?;
+
+        let chunk_id = provider.create_new_chunk(snapshot_id, block_id, chunk_data)?;
+
+        provider.commit()?;
+
+        Ok(chunk_id)
     }
 
     fn append_to_chunk(
@@ -371,24 +392,28 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
         block_number: BlockNumber,
         data: Vec<u8>,
     ) -> ProviderResult<()> {
-        self.provider_rw()?.append_to_chunk(chunk_id, block_number, data)
+        let provider = self.provider_rw()?;
+
+        provider.append_to_chunk(chunk_id, block_number, data)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
-    fn create_new_chunk(
-        &self,
-        snapshot_id: SnapshotId,
-        block_id: BlockNumber,
-        chunk_data: Vec<u8>,
-    ) -> ProviderResult<SnapshotId> {
-        self.provider_rw()?.create_new_chunk(snapshot_id, block_id, chunk_data)
-    }
     fn update_snapshot(
         &self,
         snapshot_id: SnapshotId,
         block_id: BlockNumber,
         chunk_id: ChunkId,
     ) -> ProviderResult<()> {
-        self.provider_rw()?.update_snapshot(snapshot_id, block_id, chunk_id)
+        let provider = self.provider_rw()?;
+
+        provider.update_snapshot(snapshot_id, block_id, chunk_id)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     fn update_snapshot_sync(
@@ -396,7 +421,26 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
         snapshot_sync_id: SnapshotSyncId,
         updated_snapshot: SnapshotSync,
     ) -> ProviderResult<()> {
-        self.provider_rw()?.update_snapshot_sync(snapshot_sync_id, updated_snapshot)
+        let provider = self.provider_rw()?;
+
+        provider.update_snapshot_sync(snapshot_sync_id, updated_snapshot)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.remove_block_snapshot_id_mapping(range)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     fn insert_block_snapshot_id_mapping(
@@ -404,23 +448,53 @@ impl<DB: Database> SnapshotWriter for ProviderFactory<DB> {
         block_id: BlockNumber,
         snapshot_id: SnapshotId,
     ) -> ProviderResult<()> {
-        self.provider_rw()?.insert_block_snapshot_id_mapping(block_id, snapshot_id)
+        let provider = self.provider_rw()?;
+
+        provider.insert_block_snapshot_id_mapping(block_id, snapshot_id)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     fn remove_snapshots(&self, range: RangeInclusive<SnapshotId>) -> ProviderResult<()> {
-        self.provider_rw()?.remove_snapshots(range)
+        let provider = self.provider_rw()?;
+
+        provider.remove_snapshots(range)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     fn remove_oldest_snapshot(&self) -> ProviderResult<()> {
-        self.provider_rw()?.remove_oldest_snapshot()
+        let provider = self.provider_rw()?;
+
+        provider.remove_oldest_snapshot()?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     fn remove_chunks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
-        self.provider_rw()?.remove_chunks(range)
+        let provider = self.provider_rw()?;
+
+        provider.remove_chunks(range)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
-        self.provider_rw()?.delete_chunks_in_blocks(range)
+        let provider = self.provider_rw()?;
+
+        provider.delete_chunks_in_blocks(range)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 }
 
@@ -461,7 +535,13 @@ impl<DB: Database> WalletStateSyncWriter for ProviderFactory<DB> {
         chunks_count: u64,
         data: Option<Vec<(u64, Bytes)>>,
     ) -> ProviderResult<PeerID> {
-        self.provider_rw()?.create_new_state_sync_record(uuid, peer_id, chunks_count, data)
+        let provider = self.provider_rw()?;
+
+        let peer_id = provider.create_new_state_sync_record(uuid, peer_id, chunks_count, data)?;
+
+        provider.commit()?;
+
+        Ok(peer_id)
     }
 
     /// Append data to state sync record
@@ -470,17 +550,35 @@ impl<DB: Database> WalletStateSyncWriter for ProviderFactory<DB> {
         peer_id: PeerID,
         data: Vec<(u64, Bytes)>,
     ) -> ProviderResult<()> {
-        self.provider_rw()?.append_data_to_state_sync_record(peer_id, data)
+        let provider = self.provider_rw()?;
+
+        provider.append_data_to_state_sync_record(peer_id, data)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     /// Remove state sync record by `peer_id`
     fn remove_state_sync_record_per_peer_id(&self, peer_id: PeerID) -> ProviderResult<()> {
-        self.provider_rw()?.remove_state_sync_record_per_peer_id(peer_id)
+        let provider = self.provider_rw()?;
+
+        provider.remove_state_sync_record_per_peer_id(peer_id)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     /// Removes all state sync records
     fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
-        self.provider_rw()?.remove_all_state_sync_records()
+        let provider = self.provider_rw()?;
+
+        provider.remove_all_state_sync_records()?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 }
 
@@ -829,11 +927,25 @@ impl<DB, Spec> Clone for ProviderFactory<DB, Spec> {
 
 impl<DB: Database> StagedHeader for ProviderFactory<DB> {
     fn insert_staged_header(&self, id: B256, header: HeaderWithPegs) -> ProviderResult<()> {
-        self.provider_rw()?.insert_staged_header(id, header)
+        let provider = self.provider_rw()?;
+
+        provider.insert_staged_header(id, header)?;
+
+        provider.commit()?;
+
+        Ok(())
     }
 
     fn remove_staged_header(&self, id: B256) -> ProviderResult<bool> {
-        self.provider_rw()?.remove_staged_header(id)
+        let provider = self.provider_rw()?;
+
+        let is_removed = provider.remove_staged_header(id)?;
+
+        if is_removed {
+            provider.commit()?;
+        }
+
+        Ok(is_removed)
     }
 
     fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
