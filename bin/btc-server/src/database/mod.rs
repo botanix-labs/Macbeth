@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, io::Write, path::Path};
+use std::{
+    collections::BTreeMap,
+    io::Write,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     pegout_id::PegoutId,
@@ -15,6 +20,7 @@ use bitcoin::{
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use futures::Stream;
+use log::info;
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
@@ -51,6 +57,9 @@ const KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT: &[u8; 9] = b"pegoutids";
 
 /// sled tree for pending pegout requests
 const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
+
+/// Sliding window duration in seconds (90 days)
+const PRUNING_WINDOW_SECONDS: u64 = 90 * 24 * 60 * 60;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
@@ -904,6 +913,59 @@ impl Db {
         Ok(())
     }
 
+    /// Prunes the tree of finalized pegout ids that are older than a specified pruning window.
+    ///
+    /// Returns `Ok(())` if the pruning was successful.
+    /// Returns an error if there was an issue with the database transaction or deserialization.
+    pub fn prune_finalized_pegout_ids(&self) -> Result<(), Error> {
+        // Calculate the timestamp for the pruning cutoff
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(Error::DurationSinceEpoch)?
+            .as_secs();
+
+        let cutoff_timestamp = now.saturating_sub(PRUNING_WINDOW_SECONDS);
+
+        // We can't iterate through the finalized_pegout_ids tree inside the database transaction,
+        // so we get them first then iterate through them inside the transaction.
+        let finalized_pegouts = self.get_finalized_pegout_ids()?;
+
+        self.finalized_pegout_ids
+            .transaction(|database_tx| {
+                for pegout in finalized_pegouts.iter() {
+                    match pegout.timestamp {
+                        Some(timestamp) => {
+                            // Check if the entry is older than the cutoff
+                            if timestamp < cutoff_timestamp {
+                                info!("Pruning finalized pegout id: {:?}", pegout.id);
+                                database_tx.remove(&pegout.id.as_bytes()[..])?;
+                            }
+                        }
+                        None => {
+                            // Clone and update the pegout with current timestamp
+                            let mut pegout_with_timestamp = pegout.clone();
+                            pegout_with_timestamp.timestamp = Some(now);
+
+                            // Serialize and insert back into the database
+                            let mut bytes = Vec::new();
+                            ciborium::into_writer(&pegout_with_timestamp, &mut bytes).map_err(
+                                |e| ConflictableTransactionError::Abort(Error::CiboriumWrite(e)),
+                            )?;
+
+                            info!("Updating finalized pegout id with timestamp: {:?}", pegout.id);
+                            database_tx.insert(pegout.id.as_bytes().to_vec(), &bytes[..])?;
+                            // No need to check if it should be pruned - it was just updated with a timestamp
+                        }
+                    }
+                }
+
+                Ok::<(), ConflictableTransactionError<Error>>(())
+            })
+            .map_err(|e: TransactionError<Error>| Error::Transaction(e.to_string()))?;
+
+        Ok(())
+    }
+
     pub fn iter_finalized_pegout_ids(
         &self,
     ) -> impl Iterator<Item = Result<FinalizedPegout, Error>> {
@@ -1454,6 +1516,54 @@ mod tests {
         db.flush().unwrap();
         let merkle_root3 = db.get_finalized_pegout_ids_merkle_root().unwrap().unwrap();
         assert_ne!(merkle_root, merkle_root3);
+    }
+
+    #[test]
+    fn test_prune_finalized_pegouts_ids() {
+        let (db, _temp_dir) = setup_db();
+        let num_txs = 3;
+        let mut finalized_pegout_ids = vec![];
+        let mut rng = thread_rng();
+        for i in 0..num_txs {
+            let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
+            let finalized_pegout =
+                FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
+            finalized_pegout_ids.push(finalized_pegout);
+        }
+
+        // update finalized pegout to be within the pruning window
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        finalized_pegout_ids[0].timestamp = Some(now);
+
+        // update finalized pegout to be outside the pruning window
+        finalized_pegout_ids[1].timestamp = Some(now.saturating_sub(PRUNING_WINDOW_SECONDS + 1));
+
+        let finalized_pegout_ids_slice =
+            finalized_pegout_ids.iter().collect::<Vec<&FinalizedPegout>>();
+
+        // We now have 3 finalized pegouts in the following order:
+        // - one with a timestamp within the pruning window
+        // - one with a timestamp outside the pruning window
+        // - one without a timestamp (None)
+
+        db.store_finalized_pegout_ids(&finalized_pegout_ids_slice).unwrap();
+        db.flush().unwrap();
+
+        db.prune_finalized_pegout_ids().unwrap();
+        db.flush().unwrap();
+
+        let retrieved_pegouts = db.get_finalized_pegout_ids().unwrap();
+        // There should be 2 finalized pegouts left: finalized_pegout_ids[0] and finalized_pegout_ids[2]
+        // finalized_pegout_ids[1] should be pruned since it has a timestamp outside the pruning window
+        assert_eq!(retrieved_pegouts.len(), 2);
+
+        // Check that the pegout with a timestamp within the pruning window is still present
+        assert_eq!(retrieved_pegouts[0].id, finalized_pegout_ids[0].id);
+        assert_eq!(retrieved_pegouts[0].timestamp, finalized_pegout_ids[0].timestamp);
+
+        // Check that the pegout without a timestamp is still present
+        assert_eq!(retrieved_pegouts[1].id, finalized_pegout_ids[2].id);
+        assert!(retrieved_pegouts[1].timestamp.is_some());
     }
 
     #[tokio::test]
