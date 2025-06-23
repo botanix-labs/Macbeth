@@ -27,9 +27,10 @@ use btcserverlib::{
     federation_args::FederationTomlConfig,
     frost_id,
     http::{create_web_server, state::ServerState},
+    measure_rpc_latency,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
-    pegout_scheduler::{self, PegoutRequest, PegoutScheduler},
+    pegout_scheduler::{self, is_syncing, PegoutRequest, PegoutScheduler},
     rpc::{self, *},
     shutdown::{stop_signal, StopHandle},
     signer::{
@@ -212,6 +213,41 @@ fn print_dkg_state_log(dkg: &mut DkgState) {
     }
 }
 
+macro_rules! update_signing_error_metrics {
+    ($self:expr, $req:expr, $operation:expr) => {
+        match $operation.to_status() {
+            Ok(value) => value,
+            Err(e) => {
+                if let Some(telemetry) = $self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        $self.btc_network,
+                        $self.config.identifier,
+                        $req.signing_session_id.try_into().expect("valid value"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        }
+    };
+}
+
+macro_rules! try_with_signing_error_metrics {
+    ($self:expr, $signing_session_id:expr, $operation:expr) => {
+        if let Err(e) = $operation.to_status() {
+            if let Some(telemetry) = $self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    $self.btc_network,
+                    $self.config.identifier,
+                    $signing_session_id,
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        }
+    };
+}
+
 type SigningNoncesCommitmentsMap =
     Arc<Mutex<Option<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>>>>;
 
@@ -226,6 +262,7 @@ struct DkgState {
 }
 
 struct App<BitcoinRpcApi> {
+    start_time: Instant,
     db: database::Db,
     btc_network: bitcoin::Network,
     pegout_scheduler: Mutex<PegoutScheduler>,
@@ -304,14 +341,33 @@ where
         db: &database::Db,
         fallback_checkpoint: BlockHash,
         pegin_conf_depth: u32,
+        telemetry: Option<Arc<Telemetry>>,
+        btc_network: bitcoin::Network,
+        identifier: u16,
     ) -> Result<PegoutScheduler, database::Error> {
         if let Some(latest) = db.get_pegout_mgr_finalized_block()? {
             let txs = db.get_tracked_txs()?;
             info!("Loaded pegout scheduler with {} pending txs", txs.len());
-            Ok(PegoutScheduler::new(pegin_conf_depth, txs, latest, db.clone()))
+            Ok(PegoutScheduler::new(
+                pegin_conf_depth,
+                txs,
+                latest,
+                db.clone(),
+                telemetry,
+                btc_network,
+                identifier,
+            ))
         } else {
             info!("No finalized block found, using fallback checkpoint: {}", fallback_checkpoint);
-            Ok(PegoutScheduler::new(pegin_conf_depth, vec![], fallback_checkpoint, db.clone()))
+            Ok(PegoutScheduler::new(
+                pegin_conf_depth,
+                vec![],
+                fallback_checkpoint,
+                db.clone(),
+                telemetry,
+                btc_network,
+                identifier,
+            ))
         }
     }
 
@@ -384,19 +440,62 @@ where
             bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
                 .expect("valid fee rate");
 
+        if let Some(telemetry) = telemetry.as_ref() {
+            telemetry.update_transaction_fee_rates(
+                config.btc_network,
+                config.identifier,
+                fall_back_fee_rate.to_sat_per_kwu() as f64,
+            );
+
+            if fall_back_fee_rate <= bitcoin::FeeRate::MIN {
+                warn!("Fall back fee rate is below the minimum: {}", fall_back_fee_rate);
+                telemetry.update_fee_rate_abnormalities(config.btc_network, config.identifier)
+            }
+
+            if fall_back_fee_rate >= bitcoin::FeeRate::MAX {
+                warn!("Fall back fee rate is above the maximum: {}", fall_back_fee_rate);
+                telemetry.update_fee_rate_abnormalities(config.btc_network, config.identifier)
+            }
+        }
+
         let pegin_confirmation_depth = get_pegin_confirmation_depth(config.btc_network);
+
+        // update telemetry with the pegin confirmation depth
+        if let Some(telemetry) = telemetry.as_ref() {
+            telemetry.update_pegin_confirmation_depth(
+                config.btc_network,
+                config.identifier,
+                pegin_confirmation_depth,
+            );
+        }
+
         let fallback_checkpoint = {
-            let tip_height = bitcoind_client
-                .get_block_count()
-                .map_err(|e| Error::PegoutSchedulerSync(e.into()))?;
-            bitcoind_client
-                .get_block_hash(tip_height.saturating_sub(pegin_confirmation_depth as u64))
-                .map_err(|e| Error::PegoutSchedulerSync(e.into()))?
+            let tip_height = measure_rpc_latency!(
+                &telemetry,
+                config.btc_network,
+                config.identifier,
+                "get_block_count",
+                bitcoind_client.get_block_count()
+            )
+            .map_err(|e| Error::PegoutSchedulerSync(e.into()))?;
+
+            measure_rpc_latency!(
+                &telemetry,
+                config.btc_network,
+                config.identifier,
+                "get_block_hash",
+                bitcoind_client
+                    .get_block_hash(tip_height.saturating_sub(pegin_confirmation_depth as u64))
+            )
+            .map_err(|e| Error::PegoutSchedulerSync(e.into()))?
         };
         let pegout_manager = Mutex::new(Self::load_pegout_scheduler(
             &db,
             fallback_checkpoint,
             pegin_confirmation_depth,
+            telemetry.clone(),
+            config.btc_network,
+            config.identifier,
         )?);
 
         // NOTE (lamafab): in this implementation, the DKG state machine starts
@@ -464,6 +563,7 @@ where
         };
 
         Ok(Self {
+            start_time: Instant::now(),
             btc_network: config.btc_network,
             db,
             pegout_scheduler: pegout_manager,
@@ -564,7 +664,7 @@ where
         checkpoint: BlockHash,
     ) -> Result<(), pegout_scheduler::SyncError> {
         let mut lock = self.pegout_scheduler.lock().await;
-        lock.sync_until(&self.bitcoind_client, checkpoint, self.telemetry.clone())?;
+        lock.sync_until(&self.bitcoind_client, checkpoint)?;
         self.db.store_pegout_mgr_finalized_block(lock.last_finalized())?;
         self.db.update_utxo_merkle_root()?;
         self.db.flush()?;
@@ -601,6 +701,25 @@ where
         request: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&request)?;
+        info!("Health check request received");
+
+        self.telemetry.as_ref().map(|telemetry| {
+            let is_bitcoind_syncing = is_syncing(
+                &self.bitcoind_client,
+                &self.telemetry,
+                self.btc_network,
+                self.config.identifier,
+            )
+            .ok()
+            .unwrap_or(true);
+            telemetry.update_health_check(
+                self.btc_network,
+                self.config.identifier,
+                self.start_time.elapsed().as_secs(),
+                &[("bitcoind", if is_bitcoind_syncing { "syncing" } else { "up" })],
+            )
+        });
+
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
@@ -674,6 +793,14 @@ where
         self.db.flush().to_status()?;
         info!("stored pegouts.len(): {:?}", pegouts.len());
 
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_pending_pegouts(
+                self.btc_network,
+                self.config.identifier,
+                pegouts.len() as i64,
+            );
+        }
+
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
@@ -683,7 +810,11 @@ where
     ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
+        let signing_session_id = update_signing_error_metrics!(
+            self,
+            req,
+            parse_signing_session_id(&req.signing_session_id)
+        );
         let signing_status = self.db.get_signing_status(&signing_session_id).to_status()?;
 
         let res =
@@ -714,9 +845,6 @@ where
     ) -> Result<tonic::Response<rpc::GetPendingPegoutsResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
         let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
-        if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
-        }
         let res = tonic::Response::new(rpc::GetPendingPegoutsResponse {
             pending_pegouts: pending_pegouts
                 .into_iter()
@@ -738,7 +866,6 @@ where
     ) -> Result<tonic::Response<Self::GetFinalizedPegoutIdsStream>, tonic::Status> {
         self.validate_jwt(&req)?;
         let db = self.db.clone();
-        let telemetry = self.telemetry.clone();
         let request = req.into_inner();
 
         let (tx, rx) = tokio::sync::mpsc::channel(request.chunk_size as usize);
@@ -758,10 +885,6 @@ where
                 );
                 match chunk_result {
                     Ok((pegout_ids, chunk_index, total_chunks)) => {
-                        if let Some(telemetry) = telemetry.as_ref() {
-                            telemetry.update_finalized_pegout_ids(pegout_ids.len() as i64);
-                        }
-
                         let batch = rpc::GetFinalizedPegoutIdsResponse {
                             data: pegout_ids
                                 .into_iter()
@@ -943,7 +1066,11 @@ where
             "Received round1 signing package request for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
+        let signing_session_id = update_signing_error_metrics!(
+            self,
+            req,
+            parse_signing_session_id(&req.signing_session_id)
+        );
 
         // Check if we have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
@@ -952,14 +1079,27 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    Some(signing_session_id),
+                    signing_session_id,
                     &SigningRound1Error::AlreadyInSigningSession.to_string(),
                 );
             }
             return Err(tonic::Status::internal("Already in signing session"));
         }
 
-        let mut psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
+        let mut psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         let nonces = signer::get_round1_signing_package(
             &mut psbt,
@@ -1006,9 +1146,26 @@ where
         // Validate PSBT
         let req = req.into_inner();
         info!("Received round2 signing package request");
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
+        let signing_session_id = update_signing_error_metrics!(
+            self,
+            req,
+            parse_signing_session_id(&req.signing_session_id)
+        );
 
-        let mut psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
+        let mut psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         signer::get_round2_signing_package(
             &mut psbt,
@@ -1023,7 +1180,7 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    Some(signing_session_id),
+                    signing_session_id,
                     &e.to_string(),
                 );
             }
@@ -1070,7 +1227,21 @@ where
         );
 
         // Get the matching pending pegouts
-        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+        let pending_pegouts = match self.db.get_pending_pegouts().to_status() {
+            Ok(pending_pegouts) => pending_pegouts,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
         info!(
             "[get_round2_signing_package] Found {} pending pegouts in the DB",
             pending_pegouts.len()
@@ -1090,6 +1261,10 @@ where
         self.db.reset_pending_pegouts(&[]).to_status()?;
         self.db.flush().to_status()?;
         info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
+        // set the telemetry for pending pegouts back to 0
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.set_pending_pegouts(self.btc_network, self.config.identifier, 0 as i64);
+        }
 
         let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
@@ -1111,11 +1286,11 @@ where
             "Received finalize signing request with signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id =
-            parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-                error!("Failed to parse signing session id: {}", e);
-                badarg!("Failed to parse signing session id: {}", e)
-            })?;
+        let signing_session_id = update_signing_error_metrics!(
+            self,
+            req,
+            parse_signing_session_id(&req.signing_session_id)
+        );
 
         let _tx_lock = self.tx_lock.lock().await;
         let psbt =
@@ -1128,7 +1303,14 @@ where
             })?;
         // This should be a ready to broadcast tx
         let tx = psbt.clone().extract_tx().to_status()?;
-        let tx_id = match self.bitcoind_client.send_raw_transaction(&tx) {
+
+        let tx_id = match measure_rpc_latency!(
+            &self.telemetry,
+            self.btc_network,
+            self.config.identifier,
+            "send_raw_transaction",
+            self.bitcoind_client.send_raw_transaction(&tx)
+        ) {
             Ok(tx_id) => Ok(Some(tx_id)),
             Err(err) => {
                 let err_msg = err.to_string();
@@ -1153,6 +1335,14 @@ where
             pegout_ids
         );
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
+        // remove the pegouts from the telemetry guage
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_pending_pegouts(
+                self.btc_network,
+                self.config.identifier,
+                -(pegout_ids.len() as i64),
+            );
+        }
         self.db.flush().to_status()?;
 
         if let Some(tx_id) = tx_id {
@@ -1163,6 +1353,16 @@ where
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+
+        // mark the signing session as finalized
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier);
+            telemetry.update_signing_success_rate_metrics(
+                self.btc_network,
+                self.config.identifier,
+                signing_session_id,
+            )
+        }
 
         let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
         Ok(res)
@@ -1175,21 +1375,58 @@ where
         self.validate_jwt(&req)?;
         // Ensure we have a key package
         self.db.get_key_package().to_status()?;
+
+        let req = req.into_inner();
+
+        if let Err(e) = self.db.get_key_package().to_status() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    req.signing_session_id.try_into().expect("signing session id is valid"),
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        };
+
         // take a lock on the tx_lock
         let _tx_lock = self.tx_lock.lock();
 
-        let req = req.into_inner();
         info!(
             "Received make tx request for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
-            .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
+        let signing_session_id = update_signing_error_metrics!(
+            self,
+            req,
+            parse_signing_session_id(&req.signing_session_id)
+        );
 
-        let fee_res = self
-            .bitcoind_client
-            .estimate_smart_fee(1, Some(bitcoincore_rpc::json::EstimateMode::Conservative));
+        let checkpoint = match BlockHash::from_slice(&req.checkpoint_block_hash) {
+            Ok(checkpoint) => checkpoint,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(badarg!("invalid checkpoint hash: {}", e));
+            }
+        };
+
+        let fee_res = measure_rpc_latency!(
+            &self.telemetry,
+            self.btc_network,
+            self.config.identifier,
+            "estimate_smart_fee",
+            self.bitcoind_client
+                .estimate_smart_fee(1, Some(bitcoincore_rpc::json::EstimateMode::Conservative))
+        );
+
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
             if let Some(f) = fee.fee_rate {
@@ -1197,20 +1434,65 @@ where
             }
         }
 
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_transaction_fee_rates(
+                self.btc_network,
+                self.config.identifier,
+                fee_rate.to_sat_per_kwu() as f64,
+            );
+
+            if fee_rate <= bitcoin::FeeRate::MIN {
+                warn!("Fee rate is below the minimum: {}", fee_rate);
+                telemetry.update_fee_rate_abnormalities(self.btc_network, self.config.identifier)
+            }
+
+            if fee_rate >= bitcoin::FeeRate::MAX {
+                warn!("Fee rate is above the maximum: {}", fee_rate);
+                telemetry.update_fee_rate_abnormalities(self.btc_network, self.config.identifier)
+            }
+        }
+
         debug!("Cord Fee rate: {:?}", fee_rate);
 
         // First sync the pegout scheduler as this may add tracked pegouts back to the pending
         // pegouts list
-        self.sync_pegout_scheduler(checkpoint).await.to_status()?;
-        let tracked_txs = self.db.get_tracked_txs().to_status()?;
+        try_with_signing_error_metrics!(
+            self,
+            signing_session_id,
+            self.sync_pegout_scheduler(checkpoint).await
+        );
+
+        let tracked_txs = match self.db.get_tracked_txs().to_status() {
+            Ok(tracked_txs) => tracked_txs,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         // Select up to `UPPER_PEGOUT_BOUND` pegouts, sorted by age in ascending
         // order. Respectively, the oldest pegouts come first.
-        let pending_pegouts = self.db.coord_pending_pegouts(UPPER_PEGOUT_BOUND).to_status()?;
-
-        if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
-        }
+        let pending_pegouts = match self.db.coord_pending_pegouts(UPPER_PEGOUT_BOUND).to_status() {
+            Ok(pending_pegouts) => pending_pegouts,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         let outputs = pending_pegouts
             .iter()
@@ -1229,16 +1511,32 @@ where
             .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
         let change_script = wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
-        let psbt = coordinator::make_tx(
+        let psbt = match coordinator::make_tx(
             outputs,
             fee_rate,
             change_script,
             &self.db,
             self.min_signers,
             tracked_txs,
+            self.telemetry.clone(),
+            self.btc_network,
         )
         .await
-        .to_status()?;
+        .to_status()
+        {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         // Log the outputs of the generated PSBT for debugging
         info!("PSBT generated by make_tx for session {:?}:", hex::encode(signing_session_id));
@@ -1253,16 +1551,41 @@ where
         // We rely on our logic correctly identifying it later.
 
         // Save psbt to db
-        self.db.update_psbt(&signing_session_id, &psbt).to_status()?;
+        try_with_signing_error_metrics!(
+            self,
+            req.signing_session_id.try_into().expect("valid signing session id"),
+            self.db.update_psbt(&signing_session_id, &psbt)
+        );
+
         self.db.flush().to_status()?;
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).to_status()?;
+        let psbt_bytes = match hex::decode(psbt.serialize_hex()).to_status() {
+            Ok(psbt_bytes) => psbt_bytes,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
         let res = tonic::Response::new(rpc::SigningPackage {
             // identifier really doent matter here.
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
         });
+
+        // record the new signing session in telemetry
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.record_total_signing_sessions(self.btc_network, self.config.identifier);
+        }
+
         Ok(res)
     }
 
@@ -1277,12 +1600,44 @@ where
             "Received to sign package request, signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let psbt = coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
-            .to_status()?;
+        let signing_session_id = update_signing_error_metrics!(
+            self,
+            req,
+            parse_signing_session_id(&req.signing_session_id)
+        );
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex())
-            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+        let psbt = match coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
+            .to_status()
+        {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        let psbt_bytes = match hex::decode(psbt.serialize_hex()) {
+            Ok(psbt_bytes) => psbt_bytes,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("valid signing session id"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(internal!("Failed to serialize psbt: {}", e));
+            }
+        };
+
         let res = tonic::Response::new(rpc::SigningPackage {
             // identifier really doent matter here.
             identifier: self.identifier.serialize().to_vec(),
@@ -1298,26 +1653,69 @@ where
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         let start = Instant::now();
         self.validate_jwt(&req)?;
-        // Ensure we have a key package
-        self.db.get_key_package().to_status()?;
 
         let req = req.into_inner();
+
+        // Ensure we have a key package
+        if let Err(e) = self.db.get_key_package().to_status() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    req.signing_session_id.try_into().expect("signing session id is valid"),
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        };
+
         info!(
             "Received new round1 signing package for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let frost_id = deserialize_frost_peer_id(req.identifier).to_status()?;
-        let psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
+        let signing_session_id = update_signing_error_metrics!(
+            self,
+            req,
+            parse_signing_session_id(&req.signing_session_id)
+        );
 
-        coordinator::add_round1_signing(
+        let frost_id =
+            update_signing_error_metrics!(self, req, deserialize_frost_peer_id(req.identifier));
+
+        let psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("signing session id is valid"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        if let Err(e) = coordinator::add_round1_signing(
             &signing_session_id,
             frost_id,
             &psbt,
             &self.db,
             self.min_signers,
         )
-        .to_status()?;
+        .to_status()
+        {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    req.signing_session_id.try_into().expect("signing session id is valid"),
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        };
 
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_round1_signing_metrics(
@@ -1338,23 +1736,65 @@ where
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         let start = Instant::now();
         self.validate_jwt(&req)?;
-        // Ensure we have a key package
-        self.db.get_key_package().to_status()?;
 
         let req = req.into_inner();
-        info!("Received round2 signing package");
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let frost_id = deserialize_frost_peer_id(req.identifier).to_status()?;
-        let psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
+        // Ensure we have a key package
+        if let Err(e) = self.db.get_key_package().to_status() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    req.signing_session_id.try_into().expect("signing session id is valid"),
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        };
 
-        coordinator::add_round2_signing(
+        info!("Received round2 signing package");
+        let signing_session_id = update_signing_error_metrics!(
+            self,
+            req,
+            parse_signing_session_id(&req.signing_session_id)
+        );
+
+        let frost_id =
+            update_signing_error_metrics!(self, req, deserialize_frost_peer_id(req.identifier));
+
+        let psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        req.signing_session_id.try_into().expect("signing session id is valid"),
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        if let Err(e) = coordinator::add_round2_signing(
             &signing_session_id,
             frost_id,
             &psbt,
             &self.db,
             self.min_signers,
         )
-        .to_status()?;
+        .to_status()
+        {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    req.signing_session_id.try_into().expect("signing session id is valid"),
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        }
 
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_round2_signing_metrics(
@@ -1469,29 +1909,128 @@ where
         req: tonic::Request<rpc::DkgPayload>,
     ) -> Result<tonic::Response<rpc::DkgPayloads>, tonic::Status> {
         self.validate_jwt(&req)?;
-
+        let start = Instant::now();
         // NOTE: we do not make an existing aggregated key check at the start
         // here, since we still want to respond to the coordinator in case they
         // have not received our acknowledgment yet.
 
         let req = req.into_inner();
-        let sender = deserialize_frost_peer_id(req.sender.clone()).to_status()?;
-        let recipient = deserialize_frost_peer_id(req.recipient.clone()).to_status()?;
+        let sender = match deserialize_frost_peer_id(req.sender.clone()).to_status() {
+            Ok(sender) => sender,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_dkg_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        let recipient = match deserialize_frost_peer_id(req.recipient.clone()).to_status() {
+            Ok(recipient) => recipient,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_dkg_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         // Decode the payload.
         let msg =
-            ciborium::from_reader::<dkg::DkgMessage, _>(req.payload.as_slice()).to_status()?;
+            match ciborium::from_reader::<dkg::DkgMessage, _>(req.payload.as_slice()).to_status() {
+                Ok(msg) => msg,
+                Err(e) => {
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_dkg_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            &e.to_string(),
+                        );
+                    }
+                    return Err(e);
+                }
+            };
 
         let payload = dkg::DkgPayload { sender, recipient, msg };
+
+        match &payload.msg {
+            dkg::DkgMessage::Round1 {
+                initiator: _,
+                context: _,
+                nonce: _,
+                ephemeral_pub: _,
+                signature: _,
+                package,
+            } => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    let mut bytes = vec![];
+                    ciborium::into_writer(&package, &mut bytes)
+                        .expect("failed to encode Dkg payload");
+                    telemetry.update_round1_dkg_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        bytes.len(),
+                        start.elapsed().as_millis(),
+                    );
+                }
+            }
+            dkg::DkgMessage::Round2 { initiator: _, target: _, nonce: _, package } => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    let mut bytes = vec![];
+                    ciborium::into_writer(&package, &mut bytes)
+                        .expect("failed to encode Dkg payload");
+                    telemetry.update_round2_dkg_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        bytes.len(),
+                        start.elapsed().as_millis(),
+                    );
+                }
+            }
+            dkg::DkgMessage::Round3 { initiator: _, signature: _ } => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_round3_dkg_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        start.elapsed().as_millis(),
+                    );
+                }
+            }
+            _ => {}
+        }
 
         // Acquire the lock on the dkg machine.
         let mut l = self.dkg.lock().await;
         let Some(dkg) = l.as_mut() else {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_dkg_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    &"dkg not initialized".to_string(),
+                );
+            }
             return Err(tonic::Status::internal("dkg not initialized"));
         };
 
         // Process the payload.
-        dkg.machine.recv(payload).to_status()?;
+        if let Err(e) = dkg.machine.recv(payload).to_status() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_dkg_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        }
 
         // Logging DKG state.
         print_dkg_state_log(dkg);
@@ -1513,10 +2052,37 @@ where
         if let Some((sec_key, pub_key)) = dkg.machine.aggregate_key_packages() {
             if self.db.get_key_package().to_status()?.is_none() {
                 info!("DKG completed successfully, saving key packages...");
+                if let Err(e) = self.db.set_key_package(sec_key.clone()).to_status() {
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_dkg_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            &e.to_string(),
+                        );
+                    }
+                    return Err(e);
+                }
 
-                self.db.set_key_package(sec_key.clone()).to_status()?;
-                self.db.set_pubkey_package(pub_key.clone()).to_status()?;
-                self.db.flush().to_status()?;
+                if let Err(e) = self.db.set_pubkey_package(pub_key.clone()).to_status() {
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_dkg_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            &e.to_string(),
+                        );
+                    }
+                    return Err(e);
+                }
+                if let Err(e) = self.db.flush().to_status() {
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_dkg_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            &e.to_string(),
+                        );
+                    }
+                    return Err(e);
+                }
 
                 // Note that we keep the dkg machine running, in case the
                 // coordinator does not receive the final acknowledgment and we need
@@ -1547,30 +2113,6 @@ where
         _req: tonic::Request<rpc::FinalizeSignerRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         panic!("Not used");
-        // let req = req.into_inner();
-        // info!("Received finalize signer request");
-
-        // let finalized_psbt = bitcoin::Psbt::deserialize(&req.psbt).map_err(|e| {
-        //     error!("Failed to deserialize psbt: {}", e);
-        //     badarg!("Failed to deserialize psbt: {}", e)
-        // })?;
-
-        // let psbt = self
-        //     .finalize_signer(finalized_psbt)
-        //     .await
-        //     .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
-        // let psbt_bytes = hex::decode(psbt.serialize_hex())
-        //     .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
-
-        // let res = tonic::Response::new(rpc::FinalizeSigningResponse {
-        //     psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),
-        // });
-
-        // if let Some(telemetry) = self.telemetry.as_ref() {
-        //     telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier)
-        // }
-
-        // Ok(res)
     }
 }
 
