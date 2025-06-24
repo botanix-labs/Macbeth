@@ -3,7 +3,8 @@ name: Docker Build Test for BTC Server
 on:
   pull_request:
     branches:
-      - main
+      - develop
+      - hotfix
     types: [opened]
 
 jobs:
@@ -23,7 +24,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build --platform linux/amd64 -t botanix_testnet_btc_server_v1 -f Dockerfile.btc_server .
+          docker build \
+            --platform linux/amd64 \
+            -t botanix_testnet_btc_server_v1 \
+            -f Dockerfile \
+            --build-arg PACKAGE=btc-server \
+            --build-arg BIN=btc-server \
+            .
           docker tag botanix_testnet_btc_server_v1:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:${{ steps.sha.outputs.short_sha }}
         working-directory: ./
 

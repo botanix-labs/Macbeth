@@ -46,9 +46,10 @@ use url::Url;
 
 pub const RPC_PORT_BASE: u16 = 8545;
 pub const WS_PORT_BASE: u16 = 9545;
-pub const DISCOVERY_PORT_BASE: u16 = 30330;
+pub const DISCOVERY_PORT_BASE: u16 = 30303;
 pub const ABCI_PORT_BASE: u16 = 26658;
 #[derive(Template, Clone, Debug)]
+#[allow(dead_code)]
 #[template(path = "botanix_testnet.json", ext = "json", escape = "none")]
 struct BotanixTestnetGenesisConfig<'a> {
     edh: &'a str,
@@ -129,6 +130,7 @@ pub struct FederationMemberTestConfig {
     pub bitcoind_url: Url,
     pub bitcoind_username: String,
     pub bitcoind_password: String,
+    pub bitcoind_zmq_hash_block_address: Url,
     pub bitcoin_server_url: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
     pub sender: tokio::sync::broadcast::Sender<Notifications>,
@@ -154,6 +156,7 @@ impl FederationMemberTestConfig {
         bitcoind_url: Url,
         bitcoind_username: String,
         bitcoind_password: String,
+        bitcoind_zmq_hashblock_address: Url,
         bitcoin_server_url: String,
         frost_min_signers: u16,
         frost_max_signers: u16,
@@ -180,6 +183,7 @@ impl FederationMemberTestConfig {
             bitcoind_url,
             bitcoind_username,
             bitcoind_password,
+            bitcoind_zmq_hash_block_address: bitcoind_zmq_hashblock_address,
             bitcoin_server_url,
             peers_list: vec![],
             sender,
@@ -734,6 +738,7 @@ pub async fn create_poa_nodes(
             global_context.bitcoind_url.clone(),
             global_context.bitcoind_user.clone(),
             global_context.bitcoind_pass.clone(),
+            global_context.bitcoind_zmq_hash_block_address.clone(),
             format!("localhost:{}", port),
             global_context.min_signers,
             global_context.max_signers,

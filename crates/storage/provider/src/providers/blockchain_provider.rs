@@ -4,9 +4,9 @@ use crate::{
     CanonStateSubscriptions, ChainSpecProvider, ChangeSetReader, DatabaseProviderFactory,
     DatabaseProviderRO, EvmEnvProvider, FinalizedBlockReader, HeaderProvider, ProviderError,
     ProviderFactory, PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt,
-    RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader, StateProviderBox,
-    StateProviderFactory, StaticFileProviderFactory, TransactionVariant, TransactionsProvider,
-    WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
+    RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader, StagedHeader,
+    StateProviderBox, StateProviderFactory, StaticFileProviderFactory, TransactionVariant,
+    TransactionsProvider, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::{
@@ -15,8 +15,8 @@ use reth_chain_state::{
 };
 use reth_chainspec::{ChainInfo, ChainSpec};
 use reth_db::models::{
-    ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
-    WalletStateSyncRecord,
+    ChunkId, HeaderWithPegs, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
+    SnapshotSyncId, UuidID, WalletStateSyncRecord,
 };
 use reth_db_api::{
     database::Database,
@@ -1712,6 +1712,23 @@ where
         min_required_criterion: u64,
     ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
         self.database.get_minimum_superset(min_required_criterion)
+    }
+}
+
+impl<DB> StagedHeader for BlockchainProvider2<DB>
+where
+    DB: Database + Sync + Send,
+{
+    fn insert_staged_header(&self, id: B256, header: HeaderWithPegs) -> ProviderResult<()> {
+        self.database.insert_staged_header(id, header)
+    }
+
+    fn remove_staged_header(&self, id: B256) -> ProviderResult<bool> {
+        self.database.remove_staged_header(id)
+    }
+
+    fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
+        self.database.get_staged_headers()
     }
 }
 

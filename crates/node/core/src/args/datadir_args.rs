@@ -16,11 +16,22 @@ pub struct DatadirArgs {
     /// - Linux: `$XDG_DATA_HOME/reth/` or `$HOME/.local/share/reth/`
     /// - Windows: `{FOLDERID_RoamingAppData}/reth/`
     /// - macOS: `$HOME/Library/Application Support/reth/`
-    #[arg(long, value_name = "DATA_DIR", verbatim_doc_comment, default_value_t)]
+    #[arg(
+        long,
+        value_name = "DATA_DIR",
+        env = "RETH_DATA_DIR",
+        verbatim_doc_comment,
+        default_value_t
+    )]
     pub datadir: MaybePlatformPath<DataDirPath>,
 
     /// The absolute path to store static files in.
-    #[arg(long = "datadir.static_files", verbatim_doc_comment, value_name = "PATH")]
+    #[arg(
+        long = "datadir.static_files",
+        verbatim_doc_comment,
+        value_name = "PATH",
+        env = "RETH_STATIC_FILES_PATH"
+    )]
     pub static_files_path: Option<PathBuf>,
 }
 

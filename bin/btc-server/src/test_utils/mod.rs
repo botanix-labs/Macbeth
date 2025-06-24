@@ -137,21 +137,42 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
                 ).unwrap());
         }
         if method == "getrawtransaction" {
-            // error case is triggered by a specific txid
+            // error cases are triggered by specific txids
             // used by test `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool`
-            let error_txid =
+            let error_txid_1 =
                 String::from("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2");
             if !raw_args.is_empty() &&
-                raw_args[0].get().to_string().trim_matches('\"') == error_txid
+                raw_args[0].get().to_string().trim_matches('\"') == error_txid_1
             {
                 return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
                     TX_NOT_FOUND_BITCOIND_ERROR,
                 )));
             }
 
+            // used by test `track_mempool_should_not_add_back_pegout_when_still_in_mempool`
+            let error_txid_2 =
+                String::from("26bbaab2e585d465cceecc2acc7b398069aa85fc4dd1f52e39666a65e54a4569");
+            if !raw_args.is_empty() &&
+                raw_args[0].get().to_string().trim_matches('\"') == error_txid_2
+            {
+                return Err(bitcoincore_rpc::Error::Json(serde_json::error::Error::custom(
+                    "Tx in mempool",
+                )));
+            }
+
             let txid = Txid::from_byte_array([0u8; 32]);
-            return Ok(serde_json::from_str(&format!("{{\"size\": 250, \"weight\": 1000, \"time\": 1680000000, \"height\": 680000, \"descendantcount\": 2, \"descendantsize\": 500, \"ancestorcount\": 1, \"ancestorsize\": 250, \"wtxid\": \"{txid}\", \"fees\": {{\"base\": 1000, \"modified\": 1100, \"ancestor\": 1200, \"descendant\": 1300}}, \"depends\": [\"{txid}\"], \"spentby\": [\"{txid}\"], \"bip125-replaceable\": true, \"unbroadcast\": false}}",),
-                ).unwrap());
+            // return Ok(serde_json::from_str(&format!("{{\"size\": 250, \"weight\": 1000, \"time\":
+            // 1680000000, \"height\": 680000, \"descendantcount\": 2, \"descendantsize\": 500,
+            // \"ancestorcount\": 1, \"ancestorsize\": 250, \"wtxid\": \"{txid}\", \"fees\":
+            // {{\"base\": 1000, \"modified\": 1100, \"ancestor\": 1200, \"descendant\": 1300}},
+            // \"depends\": [\"{txid}\"], \"spentby\": [\"{txid}\"], \"bip125-replaceable\": true,
+            // \"unbroadcast\": false}}",),     ).unwrap());
+            return Ok(serde_json::from_str(&format!("{{\"hex\": \"01000000010000000000000000000000000000000000000000000000000000000000000000000000000000ffffffff0100000000000000000000000000\", \"txid\": \"{txid}\", \"hash\": \"{txid}\", \"size\": 250, \"vsize\": 141, \"version\": 1, \"locktime\": 0, \"vin\": [{{\"txid\": \"{txid}\", \"vout\": 0, \"scriptSig\": {{\"asm\": \"coinbase\", \"hex\": \"\"}}, \"sequence\": 4294967295}}], \"vout\": [{{\"value\": 0.0, \"n\": 0, \"scriptPubKey\": {{\"asm\": \"\", \"hex\": \"\", \"type\": \"nonstandard\"}}}}], \"blockhash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"confirmations\": 680000, \"time\": 1680000000, \"blocktime\": 1680000000}}", txid = txid)).unwrap());
+        }
+
+        if method == "getblock" {
+            let txid = Txid::from_byte_array([0u8; 32]);
+            return Ok(serde_json::from_str(&format!("{{\"hash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"confirmations\": 680000, \"size\": 1024, \"strippedsize\": 1000, \"weight\": 4000, \"height\": 680000, \"version\": 1, \"version_hex\": \"01000000\", \"merkleroot\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"tx\": [\"{}\"], \"time\": 1680000000, \"mediantime\": 1679999500, \"nonce\": 123456789, \"bits\": \"1a00ffff\", \"difficulty\": 1.0, \"chainwork\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"nTx\": 1, \"previousblockhash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"nextblockhash\": \"0000000000000000000000000000000000000000000000000000000000000000\"}}", txid)).unwrap());
         }
 
         unimplemented!()

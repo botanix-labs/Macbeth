@@ -26,6 +26,7 @@ bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
 btc-server = { path = "../btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
+bitcoincore-zmq = { workspace = true }
 
 # Botanix
 client = { path = "../btc-server/client" }

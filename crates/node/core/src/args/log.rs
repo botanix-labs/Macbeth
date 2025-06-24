@@ -16,7 +16,7 @@ const MB_TO_BYTES: u64 = 1024 * 1024;
 #[command(next_help_heading = "Logging")]
 pub struct LogArgs {
     /// The format to use for logs written to stdout.
-    #[arg(long = "log.stdout.format", value_name = "FORMAT", global = true, default_value_t = LogFormat::Terminal)]
+    #[arg(long = "log.stdout.format", value_name = "FORMAT", global = true, default_value_t = LogFormat::Terminal, env = "RETH_LOG_STDOUT_FORMAT")]
     pub log_stdout_format: LogFormat,
 
     // TODO: Remove `reth_authority_consensus=trace` when ready for wide audience.
@@ -25,12 +25,13 @@ pub struct LogArgs {
         long = "log.stdout.filter",
         value_name = "FILTER",
         global = true,
-        default_value = "reth_authority_consensus=trace,block_with_context=off"
+        env = "RETH_LOG_STDOUT_FILTER",
+        default_value = "block_with_context=off"
     )]
     pub log_stdout_filter: String,
 
     /// The format to use for logs written to the log file.
-    #[arg(long = "log.file.format", value_name = "FORMAT", global = true, default_value_t = LogFormat::Terminal)]
+    #[arg(long = "log.file.format", value_name = "FORMAT", global = true, default_value_t = LogFormat::Terminal, env = "RETH_LOG_FILE_FORMAT")]
     pub log_file_format: LogFormat,
 
     /// The filter to use for logs written to the log file.
@@ -39,25 +40,44 @@ pub struct LogArgs {
         long = "log.file.filter",
         value_name = "FILTER",
         global = true,
+        env = "RETH_LOG_FILE_FILTER",
         default_value = "reth_authority_consensus=trace,block_with_context=trace"
     )]
     pub log_file_filter: String,
 
     /// The path to put log files in.
-    #[arg(long = "log.file.directory", value_name = "PATH", global = true, default_value_t)]
+    #[arg(
+        long = "log.file.directory",
+        value_name = "PATH",
+        global = true,
+        default_value_t,
+        env = "RETH_LOG_FILE_DIRECTORY"
+    )]
     pub log_file_directory: PlatformPath<LogsDir>,
 
     /// The maximum size (in MB) of one log file.
-    #[arg(long = "log.file.max-size", value_name = "SIZE", global = true, default_value_t = 200)]
+    #[arg(
+        long = "log.file.max-size",
+        value_name = "SIZE",
+        global = true,
+        default_value_t = 200,
+        env = "RETH_LOG_FILE_MAX_SIZE"
+    )]
     pub log_file_max_size: u64,
 
     /// The maximum amount of log files that will be stored. If set to 0, background file logging
     /// is disabled.
-    #[arg(long = "log.file.max-files", value_name = "COUNT", global = true, default_value_t = 5)]
+    #[arg(
+        long = "log.file.max-files",
+        value_name = "COUNT",
+        global = true,
+        default_value_t = 5,
+        env = "RETH_LOG_FILE_MAX_FILES"
+    )]
     pub log_file_max_files: usize,
 
     /// Write logs to journald.
-    #[arg(long = "log.journald", global = true)]
+    #[arg(long = "log.journald", global = true, env = "RETH_LOG_JOURNALD")]
     pub journald: bool,
 
     /// The filter to use for logs written to journald.
@@ -65,6 +85,7 @@ pub struct LogArgs {
         long = "log.journald.filter",
         value_name = "FILTER",
         global = true,
+        env = "RETH_LOG_JOURNALD_FILTER",
         default_value = "error"
     )]
     pub journald_filter: String,
@@ -72,11 +93,12 @@ pub struct LogArgs {
     /// Sets whether or not the formatter emits ANSI terminal escape codes for colors and other
     /// text formatting.
     #[arg(
-        long,
-        value_name = "COLOR",
-        global = true,
-        default_value_t = ColorMode::Always
-    )]
+    long,
+    value_name = "COLOR",
+    global = true,
+    env = "RETH_COLOR",
+    default_value_t = ColorMode::Always
+)]
     pub color: ColorMode,
     /// The verbosity settings for the tracer.
     #[command(flatten)]
@@ -159,11 +181,18 @@ pub struct Verbosity {
     /// -vvv    Info
     /// -vvvv   Debug
     /// -vvvvv  Traces (warning: very verbose!)
-    #[arg(short, long, action = ArgAction::Count, global = true, default_value_t = 3, verbatim_doc_comment, help_heading = "Display")]
+    #[arg(short, long, action = ArgAction::Count, global = true, default_value_t = 3, verbatim_doc_comment, help_heading = "Display", env = "RETH_LOG_VERBOSITY")]
     verbosity: u8,
 
     /// Silence all log output.
-    #[arg(long, alias = "silent", short = 'q', global = true, help_heading = "Display")]
+    #[arg(
+        long,
+        alias = "silent",
+        short = 'q',
+        global = true,
+        help_heading = "Display",
+        env = "RETH_LOG_SILENT"
+    )]
     quiet: bool,
 }
 

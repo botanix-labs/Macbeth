@@ -1,6 +1,5 @@
 use anyhow::Context;
 use ethers::types::U64;
-use tokio::time::Duration;
 
 use crate::{
     it_info_print,
@@ -15,14 +14,12 @@ use crate::{
 #[allow(clippy::unwrap_used, clippy::cast_possible_truncation)]
 pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Result<()> {
     it_info_print!("Running rpc node test");
-    // subscribe to rpc node events
-    let _rx = suite
-        .local_context
-        .rpc_notification
-        .as_ref()
-        .expect("broadcast sender to be set")
-        .subscribe();
-    let test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap();
+    let mut test_fed_members = suite.local_context.poa_nodes.as_ref().unwrap().clone();
+    // Remove syncing nodes: syncing nodes are the last entries in the map
+    let num_to_keep = test_fed_members.len() -
+        suite.local_context.cometbft_nodes_syncing.clone().unwrap_or_default().len();
+    test_fed_members = test_fed_members.into_iter().take(num_to_keep).collect();
+    it_info_print!("Test federation members", test_fed_members.len());
 
     // create botanix clients
     let mut botanix_clients: Vec<BotanixEthClient> = vec![];
@@ -37,7 +34,6 @@ pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Res
     }
 
     // send eoa messages from all botanix clients
-    let total_authorities = test_fed_members.len();
     let eoa_receiver = ethers::core::types::Address::random();
 
     let last_tx_hash = botanix_clients
@@ -49,15 +45,6 @@ pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Res
         .unwrap();
     it_info_print!("Eoa tx to Poa node: {:?}", last_tx_hash);
 
-    // get the latest header hash from the federation
-    let fed_latest_header_hash = botanix_clients
-        .first()
-        .expect("botanix client to exist")
-        .get_latest_block_hash()
-        .await
-        .unwrap();
-
-    tokio::time::sleep(Duration::from_secs(10)).await;
     // create rpc node and sync with federation peers
     let rpc_node = suite
         .local_context
@@ -79,7 +66,16 @@ pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Res
     .await
     .context("Failed to create rpc botanix client")?;
 
+    // get the latest header hash from the federation
+    let fed_latest_header_hash = botanix_clients
+        .first()
+        .expect("botanix client to exist")
+        .get_latest_block_hash()
+        .await
+        .unwrap();
     let rpc_latest_block_header = rpc_botanix_client.get_latest_block_hash().await.unwrap();
+
+    it_info_print!("Federation latest header hash", fed_latest_header_hash);
     it_info_print!("RPC node latest header hash", rpc_latest_block_header);
 
     assert_eq!(rpc_latest_block_header, fed_latest_header_hash);
@@ -87,35 +83,31 @@ pub async fn test_rpc_node(suite: &ConsensusIntegrationTestSuite) -> anyhow::Res
     // submit a tx to the rpc node
     let rpc_tx_receipt =
         rpc_botanix_client.send_eoa(eoa_receiver, SEND_AMOUNT).await.unwrap().unwrap();
-    it_info_print!("RPC node tx hash", rpc_tx_receipt);
+    it_info_print!("RPC node tx receipt", rpc_tx_receipt);
 
     // assert tx is confirmed (status = 1)
     let status = rpc_tx_receipt.status.expect("tx status to exist");
     assert_eq!(status, U64::from(1));
 
-    // wait for fed members to sync on the block
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    let rpc_tx_block_hash = rpc_tx_receipt.block_hash.expect("block hash to exist");
+    it_info_print!("RPC tx block hash", rpc_tx_block_hash);
 
-    let latest_block_hash = rpc_tx_receipt.block_hash.expect("block hash to exist");
+    // call all fed members and check they have the block with the rpc tx
+    for client in botanix_clients.iter() {
+        let block = client.get_latest_block_by_hash(rpc_tx_block_hash).await.unwrap();
+        let tx_hash = block.transactions.first().expect("tx to exist");
+        it_info_print!("Fed node tx hash", tx_hash);
+        it_info_print!("RPC node tx hash", rpc_tx_receipt.transaction_hash);
 
-    // call all fed members and check they have same block hash
-    // then check block contains rpc tx
-    for (index, client) in botanix_clients.iter().enumerate() {
-        let block_hash = client.get_latest_block_hash().await.unwrap();
-        it_info_print!("Botanix client", format!("index={index}: block hash - {block_hash}"));
+        assert_eq!(*tx_hash, rpc_tx_receipt.transaction_hash);
 
-        assert_eq!(block_hash, latest_block_hash);
-        // if last fed member, check tx is in block
-        if index == total_authorities - 1 {
-            let block = client.get_latest_block_by_hash(block_hash).await.unwrap();
-            it_info_print!("Final Botanix client block", block);
-
-            let tx_hash = block.transactions.first().expect("tx to exist");
-            it_info_print!("Latest block containing tx hash", tx_hash);
-            it_info_print!("RPC node tx hash", rpc_tx_receipt.transaction_hash);
-
-            assert_eq!(*tx_hash, rpc_tx_receipt.transaction_hash);
-        }
+        // assert tx_receipt has correct block number
+        // this test a previous bug where the tx_receipt block number was sometimes 0
+        let rpc_tx_block_number = rpc_tx_receipt.block_number.expect("block number to exist");
+        let fed_block_number = block.number.expect("block number to exist");
+        it_info_print!("RPC tx block number", rpc_tx_block_number);
+        it_info_print!("Fed block number", fed_block_number);
+        assert_eq!(rpc_tx_block_number, fed_block_number);
     }
 
     Ok(())

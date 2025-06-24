@@ -19,11 +19,11 @@ pub struct StateSyncArgs {
     /// Snapshot keep recent.
     ///
     /// The snapshot keep recent.
-    #[arg(default_value_t=DEFAULT_NUM_SNAPSHOTS_TO_KEEP, long = "sync.num_snapshots_to_keep", name = "sync.num_snapshots_to_keep", value_name = "NUM_SNAPSHOTS_TO_KEEP")]
+    #[arg(default_value_t=DEFAULT_NUM_SNAPSHOTS_TO_KEEP, long = "sync.num_snapshots_to_keep", name = "sync.num_snapshots_to_keep", value_name = "NUM_SNAPSHOTS_TO_KEEP", env = "RETH_SYNC_NUM_SNAPSHOTS_TO_KEEP")]
     pub num_snapshots_to_keep: u64,
 
     /// Snapshot message format
-    #[arg(default_value_t=SNAPSHOT_MESSAGE_FORMAT, long = "sync.snapshot_message_format", name = "sync.snapshot_message_format", value_name = "SNAPSHOT_MESSAGE_FORMAT")]
+    #[arg(default_value_t=SNAPSHOT_MESSAGE_FORMAT, long = "sync.snapshot_message_format", name = "sync.snapshot_message_format", value_name = "SNAPSHOT_MESSAGE_FORMAT", env = "RETH_SYNC_SNAPSHOT_MESSAGE_FORMAT")]
     pub snapshot_message_format: u32,
 
     /// State sync enabled
@@ -31,7 +31,8 @@ pub struct StateSyncArgs {
         default_value_t = false,
         long = "sync.enable_state_sync",
         name = "sync.enable_state_sync",
-        value_name = "ENABLE_STATE_SYNC"
+        value_name = "ENABLE_STATE_SYNC",
+        env = "RETH_SYNC_ENABLE_STATE_SYNC"
     )]
     pub enable_state_sync: bool,
 
@@ -40,12 +41,13 @@ pub struct StateSyncArgs {
         default_value_t = false,
         long = "sync.enable_historical_sync",
         name = "sync.enable_historical_sync",
-        value_name = "ENABLE_HISTORICAL_SYNC"
+        value_name = "ENABLE_HISTORICAL_SYNC",
+        env = "RETH_SYNC_ENABLE_HISTORICAL_SYNC"
     )]
     pub enable_historical_sync: bool,
 
     /// Wallet state sync chunk size
-    #[arg(default_value_t=WALLET_STATE_SYNC_CHUNK_SIZE, long = "sync.wallet_state_sync_chunk_size", name = "sync.wallet_state_sync_chunk_size", value_name = "WALLET_STATE_SYNC_CHUNK_SIZE")]
+    #[arg(default_value_t=WALLET_STATE_SYNC_CHUNK_SIZE, long = "sync.wallet_state_sync_chunk_size", name = "sync.wallet_state_sync_chunk_size", value_name = "WALLET_STATE_SYNC_CHUNK_SIZE", env = "RETH_SYNC_WALLET_STATE_SYNC_CHUNK_SIZE")]
     pub wallet_state_sync_chunk_size: u64,
 }
 

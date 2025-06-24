@@ -12,6 +12,7 @@ pub struct RpcStateCacheArgs {
     #[arg(
         long = "rpc-cache.max-blocks",
         default_value_t = DEFAULT_BLOCK_CACHE_MAX_LEN,
+        env = "RETH_RPC_CACHE_MAX_BLOCKS",
     )]
     pub max_blocks: u32,
 
@@ -19,6 +20,7 @@ pub struct RpcStateCacheArgs {
     #[arg(
         long = "rpc-cache.max-receipts",
         default_value_t = DEFAULT_RECEIPT_CACHE_MAX_LEN,
+        env = "RETH_RPC_CACHE_MAX_RECEIPTS",
     )]
     pub max_receipts: u32,
 
@@ -26,6 +28,7 @@ pub struct RpcStateCacheArgs {
     #[arg(
         long = "rpc-cache.max-envs",
         default_value_t = DEFAULT_ENV_CACHE_MAX_LEN,
+        env = "RETH_RPC_CACHE_MAX_ENVS",
     )]
     pub max_envs: u32,
 
@@ -33,6 +36,7 @@ pub struct RpcStateCacheArgs {
     #[arg(
         long = "rpc-cache.max-concurrent-db-requests",
         default_value_t = DEFAULT_CONCURRENT_DB_REQUESTS,
+        env = "RETH_RPC_CACHE_MAX_CONCURRENT_DB_REQUESTS",
     )]
     pub max_concurrent_db_requests: usize,
 }
