@@ -12,7 +12,7 @@ Each new upstream release introduces a complex and error-prone merge process due
 
 Our current process creates several key challenges:
 
-- **Manual and conflict-heavy upstream merges**: Every time we want to incorporate upstream updates from `paradigmxyz/reth`, we face merge conflicts that must be manually resolved due to the depth of our internal changes. Reth modules are often renamed, structurally interchanged or parts of them moved into other modues/crates.
+- **Manual and conflict-heavy upstream merges**: Every time we want to incorporate upstream updates from `paradigmxyz/reth`, we face merge conflicts that must be manually resolved due to the depth of our internal changes. Reth modules are often renamed, structurally interchanged or parts of them moved into other modules/crates.
 - **Tight coupling**: Cloning and modifying the entire monorepo increases coupling between our fork and upstream.
 - **Lack of granularity**: Updating means syncing the whole monorepo, even if we only need changes from a few specific crates.
 - **Risk to long-term maintainability**: With upstream changing rapidly, we risk diverging too far from the mainline Reth, making future merges nearly impossible.
