@@ -533,6 +533,7 @@ impl PegoutScheduler {
                     );
                     let refs: Vec<&FinalizedPegout> = finalized_pegout_ids.iter().collect();
                     self.db.store_finalized_pegout_ids_atomically(&refs)?;
+                    self.db.prune_finalized_pegout_ids()?;
                     self.db.flush()?;
                 } else {
                     info!("Confirmed tx {} had no associated pegout requests to finalize.", txid);
