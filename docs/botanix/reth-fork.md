@@ -54,7 +54,7 @@ The `PATCHED_CRATES.md` file in the root of our fork repository:
 ## Last Updated
 - **Date**: 2025-06-20
 - **Upstream Base**: v1.1.0 (commit: 66692a7)
-- **Fork Tag**: botanix-reth-v1.1.0-patch.123
+- **Fork Tag**: botanix-reth+v1.1.0-patch.123
 
 ## Patched Crates
 
@@ -120,6 +120,7 @@ Benefits of PR-based tagging:
 When applying patches to our fork, we follow this structured process:
 
 1. **Plan the Extensibility Change**
+    - Discuss with the Reth maintainers if they accept the change to upstream
     - Document the intended change and last update info in `PATCHED_CRATES.md`
     - Ensure the change only improves extensibility, doesn't add business logic
     - Verify the change would be acceptable upstream
@@ -294,46 +295,16 @@ macbeth/
 ```
 
 **Benefits of this structure**:
-- **Clear separation**: `crates/reth/` contains only reth integrations, `crates/botanix/` contains our logic
+- **Clear separation**: `crates/reth/` contains only reth extending logic, `crates/botanix/` contains our logic
 - **Simple organization**: Easy to understand what depends on reth vs. what doesn't
 - **Better maintainability**: Changes to reth integration are isolated to one directory
 - **Upstream contribution**: Reth extensions can be easily extracted from `crates/reth/`
 
+#### Botanix Business Logic Crates
+
+Pure business logic lives in the `crates/botanix/` directory and do not extend reth.
+
 #### Extending Reth Crates
-
-##### Extending Crates via Public APIs
-
-When our fork exposes extensibility points, we use them in our `crates/reth/` extensions:
-
-**In our fork** (reth-db-models), we expose extensibility:
-```rust
-// Make the compression macro public for external use
-pub use crate::compression::impl_compression_for_compact;
-
-// Add extensibility trait
-pub trait ExtensibleModel: Send + Sync {
-    fn model_type(&self) -> u8;
-    fn encode(&self) -> Vec<u8>;
-    fn decode(data: &[u8]) -> Result<Self, DecodeError> where Self: Sized;
-}
-```
-
-**In our crates/reth/ crate** (botanix-db-models):
-```rust
-use reth_db_models::{ExtensibleModel, impl_compression_for_compact};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BotanixSpecificModel {
-    // Our custom fields
-}
-
-impl ExtensibleModel for BotanixSpecificModel {
-    // Implementation
-}
-
-// Use the now-public macro
-impl_compression_for_compact!(BotanixSpecificModel);
-```
 
 ##### Composition and Wrapping
 
@@ -374,10 +345,6 @@ impl Hardforks for BotanixChainSpec {
     // Delegate to inner implementation with our customizations
 }
 ```
-
-##### Pure Business Logic Crates
-
-Pure business logic lives in the `crates/botanix/` directory and has no direct dependency on reth.
 
 ##### Trait Implementation Integration
 
