@@ -279,7 +279,6 @@ impl PartialEq for ValidatePSBTError {
 /// * `flags` - Flags indicating the validation criteria and actions to be performed.
 /// * `min_signers` - The minimum number of signers required for certain validations.
 /// * `db` - Database reference used for UTXO lookups.
-/// * `botanix_eth_client` - Botanix ethereum client.
 ///
 /// `NO_FLAGS`: Performs basic sanity checks only.
 /// `ROUND1`: Validates witnes_UTXO and UTXO existence in the database. Also checks the validity of
@@ -490,7 +489,7 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         };
     }
 
-    // check outputs are not in finalized pegouts list and not too old
+    // check outputs are not in finalized pegouts list
     let finalized_pegouts_ids = db
         .get_finalized_pegout_ids()?
         .into_iter()
