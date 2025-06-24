@@ -220,12 +220,12 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
 impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
 where
     DB: BlockReaderIdExt
-    + StateProviderFactory
-    + Clone
-    + SnapshotReader
-    + SnapshotWriter
-    + CanonChainTracker
-    + 'static,
+        + StateProviderFactory
+        + Clone
+        + SnapshotReader
+        + SnapshotWriter
+        + CanonChainTracker
+        + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
 {
@@ -380,12 +380,12 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
 impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
 where
     DB: BlockReaderIdExt
-    + StateProviderFactory
-    + Clone
-    + SnapshotReader
-    + SnapshotWriter
-    + CanonChainTracker
-    + 'static,
+        + StateProviderFactory
+        + Clone
+        + SnapshotReader
+        + SnapshotWriter
+        + CanonChainTracker
+        + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -613,12 +613,12 @@ where
 impl<EF, BF, DB, Pool> Application for ABCIClient<EF, BF, DB, Pool>
 where
     DB: BlockReaderIdExt
-    + StateProviderFactory
-    + Clone
-    + SnapshotReader
-    + SnapshotWriter
-    + CanonChainTracker
-    + 'static,
+        + StateProviderFactory
+        + Clone
+        + SnapshotReader
+        + SnapshotWriter
+        + CanonChainTracker
+        + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -2194,7 +2194,7 @@ where
                             eth_block_hash =
                                 %sealed_block_with_context.sealed_block_with_peg.block().hash(),
                         )
-                            .entered();
+                        .entered();
 
                         let sealed_block_with_peg = sealed_block_with_context.sealed_block_with_peg;
                         let new_header = sealed_block_with_peg.block().header.clone();
