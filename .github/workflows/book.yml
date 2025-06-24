@@ -1,18 +1,23 @@
 # Documentation and mdbook related jobs.
 
-name: book
+name: Book
 
 on:
   push:
-    branches: [main, dev]
+    branches:
+      - main
+      - develop
+      - hotfix
   pull_request:
-    branches: [main, dev]
+    branches:
+      - develop
+      - hotfix
   merge_group:
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    name: test
+    name: Test
     timeout-minutes: 60
 
     steps:
@@ -35,7 +40,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
-    name: lint
+    name: Lint
     timeout-minutes: 60
 
     steps:
@@ -53,6 +58,7 @@ jobs:
         run: mdbook-linkcheck --standalone
 
   build:
+    name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -115,6 +121,7 @@ jobs:
           if-no-files-found: error
 
   deploy:
+    name: Deploy
     # Only deploy if a push to the main branch triggered this workflow
     if: github.ref_name == 'main' && github.event_name == 'push'
     runs-on: ubuntu-latest

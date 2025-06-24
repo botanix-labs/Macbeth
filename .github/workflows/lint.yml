@@ -1,4 +1,4 @@
-name: lint
+name: Lints
 
 on:
   pull_request:
@@ -9,12 +9,17 @@ on:
       - reopened
   merge_group:
     branches:
-      - main
-      - dev
+      - develop
+      - hotfix
   push:
     branches:
       - main
-      - dev
+      - develop
+      - hotfix
+
+permissions:
+  contents: read
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -42,7 +47,7 @@ jobs:
     #         RUSTFLAGS: -D warnings
 
   clippy:
-    name: clippy-checks
+    name: Clippy
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -57,14 +62,17 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-      - run: cargo clippy -p reth-authority-consensus -p reth-network -p reth-primitives -p reth-rpc --lib
-          --tests --benches --all-features --locked
-        env:
-          RUSTFLAGS: -D warnings
+      - uses: clechasseur/rs-clippy-check@23f6dcf86d7e4e0d98b000bba0bb81ac587c44aa
+        with:
+          args: -p reth-authority-consensus -p reth-network --lib --tests --benches --all-features --locked -- --no-deps
 
   crate-checks:
+    name: Crate checks
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # We should set it here so the rust-cache action can see it too
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -75,10 +83,10 @@ jobs:
           cache-all-crates: true
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - run: cargo hack check --workspace --exclude example-custom-evm --exclude example-stateful-precompile
+      - run: cargo check --workspace
 
   lockfile:
-    name: Validate Lockfile
+    name: Cargo lock freshness
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -167,14 +175,11 @@ jobs:
     #           --cfg docsrs --show-type-layout --generate-link-to-definition --enable-index-page
     #           -Zunstable-options -D warnings
 
+  # TODO: Why do we just format code without any checks?
   fmt:
-    name: fmt
+    name: Project formatting
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-      - lockfile
-      - codespell
-      - grafana
     steps:
       - uses: actions/checkout@v4
 
@@ -202,6 +207,21 @@ jobs:
 
       - name: Format project
         run: make fmt
+
+  rust-fmt:
+    name: Rust formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+          toolchain: nightly
+
+      - name: Check formatting
+        uses: clechasseur/rs-fmt-check@e1bd0f5c24ced02542ed905bde212ffc9c324863
 
   # cargo-verifications:
   #   name: Cargo verifications
@@ -236,6 +256,7 @@ jobs:
   #       run: make lint
 
   codespell:
+    name: Codespell
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -245,6 +266,7 @@ jobs:
           skip: "*.json"
 
   grafana:
+    name: Grafana dashboard JSON validation
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -254,14 +276,31 @@ jobs:
         with:
           cmd: jq empty etc/grafana/dashboards/overview.json
 
+  signed-commits:
+    name: Signed commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commits are signed
+        uses: 1Password/check-signed-commits-action@v1
+
   lint-success:
-    name: lint success
+    name: All green
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - clippy
       - crate-checks
+      - lockfile
       - fmt
+      - rust-fmt
+      - codespell
       - grafana
+      - signed-commits
       # - cargo-verifications
     timeout-minutes: 30
     steps:

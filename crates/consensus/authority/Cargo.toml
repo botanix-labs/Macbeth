@@ -15,6 +15,7 @@ alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 ## Bitcoin
 bitcoin = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
+bitcoincore-zmq = { workspace = true }
 
 bytes = "1.6.0"
 client = { path = "../../../bin/btc-server/client" }
@@ -30,6 +31,8 @@ frost-secp256k1-tr = { workspace = true }
 futures = { workspace = true }
 # async
 futures-util = { workspace = true }
+arc-swap = "1.7.1"
+
 hex = "0.4.3"
 
 metrics = { workspace = true }
@@ -102,3 +105,4 @@ reth-cli-runner = { workspace = true }
 reth-db-common = { workspace = true }
 reth-evm = { workspace = true, features = ["test-utils"] }
 tempfile = { workspace = true }
+mockall = { workspace = true }

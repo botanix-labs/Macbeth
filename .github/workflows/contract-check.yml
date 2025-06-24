@@ -1,4 +1,4 @@
-name: "Mint Contract Check"
+name: "Mint Contract"
 
 on:
   workflow_dispatch:
@@ -6,10 +6,12 @@ on:
   push:
     branches:
       - main
-      - dev
+      - develop
+      - hotfix
 
 jobs:
   contract-build:
+    name: "Build"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -21,7 +23,7 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v1
 
-      - name: Build contract 
+      - name: Build contract
         working-directory: ./contracts
         run: forge build --sizes
 
@@ -32,6 +34,7 @@ jobs:
           echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
 
   contract-test:
+    name: "Test"
     needs: ["contract-build"]
     runs-on: "ubuntu-latest"
     env:
@@ -78,8 +81,8 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout code
-  #       uses: actions/checkout@v4 
-      
+  #       uses: actions/checkout@v4
+
   #     - name: Run eburger contract analysis
   #       id: eburger-contract-analysis
   #       uses: forefy/eburger-action@main
@@ -110,12 +113,12 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout code
-  #       uses: actions/checkout@v4 
-      
+  #       uses: actions/checkout@v4
+
   #     - name: Run slither contract analysis
   #       id: slither-contract-analysis
   #       uses: crytic/slither-action@v0.4.0
-  #       with: 
+  #       with:
   #         target: ./contracts
   #         sarif: results.sarif
   #         fail-on: none

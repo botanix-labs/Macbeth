@@ -1,0 +1,56 @@
+name: "Lint PR"
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - assigned
+      - unassigned
+
+
+jobs:
+  title:
+    name: PR title
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  base-branch:
+    name: Base branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check base branch
+        run: |
+          if [ "$GITHUB_HEAD_REF" = "main" ] || [ "$GITHUB_HEAD_REF" = "rc" ]; then
+            echo "Pull requests to ${GITHUB_HEAD_REF} branch are not allowed. Base branch must be either `develop`, `hotfix` or other feature branch."
+            exit 1
+          fi
+
+  assignees:
+    name: Assignees
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Check PR has assignees
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          ASSIGNEES=$(gh pr view $PR_NUMBER --repo $REPO --json assignees -q '.assignees | length')
+          if [ "$ASSIGNEES" -lt 1 ]; then
+            echo "::error::PR must be assigned to at least one responsible developer (Assignees)"
+            exit 1
+          else
+            echo "✅ PR has $ASSIGNEES assignee(s)"
+          fi

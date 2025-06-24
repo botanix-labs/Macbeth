@@ -9,14 +9,14 @@ use anyhow::Context;
 use reth_chainspec::BOTANIX_TESTNET;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::fmt::Display;
-use std::net::SocketAddr;
-use std::str::FromStr;
 use std::{
     collections::BTreeMap,
+    fmt::Display,
     fs,
+    net::SocketAddr,
     path::{Path, PathBuf},
     process::ExitStatus,
+    str::FromStr,
     sync::Arc,
 };
 use tokio::{

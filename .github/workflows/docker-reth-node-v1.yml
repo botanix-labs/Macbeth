@@ -3,7 +3,8 @@ name: Docker Build Test for PoA Node
 on:
   pull_request:
     branches:
-      - main
+      - develop
+      - hotfix
     types: [opened]
 
 jobs:

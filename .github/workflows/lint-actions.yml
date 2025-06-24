@@ -4,6 +4,14 @@ on:
     paths:
     - '.github/**'
   merge_group:
+    branches:
+      - develop
+      - hotfix
+  push:
+      branches:
+          - main
+          - develop
+          - hotfix
 
 jobs:
   actionlint:

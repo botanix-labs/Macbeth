@@ -11,12 +11,12 @@ use reth_node_core::{
     primitives::Address,
 };
 use secp256k1::SECP256K1;
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::os::unix::fs::PermissionsExt;
 use std::{
+    collections::HashMap,
     fs,
     io::Write,
+    net::SocketAddr,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 use test_suite::suite::consensus::common::{
@@ -307,6 +307,7 @@ fn create_docker_compose_dot_env_file(
             ("BITCOIND_URL", "http://bitcoin-core:8332".to_string()),
             ("BITCOIND_USER", "foo".to_string()),
             ("BITCOIND_PASSWORD", "bar".to_string()),
+            ("BITCOIND_ZMQ_HASH_BLOCK_ADDRESS", "tcp://bitcoin-core:28332".to_string()),
             ("FROST_MIN_SIGNERS", cli.multisig_min_signers().to_string()),
             ("FROST_MAX_SIGNERS", cli.multisig_max_signers().to_string()),
             ("POA_RPC_PORT", (8545 + config.index * 100).to_string()),
