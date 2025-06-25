@@ -59,7 +59,7 @@ const KEY_FINALIZED_PEGOUT_IDS_MERKLE_ROOT: &[u8; 9] = b"pegoutids";
 const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
 
 /// Sliding window duration in seconds (90 days)
-const PRUNING_WINDOW_SECONDS: u64 = 90 * 24 * 60 * 60;
+const RETENTION_WINDOW_SECONDS: u64 = 90 * 24 * 60 * 60;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
@@ -925,7 +925,7 @@ impl Db {
             .map_err(Error::DurationSinceEpoch)?
             .as_secs();
 
-        let cutoff_timestamp = now.saturating_sub(PRUNING_WINDOW_SECONDS);
+        let cutoff_timestamp = now.saturating_sub(RETENTION_WINDOW_SECONDS);
 
         // We can't iterate through the finalized_pegout_ids tree inside the database transaction,
         // so we get them first then iterate through them inside the transaction.
@@ -1538,7 +1538,7 @@ mod tests {
         finalized_pegout_ids[0].timestamp = Some(now);
 
         // update finalized pegout to be outside the pruning window
-        finalized_pegout_ids[1].timestamp = Some(now.saturating_sub(PRUNING_WINDOW_SECONDS + 1));
+        finalized_pegout_ids[1].timestamp = Some(now.saturating_sub(RETENTION_WINDOW_SECONDS + 1));
 
         let finalized_pegout_ids_slice =
             finalized_pegout_ids.iter().collect::<Vec<&FinalizedPegout>>();
