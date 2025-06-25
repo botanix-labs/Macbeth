@@ -1558,12 +1558,18 @@ mod tests {
         assert_eq!(retrieved_pegouts.len(), 2);
 
         // Check that the pegout with a timestamp within the pruning window is still present
-        assert_eq!(retrieved_pegouts[0].id, finalized_pegout_ids[0].id);
-        assert_eq!(retrieved_pegouts[0].timestamp, finalized_pegout_ids[0].timestamp);
+        let pegout_with_timestamp = retrieved_pegouts
+            .iter()
+            .find(|p| p.id == finalized_pegout_ids[0].id)
+            .expect("Pegout with timestamp should still be present");
+        assert_eq!(pegout_with_timestamp.timestamp, finalized_pegout_ids[0].timestamp);
 
         // Check that the pegout without a timestamp is still present
-        assert_eq!(retrieved_pegouts[1].id, finalized_pegout_ids[2].id);
-        assert!(retrieved_pegouts[1].timestamp.is_some());
+        let pegout_without_timestamp = retrieved_pegouts
+            .iter()
+            .find(|p| p.id == finalized_pegout_ids[2].id)
+            .expect("Pegout without timestamp should still be present");
+        assert!(pegout_without_timestamp.timestamp.is_some());
     }
 
     #[tokio::test]
