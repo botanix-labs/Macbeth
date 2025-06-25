@@ -8770,6 +8770,7 @@ dependencies = [
  "metrics",
  "metrics-util",
  "mockall",
+ "once_cell",
  "prost 0.13.5",
  "rand 0.8.5",
  "reth-basic-payload-builder",
