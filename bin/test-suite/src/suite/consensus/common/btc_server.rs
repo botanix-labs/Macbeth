@@ -11,7 +11,7 @@ use std::{
 };
 use tokio::process::Child;
 
-use super::{kill_process_at_port, poa_node::RPC_PORT_BASE, spawn_child_process, Scope};
+use super::{kill_process_at_port, spawn_child_process, Scope};
 
 pub const BTC_SERVER_START_PORT: u16 = 8000;
 pub const BTC_SERVER_HTTP_PORT: u16 = 7000;
