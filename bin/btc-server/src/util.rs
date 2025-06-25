@@ -29,25 +29,6 @@ pub(crate) const ROUND1_TRANSITION: u8 = (1u8 << 1) | ROUND1;
 pub(crate) const ROUND2: u8 = (1u8 << 2) | ROUND1_TRANSITION;
 pub(crate) const ROUND2_TRANSITION: u8 = (1u8 << 3) | ROUND1_TRANSITION;
 
-/// Checks if the age of a block, based on its timestamp, is within an acceptable duration.
-/// # Arguments
-///
-/// * `timestamp` - The timestamp of the block in seconds since the UNIX epoch.
-/// * `max_age_cutoff` - The maximum acceptable age of the block as a `Duration`.
-///
-/// # Returns
-///
-/// Returns `true` if the block's age is less than the specified max cutoff age, otherwise `false`.
-pub fn is_block_age_acceptable(timestamp: u64, max_age_cutoff: Duration) -> bool {
-    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(now) => now.as_secs(),
-        Err(_) => return false,
-    };
-
-    let threshold = now.saturating_sub(max_age_cutoff.as_secs());
-    timestamp > threshold
-}
-
 /// Function for retrying an async closure with retries and delays
 pub async fn retry_exec<T, E, F, Fut>(
     method_name: &str,
