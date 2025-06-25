@@ -91,7 +91,8 @@ pub struct FinalizedPegout {
     pub id: PegoutId,
     /// The Botanix block number.
     pub block_number: u64,
-    /// The timestamp of the pegout, if available.
+    /// The timestamp of when the pegout was stored in the db, if available.
+    /// A pegout is stored when the pegout request is initiated on the L2.
     #[serde(default)]
     pub timestamp: Option<u64>,
 }
