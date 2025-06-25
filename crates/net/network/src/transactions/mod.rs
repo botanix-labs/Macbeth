@@ -249,6 +249,8 @@ pub struct TransactionsManager<Pool> {
     max_transactions_seen_by_peer_history: u32,
     /// `TransactionsManager` metrics
     metrics: TransactionsManagerMetrics,
+    // Optional periodic waker task to prevent starvation
+    periodic_waker: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl<Pool: TransactionPool> TransactionsManager<Pool> {
@@ -300,6 +302,7 @@ impl<Pool: TransactionPool> TransactionsManager<Pool> {
             max_transactions_seen_by_peer_history: transactions_manager_config
                 .max_transactions_seen_by_peer_history,
             metrics,
+            periodic_waker: None,
         }
     }
 }
@@ -1240,11 +1243,16 @@ where
         // Temporary fix: this future is sometimes starved and
         // never polled again. This means pending txs are never gossiped to peers.
         // TODO: test after upstream merge and remove if unneeded.
-        let waker = cx.waker().clone();
-        tokio::task::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            waker.wake_by_ref();
-        });
+        if this.periodic_waker.is_none() {
+            let waker = cx.waker().clone();
+            this.periodic_waker = Some(tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(3));
+                loop {
+                    interval.tick().await;
+                    waker.wake_by_ref();
+                }
+            }));
+        }
 
         // All streams are polled until their corresponding budget is exhausted, then we manually
         // yield back control to tokio. See `NetworkManager` for more context on the design
