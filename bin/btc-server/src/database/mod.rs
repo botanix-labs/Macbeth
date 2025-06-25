@@ -954,7 +954,8 @@ impl Db {
 
                             info!("Updating finalized pegout id with timestamp: {:?}", pegout.id);
                             database_tx.insert(pegout.id.as_bytes().to_vec(), &bytes[..])?;
-                            // No need to check if it should be pruned - it was just updated with a timestamp
+                            // No need to check if it should be pruned - it was just updated with a
+                            // timestamp
                         }
                     }
                 }
@@ -1553,8 +1554,9 @@ mod tests {
         db.flush().unwrap();
 
         let retrieved_pegouts = db.get_finalized_pegout_ids().unwrap();
-        // There should be 2 finalized pegouts left: finalized_pegout_ids[0] and finalized_pegout_ids[2]
-        // finalized_pegout_ids[1] should be pruned since it has a timestamp outside the pruning window
+        // There should be 2 finalized pegouts left: finalized_pegout_ids[0] and
+        // finalized_pegout_ids[2] finalized_pegout_ids[1] should be pruned since it has a
+        // timestamp outside the pruning window
         assert_eq!(retrieved_pegouts.len(), 2);
 
         // Check that the pegout with a timestamp within the pruning window is still present
