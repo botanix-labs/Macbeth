@@ -276,8 +276,8 @@ fn apply_fees_and_create_psbt(
             match second_attempt {
                 FilterResult::AllRemaining(final_outputs) => Ok((
                     crate::wallet::psbt::create_psbt(
-                    selected_inputs.to_vec(),
-                    final_outputs,
+                        selected_inputs.to_vec(),
+                        final_outputs,
                         recalculated_change,
                     ),
                     filtered_pegout_ids,
@@ -394,12 +394,12 @@ fn try_apply_fees_and_filter_dust(
         let value_after_fee = txout.value.checked_sub(fees_to_subtract[i]).unwrap_or(Amount::ZERO);
         let updated_output = TxOut { value: value_after_fee, ..txout };
 
-            let dust_threshold = updated_output.script_pubkey.minimal_non_dust();
-            if updated_output.value >= dust_threshold {
-                result.push((updated_output, pegout_id));
-            } else {
-                debug!("Filtered out pegout output due to dust: output_script={:?}, output_value={:?}, fee_to_subtract={:?}", 
-                script_pubkey, original_value, fees_to_subtract[i]);
+        let dust_threshold = updated_output.script_pubkey.minimal_non_dust();
+        if updated_output.value >= dust_threshold {
+            result.push((updated_output, pegout_id));
+        } else {
+            debug!("Filtered out pegout output due to dust: output_script={:?}, output_value={:?}, fee_to_subtract={:?}", 
+            script_pubkey, original_value, fees_to_subtract[i]);
             filtered_pegout_ids.push(pegout_id);
         }
     }
@@ -445,19 +445,16 @@ mod tests {
     use crate::{
         database::Utxo,
         test_utils::{
-            create_random_pegout_id, create_tx, random_compute_txid, random_p2tr_keyspend_script,
-            random_p2wpkh_script, random_p2wpkh_scriptpubkey, setup_db,
+            create_random_pegout_id, random_compute_txid, random_p2tr_keyspend_script,
+            random_p2wpkh_script, random_p2wpkh_scriptpubkey,
         },
         wallet::{coin_selection::CoinSelectionError, util::calculate_signed_tx_fee_rate},
     };
-    use bdk_wallet::psbt::PsbtUtils;
+    use bdk_wallet::coin_selection::InsufficientFunds;
     use bitcoin::{Amount, FeeRate, OutPoint, Psbt, TxOut};
 
     use super::coin_selection;
 
-    // The ideal test case here would iterate over many outputs with varying values
-    // checking each time that the fee per output is met and that the change is correct
-    // And would also cover the case where change is not needed
     #[test]
     fn coin_selection_sanity_checks() {
         let change_script = random_p2tr_keyspend_script();
@@ -485,188 +482,229 @@ mod tests {
     }
 
     #[test]
-    fn should_take_fee_out_of_outputs() {
-        let (db, _) = setup_db();
-        // Add 15 utxos
-        let tx = create_tx(100, 1, None);
+    fn test_all_outputs_become_dust() {
         let change_script = random_p2tr_keyspend_script();
         let output_script = random_p2wpkh_script();
-        let mut utxos = vec![];
-        for i in 0..100 {
-            let utxo = crate::database::Utxo::new(
-                OutPoint::new(tx.input[i].previous_output.txid, i as u32),
-                // Each prevout has a value of 1000 sats
-                tx.output[0].clone(),
-                None,
-                None,
-            );
-            utxos.push(utxo.clone());
-        }
-
-        let available_utxos = utxos.iter().map(|u| u).collect::<Vec<_>>();
-        db.store_utxos(&available_utxos).expect("add pegins");
-
-        let mut available_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
-        for utxo in db.get_all_utxos().unwrap() {
-            available_utxos.insert(utxo.outpoint, utxo);
-        }
-
-        let required_utxos = HashMap::new();
-        let desired_fee_rate = FeeRate::from_sat_per_vb(3).unwrap();
-        let desired_amount_per_output = Amount::from_sat(10000);
-        let psbt = coin_selection(
-            available_utxos,
-            required_utxos,
-            vec![
-                (
-                    TxOut {
-                        script_pubkey: output_script.clone(),
-                        value: desired_amount_per_output,
-                    },
-                    create_random_pegout_id(),
-                ),
-                (
-                    TxOut { script_pubkey: output_script, value: desired_amount_per_output },
-                    create_random_pegout_id(),
-                ),
-            ],
-            desired_fee_rate,
-            change_script.clone(),
-        )
-        .unwrap();
-        let tx = psbt.clone().extract_tx().unwrap();
-        let fee_rate = psbt.fee_rate().unwrap();
-        println!("fee_rate = {:?}", fee_rate);
-        println!("desired_fee_rate = {:?}", desired_fee_rate);
-        // make_tx is hardcoded to have 1000 sats per output
-        let total_amount_being_spent = Amount::from_sat((tx.input.len() * 1000) as u64);
-        let pegout_outputs =
-            tx.output.iter().filter(|o| o.script_pubkey != change_script).collect::<Vec<_>>();
-        let change_output = tx.output.iter().find(|o| o.script_pubkey == change_script).unwrap();
-        let change_output_value = change_output.value;
-        let pegout_outputs_value = pegout_outputs.iter().map(|o| o.value).sum::<Amount>();
-        let total_output_value = pegout_outputs_value + change_output_value;
-
-        assert_eq!(tx.input.len(), 37);
-        assert_eq!(pegout_outputs.len(), 2);
-
-        // Check that the total output value is less than the total amount being spent
-        // i.e some fees are being taken out
-        assert!(total_output_value < total_amount_being_spent);
-
-        // Check that the change output is correct
-        assert_eq!(
-            change_output.value,
-            total_amount_being_spent - desired_amount_per_output * pegout_outputs.len() as u64
-        );
-    }
-
-    #[test]
-    fn test_no_viable_outputs() {
-        let change_script = random_p2tr_keyspend_script();
-        let output_script = random_p2wpkh_script();
-
-        // Create inputs with sufficient value
-        let input_value = Amount::from_sat(40_000);
-        let input_script = random_p2tr_keyspend_script();
-
-        // Create the TxOut that create_tx will use
-        let tx_output_template = TxOut { script_pubkey: input_script.clone(), value: input_value };
-
-        let utxo1_tx = create_tx(1, 1, Some(tx_output_template.clone()));
-        let utxo1 = Utxo::new(
-            OutPoint::new(utxo1_tx.compute_txid(), 0),
-            tx_output_template.clone(),
-            None,
-            None,
-        );
-        let utxo2_tx = create_tx(1, 1, Some(tx_output_template.clone()));
-        let utxo2 =
-            Utxo::new(OutPoint::new(utxo2_tx.compute_txid(), 0), tx_output_template, None, None);
 
         let mut available_utxos = HashMap::new();
-        available_utxos.insert(utxo1.outpoint, utxo1);
-        available_utxos.insert(utxo2.outpoint, utxo2);
+        let utxo = Utxo::new(
+            OutPoint::new(random_compute_txid(), 0),
+            TxOut {
+                value: Amount::from_sat(100_000),
+                script_pubkey: random_p2tr_keyspend_script(),
+            },
+            None,
+            None,
+        );
+        available_utxos.insert(utxo.outpoint, utxo);
 
-        // Create an output with a small value
-        let output_value = Amount::from_sat(500);
-        let outputs = vec![(
-            TxOut { script_pubkey: output_script, value: output_value },
-            create_random_pegout_id(),
-        )];
+        // Create very small outputs that will become dust after high fees
+        let outputs = vec![
+            (
+                TxOut { script_pubkey: output_script.clone(), value: Amount::from_sat(100) },
+                create_random_pegout_id(),
+            ),
+            (
+                TxOut { script_pubkey: output_script.clone(), value: Amount::from_sat(150) },
+                create_random_pegout_id(),
+            ),
+            (
+                TxOut { script_pubkey: output_script, value: Amount::from_sat(200) },
+                create_random_pegout_id(),
+            ),
+        ];
 
-        // Set a high fee rate
-        let fee_rate = FeeRate::from_sat_per_vb(100).unwrap();
-
-        let required_utxos = HashMap::new();
+        // Use a very high fee rate that makes all outputs dust
         let result = coin_selection(
             available_utxos,
-            required_utxos,
+            HashMap::new(),
             outputs,
-            fee_rate,
-            change_script.clone(),
+            FeeRate::from_sat_per_vb(1000).unwrap(), // Very high fee rate
+            change_script,
         );
 
         assert_eq!(result.err(), Some(CoinSelectionError::NoViableOutputs));
     }
 
     #[test]
-    fn should_consider_large_outputs() {
-        let (db, _) = setup_db();
-        // Add 15 utxos
-        let tx = create_tx(15, 1, None);
+    fn test_insufficient_funds() {
         let change_script = random_p2tr_keyspend_script();
         let output_script = random_p2wpkh_script();
-        let mut utxos = vec![];
-        for i in 0..5 {
-            let utxo = crate::database::Utxo::new(
-                OutPoint::new(tx.input[i].previous_output.txid, i as u32),
+
+        // Create UTXOs with insufficient total value
+        let mut available_utxos = HashMap::new();
+        let utxo = Utxo::new(
+            OutPoint::new(random_compute_txid(), 0),
+            TxOut {
+                value: Amount::from_sat(10_000), // Only 10k available
+                script_pubkey: random_p2tr_keyspend_script(),
+            },
+            None,
+            None,
+        );
+        available_utxos.insert(utxo.outpoint, utxo);
+
+        // Try to create a pegout for more than available
+        let outputs = vec![(
+            TxOut { script_pubkey: output_script, value: Amount::from_sat(15_000) }, // Need 15k
+            create_random_pegout_id(),
+        )];
+
+        let result = coin_selection(
+            available_utxos,
+            HashMap::new(),
+            outputs,
+            FeeRate::from_sat_per_vb(1).unwrap(),
+            change_script,
+        );
+
+        assert_eq!(
+            result.err(),
+            Some(CoinSelectionError::CoinSelectionBdk(InsufficientFunds {
+                needed: Amount::from_sat(15_000),
+                available: Amount::from_sat(10_000)
+            }))
+        );
+    }
+
+    #[test]
+    fn test_coin_selection_scenarios() {
+        let scenarios = create_test_scenarios();
+
+        for scenario in scenarios.iter() {
+            let psbt = run_scenario(scenario).unwrap();
+            validate_change_calculation(&psbt, scenario);
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestScenario {
+        utxo_values_sats: Vec<u64>,   // in sats
+        pegout_values_sats: Vec<u64>, // in sats
+        fee_rate: FeeRate,
+        expected_dust_pegout_removed: Vec<u64>,
+    }
+
+    fn create_test_scenarios() -> Vec<TestScenario> {
+        vec![
+            // Simple case: plenty of funds, low fee
+            TestScenario {
+                utxo_values_sats: vec![100_000, 50_000, 20_000, 10_000],
+                pegout_values_sats: vec![10_000, 20_000],
+                fee_rate: FeeRate::from_sat_per_kwu(750),
+                expected_dust_pegout_removed: vec![],
+            },
+            // Multiple small outputs
+            TestScenario {
+                utxo_values_sats: vec![200_000],
+                pegout_values_sats: vec![5_000, 8_000, 12_000, 15_000],
+                fee_rate: FeeRate::from_sat_per_kwu(750),
+                expected_dust_pegout_removed: vec![],
+            },
+            // High fee rate
+            TestScenario {
+                utxo_values_sats: vec![100_000, 80_000],
+                pegout_values_sats: vec![25_000, 30_000],
+                fee_rate: FeeRate::from_sat_per_kwu(10_000),
+                expected_dust_pegout_removed: vec![],
+            },
+            // 1 dust pegout to be removed (no fees)
+            TestScenario {
+                utxo_values_sats: vec![100_000],
+                pegout_values_sats: vec![293, 294, 10_000], // 294 is dust threshold for p2wpkh
+                fee_rate: FeeRate::from_sat_per_kwu(0),
+                expected_dust_pegout_removed: vec![293],
+            },
+            // 2 dust pegouts to be removed after considering fees
+            TestScenario {
+                utxo_values_sats: vec![100_000],
+                pegout_values_sats: vec![293, 294, 10_000], // 294 is dust threshold for p2wpkh
+                fee_rate: FeeRate::from_sat_per_kwu(1000),
+                expected_dust_pegout_removed: vec![293, 294],
+            },
+        ]
+    }
+
+    fn run_scenario(scenario: &TestScenario) -> Result<Psbt, CoinSelectionError> {
+        let change_script = random_p2tr_keyspend_script();
+
+        // Create UTXOs
+        let mut available_utxos = HashMap::new();
+        for (i, &value_sats) in scenario.utxo_values_sats.iter().enumerate() {
+            let utxo = Utxo::new(
+                OutPoint::new(random_compute_txid(), i as u32),
                 TxOut {
-                    value: Amount::from_sat(40_000),
+                    value: Amount::from_sat(value_sats),
                     script_pubkey: random_p2tr_keyspend_script(),
                 },
                 None,
                 None,
             );
-            utxos.push(utxo.clone());
-        }
-
-        let available_utxos = utxos.iter().map(|u| u).collect::<Vec<_>>();
-        db.store_utxos(&available_utxos).expect("add pegins");
-
-        let mut available_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
-        for utxo in db.get_all_utxos().unwrap() {
             available_utxos.insert(utxo.outpoint, utxo);
         }
 
-        let mut outputs = vec![];
-        for _ in 0..123 {
-            outputs.push((
-                TxOut { script_pubkey: output_script.clone(), value: Amount::from_sat(1000) },
-                create_random_pegout_id(),
-            ));
-        }
+        // Create pegouts. Using p2wpkh scriptpubkey to help identify pegouts in the tx.
+        let pegouts: Vec<_> = scenario
+            .pegout_values_sats
+            .iter()
+            .map(|&value_sats| {
+                (
+                    TxOut {
+                        value: Amount::from_sat(value_sats),
+                        script_pubkey: random_p2wpkh_scriptpubkey(),
+                    },
+                    create_random_pegout_id(),
+                )
+            })
+            .collect();
 
         let required_utxos = HashMap::new();
-        let desired_fee_rate = FeeRate::from_sat_per_vb(3).unwrap();
 
-        let psbt = coin_selection(
-            available_utxos,
-            required_utxos,
-            outputs,
-            desired_fee_rate,
-            change_script.clone(),
-        )
-        .unwrap();
+        coin_selection(available_utxos, required_utxos, pegouts, scenario.fee_rate, change_script)
+    }
 
+    fn validate_change_calculation(psbt: &Psbt, scenario: &TestScenario) {
         let tx = psbt.clone().extract_tx().unwrap();
+
+        // Calculate expected values - use actual selected inputs from PSBT
+        let total_input_value: u64 = psbt
+            .inputs
+            .iter()
+            .map(|input| input.witness_utxo.as_ref().unwrap().value.to_sat())
+            .sum();
+        let total_pegout_value: u64 = scenario.pegout_values_sats.iter().sum::<u64>()
+            - scenario.expected_dust_pegout_removed.iter().sum::<u64>();
+        let expected_change = total_input_value - total_pegout_value;
+
+        // Find pegout outputs (p2wpkh) vs change output (p2tr)
+        let pegout_outputs: Vec<_> =
+            tx.output.iter().filter(|o| o.script_pubkey.is_p2wpkh()).collect();
+        let change_outputs: Vec<_> =
+            tx.output.iter().filter(|o| o.script_pubkey.is_p2tr()).collect();
+
+        assert_eq!(change_outputs.len(), 1, "Should have exactly one change output");
+
+        assert_eq!(
+            pegout_outputs.len(),
+            scenario.pegout_values_sats.len() - scenario.expected_dust_pegout_removed.len(),
+            "Should have {} pegout outputs",
+            scenario.pegout_values_sats.len() - scenario.expected_dust_pegout_removed.len()
+        );
+
+        let actual_change = change_outputs[0].value.to_sat();
+
+        assert_eq!(
+            actual_change, expected_change,
+            "Change mismatch: expected {}, got {}",
+            expected_change, actual_change
+        );
+
+        // assert fee rate is correct
         let actual_fee_rate = calculate_signed_tx_fee_rate(&psbt);
-
-        let pegout_outputs =
-            tx.output.iter().filter(|o| o.script_pubkey != change_script).collect::<Vec<_>>();
-
-        assert_eq!(tx.input.len(), 4);
-        assert_eq!(pegout_outputs.len(), 123);
-        assert_eq!(actual_fee_rate, desired_fee_rate);
+        assert_eq!(
+            actual_fee_rate, scenario.fee_rate,
+            "Fee rate mismatch: expected {}, got {}",
+            scenario.fee_rate, actual_fee_rate
+        );
     }
 }
