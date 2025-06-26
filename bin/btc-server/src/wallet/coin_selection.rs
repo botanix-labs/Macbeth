@@ -143,49 +143,6 @@ pub(crate) fn coin_selection(
     Ok(psbt)
 }
 
-fn create_change(
-    selected_inputs: &[crate::wallet::psbt::InputDTO],
-    pegouts: &[(TxOut, PegoutIdBytes)],
-    change_script: ScriptBuf,
-) -> Option<TxOut> {
-    let total_selected_inputs = selected_inputs.iter().map(|i| i.output.value).sum::<Amount>();
-    let total_pegout_target = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
-    let final_change_amount = total_selected_inputs
-        .checked_sub(total_pegout_target)
-        .expect("Coin selection should at least cover the pegout target");
-    let change = Some(TxOut { script_pubkey: change_script.clone(), value: final_change_amount });
-    change
-}
-
-fn sanity_check_psbt(
-    psbt: &Psbt,
-    selected_inputs: &[crate::wallet::psbt::InputDTO],
-    change_script: ScriptBuf,
-    total_pegout_target: Amount,
-) -> Result<(), CoinSelectionError> {
-    let tx: bitcoin::Transaction = psbt.clone().extract_tx().unwrap();
-    let total_input_value = selected_inputs.iter().map(|i| i.output.value).sum::<Amount>();
-    let change_output_value =
-        tx.output.iter().find(|o| o.script_pubkey == change_script).unwrap().value;
-
-    // check that change output value = total_input_value - total_pegout_target
-    // note that the fee comes out of the pegout target, not the change output
-    if change_output_value
-        != total_input_value
-            .checked_sub(total_pegout_target)
-            .expect("Bitcoin amounts should never overflow u64")
-    {
-        return Err(SanityCheckError::BadRefundBalance {
-            change_output_value,
-            total_input_value,
-            target_amount: total_pegout_target,
-        }
-        .into());
-    }
-
-    Ok(())
-}
-
 fn perform_coin_selection<T: CoinSelectionAlgorithm>(
     coin_selection_algorithm: T,
     available_utxos: HashMap<OutPoint, Utxo>,
@@ -295,24 +252,42 @@ fn apply_fees_and_create_psbt(
     }
 }
 
-/// Convert a UTXO to BDK's WeightedUtxo format
-fn utxo_to_bdk(utxo: &Utxo) -> bdk_wallet::WeightedUtxo {
-    bdk_wallet::WeightedUtxo {
-        satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
-        utxo: bdk_wallet::Utxo::Local(bdk_wallet::LocalOutput {
-            outpoint: utxo.outpoint.to_bdk(),
-            txout: bdk_wallet::bitcoin::TxOut {
-                script_pubkey: utxo.output.script_pubkey.to_bytes().into(),
-                value: utxo.output.value,
-            },
-            keychain: bdk_wallet::KeychainKind::External,
-            is_spent: false,
-            derivation_index: 0,
-            chain_position: bdk_wallet::chain::ChainPosition::Confirmed {
-                anchor: bdk_wallet::chain::ConfirmationBlockTime::default(),
-                transitively: None,
-            },
-        }),
+fn try_apply_fees_and_filter_dust(
+    pegouts: Vec<(TxOut, PegoutIdBytes)>,
+    absolute_fee: Amount,
+) -> FilterResult {
+    if pegouts.is_empty() {
+        return FilterResult::NoneRemaining;
+    }
+
+    let original_count = pegouts.len();
+    let fees_to_subtract = calculate_fee_distribution(&pegouts, absolute_fee);
+
+    let mut result = Vec::new();
+    let mut filtered_pegout_ids = Vec::new();
+    for (i, (txout, pegout_id)) in pegouts.into_iter().enumerate() {
+        let script_pubkey = txout.script_pubkey.clone();
+        let original_value = txout.value;
+
+        let value_after_fee = txout.value.checked_sub(fees_to_subtract[i]).unwrap_or(Amount::ZERO);
+        let updated_output = TxOut { value: value_after_fee, ..txout };
+
+        let dust_threshold = updated_output.script_pubkey.minimal_non_dust();
+        if updated_output.value >= dust_threshold {
+            result.push((updated_output, pegout_id));
+        } else {
+            debug!("Filtered out pegout output due to dust: output_script={:?}, output_value={:?}, fee_to_subtract={:?}", 
+            script_pubkey, original_value, fees_to_subtract[i]);
+            filtered_pegout_ids.push(pegout_id);
+        }
+    }
+
+    if result.len() == original_count {
+        FilterResult::AllRemaining(result)
+    } else if result.is_empty() {
+        FilterResult::NoneRemaining
+    } else {
+        FilterResult::SomeFiltered { filtered_pegout_ids }
     }
 }
 
@@ -374,45 +349,6 @@ fn calculate_target_change(total_pegout_value: Amount, remaining_utxos_value: Am
     target_change
 }
 
-fn try_apply_fees_and_filter_dust(
-    pegouts: Vec<(TxOut, PegoutIdBytes)>,
-    absolute_fee: Amount,
-) -> FilterResult {
-    if pegouts.is_empty() {
-        return FilterResult::NoneRemaining;
-    }
-
-    let original_count = pegouts.len();
-    let fees_to_subtract = calculate_fee_distribution(&pegouts, absolute_fee);
-
-    let mut result = Vec::new();
-    let mut filtered_pegout_ids = Vec::new();
-    for (i, (txout, pegout_id)) in pegouts.into_iter().enumerate() {
-        let script_pubkey = txout.script_pubkey.clone();
-        let original_value = txout.value;
-
-        let value_after_fee = txout.value.checked_sub(fees_to_subtract[i]).unwrap_or(Amount::ZERO);
-        let updated_output = TxOut { value: value_after_fee, ..txout };
-
-        let dust_threshold = updated_output.script_pubkey.minimal_non_dust();
-        if updated_output.value >= dust_threshold {
-            result.push((updated_output, pegout_id));
-        } else {
-            debug!("Filtered out pegout output due to dust: output_script={:?}, output_value={:?}, fee_to_subtract={:?}", 
-            script_pubkey, original_value, fees_to_subtract[i]);
-            filtered_pegout_ids.push(pegout_id);
-        }
-    }
-
-    if result.len() == original_count {
-        FilterResult::AllRemaining(result)
-    } else if result.is_empty() {
-        FilterResult::NoneRemaining
-    } else {
-        FilterResult::SomeFiltered { filtered_pegout_ids }
-    }
-}
-
 fn calculate_fee_distribution(
     pegouts: &[(TxOut, PegoutIdBytes)],
     absolute_fee: Amount,
@@ -436,6 +372,70 @@ fn calculate_fee_distribution(
             .expect("Fee calculation should not overflow adding single satoshi");
     }
     fees_to_subtract
+}
+
+fn create_change(
+    selected_inputs: &[crate::wallet::psbt::InputDTO],
+    pegouts: &[(TxOut, PegoutIdBytes)],
+    change_script: ScriptBuf,
+) -> Option<TxOut> {
+    let total_selected_inputs = selected_inputs.iter().map(|i| i.output.value).sum::<Amount>();
+    let total_pegout_target = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
+    let final_change_amount = total_selected_inputs
+        .checked_sub(total_pegout_target)
+        .expect("Coin selection should at least cover the pegout target");
+    let change = Some(TxOut { script_pubkey: change_script.clone(), value: final_change_amount });
+    change
+}
+
+fn sanity_check_psbt(
+    psbt: &Psbt,
+    selected_inputs: &[crate::wallet::psbt::InputDTO],
+    change_script: ScriptBuf,
+    total_pegout_target: Amount,
+) -> Result<(), CoinSelectionError> {
+    let tx: bitcoin::Transaction = psbt.clone().extract_tx().unwrap();
+    let total_input_value = selected_inputs.iter().map(|i| i.output.value).sum::<Amount>();
+    let change_output_value =
+        tx.output.iter().find(|o| o.script_pubkey == change_script).unwrap().value;
+
+    // check that change output value = total_input_value - total_pegout_target
+    // note that the fee comes out of the pegout target, not the change output
+    if change_output_value
+        != total_input_value
+            .checked_sub(total_pegout_target)
+            .expect("Bitcoin amounts should never overflow u64")
+    {
+        return Err(SanityCheckError::BadRefundBalance {
+            change_output_value,
+            total_input_value,
+            target_amount: total_pegout_target,
+        }
+        .into());
+    }
+
+    Ok(())
+}
+
+/// Convert a UTXO to BDK's WeightedUtxo format
+fn utxo_to_bdk(utxo: &Utxo) -> bdk_wallet::WeightedUtxo {
+    bdk_wallet::WeightedUtxo {
+        satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+        utxo: bdk_wallet::Utxo::Local(bdk_wallet::LocalOutput {
+            outpoint: utxo.outpoint.to_bdk(),
+            txout: bdk_wallet::bitcoin::TxOut {
+                script_pubkey: utxo.output.script_pubkey.to_bytes().into(),
+                value: utxo.output.value,
+            },
+            keychain: bdk_wallet::KeychainKind::External,
+            is_spent: false,
+            derivation_index: 0,
+            chain_position: bdk_wallet::chain::ChainPosition::Confirmed {
+                anchor: bdk_wallet::chain::ConfirmationBlockTime::default(),
+                transitively: None,
+            },
+        }),
+    }
 }
 
 #[cfg(test)]
