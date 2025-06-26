@@ -4,7 +4,7 @@
 use std::fmt::{self, Debug, Formatter};
 
 use derive_more::{Deref, DerefMut, From, Into};
-use reth_primitives::{constants::GWEI_TO_WEI, BlockNumberOrTag, B256, U256};
+use reth_primitives::{constants::DEFAULT_SUGGESTED_TIP, BlockNumberOrTag, B256, U256};
 use reth_rpc_server_types::constants;
 use reth_storage_api::BlockReaderIdExt;
 use schnellru::{ByLength, LruMap};
@@ -290,7 +290,9 @@ pub struct GasPriceOracleResult {
 
 impl Default for GasPriceOracleResult {
     fn default() -> Self {
-        Self { block_hash: B256::ZERO, price: U256::from(GWEI_TO_WEI) }
+        // Set default to 0.001 GWEI instead of 1 GWEI (previously used GWEI_TO_WEI constant).
+        // The initial base fee is 7 WEI so a default of 1 GWEI is not practical.
+        Self { block_hash: B256::ZERO, price: U256::from(DEFAULT_SUGGESTED_TIP) }
     }
 }
 
@@ -307,6 +309,7 @@ impl Default for GasCap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reth_primitives::constants::GWEI_TO_WEI;
 
     #[test]
     fn max_price_sanity() {
