@@ -99,6 +99,9 @@ pub const BASE_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u128 = 10;
 /// Multiplier for converting gwei to wei.
 pub const GWEI_TO_WEI: u64 = 1_000_000_000;
 
+/// Default suggested tip of 0.001 GWEI for the Gas Oracle.
+pub const DEFAULT_SUGGESTED_TIP: u64 = 1_000_000;
+
 /// Multiplier for converting finney (milliether) to wei.
 pub const FINNEY_TO_WEI: u128 = (GWEI_TO_WEI as u128) * 1_000_000;
 
