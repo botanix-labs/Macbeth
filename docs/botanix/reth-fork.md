@@ -199,41 +199,30 @@ Once a change is accepted upstream, [update our fork](#upgrade-fork-from-upstrea
 
 ### Macbeth Integration
 
-The key differences in our new integration approach:
-1. Use individual reth crates from our fork via Cargo configuration, avoiding monorepo complexity
-2. Separate reth extensions/integrations from our business logic for better maintainability
+The key difference in our new integration approach is to use individual reth crates from our fork via Cargo configuration, avoiding copy-pastes and monorepo complexity.
 
 #### Dependency Management
 
-Instead of listing all reth dependencies individually in `Cargo.toml`, we use Cargo's configuration system for centralized dependency management:
+Instead of listing all reth dependency versions individually in root `Cargo.toml`, we can use `env` for centralized dependency management:
 
-The `.cargo/config.toml` file in the root of our Macbeth repository:
+The `Cargo.toml` file in the root of our Macbeth repository:
 
 ```toml
 [env]
 BOTANIX_RETH_TAG = "botanix-reth-v1.1.0-patch.123"
 
-[source.crates-io]
-replace-with = "botanix-reth"
-
-[source.botanix-reth]
-git = "https://github.com/botanix-labs/reth"
-tag = { env = "BOTANIX_RETH_TAG" }
-
-# Override specific reth crates to use our fork
-[source."https://github.com/paradigmxyz/reth"]
-replace-with = "botanix-reth"
+[workspace.dependencies]
+reth-primitives = { git = "https://github.com/botanix-labs/reth", tag = { env = "BOTANIX_RETH_TAG" } }
+reth-stages = { git = "https://github.com/botanix-labs/reth", tag = { env = "BOTANIX_RETH_TAG" } }
 ```
 
 This allows us to:
-- Manage all reth dependencies from a single configuration point
-- Use our fork tags instead of commit hashes
+- Manage all reth dependency versions from a single configuration point
 - Easily switch between different versions for testing
-- Override the source globally without modifying individual `Cargo.toml` files
 
 ##### Updating Reth Dependencies
 
-With our new `.cargo/config.toml` approach, updating reth dependencies becomes simple.
+With our new the `env` approach, updating reth dependencies becomes simple.
 
 Update the `BOTANIX_RETH_TAG`:
 
@@ -269,42 +258,7 @@ export BOTANIX_RETH_TAG=botanix-reth-v1.1.0-patch.134
 cargo build
 ```
 
-#### Project Structure
-
-We organize our codebase with a simple, clear separation between reth integrations and our own business logic:
-
-```
-macbeth/
-├── crates/
-│   ├── reth/                     # Reth integrations and extensions
-│   │   ├── botanix-chain-spec/   # Wraps reth ChainSpec
-│   │   ├── botanix-consensus/    # Consensus engine integration
-│   │   ├── botanix-network/      # Network layer integration
-│   │   ├── botanix-pool/         # Pool builder integration
-│   │   ├── botanix-node/         # Node builder integration
-│   │   └── botanix-db-models/    # Database model extensions
-│   │
-│   └── botanix/                  # Our own crates and business logic
-│       ├── btc-wallet/           # Bitcoin wallet integration
-│       ├── comet-bft-rpc/        # CometBFT RPC client
-│       ├── data-parser/          # Data parsing utilities
-│       └── frost/                # FROST signature scheme
-│
-└── .cargo/
-    └── config.toml              # Centralized dependency configuration
-```
-
-**Benefits of this structure**:
-- **Clear separation**: `crates/reth/` contains only reth extending logic, `crates/botanix/` contains our logic
-- **Simple organization**: Easy to understand what depends on reth vs. what doesn't
-- **Better maintainability**: Changes to reth integration are isolated to one directory
-- **Upstream contribution**: Reth extensions can be easily extracted from `crates/reth/`
-
-#### Botanix Business Logic Crates
-
-Pure business logic lives in the `crates/botanix/` directory and do not extend reth.
-
-#### Extending Reth Crates
+#### Extending Reth Fork Crates
 
 ##### Composition and Wrapping
 
@@ -373,7 +327,6 @@ where
 Currently, we have a complex setup where:
 - Reth crates are mixed with our custom business logic
 - Changes are applied directly to a cloned reth repository
-- No clear separation between extensibility improvements and business logic
 - Difficult to track what has been modified and why
 - Hard to contribute changes back upstream
 
@@ -394,162 +347,77 @@ To transition from our current setup to the proposed clean architecture:
    ```
 
 2. **Identify Current Commit Base**
-   ```bash
-   # In your current reth clone, find the base commit
-   git log --oneline | tail -20
-   # Identify the upstream commit you're currently based on
-   ```
+   Ask Scott
 
 3. **Create Initial Clean Fork**
    ```bash
    # In the new fork, checkout the same base commit
    git checkout <base-commit-hash>
-   git checkout -b botanix-extensions
+   git checkout -b botanix
    ```
+   Make `botanix` the default branch.
 
-#### Phase 2: Extract Extensibility Patches
-1. **Analyze Current Changes**
-   - Review all modifications in your current reth clone
-   - Categorize changes into:
-     - **Extensibility improvements** (can go to fork)
-     - **Business logic** (should move to macbeth)
-     - **Mixed changes** (need to be split)
+#### Phase 2: Define migration plan
 
-2. **Create `PATCHED_CRATES.md`**
-   ```bash
-   # In your fork
-   touch PATCHED_CRATES.md
-   # Document all planned extensibility changes
-   ```
+- Review all modifications in macbeth repo
+- Categorize changes into:
+   - **Extensibility improvements** (can go to fork)
+   - **Business logic** (should stay in macbeth)
+   - **Mixed changes** (need to be split)
+- Define tasks
 
-3. **Apply Extensibility Patches**
-   ```bash
-   # For each extensibility improvement:
-   git checkout -b enhance-{crate}-extensibility
-   # Apply only the extensibility parts
-   # Create PR and merge
-   # Tag the result
-   git tag -a botanix-reth-v{VERSION}-patch.{PR_NUMBER}
-   ```
+#### Phase 3: Implement changes one by one
 
-#### Phase 3: Restructure Macbeth
-1. **Create Directory Structure**
-   ```bash
-   # In macbeth repository
-   mkdir -p crates/reth
-   mkdir -p crates/botanix
-   ```
-
-2. **Move Business Logic**
-   - Move pure business logic crates to `crates/botanix/`
-   - Create wrapper/extension crates in `crates/reth/`
-   - Update imports and dependencies
-
-3. **Setup Cargo Configuration**
-   ```bash
-   # Create .cargo/config.toml
-   cat > .cargo/config.toml << EOF
-   [env]
-   BOTANIX_RETH_TAG = "botanix-reth-v{VERSION}-patch.{PR_NUMBER}"
-   
-   [source.crates-io]
-   replace-with = "botanix-reth"
-   
-   [source.botanix-reth]
-   git = "https://github.com/botanix-labs/reth"
-   tag = { env = "BOTANIX_RETH_TAG" }
-   
-   [source."https://github.com/paradigmxyz/reth"]
-   replace-with = "botanix-reth"
-   EOF
-   ```
-
-#### Phase 4: Testing and Validation
-1. **Build and Test**
-   ```bash
-   # Clear cargo cache
-   rm -rf ~/.cargo/git/checkouts
-   rm -rf ~/.cargo/git/db
-   
-   # Build with new structure
-   cargo build
-   cargo test
-   ```
-
-2. **Functional Testing**
-   - Ensure all functionality works with the new structure
-   - Verify that reth extensions work correctly
-   - Test that business logic is properly separated
-
-3. **Documentation Update**
-   - Update README files
-   - Document the new architecture
-   - Create migration guide for team members
-
-#### Phase 5: Rollout
-1. **Team Training**
-   - Present the new architecture to the team
-   - Provide hands-on training sessions
-   - Create quick reference guides
-
-2. **Gradual Migration**
-   - Use feature flags to gradually move components
-   - Maintain parallel builds during transition
-   - Monitor for regressions
-
-3. **Cleanup**
-   - Remove old reth clone once migration is complete
-   - Update CI/CD pipelines
-   - Archive old workflows
+- For each extensibility improvement:
+  - Create a new branch in the fork
+  - Apply the change
+  - Update `PATCHED_CRATES.md` with details
+  - Create a PR against the fork
+  - Fork's CI should be green
+  - Review and merge the PR
+  - Tag the fork
+  - Use a new tag in macbeth's Cargo configuration and update code
+  - Validate that macbeth passing CI
 
 ### Success Criteria
 
 The implementation is successful when:
 - [ ] Clean fork created with only extensibility improvements
-- [ ] All business logic moved to `crates/botanix/`
-- [ ] All reth integrations moved to `crates/reth/`
-- [ ] Cargo configuration manages all reth dependencies
-- [ ] Full test suite passes
-- [ ] Team can easily update reth dependencies
-- [ ] Clear path for upstream contributions established
-- [ ] Documentation updated and team trained
+- [ ] Macbeth repository uses the forked reth crates via Cargo configuration and doesn't contain copy-pasted code
+- [ ] Continues Integration in fork and macbeth repositories are green
 
-## Checklists
+## Future Possible Improvements
 
-### Checklist for Reth Fork Updates
+## Separate Reth Extensions from Business Logic
 
-- [ ] **Planning Phase**
-  - [ ] Select upstream reth version/commit to merge
-  - [ ] Review upstream changes for potential conflicts
-  - [ ] Check if any of our patches have been upstreamed
-  - [ ] Plan testing strategy
+Organize our codebase with a simple, clear separation between reth extensions and our own business logic:
 
-- [ ] **Update Process**
-  - [ ] Create update branch: `git checkout -b update-to-v{VERSION}`
-  - [ ] Merge upstream changes: `git merge v{VERSION}`
-  - [ ] Resolve any merge conflicts
-  - [ ] Remove patches that have been upstreamed
-  - [ ] Re-apply remaining extensibility patches
-  - [ ] Update `PATCHED_CRATES.md` specification
-  - [ ] Test all functionality works
+```
+macbeth/
+├── crates/
+│   ├── reth/                     # Reth integrations and extensions
+│   │   ├── botanix-chain-spec/   # Wraps reth ChainSpec
+│   │   ├── botanix-consensus/    # Consensus engine integration
+│   │   ├── botanix-network/      # Network layer integration
+│   │   ├── botanix-pool/         # Pool builder integration
+│   │   ├── botanix-node/         # Node builder integration
+│   │   └── botanix-db-models/    # Database model extensions
+│   │
+│   └── botanix/                  # Our own crates and business logic
+│       ├── btc-wallet/           # Bitcoin wallet integration
+│       ├── comet-bft-rpc/        # CometBFT RPC client
+│       ├── data-parser/          # Data parsing utilities
+│       └── frost/                # FROST signature scheme
+│
+└── .cargo/
+    └── config.toml              # Centralized dependency configuration
+```
 
-- [ ] **Release Process**
-  - [ ] Create annotated git tag following naming convention
-  - [ ] Push tag to remote repository
-  - [ ] Update `BOTANIX_RETH_TAG` in `.cargo/config.toml`
-  - [ ] Test Macbeth builds with new version
-  - [ ] Update documentation if needed
-
-- [ ] **Verification**
-  - [ ] Run full test suite
-  - [ ] Verify all crates/reth/ extensions work correctly
-  - [ ] Check that no functionality is broken
-  - [ ] Confirm upstream readiness status for remaining patches
-
-- [ ] **Upstream Contribution**
-  - [ ] Identify new contribution-ready changes
-  - [ ] Prepare clean PRs for upstream submission
-  - [ ] Update contribution tracking documentation
+**Benefits of this structure**:
+- **Clear separation**: `crates/reth/` contains only reth extending logic, `crates/botanix/` contains our logic
+- **Simple organization**: Easy to understand what depends on reth vs. what doesn't
+- **Better maintainability**: Changes to reth integration are isolated to one directory
+- **Upstream contribution**: Reth extensions can be easily extracted from `crates/reth/`
 
 ## Conclusion
 
