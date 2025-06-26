@@ -84,5 +84,4 @@ prost-build = "0.13.3"
 tonic-build = "0.12.3"
 
 [dev-dependencies]
-once_cell = "1.21"
 test-log = "0.2.17"

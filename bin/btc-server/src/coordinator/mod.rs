@@ -73,7 +73,7 @@ pub fn add_round2_signing(
     Ok(())
 }
 
-pub async fn make_tx(
+pub fn make_tx(
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
     change_script: ScriptBuf,

@@ -24,6 +24,8 @@ client = { path = "../../../bin/btc-server/client" }
 comet-bft-rpc = { workspace = true }
 displaydoc = "0.2"
 
+ethabi = "18.0.0"
+
 # frost
 frost-secp256k1-tr = { workspace = true }
 futures = { workspace = true }
@@ -32,8 +34,12 @@ futures-util = { workspace = true }
 arc-swap = "1.7.1"
 
 hex = "0.4.3"
+
 metrics = { workspace = true }
 metrics-util = { workspace = true }
+
+# lazy
+once_cell = { workspace = true }
 prost = "0.13.3"
 reth-basic-payload-builder = { workspace = true }
 
@@ -94,7 +100,6 @@ tracing = { workspace = true }
 uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
-ethabi = "18.0.0"
 rand = "0.8.5"
 reth-cli-runner = { workspace = true }
 reth-db-common = { workspace = true }
