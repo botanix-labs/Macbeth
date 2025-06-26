@@ -9,15 +9,15 @@ branches:
   # develop branch for alpha pre-releases
   - name: develop
     channel: alpha
-    prerelease: true
+    prerelease: alpha
   # rc branch for release candidates
   - name: rc
     channel: rc
-    prerelease: true
+    prerelease: rc
   # hotfix branch for urgent fixes
   - name: hotfix
     channel: hotfix
-    prerelease: true
+    prerelease: hotfix
 
 # Format for git tags
 tagFormat: v${version}
@@ -80,13 +80,6 @@ plugins:
   - - "@semantic-release/exec"
     - prepareCmd: |
         .github/scripts/release.sh update ${nextRelease.version}
-
-        # Trigger binary builds workflow
-        curl -X POST \
-          -H "Authorization: token ${process.env.GITHUB_TOKEN}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/binary-release.yml/dispatches \
-          -d '{"ref": "${process.env.GITHUB_REF}", "inputs": {"version": "v${nextRelease.version}", "engineer": "semantic-release"}}'
       successCmd: |
         git push origin HEAD:${branch.name} --tags
 
@@ -97,65 +90,86 @@ plugins:
           .github/scripts/release.sh multi_back_merge main "${process.env.GITHUB_TOKEN}" develop rc hotfix
         fi
 
-  # Build and publish Docker images for BTC Server
-  - - "semantic-release-docker"
-    - name: botanix-btc-server
-      dockerTags:
-        - latest
-        - "{{version}}"
-        - "{{major}}.{{minor}}"
-        - "{{major}}"
-      dockerFile: Dockerfile.btc_server
-      registryUrl: ghcr.io/botanix-labs/Macbeth/botanix-btc-server
-      buildArgs:
-        - "--platform=linux/amd64"
-        - "--label=org.opencontainers.image.version={{version}}"
-        - "--label=org.opencontainers.image.created={{date}}"
-        - "--label=org.opencontainers.image.revision={{hash}}"
 
-  # Build and publish Docker images for PoA Node
-  - - "semantic-release-docker"
-    - name: botanix-reth-node
-      dockerTags:
-        - latest
-        - "{{version}}"
-        - "{{major}}.{{minor}}"
-        - "{{major}}"
-      dockerFile: Dockerfile
-      registryUrl: ghcr.io/botanix-labs/Macbeth/botanix-reth-node
-      buildArgs:
-        - "--platform=linux/amd64"
-        - "--label=org.opencontainers.image.version={{version}}"
-        - "--label=org.opencontainers.image.created={{date}}"
-        - "--label=org.opencontainers.image.revision={{hash}}"
+  # Build Docker images with channel-specific tags
+  - - "@semantic-release/exec"
+    - publishCmd: |
+        # Determine Docker tags based on release channel
+        if [ "${branch.channel}" = "latest" ]; then
+          # Main branch - stable release tags
+          DOCKER_TAGS="latest,{{version}},{{major}}.{{minor}},{{major}}"
+        elif [ "${branch.channel}" = "alpha" ]; then
+          # Develop branch - alpha channel tags
+          DOCKER_TAGS="alpha,alpha-latest,{{version}}"
+        elif [ "${branch.channel}" = "rc" ]; then
+          # RC branch - release candidate tags
+          DOCKER_TAGS="rc,rc-latest,{{version}}"
+        elif [ "${branch.channel}" = "hotfix" ]; then
+          # Hotfix branch - hotfix channel tags
+          DOCKER_TAGS="hotfix,hotfix-latest,{{version}}"
+        else
+          # Fallback for other channels
+          DOCKER_TAGS="{{channel}},{{channel}}-latest,{{version}}"
+        fi
 
-  # Publish to Google Container Registry
-  - - "semantic-release-gcr"
-    - image: botanix-btc-server/signing-server
-      registry: us-central1-docker.pkg.dev/botanix-391913
-      preset: extended
+        echo "Building Docker images with tags: $DOCKER_TAGS"
 
-  - - "semantic-release-gcr"
-    - image: botanix-reth-node/reth-node
-      registry: us-central1-docker.pkg.dev/botanix-391913
-      preset: extended
+        # Build and push BTC Server image
+        docker buildx build \
+          --platform linux/amd64 \
+          --build-arg PACKAGE=btc-server \
+          --build-arg BIN=btc-server \
+          --label org.opencontainers.image.version={{version}} \
+          --label org.opencontainers.image.created={{date}} \
+          --label org.opencontainers.image.revision={{hash}} \
+          --label org.opencontainers.image.source=https://github.com/${process.env.GITHUB_REPOSITORY} \
+          --label org.opencontainers.image.channel=${branch.channel} \
+          $(echo "$DOCKER_TAGS" | tr ',' '\n' | sed 's/^/-t ghcr.io\/botanix-labs\/macbeth\/botanix-btc-server:/' | tr '\n' ' ') \
+          --push \
+          -f Dockerfile .
 
-  # Create GitHub release and attach binary assets
-  - - "@semantic-release/github"
-    - assets:
-        - path: "reth-x86_64-unknown-linux-gnu.tar.gz"
-          label: "reth-linux-x86_64"
-        - path: "reth-aarch64-unknown-linux-gnu.tar.gz"
-          label: "reth-linux-arm64"
-        - path: "btc-server-x86_64-unknown-linux-gnu.tar.gz"
-          label: "btc-server-linux-x86_64"
-        - path: "btc-server-aarch64-unknown-linux-gnu.tar.gz"
-          label: "btc-server-linux-arm64"
-        - path: "reth-x86_64-unknown-linux-gnu.tar.gz.sha256sum"
-          label: "reth-linux-x86_64-checksum"
-        - path: "reth-aarch64-unknown-linux-gnu.tar.gz.sha256sum"
-          label: "reth-linux-arm64-checksum"
-        - path: "btc-server-x86_64-unknown-linux-gnu.tar.gz.sha256sum"
-          label: "btc-server-linux-x86_64-checksum"
-        - path: "btc-server-aarch64-unknown-linux-gnu.tar.gz.sha256sum"
-          label: "btc-server-linux-arm64-checksum"
+        # Build and push Reth Node image  
+        docker buildx build \
+          --platform linux/amd64 \
+          --build-arg PACKAGE=reth \
+          --build-arg BIN=reth \
+          --label org.opencontainers.image.version={{version}} \
+          --label org.opencontainers.image.created={{date}} \
+          --label org.opencontainers.image.revision={{hash}} \
+          --label org.opencontainers.image.source=https://github.com/${process.env.GITHUB_REPOSITORY} \
+          --label org.opencontainers.image.channel=${branch.channel} \
+          $(echo "$DOCKER_TAGS" | tr ',' '\n' | sed 's/^/-t ghcr.io\/botanix-labs\/macbeth\/botanix-reth-node:/' | tr '\n' ' ') \
+          --push \
+          -f Dockerfile .
+
+  # Publish to Google Container Registry with channel-specific tags
+  # - - "@semantic-release/exec"
+  #   - publishCmd: |
+  #       # Determine GCR tags based on release channel
+  #       if [ "${branch.channel}" = "latest" ]; then
+  #         GCR_TAGS="latest,{{version}},{{major}}.{{minor}},{{major}}"
+  #       elif [ "${branch.channel}" = "alpha" ]; then
+  #         GCR_TAGS="alpha,alpha-latest,{{version}}"
+  #       elif [ "${branch.channel}" = "rc" ]; then
+  #         GCR_TAGS="rc,rc-latest,{{version}}"
+  #       elif [ "${branch.channel}" = "hotfix" ]; then
+  #         GCR_TAGS="hotfix,hotfix-latest,{{version}}"
+  #       else
+  #         GCR_TAGS="{{channel}},{{channel}}-latest,{{version}}"
+  #       fi
+
+  #       echo "Publishing to GCR with tags: $GCR_TAGS"
+
+  #       # Tag and push BTC Server to GCR
+  #       for tag in $(echo "$GCR_TAGS" | tr ',' ' '); do
+  #         docker tag ghcr.io/botanix-labs/macbeth/botanix-btc-server:{{version}} us-central1-docker.pkg.dev/botanix-391913/botanix-btc-server/signing-server:$tag
+  #         docker push us-central1-docker.pkg.dev/botanix-391913/botanix-btc-server/signing-server:$tag
+  #       done
+
+  #       # Tag and push Reth Node to GCR
+  #       for tag in $(echo "$GCR_TAGS" | tr ',' ' '); do
+  #         docker tag ghcr.io/botanix-labs/macbeth/botanix-reth-node:{{version}} us-central1-docker.pkg.dev/botanix-391913/botanix-reth-node/reth-node:$tag
+  #         docker push us-central1-docker.pkg.dev/botanix-391913/botanix-reth-node/reth-node:$tag
+  #       done
+
+

@@ -98,10 +98,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download Release Artifacts
-        uses: actions/download-artifact@v4
+      - name: Wait for Binary Release Workflow
+        uses: fountainhead/action-wait-for-check@v1.2.0
+        id: wait-for-binary
         with:
-          path: ./binaries
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: "build release"
+          ref: v${{ needs.semantic-release.outputs.new_release_version }}
+          timeoutSeconds: 3600
+          intervalSeconds: 30
+
+      - name: Download Release Artifacts from Binary Workflow
+        if: steps.wait-for-binary.outputs.conclusion == 'success'
+        run: |
+          # Get the workflow run ID for the binary release triggered by the tag
+          RUN_ID=$(gh run list --workflow=binary-release.yml --limit=1 --json databaseId --jq '.[0].databaseId')
+          echo "Binary workflow run ID: $RUN_ID"
+          
+          # Download artifacts from that specific run
+          gh run download $RUN_ID --dir ./binaries
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List Available Artifacts
         run: |

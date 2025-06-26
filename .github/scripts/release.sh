@@ -16,7 +16,7 @@ YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
 # Cargo.toml main file
-CARGO_TOML="../../Cargo.toml"
+CARGO_TOML="Cargo.toml"
 
 # Log messages with color
 log_info() {
