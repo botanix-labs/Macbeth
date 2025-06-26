@@ -59,11 +59,9 @@ pub enum FilterResult {
     /// All outputs were retained after applying fees
     AllRemaining(Vec<(TxOut, PegoutIdBytes)>),
     /// Some outputs were filtered out due to dust or insufficient funds
-    SomeRemaining {
-        /// The outputs that remained after filtering
-        remaining: Vec<(TxOut, PegoutIdBytes)>,
-        /// Number of outputs that were filtered out
-        filtered_count: usize,
+    SomeFiltered {
+        /// The pegout ids that were filtered out
+        filtered_pegout_ids: Vec<PegoutIdBytes>,
     },
     /// No outputs were retained after applying fees
     NoneRemaining,
@@ -102,7 +100,7 @@ pub(crate) fn coin_selection(
         .map(|(txout, pegout_id)| (txout, pegout_id.as_bytes()))
         .collect::<Vec<_>>();
     let total_utxos_value = available_utxos.values().map(|u| u.output.value).sum::<Amount>();
-    let total_pegout_target = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
+    let total_pegout_target = pegouts.clone().iter().map(|(txout, _)| txout.value).sum::<Amount>();
 
     // return InsufficientFunds error
     let remaining_utxos_value = total_utxos_value
@@ -125,18 +123,38 @@ pub(crate) fn coin_selection(
         &change_script,
     )?;
 
-    // Calculate change amount, ensuring that change pays no fees
+    let (psbt, filtered_pegout_ids) = apply_fees_and_create_psbt(
+        &selected_inputs,
+        pegouts.clone(),
+        change_script.clone(),
+        fee_rate,
+    )?;
+
+    // update total pegout target to reflect the filtered pegout ids
+    let updated_pegout_target = pegouts
+        .clone()
+        .iter()
+        .filter(|(_, pegout_id)| !filtered_pegout_ids.contains(pegout_id))
+        .map(|(txout, _)| txout.value)
+        .sum::<Amount>();
+
+    sanity_check_psbt(&psbt, &selected_inputs, change_script.clone(), updated_pegout_target)?;
+
+    Ok(psbt)
+}
+
+fn create_change(
+    selected_inputs: &[crate::wallet::psbt::InputDTO],
+    pegouts: &[(TxOut, PegoutIdBytes)],
+    change_script: ScriptBuf,
+) -> Option<TxOut> {
     let total_selected_inputs = selected_inputs.iter().map(|i| i.output.value).sum::<Amount>();
+    let total_pegout_target = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
     let final_change_amount = total_selected_inputs
         .checked_sub(total_pegout_target)
         .expect("Coin selection should at least cover the pegout target");
     let change = Some(TxOut { script_pubkey: change_script.clone(), value: final_change_amount });
-
-    let psbt = apply_fees_and_create_psbt(&selected_inputs, pegouts, change, fee_rate)?;
-
-    sanity_check_psbt(&psbt, &selected_inputs, change_script, total_pegout_target)?;
-
-    Ok(psbt)
+    change
 }
 
 fn sanity_check_psbt(
@@ -213,30 +231,56 @@ fn perform_coin_selection<T: CoinSelectionAlgorithm>(
 fn apply_fees_and_create_psbt(
     selected_inputs: &[crate::wallet::psbt::InputDTO],
     pegouts: Vec<(TxOut, PegoutIdBytes)>,
-    change: Option<TxOut>,
+    change_script: ScriptBuf,
     fee_rate: FeeRate,
-) -> Result<Psbt, CoinSelectionError> {
+) -> Result<(Psbt, Vec<PegoutIdBytes>), CoinSelectionError> {
+    let change = create_change(&selected_inputs, &pegouts, change_script.clone());
     let absolute_fee = calculate_required_fee(&selected_inputs, &pegouts, &change, fee_rate)?;
     let first_attempt = try_apply_fees_and_filter_dust(pegouts.clone(), absolute_fee);
 
+    let filtered_pegout_ids = Vec::new();
     match first_attempt {
         FilterResult::AllRemaining(final_pegouts) => {
             // No outputs were filtered out, we can return the psbt
-            Ok(crate::wallet::psbt::create_psbt(selected_inputs.to_vec(), final_pegouts, change))
+            Ok((
+                crate::wallet::psbt::create_psbt(selected_inputs.to_vec(), final_pegouts, change),
+                filtered_pegout_ids,
+            ))
         }
-        FilterResult::SomeRemaining { remaining, filtered_count } => {
-            debug!("Filtered out {} outputs due to dust or insufficient funds", filtered_count);
+        FilterResult::SomeFiltered { filtered_pegout_ids } => {
+            debug!(
+                "Filtered out {} outputs due to dust or insufficient funds",
+                filtered_pegout_ids.len()
+            );
 
-            // Some outputs were filtered out, we need to re-calculate the fee
-            let temp_absolute_fee =
-                calculate_required_fee(&selected_inputs, &remaining, &change, fee_rate)?;
-            let second_attempt = try_apply_fees_and_filter_dust(pegouts, temp_absolute_fee);
+            let remaining_pegouts = pegouts
+                .iter()
+                .filter(|(_, pegout_id)| !filtered_pegout_ids.contains(pegout_id))
+                .map(|(txout, pegout_id)| (txout.clone(), pegout_id.clone()))
+                .collect::<Vec<_>>();
+
+            // since a pegout was filtered out, this affects the total pegout value and therefore the change output value
+            let recalculated_change =
+                create_change(&selected_inputs, &remaining_pegouts, change_script.clone());
+
+            let recalculated_absolute_fee = calculate_required_fee(
+                &selected_inputs,
+                &remaining_pegouts,
+                &recalculated_change,
+                fee_rate,
+            )?;
+
+            let second_attempt =
+                try_apply_fees_and_filter_dust(remaining_pegouts, recalculated_absolute_fee);
 
             match second_attempt {
-                FilterResult::AllRemaining(final_outputs) => Ok(crate::wallet::psbt::create_psbt(
+                FilterResult::AllRemaining(final_outputs) => Ok((
+                    crate::wallet::psbt::create_psbt(
                     selected_inputs.to_vec(),
                     final_outputs,
-                    change,
+                        recalculated_change,
+                    ),
+                    filtered_pegout_ids,
                 )),
                 _ => {
                     // should never happen
@@ -342,12 +386,13 @@ fn try_apply_fees_and_filter_dust(
     let fees_to_subtract = calculate_fee_distribution(&pegouts, absolute_fee);
 
     let mut result = Vec::new();
+    let mut filtered_pegout_ids = Vec::new();
     for (i, (txout, pegout_id)) in pegouts.into_iter().enumerate() {
         let script_pubkey = txout.script_pubkey.clone();
         let original_value = txout.value;
 
-        if let Some(new_value) = txout.value.checked_sub(fees_to_subtract[i]) {
-            let updated_output = TxOut { value: new_value, ..txout };
+        let value_after_fee = txout.value.checked_sub(fees_to_subtract[i]).unwrap_or(Amount::ZERO);
+        let updated_output = TxOut { value: value_after_fee, ..txout };
 
             let dust_threshold = updated_output.script_pubkey.minimal_non_dust();
             if updated_output.value >= dust_threshold {
@@ -355,10 +400,7 @@ fn try_apply_fees_and_filter_dust(
             } else {
                 debug!("Filtered out pegout output due to dust: output_script={:?}, output_value={:?}, fee_to_subtract={:?}", 
                 script_pubkey, original_value, fees_to_subtract[i]);
-            }
-        } else {
-            debug!("Filtered out pegout output due to insufficient funds: output_script={:?}, output_value={:?}, fee_to_subtract={:?}", 
-            script_pubkey, original_value, fees_to_subtract[i]);
+            filtered_pegout_ids.push(pegout_id);
         }
     }
 
@@ -367,11 +409,7 @@ fn try_apply_fees_and_filter_dust(
     } else if result.is_empty() {
         FilterResult::NoneRemaining
     } else {
-        let result_len = result.len();
-        FilterResult::SomeRemaining {
-            remaining: result,
-            filtered_count: original_count - result_len,
-        }
+        FilterResult::SomeFiltered { filtered_pegout_ids }
     }
 }
 
@@ -407,13 +445,13 @@ mod tests {
     use crate::{
         database::Utxo,
         test_utils::{
-            create_random_pegout_id, create_tx, random_p2tr_keyspend_script, random_p2wpkh_script,
-            setup_db,
+            create_random_pegout_id, create_tx, random_compute_txid, random_p2tr_keyspend_script,
+            random_p2wpkh_script, random_p2wpkh_scriptpubkey, setup_db,
         },
         wallet::{coin_selection::CoinSelectionError, util::calculate_signed_tx_fee_rate},
     };
     use bdk_wallet::psbt::PsbtUtils;
-    use bitcoin::{Amount, FeeRate, OutPoint, TxOut};
+    use bitcoin::{Amount, FeeRate, OutPoint, Psbt, TxOut};
 
     use super::coin_selection;
 
