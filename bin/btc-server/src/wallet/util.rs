@@ -1,6 +1,11 @@
-use bitcoin::secp256k1;
+use bdk_wallet::psbt::PsbtUtils;
+use bitcoin::{secp256k1, FeeRate, Psbt, Weight};
 use frost_secp256k1_tr as frost;
 use thiserror::Error;
+
+use crate::wallet::{
+    SEGWIT_FLAG_WEIGHT, SEGWIT_MARKER_WEIGHT, TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+};
 
 #[derive(Debug, Error)]
 pub enum ParsingError {
@@ -44,3 +49,26 @@ pub trait VerifyingKeyExt: Into<frost::VerifyingKey> {
 }
 
 impl VerifyingKeyExt for frost::VerifyingKey {}
+
+/// Calculates the total weight of a PSBT after it has been fully signed with P2TR keyspend inputs.
+pub fn calculate_signed_tx_weight(psbt: &Psbt) -> Weight {
+    let unsigned_tx_weight = psbt.unsigned_tx.weight();
+
+    // calculate the weight of the signatures (assuming all inputs are p2tr)
+    let num_inputs = psbt.inputs.len();
+    let per_input_witness_item_count = Weight::from_wu(1);
+    let total_signature_weight = (TAPROOT_KEYSPEND_SATISFACTION_WEIGHT
+        + per_input_witness_item_count)
+        .checked_mul(num_inputs as u64)
+        .expect("Bitcoin amounts should never overflow u64");
+
+    // total including base weights for segwit transactions
+    unsigned_tx_weight + total_signature_weight + SEGWIT_FLAG_WEIGHT + SEGWIT_MARKER_WEIGHT
+}
+
+// Calculates the fee rate of a PSBT after it has been fully signed with P2TR keyspend inputs.
+pub fn calculate_signed_tx_fee_rate(psbt: &Psbt) -> FeeRate {
+    let tx_weight = calculate_signed_tx_weight(psbt);
+    let absolute_fee = psbt.fee_amount().unwrap();
+    FeeRate::from_sat_per_kwu((absolute_fee.to_sat() * 1000) / tx_weight.to_wu())
+}

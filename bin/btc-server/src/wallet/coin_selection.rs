@@ -1,7 +1,7 @@
 use crate::{
     database::version::UtxoVersion,
     wallet::{
-        psbt::PegoutId as PegoutIdBytes, SEGWIT_FLAG_WEIGHT, SEGWIT_MARKER_WEIGHT,
+        psbt::PegoutId as PegoutIdBytes, util::calculate_signed_tx_weight,
         TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
     },
 };
@@ -10,7 +10,7 @@ use bdk_wallet::coin_selection::{
 };
 use bitcoin::{
     psbt::{Error as PsbtError, ExtractTxError, Psbt},
-    Amount, FeeRate, OutPoint, ScriptBuf, TxOut, Weight,
+    Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
 };
 use log::debug;
 use std::{cmp::Reverse, collections::HashMap};
@@ -216,7 +216,7 @@ fn apply_fees_and_create_psbt(
     change: Option<TxOut>,
     fee_rate: FeeRate,
 ) -> Result<Psbt, CoinSelectionError> {
-    let absolute_fee = calculate_signed_tx_fee(&selected_inputs, &pegouts, &change, fee_rate)?;
+    let absolute_fee = calculate_required_fee(&selected_inputs, &pegouts, &change, fee_rate)?;
     let first_attempt = try_apply_fees_and_filter_dust(pegouts.clone(), absolute_fee);
 
     match first_attempt {
@@ -229,7 +229,7 @@ fn apply_fees_and_create_psbt(
 
             // Some outputs were filtered out, we need to re-calculate the fee
             let temp_absolute_fee =
-                calculate_signed_tx_fee(&selected_inputs, &remaining, &change, fee_rate)?;
+                calculate_required_fee(&selected_inputs, &remaining, &change, fee_rate)?;
             let second_attempt = try_apply_fees_and_filter_dust(pegouts, temp_absolute_fee);
 
             match second_attempt {
@@ -272,25 +272,16 @@ fn utxo_to_bdk(utxo: &Utxo) -> bdk_wallet::WeightedUtxo {
     }
 }
 
-/// Calculate the absolute fee for a transaction given its inputs and outputs
-fn calculate_signed_tx_fee(
+/// Calculates the required absolute fee for a pegout tx with the given inputs, outputs, and fee rate.
+/// This assumes the inputs are p2tr keyspend inputs (as is the case for all inputs in the pegout tx).
+fn calculate_required_fee(
     inputs: &[crate::wallet::psbt::InputDTO],
     outputs: &[(TxOut, PegoutIdBytes)],
     change: &Option<TxOut>,
     fee_rate: FeeRate,
 ) -> Result<Amount, CoinSelectionError> {
-    let psbt_without_fees =
-        crate::wallet::psbt::create_psbt(inputs.to_vec(), outputs.to_vec(), change.clone());
-    let unsigned_tx_weight = psbt_without_fees.unsigned_tx.weight();
-
-    let per_input_witness_item_count = Weight::from_wu(1);
-    let total_signature_weight = (TAPROOT_KEYSPEND_SATISFACTION_WEIGHT
-        + per_input_witness_item_count)
-        .checked_mul(inputs.len() as u64)
-        .expect("Bitcoin amounts should never overflow u64");
-
-    let total_weight =
-        unsigned_tx_weight + total_signature_weight + SEGWIT_FLAG_WEIGHT + SEGWIT_MARKER_WEIGHT;
+    let psbt = crate::wallet::psbt::create_psbt(inputs.to_vec(), outputs.to_vec(), change.clone());
+    let total_weight = calculate_signed_tx_weight(&psbt);
     let absolute_fee = fee_rate.fee_wu(total_weight).ok_or(CoinSelectionError::FeeRateOverflow)?;
 
     Ok(absolute_fee)
@@ -419,7 +410,7 @@ mod tests {
             create_random_pegout_id, create_tx, random_p2tr_keyspend_script, random_p2wpkh_script,
             setup_db,
         },
-        wallet::coin_selection::CoinSelectionError,
+        wallet::{coin_selection::CoinSelectionError, util::calculate_signed_tx_fee_rate},
     };
     use bdk_wallet::psbt::PsbtUtils;
     use bitcoin::{Amount, FeeRate, OutPoint, TxOut};
@@ -631,17 +622,13 @@ mod tests {
         .unwrap();
 
         let tx = psbt.clone().extract_tx().unwrap();
-        let fee_rate = psbt.fee_rate().unwrap();
+        let actual_fee_rate = calculate_signed_tx_fee_rate(&psbt);
 
         let pegout_outputs =
             tx.output.iter().filter(|o| o.script_pubkey != change_script).collect::<Vec<_>>();
 
         assert_eq!(tx.input.len(), 4);
         assert_eq!(pegout_outputs.len(), 123);
-
-        // NOTE: Slight inconsistency here, described more in the
-        // `coin_selection` function.
-        assert_eq!(fee_rate, FeeRate::from_sat_per_kwu(761));
-        assert_eq!(desired_fee_rate, FeeRate::from_sat_per_kwu(750));
+        assert_eq!(actual_fee_rate, desired_fee_rate);
     }
 }
