@@ -8,6 +8,10 @@ use bitcoin::Weight;
 /// The weight needed to satisfy a taproot output using keyspend.
 pub const TAPROOT_KEYSPEND_SATISFACTION_WEIGHT: Weight = Weight::from_wu(66);
 
+// Two base weights for segwit transactions
+pub const SEGWIT_FLAG_WEIGHT: Weight = Weight::from_wu(1);
+pub const SEGWIT_MARKER_WEIGHT: Weight = Weight::from_wu(1);
+
 #[cfg(test)]
 mod test {
     use super::*;

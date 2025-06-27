@@ -238,10 +238,19 @@ pub fn random_p2tr_keyspend_script() -> ScriptBuf {
     generate_taproot_change_scriptpubkey(&key_pair.1)
 }
 
+// FIXME: This creates P2WPKH script code (for spending), not scriptpubkey (for outputs).
+// Use `random_p2wpkh_scriptpubkey()` instead. Not fixing immediately to avoid breaking tests.
 pub fn random_p2wpkh_script() -> ScriptBuf {
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let sk = bitcoin::PrivateKey::generate(NETWORK);
     sk.public_key(&secp).p2wpkh_script_code().unwrap()
+}
+
+pub fn random_p2wpkh_scriptpubkey() -> ScriptBuf {
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let sk = bitcoin::PrivateKey::generate(NETWORK);
+    let wpk = sk.public_key(&secp).wpubkey_hash().unwrap();
+    ScriptBuf::new_p2wpkh(&wpk)
 }
 
 pub fn trusted_dealer_setup(
