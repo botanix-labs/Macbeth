@@ -57,8 +57,8 @@ pub fn calculate_signed_tx_weight(psbt: &Psbt) -> Weight {
     // calculate the weight of the signatures (assuming all inputs are p2tr)
     let num_inputs = psbt.inputs.len();
     let per_input_witness_item_count = Weight::from_wu(1);
-    let total_signature_weight = (TAPROOT_KEYSPEND_SATISFACTION_WEIGHT
-        + per_input_witness_item_count)
+    let total_signature_weight = (TAPROOT_KEYSPEND_SATISFACTION_WEIGHT +
+        per_input_witness_item_count)
         .checked_mul(num_inputs as u64)
         .expect("Bitcoin amounts should never overflow u64");
 
@@ -76,11 +76,10 @@ pub fn calculate_signed_tx_fee_rate(psbt: &Psbt) -> FeeRate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wallet::psbt::create_psbt;
     use crate::{
         database::version::UtxoVersion,
         test_utils::{create_random_pegout_id, random_compute_txid, random_p2tr_keyspend_script},
-        wallet::psbt::InputDTO,
+        wallet::psbt::{create_psbt, InputDTO},
     };
     use bitcoin::{Amount, OutPoint, TxOut};
 

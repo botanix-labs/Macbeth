@@ -216,7 +216,8 @@ fn apply_fees_and_create_psbt(
                 .map(|(txout, pegout_id)| (txout.clone(), pegout_id.clone()))
                 .collect::<Vec<_>>();
 
-            // since a pegout was filtered out, this affects the total pegout value and therefore the change output value
+            // since a pegout was filtered out, this affects the total pegout value and therefore
+            // the change output value
             let recalculated_change =
                 create_change(&selected_inputs, &remaining_pegouts, change_script.clone());
 
@@ -291,8 +292,9 @@ fn try_apply_fees_and_filter_dust(
     }
 }
 
-/// Calculates the required absolute fee for a pegout tx with the given inputs, outputs, and fee rate.
-/// This assumes the inputs are p2tr keyspend inputs (as is the case for all inputs in the pegout tx).
+/// Calculates the required absolute fee for a pegout tx with the given inputs, outputs, and fee
+/// rate. This assumes the inputs are p2tr keyspend inputs (as is the case for all inputs in the
+/// pegout tx).
 fn calculate_required_fee(
     inputs: &[crate::wallet::psbt::InputDTO],
     outputs: &[(TxOut, PegoutIdBytes)],
@@ -401,8 +403,8 @@ fn sanity_check_psbt(
 
     // check that change output value = total_input_value - total_pegout_target
     // note that the fee comes out of the pegout target, not the change output
-    if change_output_value
-        != total_input_value
+    if change_output_value !=
+        total_input_value
             .checked_sub(total_pegout_target)
             .expect("Bitcoin amounts should never overflow u64")
     {
@@ -672,8 +674,8 @@ mod tests {
             .iter()
             .map(|input| input.witness_utxo.as_ref().unwrap().value.to_sat())
             .sum();
-        let total_pegout_value: u64 = scenario.pegout_values_sats.iter().sum::<u64>()
-            - scenario.expected_dust_pegout_removed.iter().sum::<u64>();
+        let total_pegout_value: u64 = scenario.pegout_values_sats.iter().sum::<u64>() -
+            scenario.expected_dust_pegout_removed.iter().sum::<u64>();
         let expected_change = total_input_value - total_pegout_value;
 
         // Find pegout outputs (p2wpkh) vs change output (p2tr)
