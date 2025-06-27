@@ -56,6 +56,9 @@ impl PartialEq for CoinSelectionError {
     }
 }
 
+// Change calculation constants
+const TARGET_CHANGE_PERCENT: u64 = 50; // 50% of total pegout value
+const MAX_CHANGE_PERCENT: u64 = 5; // 5% of total UTXOs
 const MIN_CHANGE_SATS: u64 = 10_000; // minimum pegout value (0.0001 BTC)
 
 /// Coin selection
@@ -79,10 +82,16 @@ pub(crate) fn coin_selection(
         .into_iter()
         .map(|(txout, pegout_id)| (txout, pegout_id.as_bytes()))
         .collect::<Vec<_>>();
+    let total_utxos_value = available_utxos.values().map(|u| u.output.value).sum::<Amount>();
     let total_pegout_target = pegouts.clone().iter().map(|(txout, _)| txout.value).sum::<Amount>();
 
+    // return InsufficientFunds error
+    let remaining_utxos_value = total_utxos_value
+        .checked_sub(total_pegout_target)
+        .ok_or(InsufficientFunds { needed: total_pegout_target, available: total_utxos_value })?;
+
     // Coin selection using BDK
-    let target_change = Amount::from_sat(MIN_CHANGE_SATS);
+    let target_change = calculate_target_change(total_pegout_target, remaining_utxos_value);
     let coin_selection_target = total_pegout_target
         .checked_add(target_change)
         .ok_or(CoinSelectionError::FeeRateOverflow)?;
@@ -198,6 +207,49 @@ fn calculate_required_fee(
     Ok(absolute_fee)
 }
 
+/// Calculate the target change amount to balance competing goals:
+///
+/// **Benefits of larger change:**
+/// - More useful for future pegouts (reduces need for multiple UTXOs)
+/// - Provides UTXO consolidation over time
+///
+/// **Benefits of smaller change:**
+/// - Keeps more liquidity available while the current pegout is waiting to be confirmed
+///
+/// The target change is calculated as a percentage of the pegout value, with a ceiling
+/// to prevent excessive liquidity lockup and a floor to prevent the change from being too small.
+fn calculate_target_change(total_pegout_value: Amount, remaining_utxos_value: Amount) -> Amount {
+    // default target change is a percentage of the total pegout value
+    let mut target_change = total_pegout_value
+        .checked_mul(TARGET_CHANGE_PERCENT)
+        .expect("Bitcoin amounts should never overflow u64")
+        .checked_div(100)
+        .expect("Division by 100 should never fail");
+
+    let max_change_value = remaining_utxos_value
+        .checked_mul(MAX_CHANGE_PERCENT)
+        .expect("Bitcoin amounts should never overflow u64")
+        .checked_div(100)
+        .expect("Division by 100 should never fail");
+    if target_change > max_change_value {
+        target_change = max_change_value;
+    }
+
+    // for small pegouts, set the change is at least the minimum change amount
+    let min_change_value = Amount::from_sat(MIN_CHANGE_SATS);
+    if target_change < min_change_value {
+        target_change = min_change_value;
+    }
+
+    // this is an edge case, probably only relevant for test cases,
+    // if the minimum is more than the remaining utxos just return the remaining utxos value
+    if target_change > remaining_utxos_value {
+        target_change = remaining_utxos_value;
+    }
+
+    target_change
+}
+
 fn calculate_fee_distribution(
     pegouts: &[(TxOut, PegoutIdBytes)],
     absolute_fee: Amount,
@@ -303,11 +355,48 @@ mod tests {
             create_random_pegout_id, random_compute_txid, random_p2tr_keyspend_script,
             random_p2wpkh_script, random_p2wpkh_scriptpubkey,
         },
-        wallet::{coin_selection::CoinSelectionError, util::calculate_signed_tx_fee_rate},
+        wallet::{
+            coin_selection::{calculate_target_change, CoinSelectionError, MIN_CHANGE_SATS},
+            util::calculate_signed_tx_fee_rate,
+        },
     };
+    use bdk_wallet::coin_selection::InsufficientFunds;
     use bitcoin::{Amount, FeeRate, OutPoint, Psbt, TxOut};
 
     use super::coin_selection;
+
+    #[test]
+    fn test_calculate_target_change() {
+        // Test default case: 50% of pegout value
+        let total_pegout = Amount::from_sat(100_000);
+        let remaining_utxos = Amount::from_sat(1_000_000);
+        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        assert_eq!(target_change, Amount::from_sat(50_000)); // 50% of 100k
+
+        // Test max cap: 5% of remaining UTXOs
+        let total_pegout = Amount::from_sat(20_000_000);
+        let remaining_utxos = Amount::from_sat(100_000_000);
+        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        assert_eq!(target_change, Amount::from_sat(5_000_000)); // 5% of 100M, not 50% of 20M
+
+        // Test min floor: at least 10,000 sats
+        let total_pegout = Amount::from_sat(10_000);
+        let remaining_utxos = Amount::from_sat(1_000_000);
+        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        assert_eq!(target_change, Amount::from_sat(MIN_CHANGE_SATS)); // Min of 10k, not 50% of 1k (500)
+
+        // Test edge case: min > 5% of remaining UTXOs
+        let total_pegout = Amount::from_sat(100_000);
+        let remaining_utxos = Amount::from_sat(15_000);
+        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        assert_eq!(target_change, Amount::from_sat(MIN_CHANGE_SATS));
+
+        // Test edge case: min > remaining UTXOs
+        let total_pegout = Amount::from_sat(100_000);
+        let remaining_utxos = Amount::from_sat(9_000);
+        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        assert_eq!(target_change, remaining_utxos);
+    }
 
     #[test]
     fn coin_selection_sanity_checks() {
@@ -333,6 +422,47 @@ mod tests {
             change_script.clone(),
         );
         assert_eq!(res.err(), Some(CoinSelectionError::AvailableUtxosCannotBeEmpty));
+    }
+
+    #[test]
+    fn test_insufficient_funds() {
+        let change_script = random_p2tr_keyspend_script();
+        let output_script = random_p2wpkh_script();
+
+        // Create UTXOs with insufficient total value
+        let mut available_utxos = HashMap::new();
+        let utxo = Utxo::new(
+            OutPoint::new(random_compute_txid(), 0),
+            TxOut {
+                value: Amount::from_sat(10_000), // Only 10k available
+                script_pubkey: random_p2tr_keyspend_script(),
+            },
+            None,
+            None,
+        );
+        available_utxos.insert(utxo.outpoint, utxo);
+
+        // Try to create a pegout for more than available
+        let outputs = vec![(
+            TxOut { script_pubkey: output_script, value: Amount::from_sat(15_000) }, // Need 15k
+            create_random_pegout_id(),
+        )];
+
+        let result = coin_selection(
+            available_utxos,
+            HashMap::new(),
+            outputs,
+            FeeRate::from_sat_per_vb(1).unwrap(),
+            change_script,
+        );
+
+        assert_eq!(
+            result.err(),
+            Some(CoinSelectionError::CoinSelectionBdk(InsufficientFunds {
+                needed: Amount::from_sat(15_000),
+                available: Amount::from_sat(10_000)
+            }))
+        );
     }
 
     #[test]
