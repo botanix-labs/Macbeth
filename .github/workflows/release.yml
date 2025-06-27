@@ -63,10 +63,10 @@ jobs:
         run: |
           channel_name=${GITHUB_REF_NAME//[^a-z0-9]/}
 
-          if [ $GITHUB_REF_NAME == "develop" ]; then
+          if [ "$GITHUB_REF_NAME" == "develop" ]; then
             echo "branches='[{name: \"develop\", channel: \"alpha\", prerelease: true}]'" >> $GITHUB_OUTPUT
           else
-            echo "branches='[{name: \"${GITHUB_REF_NAME}\", channel: "${channel_name}" prerelease: true}]'" >> $GITHUB_OUTPUT
+            echo "branches='[{name: \"${GITHUB_REF_NAME}\", channel: \"${channel_name}\", prerelease: true}]'" >> $GITHUB_OUTPUT
           fi
 
       - name: Run Semantic Release
@@ -75,7 +75,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          branches: "{{ steps.branches_config.outputs.branches }}"
+          branches: "${{ steps.branches_config.outputs.branches }}"
 
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
           # TODO: Do we use this plugins?
@@ -277,7 +277,6 @@ jobs:
           # Determine Docker tags based on release channel
           case "$CHANNEL" in
             "latest") DOCKER_TAGS="latest,$VERSION,$MAJOR.$MINOR,$MAJOR" ;;
-
             *) DOCKER_TAGS="$CHANNEL,$VERSION" ;;
           esac
 
@@ -420,288 +419,14 @@ jobs:
         with:
           path: ./artifacts
 
-      # TODO: Put this in a script
-      - name: Generate Release Documentation
+      - name: Publish Release
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
-          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}"
-          RELEASE_NOTES="${{ needs.semantic-release.outputs.new_release_notes }}"
-          
-          mkdir -p "botanix/releases/$VERSION"
-          mkdir -p "botanix/releases/$VERSION/binaries"
-          mkdir -p "botanix/releases/$VERSION/docker"
-          mkdir -p "botanix/changelog/$CHANNEL"
-          
-          # release manifest
-          cat > "botanix/releases/$VERSION/release.json" << EOF
-          {
-            "version": "$VERSION",
-            "channel": "$CHANNEL", 
-            "release_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "git_tag": "${{ needs.semantic-release.outputs.new_release_git_tag }}",
-            "git_sha": "${{ needs.semantic-release.outputs.new_release_git_head }}",
-            "previous_version": "${{ needs.semantic-release.outputs.last_release_version }}",
-            "breaking_changes": $(echo '$RELEASE_NOTES' | grep -i "BREAKING" > /dev/null && echo "true" || echo "false"),
-            "prerelease": ${{ needs.semantic-release.outputs.new_release_channel != 'latest' && needs.semantic-release.outputs.new_release_channel != '' }},
-            "binaries": {
-              "reth": {
-                "linux_x86_64": {
-                  "url": "https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz",
-                  "checksum_url": "https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz.sha256sum"
-                },
-                "linux_arm64": {
-                  "url": "https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-aarch64-unknown-linux-gnu.tar.gz", 
-                  "checksum_url": "https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-aarch64-unknown-linux-gnu.tar.gz.sha256sum"
-                }
-              },
-              "btc-server": {
-                "linux_x86_64": {
-                  "url": "https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/$VERSION/btc-server-x86_64-unknown-linux-gnu.tar.gz",
-                  "checksum_url": "https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/$VERSION/btc-server-x86_64-unknown-linux-gnu.tar.gz.sha256sum"
-                },
-                "linux_arm64": {
-                  "url": "https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/$VERSION/btc-server-aarch64-unknown-linux-gnu.tar.gz",
-                  "checksum_url": "https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/$VERSION/btc-server-aarch64-unknown-linux-gnu.tar.gz.sha256sum"
-                }
-              }
-            },
-            "docker_images": {
-              "btc_server": {
-                "registry": "ghcr.io/botanix-labs/botanix-btc-server",
-                "tags": ["$VERSION", "$CHANNEL"]
-              },
-              "reth_node": {
-                "registry": "ghcr.io/botanix-labs/botanix-reth-node", 
-                "tags": ["$VERSION", "$CHANNEL"]
-              }
-            }
-          }
-          EOF
-
-      # TODO: Put this in a script
-      - name: Generate Release Notes
-        run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
-          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}"
-          RELEASE_NOTES="${{ needs.semantic-release.outputs.new_release_notes }}"
-          
-
-          cat > "botanix/releases/$VERSION/README.md" << EOF
-          # Botanix Release v$VERSION
-          
-          **Release Channel:** \`$CHANNEL\`  
-          **Release Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")  
-          **Git Tag:** \`${{ needs.semantic-release.outputs.new_release_git_tag }}\`  
-          **Git SHA:** \`${{ needs.semantic-release.outputs.new_release_git_head }}\`
-          
-          ## Release Notes
-          
-          $RELEASE_NOTES
-          
-          ## Downloads
-          
-          ### Binaries
-          
-          #### Reth Node
-          - [Linux x86_64](https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz) ([checksum](https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz.sha256sum))
-          - [Linux ARM64](https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-aarch64-unknown-linux-gnu.tar.gz) ([checksum](https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-aarch64-unknown-linux-gnu.tar.gz.sha256sum))
-          
-          #### BTC Server  
-          - [Linux x86_64](https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/$VERSION/btc-server-x86_64-unknown-linux-gnu.tar.gz) ([checksum](https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/$VERSION/btc-server-x86_64-unknown-linux-gnu.tar.gz.sha256sum))
-          - [Linux ARM64](https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/$VERSION/btc-server-aarch64-unknown-linux-gnu.tar.gz) ([checksum](https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/$VERSION/btc-server-aarch64-unknown-linux-gnu.tar.gz.sha256sum))
-          
-          ### Docker Images
-          
-          #### BTC Server
-          \`\`\`bash
-          docker pull ghcr.io/botanix-labs/botanix-btc-server:$VERSION
-          docker pull ghcr.io/botanix-labs/botanix-btc-server:$CHANNEL
-          \`\`\`
-          
-          #### Reth Node
-          \`\`\`bash  
-          docker pull ghcr.io/botanix-labs/botanix-reth-node:$VERSION
-          docker pull ghcr.io/botanix-labs/botanix-reth-node:$CHANNEL
-          \`\`\`
-          
-          ## Verification
-          
-          ### Binary Checksums
-          \`\`\`bash
-          # Download and verify checksums
-          wget https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz
-          wget https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz.sha256sum
-          sha256sum -c reth-x86_64-unknown-linux-gnu.tar.gz.sha256sum
-          \`\`\`
-          
-          ### Docker Image Verification
-          \`\`\`bash
-          # Inspect image labels
-          docker inspect ghcr.io/botanix-labs/botanix-btc-server:$VERSION --format='{{.Config.Labels}}'
-          \`\`\`
-          
-          ## Installation
-          
-          ### Quick Start with Docker
-          \`\`\`bash
-          # Run BTC Server
-          docker run -d --name botanix-btc-server \\
-            -p 8080:8080 \\
-            ghcr.io/botanix-labs/botanix-btc-server:$VERSION
-          
-          # Run Reth Node  
-          docker run -d --name botanix-reth-node \\
-            -p 30303:30303 -p 8545:8545 \\
-            ghcr.io/botanix-labs/botanix-reth-node:$VERSION
-          \`\`\`
-          
-          ### Binary Installation
-          \`\`\`bash
-          # Download and extract
-          wget https://storage.googleapis.com/botanix-artifact-registry/releases/reth/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz
-          tar -xzf reth-x86_64-unknown-linux-gnu.tar.gz
-          sudo mv reth /usr/local/bin/
-          \`\`\`
-          
-          ## Previous Releases
-          
-          See [all releases](../../README.md#releases) for version history.
-          EOF
-
-      - name: Update Changelog
-        run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
-          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}"
-          RELEASE_NOTES="${{ needs.semantic-release.outputs.new_release_notes }}"
-          
-          # channel-specific changelog
-          CHANGELOG_FILE="botanix/changelog/$CHANNEL/CHANGELOG.md"
-
-          if [ ! -f "$CHANGELOG_FILE" ]; then
-            cat > "$CHANGELOG_FILE" << EOF
-          # Botanix $CHANNEL Channel Changelog
-          
-          All notable changes to the $CHANNEL release channel will be documented in this file.
-          
-          The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-          and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-          
-          EOF
-          fi
-          
-          {
-            head -n 6 "$CHANGELOG_FILE"
-            echo ""
-            echo "## [$VERSION] - $(date -u +%Y-%m-%d)"
-            echo ""
-            echo "$RELEASE_NOTES"
-            echo ""
-            echo "**Downloads:** [Release Page](../releases/$VERSION/)"
-            echo ""
-            tail -n +7 "$CHANGELOG_FILE"
-          } > "$CHANGELOG_FILE.tmp"
-          
-          mv "$CHANGELOG_FILE.tmp" "$CHANGELOG_FILE"
-
-      - name: Update Release Index
-        run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
-          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}"
-          
-          INDEX_FILE="botanix/releases/index.json"
-          
-          if [ ! -f "$INDEX_FILE" ]; then
-            echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
-          fi
-          
-          jq --arg version "$VERSION" \
-             --arg channel "$CHANNEL" \
-             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-             --arg prerelease "${{ needs.semantic-release.outputs.new_release_channel != 'latest' && needs.semantic-release.outputs.new_release_channel != '' }}" \
-             '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": "releases/" + $version}] | .channels[$channel] = $version | if $channel == "latest" or $channel == "" then .latest.stable = $version else .latest[$channel] = $version end | .releases |= sort_by(.date) | reverse' \
-             "$INDEX_FILE" > "$INDEX_FILE.tmp"
-          
-          mv "$INDEX_FILE.tmp" "$INDEX_FILE"
-
-      - name: Update Public Repository README
-        run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
-          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}"
-          
-          cat > "botanix/README.md" << 'EOF'
-          # Botanix Public Releases
-          
-          This repository contains public release artifacts, documentation, and changelogs for Botanix.
-          
-          ## Latest Releases
-          
-          | Channel | Version | Release Date | Downloads |
-          |---------|---------|--------------|-----------|
-          EOF
-          
-          # Add release information from index
-          jq -r '.channels | to_entries[] | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' botanix/releases/index.json >> botanix/README.md
-          
-          cat >> "botanix/README.md" << 'EOF'
-          
-          ## Quick Start
-          
-          ### Docker (Recommended)
-          ```bash
-          # Latest stable release
-          docker pull ghcr.io/botanix-labs/botanix-reth-node:latest
-          docker pull ghcr.io/botanix-labs/botanix-btc-server:latest
-          
-          # Development builds
-          docker pull ghcr.io/botanix-labs/botanix-reth-node:alpha
-          docker pull ghcr.io/botanix-labs/botanix-btc-server:alpha
-          ```
-          
-          ### Binary Installation
-          ```bash
-          # Download latest stable binaries
-          curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/reth/latest/reth-x86_64-unknown-linux-gnu.tar.gz | tar -xz
-          curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/latest/btc-server-x86_64-unknown-linux-gnu.tar.gz | tar -xz
-          ```
-          
-          ## Documentation
-          
-          - [Release Notes](releases/) - Detailed release information
-          - [Changelogs](changelog/) - Version history by channel
-          
-          ## Channels
-          
-          - **stable** (latest) - Production-ready releases
-          - **rc** - Release candidates for testing
-          - **alpha** - Development builds with latest features
-          - **hotfix** - Emergency fixes for production issues
-          
-          ## Support
-          
-          - [GitHub Issues](https://github.com/botanix-labs/botanix-releases/issues)
-          - [Documentation](https://github.com/botanix-labs/documentation)
-          
-          ---
-          
-          *This repository is automatically updated by the release pipeline.*
-          EOF
-
-      - name: Commit and Push Changes
-        run: |
-          cd botanix
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
-          
-          git add .
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "feat: release v$VERSION
-          
-          - Add release artifacts and documentation
-          - Update changelogs and release index
-          - Generated from botanix-labs/macbeth@${{ needs.semantic-release.outputs.new_release_git_head }}
-          
-          🤖 Automated release by GitHub Actions"
-            git push origin main
-            echo "✅ Successfully published release v$VERSION to public repository"
-          fi
+          chmod +x .github/scripts/publish-release.sh
+          ./.github/scripts/publish-release.sh full-publish \
+            "${{ needs.semantic-release.outputs.new_release_version }}" \
+            "${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}" \
+            "${{ needs.semantic-release.outputs.new_release_notes }}" \
+            "${{ needs.semantic-release.outputs.new_release_git_tag }}" \
+            "${{ needs.semantic-release.outputs.new_release_git_head }}" \
+            "${{ needs.semantic-release.outputs.last_release_version }}"
+      
