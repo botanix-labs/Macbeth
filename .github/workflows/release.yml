@@ -604,24 +604,11 @@ jobs:
             echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
           fi
           
-          jq --arg version "$VERSION" \\
-             --arg channel "$CHANNEL" \\
-             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \\
-             --arg prerelease "${{ needs.semantic-release.outputs.new_release_channel != 'latest' && needs.semantic-release.outputs.new_release_channel != '' }}" \\
-             '.releases += [{
-               "version": $version,
-               "channel": $channel, 
-               "date": $date,
-               "prerelease": ($prerelease == "true"),
-               "path": "releases/" + $version
-             }] |
-             .channels[$channel] = $version |
-             if $channel == "latest" or $channel == "" then
-               .latest.stable = $version
-             else
-               .latest[$channel] = $version
-             end |
-             .releases |= sort_by(.date) | reverse' \\
+          jq --arg version "$VERSION" \
+             --arg channel "$CHANNEL" \
+             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+             --arg prerelease "${{ needs.semantic-release.outputs.new_release_channel != 'latest' && needs.semantic-release.outputs.new_release_channel != '' }}" \
+             '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": "releases/" + $version}] | .channels[$channel] = $version | if $channel == "latest" or $channel == "" then .latest.stable = $version else .latest[$channel] = $version end | .releases |= sort_by(.date) | reverse' \
              "$INDEX_FILE" > "$INDEX_FILE.tmp"
           
           mv "$INDEX_FILE.tmp" "$INDEX_FILE"
