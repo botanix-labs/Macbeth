@@ -5,11 +5,7 @@
 branches:
   # main branch for production releases
   - name: main
-    channel: latest # TODO: shall we call it 'stable'?
-  # develop branch for alpha pre-releases
-  - name: develop
-    channel: alpha
-    prerelease: alpha
+    channel: latest
   # rc branch for release candidates
   - name: rc
     channel: rc

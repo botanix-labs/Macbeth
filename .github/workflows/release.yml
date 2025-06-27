@@ -1,11 +1,7 @@
-name: Botanixlabs Semantic Release
+name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to release from (default is current branch)'
-        required: true
   # TODO: We need to make sure that PR merged to this branch had latest version of the code from this
   # and we can't merge without PRs
   # Look at rulesets and protected branch rules
@@ -61,14 +57,28 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare branches configuration for manual dispatch
+        id: branches_config
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          channel_name=${GITHUB_REF_NAME//[^a-z0-9]/}
+
+          if [ $GITHUB_REF_NAME == "develop" ]; then
+            echo "branches='[{name: \"develop\", channel: \"alpha\", prerelease: true}]'" >> $GITHUB_OUTPUT
+          else
+            echo "branches='[{name: \"${GITHUB_REF_NAME}\", channel: "${channel_name}" prerelease: true}]'" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run Semantic Release
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          branch: ${{ github.event.inputs.branch }}
+          branches: "{{ steps.branches_config.outputs.branches }}"
+
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
+          # TODO: Do we use this plugins?
           extra_plugins: |
             @semantic-release/git
             @semantic-release/exec
@@ -385,7 +395,7 @@ jobs:
       - semantic-release
       - finalize-release
     if: needs.semantic-release.outputs.new_release_published == 'true'
-    
+
     steps:
       - name: Checkout Main Repository
         uses: actions/checkout@v4
