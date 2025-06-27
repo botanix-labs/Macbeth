@@ -277,10 +277,8 @@ jobs:
           # Determine Docker tags based on release channel
           case "$CHANNEL" in
             "latest") DOCKER_TAGS="latest,$VERSION,$MAJOR.$MINOR,$MAJOR" ;;
-            "alpha") DOCKER_TAGS="alpha,alpha-latest,$VERSION" ;;
-            "rc") DOCKER_TAGS="rc,rc-latest,$VERSION" ;;
-            "hotfix") DOCKER_TAGS="hotfix,hotfix-latest,$VERSION" ;;
-            *) DOCKER_TAGS="$CHANNEL,$CHANNEL-latest,$VERSION" ;;
+
+            *) DOCKER_TAGS="$CHANNEL,$VERSION" ;;
           esac
 
           # Generate fully qualified tags
@@ -422,6 +420,7 @@ jobs:
         with:
           path: ./artifacts
 
+      # TODO: Put this in a script
       - name: Generate Release Documentation
         run: |
           VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
@@ -479,6 +478,7 @@ jobs:
           }
           EOF
 
+      # TODO: Put this in a script
       - name: Generate Release Notes
         run: |
           VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
