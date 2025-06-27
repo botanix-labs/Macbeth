@@ -76,7 +76,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           branches: "${{ steps.branches_config.outputs.branches }}"
-
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
           # TODO: Do we use this plugins?
           extra_plugins: |
@@ -372,7 +371,6 @@ jobs:
           git fetch origin
           ./.github/scripts/release.sh multi_back_merge main "${{ secrets.GITHUB_TOKEN }}" develop rc hotfix
 
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -385,6 +383,7 @@ jobs:
           make_latest: ${{ needs.semantic-release.outputs.new_release_channel == 'latest' || needs.semantic-release.outputs.new_release_channel == '' }}
           prerelease: ${{ needs.semantic-release.outputs.new_release_channel != 'latest' && needs.semantic-release.outputs.new_release_channel != '' }}
 
+# TODO: combine with πfinalize-release
   publish-release:
     name: Publish to Botanix Releases Repository
     runs-on: ubuntu-latest
@@ -429,4 +428,3 @@ jobs:
             "${{ needs.semantic-release.outputs.new_release_git_tag }}" \
             "${{ needs.semantic-release.outputs.new_release_git_head }}" \
             "${{ needs.semantic-release.outputs.last_release_version }}"
-      
