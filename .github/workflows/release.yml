@@ -82,6 +82,7 @@ jobs:
           # TODO: Do we use this plugins?
           extra_plugins: |
             @semantic-release/changelog
+            @semantic-release/conventional-commits
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
 
