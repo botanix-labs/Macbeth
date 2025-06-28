@@ -11,6 +11,7 @@ on:
       - develop
       - rc
       - hotfix
+      - refactor/releases
 
 permissions:
   contents: write
