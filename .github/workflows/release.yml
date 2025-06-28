@@ -128,10 +128,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           target: ${{ matrix.configs.target }}
-
-      - name: Install sccache
-        run: |
-          cargo install sccache --locked
+          toolchain: stable
 
       - name: Install cross main
         id: cross_main
@@ -143,18 +140,18 @@ jobs:
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+      # - name: Install sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.9
 
-      # - name: Install protoc
+      # # - name: Install protoc
+      # #   run: |
+      # #     sudo apt-get update
+      # #     sudo apt-get install -y protobuf-compiler
+
+      # - name: Configure sccache
       #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y protobuf-compiler
-
-      - name: Configure sccache
-        run: |
-          sccache --start-server
-          sccache --show-stats
+      #     sccache --start-server
+      #     sccache --show-stats
 
       - uses: Swatinem/rust-cache@v2
         with:
