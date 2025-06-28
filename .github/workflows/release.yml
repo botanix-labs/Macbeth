@@ -128,6 +128,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           target: ${{ matrix.configs.target }}
+
+      - name: Install sccache
+        run: |
+          cargo install sccache
+
       - name: Install cross main
         id: cross_main
         run: |
@@ -315,7 +320,6 @@ jobs:
             *.labels.org.opencontainers.image.revision=${{ github.sha }}
             *.labels.org.opencontainers.image.source=https://github.com/${{ github.repository }}
             *.labels.org.opencontainers.image.channel=${{ needs.semantic-release.outputs.new_release_channel }}
-            *.platforms=linux/amd64
 
   # This job waits for the binary release workflow to complete before finalizing the release
   finalize-release:
