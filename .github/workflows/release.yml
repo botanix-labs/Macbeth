@@ -80,8 +80,6 @@ jobs:
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
           # TODO: Do we use this plugins?
           extra_plugins: |
-            @semantic-release/git
-            @semantic-release/exec
             @semantic-release/changelog
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
