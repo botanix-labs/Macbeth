@@ -95,7 +95,7 @@ jobs:
     name: build release binaries
     needs: semantic-release
     #if: needs.semantic-release.outputs.new_release_published == 'true'
-    runs-on: ubuntu-latest
+    runs-on: k8-runners
     permissions:
       contents: read
       id-token: write
@@ -146,10 +146,10 @@ jobs:
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Install protoc
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+      # - name: Install protoc
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y protobuf-compiler
 
       - name: Configure sccache
         run: |
@@ -245,7 +245,7 @@ jobs:
 
   build-docker-images:
     name: Build Docker Images
-    runs-on: ubuntu-latest
+    runs-on: k8-runners
     needs: semantic-release
     #if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
