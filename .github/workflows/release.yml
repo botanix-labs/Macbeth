@@ -69,6 +69,12 @@ jobs:
           else
             echo "branches='[{name: \"${GITHUB_REF_NAME}\", channel: \"${channel_name}\", prerelease: true}]'" >> $GITHUB_OUTPUT
           fi
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install --save-dev \
+            conventional-changelog-conventionalcommits 
 
       - name: Run Semantic Release
         id: semantic
@@ -81,10 +87,9 @@ jobs:
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
           # TODO: Do we use this plugins?
           extra_plugins: |
-            @semantic-release/changelog
-            @semantic-release/conventional-commits
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
+            @semantic-release/changelog
 
       # TODO: Update Cargo.toml without commiting and upload as artifact
 
