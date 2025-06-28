@@ -131,7 +131,7 @@ jobs:
 
       - name: Install sccache
         run: |
-          cargo install sccache
+          cargo install sccache --locked
 
       - name: Install cross main
         id: cross_main
@@ -281,6 +281,15 @@ jobs:
           MAJOR="${{ needs.semantic-release.outputs.new_release_major_version }}"
           MINOR="${{ needs.semantic-release.outputs.new_release_minor_version }}"
           CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'latest' }}"
+
+          if [ -z "$VERSION" ]; then
+            echo "No semantic release version found, using git SHA"
+            SHA_TAG="${{ github.sha }}"
+            echo "btc-server-tags=ghcr.io/botanix-labs/botanix-btc-server:$SHA_TAG" >> $GITHUB_OUTPUT
+            echo "reth-node-tags=ghcr.io/botanix-labs/botanix-reth-node:$SHA_TAG" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
 
           # Determine Docker tags based on release channel
           case "$CHANNEL" in
