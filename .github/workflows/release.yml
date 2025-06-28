@@ -94,7 +94,7 @@ jobs:
   build-binaries:
     name: build release binaries
     needs: semantic-release
-    if: needs.semantic-release.outputs.new_release_published == 'true'
+    #if: needs.semantic-release.outputs.new_release_published == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -242,7 +242,7 @@ jobs:
     name: Build Docker Images
     runs-on: ubuntu-latest
     needs: semantic-release
-    if: needs.semantic-release.outputs.new_release_published == 'true'
+    #if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
