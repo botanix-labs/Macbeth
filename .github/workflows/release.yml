@@ -130,6 +130,13 @@ jobs:
           target: ${{ matrix.configs.target }}
           toolchain: stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+          env-vars: |
+            RUSTC_WRAPPER
+
       - name: Install cross main
         id: cross_main
         run: |
@@ -153,12 +160,6 @@ jobs:
       #     sccache --start-server
       #     sccache --show-stats
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          cache-all-crates: true
-          env-vars: |
-            RUSTC_WRAPPER
 
       - name: Build Reth Binary
         if: matrix.build.binary == 'reth'
