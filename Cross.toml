@@ -4,7 +4,7 @@ pre-build = [
     "apt-get update && apt-get install --assume-yes --no-install-recommends build-essential llvm-dev protobuf-compiler gcc pkg-config libprotobuf-dev libclang-6.0-dev clang-6.0 curl",
     # Install Rust and Cargo
     "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable",
-    "source $HOME/.cargo/env && rustup target add x86_64-unknown-linux-gnu"
+    ". "$HOME/.cargo/env && rustup target add x86_64-unknown-linux-gnu"
 ]
 
 [build.env]
