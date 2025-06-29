@@ -238,6 +238,12 @@ jobs:
           VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
           CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}"
           
+          # Use git SHA if no semantic version
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ github.sha }}"
+            echo "No semantic release version, using git SHA: $VERSION"
+          fi
+          
           # Map channel names
           case "$CHANNEL" in
             "latest") CHANNEL="stable" ;;
