@@ -2,8 +2,8 @@
 pre-build = [
   "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
   "apt-get update && apt-get install --assume-yes --no-install-recommends build-essential llvm-dev protobuf-compiler gcc pkg-config libprotobuf-dev libclang-6.0-dev clang-6.0 curl", # install system deps                                                                    # add target
+  "echo 'export PATH=/root/.cargo/bin:$PATH' >> /etc/environment",
 ]
 
 [build.env]
-passthrough = ["JEMALLOC_SYS_WITH_LG_PAGE", "PATH"]
-PATH = "/root/.cargo/bin:$PATH"
+passthrough = ["JEMALLOC_SYS_WITH_LG_PAGE"]
