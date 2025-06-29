@@ -133,11 +133,6 @@ jobs:
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Configure sccache
-        run: |
-          sccache --start-server
-          sccache --show-stats
-
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
