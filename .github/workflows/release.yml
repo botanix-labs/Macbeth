@@ -180,6 +180,9 @@ jobs:
           mkdir -p artifacts
           [[ "${{ matrix.configs.target }}" == *windows* ]] && ext=".exe"
           
+          echo "Looking for binaries in target/${{ matrix.configs.target }}/"
+          find target/${{ matrix.configs.target }}/ -name "*${{ matrix.build.binary }}*" -type f || echo "No binaries found"
+          
           if [[ "${{ matrix.build.binary }}" == "reth" && "${{ matrix.configs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
             mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
           elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
