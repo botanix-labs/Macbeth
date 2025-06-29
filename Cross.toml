@@ -1,8 +1,7 @@
 [build]
 pre-build = [
-  "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+  "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && . ~/.cargo/env",
   "apt-get update && apt-get install --assume-yes --no-install-recommends build-essential llvm-dev protobuf-compiler gcc pkg-config libprotobuf-dev libclang-6.0-dev clang-6.0 curl", # install system deps                                                                    # add target
-  "source ~/.cargo/env",
 ]
 
 [build.env]
