@@ -130,8 +130,30 @@ jobs:
           target: ${{ matrix.configs.target }}
           toolchain: stable
 
+      - name: gcloud auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: botanix-391913
+          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+
+      - name: gcloud setup
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: 'Create GCS credentials file for sccache'
+        run: |
+          echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
+          chmod 600 ${SCCACHE_GCS_KEY_PATH}
+
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure sccache
+        run: |
+          sccache --start-server
+          sccache --show-stats
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -185,18 +207,6 @@ jobs:
           elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
           fi
-
-      - name: gcloud auth
-        uses: google-github-actions/auth@v2
-        with:
-          project_id: botanix-391913
-          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
-
-      - name: gcloud setup
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: botanix-391913
 
 
       # TODO: Download artifacts with Cargo.toml
