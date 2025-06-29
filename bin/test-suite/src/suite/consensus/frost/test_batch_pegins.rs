@@ -75,7 +75,7 @@ fn create_pegin_meta(
 pub async fn batch_pegins(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
-    let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
+    let pegin_conf_depth = BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
     tokio::time::sleep(Duration::from_secs(5)).await;

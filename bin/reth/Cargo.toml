@@ -24,6 +24,7 @@ backon = { workspace = true }
 # Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
+bitcoincore-zmq = { workspace = true }
 btc-server = { path = "../btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
 

@@ -9,6 +9,8 @@ pub struct PendingPegout {
     pub amount: u64,
     #[prost(uint64, tag = "4")]
     pub height: u64,
+    #[prost(uint64, tag = "5")]
+    pub timestamp: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizedPegout {
@@ -16,6 +18,8 @@ pub struct FinalizedPegout {
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint64, tag = "2")]
     pub botanix_block_height: u64,
+    #[prost(uint64, tag = "3")]
+    pub botanix_block_timestamp: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPendingPegoutsResponse {

@@ -25,7 +25,7 @@ use btcserverlib::{
     coordinator::{self, error::CoordinatorError},
     database, dkg,
     federation_args::FederationTomlConfig,
-    frost_id,
+    frost_id, handle_signing_error,
     http::{create_web_server, state::ServerState},
     measure_rpc_latency,
     merkle::get_wallet_state_commitment,
@@ -211,41 +211,6 @@ fn print_dkg_state_log(dkg: &mut DkgState) {
         info!("DKG stage set to: {}", stage);
         dkg.stage = Some(stage);
     }
-}
-
-macro_rules! update_signing_error_metrics {
-    ($self:expr, $req:expr, $operation:expr) => {
-        match $operation.to_status() {
-            Ok(value) => value,
-            Err(e) => {
-                if let Some(telemetry) = $self.telemetry.as_ref() {
-                    telemetry.update_signing_error_metrics(
-                        $self.btc_network,
-                        $self.config.identifier,
-                        $req.signing_session_id.try_into().expect("valid value"),
-                        &e.to_string(),
-                    );
-                }
-                return Err(e);
-            }
-        }
-    };
-}
-
-macro_rules! try_with_signing_error_metrics {
-    ($self:expr, $signing_session_id:expr, $operation:expr) => {
-        if let Err(e) = $operation.to_status() {
-            if let Some(telemetry) = $self.telemetry.as_ref() {
-                telemetry.update_signing_error_metrics(
-                    $self.btc_network,
-                    $self.config.identifier,
-                    $signing_session_id,
-                    &e.to_string(),
-                );
-            }
-            return Err(e);
-        }
-    };
 }
 
 type SigningNoncesCommitmentsMap =
@@ -664,7 +629,13 @@ where
         checkpoint: BlockHash,
     ) -> Result<(), pegout_scheduler::SyncError> {
         let mut lock = self.pegout_scheduler.lock().await;
-        lock.sync_until(&self.bitcoind_client, checkpoint)?;
+        lock.sync_until(
+            &self.bitcoind_client,
+            checkpoint,
+            &self.telemetry,
+            self.btc_network,
+            self.config.identifier,
+        )?;
         self.db.store_pegout_mgr_finalized_block(lock.last_finalized())?;
         self.db.update_utxo_merkle_root()?;
         self.db.flush()?;
@@ -783,6 +754,7 @@ where
                     spk,
                     value: Amount::from_sat(p.amount),
                     botanix_height: p.height,
+                    timestamp: Some(p.timestamp),
                 })
             })
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
@@ -810,11 +782,8 @@ where
     ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        let signing_session_id = update_signing_error_metrics!(
-            self,
-            req,
-            parse_signing_session_id(&req.signing_session_id)
-        );
+        let signing_session_id =
+            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
         let signing_status = self.db.get_signing_status(&signing_session_id).to_status()?;
 
         let res =
@@ -853,6 +822,12 @@ where
                     spk: p.spk.into_bytes().to_vec(),
                     amount: p.value.to_sat(),
                     height: p.botanix_height,
+                    timestamp: p.timestamp.unwrap_or(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .expect("valid duration")
+                            .as_secs() as u64,
+                    ),
                 })
                 .collect(),
         });
@@ -891,6 +866,13 @@ where
                                 .map(|p| rpc::FinalizedPegout {
                                     id: p.id.as_bytes().to_vec(),
                                     botanix_block_height: p.block_number,
+                                    botanix_block_timestamp: p.timestamp.unwrap_or(
+                                        std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .expect("valid duration")
+                                            .as_secs()
+                                            as u64,
+                                    ),
                                 })
                                 .collect(),
                             chunk_index,
@@ -1024,6 +1006,7 @@ where
                 Ok(btcserverlib::database::FinalizedPegout {
                     id: PegoutId::from_bytes(&v.id)?,
                     block_number: v.botanix_block_height,
+                    timestamp: Some(v.botanix_block_timestamp),
                 })
             })
             .collect::<Result<Vec<btcserverlib::database::FinalizedPegout>, ()>>()
@@ -1066,11 +1049,8 @@ where
             "Received round1 signing package request for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = update_signing_error_metrics!(
-            self,
-            req,
-            parse_signing_session_id(&req.signing_session_id)
-        );
+        let signing_session_id =
+            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
 
         // Check if we have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
@@ -1107,7 +1087,6 @@ where
             &self.db,
             &self.identifier,
         )
-        .await
         .map_err(SigningError::Round1)
         .to_status()?;
 
@@ -1146,11 +1125,8 @@ where
         // Validate PSBT
         let req = req.into_inner();
         info!("Received round2 signing package request");
-        let signing_session_id = update_signing_error_metrics!(
-            self,
-            req,
-            parse_signing_session_id(&req.signing_session_id)
-        );
+        let signing_session_id =
+            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
 
         let mut psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
             Ok(psbt) => psbt,
@@ -1174,7 +1150,6 @@ where
             &self.identifier,
             &signing_nonces,
         )
-        .await
         .map_err(|e| {
             if let Some(telemetry) = self.telemetry.as_ref() {
                 telemetry.update_signing_error_metrics(
@@ -1286,11 +1261,8 @@ where
             "Received finalize signing request with signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = update_signing_error_metrics!(
-            self,
-            req,
-            parse_signing_session_id(&req.signing_session_id)
-        );
+        let signing_session_id =
+            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
 
         let _tx_lock = self.tx_lock.lock().await;
         let psbt =
@@ -1335,7 +1307,7 @@ where
             pegout_ids
         );
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
-        // remove the pegouts from the telemetry guage
+        // remove the pegouts from the telemetry gauge
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_pending_pegouts(
                 self.btc_network,
@@ -1397,11 +1369,8 @@ where
             "Received make tx request for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = update_signing_error_metrics!(
-            self,
-            req,
-            parse_signing_session_id(&req.signing_session_id)
-        );
+        let signing_session_id =
+            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
 
         let checkpoint = match BlockHash::from_slice(&req.checkpoint_block_hash) {
             Ok(checkpoint) => checkpoint,
@@ -1456,10 +1425,11 @@ where
 
         // First sync the pegout scheduler as this may add tracked pegouts back to the pending
         // pegouts list
-        try_with_signing_error_metrics!(
+        handle_signing_error!(
             self,
             signing_session_id,
-            self.sync_pegout_scheduler(checkpoint).await
+            self.sync_pegout_scheduler(checkpoint).await,
+            check_only
         );
 
         let tracked_txs = match self.db.get_tracked_txs().to_status() {
@@ -1520,8 +1490,8 @@ where
             tracked_txs,
             self.telemetry.clone(),
             self.btc_network,
+            self.config.identifier,
         )
-        .await
         .to_status()
         {
             Ok(psbt) => psbt,
@@ -1551,10 +1521,11 @@ where
         // We rely on our logic correctly identifying it later.
 
         // Save psbt to db
-        try_with_signing_error_metrics!(
+        handle_signing_error!(
             self,
             req.signing_session_id.try_into().expect("valid signing session id"),
-            self.db.update_psbt(&signing_session_id, &psbt)
+            self.db.update_psbt(&signing_session_id, &psbt),
+            check_only
         );
 
         self.db.flush().to_status()?;
@@ -1600,11 +1571,8 @@ where
             "Received to sign package request, signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = update_signing_error_metrics!(
-            self,
-            req,
-            parse_signing_session_id(&req.signing_session_id)
-        );
+        let signing_session_id =
+            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
 
         let psbt = match coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
             .to_status()
@@ -1673,14 +1641,10 @@ where
             "Received new round1 signing package for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = update_signing_error_metrics!(
-            self,
-            req,
-            parse_signing_session_id(&req.signing_session_id)
-        );
+        let signing_session_id =
+            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
 
-        let frost_id =
-            update_signing_error_metrics!(self, req, deserialize_frost_peer_id(req.identifier));
+        let frost_id = handle_signing_error!(self, req, deserialize_frost_peer_id(req.identifier));
 
         let psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
             Ok(psbt) => psbt,
@@ -1752,14 +1716,10 @@ where
         };
 
         info!("Received round2 signing package");
-        let signing_session_id = update_signing_error_metrics!(
-            self,
-            req,
-            parse_signing_session_id(&req.signing_session_id)
-        );
+        let signing_session_id =
+            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
 
-        let frost_id =
-            update_signing_error_metrics!(self, req, deserialize_frost_peer_id(req.identifier));
+        let frost_id = handle_signing_error!(self, req, deserialize_frost_peer_id(req.identifier));
 
         let psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
             Ok(psbt) => psbt,
@@ -2151,7 +2111,7 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
             Some(s)
         }
         Err(err) => {
-            error!("Grpc server: Join Error {}", err.to_string());
+            error!("Grpc server: Join Error {}", err);
             None
         }
     };
@@ -2554,6 +2514,10 @@ mod tests {
                 spk: spk.clone().as_bytes().to_vec(),
                 amount: 100_000, // sats
                 height: 1,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("valid duration")
+                    .as_secs() as u64,
             });
         }
 
@@ -2600,8 +2564,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout =
-                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout = btcserverlib::database::FinalizedPegout {
+                id: pegout_id,
+                block_number: 100,
+                timestamp: None,
+            };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =
@@ -2629,8 +2596,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout =
-                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout = btcserverlib::database::FinalizedPegout {
+                id: pegout_id,
+                block_number: 100,
+                timestamp: None,
+            };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =

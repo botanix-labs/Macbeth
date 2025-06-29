@@ -1,6 +1,6 @@
 use bitcoin::psbt::{self};
 use frost_secp256k1_tr as frost;
-use std::{array::TryFromSliceError, io};
+use std::{array::TryFromSliceError, io, time::SystemTimeError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -33,6 +33,8 @@ pub enum Error {
     InvalidUTXOVersion(u32),
     #[error("Tracked tx not found in Pegout Scheduler")]
     TrackedTxNotFoundInPegoutScheduler,
+    #[error("Error getting duration since epoch: {0}")]
+    DurationSinceEpoch(#[from] SystemTimeError),
 }
 
 impl PartialEq for Error {

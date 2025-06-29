@@ -40,7 +40,7 @@ impl Telemetry {
         self.maybe_use_metrics(|metrics| {
             // update latency histogram (in milliseconds)
             metrics
-                .round1_signing_latency
+                .bitcoind_rpc_latency
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), rpc_method])
                 .observe(latency_millis as f64);
         });
@@ -266,9 +266,17 @@ impl Telemetry {
         });
     }
 
-    pub fn update_pegout_scheduler_error_metrics(&self, error: &str) {
+    pub fn update_pegout_scheduler_error_metrics(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        error: &str,
+    ) {
         self.maybe_use_metrics(|metrics| {
-            metrics.pegout_scheduler_error_rates.with_label_values(&[error]).inc();
+            metrics
+                .pegout_scheduler_error_rates
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), error])
+                .inc();
         });
     }
 
@@ -308,9 +316,12 @@ impl Telemetry {
         });
     }
 
-    pub fn update_utxos(&self, btc_chain: bitcoin::Network, utxos: i64) {
+    pub fn update_utxos(&self, btc_chain: bitcoin::Network, self_id: u16, utxos: i64) {
         self.maybe_use_metrics(|metrics| {
-            metrics.utxo_count.with_label_values(&[&btc_chain.to_string()]).add(utxos);
+            metrics
+                .utxo_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .add(utxos);
         });
     }
 

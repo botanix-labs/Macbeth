@@ -16,7 +16,7 @@ service BtcServer {
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse) {}
-    
+
     rpc GetDkgPayloads(Empty) returns(DkgPayloads) {}
 
     rpc NewDkgPayload(DkgPayload) returns(DkgPayloads) {}
@@ -69,11 +69,13 @@ message PendingPegout {
     bytes spk = 2;
     uint64 amount = 3;
     uint64 height = 4;
+    uint64 timestamp = 5;
 }
 
 message FinalizedPegout {
     bytes id = 1;
     uint64 botanix_block_height = 2;
+    uint64 botanix_block_timestamp = 3;
 }
 
 message GetPendingPegoutsResponse {

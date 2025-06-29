@@ -128,6 +128,8 @@ pub struct PegoutRequest {
     pub value: Amount,
     /// L2 block height this pegout was requested at.
     pub botanix_height: u64,
+    /// L2 block timestamp this pegout was requested at.
+    pub timestamp: Option<u64>,
 }
 
 impl PegoutRequest {
@@ -145,6 +147,7 @@ impl TryFrom<rpc::PendingPegout> for PegoutRequest {
             spk: ScriptBuf::from_bytes(pegout.spk),
             value: Amount::from_sat(pegout.amount),
             botanix_height: pegout.height,
+            timestamp: Some(pegout.timestamp),
         })
     }
 }
@@ -533,6 +536,7 @@ impl PegoutScheduler {
                     .map(|pegout_request| FinalizedPegout {
                         id: pegout_request.id,
                         block_number: pegout_request.botanix_height,
+                        timestamp: pegout_request.timestamp,
                     })
                     .collect();
 
@@ -544,6 +548,7 @@ impl PegoutScheduler {
                     );
                     let refs: Vec<&FinalizedPegout> = finalized_pegout_ids.iter().collect();
                     self.db.store_finalized_pegout_ids_atomically(&refs)?;
+                    self.db.prune_finalized_pegout_ids()?;
                     self.db.flush()?;
                     if let Some(telemetry) = self.telemetry.as_ref() {
                         telemetry.update_finalized_pegout_ids(
@@ -621,6 +626,9 @@ impl PegoutScheduler {
         &mut self,
         bitcoind: &impl RpcApi,
         checkpoint: bitcoincore_rpc::json::GetBlockHeaderResult,
+        telemetry: &Option<Arc<Telemetry>>,
+        bitcoin_network: bitcoin::Network,
+        identifier: u16,
     ) -> Result<(), SyncError> {
         // Determine the timestamp of the checkpoint block
         let cp_time = checkpoint.block_time();
@@ -645,7 +653,15 @@ impl PegoutScheduler {
             // Check if the tx is on chain and is actually deeply confirmed.
             // We use the tracked_tx.created timestamp but we don't know when the tx was actually
             // included in a block.
-            let onchain_tx = bitcoind.get_raw_transaction_info(&txid, None);
+
+            let onchain_tx = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_raw_transaction_info",
+                bitcoind.get_raw_transaction_info(&txid, None)
+            );
+
             if let Ok(onchain_tx) = onchain_tx {
                 // Check if the tx is deeply confirmed
                 let Some(blockhash) = onchain_tx.blockhash else {
@@ -653,8 +669,16 @@ impl PegoutScheduler {
                     info!("PegoutScheduler::track_mempool: Tx {} is still in the mempool.", txid);
                     continue;
                 };
-                let actual_height =
-                    bitcoind.get_block_info(&blockhash).map_err(SyncError::Rpc)?.height;
+                let actual_height = measure_rpc_latency!(
+                    &telemetry,
+                    bitcoin_network,
+                    identifier,
+                    "get_block_info",
+                    bitcoind.get_block_info(&blockhash)
+                )
+                .map_err(SyncError::Rpc)?
+                .height;
+
                 if actual_height > checkpoint.height {
                     info!("Tx {} is confirmed in block {} at height {}, but is not deeply confirmed (checkpoint height {}).",
                         txid, blockhash, actual_height, checkpoint.height);
@@ -676,7 +700,16 @@ impl PegoutScheduler {
             // a tx that is in a deeply confirmed block should have been handled already
             // so check if still in mempool
             let tx = self.txs.get(&txid).expect("tx should exist").clone();
-            match bitcoind.get_mempool_entry(&txid) {
+
+            let mempool_entry = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_mempool_entry",
+                bitcoind.get_mempool_entry(&txid)
+            );
+
+            match mempool_entry {
                 Ok(_) => {
                     warn!("Tx {} still in the mempool", &txid);
                     // nothing else to do: eventually the tx will be confirmed or dropped
@@ -716,15 +749,31 @@ impl PegoutScheduler {
         &mut self,
         bitcoind: &impl RpcApi,
         checkpoint: BlockHash,
+        telemetry: &Option<Arc<Telemetry>>,
+        bitcoin_network: bitcoin::Network,
+        identifier: u16,
     ) -> Result<(), SyncError> {
-        let cp_result = match bitcoind.get_block_header_info(&checkpoint) {
+        let block_header_info = measure_rpc_latency!(
+            &telemetry,
+            bitcoin_network,
+            identifier,
+            "get_block_header_info",
+            bitcoind.get_block_header_info(&checkpoint)
+        );
+
+        let cp_result = match block_header_info {
             Ok(cp) => cp,
             Err(e) => {
                 error!(
                     "PegoutScheduler::sync_until: Error getting checkpoint block header info: {}",
                     e
                 );
-                update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                update_pegout_scheduler_error_metrics!(
+                    &self.telemetry,
+                    self.bitcoin_network,
+                    self.identifier,
+                    &e
+                );
                 return Err(SyncError::Rpc(e));
             }
         };
@@ -741,7 +790,12 @@ impl PegoutScheduler {
         // some of the blocks we already saw might not be in the node's chain.
         // To avoid errors related to this, we'll just ask called to wait.
         if is_syncing(bitcoind, &self.telemetry, self.bitcoin_network, self.identifier)? {
-            update_pegout_scheduler_error_metrics!(&self.telemetry, SyncError::NodeNotSynced);
+            update_pegout_scheduler_error_metrics!(
+                &self.telemetry,
+                self.bitcoin_network,
+                self.identifier,
+                SyncError::NodeNotSynced
+            );
             return Err(SyncError::NodeNotSynced);
         }
 
@@ -750,34 +804,74 @@ impl PegoutScheduler {
         // that we know for sure the tip we start working with is the tip of
         // a chain we are actually on.
         let (last, tip) = loop {
-            let block_hash = match bitcoind.get_best_block_hash() {
+            let best_block_hash = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_best_block_hash",
+                bitcoind.get_best_block_hash()
+            );
+
+            let block_hash = match best_block_hash {
                 Ok(hash) => hash,
                 Err(e) => {
                     error!("PegoutScheduler::sync_until: Error getting best block hash: {}", e);
-                    update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                    update_pegout_scheduler_error_metrics!(
+                        &self.telemetry,
+                        self.bitcoin_network,
+                        self.identifier,
+                        &e
+                    );
                     return Err(SyncError::Rpc(e));
                 }
             };
 
-            let tip = match bitcoind.get_block_header_info(&block_hash) {
+            let block_header_info = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_block_header_info",
+                bitcoind.get_block_header_info(&block_hash)
+            );
+
+            let tip = match block_header_info {
                 Ok(tip) => tip,
                 Err(e) => {
                     error!("PegoutScheduler::sync_until: Error getting block header info: {}", e);
-                    update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                    update_pegout_scheduler_error_metrics!(
+                        &self.telemetry,
+                        self.bitcoin_network,
+                        self.identifier,
+                        &e
+                    );
                     return Err(SyncError::Rpc(e));
                 }
             };
 
             let last = loop {
                 let last = self.last_blocks.back().expect("never empty");
-                let in_chain = match bitcoind.get_block_header_info(&last.hash) {
+
+                let block_header_info = measure_rpc_latency!(
+                    &telemetry,
+                    bitcoin_network,
+                    identifier,
+                    "get_block_header_info",
+                    bitcoind.get_block_header_info(&last.hash)
+                );
+
+                let in_chain = match block_header_info {
                     Ok(in_chain) => in_chain,
                     Err(e) => {
                         error!(
                             "PegoutScheduler::sync_until: Error getting block header info: {}",
                             e
                         );
-                        update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                        update_pegout_scheduler_error_metrics!(
+                            &self.telemetry,
+                            self.bitcoin_network,
+                            self.identifier,
+                            &e
+                        );
                         return Err(SyncError::Rpc(e));
                     }
                 };
@@ -791,6 +885,8 @@ impl PegoutScheduler {
                         // our conf_window has taken place. We can't do anything at this point.
                         update_pegout_scheduler_error_metrics!(
                             &self.telemetry,
+                            self.bitcoin_network,
+                            self.identifier,
                             SyncError::DeepReorg
                         );
                         return Err(SyncError::DeepReorg);
@@ -800,20 +896,46 @@ impl PegoutScheduler {
                 }
             };
 
-            let best_block_hash = match bitcoind.get_best_block_hash() {
+            let best_block_hash = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_best_block_hash",
+                bitcoind.get_best_block_hash()
+            );
+
+            let best_block_hash = match best_block_hash {
                 Ok(best_block_hash) => best_block_hash,
                 Err(e) => {
                     error!("PegoutScheduler::sync_until: Error getting best block hash: {}", e);
-                    update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                    update_pegout_scheduler_error_metrics!(
+                        &self.telemetry,
+                        self.bitcoin_network,
+                        self.identifier,
+                        &e
+                    );
                     return Err(SyncError::Rpc(e));
                 }
             };
 
-            let new_tip = match bitcoind.get_block_header_info(&best_block_hash) {
+            let block_header_info = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_block_header_info",
+                bitcoind.get_block_header_info(&best_block_hash)
+            );
+
+            let new_tip = match block_header_info {
                 Ok(new_tip) => new_tip,
                 Err(e) => {
                     error!("PegoutScheduler::sync_until: Error getting block header info: {}", e);
-                    update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                    update_pegout_scheduler_error_metrics!(
+                        &self.telemetry,
+                        self.bitcoin_network,
+                        self.identifier,
+                        &e
+                    );
                     return Err(SyncError::Rpc(e));
                 }
             };
@@ -839,11 +961,25 @@ impl PegoutScheduler {
         loop {
             let prevhash = cursor.previous_block_hash.expect("can't reach genesis");
             trace!("Getting prev block of {}:{}: {}", cursor.height, cursor.hash, prevhash);
-            cursor = match bitcoind.get_block_header_info(&prevhash) {
+
+            let block_header_info = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_block_header_info",
+                bitcoind.get_block_header_info(&prevhash)
+            );
+
+            cursor = match block_header_info {
                 Ok(cursor) => cursor,
                 Err(e) => {
                     error!("PegoutScheduler::sync_until: Error getting block header info: {}", e);
-                    update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                    update_pegout_scheduler_error_metrics!(
+                        &self.telemetry,
+                        self.bitcoin_network,
+                        self.identifier,
+                        &e
+                    );
                     return Err(SyncError::Rpc(e));
                 }
             };
@@ -862,21 +998,48 @@ impl PegoutScheduler {
                 break;
             }
 
-            let height = match bitcoind.get_block_header_info(&hash) {
+            let block_header_info = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_block_header_info",
+                bitcoind.get_block_header_info(&hash)
+            );
+
+            let height = match block_header_info {
                 Ok(block_header_info) => block_header_info.height,
                 Err(e) => {
                     error!("PegoutScheduler::sync_until: Error getting block header info: {}", e);
-                    update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                    update_pegout_scheduler_error_metrics!(
+                        &self.telemetry,
+                        self.bitcoin_network,
+                        self.identifier,
+                        &e
+                    );
                     return Err(SyncError::Rpc(e));
                 }
             };
 
             info!("PegoutScheduler::sync_until: Processing block {}:{}", height, hash);
-            let block = match bitcoind.get_block(&hash) {
+
+            let block = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_block",
+                bitcoind.get_block(&hash)
+            );
+
+            let block = match block {
                 Ok(block) => block,
                 Err(e) => {
                     error!("PegoutScheduler::sync_until: Error getting best block: {}", e);
-                    update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                    update_pegout_scheduler_error_metrics!(
+                        &self.telemetry,
+                        self.bitcoin_network,
+                        self.identifier,
+                        &e
+                    );
                     return Err(SyncError::Rpc(e));
                 }
             };
@@ -905,7 +1068,12 @@ impl PegoutScheduler {
                         // Propagate ALL database errors immediately
                         // Removed the specific check for Storage variant as it doesn't exist
                         // and we want to propagate any DB error from finalize_block.
-                        update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                        update_pegout_scheduler_error_metrics!(
+                            &self.telemetry,
+                            self.bitcoin_network,
+                            self.identifier,
+                            &e
+                        );
                         return Err(SyncError::Db(e));
                     }
                 }
@@ -915,12 +1083,17 @@ impl PegoutScheduler {
         // handle txs that are still in the mempool, have been dropped or there was a reorg
         // this must be done after `finalize_block` which updates the db and pegout scheduler state
         info!("PegoutScheduler::sync_until: Finished block processing loop. Tracking mempool...");
-        match self.track_mempool(bitcoind, cp_result) {
+        match self.track_mempool(bitcoind, cp_result, &telemetry, bitcoin_network, identifier) {
             Ok(_) => info!("PegoutScheduler::sync_until: Mempool tracking successful."),
             Err(e) => {
                 error!("PegoutScheduler::sync_until: Error during mempool tracking: {}. Propagating error.", e);
                 // Decide if mempool tracking error should halt the sync
-                update_pegout_scheduler_error_metrics!(&self.telemetry, &e);
+                update_pegout_scheduler_error_metrics!(
+                    &self.telemetry,
+                    self.bitcoin_network,
+                    self.identifier,
+                    &e
+                );
                 return Err(e);
             }
         }
@@ -929,8 +1102,22 @@ impl PegoutScheduler {
             info!("Checkpoint reached: {}", checkpoint);
             Ok(())
         } else {
-            let last_info = bitcoind.get_block_header_info(&self.last_finalized);
-            let cp_info = bitcoind.get_block_header_info(&checkpoint);
+            let last_info = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_block_header_info",
+                bitcoind.get_block_header_info(&self.last_finalized)
+            );
+
+            let cp_info = measure_rpc_latency!(
+                &telemetry,
+                bitcoin_network,
+                identifier,
+                "get_block_header_info",
+                bitcoind.get_block_header_info(&checkpoint)
+            );
+
             if let (Ok(last), Ok(cp)) = (last_info, cp_info) {
                 debug!(
                     "Checkpoint not reached: last={:?}, checkpoint={:?}, tip={:?}",
@@ -939,6 +1126,8 @@ impl PegoutScheduler {
             }
             update_pegout_scheduler_error_metrics!(
                 &self.telemetry,
+                self.bitcoin_network,
+                self.identifier,
                 SyncError::CheckPointNotReached
             );
             Err(SyncError::CheckPointNotReached)
@@ -1027,7 +1216,7 @@ mod tests {
         TxIn,
     };
     use frost_secp256k1_tr as frost;
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
 
     use crate::{
         frost_id,
@@ -1046,7 +1235,7 @@ mod tests {
     // ("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2")
     // This is currently used to test
     // `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool()`
-    pub static TEST_TRANSACTION_1: Lazy<Transaction> = Lazy::new(|| Transaction {
+    pub static TEST_TRANSACTION_1: LazyLock<Transaction> = LazyLock::new(|| Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
@@ -1065,7 +1254,7 @@ mod tests {
     // ("26bbaab2e585d465cceecc2acc7b398069aa85fc4dd1f52e39666a65e54a4569")
     // This is currently used to test
     // `track_mempool_should_not_add_back_pegout_when_still_in_mempool()`
-    pub static TEST_TRANSACTION_2: Lazy<Transaction> = Lazy::new(|| Transaction {
+    pub static TEST_TRANSACTION_2: LazyLock<Transaction> = LazyLock::new(|| Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
@@ -1153,6 +1342,7 @@ mod tests {
                 value: tx.output[*i].value,
                 id: create_random_pegout_id(),
                 botanix_height: 0,
+                timestamp: None,
             };
             pegouts.push(pegout_req);
         }
@@ -1644,7 +1834,13 @@ mod tests {
         // increase time for checkpoint block so tracked tx is older
         checkpoint.time += 5;
 
-        let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
+        let result = pegout_scheduler.track_mempool(
+            &mock_bitcoind,
+            checkpoint,
+            &None,
+            bitcoin::Network::Regtest,
+            1,
+        );
         assert!(result.is_ok());
 
         // assert the pegout was added to pending pegouts
@@ -1684,7 +1880,13 @@ mod tests {
         // increase time for checkpoint block so tracked tx is older
         checkpoint.time += 5;
 
-        let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
+        let result = pegout_scheduler.track_mempool(
+            &mock_bitcoind,
+            checkpoint,
+            &None,
+            bitcoin::Network::Regtest,
+            1,
+        );
         assert!(result.is_ok());
 
         // assert the pegout was added to pending pegouts
@@ -1722,7 +1924,13 @@ mod tests {
         let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
         assert!(pending_pegouts.is_empty());
 
-        let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
+        let result = pegout_scheduler.track_mempool(
+            &mock_bitcoind,
+            checkpoint,
+            &None,
+            bitcoin::Network::Regtest,
+            1,
+        );
         assert!(result.is_ok());
 
         // assert the pegout was added to pending pegouts

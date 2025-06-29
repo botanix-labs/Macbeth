@@ -75,7 +75,7 @@ pub fn add_round2_signing(
     Ok(())
 }
 
-pub async fn make_tx(
+pub fn make_tx(
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
     change_script: ScriptBuf,
@@ -84,6 +84,7 @@ pub async fn make_tx(
     tracked_txs: Vec<Tx>,
     telemetry: Option<Arc<Telemetry>>,
     btc_network: bitcoin::network::Network,
+    identifier: u16,
 ) -> Result<Psbt, CoordinatorError> {
     // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate
@@ -104,7 +105,7 @@ pub async fn make_tx(
     debug!("utxos len = {:?}", utxos.len());
     debug!("utxos = {:?}", utxos);
     if let Some(telemetry) = telemetry {
-        telemetry.update_utxos(btc_network, utxos.len() as i64);
+        telemetry.update_utxos(btc_network, identifier, utxos.len() as i64);
     }
 
     let tracked_inputs = tracked_txs
