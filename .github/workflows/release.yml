@@ -358,8 +358,13 @@ jobs:
           docker tag botanix_reth_node:latest ${{ steps.generate-tags.outputs.reth-node-tags }}
 
       - name: Push Docker Image
+        if: matrix.configs.bin == 'btc-server'
         run: |
           docker push ${{ steps.generate-tags.outputs.btc-server-tags }}
+
+      - name: Push Docker Image
+        if: matrix.configs.bin == 'reth'
+        run: |
           docker push ${{ steps.generate-tags.outputs.reth-node-tags }}
 
       # - name: Build and push
