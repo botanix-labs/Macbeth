@@ -166,10 +166,12 @@ jobs:
 
       - name: Build Reth Binary
         if: matrix.build.binary == 'reth'
+        shell: bash
         run: make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
 
       - name: Build Bitcoin Server Binary
         if: matrix.build.binary == 'btc-server'
+        shell: bash
         run: |
           cross build --package btc-server --bin btc-server --target ${{ matrix.configs.target }} --release
 
@@ -346,8 +348,13 @@ jobs:
             .
 
       - name: Tag Docker Image
+        if: matrix.configs.bin == 'btc-server'
         run: |
           docker tag botanix_btc_server:latest ${{ steps.generate-tags.outputs.btc-server-tags }}
+
+      - name: Tag Docker Image
+        if: matrix.configs.bin == 'reth'
+        run: |
           docker tag botanix_reth_node:latest ${{ steps.generate-tags.outputs.reth-node-tags }}
 
       - name: Push Docker Image
