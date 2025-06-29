@@ -180,9 +180,13 @@ jobs:
           mkdir -p artifacts
           [[ "${{ matrix.configs.target }}" == *windows* ]] && ext=".exe"
           
-          if [[ "${{ matrix.build.binary }}" == "reth" ]]; then
+          if [[ "${{ matrix.build.binary }}" == "reth" && "${{ matrix.configs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
             mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
-          elif [[ "${{ matrix.build.binary }}" == "btc-server" ]]; then
+          elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
+            mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
+          elif [[ "${{ matrix.build.binary }}" == "reth" && "${{ matrix.configs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
+          elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
           fi
 
@@ -204,6 +208,7 @@ jobs:
       - name: Create sha256sum
         run: |
           cd artifacts
+          echo "Artifacts: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz"
           tar -cvf ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
           sha256sum ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz > ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
           mv ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum ..
