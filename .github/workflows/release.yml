@@ -166,12 +166,10 @@ jobs:
 
       - name: Build Reth Binary
         if: matrix.build.binary == 'reth'
-        shell: bash
         run: make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
 
       - name: Build Bitcoin Server Binary
         if: matrix.build.binary == 'btc-server'
-        shell: bash
         run: |
           cross build --package btc-server --bin btc-server --target ${{ matrix.configs.target }} --release
 
@@ -184,13 +182,13 @@ jobs:
           find target/${{ matrix.configs.target }}/ -name "*${{ matrix.build.binary }}*" -type f || echo "No binaries found"
           
           if [[ "${{ matrix.build.binary }}" == "reth" && "${{ matrix.configs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
-            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
+            mv "/home/runner/target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
           elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
-            mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
+            mv "/home/runner/target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
           elif [[ "${{ matrix.build.binary }}" == "reth" && "${{ matrix.configs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
+            mv "/home/runner/target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
           elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
+            mv "/home/runner/target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
           fi
 
       - name: gcloud auth
