@@ -9,6 +9,7 @@ exclude = [".github/"]
 
 [dependencies]
 anyhow = "1.0.71"
+async-trait = { workspace = true }
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
 ethers = "2.0.10"

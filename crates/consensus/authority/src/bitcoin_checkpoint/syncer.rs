@@ -424,6 +424,7 @@ mod tests {
 
     use mockall::{mock, predicate::*};
     use reth_btc_wallet::bitcoind::jsonrpc::serde;
+    use tonic::async_trait;
 
     mod sync_new_blocks {
         use super::*;
@@ -893,7 +894,7 @@ mod tests {
     }
 
     // This one depends on call as well so we can't do it with mock macro
-
+    #[async_trait::async_trait]
     impl reth_btc_wallet::bitcoind::RpcApiExt for MockRpc {
         async fn is_synced(&self) -> Result<bool, reth_btc_wallet::bitcoind::BitcoindError> {
             Ok(true)

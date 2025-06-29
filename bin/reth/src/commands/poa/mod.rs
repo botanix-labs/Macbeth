@@ -450,7 +450,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
             let fut = || async { btc_server_factory.build_and_connect().await };
 
-            let mut client =
+            let mut btc_server_client =
                 match retry_exec("btc_server_start", fut, 3, Duration::from_secs(2)).await {
                     Ok(client) => client,
                     Err(err) => {
@@ -461,7 +461,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             info!(target: "reth::cli", "Btc server connected");
 
             // Check our connection to the btc server is authenticated properly
-            client.health_check(Empty {}).await.map_err(|err| {
+            btc_server_client.health_check(Empty {}).await.map_err(|err| {
                 error!(target: "reth::cli", "Failed to authenticate to btc server: {}", err);
                 eyre::eyre!("Failed to authenticate to btc server: {}", err)
             })?;
@@ -832,6 +832,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
+        let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
         let (frost_task, abci_client_builder, snapshot_manager, wallet_sync) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
@@ -855,6 +856,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 node_config.clone().state_sync,
                 provider_factory.clone(),
                 *block_fee_recipient_address,
+                bitcoind_client,
             ) {
                 Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
                 Err(e) => {
