@@ -325,7 +325,15 @@ jobs:
 
           # Determine Docker tags based on release channel
           case "$CHANNEL" in
-            "latest") DOCKER_TAGS="latest,$VERSION,$MAJOR.$MINOR,$MAJOR" ;;
+            "latest") 
+              DOCKER_TAGS="latest,$VERSION"
+              if [ -n "$MAJOR" ] && [ -n "$MINOR" ]; then
+                DOCKER_TAGS="$DOCKER_TAGS,$MAJOR.$MINOR"
+              fi
+              if [ -n "$MAJOR" ]; then
+                DOCKER_TAGS="$DOCKER_TAGS,$MAJOR"
+              fi
+              ;;
             *) DOCKER_TAGS="$CHANNEL,$VERSION" ;;
           esac
 
@@ -334,12 +342,15 @@ jobs:
           RETH_NODE_TAGS=""
 
           for tag in $(echo "$DOCKER_TAGS" | tr ',' ' '); do
-            if [ -z "$BTC_SERVER_TAGS" ]; then
-              BTC_SERVER_TAGS="ghcr.io/botanix-labs/botanix-btc-server:$tag"
-              RETH_NODE_TAGS="ghcr.io/botanix-labs/botanix-reth-node:$tag"
-            else
-              BTC_SERVER_TAGS="$BTC_SERVER_TAGS,ghcr.io/botanix-labs/botanix-btc-server:$tag"
-              RETH_NODE_TAGS="$RETH_NODE_TAGS,ghcr.io/botanix-labs/botanix-reth-node:$tag"
+            # Skip empty tags
+            if [ -n "$tag" ]; then
+              if [ -z "$BTC_SERVER_TAGS" ]; then
+                BTC_SERVER_TAGS="ghcr.io/botanix-labs/botanix-btc-server:$tag"
+                RETH_NODE_TAGS="ghcr.io/botanix-labs/botanix-reth-node:$tag"
+              else
+                BTC_SERVER_TAGS="$BTC_SERVER_TAGS,ghcr.io/botanix-labs/botanix-btc-server:$tag"
+                RETH_NODE_TAGS="$RETH_NODE_TAGS,ghcr.io/botanix-labs/botanix-reth-node:$tag"
+              fi
             fi
           done
 
