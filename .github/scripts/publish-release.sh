@@ -199,9 +199,8 @@ update_release_index() {
     
     local INDEX_FILE="botanix/releases/index.json"
     
-    if [ ! -f "$INDEX_FILE" ]; then
-        echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
-    fi
+    # Always recreate the index file to ensure correct structure
+    echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
     
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
     
@@ -209,7 +208,7 @@ update_release_index() {
        --arg channel "$CHANNEL" \
        --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
        --arg prerelease "$prerelease_flag" \
-       '(.releases //= []) | .releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end | .releases |= sort_by(.date) | reverse' \
+       '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
        "$INDEX_FILE" > "$INDEX_FILE.tmp"
     
     mv "$INDEX_FILE.tmp" "$INDEX_FILE"
