@@ -8755,6 +8755,7 @@ version = "1.1.1"
 dependencies = [
  "alloy-rpc-types-engine",
  "arc-swap",
+ "async-trait",
  "bitcoin 0.32.5",
  "bitcoincore-zmq",
  "btc-server",
@@ -9010,6 +9011,7 @@ name = "reth-btc-wallet"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
  "ethers",

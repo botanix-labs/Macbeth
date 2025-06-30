@@ -1,4 +1,5 @@
 use crate::bitcoind::{BitcoindError, BitcoindFactory, RpcApiExt};
+use async_trait::async_trait;
 use bitcoin::{
     block::{BlockHash, Header, Version},
     hashes::Hash,
@@ -76,6 +77,7 @@ impl Default for MockBitcoind {
     }
 }
 
+#[async_trait]
 impl RpcApiExt for MockBitcoind {
     async fn is_synced(&self) -> Result<bool, BitcoindError> {
         Ok(true)

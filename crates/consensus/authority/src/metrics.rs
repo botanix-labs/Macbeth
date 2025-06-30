@@ -36,8 +36,17 @@ pub struct AuthorityMetrics {
     /// Number of commet prepared proposals
     pub(crate) commet_prepared_proposals: Counter,
 
-    /// Number of commet processd\ed proposals
+    /// Number of commet processed proposals
     pub(crate) commet_processed_proposals: Counter,
+
+    /// Gauge for bitcoind connection status (0 - disconnected, 1 - connected)
+    pub(crate) bitcoind_connection_status: Gauge,
+
+    /// Gauge for bitcoin server connection status (0 - disconnected, 1 - connected)
+    pub(crate) btc_server_connection_status: Gauge,
+
+    /// Gauge for cometbft connection status (0 - disconnected, 1 - connected)
+    pub(crate) cometbft_connection_status: Gauge,
 }
 
 /// Measures the duration of executing the given code block. The duration is added to the given

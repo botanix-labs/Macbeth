@@ -826,7 +826,7 @@ where
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .expect("valid duration")
-                            .as_secs() as u64,
+                            .as_secs(),
                     ),
                 })
                 .collect(),
@@ -870,8 +870,7 @@ where
                                         std::time::SystemTime::now()
                                             .duration_since(std::time::UNIX_EPOCH)
                                             .expect("valid duration")
-                                            .as_secs()
-                                            as u64,
+                                            .as_secs(),
                                     ),
                                 })
                                 .collect(),
