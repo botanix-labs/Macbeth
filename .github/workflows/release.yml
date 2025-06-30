@@ -95,7 +95,7 @@ jobs:
     name: build release binaries
     needs: semantic-release
     #if: needs.semantic-release.outputs.new_release_published == 'true'
-    runs-on: ubuntu-latest
+    runs-on: k8-runners
     permissions:
       contents: read
       id-token: write
@@ -147,13 +147,13 @@ jobs:
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+      # - name: Install sccache
+      #   uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Configure sccache
-        run: |
-          sccache --start-server
-          sccache --show-stats
+      # - name: Configure sccache
+      #   run: |
+      #     sccache --start-server
+      #     sccache --show-stats
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -172,10 +172,10 @@ jobs:
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
-      - name: Install protoc
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+      # - name: Install protoc
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y protobuf-compiler
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -185,11 +185,13 @@ jobs:
         if: matrix.build.binary == 'reth'
         run: |
           export CARGO_BUILD_JOBS=2
+          unset CARGO_TARGET_DIR 
           make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
 
       - name: Build Bitcoin Server Binary
         if: matrix.build.binary == 'btc-server'
         run: |
+          unset CARGO_TARGET_DIR 
           cross build --package btc-server --bin btc-server --target ${{ matrix.configs.target }} --release
 
       - name: Move Binary to Artifacts
@@ -209,6 +211,7 @@ jobs:
           elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
           fi
+          export CARGO_TARGET_DIR=/home/runner
 
 
       # TODO: Download artifacts with Cargo.toml
