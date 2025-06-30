@@ -433,7 +433,7 @@ jobs:
           version=${{ needs.semantic-release.outputs.new_release_version }}
 
           # Copy artifacts to the release-assets directory with proper naming
-          for file in $(find ./binaries -name "*.tar.gz" -o -name "*.sha256sum"); do
+          find ./binaries -name "*.tar.gz" -o -name "*.sha256sum" | while read file; do
             cp "$file" ./release-assets/
           done
 
