@@ -513,6 +513,8 @@ jobs:
           path: ./artifacts
 
       - name: Publish Release
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.2' }}"
           if [ -n "$VERSION" ]; then

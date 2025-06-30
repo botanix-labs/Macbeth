@@ -25,8 +25,8 @@ setup_git_auth() {
     echo "Setting up Git authentication..."
     
     # Check if GITHUB_TOKEN is available
-    if [ -z "${GITHUB_TOKEN:-}" ]; then
-        echo "❌ GITHUB_TOKEN environment variable is required"
+    if [ -z "${PAT_TOKEN:-}" ]; then
+        echo "❌ PAT_TOKEN environment variable is required"
         exit 1
     fi
     
@@ -35,7 +35,7 @@ setup_git_auth() {
     git config --global user.email "github-actions[bot]@users.noreply.github.com"
     
     # Set up authentication for HTTPS
-    git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+    git config --global url."https://x-access-token:${PAT_TOKEN}@github.com/".insteadOf "https://github.com/"
     
     echo "✅ Git authentication configured"
 }
