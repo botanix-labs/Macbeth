@@ -10,7 +10,8 @@ use crate::{
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use client::Empty;
+use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::ChainSpec;
 use reth_data_parser::{DataParser, SerializationType};
@@ -34,12 +35,13 @@ use reth_tasks::TaskExecutor;
 use std::{
     net::SocketAddr,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 use tracing::info;
 
 /// Builder type for configuring the setup
 #[allow(dead_code)]
-pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source> {
+pub struct AuthorityConsensusBuilder<EF, BF, DB, BD, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
     btc_server_factory: Option<GrpcClientFactory>,
@@ -55,6 +57,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source> {
     provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     state_sync: StateSyncArgs,
     block_fee_recipient_address: Option<reth_primitives::Address>,
+    bitcoind_client: BD,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -67,7 +70,8 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<EF, BF, DB, ToFrostMan, Source> AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source>
+impl<EF, BF, DB, BD, ToFrostMan, Source>
+    AuthorityConsensusBuilder<EF, BF, DB, BD, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send + Sync,
     DB: BlockReaderIdExt
@@ -83,6 +87,7 @@ where
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
+    BD: reth_btc_wallet::bitcoind::RpcApiExt + Send + Sync + 'static,
     Source: RandomSource,
 {
     /// Creates a new builder instance to configure all parts.
@@ -109,6 +114,7 @@ where
         state_sync: StateSyncArgs,
         provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         block_fee_recipient_address: Option<reth_primitives::Address>,
+        bitcoind_client: BD,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -193,6 +199,7 @@ where
             provider_factory,
             state_sync,
             block_fee_recipient_address,
+            bitcoind_client,
         })
     }
 
@@ -227,6 +234,7 @@ where
             provider_factory,
             state_sync,
             block_fee_recipient_address,
+            bitcoind_client,
         } = self;
         let is_fed_node = btc_server_factory.is_some();
         let chain_spec = storage.chain_spec.clone();
@@ -320,6 +328,57 @@ where
         } else {
             None
         };
+
+        // run a background health monitoring task for the btc server, comet and bitcoind
+        if is_fed_node {
+            let mut btc_server_client = btc_server_client.clone();
+            let cbft_rpc_provider = cometbft_rpc_factory.build_and_connect().unwrap();
+            let metrics = Arc::clone(&metrics);
+            task_executor.spawn_critical(
+                "healthcheck monitoring task",
+                Box::pin(async move {
+                    loop {
+                        // Health check for btc server
+                        if let Some(btc) = btc_server_client.as_mut() {
+                            match btc.health_check(Empty {}).await {
+                                Ok(_) => {
+                                    info!(target: "reth::authority", "Btc server is healthy");
+                                    metrics.btc_server_connection_status.set(1);
+                                }
+                                Err(e) => {
+                                    tracing::error!(target: "reth::authority", "Btc server is unhealthy: {}", e);
+                                    metrics.btc_server_connection_status.set(0);
+                                }
+                            }
+                        }
+                        // Health check for bitcoind
+                        match bitcoind_client.is_synced().await {
+                            Ok(status) => {
+                                tracing::info!(target: "reth::authority", "Bitcoind server is healthy");
+                                if status { metrics.bitcoind_connection_status.set(1) } else { metrics.bitcoind_connection_status.set(0) };
+                            }
+                            Err(e) => {
+                                tracing::error!(target: "reth::authority", "Bitcoind server is unhealthy: {}", e);
+                                metrics.bitcoind_connection_status.set(0);
+                            }
+                        }
+
+                        // Health check for cbft
+                        match cbft_rpc_provider.health().await {
+                            Ok(_) => {
+                                tracing::info!(target: "reth::authority", "CometBFT server is healthy");
+                                metrics.cometbft_connection_status.set(1);
+                            }
+                            Err(e) => {
+                                tracing::error!(target: "reth::authority", "CometBFT server is unhealthy: {}", e);
+                                metrics.cometbft_connection_status.set(0);
+                            }
+                        }
+                        tokio::time::sleep(Duration::from_secs(60)).await;
+                    }
+                })
+            );
+        }
 
         (frost_task, abci_client_builder, snapshot_manager, wallet_sync)
     }

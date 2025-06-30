@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 pub use bitcoincore_rpc::{
     json::{EstimateMode, EstimateSmartFeeResult, GetBlockHeaderResult},
     jsonrpc, Auth, Client, Error as JsonRPCError, RpcApi,
@@ -84,11 +85,13 @@ pub struct BitcoindClientFactory {
 }
 
 #[allow(async_fn_in_trait)]
+#[async_trait]
 pub trait RpcApiExt: RpcApi + Send + Sync + 'static {
     async fn is_synced(&self) -> Result<bool, BitcoindError>;
     async fn wait_until_synced(&self);
 }
 
+#[async_trait]
 impl RpcApiExt for Client {
     async fn is_synced(&self) -> Result<bool, BitcoindError> {
         #[derive(Deserialize)]
