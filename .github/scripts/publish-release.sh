@@ -209,7 +209,7 @@ update_release_index() {
        --arg channel "$CHANNEL" \
        --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
        --arg prerelease "$prerelease_flag" \
-       '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end | .releases |= sort_by(.date) | reverse' \
+       '(.releases //= []) | .releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end | .releases |= sort_by(.date) | reverse' \
        "$INDEX_FILE" > "$INDEX_FILE.tmp"
     
     mv "$INDEX_FILE.tmp" "$INDEX_FILE"
