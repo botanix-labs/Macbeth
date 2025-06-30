@@ -95,7 +95,7 @@ jobs:
     name: build release binaries
     needs: semantic-release
     #if: needs.semantic-release.outputs.new_release_published == 'true'
-    runs-on: k8-runners
+    runs-on: binary-builer
     permissions:
       contents: read
       id-token: write
@@ -147,13 +147,13 @@ jobs:
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
-      # - name: Install sccache
-      #   uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
-      # - name: Configure sccache
-      #   run: |
-      #     sccache --start-server
-      #     sccache --show-stats
+      - name: Configure sccache
+        run: |
+          sccache --start-server
+          sccache --show-stats
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -411,7 +411,7 @@ jobs:
       - semantic-release
       - build-docker-images
       - build-binaries
-    if: needs.semantic-release.outputs.new_release_published == 'true'
+    #if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -480,7 +480,7 @@ jobs:
     needs:
       - semantic-release
       - finalize-release
-    if: needs.semantic-release.outputs.new_release_published == 'true'
+    #if: needs.semantic-release.outputs.new_release_published == 'true'
 
     steps:
       - name: Checkout Main Repository
