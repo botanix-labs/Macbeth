@@ -439,8 +439,12 @@ jobs:
 
       - name: Update Cargo.toml version
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
-          ./.github/scripts/release.sh update "$VERSION"
+          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.2' }}"
+          if [ -n "$VERSION" ]; then
+            ./.github/scripts/release.sh update "$VERSION"
+          else
+            echo "No semantic release version, skipping Cargo.toml update"
+          fi
 
       - name: Push version update
         run: |
