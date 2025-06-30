@@ -16,25 +16,25 @@ naming conventions, commit messages, and the pull‑request life‑cycle.
   └───────────────────────────┘
 ```
 
-- `hotfix` - The latest stable version. This branch is used to test hotfixes before release. Only critical bug fixes should be merged into this branch.
-- `develop` - Integration branch for a new release. It contains all the new features and bug fixes.
-- `<type>/[scope]/<name>` - A new change branch that should be created and merged back to `hotfix` or `develop`.
+-   `hotfix` - The latest stable version. This branch is used to test hotfixes before release. Only critical bug fixes should be merged into this branch.
+-   `develop` - Integration branch for a new release. It contains all the new features and bug fixes.
+-   `<type>/[scope]/<name>` - A new change branch that should be created and merged back to `hotfix` or `develop`.
 
 All changes to `hotfix` and `develop` branches should be done through pull requests (PRs).
 
 To choose the base branch for your PR, consider the following:
 
-- If you are working on a new feature or bug fix for a future version, create a new branch from `develop`.
-- If you are fixing a bug in the latest stable version, create a new branch from `hotfix`.
+-   If you are working on a new feature or bug fix for a future version, create a new branch from `develop`.
+-   If you are fixing a bug in the latest stable version, create a new branch from `hotfix`.
 
 New branch name must have a format of `<type>/[scope]/<name>` and follow [commit rules](#commits).
 The `name` must be alphanumeric and can contain dashes. It should be descriptive enough to understand the purpose of the branch.
 
 **Examples:**
 
-- `feat/implement-attestation` - Adding a new attestation feature
-- `fix/pegin/handle-transaction-error` - Fixing an error in the pegin transaction handling
-- `docs/update-quickstart` - Updating the quickstart section in the readme
+-   `feat/implement-attestation` - Adding a new attestation feature
+-   `fix/pegin/handle-transaction-error` - Fixing an error in the pegin transaction handling
+-   `docs/update-quickstart` - Updating the quickstart section in the readme
 
 ## Commits
 
@@ -50,25 +50,25 @@ Commit messages must follow [the conventional commits](https://www.conventionalc
 [optional footer(s)]
 ```
 
-- `type` is the type of change:
-    - `feat` - a new business feature
-    - `chore` - a developer feature. For example, updating dependencies, adding logs, etc.
-    - `fix` - a bug fix
-    - `build` - changes that affect the build system or external dependencies
-    - `ci` - changes to our CI configuration files and scripts
-    - `docs` - documentation only changes
-    - `style` - changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
-    - `refactor` - a code refactoring
-    - `perf` - a code change that improves performance
-    - `test` - adding missing tests or correcting existing tests
-    - `revert` - reverting a commit
-- `!` is used to indicate a breaking change:
-    - any user-facing API has incompatible changes
-    - previously created data is no longer valid
-    - any other change that requires users to take action
-- `scope` is the area of the codebase affected. Must be a crate name where changes are located.
-  Skip if changes affect multiple crates or changes are done outside of crates.
-- `description` is a short summary of the change
+-   `type` is the type of change:
+    -   `feat` - a new business feature
+    -   `chore` - a developer feature. For example, updating dependencies, adding logs, etc.
+    -   `fix` - a bug fix
+    -   `build` - changes that affect the build system or external dependencies
+    -   `ci` - changes to our CI configuration files and scripts
+    -   `docs` - documentation only changes
+    -   `style` - changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
+    -   `refactor` - a code refactoring
+    -   `perf` - a code change that improves performance
+    -   `test` - adding missing tests or correcting existing tests
+    -   `revert` - reverting a commit
+-   `!` is used to indicate a breaking change:
+    -   any user-facing API has incompatible changes
+    -   previously created data is no longer valid
+    -   any other change that requires users to take action
+-   `scope` is the area of the codebase affected. Must be a crate name where changes are located.
+    Skip if changes affect multiple crates or changes are done outside of crates.
+-   `description` is a short summary of the change
 
 Commit message title should not be longer than 50 characters.
 
@@ -83,9 +83,9 @@ refactor!(api): change response format for transaction endpoints
 
 Changes in a commit must be atomic and focused:
 
-- Each commit should contain a single logical change
-- Do not mix different types of changes (e.g., refactoring and new features) in the same commit
-- Do not include multiple features in a single commit
+-   Each commit should contain a single logical change
+-   Do not mix different types of changes (e.g., refactoring and new features) in the same commit
+-   Do not include multiple features in a single commit
 
 Commits must be signed with a PGP key. See [GitHub's documentation on signing commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits) for more information.
 
@@ -116,28 +116,33 @@ Frequently commit and push your changes to ensure your work is backed up and vis
 
 ```markdown
 ## Issue being fixed or feature implemented
+
 Users cannot pegin amounts less than 0.001 BTC due to a validation error in the transaction handling.
 
 ## What was done?
-- Fixed the validation logic in the pegin module
-- Added proper error handling for small amounts
-- Updated the user-facing error message
+
+-   Fixed the validation logic in the pegin module
+-   Added proper error handling for small amounts
+-   Updated the user-facing error message
 
 ## How Has This Been Tested?
-- Added unit tests for various pegin amounts
-- Manually tested with 0.0005 BTC pegin transactions
-- Verified error messages are clear and helpful
+
+-   Added unit tests for various pegin amounts
+-   Manually tested with 0.0005 BTC pegin transactions
+-   Verified error messages are clear and helpful
 
 ## Breaking Changes
+
 None
 
 ## Checklist:
-- [x] I have added or updated relevant unit/integration/functional/e2e tests
-- [x] I have tested my changes running a local network, and they work as expected
-- [x] I have performed a self-review
-- [x] I have commented my code, particularly in hard-to-understand areas
-- [x] I have added "!" to the title and described breaking changes in the corresponding section if my code contains any
-- [x] I have made corresponding changes to the documentation if needed
+
+-   [x] I have added or updated relevant unit/integration/functional/e2e tests
+-   [x] I have tested my changes running a local network, and they work as expected
+-   [x] I have performed a self-review
+-   [x] I have commented my code, particularly in hard-to-understand areas
+-   [x] I have added "!" to the title and described breaking changes in the corresponding section if my code contains any
+-   [x] I have made corresponding changes to the documentation if needed
 ```
 
 ### Checks
@@ -149,17 +154,17 @@ None
 5. Self-review has been completed
 6. The change is tested on a local network and works as expected
 7. All tests are passing
-   - Rust unit tests
-   - Rust integration tests
-   - Minting contract tests
+    - Rust unit tests
+    - Rust integration tests
+    - Minting contract tests
 8. Code is formatted
 9. Code is linted
-   - Cargo check
-   - Grafana a dashboard JSON structure
-   - Cargo lock file
-   - GitHub actions
-   - Misspellings
-   - Clippy warnings
+    - Cargo check
+    - Grafana a dashboard JSON structure
+    - Cargo lock file
+    - GitHub actions
+    - Misspellings
+    - Clippy warnings
 10. Pre-review with AI is done
 11. At least two code owners (team member(s) responsible for codebase) have approved the PR
 12. The PR has not been rejected by any reviewer
