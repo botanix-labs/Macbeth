@@ -497,7 +497,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: botanix-labs/botanix-releases  # Replace with your public repo
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
           path: botanix
           fetch-depth: 0
 
