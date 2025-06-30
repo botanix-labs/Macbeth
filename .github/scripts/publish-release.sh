@@ -12,20 +12,61 @@ GIT_TAG="${5:-}"
 GIT_SHA="${6:-}"
 PREV_VERSION="${7:-}"
 
+# Repository configuration
+RELEASE_REPO="botanix-labs/botanix-releases"
+RELEASE_REPO_URL="https://github.com/${RELEASE_REPO}.git"
+
 # Map channel names
 case "$CHANNEL" in
     "latest") CHANNEL="stable" ;;
 esac
 
+setup_git_auth() {
+    echo "Setting up Git authentication..."
+    
+    # Check if GITHUB_TOKEN is available
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        echo "❌ GITHUB_TOKEN environment variable is required"
+        exit 1
+    fi
+    
+    # Configure git
+    git config --global user.name "github-actions[bot]"
+    git config --global user.email "github-actions[bot]@users.noreply.github.com"
+    
+    # Set up authentication for HTTPS
+    git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+    
+    echo "✅ Git authentication configured"
+}
+
+setup_release_repo() {
+    echo "Setting up release repository..."
+    
+    # Remove existing directory if it exists
+    if [ -d "botanix" ]; then
+        rm -rf botanix
+    fi
+    
+    # Clone the release repository
+    git clone "${RELEASE_REPO_URL}" botanix
+    cd botanix
+    
+    # Ensure we're on the main branch
+    git checkout main || git checkout -b main
+    
+    echo "✅ Release repository set up"
+}
+
 generate_release_manifest() {
     echo "Generating release manifest for v$VERSION ($CHANNEL)..."
     
-    mkdir -p "botanix/releases/$VERSION"
-    mkdir -p "botanix/releases/$VERSION/binaries"
-    mkdir -p "botanix/releases/$VERSION/docker"
-    mkdir -p "botanix/changelog/$CHANNEL"
+    mkdir -p "releases/$VERSION"
+    mkdir -p "releases/$VERSION/binaries"
+    mkdir -p "releases/$VERSION/docker"
+    mkdir -p "changelog/$CHANNEL"
     
-    cat > "botanix/releases/$VERSION/release.json" << EOF
+    cat > "releases/$VERSION/release.json" << EOF
 {
   "version": "$VERSION",
   "channel": "$CHANNEL", 
@@ -76,7 +117,7 @@ EOF
 generate_release_readme() {
     echo "Generating release README for v$VERSION..."
     
-    cat > "botanix/releases/$VERSION/README.md" << EOF
+    cat > "releases/$VERSION/README.md" << EOF
 # Botanix Release v$VERSION
 
 **Release Channel:** \`$CHANNEL\`  
@@ -164,9 +205,10 @@ EOF
 update_changelog() {
     echo "Updating changelog for $CHANNEL channel..."
     
-    local CHANGELOG_FILE="botanix/changelog/$CHANNEL/CHANGELOG.md"
+    local CHANGELOG_FILE="changelog/$CHANNEL/CHANGELOG.md"
     
     if [ ! -f "$CHANGELOG_FILE" ]; then
+        mkdir -p "changelog/$CHANNEL"
         cat > "$CHANGELOG_FILE" << EOF
 # Botanix $CHANNEL Channel Changelog
 
@@ -197,28 +239,56 @@ EOF
 update_release_index() {
     echo "Updating release index..."
     
-    local INDEX_FILE="botanix/releases/index.json"
+    local INDEX_FILE="releases/index.json"
+    
+    # Create directory if it doesn't exist
+    mkdir -p "releases"
     
     # Always recreate the index file to ensure correct structure
     echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
     
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
     
-    jq --arg version "$VERSION" \
-       --arg channel "$CHANNEL" \
-       --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-       --arg prerelease "$prerelease_flag" \
-       '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
-       "$INDEX_FILE" > "$INDEX_FILE.tmp"
+    # Use jq if available, otherwise create manually
+    if command -v jq >/dev/null 2>&1; then
+        jq --arg version "$VERSION" \
+           --arg channel "$CHANNEL" \
+           --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+           --arg prerelease "$prerelease_flag" \
+           '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
+           "$INDEX_FILE" > "$INDEX_FILE.tmp"
+        
+        mv "$INDEX_FILE.tmp" "$INDEX_FILE"
+    else
+        # Fallback without jq
+        cat > "$INDEX_FILE" << EOF
+{
+  "releases": [
+    {
+      "version": "$VERSION",
+      "channel": "$CHANNEL",
+      "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+      "prerelease": $prerelease_flag,
+      "path": "releases/$VERSION"
+    }
+  ],
+  "channels": {
+    "$CHANNEL": "$VERSION"
+  },
+  "latest": {
+    "$CHANNEL": "$VERSION"
+  }
+}
+EOF
+    fi
     
-    mv "$INDEX_FILE.tmp" "$INDEX_FILE"
     echo "✅ Updated release index"
 }
 
 update_public_readme() {
     echo "Updating public repository README..."
     
-    cat > "botanix/README.md" << 'EOF'
+    cat > "README.md" << 'EOF'
 # Botanix Public Releases
 
 This repository contains public release artifacts, documentation, and changelogs for Botanix.
@@ -230,11 +300,13 @@ This repository contains public release artifacts, documentation, and changelogs
 EOF
     
     # Add release information from index
-    if [[ -f "botanix/releases/index.json" ]]; then
-        jq -r '.channels | to_entries[] | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' botanix/releases/index.json >> botanix/README.md
+    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+        jq -r '.channels | to_entries[] | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
+    else
+        echo "| $CHANNEL | $VERSION | $(date -u +%Y-%m-%d) | [Download](releases/$VERSION) |" >> README.md
     fi
     
-    cat >> "botanix/README.md" << 'EOF'
+    cat >> "README.md" << 'EOF'
 
 ## Quick Start
 
@@ -284,7 +356,12 @@ EOF
 commit_and_push_changes() {
     echo "Committing and pushing changes to public repository..."
     
-    cd botanix
+    # Ensure we're in the botanix directory
+    if [ ! -d ".git" ]; then
+        echo "❌ Not in a git repository"
+        exit 1
+    fi
+    
     git add .
     
     if git diff --staged --quiet; then
@@ -298,37 +375,83 @@ commit_and_push_changes() {
 - Generated from botanix-labs/macbeth@$GIT_SHA
 
 🤖 Automated release by GitHub Actions"
-        git push origin main
-        echo "✅ Successfully published release v$VERSION to public repository"
+        
+        # Push with retry logic
+        local max_retries=3
+        local retry_count=0
+        
+        while [ $retry_count -lt $max_retries ]; do
+            if git push origin main; then
+                echo "✅ Successfully published release v$VERSION to public repository"
+                return 0
+            else
+                retry_count=$((retry_count + 1))
+                echo "⚠️  Push failed, retrying ($retry_count/$max_retries)..."
+                sleep 2
+            fi
+        done
+        
+        echo "❌ Failed to push after $max_retries attempts"
+        exit 1
     fi
 }
 
+cleanup() {
+    echo "Cleaning up..."
+    cd ..
+    if [ -d "botanix" ]; then
+        rm -rf botanix
+    fi
+}
+
+# Main execution
 case "$COMMAND" in
     "manifest")
+        setup_git_auth
+        setup_release_repo
         generate_release_manifest
+        cleanup
         ;;
     "readme")
+        setup_git_auth
+        setup_release_repo
         generate_release_readme
+        cleanup
         ;;
     "changelog")
+        setup_git_auth
+        setup_release_repo
         update_changelog
+        cleanup
         ;;
     "index")
+        setup_git_auth
+        setup_release_repo
         update_release_index
+        cleanup
         ;;
     "public-readme")
+        setup_git_auth
+        setup_release_repo
         update_public_readme
+        cleanup
         ;;
     "commit")
+        setup_git_auth
+        setup_release_repo
         commit_and_push_changes
+        cleanup
         ;;
     "full-publish")
+        setup_git_auth
+        setup_release_repo
         generate_release_manifest
         generate_release_readme
         update_changelog
         update_release_index
         update_public_readme
         commit_and_push_changes
+        cleanup
         ;;
     *)
         echo "Usage: $0 <manifest|readme|changelog|index|public-readme|commit|full-publish> <version> <channel> <release_notes> [git_tag] [git_sha] [prev_version]"
