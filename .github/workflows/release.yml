@@ -372,22 +372,34 @@ jobs:
       - name: Tag Docker Image
         if: matrix.configs.bin == 'btc-server'
         run: |
-          docker tag botanix_btc_server:latest ${{ steps.generate-tags.outputs.btc-server-tags }}
+          IFS=',' read -ra TAGS <<< "${{ steps.generate-tags.outputs.btc-server-tags }}"
+          for tag in "${TAGS[@]}"; do
+            docker tag botanix_btc_server:latest "$tag"
+          done
 
       - name: Tag Docker Image
         if: matrix.configs.bin == 'reth'
         run: |
-          docker tag botanix_reth_node:latest ${{ steps.generate-tags.outputs.reth-node-tags }}
+          IFS=',' read -ra TAGS <<< "${{ steps.generate-tags.outputs.reth-node-tags }}"
+          for tag in "${TAGS[@]}"; do
+            docker tag botanix_reth_node:latest "$tag"
+          done
 
       - name: Push Docker Image
         if: matrix.configs.bin == 'btc-server'
         run: |
-          docker push ${{ steps.generate-tags.outputs.btc-server-tags }}
+          IFS=',' read -ra TAGS <<< "${{ steps.generate-tags.outputs.btc-server-tags }}"
+          for tag in "${TAGS[@]}"; do
+            docker push "$tag"
+          done
 
       - name: Push Docker Image
         if: matrix.configs.bin == 'reth'
         run: |
-          docker push ${{ steps.generate-tags.outputs.reth-node-tags }}
+          IFS=',' read -ra TAGS <<< "${{ steps.generate-tags.outputs.reth-node-tags }}"
+          for tag in "${TAGS[@]}"; do
+            docker push "$tag"
+          done
 
       
   # This job waits for the binary release workflow to complete before finalizing the release
