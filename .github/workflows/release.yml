@@ -518,7 +518,7 @@ jobs:
           if [ -n "$VERSION" ]; then
             chmod +x .github/scripts/publish-release.sh
             ./.github/scripts/publish-release.sh full-publish \
-              "${{ needs.semantic-release.outputs.new_release_version }}" \
+              "$VERSION" \
               "${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}" \
               "${{ needs.semantic-release.outputs.new_release_notes }}" \
               "${{ needs.semantic-release.outputs.new_release_git_tag }}" \
