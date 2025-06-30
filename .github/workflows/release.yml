@@ -95,7 +95,7 @@ jobs:
     name: build release binaries
     needs: semantic-release
     #if: needs.semantic-release.outputs.new_release_published == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
     permissions:
       contents: read
       id-token: write
@@ -183,7 +183,9 @@ jobs:
 
       - name: Build Reth Binary
         if: matrix.build.binary == 'reth'
-        run: make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
+        run: |
+          export CARGO_BUILD_JOBS=2
+          make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
 
       - name: Build Bitcoin Server Binary
         if: matrix.build.binary == 'btc-server'
