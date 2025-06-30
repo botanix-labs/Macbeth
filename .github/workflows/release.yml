@@ -240,7 +240,7 @@ jobs:
       # TODO: Use semantic-release outputs
       - name: Upload Binary to GCP Artifact Storage
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
+          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.2-hotfix' }}"
           CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'stable' }}"
           
           # Use git SHA if no semantic version
@@ -309,7 +309,7 @@ jobs:
       - name: Generate Docker tags
         id: generate-tags
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
+          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.2-hotfix' }}"
           MAJOR="${{ needs.semantic-release.outputs.new_release_major_version }}"
           MINOR="${{ needs.semantic-release.outputs.new_release_minor_version }}"
           CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'latest' }}"
@@ -389,20 +389,7 @@ jobs:
         run: |
           docker push ${{ steps.generate-tags.outputs.reth-node-tags }}
 
-      # - name: Build and push
-      #   uses: docker/bake-action@v6
-      #   with:
-      #     source: .
-      #     push: true
-      #     set: |
-      #       btc-server.tags=${{ steps.generate-tags.outputs.btc-server-tags }}
-      #       reth-node.tags=${{ steps.generate-tags.outputs.reth-node-tags }}
-      #       *.labels.org.opencontainers.image.version=${{ needs.semantic-release.outputs.new_release_version }}
-      #       *.labels.org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
-      #       *.labels.org.opencontainers.image.revision=${{ github.sha }}
-      #       *.labels.org.opencontainers.image.source=https://github.com/${{ github.repository }}
-      #       *.labels.org.opencontainers.image.channel=${{ needs.semantic-release.outputs.new_release_channel }}
-
+      
   # This job waits for the binary release workflow to complete before finalizing the release
   finalize-release:
     name: Finalize Release
@@ -430,7 +417,7 @@ jobs:
       - name: Prepare Artifacts for GitHub Release
         run: |
           mkdir -p ./release-assets
-          version=${{ needs.semantic-release.outputs.new_release_version }}
+          version=${{ needs.semantic-release.outputs.new_release_version || '1.1.2-hotfix' }}
 
           # Copy artifacts to the release-assets directory with proper naming
           find ./binaries -type f \( -name "*.tar.gz" -o -name "*.sha256sum" \) | while read file; do
@@ -439,7 +426,7 @@ jobs:
 
       - name: Update Cargo.toml version
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.2' }}"
+          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.2-hotfix' }}"
           if [ -n "$VERSION" ]; then
             ./.github/scripts/release.sh update "$VERSION"
           else
@@ -469,8 +456,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./release-assets/*
-          tag_name: v${{ needs.semantic-release.outputs.new_release_version }}
-          name: Botanix Release v${{ needs.semantic-release.outputs.new_release_version }}
+          tag_name: v${{ needs.semantic-release.outputs.new_release_version || '1.1.2-hotfix' }}
+          name: Botanix Release v${{ needs.semantic-release.outputs.new_release_version || '1.1.2-hotfix' }}
           body: ${{ needs.semantic-release.outputs.new_release_notes }}
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
@@ -516,7 +503,7 @@ jobs:
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.2' }}"
+          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.2-hotfix' }}"
           if [ -n "$VERSION" ]; then
             chmod +x .github/scripts/publish-release.sh
             ./.github/scripts/publish-release.sh full-publish \

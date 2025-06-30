@@ -6,7 +6,7 @@ FROM rust:1.85 AS base
 ARG TARGETARCH
 
 # Download and install cargo-binstall
-ENV BINSTALL_VERSION=1.8.0
+ENV BINSTALL_VERSION=1.12.6
 RUN set -ex; \
     if [ "$TARGETARCH" = "amd64" ]; then \
         CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
@@ -76,7 +76,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --features "$FEATURES" \
     --recipe-path recipe.json \
     --package "$PACKAGE" \
-    --bin "$BIN"
+    --bin "$BIN" \
+    --locked
 
 COPY --parents .cargo bin crates testing Cargo.toml Cargo.lock  ./
 
