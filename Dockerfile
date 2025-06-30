@@ -76,8 +76,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --features "$FEATURES" \
     --recipe-path recipe.json \
     --package "$PACKAGE" \
-    --bin "$BIN" \
-    --locked
+    --bin "$BIN"
 
 COPY --parents .cargo bin crates testing Cargo.toml Cargo.lock  ./
 
@@ -94,8 +93,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --profile $PROFILE \
     --features "$FEATURES" \
     --package "$PACKAGE" \
-    --bin "$BIN" \
-    --locked && \
+    --bin "$BIN" && \
     cp target/$OUT_DIRECTORY/$BIN /usr/local/bin/app
 
 # Use Ubuntu as the release image
