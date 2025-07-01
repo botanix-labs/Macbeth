@@ -244,8 +244,10 @@ update_release_index() {
     # Create directory if it doesn't exist
     mkdir -p "releases"
     
-    # Always recreate the index file to ensure correct structure
-    echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
+    # Create index file if it doesn't exist, otherwise keep existing
+    if [ ! -f "$INDEX_FILE" ]; then
+        echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
+    fi
     
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
     
@@ -255,7 +257,17 @@ update_release_index() {
            --arg channel "$CHANNEL" \
            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
            --arg prerelease "$prerelease_flag" \
-           '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
+           '
+           # Remove existing release with same version if it exists
+           .releases = (.releases | map(select(.version != $version))) |
+           # Add new release
+           .releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] |
+           # Update channels and latest
+           .channels[$channel] = $version |
+           if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end |
+           # Sort releases by date (newest first)
+           .releases |= sort_by(.date) | reverse
+           ' \
            "$INDEX_FILE" > "$INDEX_FILE.tmp"
         
         mv "$INDEX_FILE.tmp" "$INDEX_FILE"
@@ -299,9 +311,10 @@ This repository contains public release artifacts, documentation, and changelogs
 |---------|---------|--------------|-----------|
 EOF
     
-    # Add release information from index
+    # Add release information from index - show all releases
     if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
-        jq -r '.channels | to_entries[] | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
+        # Add all releases sorted by date (newest first)
+        jq -r '.releases[] | "| " + .channel + " | " + .version + " | " + (.date | split("T")[0]) + " | [Download](releases/" + .version + ") |"' releases/index.json >> README.md
     else
         echo "| $CHANNEL | $VERSION | $(date -u +%Y-%m-%d) | [Download](releases/$VERSION) |" >> README.md
     fi
