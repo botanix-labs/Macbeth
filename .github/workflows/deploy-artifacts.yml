@@ -42,8 +42,6 @@ jobs:
 
       - name: Tag Docker images for testnet and mainnet
         run: |
-          cat /etc/gcp/sa_credentials.json | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
-          
           # Tag for testnet registry
           docker tag botanix_btc_server:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:${{ steps.sha.outputs.short_sha }}
           docker tag botanix_btc_server:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:${{ steps.tag.outputs.tag }}
@@ -102,8 +100,6 @@ jobs:
 
       - name: Tag Docker images for testnet and mainnet
         run: |
-          cat /etc/gcp/sa_credentials.json | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
-          
           # Tag for testnet registry
           docker tag botanix_reth:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:${{ steps.sha.outputs.short_sha }}
           docker tag botanix_reth:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:${{ steps.tag.outputs.tag }}
