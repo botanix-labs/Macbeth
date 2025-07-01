@@ -244,10 +244,8 @@ update_release_index() {
     # Create directory if it doesn't exist
     mkdir -p "releases"
     
-    # Create index file if it doesn't exist, otherwise keep existing
-    if [ ! -f "$INDEX_FILE" ]; then
-        echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
-    fi
+    # Always recreate the index file to ensure correct structure
+    echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
     
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
     
@@ -257,21 +255,7 @@ update_release_index() {
            --arg channel "$CHANNEL" \
            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
            --arg prerelease "$prerelease_flag" \
-           '
-           # Ensure releases is an array, channels and latest are objects
-           if (.releases | type) != "array" then .releases = [] else . end |
-           if (.channels | type) != "object" then .channels = {} else . end |
-           if (.latest | type) != "object" then .latest = {} else . end |
-           # Remove existing release with same version if it exists
-           .releases = (.releases | map(select(.version != $version))) |
-           # Add new release
-           .releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] |
-           # Update channels and latest
-           .channels[$channel] = $version |
-           if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end |
-           # Sort releases by date (newest first)
-           .releases |= sort_by(.date) | reverse
-           ' \
+           '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
            "$INDEX_FILE" > "$INDEX_FILE.tmp"
         
         mv "$INDEX_FILE.tmp" "$INDEX_FILE"
@@ -315,10 +299,9 @@ This repository contains public release artifacts, documentation, and changelogs
 |---------|---------|--------------|-----------|
 EOF
     
-    # Add release information from index - show all releases
+    # Add release information from index
     if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
-        # Add all releases sorted by date (newest first)
-        jq -r '.releases[] | "| " + .channel + " | " + .version + " | " + (.date | split("T")[0]) + " | [Download](releases/" + .version + ") |"' releases/index.json >> README.md
+        jq -r '.channels | to_entries[] | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
     else
         echo "| $CHANNEL | $VERSION | $(date -u +%Y-%m-%d) | [Download](releases/$VERSION) |" >> README.md
     fi
