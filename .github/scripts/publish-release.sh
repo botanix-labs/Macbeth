@@ -244,8 +244,10 @@ update_release_index() {
     # Create directory if it doesn't exist
     mkdir -p "releases"
     
-    # Temporarily force recreation to fix malformed remote file
-    echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
+    # Create index file if it doesn't exist, otherwise keep existing
+    if [ ! -f "$INDEX_FILE" ]; then
+        echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
+    fi
     
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
     
