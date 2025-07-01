@@ -258,6 +258,10 @@ update_release_index() {
            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
            --arg prerelease "$prerelease_flag" \
            '
+           # Ensure releases is an array, channels and latest are objects
+           if (.releases | type) != "array" then .releases = [] else . end |
+           if (.channels | type) != "object" then .channels = {} else . end |
+           if (.latest | type) != "object" then .latest = {} else . end |
            # Remove existing release with same version if it exists
            .releases = (.releases | map(select(.version != $version))) |
            # Add new release
