@@ -9,60 +9,71 @@ It requires the highest level of security and stability.
 
 - Permission-based network (only approved operators can run nodes)
 - Future roadmap includes transition to a permissionless model
-- Infrastructure: 16 federation nodes and 16 RPC nodes
+- Infrastructure: 16 federation nodes and 2 RPC nodes. One of them is run by Botanix team. Bridge and sidecar services.
+- Pegouts consensus threshold: 12 of 16 federation nodes
+- Comet BFT consensus threshold: 11 of 16 federation nodes
 
 ### Testnet
 
-Testnet serves as a testing environment for release candidates that closely mirrors mainnet functionality.
+Testnet serves as a testing environment that closely mirrors mainnet functionality.
 Business partners, developers, and community members use it to test applications and integrations before deploying to mainnet.
+Botanix teams use testnet to test release candidates and hotfixes before deploying to mainnet.
 
 - Considered a production-grade network requiring stability and high availability
 - Will support 3rd party testnet nodes in the future
-- Infrastructure: 15 federation nodes and 15 RPC nodes
+- Infrastructure: 3 federation nodes and 2 RPC nodes. Bridge and sidecar services.
+- Pegouts consensus threshold: 3 of 3 federation nodes
+- Comet BFT consensus threshold: 3 of 3 federation nodes 
+
+**Testnet infrastructure doesn't mirror mainnet's setup, which may lead to differences in behavior and hight risk of overseeing issues that could occur on mainnet**
 
 ### Devnet
 
 Development networks (devnets) provide environments for early testing, experimentation, and integration work.
-These are internal networks that engineering teams can configure according to their specific testing requirements.
+These are internal networks that engineering teams can sping up and configure according to their specific testing requirements.
+Currently, we have one static devnet dedicated to alpha testing. In the future, when we see demand to test two long-running features in parallel, we'll allow developers to create their own devnets.
 
 - Early feature testing and internal integration
 - Temporary environments that can be created, reset, reconfigured, or destroyed as needed
 - Support for experimental features that aren't ready for testnet
-
+- Infrastructure: 6 federation nodes and 1 RPC node. Bridge and sidecar services.
+- Pegouts consensus threshold: 4 of 6 federation nodes
+- Comet BFT consensus threshold: 4 of 6 federation nodes
 
 ## Deployment Strategies
 
+
 ```
-┌─────────────┐        ┌─────────────┐        ┌─────────────┐
-│             │        │             │        │             │
-│    DevNet   │        │   TestNet   │        │   MainNet   │
-│             │        │             │        │             │
-└─────────────┘        └─────────────┘        └─────────────┘
-       ▲                      ▲                      ▲
-       │                      │                      │
-┌─────────────┐        ┌─────────────┐        ┌─────────────┐
-│             │        │             │        │             │
-│ Alpha       │        │  Release    │        │  Stable     │
-│ Pre-Release ├───────►│  Candidate  ├───────►│  Release    │
-│             │        │             │        │             │
-└─────────────┘        └─────────────┘        └─────────────┘
-                              ▲                      ▲
-                              │                      │
-                       ┌─────────────┐               │
-                       │             │               │
-                       │    Hotfix   │───────────────┘
-                       │             │
-                       └─────────────┘
+┌─────────────┐                   ┌─────────────┐        ┌─────────────┐
+│             │                   │             │        │             │
+│    DevNet   │                   │   TestNet   │        │   MainNet   │
+│             │                   │             │        │             │
+└─────────────┘                   └─────────────┘        └─────────────┘
+       ▲                              ▲  ▲  ▲                   ▲
+       │                      ┌───────┘  |  └──────────────┐    │
+       │                      │          |                 |    │
+┌─────────────┐        ┌─────────────┐                   ┌─────────────┐
+│             │        │             │   |               │             │
+│ Alpha       │        │  Release    │   |               │  Stable     │
+│ Pre-Release ├───────►│  Candidate  ├──────────────────►│  Release    │
+│             │        │             │   |               │             │
+└─────────────┘        └─────────────┘   |               └─────────────┘
+                                         |                      ▲
+                                         │                      │
+                                  ┌─────────────┐               │
+                                  │             │               │
+                                  │    Hotfix    │───────────────┘
+                                  │             │
+                                  └─────────────┘
 ```
 
 ### Alpha Pre-release Deployments
 
 Alpha pre-releases are deployed to a dedicated alpha devnet for initial testing, following our established release schedule and testing strategy.
 
-- Minimum infrastructure: 5 federation nodes and 1 RPC node
-- Must include bridge and sidecar services
-- Environment should support easy network reset and reconfiguration
 - Intended for internal testing before broader release
+- We expect such releases to be unstable and may contain breaking changes so we should be ready to reset the devnet data if needed
+- Testing and release acceptance criteria are defined in the [release-testing](./release-testing.md)
 
 ### Release Candidate Deployments
 
@@ -70,16 +81,19 @@ Release candidates (RCs) are deployed to the testnet environment for final verif
 
 - Should maintain testnet stability and functionality
 - Requires robust contingency plans for quick recovery in case of issues
-- Undergoes comprehensive testing with existing applications and services
 - Serves as the final quality gate before mainnet deployment
+- Testing and release acceptance criteria are defined in the [release-testing](./release-testing.md)
 
 ### Hotfix Release Deployments
 
 Hotfix releases address critical issues and may be deployed to either testnet or devnet depending on:
 - The severity of the issue
-- The potential impact on testnet stability
 - The urgency of the fix
-- Testing requirements before mainnet deployment
+
+- Should maintain testnet stability and functionality
+- Requires robust contingency plans for quick recovery in case of issues
+- Serves as the final quality gate before mainnet deployment
+- Testing and release acceptance criteria are defined in the [release-testing](./release-testing.md)
 
 ### Stable Release Deployments
 
@@ -88,6 +102,7 @@ Stable releases represent thoroughly tested software ready for production use on
 - Deployment follows careful coordination with the community and partners
 - Includes comprehensive release notes and migration instructions if applicable
 - Follows a scheduled rollout plan with monitoring for any issues
+- Testing and release acceptance criteria are defined in the [release-testing](./release-testing.md)
 
 ### Other Pre-release Deployments
 
