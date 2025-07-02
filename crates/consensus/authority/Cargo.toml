@@ -11,9 +11,12 @@ description = "A PoA consensus engine"
 
 [dependencies]
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
+arc-swap = "1.7.1"
+async-trait = { workspace = true }
 
 ## Bitcoin
 bitcoin = { workspace = true }
+bitcoincore-zmq = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 
 bytes = "1.6.0"
@@ -23,6 +26,8 @@ client = { path = "../../../bin/btc-server/client" }
 comet-bft-rpc = { workspace = true }
 displaydoc = "0.2"
 
+ethabi = "18.0.0"
+
 # frost
 frost-secp256k1-tr = { workspace = true }
 futures = { workspace = true }
@@ -30,8 +35,12 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 
 hex = "0.4.3"
+
 metrics = { workspace = true }
 metrics-util = { workspace = true }
+
+# lazy
+once_cell = { workspace = true }
 prost = "0.13.3"
 reth-basic-payload-builder = { workspace = true }
 
@@ -92,7 +101,7 @@ tracing = { workspace = true }
 uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
-ethabi = "18.0.0"
+mockall = { workspace = true }
 rand = "0.8.5"
 reth-cli-runner = { workspace = true }
 reth-db-common = { workspace = true }

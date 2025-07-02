@@ -19,7 +19,9 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error
             .local_context
             .btc_processes
             .as_ref()
-            .and_then(|process| process.iter().nth(instance as usize).map(|val| val.port))
+            .and_then(|process| {
+                process.iter().nth(instance as usize).map(|val| val.btc_server_port)
+            })
             .ok_or_else(|| Error::InvalidBtcServerPort)?;
         let c = client::BtcServerClient::connect(format!("http://localhost:{}", port))
             .await

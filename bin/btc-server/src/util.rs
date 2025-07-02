@@ -1,7 +1,11 @@
-use crate::wallet::{
-    address::generate_taproot_change_scriptpubkey,
-    psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
-    util::VerifyingKeyExt,
+use crate::{
+    database::{self, Db, Utxo},
+    pegout_id::PegoutId,
+    wallet::{
+        address::generate_taproot_change_scriptpubkey,
+        psbt::{PsbtExt, PsbtInputExt, PsbtOutputExt},
+        util::VerifyingKeyExt,
+    },
 };
 use bitcoin::{
     consensus::encode as btcencode,
@@ -11,23 +15,12 @@ use bitcoin::{
 };
 use frost_secp256k1_tr as frost;
 use futures_util::Future;
-use lazy_static::lazy_static;
 use log::{error, info};
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
 };
-
-use crate::{
-    database::{self, Db, Utxo},
-    pegout_id::PegoutId,
-};
 use thiserror::Error;
-
-lazy_static! {
-    static ref MAX_FEERATE: bitcoin::FeeRate =
-        bitcoin::FeeRate::from_sat_per_vb(300).expect("valid feerate");
-}
 
 // Psbt validation flags
 pub(crate) const NO_FLAGS: u8 = 0u8;
@@ -333,7 +326,7 @@ pub fn validate_psbt(
     }
 
     // Check if we have enough round 2 partial sigs
-    // TODO is this necessary? Will signing fail?
+    // TODO: Is this check necessary?
     let sigs = psbt.inputs.iter().map(|i| i.all_partial_signatures()).collect::<Vec<_>>();
     if flags & ROUND2 == ROUND2 {
         // if any of the maps have min signers we should fail
@@ -344,7 +337,9 @@ pub fn validate_psbt(
         }
     }
 
-    // validate partial sigs in round 2
+    // Validate partial sigs in round 2
+    // The ROUND2_TRANSITION flag is currently not being used.
+    // TODO: Is this check necessary?
     if flags & ROUND2_TRANSITION == ROUND2_TRANSITION {
         if sigs.len() != psbt.inputs.len() {
             return Err(ValidatePSBTError::InvalidNumberOfPartialSignatures);
@@ -400,7 +395,7 @@ pub fn validate_psbt(
     Ok(())
 }
 
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error)]
 pub enum ValidateOutputsError {
     #[error("missing key package {0}")]
     DbError(#[from] database::Error),
@@ -412,6 +407,10 @@ pub enum ValidateOutputsError {
     MissingPsbtPegout(PegoutId),
     #[error("found already finalized psbt pegouts in db {0:?}")]
     AlreadyFinalizedPegouts(Vec<PegoutId>),
+    #[error("pegout id tx hash not found {0:?}")]
+    PegoutIdTxHashNotFound(Vec<PegoutId>),
+    #[error("pegout id not found in block {0:?}")]
+    PegoutIdNotFoundInBlock(Vec<PegoutId>),
     #[error("expecting only one change output")]
     ExpectingOnlyOneChangeOutput,
     #[error("invalid change output")]
@@ -420,6 +419,8 @@ pub enum ValidateOutputsError {
     ExtractTxError(#[from] ExtractTxError),
     #[error("duplicate outputs")]
     DuplicateOutputs,
+    #[error("pegout id is too old {0:?}")]
+    PegoutIdTooOld(Vec<PegoutId>),
     #[error("PSBT outputs length ({0}) does not match unsigned_tx.output length ({1})")]
     OutputCountMismatch(usize, usize),
 }
@@ -435,11 +436,14 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     if psbt.outputs.len() != psbt.unsigned_tx.output.len() {
         error!(
             target: "btc_server::util::validate_outputs",
-            "psbt.outputs length ({}) does not match psbt.unsigned_tx.output length ({})", 
-            psbt.outputs.len(), 
+            "psbt.outputs length ({}) does not match psbt.unsigned_tx.output length ({})",
+            psbt.outputs.len(),
             psbt.unsigned_tx.output.len()
         );
-        return Err(ValidateOutputsError::OutputCountMismatch(psbt.outputs.len(), psbt.unsigned_tx.output.len()));
+        return Err(ValidateOutputsError::OutputCountMismatch(
+            psbt.outputs.len(),
+            psbt.unsigned_tx.output.len(),
+        ));
     }
 
     // check aggregated public key exists
@@ -467,10 +471,19 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     }
 
     // check outputs are not in finalized pegouts list
-    let finalized_pegouts_id =
-        db.get_finalized_pegout_ids()?.into_iter().map(|id| id.id).collect::<Vec<_>>();
+    let finalized_pegouts_ids = db
+        .get_finalized_pegout_ids()?
+        .into_iter()
+        .map(|id| (id.id, id.timestamp))
+        .collect::<Vec<_>>();
+
     for id in &psbt_pegout_ids {
-        if finalized_pegouts_id.contains(id) {
+        let finalized_pegouts_id = finalized_pegouts_ids
+            .iter()
+            .find(|(finalized_pegouts_id, _)| finalized_pegouts_id == id)
+            .cloned();
+
+        if finalized_pegouts_id.is_some() {
             return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
         }
     }
@@ -928,8 +941,8 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[test]
-    fn round2_psbt_validation_checks() {
+    #[tokio::test]
+    async fn round2_psbt_validation_checks() {
         let db = db_setup();
         let (shares, pk_package) = trusted_dealer_setup(2, 2);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(0)].clone())
@@ -1212,8 +1225,9 @@ mod tests {
 
         // Create a base PSBT
         let mut psbt = create_psbt(1, 1, Some(get_change(&db))); // 1 output + 1 change = 2 outputs in psbt.outputs
-        
-        // Simulate a mismatch: psbt.outputs has 2 elements, psbt.unsigned_tx.output will have 1 extra
+
+        // Simulate a mismatch: psbt.outputs has 2 elements, psbt.unsigned_tx.output will have 1
+        // extra
         let original_outputs_len = psbt.outputs.len();
         psbt.unsigned_tx.output.push(bitcoin::TxOut {
             value: Amount::from_sat(12345),
@@ -1221,7 +1235,10 @@ mod tests {
         });
         let new_unsigned_tx_outputs_len = psbt.unsigned_tx.output.len();
 
-        assert_ne!(original_outputs_len, new_unsigned_tx_outputs_len, "Test setup error: output lengths should be different");
+        assert_ne!(
+            original_outputs_len, new_unsigned_tx_outputs_len,
+            "Test setup error: output lengths should be different"
+        );
 
         let res = validate_outputs(&psbt, &db);
         assert!(res.is_err(), "validate_outputs should fail due to output count mismatch");
@@ -1237,9 +1254,9 @@ mod tests {
 
         // Test the other way around: psbt.outputs is longer
         let mut psbt2 = create_psbt(1, 0, None); // 0 outputs in psbt.outputs
-        // psbt2.unsigned_tx.output is initially empty from create_psbt with 0 outputs
-        // Add one to psbt.outputs to create a mismatch where psbt.outputs is longer
-        psbt2.outputs.push(Default::default()); 
+                                                 // psbt2.unsigned_tx.output is initially empty from create_psbt with 0 outputs
+                                                 // Add one to psbt.outputs to create a mismatch where psbt.outputs is longer
+        psbt2.outputs.push(Default::default());
         // Now psbt2.outputs.len() = 1, psbt2.unsigned_tx.output.len() = 0
 
         let res2 = validate_outputs(&psbt2, &db);
@@ -1250,7 +1267,10 @@ mod tests {
                 assert_eq!(len_unsigned_tx_output, 0);
             }
             other_error => {
-                panic!("Expected OutputCountMismatch for psbt.outputs longer, got {:?}", other_error);
+                panic!(
+                    "Expected OutputCountMismatch for psbt.outputs longer, got {:?}",
+                    other_error
+                );
             }
         }
     }
@@ -1528,6 +1548,7 @@ mod tests {
             value: tx.output[0].value,
             id: pegout_id,
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx = Tx {
             txid: tx.compute_txid(),
@@ -1561,6 +1582,7 @@ mod tests {
             value: tx.output[0].value,
             id: pegout_id,
             botanix_height: 0,
+            timestamp: None,
         }];
         let tracked_tx = Tx {
             txid: tx.compute_txid(),
@@ -1594,6 +1616,7 @@ mod tests {
             value: tx.output[0].value,
             id: pegout_id,
             botanix_height: 0,
+            timestamp: None,
         };
         db.store_pending_pegout(&pegout_request).unwrap();
         db.flush().unwrap();
@@ -1618,7 +1641,8 @@ mod tests {
 
         // store finalized pegout
         let pegout_id = PegoutId::new(rand::thread_rng().gen::<[u8; 32]>(), 0);
-        let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+        let finalized_pegout =
+            FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
         db.store_finalized_pegout_ids_atomically(vec![&finalized_pegout].as_slice()).unwrap();
 
         // create a psbt with the finalized pegout id
@@ -1629,5 +1653,40 @@ mod tests {
         let res_error = res.unwrap_err().to_string();
         assert!(res_error
             .contains("error validating outputs: found already finalized psbt pegouts in db"));
+    }
+
+    #[test]
+    fn test_validate_outputs_should_return_already_finalized_pegout_id() {
+        let db = db_setup();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        // store finalized pegout
+        let pegout_id = PegoutId::new(rand::thread_rng().gen::<[u8; 32]>(), 0);
+        let finalized_pegout =
+            FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
+        db.store_finalized_pegout_ids_atomically(vec![&finalized_pegout].as_slice()).unwrap();
+
+        // create a psbt with the finalized pegout id
+        let mut psbt = create_psbt(1, 1, None);
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        let res = validate_outputs(&psbt, &db);
+
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            ValidateOutputsError::AlreadyFinalizedPegouts(pegout_ids) => {
+                assert_eq!(pegout_ids.len(), 1);
+                assert_eq!(pegout_ids[0], pegout_id);
+            }
+            other_error => {
+                panic!("Expected AlreadyFinalizedPegouts error, got {:?}", other_error);
+            }
+        }
     }
 }

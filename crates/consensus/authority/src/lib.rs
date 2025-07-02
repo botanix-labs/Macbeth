@@ -14,6 +14,8 @@
 //! A [Consensus] implementation of Clique Proof of Authority (POA)
 //! that authoritymatically seals blocks.
 
+use async_trait as _;
+use metrics_util as _;
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
     Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,
@@ -27,17 +29,15 @@ use reth_consensus_common::{
         validate_header_extradata, validate_header_gas,
     },
 };
-use reth_network_peers as _;
-use serde_json as _;
-
-use metrics_util as _;
 use reth_ethereum_consensus::validate_block_post_execution;
+use reth_network_peers as _;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
     constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},
     header_ext::HeaderExt,
     Address, BlockWithSenders, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH, U256,
 };
+use serde_json as _;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
@@ -55,8 +55,10 @@ mod signing;
 pub mod snapshot_manager;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
+pub mod bitcoin_checkpoint;
 pub mod metrics;
 pub mod random_source_provider;
+pub mod test_utils;
 pub mod wallet_state_sync;
 
 /// Max EDH size; for specific details see [ExtraDataHeader]

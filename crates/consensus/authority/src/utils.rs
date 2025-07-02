@@ -13,6 +13,7 @@ use btcserverlib::{
 };
 use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
+use reth_db::models;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{
     botanix::{
@@ -22,12 +23,17 @@ use reth_primitives::{
     constants::EPOCH_LENGTH,
     Bloom, BloomInput,
 };
-use reth_provider::{BlockReaderIdExt, ReceiptProvider};
+use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
-use std::{fmt::Debug, time::Duration};
-use tracing::{error, info};
+use std::{
+    fmt::Debug,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use tracing::{error, info, warn};
 use uuid::Uuid;
+
+use crate::wallet_state_sync::MAX_BLOCK_TS_CUTOFF_DURATION;
 
 /// Checks if the network is undergoing an active sync or not
 pub fn is_active_sync_in_progress(network_handle: &NetworkHandle) -> bool {
@@ -122,6 +128,7 @@ pub(crate) fn get_utxos_from_pegin_meta(pegins: &[PeginMeta]) -> Vec<Utxo> {
 pub(crate) fn get_pending_pegouts_from_pegout_data(
     pegouts: &[PegoutWithId],
     height: u64,
+    timestamp: u64,
 ) -> Vec<PendingPegout> {
     if pegouts.is_empty() {
         return vec![];
@@ -130,9 +137,10 @@ pub(crate) fn get_pending_pegouts_from_pegout_data(
         .iter()
         .map(|pegout| PendingPegout {
             pegout_id: pegout.id.as_bytes().to_vec(),
-            spk: pegout.data.destination.script_pubkey().to_bytes().to_vec(),
+            spk: pegout.data.destination.script_pubkey().into_bytes(),
             amount: pegout.data.amount.to_sat(),
             height,
+            timestamp,
         })
         .collect::<Vec<_>>()
 }
@@ -141,6 +149,7 @@ fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
     let tx_out =
         pegin_meta.tx().output.get(pegin_meta.outpoint().vout as usize).expect("valid vout");
     let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+
     Utxo {
         outpoint: Some(client::OutPoint {
             txid: bitcoin::consensus::serialize(&pegin_meta.outpoint().txid),
@@ -152,6 +161,69 @@ fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
         }),
         eth_address: hex::encode(pegin_meta.address()),
     }
+}
+
+pub(crate) fn get_staged_pegins_from_pegin_meta(pegins: &[PeginMeta]) -> Vec<models::PeginData> {
+    pegins
+        .iter()
+        .map(|pegin| {
+            let tx_out = pegin.txout();
+
+            let txid = bitcoin::consensus::serialize(&pegin.outpoint().txid);
+            let vout = pegin.outpoint().vout as u64;
+            let value = tx_out.value.to_sat();
+            let script_pubkey = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+            let eth_address = pegin.address().to_vec();
+
+            models::PeginData { txid, vout, value, script_pubkey, eth_address }
+        })
+        .collect()
+}
+
+pub(crate) fn get_utxos_from_staged_pegins(pegins: Vec<models::PeginData>) -> Vec<Utxo> {
+    pegins
+        .into_iter()
+        .map(|pegin| Utxo {
+            outpoint: Some(client::OutPoint { txid: pegin.txid, vout: pegin.vout as u32 }),
+            output: Some(TxOut {
+                value: pegin.value,
+                script_pubkey: Some(ScriptBuf { script: pegin.script_pubkey }),
+            }),
+            eth_address: hex::encode(pegin.eth_address),
+        })
+        .collect()
+}
+
+pub(crate) fn get_staged_pegouts_from_pegout_data(
+    pegouts: &[PegoutWithId],
+    height: u64,
+) -> Vec<models::PegoutData> {
+    pegouts
+        .iter()
+        .map(|pegout| {
+            let pegout_id = pegout.id.as_bytes().to_vec();
+            let script_pubkey = pegout.data.destination.script_pubkey().into_bytes();
+            let amount = pegout.data.amount.to_sat();
+
+            models::PegoutData { pegout_id, script_pubkey, amount, height }
+        })
+        .collect()
+}
+
+pub(crate) fn get_pending_pegouts_from_staged_pegouts(
+    pegouts: Vec<models::PegoutData>,
+    timestamp: u64,
+) -> Vec<PendingPegout> {
+    pegouts
+        .into_iter()
+        .map(|pegout| PendingPegout {
+            pegout_id: pegout.pegout_id,
+            spk: pegout.script_pubkey,
+            amount: pegout.amount,
+            height: pegout.height,
+            timestamp,
+        })
+        .collect()
 }
 
 fn bloom_contains_minting_contract_address(bloom: Bloom) -> bool {
@@ -271,6 +343,26 @@ pub(crate) async fn epoch_pegouts(
     Ok(pegouts)
 }
 
+/// Checks if the age of a block, based on its timestamp, is within an acceptable duration.
+///
+/// # Arguments
+///
+/// * `timestamp` - The timestamp of the block in seconds since the UNIX epoch.
+/// * `max_age_cutoff` - The maximum acceptable age of the block as a `Duration`.
+///
+/// # Returns
+///
+/// Returns `true` if the block's age is less than the specified max cutoff age, otherwise `false`.
+pub fn is_block_age_acceptable(timestamp: u64, max_age_cutoff: Duration) -> bool {
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(now) => now.as_secs(),
+        Err(_) => return false,
+    };
+
+    let threshold = now.saturating_sub(max_age_cutoff.as_secs());
+    timestamp > threshold
+}
+
 /// Returns all pegouts ids in a given block
 ///
 /// # Arguments
@@ -278,6 +370,7 @@ pub(crate) async fn epoch_pegouts(
 /// * `block` - The block height
 /// * `client` - Reth database client
 /// * `btc_network` - Bitcoin network
+/// * `max_cutoff_age` - Max cutoff age
 ///
 /// # Returns
 ///
@@ -286,10 +379,18 @@ pub(crate) async fn get_block_pegouts(
     block: u64,
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
-) -> Result<Vec<PegoutId>, EpochPegoutsError> {
-    let mut pegouts = Vec::new();
+    max_cutoff_age: Option<Duration>,
+) -> Result<Vec<(PegoutId, u64)>, EpochPegoutsError> {
+    let mut pegouts: Vec<(PegoutId, u64)> = Vec::new();
     match client.block_by_number(block) {
         Ok(Some(block)) if bloom_contains_pegout(block.header.logs_bloom) => {
+            let block_timestamp = block.header.timestamp;
+            if let Some(max_cutoff_age) = max_cutoff_age {
+                if !is_block_age_acceptable(block_timestamp, max_cutoff_age) {
+                    warn!("Block number {:?} is too old, ignoring ...", block.header.number);
+                    return Ok(pegouts);
+                }
+            }
             let transactions_by_block = match client
                 .transactions_by_block(BlockHashOrNumber::Number(block.header.number))
             {
@@ -319,7 +420,7 @@ pub(crate) async fn get_block_pegouts(
                                 let mut tx_hash_array = [0u8; 32];
                                 tx_hash_array.copy_from_slice(tx.hash().as_slice());
                                 let pegout_id = PegoutId::new(tx_hash_array, index as u32);
-                                pegouts.push(pegout_id);
+                                pegouts.push((pegout_id, block_timestamp));
                             }
                         }
                     }
@@ -431,9 +532,18 @@ pub fn is_known_minting_contract(
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 /// Represents errors that can occur during psbt validation
 pub enum PsbtValidationError {
-    #[error("Failed to validate psbt by ids: {0}")]
     /// Failed to validate psbt by ids
+    #[error("Failed to validate psbt by ids: {0}")]
     FailedToValidatePsbtByIds(String),
+    /// Failed to get transaction by pegout id
+    #[error("Failed to get transaction by pegout id: {0}")]
+    FailedToGetTransactionByPegoutId(String),
+    /// Failed to get block for pegout id
+    #[error("Failed to get block for pegout id: {0}")]
+    FailedToGetHeaderForPegoutId(String),
+    /// Failed to validate pegout id by maximum cutoff age
+    #[error("Pegout ID outside the maximum cutoff age: {0}")]
+    PegoutIdOutsideMaximumCutoffAge(String),
 }
 
 /// Extract pegouts ids from psbt
@@ -485,8 +595,8 @@ pub fn validate_psbt_by_output(
 /// receipt database.
 ///
 /// This function extracts pegout IDs from the PSBT, retrieves the corresponding
-/// pegout data from the database, and validates each output's destination and
-/// amount.
+/// pegout data from the database, validates each output's destination and
+/// amount, and enforces a maximum age for pending pegouts in the psbt.
 ///
 /// # Warning
 ///
@@ -501,7 +611,7 @@ pub fn validate_psbt_by_output(
 // TODO(lamafab): All those responsibilities SHOULD be handled in one place,
 // ideally by a single function.
 pub async fn validate_psbt_by_ids(
-    client: impl ReceiptProvider + Clone,
+    client: &(impl ReceiptProvider + TransactionsProvider + HeaderProvider + Clone),
     btc_network: bitcoin::Network,
     psbt: &Psbt,
 ) -> Result<(), PsbtValidationError> {
@@ -532,6 +642,15 @@ pub async fn validate_psbt_by_ids(
         }
     }
 
+    // Verify that each pegout is within the maximum cutoff age.
+    // The coordinator and signers should not create nor sign a PSBT if any of the pending pegouts
+    // are older than the maximum cutoff age. The coordinator and signers only store the most recent
+    // maximum cutoff age of finalized pegouts against which the PSBT is validated. This
+    // prevents having to store an unbounded list of finalized pegouts.
+    pegout_ids
+        .iter()
+        .try_for_each(|(_, pegout_id)| validate_psbt_id_by_maximum_cutoff_age(pegout_id, client))?;
+
     // Verify that there is at most one change output
     // and that all outputs are either a validated pegout or the single change output.
     let mut change_output_count = 0;
@@ -554,7 +673,7 @@ pub async fn validate_psbt_by_ids(
             "Multiple change outputs (non-pegout IDs) found in PSBT outputs",
         )));
     }
-    
+
     // The preceding checks (output length equality, duplicate pegout ID, and change output count)
     // ensure that every entry in `psbt.unsigned_tx.output` (due to the length check)
     // is accounted for as either a pegout (validated in the main loop below)
@@ -606,6 +725,64 @@ pub async fn validate_psbt_by_ids(
     Ok(())
 }
 
+/// Validates the pegout ID against the maximum cutoff age.
+/// This function checks if the pegout ID's transaction is within the acceptable age limit.
+/// # Arguments
+/// * `pegout_id` - The pegout ID to validate.
+/// * `client` - The client to use for fetching the transaction by pegout ID.
+/// # Returns
+/// Returns `Ok(())` if the pegout ID is valid, otherwise returns a `PsbtValidationError`.
+pub fn validate_psbt_id_by_maximum_cutoff_age(
+    pegout_id: &PegoutId,
+    client: &(impl ReceiptProvider + TransactionsProvider + HeaderProvider + Clone),
+) -> Result<(), PsbtValidationError> {
+    // Get the transaction by pegout id
+    let (_, tx) = client
+        .transaction_by_hash_with_meta(pegout_id.txid.into())
+        .map_err(|e| {
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Failed to get transaction by pegout id {:?}: {:?}", pegout_id, e);
+            PsbtValidationError::FailedToGetTransactionByPegoutId(format!(
+                "Failed to get transaction by pegout id from database {:?}",
+                pegout_id.txid
+            ))
+        })?
+        .ok_or_else(|| {
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Transaction not found for pegout id {:?}", pegout_id);
+            PsbtValidationError::FailedToGetTransactionByPegoutId(format!(
+                "Transaction not found for pegout id {:?}",
+                pegout_id.txid
+            ))
+        })?;
+
+    // Get the timestamp of the header that contains the transaction
+    let header_timestamp = client
+        .header_by_number(tx.block_number)
+        .map_err(|e| {
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Failed to get header by number {:?}: {:?}", tx.block_number, e);
+            PsbtValidationError::FailedToGetHeaderForPegoutId(format!(
+                "Failed to get header by number from database {:?}",
+                tx.block_number
+            ))
+        })?
+        .ok_or_else(|| {
+            error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Header not found for transaction {:?}", tx);
+            PsbtValidationError::FailedToGetHeaderForPegoutId(format!(
+                "Header not found for pegout id {:?}",
+                tx.tx_hash
+            ))
+        })?.timestamp;
+
+    if !is_block_age_acceptable(header_timestamp, *MAX_BLOCK_TS_CUTOFF_DURATION) {
+        error!(target: "consensus::authority::frost_task::validate_psbt_ids_by_maximum_cutoff_age", "Pegout id: {:?} is outside the maximum cutoff range", tx.tx_hash);
+        return Err(PsbtValidationError::PegoutIdOutsideMaximumCutoffAge(format!(
+            "Pegout id: {:?} is outside the maximum cutoff range",
+            tx.tx_hash
+        )));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use bitcoin::{
@@ -616,13 +793,8 @@ mod tests {
     };
     use btcserverlib::{test_utils::random_p2wpkh_script, wallet::psbt::PsbtOutputExt};
     use rand::{thread_rng, Rng, RngCore};
-    use reth_primitives::{
-        address, b256, bytes, hex_literal::hex, Bytes, Header, Log, LogData, Receipt, TxHash,
-        TxNumber, TxType, B256, U256,
-    };
-    use reth_provider::ProviderResult;
+    use reth_primitives::{address, b256, bytes, Header, B256, U256};
     use std::{
-        ops::RangeBounds,
         str::FromStr,
         sync::{
             atomic::{AtomicUsize, Ordering},
@@ -630,85 +802,11 @@ mod tests {
         },
     };
 
+    use crate::test_utils::MockProvider;
+
     use super::*;
 
     const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
-
-    #[derive(Clone)]
-    struct MockProvider {}
-
-    impl MockProvider {
-        fn new() -> Self {
-            Self {}
-        }
-
-        fn receipt() -> Receipt {
-            Receipt {
-                tx_type: TxType::Legacy,
-                cumulative_gas_used: 0x1u64,
-                logs: vec![Log::new_unchecked(
-                    address!("0000000000000000000000000000000000000011"),
-                    vec![
-                        b256!("000000000000000000000000000000000000000000000000000000000000dead"),
-                        b256!("000000000000000000000000000000000000000000000000000000000000beef"),
-                    ],
-                    bytes!("0100ff"),
-                )],
-                success: false,
-            }
-        }
-    }
-
-    impl ReceiptProvider for MockProvider {
-        fn receipt(&self, _id: TxNumber) -> ProviderResult<Option<Receipt>> {
-            Ok(Some(MockProvider::receipt()))
-        }
-
-        // return receipt with burn log
-        fn receipt_by_hash(&self, _hash: TxHash) -> ProviderResult<Option<Receipt>> {
-            // encoded values (amount, destination, version)
-            let amount =
-                ethabi::Token::Uint(ethabi::ethereum_types::U256::from(10_000_000_000_000_u64));
-            let destination =
-                ethabi::Token::String("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh".to_string());
-            let version = ethabi::Token::Bytes(vec![0]);
-            let payload = ethabi::encode(&[amount, destination, version]);
-
-            let log = Log {
-                address: *MINT_CONTRACT_ADDRESS,
-                data: LogData::new(
-                    vec![
-                        *BURN_TOPIC,
-                        // msg.sender
-                        B256::from(hex!(
-                            "000000000000000000000000a65812bac44dadb79c3e4930dbd98d5a75376b2a"
-                        )),
-                    ],
-                    Bytes::copy_from_slice(payload.as_slice()),
-                )
-                .unwrap(),
-            };
-
-            let mut receipt = MockProvider::receipt();
-            receipt.logs = vec![log];
-
-            Ok(Some(receipt))
-        }
-
-        fn receipts_by_block(
-            &self,
-            _block: BlockHashOrNumber,
-        ) -> ProviderResult<Option<Vec<Receipt>>> {
-            Ok(Some(vec![MockProvider::receipt()]))
-        }
-
-        fn receipts_by_tx_range(
-            &self,
-            _range: impl RangeBounds<TxNumber>,
-        ) -> ProviderResult<Vec<Receipt>> {
-            Ok(vec![MockProvider::receipt()])
-        }
-    }
 
     fn create_random_pegout_id() -> PegoutId {
         let mut rng = thread_rng();
@@ -1168,8 +1266,14 @@ mod tests {
         let pegout_id = PegoutId::new([0u8; 32], 0).as_bytes();
         psbt.outputs[0].set_pegout_id(pegout_id);
 
-        let result =
-            validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
+        let mock_provider = MockProvider::default().set_timestamp(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_secs(),
+        );
+
+        let result = validate_psbt_by_ids(&mock_provider, bitcoin::Network::Regtest, &psbt).await;
         println!("Result: {:?}", result);
         assert!(result.is_ok());
     }
@@ -1202,10 +1306,11 @@ mod tests {
         psbt.outputs[1].set_pegout_id(pegout_id);
 
         let result =
-            validate_psbt_by_ids(MockProvider::new(), bitcoin::Network::Regtest, &psbt).await;
+            validate_psbt_by_ids(&MockProvider::default(), bitcoin::Network::Regtest, &psbt).await;
 
         assert!(result.is_err());
-        // This error should now be due to duplicate pegout IDs, which is checked before script_pubkey matching.
+        // This error should now be due to duplicate pegout IDs, which is checked before
+        // script_pubkey matching.
         assert_eq!(
             result.unwrap_err(),
             PsbtValidationError::FailedToValidatePsbtByIds(
@@ -1217,7 +1322,12 @@ mod tests {
     #[tokio::test]
     async fn test_validate_psbt_by_ids_mismatched_lengths_and_multiple_change() {
         let btc_network = bitcoin::Network::Regtest;
-        let mock_provider = MockProvider::new();
+        let mock_provider = MockProvider::default().set_timestamp(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_secs(),
+        );
         let base_destination = bitcoin::Address::from_str("mrpkDJFJdNGA22FaxCWw6T9oXogXfHU1rh")
             .expect("valid address")
             .assume_checked();
@@ -1226,7 +1336,8 @@ mod tests {
         {
             let mut psbt = create_psbt_without_fee(1, &base_destination); // Creates 1 output in psbt.outputs and 1 in unsigned_tx.output
 
-            // Make psbt.outputs[0] a valid pegout target for later logic if needed, though this test should fail before that.
+            // Make psbt.outputs[0] a valid pegout target for later logic if needed, though this
+            // test should fail before that.
             let pegout_id_bytes_scenario_a = PegoutId::new([1u8; 32], 0).as_bytes();
             psbt.outputs[0].set_pegout_id(pegout_id_bytes_scenario_a);
 
@@ -1237,12 +1348,13 @@ mod tests {
             });
             // Now psbt.outputs.len() == 1, but psbt.unsigned_tx.output.len() == 2
 
-            let result = validate_psbt_by_ids(mock_provider.clone(), btc_network, &psbt).await;
+            let result = validate_psbt_by_ids(&mock_provider, btc_network, &psbt).await;
             assert!(result.is_err(), "Scenario A: Mismatched lengths should error");
             assert_eq!(
                 result.unwrap_err(),
                 PsbtValidationError::FailedToValidatePsbtByIds(
-                    "Mismatch between number of PSBT outputs and unsigned transaction outputs".to_string()
+                    "Mismatch between number of PSBT outputs and unsigned transaction outputs"
+                        .to_string()
                 ),
                 "Scenario A: Error message for mismatched lengths was incorrect"
             );
@@ -1254,44 +1366,52 @@ mod tests {
             let tx_three_outputs = Transaction {
                 version: bitcoin::transaction::Version(2),
                 lock_time: LockTime::ZERO,
-                input: vec![TxIn { // A single input
+                input: vec![TxIn {
+                    // A single input
                     previous_output: OutPoint::new(random_txid(), 0),
                     script_sig: bitcoin::ScriptBuf::new(),
                     sequence: Sequence::MAX,
                     witness: Default::default(),
                 }],
                 output: vec![
-                    bitcoin::TxOut { // This will be our pegout
+                    bitcoin::TxOut {
+                        // This will be our pegout
                         value: Amount::from_sat(1000),
                         script_pubkey: base_destination.script_pubkey(),
                     },
-                    bitcoin::TxOut { // This will be change output 1
+                    bitcoin::TxOut {
+                        // This will be change output 1
                         value: Amount::from_sat(2000),
-                        script_pubkey: random_p2wpkh_script(), 
+                        script_pubkey: random_p2wpkh_script(),
                     },
-                    bitcoin::TxOut { // This will be change output 2
+                    bitcoin::TxOut {
+                        // This will be change output 2
                         value: Amount::from_sat(3000),
                         script_pubkey: random_p2wpkh_script(),
                     },
                 ],
             };
 
-            let mut psbt = Psbt::from_unsigned_tx(tx_three_outputs).expect("valid psbt from 3-output tx");
+            let mut psbt =
+                Psbt::from_unsigned_tx(tx_three_outputs).expect("valid psbt from 3-output tx");
             // psbt.outputs and psbt.unsigned_tx.output both have 3 elements.
 
             // Provide a witness_utxo for the input
-            let total_output_value: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
+            let total_output_value: u64 =
+                psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
             psbt.inputs[0].witness_utxo = Some(bitcoin::TxOut {
                 value: Amount::from_sat(total_output_value + 1000), // Cover outputs + some fee
-                script_pubkey: bitcoin::ScriptBuf::new(), // Dummy script pubkey for witness_utxo
+                script_pubkey: bitcoin::ScriptBuf::new(),           /* Dummy script pubkey for
+                                                                     * witness_utxo */
             });
-            
+
             // Set psbt.outputs[0] as a pegout
             let pegout_id_bytes_scenario_b = PegoutId::new([2u8; 32], 0).as_bytes();
             psbt.outputs[0].set_pegout_id(pegout_id_bytes_scenario_b);
-            // psbt.outputs[1] and psbt.outputs[2] have no pegout_id, so they count as change outputs.
+            // psbt.outputs[1] and psbt.outputs[2] have no pegout_id, so they count as change
+            // outputs.
 
-            let result = validate_psbt_by_ids(mock_provider.clone(), btc_network, &psbt).await;
+            let result = validate_psbt_by_ids(&mock_provider, btc_network, &psbt).await;
             assert!(result.is_err(), "Scenario B: Multiple change outputs should error");
             assert_eq!(
                 result.unwrap_err(),
@@ -1543,5 +1663,129 @@ mod tests {
         for (index, &byte) in session_id_array.iter().enumerate() {
             assert_eq!(byte, index as u8, "Byte at position {} should match", index);
         }
+    }
+
+    const SAMPLE_PEGIN_DATA_1: &[u8] = &[
+        1, 0, 0, 0, 186, 47, 173, 29, 210, 117, 81, 42, 149, 104, 41, 68, 5, 76, 3, 154, 112, 181,
+        52, 69, 30, 43, 59, 74, 145, 249, 207, 159, 118, 66, 84, 169, 0, 0, 0, 0, 166, 88, 18, 186,
+        196, 77, 173, 183, 156, 62, 73, 48, 219, 217, 141, 90, 117, 55, 107, 42, 3, 193, 21, 176,
+        76, 85, 168, 108, 74, 80, 201, 186, 34, 88, 197, 19, 32, 51, 32, 53, 181, 241, 234, 246,
+        32, 118, 214, 243, 115, 212, 65, 206, 226, 1, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 59, 245, 154, 11, 135, 200,
+        31, 173, 132, 234, 254, 118, 59, 216, 142, 96, 181, 34, 126, 63, 18, 235, 66, 227, 69, 4,
+        102, 139, 14, 135, 18, 38, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 38, 5, 185,
+        167, 101, 87, 10, 149, 75, 172, 69, 3, 239, 77, 53, 148, 86, 89, 247, 131, 177, 85, 65,
+        174, 102, 122, 105, 72, 59, 214, 204, 79, 186, 47, 173, 29, 210, 117, 81, 42, 149, 104, 41,
+        68, 5, 76, 3, 154, 112, 181, 52, 69, 30, 43, 59, 74, 145, 249, 207, 159, 118, 66, 84, 169,
+        1, 5, 1, 0, 0, 0, 1, 187, 136, 109, 254, 46, 245, 8, 181, 117, 222, 21, 135, 203, 80, 249,
+        19, 204, 145, 227, 93, 161, 196, 221, 59, 182, 139, 115, 103, 12, 231, 110, 156, 0, 0, 0,
+        0, 0, 255, 255, 255, 255, 1, 100, 0, 0, 0, 0, 0, 0, 0, 34, 81, 32, 104, 85, 85, 37, 126, 0,
+        22, 68, 29, 84, 2, 20, 209, 58, 60, 75, 64, 52, 12, 36, 59, 170, 51, 179, 54, 3, 132, 46,
+        0, 128, 92, 49, 0, 0, 0, 0, 175, 162, 74, 171, 220, 185, 167, 20, 159, 113, 140, 124, 45,
+        34, 53, 168, 25, 180, 127, 189, 57, 20, 55, 184, 92, 195, 170, 169, 97, 230, 51, 239,
+    ];
+
+    const SAMPLE_PEGIN_DATA_2: &[u8] = &[
+        1, 0, 0, 0, 79, 66, 237, 216, 151, 230, 184, 125, 113, 43, 63, 25, 149, 48, 28, 141, 69,
+        107, 115, 191, 214, 199, 96, 21, 53, 126, 59, 55, 13, 25, 20, 72, 0, 0, 0, 0, 166, 88, 18,
+        186, 196, 77, 173, 183, 156, 62, 73, 48, 219, 217, 141, 90, 117, 55, 107, 42, 3, 163, 237,
+        72, 215, 58, 205, 146, 150, 1, 61, 106, 148, 17, 131, 124, 68, 167, 170, 42, 232, 181, 65,
+        252, 233, 95, 23, 1, 119, 249, 36, 254, 178, 1, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 103, 134, 236, 118,
+        243, 173, 51, 71, 131, 70, 116, 28, 227, 73, 94, 228, 188, 113, 210, 230, 124, 222, 130,
+        15, 32, 31, 63, 65, 221, 81, 231, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 38, 5,
+        185, 167, 101, 87, 10, 149, 75, 172, 69, 3, 239, 77, 53, 148, 86, 89, 247, 131, 177, 85,
+        65, 174, 102, 122, 105, 72, 59, 214, 204, 79, 79, 66, 237, 216, 151, 230, 184, 125, 113,
+        43, 63, 25, 149, 48, 28, 141, 69, 107, 115, 191, 214, 199, 96, 21, 53, 126, 59, 55, 13, 25,
+        20, 72, 1, 5, 1, 0, 0, 0, 1, 187, 136, 109, 254, 46, 245, 8, 181, 117, 222, 21, 135, 203,
+        80, 249, 19, 204, 145, 227, 93, 161, 196, 221, 59, 182, 139, 115, 103, 12, 231, 110, 156,
+        0, 0, 0, 0, 0, 255, 255, 255, 255, 1, 100, 0, 0, 0, 0, 0, 0, 0, 34, 81, 32, 205, 24, 244,
+        70, 186, 83, 131, 70, 219, 19, 26, 42, 1, 207, 79, 211, 245, 100, 200, 59, 145, 6, 83, 247,
+        77, 85, 28, 251, 243, 35, 80, 68, 0, 0, 0, 0, 89, 134, 217, 245, 134, 72, 234, 118, 185, 3,
+        136, 43, 77, 1, 241, 169, 96, 49, 104, 163, 62, 219, 231, 233, 208, 34, 176, 190, 172, 63,
+        31, 188,
+    ];
+
+    #[test]
+    fn test_pegins_to_staged_to_utxo_conversion() {
+        // pegins -> staged -> utxo
+        // ==
+        // pegins -> utxo
+
+        let (p1, _) = PeginMeta::deserialize(SAMPLE_PEGIN_DATA_1).unwrap();
+        let (p2, _) = PeginMeta::deserialize(SAMPLE_PEGIN_DATA_2).unwrap();
+
+        let pegins = vec![p1, p2];
+
+        let staged = get_staged_pegins_from_pegin_meta(&pegins);
+        let utxos1 = get_utxos_from_staged_pegins(staged);
+
+        let utxos2 = get_utxos_from_pegin_meta(&pegins);
+
+        assert_eq!(utxos1, utxos2);
+    }
+
+    #[test]
+    fn test_pegouts_to_staged_to_pending_pegouts_conversion() {
+        // pegouts -> staged -> pending
+        // ==
+        // pegouts -> pending
+
+        let destination = Address::from_str("32iVBEu4dxkUQk9dJbZUiBiQdmypcEyJRf")
+            .unwrap()
+            .require_network(bitcoin::network::Network::Bitcoin)
+            .unwrap();
+
+        let p1 = PegoutWithId {
+            data: PegoutData {
+                amount: bitcoin::Amount::from_sat(1_000),
+                destination: destination.clone(),
+                network: bitcoin::Network::Bitcoin,
+            },
+            id: PegoutId::new([0; 32], 0),
+        };
+
+        let p2 = PegoutWithId {
+            data: PegoutData {
+                amount: bitcoin::Amount::from_sat(2_000),
+                destination,
+                network: bitcoin::Network::Bitcoin,
+            },
+            id: PegoutId::new([1; 32], 1),
+        };
+
+        let pegouts = vec![p1, p2];
+        let height = 100;
+
+        let staged = get_staged_pegouts_from_pegout_data(&pegouts, height);
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let pending1 = get_pending_pegouts_from_staged_pegouts(staged, now);
+
+        let pending2 = get_pending_pegouts_from_pegout_data(&pegouts, height, now);
+
+        assert_eq!(pending1, pending2);
+    }
+
+    #[test]
+    fn test_validate_psbt_id_by_maximum_cutoff_age_within_cutoff() {
+        let pegout_id = PegoutId::new([0; 32], 0);
+        let mock_provider = MockProvider::default().set_timestamp(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_secs(),
+        );
+
+        assert!(validate_psbt_id_by_maximum_cutoff_age(&pegout_id, &mock_provider).is_ok());
+    }
+
+    #[test]
+    fn test_validate_psbt_id_by_maximum_cutoff_age_outside_cutoff() {
+        let pegout_id = PegoutId::new([0; 32], 0);
+
+        // Invalid case: MockProvider::default() returns a timestamp of 0
+        assert!(
+            validate_psbt_id_by_maximum_cutoff_age(&pegout_id, &MockProvider::default()).is_err()
+        );
     }
 }

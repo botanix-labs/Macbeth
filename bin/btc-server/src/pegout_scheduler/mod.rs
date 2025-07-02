@@ -127,6 +127,8 @@ pub struct PegoutRequest {
     pub value: Amount,
     /// L2 block height this pegout was requested at.
     pub botanix_height: u64,
+    /// L2 block timestamp this pegout was requested at.
+    pub timestamp: Option<u64>,
 }
 
 impl PegoutRequest {
@@ -144,6 +146,7 @@ impl TryFrom<rpc::PendingPegout> for PegoutRequest {
             spk: ScriptBuf::from_bytes(pegout.spk),
             value: Amount::from_sat(pegout.amount),
             botanix_height: pegout.height,
+            timestamp: Some(pegout.timestamp),
         })
     }
 }
@@ -441,7 +444,8 @@ impl PegoutScheduler {
         // first try store the new finalized UTXOs to the db, then update the index.
         let mut all_inputs = block.relevant_inputs.iter().copied().collect::<HashSet<_>>();
         for txid in &block.relevant_txs {
-            let tx = self.txs.get(txid).expect("corrupt db");
+            let tx =
+                self.txs.get(txid).ok_or(database::Error::TrackedTxNotFoundInPegoutScheduler)?;
             // Add back the change to the utxo set
             let mut change_utxos = vec![];
             if let Ok(ref change_spk) = change_spk_res {
@@ -517,6 +521,7 @@ impl PegoutScheduler {
                     .map(|pegout_request| FinalizedPegout {
                         id: pegout_request.id,
                         block_number: pegout_request.botanix_height,
+                        timestamp: pegout_request.timestamp,
                     })
                     .collect();
 
@@ -528,6 +533,7 @@ impl PegoutScheduler {
                     );
                     let refs: Vec<&FinalizedPegout> = finalized_pegout_ids.iter().collect();
                     self.db.store_finalized_pegout_ids_atomically(&refs)?;
+                    self.db.prune_finalized_pegout_ids()?;
                     self.db.flush()?;
                 } else {
                     info!("Confirmed tx {} had no associated pegout requests to finalize.", txid);
@@ -605,7 +611,7 @@ impl PegoutScheduler {
             "PegoutScheduler::track_mempool: Checking tracked txs older than checkpoint time {:?}",
             cp_time
         );
-        // Get txs older than timestamp
+        // Get txs older than the checkpoint time
         let maybe_dropped_txs = self
             .txs
             .values()
@@ -619,8 +625,36 @@ impl PegoutScheduler {
 
         // Check if tx still exists
         for txid in maybe_dropped_txs {
-            // TODO(scott): first check if tx is in the `finalized outputs` if we implement this
-            // see Updates section in `https://github.com/botanix-labs/botanix/issues/701`
+            // Check if the tx is on chain and is actually deeply confirmed.
+            // We use the tracked_tx.created timestamp but we don't know when the tx was actually
+            // included in a block.
+            let onchain_tx = bitcoind.get_raw_transaction_info(&txid, None);
+            if let Ok(onchain_tx) = onchain_tx {
+                // Check if the tx is deeply confirmed
+                let Some(blockhash) = onchain_tx.blockhash else {
+                    // Still in the mempool since blockhash is None
+                    info!("PegoutScheduler::track_mempool: Tx {} is still in the mempool.", txid);
+                    continue;
+                };
+                let actual_height =
+                    bitcoind.get_block_info(&blockhash).map_err(SyncError::Rpc)?.height;
+                if actual_height > checkpoint.height {
+                    info!("Tx {} is confirmed in block {} at height {}, but is not deeply confirmed (checkpoint height {}).",
+                        txid, blockhash, actual_height, checkpoint.height);
+                    // Continue so sync_until will finalize the block and tracked tx once it is
+                    // deeply confirmed
+                    continue;
+                }
+
+                // This should not happen if sync_until functions correctly
+                error!(
+                    "PegoutScheduler::track_mempool: {:?}.",
+                    SyncError::DeeplyConfirmedTxNotFinalized(txid)
+                );
+                // Intentionally not untracking the tx here since this should not happen.
+                // If it does, the underlying issue should be fixed and the tracked tx handled.
+                continue;
+            }
 
             // a tx that is in a deeply confirmed block should have been handled already
             // so check if still in mempool
@@ -632,7 +666,10 @@ impl PegoutScheduler {
                     continue;
                 }
                 Err(e) => {
-                    info!("PegoutScheduler::track_mempool: Tx {} not found in mempool (Error: {}). Checking chain...", txid, e);
+                    info!(
+                        "PegoutScheduler::track_mempool: Tx {} not found in mempool (Error: {}).",
+                        txid, e
+                    );
                     // check error message to confirm the tx is not in the mempool
                     if !e.to_string().to_lowercase().contains(TX_NOT_IN_MEMPOOL_BITCOIND_ERROR) {
                         warn!("Error checking mempool for tx {}: {}", &txid, e);
@@ -643,19 +680,6 @@ impl PegoutScheduler {
                     info!("PegoutScheduler::track_mempool: Tx {} confirmed not on chain. Untracking and adding back to pending.", txid);
                     self.un_track_tx(&txid)?;
                 }
-            }
-
-            // sanity check that the tx is not on-chain and `fn sync_until`` hasn't handled it
-            let onchain_tx = bitcoind.get_raw_transaction(&txid, None);
-            if let Ok(onchain_tx) = onchain_tx {
-                // intentionally not erroring here because there's no action to take other than not
-                // adding it back to pending pegouts
-                warn!(
-                    "Tx {} is on-chain but not handled by sync_until: {:?}",
-                    &onchain_tx.compute_txid(),
-                    onchain_tx
-                );
-                continue;
             }
 
             // add the tx back to pending pegouts so it can be retried
@@ -791,7 +815,7 @@ impl PegoutScheduler {
         // handle txs that are still in the mempool, have been dropped or there was a reorg
         // this must be done after `finalize_block` which updates the db and pegout scheduler state
         info!("PegoutScheduler::sync_until: Finished block processing loop. Tracking mempool...");
-        match self.track_mempool(bitcoind, cp_result.clone()) {
+        match self.track_mempool(bitcoind, cp_result) {
             Ok(_) => info!("PegoutScheduler::sync_until: Mempool tracking successful."),
             Err(e) => {
                 error!("PegoutScheduler::sync_until: Error during mempool tracking: {}. Propagating error.", e);
@@ -853,6 +877,10 @@ pub enum SyncError {
     Block(BlockError),
     #[error("database error: {0}")]
     Db(#[from] database::Error),
+    #[error("tracked tx not included in a block: {0}")]
+    TrackedTxNotInBlock(Txid),
+    #[error("deeply confirmed tx not finalized: {0}")]
+    DeeplyConfirmedTxNotFinalized(Txid),
 }
 
 #[derive(Debug, Error)]
@@ -874,7 +902,7 @@ mod tests {
         TxIn,
     };
     use frost_secp256k1_tr as frost;
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
 
     use crate::{
         frost_id,
@@ -890,13 +918,33 @@ mod tests {
     const MAX_SIGNERS: u16 = 3;
 
     // A test transaction when you need a deterministic txid which is:
-    // (855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2)
-    // This is currently used to test `track_mempool()`
-    pub static TEST_TRANSACTION: Lazy<Transaction> = Lazy::new(|| Transaction {
+    // ("855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2")
+    // This is currently used to test
+    // `track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool()`
+    pub static TEST_TRANSACTION_1: LazyLock<Transaction> = LazyLock::new(|| Transaction {
         version: Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::new(Txid::from_byte_array([123u8; 32]), 0),
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::MAX,
+            witness: Default::default(),
+        }],
+        output: vec![TxOut {
+            value: Amount::from_sat(1000),
+            script_pubkey: ScriptBuf::with_capacity(0),
+        }],
+    });
+
+    // A test transaction when you need a deterministic txid which is:
+    // ("26bbaab2e585d465cceecc2acc7b398069aa85fc4dd1f52e39666a65e54a4569")
+    // This is currently used to test
+    // `track_mempool_should_not_add_back_pegout_when_still_in_mempool()`
+    pub static TEST_TRANSACTION_2: LazyLock<Transaction> = LazyLock::new(|| Transaction {
+        version: Version(2),
+        lock_time: LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([45u8; 32]), 0),
             script_sig: ScriptBuf::new(),
             sequence: Sequence::MAX,
             witness: Default::default(),
@@ -973,6 +1021,7 @@ mod tests {
                 value: tx.output[*i].value,
                 id: create_random_pegout_id(),
                 botanix_height: 0,
+                timestamp: None,
             };
             pegouts.push(pegout_req);
         }
@@ -1365,7 +1414,8 @@ mod tests {
     }
 
     #[test]
-    fn track_mempool_should_not_add_back_pegout_when_still_in_mempool() {
+    // mock_bitcoind is set up so the tracked tx is confirmed but not deeply confirmed.
+    fn track_mempool_should_not_add_back_pegout_when_not_deeply_confirmed() {
         let db = setup_db().0;
         let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
@@ -1395,6 +1445,39 @@ mod tests {
     }
 
     #[test]
+    fn track_mempool_should_not_add_back_pegout_when_still_in_mempool() {
+        let db = setup_db().0;
+        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
+            .expect("valid key package");
+        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_key_package(key_package).expect("set key package");
+
+        let mut pegout_scheduler =
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+        // mock bitcoind will trigger error path for `getmempoolentry` for specific txids
+        // so pass true to create_tx() to make it deterministic which is
+        // "26bbaab2e585d465cceecc2acc7b398069aa85fc4dd1f52e39666a65e54a4569" for this test
+        // this txid will result in the tx not being on chain but in the mempool
+        let pegouts = pegout_requests_from_tx(&TEST_TRANSACTION_2, &[0]);
+        pegout_scheduler.add_tx(TEST_TRANSACTION_2.clone(), &pegouts, SystemTime::now());
+
+        let mock_bitcoind = MockBitcoind::new();
+        let mut checkpoint = mock_bitcoind
+            .get_block_header_info(&bitcoin::BlockHash::all_zeros())
+            .expect("valid checkpoint");
+        // increase time for checkpoint block so tracked tx is older
+        checkpoint.time += 5;
+
+        let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
+        assert!(result.is_ok());
+
+        // assert the pegout was added to pending pegouts
+        let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
+        assert_eq!(pending_pegouts.len(), 0);
+    }
+
+    #[test]
     fn track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool() {
         let db = setup_db().0;
         let mut pegout_scheduler =
@@ -1402,8 +1485,9 @@ mod tests {
         // mock bitcoind will trigger error path for `getmempoolentry` for a specific txid
         // so pass true to create_tx() to make it deterministic which is
         // "855b53d27666779a179ec93d88dbe28f456040155c4b712a1261ad211f4ba6f2" for this test
-        let pegouts = pegout_requests_from_tx(&TEST_TRANSACTION, &[0]);
-        pegout_scheduler.add_tx(TEST_TRANSACTION.clone(), &pegouts, SystemTime::now());
+        // this txid will result in the tx not being on chain nor in the mempool
+        let pegouts = pegout_requests_from_tx(&TEST_TRANSACTION_1, &[0]);
+        pegout_scheduler.add_tx(TEST_TRANSACTION_1.clone(), &pegouts, SystemTime::now());
 
         let mock_bitcoind = MockBitcoind::new();
         let mut checkpoint = mock_bitcoind

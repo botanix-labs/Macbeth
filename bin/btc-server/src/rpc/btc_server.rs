@@ -9,6 +9,8 @@ pub struct PendingPegout {
     pub amount: u64,
     #[prost(uint64, tag = "4")]
     pub height: u64,
+    #[prost(uint64, tag = "5")]
+    pub timestamp: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FinalizedPegout {
@@ -16,6 +18,8 @@ pub struct FinalizedPegout {
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint64, tag = "2")]
     pub botanix_block_height: u64,
+    #[prost(uint64, tag = "3")]
+    pub botanix_block_timestamp: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPendingPegoutsResponse {
@@ -228,15 +232,15 @@ pub struct Output {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MakeTxRequest {
-    #[prost(bytes = "vec", tag = "2")]
+    #[prost(bytes = "vec", tag = "1")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
     /// The checkpoint of the best finalized Bitcoin block hash.
-    #[prost(bytes = "vec", tag = "3")]
+    #[prost(bytes = "vec", tag = "2")]
     pub checkpoint_block_hash: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ToSignRequest {
-    #[prost(bytes = "vec", tag = "3")]
+    #[prost(bytes = "vec", tag = "1")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

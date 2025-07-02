@@ -664,6 +664,7 @@ where
                     spk,
                     value: Amount::from_sat(p.amount),
                     botanix_height: p.height,
+                    timestamp: Some(p.timestamp),
                 })
             })
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
@@ -725,6 +726,12 @@ where
                     spk: p.spk.into_bytes().to_vec(),
                     amount: p.value.to_sat(),
                     height: p.botanix_height,
+                    timestamp: p.timestamp.unwrap_or(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .expect("valid duration")
+                            .as_secs(),
+                    ),
                 })
                 .collect(),
         });
@@ -768,6 +775,12 @@ where
                                 .map(|p| rpc::FinalizedPegout {
                                     id: p.id.as_bytes().to_vec(),
                                     botanix_block_height: p.block_number,
+                                    botanix_block_timestamp: p.timestamp.unwrap_or(
+                                        std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .expect("valid duration")
+                                            .as_secs(),
+                                    ),
                                 })
                                 .collect(),
                             chunk_index,
@@ -901,6 +914,7 @@ where
                 Ok(btcserverlib::database::FinalizedPegout {
                     id: PegoutId::from_bytes(&v.id)?,
                     block_number: v.botanix_block_height,
+                    timestamp: Some(v.botanix_block_timestamp),
                 })
             })
             .collect::<Result<Vec<btcserverlib::database::FinalizedPegout>, ()>>()
@@ -967,7 +981,6 @@ where
             &self.db,
             &self.identifier,
         )
-        .await
         .map_err(SigningError::Round1)
         .to_status()?;
 
@@ -1017,7 +1030,6 @@ where
             &self.identifier,
             &signing_nonces,
         )
-        .await
         .map_err(|e| {
             if let Some(telemetry) = self.telemetry.as_ref() {
                 telemetry.update_signing_error_metrics(
@@ -1237,7 +1249,6 @@ where
             self.min_signers,
             tracked_txs,
         )
-        .await
         .to_status()?;
 
         // Log the outputs of the generated PSBT for debugging
@@ -1296,6 +1307,7 @@ where
         &self,
         req: tonic::Request<rpc::SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        let start = Instant::now();
         self.validate_jwt(&req)?;
         // Ensure we have a key package
         self.db.get_key_package().to_status()?;
@@ -1318,15 +1330,15 @@ where
         )
         .to_status()?;
 
-        // if let Some(telemetry) = self.telemetry.as_ref() {
-        //     telemetry.update_round1_signing_metrics(
-        //         self.btc_network,
-        //         self.config.identifier,
-        //         &signing_session_id,
-        //         written_data,
-        //         start.elapsed().as_millis(),
-        //     )
-        // }
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_round1_signing_metrics(
+                self.btc_network,
+                self.config.identifier,
+                &signing_session_id,
+                req.psbt.as_slice().len(),
+                start.elapsed().as_millis(),
+            )
+        }
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -1335,6 +1347,7 @@ where
         &self,
         req: tonic::Request<rpc::SigningPackage>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
+        let start = Instant::now();
         self.validate_jwt(&req)?;
         // Ensure we have a key package
         self.db.get_key_package().to_status()?;
@@ -1353,6 +1366,16 @@ where
             self.min_signers,
         )
         .to_status()?;
+
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_round2_signing_metrics(
+                self.btc_network,
+                self.config.identifier,
+                &signing_session_id,
+                req.psbt.as_slice().len(),
+                start.elapsed().as_millis(),
+            )
+        }
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -1597,7 +1620,7 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
             Some(s)
         }
         Err(err) => {
-            error!("Grpc server: Join Error {}", err.to_string());
+            error!("Grpc server: Join Error {}", err);
             None
         }
     };
@@ -2000,6 +2023,10 @@ mod tests {
                 spk: spk.clone().as_bytes().to_vec(),
                 amount: 100_000, // sats
                 height: 1,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("valid duration")
+                    .as_secs() as u64,
             });
         }
 
@@ -2046,8 +2073,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout =
-                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout = btcserverlib::database::FinalizedPegout {
+                id: pegout_id,
+                block_number: 100,
+                timestamp: None,
+            };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =
@@ -2075,8 +2105,11 @@ mod tests {
         let mut rng = thread_rng();
         for i in 0..num_txs {
             let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), i as u32);
-            let finalized_pegout =
-                btcserverlib::database::FinalizedPegout { id: pegout_id, block_number: 100 };
+            let finalized_pegout = btcserverlib::database::FinalizedPegout {
+                id: pegout_id,
+                block_number: 100,
+                timestamp: None,
+            };
             finalized_pegout_ids.push(finalized_pegout);
         }
         let finalized_pegout_ids_slice =

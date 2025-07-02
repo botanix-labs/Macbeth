@@ -12,6 +12,7 @@ use ethers::{
     providers::{JsonRpcClient, Provider, ProviderError},
     types::H256,
 };
+use reth::consensus_common::utils::unix_timestamp;
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::{Address as EthAddress, B256};
 use serde::Deserialize;
@@ -56,6 +57,7 @@ pub async fn send_pegout_notification(
         spk: spk.to_bytes().to_vec(),
         amount,
         height: bitcoin_height,
+        timestamp: unix_timestamp(),
     }];
 
     client
@@ -163,7 +165,7 @@ pub struct BlockChainInfoRes {
 
 pub fn get_checkpoint_block_hash(bitcoind: &impl RpcApi) -> Result<Vec<u8>, Error> {
     let deep_tip = bitcoind.call::<BlockChainInfoRes>("getblockchaininfo", &[]).unwrap().blocks -
-        (BOTANIX_TESTNET.parent_confirmation_depth as u64);
+        (BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth as u64);
     let deep_block_hash = bitcoind.get_block_hash(deep_tip).unwrap();
     let mut checkpoint_block_hash = vec![];
     if let Err(e) = deep_block_hash.consensus_encode(&mut checkpoint_block_hash) {
