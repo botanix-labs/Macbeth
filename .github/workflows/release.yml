@@ -88,7 +88,7 @@ jobs:
             @semantic-release/changelog
 
       - name: Update Cargo.toml version
-        if: needs.semantic-release.outputs.new_release_published == 'true'
+        if: steps.semantic.outputs.new_release_version != ''
         run: ./.github/scripts/release.sh update "${{ needs.semantic-release.outputs.new_release_version}}"
 
       # TODO: Upload Cargo.toml and Cargo.lock to artifacts
