@@ -25,7 +25,7 @@ Botanix teams use testnet to test release candidates and hotfixes before deployi
 - Pegouts consensus threshold: 3 of 3 federation nodes
 - Comet BFT consensus threshold: 3 of 3 federation nodes 
 
-**Testnet infrastructure doesn't mirror mainnet's setup, which may lead to differences in behavior and hight risk of overseeing issues that could occur on mainnet**
+**Testnet infrastructure doesn't mirror mainnet's setup, which may lead to differences in behavior and high risk of overseeing issues that could occur on mainnet**
 
 ### Devnet
 
