@@ -43,23 +43,18 @@ update_cargo_version() {
     log_error "Version is required for update command"
   fi
 
-  # Extract base version (e.g., "1.1.2" from "1.1.2-hotfix" or "1.1.2-rc")
-  BASE_VERSION=$(echo "$VERSION" | sed 's/-.*$//')
-  
-  log_info "Updating Cargo.toml version to $BASE_VERSION (extracted from $VERSION)"
+  log_info "Updating Cargo.toml version to $VERSION"
 
   # Use sed to replace the version line in Cargo.toml
-  sed -i "s/^version = .*$/version = \"$BASE_VERSION\"/" "$CARGO_TOML"
+  sed -i "s/^version = .*$/version = \"$VERSION\"/" "$CARGO_TOML"
 
-  if ! grep -q "version = \"$BASE_VERSION\"" "$CARGO_TOML"; then
+  if ! grep -q "version = \"$VERSION\"" "$CARGO_TOML"; then
     log_error "Failed to update version in $CARGO_TOML"
   fi
 
-  log_info "Successfully updated version to $BASE_VERSION in $CARGO_TOML"
+  cargo generate-lockfile
 
-  git add "$CARGO_TOML"
-
-  git commit -m "chore(release): bump version to ${BASE_VERSION} [skip ci]" || true
+  log_info "Successfully updated version to $VERSION in $CARGO_TOML"
 }
 
 # Back-merge changes from main to other branches according to release strategy

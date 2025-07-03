@@ -11,7 +11,7 @@ on:
       - develop
       - rc
       - hotfix
-      - refactor/releases
+      - refactor/releases # TODO: This is for testing, remove when done
 
 permissions:
   contents: write
@@ -69,7 +69,7 @@ jobs:
           else
             echo "branches='[{name: \"${GITHUB_REF_NAME}\", channel: \"${channel_name}\", prerelease: true}]'" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Install dependencies
         run: |
           npm install --save-dev conventional-changelog-conventionalcommits 
@@ -81,20 +81,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           branches: "${{ steps.branches_config.outputs.branches }}"
-          branch: "${{ github.ref_name }}"
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
-          # TODO: Do we use this plugins?
           extra_plugins: |
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
             @semantic-release/changelog
 
-      # TODO: Update Cargo.toml without commiting and upload as artifact
+      - name: Update Cargo.toml version
+        if: needs.semantic-release.outputs.new_release_published == 'true'
+        run: ./.github/scripts/release.sh update "${{ needs.semantic-release.outputs.new_release_version}}"
+
+      # TODO: Upload Cargo.toml and Cargo.lock to artifacts
 
   build-binaries:
     name: build release binaries
     needs: semantic-release
-    #if: needs.semantic-release.outputs.new_release_published == 'true'
+    if: needs.semantic-release.outputs.new_release_published == 'true'
     runs-on: binary-builer
     permissions:
       contents: read
@@ -172,10 +174,8 @@ jobs:
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
 
       - name: Build Reth Binary
         if: matrix.build.binary == 'reth'
@@ -236,14 +236,8 @@ jobs:
       # TODO: Use semantic-release outputs
       - name: Upload Binary to GCP Artifact Storage
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.4-rc' }}"
-          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'rc' }}"
-          
-          # Use git SHA if no semantic version
-          if [ -z "$VERSION" ]; then
-            VERSION="${{ github.sha }}"
-            echo "No semantic release version, using git SHA: $VERSION"
-          fi
+          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
+          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel }}"
           
           # Map channel names
           case "$CHANNEL" in
@@ -264,11 +258,94 @@ jobs:
           echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${CHANNEL}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz"
           echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${CHANNEL}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum"
 
+
+# TODO: @shumkov test it and make sure it's not taking more than 20 mins.
+# TODO: Use sccache for docker builds
+# TODO: store docker layer cache in GCS
+#  build-docker-images:
+#    name: Build Docker Images
+#    runs-on: ubuntu-latest
+#    needs: semantic-release
+#    if: needs.semantic-release.outputs.new_release_published == 'true'
+#    steps:
+#      - name: Checkout
+#        uses: actions/checkout@v4
+#
+#      - name: Set up Docker Buildx
+#        uses: docker/setup-buildx-action@v3
+#
+#      - name: Auth gcloud
+#        uses: google-github-actions/auth@v2
+#        with:
+#          project_id: botanix-391913
+#          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+#          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+#
+#      - name: Setup gcloud
+#        uses: google-github-actions/setup-gcloud@v2
+#        with:
+#          project_id: botanix-391913
+#
+#      - name: Login to GHCR
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.repository_owner }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Generate Docker tags
+#        id: generate-tags
+#        run: |
+#          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
+#          MAJOR="${{ needs.semantic-release.outputs.new_release_major_version }}"
+#          MINOR="${{ needs.semantic-release.outputs.new_release_minor_version }}"
+#          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'latest' }}"
+#
+#          # Determine Docker tags based on release channel
+#          case "$CHANNEL" in
+#            "latest") DOCKER_TAGS="latest,$VERSION,$MAJOR.$MINOR,$MAJOR" ;;
+#            *) DOCKER_TAGS="$CHANNEL,$VERSION" ;;
+#          esac
+#
+#          # Generate fully qualified tags
+#          BTC_SERVER_TAGS=""
+#          RETH_NODE_TAGS=""
+#
+#          for tag in $(echo "$DOCKER_TAGS" | tr ',' ' '); do
+#            if [ -z "$BTC_SERVER_TAGS" ]; then
+#              BTC_SERVER_TAGS="ghcr.io/botanix-labs/botanix-btc-server:$tag"
+#              RETH_NODE_TAGS="ghcr.io/botanix-labs/botanix-reth-node:$tag"
+#            else
+#              BTC_SERVER_TAGS="$BTC_SERVER_TAGS,ghcr.io/botanix-labs/botanix-btc-server:$tag"
+#              RETH_NODE_TAGS="$RETH_NODE_TAGS,ghcr.io/botanix-labs/botanix-reth-node:$tag"
+#            fi
+#          done
+#
+#          echo "btc-server-tags=$BTC_SERVER_TAGS" >> $GITHUB_OUTPUT
+#          echo "reth-node-tags=$RETH_NODE_TAGS" >> $GITHUB_OUTPUT
+#
+#      # TODO: Download artifacts with Cargo.toml. # why do we need to do this?
+#
+#      - name: Build and push
+#        uses: docker/bake-action@v6
+#        with:
+#          source: .
+#          push: true
+#          set: |
+#            btc-server.tags=${{ steps.generate-tags.outputs.btc-server-tags }}
+#            reth-node.tags=${{ steps.generate-tags.outputs.reth-node-tags }}
+#            *.labels.org.opencontainers.image.version=${{ needs.semantic-release.outputs.new_release_version }}
+#            *.labels.org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+#            *.labels.org.opencontainers.image.revision=${{ github.sha }}
+#            *.labels.org.opencontainers.image.source=https://github.com/${{ github.repository }}
+#            *.labels.org.opencontainers.image.channel=${{ needs.semantic-release.outputs.new_release_channel }}
+#            *.platforms=linux/amd64
+
   build-docker-images:
     name: Build Docker Images
     runs-on: ubuntu-latest
     needs: semantic-release
-    #if: needs.semantic-release.outputs.new_release_published == 'true'
+    if: needs.semantic-release.outputs.new_release_published == 'true'
     strategy:
       matrix:
         configs:
@@ -305,19 +382,10 @@ jobs:
       - name: Generate Docker tags
         id: generate-tags
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.4-rc' }}"
+          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
           MAJOR="${{ needs.semantic-release.outputs.new_release_major_version }}"
           MINOR="${{ needs.semantic-release.outputs.new_release_minor_version }}"
-          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'rc' }}"
-
-          if [ -z "$VERSION" ]; then
-            echo "No semantic release version found, using git SHA"
-            SHA_TAG="${{ github.sha }}"
-            echo "btc-server-tags=ghcr.io/botanix-labs/botanix-btc-server:$SHA_TAG" >> $GITHUB_OUTPUT
-            echo "reth-node-tags=ghcr.io/botanix-labs/botanix-reth-node:$SHA_TAG" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
+          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel }}"
 
           # Determine Docker tags based on release channel
           case "$CHANNEL" in
@@ -408,7 +476,7 @@ jobs:
             docker push "$tag"
           done
 
-      
+
   # This job waits for the binary release workflow to complete before finalizing the release
   finalize-release:
     name: Finalize Release
@@ -417,7 +485,7 @@ jobs:
       - semantic-release
       - build-docker-images
       - build-binaries
-    #if: needs.semantic-release.outputs.new_release_published == 'true'
+    if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -436,33 +504,22 @@ jobs:
       - name: Prepare Artifacts for GitHub Release
         run: |
           mkdir -p ./release-assets
-          version=${{ needs.semantic-release.outputs.new_release_version || '1.1.4-rc' }}
+          version=${{ needs.semantic-release.outputs.new_release_version }}
 
           # Copy artifacts to the release-assets directory with proper naming
           find ./binaries -type f \( -name "*.tar.gz" -o -name "*.sha256sum" \) | while read file; do
             cp "$file" ./release-assets/
           done
 
-      - name: Update Cargo.toml version
-        run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.4-rc' }}"
-          if [ -n "$VERSION" ]; then
-            ./.github/scripts/release.sh update "$VERSION"
-          else
-            echo "No semantic release version, skipping Cargo.toml update"
-          fi
+      # TODO: Download artifacts with Cargo.toml and Cargo.lock
 
       - name: Push version update
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "chore(release): bump version to ${{ needs.semantic-release.outputs.new_release_version }} [skip ci]"
-            git push origin HEAD --tags
-          fi
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore(release): bump version to ${{ needs.semantic-release.outputs.new_release_version }}"
+          git push origin HEAD --tags
 
       - name: Back-merge to other branches
         if: github.ref_name == 'main'
@@ -475,23 +532,21 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./release-assets/*
-          tag_name: v${{ needs.semantic-release.outputs.new_release_version || '1.1.4-rc' }}
-          name: Botanix Release v${{ needs.semantic-release.outputs.new_release_version || '1.1.4-rc' }}
+          tag_name: v${{ needs.semantic-release.outputs.new_release_version }}
+          name: Botanix Release v${{ needs.semantic-release.outputs.new_release_version }}
           body: ${{ needs.semantic-release.outputs.new_release_notes }}
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
-          make_latest: ${{ needs.semantic-release.outputs.new_release_channel == 'latest' || needs.semantic-release.outputs.new_release_channel == '' }}
-          prerelease: ${{ needs.semantic-release.outputs.new_release_channel != 'latest' && needs.semantic-release.outputs.new_release_channel != '' }}
+          make_latest: ${{ needs.semantic-release.outputs.new_release_channel == 'latest' }}
+          prerelease: ${{ needs.semantic-release.outputs.new_release_channel != 'latest' }}
 
-# TODO: combine with πfinalize-release
   publish-release:
     name: Publish to Botanix Releases Repository
     runs-on: ubuntu-latest
     needs:
       - semantic-release
       - finalize-release
-    #if: needs.semantic-release.outputs.new_release_published == 'true'
-
+    if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
       - name: Checkout Main Repository
         uses: actions/checkout@v4
@@ -522,16 +577,10 @@ jobs:
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          VERSION="${{ needs.semantic-release.outputs.new_release_version || '1.1.4-rc' }}"
-          if [ -n "$VERSION" ]; then
-            chmod +x .github/scripts/publish-release.sh
             ./.github/scripts/publish-release.sh full-publish \
-              "$VERSION" \
-              "${{ needs.semantic-release.outputs.new_release_channel || 'rc' }}" \
+              "${{ needs.semantic-release.outputs.new_release_version }}" \
+              "${{ needs.semantic-release.outputs.new_release_channel }}" \
               "${{ needs.semantic-release.outputs.new_release_notes }}" \
               "${{ needs.semantic-release.outputs.new_release_git_tag }}" \
               "${{ needs.semantic-release.outputs.new_release_git_head }}" \
               "${{ needs.semantic-release.outputs.last_release_version }}"
-          else
-            echo "No semantic release version, skipping publish"
-          fi

@@ -14,6 +14,10 @@ branches:
   - name: hotfix
     channel: hotfix
     prerelease: hotfix
+  # TODO: This only for testing, remove when it's done
+  - name: refactor/releases
+    channel: hotfix
+    prerelease: hotfix
 
 # Format for git tags
 tagFormat: v${version}

@@ -94,7 +94,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --profile $PROFILE \
     --features "$FEATURES" \
     --package "$PACKAGE" \
-    --bin "$BIN" && \
+    --bin "$BIN" \
+    --locked && \
     cp target/$OUT_DIRECTORY/$BIN /usr/local/bin/app
 
 # Use Ubuntu as the release image
