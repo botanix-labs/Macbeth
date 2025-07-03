@@ -11,11 +11,7 @@ branches:
     channel: rc
     prerelease: rc
   # hotfix branch for urgent fixes
-  - name: hotfix
-    channel: hotfix
-    prerelease: hotfix
-  # TODO: This only for testing, remove when it's done
-  - name: refactor/releases
+  - name: refactor/releases # TODO: This only for testing, change to "hotfix" when ready
     channel: hotfix
     prerelease: hotfix
 
