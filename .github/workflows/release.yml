@@ -87,6 +87,21 @@ jobs:
             @semantic-release/release-notes-generator
             @semantic-release/changelog
 
+      - name: Output semantic-release results
+        run: |
+          echo "new_release_published=${{ steps.semantic.outputs.new_release_published }}"
+          echo "new_release_version=${{ steps.semantic.outputs.new_release_version }}"
+          echo "new_release_major_version=${{ steps.semantic.outputs.new_release_major_version }}"
+          echo "new_release_minor_version=${{ steps.semantic.outputs.new_release_minor_version }}"
+          echo "new_release_patch_version=${{ steps.semantic.outputs.new_release_patch_version }}"
+          echo "new_release_channel=${{ steps.semantic.outputs.new_release_channel }}"
+          echo "new_release_notes=${{ steps.semantic.outputs.new_release_notes }}"
+          echo "new_release_git_head=${{ steps.semantic.outputs.new_release_git_head }}"
+          echo "new_release_git_tag=${{ steps.semantic.outputs.new_release_git_tag }}"
+          echo "last_release_version=${{ steps.semantic.outputs.last_release_version }}"
+          echo "last_release_git_head=${{ steps.semantic.outputs.last_release_git_head }}"
+          echo "last_release_git_tag=${{ steps.semantic.outputs.last_release_git_tag }}"
+
       - name: Update Cargo.toml version
         if: steps.semantic.outputs.new_release_version != ''
         run: ./.github/scripts/release.sh update "${{ needs.semantic-release.outputs.new_release_version}}"
