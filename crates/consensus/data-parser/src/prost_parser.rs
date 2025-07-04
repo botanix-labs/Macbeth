@@ -4,7 +4,7 @@ use thiserror::Error;
 
 /// Prost encode/decode error types.
 #[derive(Debug, DisplayDoc, Error)]
-pub(crate) enum ProstError {
+pub enum ProstError {
     /// serde prost encode error
     ProstEncode(#[from] prost::EncodeError),
     /// serde prost decode error
@@ -13,7 +13,7 @@ pub(crate) enum ProstError {
 
 /// Prost Message Wrapper allowing serialization/deserialization
 #[allow(dead_code)]
-pub(crate) struct ProstMessageSerdelizer<T: prost::Message>(pub(crate) T);
+pub struct ProstMessageSerdelizer<T: prost::Message>(pub T);
 
 #[allow(dead_code)]
 impl<T> ProstMessageSerdelizer<T>
@@ -21,25 +21,27 @@ where
     T: prost::Message + std::default::Default,
 {
     /// Method to serialize
-    pub(crate) fn serialize(&self) -> Result<Vec<u8>, ProstError> {
+    pub fn serialize(&self) -> Result<Vec<u8>, ProstError> {
         let mut buf = Vec::new();
         self.0.encode(&mut buf).map_err(ProstError::ProstEncode)?;
         Ok(buf)
     }
 
     /// Method to deserialize
-    pub(crate) fn deserialize(buf: Vec<u8>) -> Result<T, ProstError> {
+    pub fn deserialize(buf: Vec<u8>) -> Result<T, ProstError> {
         T::decode(Bytes::from(buf)).map_err(ProstError::ProstDecode)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::prost_parser::ProstMessageSerdelizer;
+    use crate::{
+        prost_parser::ProstMessageSerdelizer, DataParser, SerializationType,
+        DEFAULT_COMPRESSION_STRATEGY,
+    };
     use bitcoin::{hashes::Hash, Txid};
     use client::{GetAllUtxosResponse, TxOut, Utxo};
     use rand::{thread_rng, Rng};
-    use reth_data_parser::{DataParser, SerializationType, DEFAULT_COMPRESSION_STRATEGY};
 
     #[tokio::test]
     async fn test_compress_decompress_json() {

@@ -1,12 +1,5 @@
 //! Wallet state sync module
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
-
 use crate::{
-    prost_parser::ProstMessageSerdelizer,
     utils::{get_block_pegouts, EpochPegoutsError},
     Storage,
 };
@@ -18,7 +11,9 @@ use btcserverlib::{
 use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
 use once_cell::sync::Lazy;
 use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_data_parser::{DataParser, Error as CompressorError, SerializationType};
+use reth_data_parser::{
+    prost_parser::ProstMessageSerdelizer, DataParser, Error as CompressorError, SerializationType,
+};
 use reth_db::{
     models::{uuid_to_b256, PeerID, UuidID, WalletStateSyncRecord},
     DatabaseEnv,
@@ -34,6 +29,11 @@ use reth_provider::{
     ProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use reth_tasks::TaskExecutor;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
