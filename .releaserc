@@ -13,7 +13,6 @@ branches:
   # hotfix branch for urgent fixes
   - name: refactor/releases # TODO: This only for testing, change to "hotfix" when ready
     channel: hotfix
-    prerelease: hotfix
 
 # Format for git tags
 tagFormat: v${version}
