@@ -40,9 +40,6 @@ plugins:
         - type: ci
           release: patch
         - type: chore
-          scope: release
-          release: false
-        - type: chore
           release: patch
         - breaking: true
           release: major
