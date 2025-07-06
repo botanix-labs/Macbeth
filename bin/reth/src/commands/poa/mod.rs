@@ -620,6 +620,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let validator =
             TransactionValidationTaskExecutor::eth_builder(Arc::clone(&chain_arc.clone()))
                 .with_head_timestamp(head.timestamp)
+                .with_minimum_priority_fee(self.txpool.minimum_priority_fee)
                 .with_additional_tasks(1)
                 .build_with_tasks(blockchain_db.clone(), executor.clone(), blob_store.clone());
 

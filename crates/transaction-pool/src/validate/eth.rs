@@ -124,7 +124,7 @@ pub(crate) struct EthTransactionValidatorInner<Client, T> {
     /// The current max gas limit
     block_gas_limit: u64,
     /// Minimum priority fee to enforce for acceptance into the pool.
-    minimum_priority_fee: Option<u128>,
+    minimum_priority_fee: u128,
     /// Stores the setup and parameters needed for validating KZG proofs.
     kzg_settings: EnvKzgSettings,
     /// How to handle [`TransactionOrigin::Local`](TransactionOrigin) transactions.
@@ -248,14 +248,12 @@ where
         // the pool.
         if !self.local_transactions_config.is_local(origin, transaction.sender()) &&
             transaction.is_eip1559() &&
-            transaction.max_priority_fee_per_gas() < self.minimum_priority_fee
+            transaction.max_priority_fee_per_gas() < Some(self.minimum_priority_fee)
         {
             return TransactionValidationOutcome::Invalid(
                 transaction,
                 InvalidPoolTransactionError::PriorityFeeBelowMinimum {
-                    minimum_priority_fee: self
-                        .minimum_priority_fee
-                        .expect("minimum priority fee is expected inside if statement"),
+                    minimum_priority_fee: self.minimum_priority_fee,
                 },
             );
         }
@@ -458,7 +456,7 @@ pub struct EthTransactionValidatorBuilder {
     /// The current max gas limit
     block_gas_limit: u64,
     /// Minimum priority fee to enforce for acceptance into the pool.
-    minimum_priority_fee: Option<u128>,
+    minimum_priority_fee: u128,
     /// Determines how many additional tasks to spawn
     ///
     /// Default is 1
@@ -485,7 +483,7 @@ impl EthTransactionValidatorBuilder {
         Self {
             block_gas_limit: chain_spec.max_gas_limit,
             chain_spec,
-            minimum_priority_fee: None,
+            minimum_priority_fee: Default::default(),
             additional_tasks: 1,
             kzg_settings: EnvKzgSettings::Default,
             local_transactions_config: Default::default(),
@@ -590,7 +588,7 @@ impl EthTransactionValidatorBuilder {
     }
 
     /// Sets a minimum priority fee that's enforced for acceptance into the pool.
-    pub const fn with_minimum_priority_fee(mut self, minimum_priority_fee: Option<u128>) -> Self {
+    pub const fn with_minimum_priority_fee(mut self, minimum_priority_fee: u128) -> Self {
         self.minimum_priority_fee = minimum_priority_fee;
         self
     }
@@ -899,7 +897,7 @@ mod tests {
     // Helper function to create a validator with minimum priority fee
     fn create_validator_with_minimum_fee(
         provider: MockEthProvider,
-        minimum_priority_fee: Option<u128>,
+        minimum_priority_fee: u128,
         local_config: Option<LocalTransactionConfig>,
     ) -> EthTransactionValidator<MockEthProvider, EthPooledTransaction> {
         let blob_store = InMemoryBlobStore::default();
@@ -924,8 +922,7 @@ mod tests {
         let minimum_priority_fee =
             transaction.max_priority_fee_per_gas().expect("priority fee is expected") * 2;
 
-        let validator =
-            create_validator_with_minimum_fee(provider, Some(minimum_priority_fee), None);
+        let validator = create_validator_with_minimum_fee(provider, minimum_priority_fee, None);
 
         // External transaction should be rejected due to low priority fee
         let outcome = validator.validate_one(TransactionOrigin::External, transaction.clone());
@@ -958,7 +955,7 @@ mod tests {
         // Local transactions should still be accepted regardless of minimum priority fee
         let (_, local_provider) = setup_priority_fee_test();
         let validator_local =
-            create_validator_with_minimum_fee(local_provider, Some(minimum_priority_fee), None);
+            create_validator_with_minimum_fee(local_provider, minimum_priority_fee, None);
 
         let local_outcome = validator_local.validate_one(TransactionOrigin::Local, transaction);
         assert!(local_outcome.is_valid());
@@ -971,7 +968,7 @@ mod tests {
         // Set minimum priority fee equal to transaction's priority fee
         let tx_priority_fee =
             transaction.max_priority_fee_per_gas().expect("priority fee is expected");
-        let validator = create_validator_with_minimum_fee(provider, Some(tx_priority_fee), None);
+        let validator = create_validator_with_minimum_fee(provider, tx_priority_fee, None);
 
         let outcome = validator.validate_one(TransactionOrigin::External, transaction);
         assert!(outcome.is_valid());
@@ -986,8 +983,7 @@ mod tests {
             transaction.max_priority_fee_per_gas().expect("priority fee is expected");
         let minimum_priority_fee = tx_priority_fee / 2; // Half of transaction's priority fee
 
-        let validator =
-            create_validator_with_minimum_fee(provider, Some(minimum_priority_fee), None);
+        let validator = create_validator_with_minimum_fee(provider, minimum_priority_fee, None);
 
         let outcome = validator.validate_one(TransactionOrigin::External, transaction);
         assert!(outcome.is_valid());
@@ -998,7 +994,7 @@ mod tests {
         let (transaction, provider) = setup_priority_fee_test();
 
         // No minimum priority fee set (default is None)
-        let validator = create_validator_with_minimum_fee(provider, None, None);
+        let validator = create_validator_with_minimum_fee(provider, 0, None);
 
         let outcome = validator.validate_one(TransactionOrigin::External, transaction);
         assert!(outcome.is_valid());
@@ -1012,8 +1008,7 @@ mod tests {
         let minimum_priority_fee =
             transaction.max_priority_fee_per_gas().expect("priority fee is expected") * 2;
 
-        let validator =
-            create_validator_with_minimum_fee(provider, Some(minimum_priority_fee), None);
+        let validator = create_validator_with_minimum_fee(provider, minimum_priority_fee, None);
 
         // Private transactions are also subject to minimum priority fee validation
         // because they are not considered "local" by default unless specifically configured
@@ -1041,11 +1036,8 @@ mod tests {
         let local_config =
             LocalTransactionConfig { propagate_local_transactions: true, ..Default::default() };
 
-        let validator = create_validator_with_minimum_fee(
-            provider,
-            Some(minimum_priority_fee),
-            Some(local_config),
-        );
+        let validator =
+            create_validator_with_minimum_fee(provider, minimum_priority_fee, Some(local_config));
 
         // With appropriate local config, the behavior depends on the local transaction logic
         // This test documents the current behavior - private transactions are still validated
