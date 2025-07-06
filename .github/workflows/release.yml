@@ -83,8 +83,6 @@ jobs:
         with:
           #branches: ${{ steps.branches_config.outputs.branches }}
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
-          dry_run: true
-          ci: false
           extra_plugins: |
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
