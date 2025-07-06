@@ -1,6 +1,9 @@
 ---
 # Configuration for semantic-release
 
+# Repository URL
+repositoryUrl: https://github.com/botanix-labs/Macbeth
+
 # Branch configuration
 branches:
   # main branch for production releases
