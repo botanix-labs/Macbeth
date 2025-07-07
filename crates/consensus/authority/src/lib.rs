@@ -13,8 +13,9 @@
 
 //! A [Consensus] implementation of Clique Proof of Authority (POA)
 //! that authoritymatically seals blocks.
-
 use async_trait as _;
+use bytes as _;
+use displaydoc as _;
 use metrics_util as _;
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
@@ -50,7 +51,6 @@ pub use comet_bft::light_client::LightCBFTClientBuilder;
 pub mod activation_manager;
 mod excecution_utils;
 mod frost_task;
-mod prost_parser;
 mod signing;
 pub mod snapshot_manager;
 pub mod utils;

@@ -1,5 +1,6 @@
 mod compression_strategies;
 mod error;
+pub mod prost_parser;
 pub use compression_strategies::*;
 use std::{fmt::Debug, sync::Arc};
 

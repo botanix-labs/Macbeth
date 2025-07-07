@@ -1,8 +1,5 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
-
 use crate::{
     metrics::AuthorityMetrics,
-    prost_parser::{ProstError, ProstMessageSerdelizer},
     random_source_provider::RandomSource,
     signing::SigningStateMachine,
     utils::{
@@ -20,7 +17,10 @@ use client::{ConsensusCheckpointRequest, PendingPegout, Utxo};
 use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use futures::{pin_mut, StreamExt};
 use reth_chainspec::ChainSpec;
-use reth_data_parser::{DataParser, Error as DataParserError};
+use reth_data_parser::{
+    prost_parser::{ProstError, ProstMessageSerdelizer},
+    DataParser, Error as DataParserError,
+};
 use reth_network::{
     frost::{
         manager::{
@@ -38,6 +38,7 @@ use reth_provider::{
     StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tendermint_rpc::client::HttpClient;
 use tokio::sync::mpsc::{self, error::SendError};
 use tracing::{error, info, warn};
