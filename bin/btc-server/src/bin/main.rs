@@ -1137,7 +1137,7 @@ where
                         info!("Transaction already in chain, skipping");
                         Ok(None)
                     }
-                    msg if msg.contains("tx-invalid-input-missingorspent") => {
+                    msg if msg.contains("bad-txns-inputs-missingorspent") => {
                         error!("Invalid input detected: {}", msg);
                         self.handle_invalid_inputs(&tx).to_status()?;
                         Err(CoordinatorError::FailedToBroadcastTx(err))
