@@ -2,7 +2,7 @@
 
 use crate::cli::config::RethTransactionPoolConfig;
 use clap::Args;
-use reth_primitives::Address;
+use reth_primitives::{constants::DEFAULT_SUGGESTED_TIP, Address};
 use reth_transaction_pool::{
     blobstore::disk::DEFAULT_MAX_CACHED_BLOBS,
     pool::{NEW_TX_LISTENER_BUFFER_SIZE, PENDING_TX_LISTENER_BUFFER_SIZE},
@@ -77,6 +77,15 @@ pub struct TxPoolArgs {
     /// Maximum number of new transactions to buffer
     #[arg(long = "txpool.max-new-txns", alias = "txpool.max_new_txns", default_value_t = NEW_TX_LISTENER_BUFFER_SIZE)]
     pub new_tx_listener_buffer_size: usize,
+
+    /// Minimum priority fee required for transaction acceptance into the pool.
+    /// Transactions with priority fee below this value will be rejected.
+    #[arg(
+        long = "txpool.minimum-priority-fee",
+        alias = "txpool.minimum_priority_fee",
+        default_value_t = DEFAULT_SUGGESTED_TIP
+    )]
+    pub minimum_priority_fee: u128,
 }
 
 impl Default for TxPoolArgs {
@@ -99,6 +108,7 @@ impl Default for TxPoolArgs {
             additional_validation_tasks: DEFAULT_TXPOOL_ADDITIONAL_VALIDATION_TASKS,
             pending_tx_listener_buffer_size: PENDING_TX_LISTENER_BUFFER_SIZE,
             new_tx_listener_buffer_size: NEW_TX_LISTENER_BUFFER_SIZE,
+            minimum_priority_fee: DEFAULT_SUGGESTED_TIP,
         }
     }
 }
@@ -135,6 +145,7 @@ impl RethTransactionPoolConfig for TxPoolArgs {
             },
             pending_tx_listener_buffer_size: self.pending_tx_listener_buffer_size,
             new_tx_listener_buffer_size: self.new_tx_listener_buffer_size,
+            minimum_priority_fee: self.minimum_priority_fee,
         }
     }
 }
