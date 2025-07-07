@@ -221,7 +221,7 @@ jobs:
           toolchain: nightly
 
       - name: Check formatting
-        uses: clechasseur/rs-fmt-check@79f30e1d92a7a4fbc417d377ef8172e445f58555
+        uses: clechasseur/rs-fmt-check@946ff7ba705ba6b0b5101309ab693c96fd452e25
 
   # cargo-verifications:
   #   name: Cargo verifications
