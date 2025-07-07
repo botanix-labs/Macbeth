@@ -1132,11 +1132,20 @@ where
             Ok(tx_id) => Ok(Some(tx_id)),
             Err(err) => {
                 let err_msg = err.to_string();
-                if err_msg.contains("already in chain") {
-                    Ok(None)
-                } else {
-                    error!("Failed to broadcast tx: {}", err);
-                    Err(CoordinatorError::FailedToBroadcastTx(err))
+                match err_msg.as_str() {
+                    msg if msg.contains("already in chain") => {
+                        info!("Transaction already in chain, skipping");
+                        Ok(None)
+                    }
+                    msg if msg.contains("tx-invalid-input-missingorspent") => {
+                        error!("Invalid input detected: {}", msg);
+                        self.handle_invalid_inputs(&tx).to_status()?;
+                        Err(CoordinatorError::FailedToBroadcastTx(err))
+                    }
+                    _ => {
+                        error!("Failed to broadcast transaction: {}", err_msg);
+                        Err(CoordinatorError::FailedToBroadcastTx(err))
+                    }
                 }
             }
         }
@@ -1559,6 +1568,27 @@ where
         // }
 
         // Ok(res)
+    }
+}
+
+impl<BitcoindClient> App<BitcoindClient> {
+    fn handle_invalid_inputs(&self, tx: &Transaction) -> Result<(), btcserverlib::database::Error> {
+        for input in &tx.input {
+            if let Some(_utxo) = self.db.get_utxo(input.previous_output)? {
+                match self.db.remove_utxo(&input.previous_output) {
+                    Ok(_) => {
+                        info!("Removed spent input: {} from DB", input.previous_output);
+                    }
+                    Err(e) => {
+                        error!(
+                            "Failed to remove spent input: {} from DB: {}",
+                            input.previous_output, e
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
