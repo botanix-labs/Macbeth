@@ -1132,11 +1132,21 @@ where
             Ok(tx_id) => Ok(Some(tx_id)),
             Err(err) => {
                 let err_msg = err.to_string();
-                if err_msg.contains("already in chain") {
-                    Ok(None)
-                } else {
-                    error!("Failed to broadcast tx: {}", err);
-                    Err(CoordinatorError::FailedToBroadcastTx(err))
+                match err_msg.as_str() {
+                    msg if msg.contains("already in chain") => {
+                        info!("Transaction already in chain, skipping");
+                        Ok(None)
+                    }
+                    msg if msg.contains("bad-txns-inputs-missingorspent") => {
+                        error!("Invalid input detected: {}", msg);
+                        self.handle_invalid_inputs(&tx).to_status()?;
+                        Err(CoordinatorError::FailedToBroadcastTx(err))
+                    }
+                    _ => {
+                        error!("Failed to broadcast transaction: {}", err_msg);
+                        error!("Failed tx: {:?}", tx);
+                        Err(CoordinatorError::FailedToBroadcastTx(err))
+                    }
                 }
             }
         }
@@ -1559,6 +1569,46 @@ where
         // }
 
         // Ok(res)
+    }
+}
+
+impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
+    /// Handles invalid inputs in the transaction by:
+    /// 1. Checking if the input's previous output exists in the database.
+    /// 2. If it exists, checks if it's already spent.
+    /// 3. If it is spent, removes it from the database.
+    ///
+    /// Returns `Ok(())` if all inputs are handled successfully, or an error if any operation fails.
+    fn handle_invalid_inputs(&self, tx: &Transaction) -> Result<(), btcserverlib::database::Error> {
+        let tx_id = tx.compute_txid();
+        for input in &tx.input {
+            if let Some(_utxo) = self.db.get_utxo(input.previous_output)? {
+                // Check on chain if the input is already spent
+                let result = self
+                    .bitcoind_client
+                    .get_tx_out(&tx_id, input.previous_output.vout, None)
+                    .map_err(|e| {
+                        error!("Failed to get tx out for input: {}: {}", input.previous_output, e);
+                        btcserverlib::database::Error::BitcoindError(e)
+                    })?;
+
+                if result.is_none() {
+                    // The input is already spent, remove it from the database
+                    match self.db.remove_utxo(&input.previous_output) {
+                        Ok(_) => {
+                            info!("Removed spent input: {} from DB", input.previous_output);
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to remove spent input: {} from DB: {}",
+                                input.previous_output, e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 

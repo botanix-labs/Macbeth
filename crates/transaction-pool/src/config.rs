@@ -39,6 +39,8 @@ pub struct PoolConfig {
     pub max_account_slots: usize,
     /// Price bump (in %) for the transaction pool underpriced check.
     pub price_bumps: PriceBumpConfig,
+    /// Minimum priority fee required for transaction acceptance into the pool.
+    pub minimum_priority_fee: u128,
     /// How to handle locally received transactions:
     /// [`TransactionOrigin::Local`](crate::TransactionOrigin).
     pub local_transactions_config: LocalTransactionConfig,
@@ -68,6 +70,7 @@ impl Default for PoolConfig {
             blob_limit: Default::default(),
             max_account_slots: TXPOOL_MAX_ACCOUNT_SLOTS_PER_SENDER,
             price_bumps: Default::default(),
+            minimum_priority_fee: Default::default(),
             local_transactions_config: Default::default(),
             pending_tx_listener_buffer_size: PENDING_TX_LISTENER_BUFFER_SIZE,
             new_tx_listener_buffer_size: NEW_TX_LISTENER_BUFFER_SIZE,

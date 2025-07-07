@@ -31,6 +31,8 @@ pub enum Error {
     HashEngine(#[from] std::io::Error),
     #[error("Invalid UTXO version number {0}")]
     InvalidUTXOVersion(u32),
+    #[error("Failed to get tx out for input: {0}")]
+    BitcoindError(#[from] bitcoincore_rpc::Error),
 }
 
 impl PartialEq for Error {
