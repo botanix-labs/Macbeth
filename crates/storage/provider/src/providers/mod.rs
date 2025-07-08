@@ -4,7 +4,7 @@ use crate::{
     CanonStateSubscriptions, ChainSpecProvider, ChangeSetReader, DatabaseProviderFactory,
     EvmEnvProvider, FinalizedBlockReader, FullExecutionDataProvider, HeaderProvider, ProviderError,
     PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt, RequestsProvider, SnapshotReader,
-    SnapshotWriter, StageCheckpointReader, StateProviderBox, StateProviderFactory,
+    SnapshotWriter, StageCheckpointReader, StagedHeader, StateProviderBox, StateProviderFactory,
     StaticFileProviderFactory, TransactionVariant, TransactionsProvider, TreeViewer,
     WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
@@ -16,8 +16,8 @@ use reth_blockchain_tree_api::{
 use reth_chain_state::{ChainInfoTracker, ForkChoiceNotifications, ForkChoiceSubscriptions};
 use reth_chainspec::{ChainInfo, ChainSpec, EthChainSpec};
 use reth_db::models::{
-    ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
-    WalletStateSyncRecord,
+    ChunkId, HeaderWithPegs, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
+    SnapshotSyncId, UuidID, WalletStateSyncRecord,
 };
 use reth_db_api::{
     database::Database,
@@ -709,6 +709,23 @@ where
 
     fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
         self.database.provider_rw()?.delete_chunks_in_blocks(range)
+    }
+}
+
+impl<DB> StagedHeader for BlockchainProvider<DB>
+where
+    DB: Database,
+{
+    fn insert_staged_header(&self, id: B256, header: HeaderWithPegs) -> ProviderResult<()> {
+        self.database.provider_rw()?.insert_staged_header(id, header)
+    }
+
+    fn remove_staged_header(&self, id: B256) -> ProviderResult<bool> {
+        self.database.provider_rw()?.remove_staged_header(id)
+    }
+
+    fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
+        self.database.provider_rw()?.get_staged_headers()
     }
 }
 
