@@ -36,9 +36,9 @@ Currently, we have one static devnet dedicated to alpha testing. In the future, 
 - Early feature testing and internal integration
 - Temporary environments that can be created, reset, reconfigured, or destroyed as needed
 - Support for experimental features that aren't ready for testnet
-- Infrastructure: 6 federation nodes and 1 RPC node. Bridge and sidecar services.
-- Pegouts consensus threshold: 4 of 6 federation nodes
-- Comet BFT consensus threshold: 4 of 6 federation nodes
+- Infrastructure: 5 federation nodes and 1 RPC node. Bridge and sidecar services.
+- Comet BFT consensus threshold: 3 of 5 federation nodes
+- Pegouts consensus threshold: 3 of 5 federation nodes
 
 ## Deployment Strategies
 
