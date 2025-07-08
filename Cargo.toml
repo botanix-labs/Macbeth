@@ -12,9 +12,9 @@ resolver = "2"
 
 members = [
     "bin/botanix-db-cleaner",
+    "bin/botanix-federation-utils",
     "bin/botanix-up",
     "bin/btc-server",
-    "bin/federation-utils",
     "bin/reth-bench/",
     "bin/reth/",
     "bin/test-suite",

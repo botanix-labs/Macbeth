@@ -2271,6 +2271,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-federation-utils-cli"
+version = "1.1.5"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "clap",
+ "dirs 6.0.0",
+ "ethers",
+ "hex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "botanix-up"
 version = "1.1.5"
 dependencies = [
@@ -4468,26 +4488,6 @@ checksum = "e182f7dbc2ef73d9ef67351c5fbbea084729c48362d3ce9dd44c28e32e277fe5"
 dependencies = [
  "libc",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "federation-utils-cli"
-version = "1.1.5"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "clap",
- "dirs 6.0.0",
- "ethers",
- "hex",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.12",
- "tokio",
- "toml",
- "tracing",
- "url",
 ]
 
 [[package]]
