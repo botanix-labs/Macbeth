@@ -28,7 +28,7 @@ use reth_data_parser::DataParser;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
@@ -2326,7 +2326,7 @@ mod tests {
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,
     };
-    use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+    use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
     use rand::thread_rng;
     use reth_chainspec::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use reth_cli_runner::tokio_runtime;

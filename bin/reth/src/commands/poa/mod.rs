@@ -1,12 +1,12 @@
 //! POA node command
 
 use bitcoincore_zmq::subscribe_async_wait_handshake;
+use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use clap::{value_parser, Parser};
 use client::Empty;
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;

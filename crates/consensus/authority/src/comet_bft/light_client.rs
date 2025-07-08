@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use tendermint_light_client::{
     builder::LightClientBuilder,
     instance::Instance,

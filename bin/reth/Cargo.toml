@@ -28,12 +28,12 @@ bitcoincore-zmq = { workspace = true }
 
 # Botanix
 botanix-btc-wallet = { workspace = true }
+botanix-comet-bft-rpc = { workspace = true }
 btc-server = { path = "../btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
 
 # Botanix
 client = { path = "../btc-server/client" }
-comet-bft-rpc = { workspace = true }
 
 # confy
 confy = "0.6"

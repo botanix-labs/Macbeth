@@ -9,12 +9,12 @@ use crate::{
     Storage,
 };
 use bitcoin::consensus::Encodable;
+use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     wallet::psbt::frost_id_from_bytes,
 };
 use client::{ConsensusCheckpointRequest, PendingPegout, Utxo};
-use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use futures::{pin_mut, StreamExt};
 use reth_chainspec::ChainSpec;
 use reth_data_parser::{

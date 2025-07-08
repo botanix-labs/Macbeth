@@ -21,13 +21,13 @@ members = [
     "crates/blockchain-tree-api/",
     "crates/botanix-btc-wallet",
     "crates/botanix-cli",
+    "crates/botanix-comet-bft-rpc",
     "crates/chain-state/",
     "crates/chainspec/",
     "crates/cli/cli/",
     "crates/cli/commands/",
     "crates/cli/runner/",
     "crates/cli/util/",
-    "crates/comet-bft-rpc",
     "crates/config/",
     "crates/consensus/authority",
     "crates/consensus/auto-seal/",
@@ -367,15 +367,13 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 
 # Botanix deps
 botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
+botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 
 # frost
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
     "serde",
     "serialization",
 ] }
-
-# Comet BFT
-comet-bft-rpc = { path = "crates/comet-bft-rpc" }
 
 # revm
 revm = { version = "13.0.0", features = ["std", "secp256k1", "blst"], default-features = false }

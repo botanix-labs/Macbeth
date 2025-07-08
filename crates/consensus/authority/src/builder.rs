@@ -8,11 +8,11 @@ use crate::{
     AuthorityConsensus, Storage,
 };
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use client::Empty;
-use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use reth_chainspec::ChainSpec;
 use reth_data_parser::{DataParser, SerializationType};
 use reth_db::DatabaseEnv;

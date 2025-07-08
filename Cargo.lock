@@ -2247,6 +2247,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-comet-bft-rpc"
+version = "1.1.5"
+dependencies = [
+ "tendermint-rpc",
+]
+
+[[package]]
 name = "botanix-db-cleaner"
 version = "1.1.5"
 dependencies = [
@@ -2922,13 +2929,6 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
-]
-
-[[package]]
-name = "comet-bft-rpc"
-version = "1.1.5"
-dependencies = [
- "tendermint-rpc",
 ]
 
 [[package]]
@@ -8697,10 +8697,10 @@ dependencies = [
  "bitcoincore-rpc",
  "bitcoincore-zmq",
  "botanix-btc-wallet",
+ "botanix-comet-bft-rpc",
  "btc-server",
  "clap",
  "client",
- "comet-bft-rpc",
  "confy",
  "eyre",
  "fdlimit",
@@ -8782,10 +8782,10 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoincore-zmq",
  "botanix-btc-wallet",
+ "botanix-comet-bft-rpc",
  "btc-server",
  "bytes",
  "client",
- "comet-bft-rpc",
  "displaydoc",
  "ethabi",
  "frost-secp256k1-tr",
@@ -13185,11 +13185,11 @@ dependencies = [
  "bitcoin_hashes 0.16.0",
  "bitcoincore-rpc",
  "botanix-btc-wallet",
+ "botanix-comet-bft-rpc",
  "btc-server",
  "bytes",
  "clap",
  "client",
- "comet-bft-rpc",
  "displaydoc",
  "dotenv",
  "ethers",
