@@ -36,7 +36,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned + Clone + Send + Sync + D
 /// # Examples
 ///
 /// ```
-/// use reth_data_parser::{DataParser, SerializationType};
+/// use botanix_data_parser::{DataParser, SerializationType};
 /// use std::sync::Arc;
 ///
 /// #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
@@ -69,7 +69,7 @@ impl Default for DataParser {
     /// # Examples
     ///
     /// ```
-    /// use reth_data_parser::{DataParser, SerializationType};
+    /// use botanix_data_parser::{DataParser, SerializationType};
     ///
     /// let parser = DataParser::default();
     /// assert!(matches!(parser.serialization_type, SerializationType::Json));
@@ -93,7 +93,7 @@ impl DataParser {
     /// # Examples
     ///
     /// ```
-    /// use reth_data_parser::{DataParser, DEFAULT_COMPRESSION_STRATEGY};
+    /// use botanix_data_parser::{DataParser, DEFAULT_COMPRESSION_STRATEGY};
     /// use std::sync::Arc;
     ///
     /// let parser = DataParser::default().with_compression_strategy(&DEFAULT_COMPRESSION_STRATEGY);
@@ -120,7 +120,7 @@ impl DataParser {
     /// # Examples
     ///
     /// ```
-    /// use reth_data_parser::{DataParser, SerializationType};
+    /// use botanix_data_parser::{DataParser, SerializationType};
     ///
     /// let parser = DataParser::default().with_serialization_type(SerializationType::Json);
     /// ```
@@ -143,7 +143,7 @@ impl DataParser {
     /// # Examples
     ///
     /// ```
-    /// use reth_data_parser::DataParser;
+    /// use botanix_data_parser::DataParser;
     ///
     /// #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
     /// struct TestData {
@@ -222,7 +222,7 @@ impl DataParser {
     /// # Examples
     ///
     /// ```
-    /// use reth_data_parser::DataParser;
+    /// use botanix_data_parser::DataParser;
     ///
     /// #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
     /// struct TestData {

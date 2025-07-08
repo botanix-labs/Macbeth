@@ -27,6 +27,7 @@ bitcoincore-rpc = { workspace = true }
 # Botanix
 botanix-btc-wallet = { path = "../../crates/botanix-btc-wallet" }
 botanix-comet-bft-rpc = { workspace = true }
+botanix-data-parser = { workspace = true }
 btc-server = { path = "../btc-server" }
 
 # other dependencies
@@ -55,7 +56,6 @@ reth-chainspec = { workspace = true }
 reth-cli-commands = { workspace = true }
 reth-cli-runner = { workspace = true }
 reth-consensus = { workspace = true }
-reth-data-parser = { workspace = true }
 reth-db = { workspace = true, features = ["mdbx"] }
 reth-network-peers = { workspace = true }
 reth-node-core = { workspace = true }

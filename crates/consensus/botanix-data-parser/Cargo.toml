@@ -1,5 +1,5 @@
 [package]
-name = "reth-data-parser"
+name = "botanix-data-parser"
 description = "A parser and compressor for various data structures"
 version = { workspace = true }
 edition = { workspace = true }

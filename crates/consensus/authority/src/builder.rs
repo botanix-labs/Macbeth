@@ -9,12 +9,12 @@ use crate::{
 };
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_data_parser::{DataParser, SerializationType};
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use client::Empty;
 use reth_chainspec::ChainSpec;
-use reth_data_parser::{DataParser, SerializationType};
 use reth_db::DatabaseEnv;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{

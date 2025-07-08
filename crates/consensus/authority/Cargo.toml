@@ -21,14 +21,13 @@ bitcoincore-zmq = { workspace = true }
 ## Botanix
 botanix-btc-wallet = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
+botanix-data-parser = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 
+# others
 bytes = "1.6.0"
 client = { path = "../../../bin/btc-server/client" }
-
-# CometBFT
 displaydoc = "0.2"
-
 ethabi = "18.0.0"
 
 # frost
@@ -52,8 +51,6 @@ reth-chain-state = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-consensus = { workspace = true }
 reth-consensus-common = { path = "../common" }
-reth-data-parser = { workspace = true }
-
 reth-db = { workspace = true }
 reth-ethereum-consensus = { workspace = true }
 reth-ethereum-payload-builder = { workspace = true }

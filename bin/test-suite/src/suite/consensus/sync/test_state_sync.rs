@@ -1,5 +1,5 @@
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory};
-use reth_data_parser::{DataParser, SerializationType};
+use botanix_data_parser::{DataParser, SerializationType};
 use reth_primitives::BlockWithSenders;
 use reth_provider::{BlockNumReader, SnapshotReader};
 
