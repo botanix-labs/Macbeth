@@ -17,15 +17,17 @@ async-trait = { workspace = true }
 ## Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-zmq = { workspace = true }
+
+## Botanix
+botanix-btc-wallet = { workspace = true }
+botanix-comet-bft-rpc = { workspace = true }
+botanix-data-parser = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 
+# others
 bytes = "1.6.0"
 client = { path = "../../../bin/btc-server/client" }
-
-# CometBFT
-comet-bft-rpc = { workspace = true }
 displaydoc = "0.2"
-
 ethabi = "18.0.0"
 
 # frost
@@ -44,15 +46,11 @@ once_cell = { workspace = true }
 prost = "0.13.3"
 reth-basic-payload-builder = { workspace = true }
 
-## Botanix
-reth-btc-wallet = { workspace = true }
 # reth
 reth-chain-state = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-consensus = { workspace = true }
 reth-consensus-common = { path = "../common" }
-reth-data-parser = { workspace = true }
-
 reth-db = { workspace = true }
 reth-ethereum-consensus = { workspace = true }
 reth-ethereum-payload-builder = { workspace = true }

@@ -25,7 +25,7 @@ struct PrivKey {
     key_type: String,
     value: String, // This is the base64-encoded private key
 }
-/// creates federation-utils config-toml.
+/// creates botanix-federation-utils config-toml.
 pub fn handle_init_config(config_path: Option<&str>) {
     let default_config = Config::default();
 

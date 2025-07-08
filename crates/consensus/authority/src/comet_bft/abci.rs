@@ -20,15 +20,15 @@ use std::{
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_data_parser::DataParser;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
-use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::utils::unix_timestamp;
-use reth_data_parser::DataParser;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
@@ -2322,12 +2322,12 @@ mod tests {
         hashes::Hash,
         CompactTarget, TxMerkleNode,
     };
-    use comet_bft_rpc::HttpCometBFTRpcClientFactory;
-    use rand::thread_rng;
-    use reth_btc_wallet::{
+    use botanix_btc_wallet::{
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,
     };
+    use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+    use rand::thread_rng;
     use reth_chainspec::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use reth_cli_runner::tokio_runtime;
     use reth_db::{init_db, mdbx::DatabaseArguments};

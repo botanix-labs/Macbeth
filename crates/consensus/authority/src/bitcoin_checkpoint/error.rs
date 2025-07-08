@@ -23,7 +23,7 @@ pub enum BitcoinCheckpointError {
     #[error("Bitcoin RPC call {procedure_name} failed on checkpoint sync: {error}")]
     SyncRpcError {
         /// The underlying JSON-RPC error
-        error: reth_btc_wallet::bitcoind::JsonRPCError,
+        error: botanix_btc_wallet::bitcoind::JsonRPCError,
         /// Name of the procedure that failed
         procedure_name: String,
     },

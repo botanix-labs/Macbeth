@@ -25,12 +25,15 @@ backon = { workspace = true }
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
 bitcoincore-zmq = { workspace = true }
+
+# Botanix
+botanix-btc-wallet = { workspace = true }
+botanix-comet-bft-rpc = { workspace = true }
 btc-server = { path = "../btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
 
 # Botanix
 client = { path = "../btc-server/client" }
-comet-bft-rpc = { workspace = true }
 
 # confy
 confy = "0.6"
@@ -46,7 +49,6 @@ reth-authority-consensus = { workspace = true }
 reth-basic-payload-builder = { workspace = true }
 reth-beacon-consensus = { workspace = true }
 reth-blockchain-tree = { workspace = true }
-reth-btc-wallet = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-cli-commands = { workspace = true }
 reth-cli-runner = { workspace = true }

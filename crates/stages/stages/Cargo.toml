@@ -56,12 +56,15 @@ tracing = { workspace = true }
 alloy-rlp = { workspace = true }
 assert_matches = { workspace = true }
 
+# Botanix
+botanix-btc-wallet = { workspace = true }
+
 # Stage benchmarks
 criterion = { workspace = true, features = ["async_tokio"] }
 itertools = { workspace = true }
 paste = { workspace = true }
 rand = { workspace = true }
-reth-btc-wallet = { workspace = true }
+
 # reth
 reth-chainspec = { workspace = true }
 reth-consensus = { workspace = true, features = ["test-utils"] }

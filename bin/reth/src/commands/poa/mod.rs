@@ -1,12 +1,12 @@
 //! POA node command
 
 use bitcoincore_zmq::subscribe_async_wait_handshake;
+use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use clap::{value_parser, Parser};
 use client::Empty;
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
@@ -53,14 +53,14 @@ use crate::{
     cli::NoArgs,
     payload::PayloadBuilderService,
 };
+use botanix_btc_wallet::bitcoind::{
+    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
+};
 use reth_authority_consensus::bitcoin_checkpoint::{
     BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
     DummyHashBlockStream,
 };
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_btc_wallet::bitcoind::{
-    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
-};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};

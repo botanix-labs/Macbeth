@@ -19,11 +19,13 @@ alloy-sol-types = { workspace = true }
 # Bitcoin
 bitcoin = { workspace = true }
 
+# Botanix
+botanix-btc-wallet = { workspace = true }
+
 # BTC server
 btc-server = { path = "../../../bin/btc-server" }
 
 # Reth
-reth-btc-wallet = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-db = { workspace = true, features = ["test-utils"] }
 reth-ethereum-consensus = { workspace = true }

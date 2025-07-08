@@ -1,5 +1,5 @@
+use botanix_btc_wallet::bitcoind::BitcoindConfig;
 use clap::Args;
-use reth_btc_wallet::bitcoind::BitcoindConfig;
 use reth_cli_util::parsers::parse_url;
 use serde::{Deserialize, Serialize};
 use url::Url;
