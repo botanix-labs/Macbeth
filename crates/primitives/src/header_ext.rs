@@ -4,7 +4,7 @@ use crate::{
     Bytes, Header,
 };
 use bitcoincore_rpc::{Error as BitcoindError, RpcApi};
-use reth_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use revm_primitives::Address;
 use secp256k1::ecdsa::RecoverableSignature;
 use thiserror::Error;
@@ -160,7 +160,7 @@ mod tests {
         hashes::Hash,
         CompactTarget, TxMerkleNode,
     };
-    use reth_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
+    use botanix_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
 
     use super::*;
     use crate::Header;

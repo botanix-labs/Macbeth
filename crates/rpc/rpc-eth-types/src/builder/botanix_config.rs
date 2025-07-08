@@ -3,8 +3,8 @@
 use std::{fmt, str::FromStr};
 
 use bitcoincore_rpc::RpcApi;
+use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use frost_secp256k1_tr::{self as frost};
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 
 use btcserverlib::wallet::address::{generate_taproot_address, generate_tweaked_public_key};
 

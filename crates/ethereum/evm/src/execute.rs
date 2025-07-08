@@ -4,12 +4,12 @@ use crate::{
     dao_fork::{DAO_HARDFORK_BENEFICIARY, DAO_HARDKFORK_ACCOUNTS},
     EthEvmConfig,
 };
-use btcserverlib::pegout_id::PegoutId;
-use core::fmt::Display;
-use reth_btc_wallet::{
+use botanix_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
 };
+use btcserverlib::pegout_id::PegoutId;
+use core::fmt::Display;
 use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_db::{test_utils::TempDatabase, DatabaseEnv};
 use reth_ethereum_consensus::validate_block_post_execution;

@@ -4,13 +4,13 @@ use crate::{
     Storage,
 };
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
 };
 use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
 use once_cell::sync::Lazy;
-use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_data_parser::{
     prost_parser::ProstMessageSerdelizer, DataParser, Error as CompressorError, SerializationType,
 };

@@ -7,12 +7,12 @@ use crate::{
     wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use client::Empty;
 use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
-use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_chainspec::ChainSpec;
 use reth_data_parser::{DataParser, SerializationType};
 use reth_db::DatabaseEnv;
@@ -87,7 +87,7 @@ where
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
-    BD: reth_btc_wallet::bitcoind::RpcApiExt + Send + Sync + 'static,
+    BD: botanix_btc_wallet::bitcoind::RpcApiExt + Send + Sync + 'static,
     Source: RandomSource,
 {
     /// Creates a new builder instance to configure all parts.

@@ -80,7 +80,7 @@ pub struct BitcoinCheckpointsChainSynchronizer<R> {
 
 impl<R> BitcoinCheckpointsChainSynchronizer<R>
 where
-    R: reth_btc_wallet::bitcoind::RpcApiExt,
+    R: botanix_btc_wallet::bitcoind::RpcApiExt,
 {
     /// Creates a new Bitcoin checkpoints chain synchronizer.
     ///
@@ -422,8 +422,8 @@ mod tests {
         block::Header as BitcoinHeader, hashes::Hash, BlockHash as BitcoinBlockHash, TxMerkleNode,
     };
 
+    use botanix_btc_wallet::bitcoind::jsonrpc::serde;
     use mockall::{mock, predicate::*};
-    use reth_btc_wallet::bitcoind::jsonrpc::serde;
     use tonic::async_trait;
 
     mod sync_new_blocks {
@@ -488,8 +488,9 @@ mod tests {
                 Arc::new(BitcoinCheckpointsChain::try_new(6, 4, 2).expect("create valid chain"));
 
             let mut mock = MockRpc::new();
-            mock.expect_get_block_count()
-                .return_once(|| Err(reth_btc_wallet::bitcoind::JsonRPCError::UnexpectedStructure));
+            mock.expect_get_block_count().return_once(|| {
+                Err(botanix_btc_wallet::bitcoind::JsonRPCError::UnexpectedStructure)
+            });
 
             let mut syncer = BitcoinCheckpointsChainSynchronizer::new(chain, mock);
 
@@ -613,7 +614,7 @@ mod tests {
 
             // Create an RPC error
             let result = Err(BitcoinCheckpointError::SyncRpcError {
-                error: reth_btc_wallet::bitcoind::JsonRPCError::UnexpectedStructure,
+                error: botanix_btc_wallet::bitcoind::JsonRPCError::UnexpectedStructure,
                 procedure_name: "get_block_count".to_string(),
             });
 
@@ -845,27 +846,27 @@ mod tests {
     mock! {
         pub Rpc {
             fn get_block_count(&self)
-                -> Result<u64, reth_btc_wallet::bitcoind::JsonRPCError>;
+                -> Result<u64, botanix_btc_wallet::bitcoind::JsonRPCError>;
 
             fn get_block_hash(&self, height: u64)
-                -> Result<BitcoinBlockHash, reth_btc_wallet::bitcoind::JsonRPCError>;
+                -> Result<BitcoinBlockHash, botanix_btc_wallet::bitcoind::JsonRPCError>;
 
             fn get_block_header(&self, hash: &BitcoinBlockHash)
-                -> Result<BitcoinHeader, reth_btc_wallet::bitcoind::JsonRPCError>;
+                -> Result<BitcoinHeader, botanix_btc_wallet::bitcoind::JsonRPCError>;
         }
     }
 
     // Mockall doesn't allow to mock `call` method because it has a generic parameter without
     // 'static lifetime. So to satisfy the `RpcApi` trait, we need to implement the `call`
     // method directly in generated MockRpc
-    impl reth_btc_wallet::bitcoind::RpcApi for MockRpc {
+    impl botanix_btc_wallet::bitcoind::RpcApi for MockRpc {
         // Generic method we never need in the synchroniser tests,
         // but it used by others
         fn call<T>(
             &self,
             _cmd: &str,
             _args: &[serde_json::Value],
-        ) -> Result<T, reth_btc_wallet::bitcoind::JsonRPCError>
+        ) -> Result<T, botanix_btc_wallet::bitcoind::JsonRPCError>
         where
             T: for<'a> serde::de::Deserialize<'a>,
         {
@@ -877,26 +878,26 @@ mod tests {
         fn get_block_header(
             &self,
             hash: &BitcoinBlockHash,
-        ) -> Result<BitcoinHeader, reth_btc_wallet::bitcoind::JsonRPCError> {
+        ) -> Result<BitcoinHeader, botanix_btc_wallet::bitcoind::JsonRPCError> {
             self.get_block_header(hash)
         }
 
-        fn get_block_count(&self) -> Result<u64, reth_btc_wallet::bitcoind::JsonRPCError> {
+        fn get_block_count(&self) -> Result<u64, botanix_btc_wallet::bitcoind::JsonRPCError> {
             self.get_block_count()
         }
 
         fn get_block_hash(
             &self,
             height: u64,
-        ) -> Result<BitcoinBlockHash, reth_btc_wallet::bitcoind::JsonRPCError> {
+        ) -> Result<BitcoinBlockHash, botanix_btc_wallet::bitcoind::JsonRPCError> {
             self.get_block_hash(height)
         }
     }
 
     // This one depends on call as well so we can't do it with mock macro
     #[async_trait::async_trait]
-    impl reth_btc_wallet::bitcoind::RpcApiExt for MockRpc {
-        async fn is_synced(&self) -> Result<bool, reth_btc_wallet::bitcoind::BitcoindError> {
+    impl botanix_btc_wallet::bitcoind::RpcApiExt for MockRpc {
+        async fn is_synced(&self) -> Result<bool, botanix_btc_wallet::bitcoind::BitcoindError> {
             Ok(true)
         }
 

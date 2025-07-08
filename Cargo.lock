@@ -2213,6 +2213,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-btc-wallet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitcoin 0.32.5",
+ "bitcoincore-rpc",
+ "ethers",
+ "frost-secp256k1-tr",
+ "hex",
+ "lazy_static",
+ "miniscript 11.2.0",
+ "mockall",
+ "rand 0.6.5",
+ "secp256k1 0.28.2",
+ "serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "botanix-cli"
 version = "0.1.0"
 dependencies = [
@@ -8673,6 +8696,7 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
  "bitcoincore-zmq",
+ "botanix-btc-wallet",
  "btc-server",
  "clap",
  "client",
@@ -8686,7 +8710,6 @@ dependencies = [
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
  "reth-blockchain-tree",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-commands",
  "reth-cli-runner",
@@ -8758,6 +8781,7 @@ dependencies = [
  "async-trait",
  "bitcoin 0.32.5",
  "bitcoincore-zmq",
+ "botanix-btc-wallet",
  "btc-server",
  "bytes",
  "client",
@@ -8775,7 +8799,6 @@ dependencies = [
  "prost 0.13.5",
  "rand 0.8.5",
  "reth-basic-payload-builder",
- "reth-btc-wallet",
  "reth-chain-state",
  "reth-chainspec",
  "reth-cli-runner",
@@ -9004,29 +9027,6 @@ dependencies = [
  "reth-primitives",
  "reth-storage-errors",
  "thiserror 2.0.12",
-]
-
-[[package]]
-name = "reth-btc-wallet"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "bitcoin 0.32.5",
- "bitcoincore-rpc",
- "ethers",
- "frost-secp256k1-tr",
- "hex",
- "lazy_static",
- "miniscript 11.2.0",
- "mockall",
- "rand 0.6.5",
- "secp256k1 0.28.2",
- "serde",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -9840,8 +9840,8 @@ dependencies = [
  "alloy-eips",
  "alloy-sol-types",
  "bitcoin 0.32.5",
+ "botanix-btc-wallet",
  "btc-server",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-db",
  "reth-ethereum-consensus",
@@ -10236,6 +10236,7 @@ version = "1.1.5"
 dependencies = [
  "aquamarine",
  "bitcoin 0.32.5",
+ "botanix-btc-wallet",
  "eyre",
  "fdlimit",
  "futures",
@@ -10243,7 +10244,6 @@ dependencies = [
  "reth-auto-seal-consensus",
  "reth-beacon-consensus",
  "reth-blockchain-tree",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-util",
  "reth-config",
@@ -10297,6 +10297,7 @@ dependencies = [
  "alloy-rpc-types-engine",
  "askama",
  "bitcoin 0.32.5",
+ "botanix-btc-wallet",
  "clap",
  "const_format",
  "derive_more 2.0.1",
@@ -10308,7 +10309,6 @@ dependencies = [
  "humantime",
  "proptest",
  "rand 0.8.5",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-util",
  "reth-config",
@@ -10355,6 +10355,7 @@ dependencies = [
  "alloy-genesis",
  "alloy-primitives 0.7.7",
  "bitcoin 0.32.5",
+ "botanix-btc-wallet",
  "eyre",
  "futures",
  "futures-util",
@@ -10362,7 +10363,6 @@ dependencies = [
  "reth-auto-seal-consensus",
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-consensus",
  "reth-db",
@@ -10495,6 +10495,7 @@ dependencies = [
  "assert_matches",
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
+ "botanix-btc-wallet",
  "btc-server",
  "bytes",
  "c-kzg",
@@ -10512,7 +10513,6 @@ dependencies = [
  "proptest-arbitrary-interop",
  "rand 0.8.5",
  "rayon",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-codecs",
  "reth-ethereum-forks",
@@ -10876,6 +10876,7 @@ dependencies = [
  "alloy-sol-types",
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
+ "botanix-btc-wallet",
  "btc-server",
  "derive_more 2.0.1",
  "frost-secp256k1-tr",
@@ -10884,7 +10885,6 @@ dependencies = [
  "jsonrpsee-types",
  "metrics",
  "rand 0.8.5",
- "reth-btc-wallet",
  "reth-chain-state",
  "reth-chainspec",
  "reth-errors",
@@ -10982,6 +10982,7 @@ version = "1.1.5"
 dependencies = [
  "alloy-rlp",
  "assert_matches",
+ "botanix-btc-wallet",
  "criterion",
  "futures-util",
  "itertools 0.14.0",
@@ -10990,7 +10991,6 @@ dependencies = [
  "pprof",
  "rand 0.8.5",
  "rayon",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-codecs",
  "reth-config",
@@ -13184,6 +13184,7 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoin_hashes 0.16.0",
  "bitcoincore-rpc",
+ "botanix-btc-wallet",
  "btc-server",
  "bytes",
  "clap",
@@ -13202,7 +13203,6 @@ dependencies = [
  "regex",
  "reth",
  "reth-authority-consensus",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-commands",
  "reth-cli-runner",

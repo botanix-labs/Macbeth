@@ -21,6 +21,9 @@ askama = "0.12.1"
 
 # bitcoin
 bitcoin = { workspace = true }
+
+# Botanix
+botanix-btc-wallet = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 const_format = { workspace = true }
 derive_more = { workspace = true }
@@ -41,7 +44,7 @@ futures = { workspace = true }
 hex = "0.4.3"
 humantime = { workspace = true }
 rand = { workspace = true }
-reth-btc-wallet = { workspace = true }
+
 # reth
 reth-chainspec = { workspace = true }
 reth-cli-util = { workspace = true }

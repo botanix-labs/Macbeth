@@ -32,7 +32,7 @@
 //! # use reth_config::config::StageConfig;
 //! # use reth_consensus::Consensus;
 //! # use reth_consensus::test_utils::TestConsensus;
-//! # use reth_btc_wallet::test_utils::MockBitcoindFactory;
+//! # use botanix_btc_wallet::test_utils::MockBitcoindFactory;
 //! #
 //! # let chain_spec = MAINNET.clone();
 //! # let consensus: Arc<dyn Consensus> = Arc::new(TestConsensus::default());

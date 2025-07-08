@@ -655,7 +655,7 @@ mod tests {
     use crate::test_utils::TestStageDB;
     use alloy_rlp::Decodable;
     use assert_matches::assert_matches;
-    use reth_btc_wallet::test_utils::MockBitcoindFactory;
+    use botanix_btc_wallet::test_utils::MockBitcoindFactory;
     use reth_chainspec::ChainSpecBuilder;
     use reth_db::{test_utils::TempDatabase, DatabaseEnv};
     use reth_db_api::{models::AccountBeforeTx, transaction::DbTxMut};

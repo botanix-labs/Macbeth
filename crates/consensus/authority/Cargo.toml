@@ -17,6 +17,9 @@ async-trait = { workspace = true }
 ## Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-zmq = { workspace = true }
+
+## Botanix
+botanix-btc-wallet = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 
 bytes = "1.6.0"
@@ -44,8 +47,6 @@ once_cell = { workspace = true }
 prost = "0.13.3"
 reth-basic-payload-builder = { workspace = true }
 
-## Botanix
-reth-btc-wallet = { workspace = true }
 # reth
 reth-chain-state = { workspace = true }
 reth-chainspec = { workspace = true }

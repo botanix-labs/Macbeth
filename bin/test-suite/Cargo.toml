@@ -23,6 +23,9 @@ bitcoin_hashes = "0.16.0"
 
 ## Bitcoin rpc
 bitcoincore-rpc = { workspace = true }
+
+# Botanix
+botanix-btc-wallet = { path = "../../crates/botanix-btc-wallet" }
 btc-server = { path = "../btc-server" }
 bytes = "1.4.0"
 clap = "4.3.3"
@@ -48,7 +51,6 @@ rand = "0.8.5"
 regex = "1.11.1"
 reth = { workspace = true }
 reth-authority-consensus = { workspace = true }
-reth-btc-wallet = { path = "../../crates/btc-wallet" }
 reth-chainspec = { workspace = true }
 reth-cli-commands = { workspace = true }
 reth-cli-runner = { workspace = true }

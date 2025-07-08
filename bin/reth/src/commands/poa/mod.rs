@@ -53,14 +53,14 @@ use crate::{
     cli::NoArgs,
     payload::PayloadBuilderService,
 };
+use botanix_btc_wallet::bitcoind::{
+    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
+};
 use reth_authority_consensus::bitcoin_checkpoint::{
     BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
     DummyHashBlockStream,
 };
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_btc_wallet::bitcoind::{
-    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
-};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};

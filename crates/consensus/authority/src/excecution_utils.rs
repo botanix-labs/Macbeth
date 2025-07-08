@@ -1,5 +1,5 @@
 pub(crate) mod authority_execution_utils {
-    use reth_btc_wallet::bitcoind::BitcoindFactory;
+    use botanix_btc_wallet::bitcoind::BitcoindFactory;
     use reth_chainspec::{ChainSpec, EthereumHardforks};
 
     use reth_db::Database;
