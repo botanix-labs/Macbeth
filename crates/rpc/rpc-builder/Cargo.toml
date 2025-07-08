@@ -12,6 +12,7 @@ description = "Helpers for configuring RPC"
 workspace = true
 
 [dependencies]
+btc-server = { path = "../../../bin/btc-server" }
 http = { workspace = true }
 
 # rpc/net

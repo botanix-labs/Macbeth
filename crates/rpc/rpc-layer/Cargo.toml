@@ -11,13 +11,11 @@ repository = { workspace = true }
 workspace = true
 
 [dependencies]
-alloy-rpc-types-engine = { workspace = true }
-
+btc-server = { path = "../../../bin/btc-server" }
 http = { workspace = true }
 jsonrpsee-http-client = { workspace = true }
 pin-project = { workspace = true }
 tower = { workspace = true }
-
 tracing = { workspace = true }
 
 [dev-dependencies]

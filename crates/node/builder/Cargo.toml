@@ -16,6 +16,7 @@ workspace = true
 ## misc
 aquamarine = { workspace = true }
 bitcoin = { workspace = true }
+btc-server = { path = "../../../bin/btc-server" }
 eyre = { workspace = true }
 fdlimit = { workspace = true }
 
@@ -59,7 +60,6 @@ reth-rpc = { workspace = true }
 reth-rpc-builder = { workspace = true }
 reth-rpc-engine-api = { workspace = true }
 reth-rpc-eth-types = { workspace = true }
-reth-rpc-layer = { workspace = true }
 reth-rpc-types = { workspace = true }
 reth-stages = { workspace = true }
 reth-static-file = { workspace = true }

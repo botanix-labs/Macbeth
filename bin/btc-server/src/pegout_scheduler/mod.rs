@@ -1083,7 +1083,7 @@ impl PegoutScheduler {
         // handle txs that are still in the mempool, have been dropped or there was a reorg
         // this must be done after `finalize_block` which updates the db and pegout scheduler state
         info!("PegoutScheduler::sync_until: Finished block processing loop. Tracking mempool...");
-        match self.track_mempool(bitcoind, cp_result, &telemetry, bitcoin_network, identifier) {
+        match self.track_mempool(bitcoind, cp_result, telemetry, bitcoin_network, identifier) {
             Ok(_) => info!("PegoutScheduler::sync_until: Mempool tracking successful."),
             Err(e) => {
                 error!("PegoutScheduler::sync_until: Error during mempool tracking: {}. Propagating error.", e);

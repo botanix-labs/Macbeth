@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use alloy_json_rpc::{RequestPacket, ResponsePacket};
 use alloy_pubsub::{PubSubConnect, PubSubFrontend};
-use alloy_rpc_types_engine::{Claims, JwtSecret};
 use alloy_transport::{
     utils::guess_local_url, Authorization, Pbf, TransportConnect, TransportError,
     TransportErrorKind, TransportFut,
@@ -13,6 +12,7 @@ use alloy_transport::{
 use alloy_transport_http::{reqwest::Url, Http, ReqwestTransport};
 use alloy_transport_ipc::IpcConnect;
 use alloy_transport_ws::WsConnect;
+use btcserverlib::jwt::{Claims, JwtSecret};
 use futures::FutureExt;
 use reqwest::header::HeaderValue;
 use std::task::{Context, Poll};
