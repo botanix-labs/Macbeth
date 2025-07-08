@@ -14,7 +14,7 @@ async-trait = { workspace = true }
 bincode = "1.3"
 bitcoin = { workspace = true }
 bytes = "1.6.0"
-client = { path = "../../../bin/btc-server/client" }
+client = { path = "../../bin/btc-server/client" }
 displaydoc = "0.2"
 lazy_static = "1.5"
 paste = "1.0"
