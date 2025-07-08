@@ -21,6 +21,18 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64,linux/arm/v7
 
+      - name: gcloud auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: botanix-391913
+          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+
+      - name: gcloud setup
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: botanix-391913
+
       - name: Build Docker image
         run: |
           docker build \
@@ -98,6 +110,18 @@ jobs:
       - name: Get short SHA
         id: sha
         run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: gcloud auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: botanix-391913
+          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+
+      - name: gcloud setup
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: botanix-391913
 
       - name: Get tag
         id: tag
