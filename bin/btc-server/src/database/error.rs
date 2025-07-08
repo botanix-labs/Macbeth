@@ -33,6 +33,8 @@ pub enum Error {
     InvalidUTXOVersion(u32),
     #[error("Failed to get tx out for input: {0}")]
     BitcoindError(#[from] bitcoincore_rpc::Error),
+    #[error("Tracked tx not found in Pegout Scheduler")]
+    TrackedTxNotFoundInPegoutScheduler,
 }
 
 impl PartialEq for Error {

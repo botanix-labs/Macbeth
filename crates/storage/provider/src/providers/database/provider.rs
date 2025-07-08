@@ -11,10 +11,10 @@ use crate::{
     FinalizedBlockWriter, HashingWriter, HeaderProvider, HeaderSyncGap, HeaderSyncGapProvider,
     HistoricalStateProvider, HistoryWriter, LatestStateProvider, OriginalValuesKnown,
     ProviderError, PruneCheckpointReader, PruneCheckpointWriter, RequestsProvider, RevertsInit,
-    SnapshotReader, SnapshotWriter, StageCheckpointReader, StateChangeWriter, StateProviderBox,
-    StateWriter, StatsReader, StorageReader, StorageTrieWriter, TransactionVariant,
-    TransactionsProvider, TransactionsProviderExt, TrieWriter, WalletStateSyncReader,
-    WalletStateSyncWriter, WithdrawalsProvider,
+    SnapshotReader, SnapshotWriter, StageCheckpointReader, StagedHeader, StateChangeWriter,
+    StateProviderBox, StateWriter, StatsReader, StorageReader, StorageTrieWriter,
+    TransactionVariant, TransactionsProvider, TransactionsProviderExt, TrieWriter,
+    WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 use itertools::{izip, Itertools};
 use rayon::slice::ParallelSliceMut;
@@ -22,8 +22,8 @@ use reth_chainspec::{ChainInfo, ChainSpec, EthereumHardforks};
 use reth_db::{
     cursor::DbDupCursorRW,
     models::{
-        ChunkId, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId, UuidID,
-        WalletStateSyncRecord,
+        ChunkId, HeaderWithPegs, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
+        SnapshotSyncId, UuidID, WalletStateSyncRecord,
     },
     tables, BlockNumberList, PlainAccountState, PlainStorageState,
 };
@@ -4096,6 +4096,29 @@ impl<TX: DbTxMut + DbTx> WalletStateSyncWriter for DatabaseProvider<TX> {
             self.remove::<tables::WalletStateSyncs>(state_sync_record..=state_sync_record)?;
         }
         Ok(())
+    }
+}
+
+impl<TX: DbTxMut + DbTx> StagedHeader for DatabaseProvider<TX> {
+    fn insert_staged_header(&self, id: B256, header: HeaderWithPegs) -> ProviderResult<()> {
+        Ok(self.tx.put::<tables::StagedHeader>(id, header)?)
+    }
+
+    fn remove_staged_header(&self, id: B256) -> ProviderResult<bool> {
+        let res = self.remove::<tables::StagedHeader>(id..=id)?;
+        match res {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => unreachable!(),
+        }
+    }
+
+    fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
+        self.tx
+            .cursor_read::<tables::StagedHeader>()?
+            .walk(None)?
+            .collect::<Result<Vec<(B256, HeaderWithPegs)>, _>>()
+            .map_err(ProviderError::Database)
     }
 }
 
