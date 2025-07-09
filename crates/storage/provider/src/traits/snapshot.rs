@@ -5,6 +5,7 @@ use std::ops::RangeInclusive;
 
 /// SnapshotReader
 #[auto_impl::auto_impl(&, Arc, Box)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub trait SnapshotReader: Send + Sync {
     /// Get snapshots
     fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>>;
@@ -60,8 +61,10 @@ pub trait SnapshotReader: Send + Sync {
 
 /// SnapshotWriter
 #[auto_impl::auto_impl(&, Arc, Box)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub trait SnapshotWriter: Send + Sync {
     /// Create new snapshot sync
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn create_new_snapshot_sync(
         &self,
         block_id: BlockNumber,
@@ -71,6 +74,7 @@ pub trait SnapshotWriter: Send + Sync {
     ) -> ProviderResult<SnapshotId>;
 
     /// Create new snapshot
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn create_new_snapshot(
         &self,
         block_id: BlockNumber,
@@ -78,6 +82,7 @@ pub trait SnapshotWriter: Send + Sync {
     ) -> ProviderResult<SnapshotId>;
 
     /// Create new chunk
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn create_new_chunk(
         &self,
         snapshot_id: SnapshotId,
@@ -86,6 +91,7 @@ pub trait SnapshotWriter: Send + Sync {
     ) -> ProviderResult<SnapshotId>;
 
     /// Append to chunk
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn append_to_chunk(
         &self,
         chunk_id: ChunkId,
@@ -94,6 +100,7 @@ pub trait SnapshotWriter: Send + Sync {
     ) -> ProviderResult<()>;
 
     /// Updates a snapshot with block and chunk id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn update_snapshot(
         &self,
         snapshot_id: SnapshotId,
@@ -102,6 +109,7 @@ pub trait SnapshotWriter: Send + Sync {
     ) -> ProviderResult<()>;
 
     /// Updates a snapshot sync
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn update_snapshot_sync(
         &self,
         snapshot_sync_id: SnapshotSyncId,
@@ -109,12 +117,14 @@ pub trait SnapshotWriter: Send + Sync {
     ) -> ProviderResult<()>;
 
     /// Removes block snapshot id mapping
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn remove_block_snapshot_id_mapping(
         &self,
         range: RangeInclusive<BlockNumber>,
     ) -> ProviderResult<()>;
 
     /// Inserts block to snapshot id mapping
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn insert_block_snapshot_id_mapping(
         &self,
         block_id: BlockNumber,
@@ -122,14 +132,18 @@ pub trait SnapshotWriter: Send + Sync {
     ) -> ProviderResult<()>;
 
     /// Removes snapshots
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn remove_snapshots(&self, range: RangeInclusive<SnapshotId>) -> ProviderResult<()>;
 
     /// Removes oldest snapshot
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn remove_oldest_snapshot(&self) -> ProviderResult<()>;
 
     /// Removes snapshots
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn remove_chunks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()>;
 
     /// Deletes chunks in blocks
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()>;
 }
