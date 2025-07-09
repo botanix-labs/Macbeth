@@ -19,6 +19,7 @@ pub mod rpc {
 }
 pub mod config;
 pub mod federation_args;
+pub mod jwt;
 pub mod macros;
 pub mod shutdown;
 pub mod test_utils;

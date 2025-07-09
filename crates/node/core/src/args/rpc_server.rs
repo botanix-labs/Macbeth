@@ -1,12 +1,5 @@
 //! clap [Args](clap::Args) for RPC related arguments.
 
-use std::{
-    ffi::OsStr,
-    net::{IpAddr, Ipv4Addr},
-    path::PathBuf,
-};
-
-use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use clap::{
     builder::{PossibleValue, RangedU64ValueParser, TypedValueParser},
     Arg, Args, Command,
@@ -14,6 +7,11 @@ use clap::{
 use rand::Rng;
 use reth_cli_util::parsers::parse_grpc_address;
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
+use std::{
+    ffi::OsStr,
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+};
 use url::Url;
 
 use super::{
@@ -27,6 +25,7 @@ use crate::{
     },
     cli::config::BtcServerConfig,
 };
+use btcserverlib::jwt::{JwtError, JwtSecret};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;

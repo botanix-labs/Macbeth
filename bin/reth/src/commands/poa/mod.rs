@@ -445,7 +445,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.map(Into::into),
+                btc_signing_server_jwt_secret.map(|s| btcserverlib::jwt::JwtSecret(s.0)),
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };

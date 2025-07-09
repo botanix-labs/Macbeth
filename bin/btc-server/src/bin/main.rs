@@ -1,17 +1,6 @@
 #[macro_use]
 extern crate log;
 
-use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::Path,
-    str::FromStr,
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
-
-use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::Decodable, secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
@@ -27,6 +16,7 @@ use btcserverlib::{
     federation_args::FederationTomlConfig,
     frost_id, handle_signing_error,
     http::{create_web_server, state::ServerState},
+    jwt::{JwtError, JwtSecret},
     measure_rpc_latency,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
@@ -54,6 +44,15 @@ use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
+use std::{
+    collections::BTreeMap,
+    fmt::Debug,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+    str::FromStr,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
+};
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
@@ -674,7 +673,7 @@ where
         self.validate_jwt(&request)?;
         info!("Health check request received");
 
-        self.telemetry.as_ref().map(|telemetry| {
+        if let Some(telemetry) = self.telemetry.as_ref() {
             let is_bitcoind_syncing = is_syncing(
                 &self.bitcoind_client,
                 &self.telemetry,
@@ -689,7 +688,7 @@ where
                 self.start_time.elapsed().as_secs(),
                 &[("bitcoind", if is_bitcoind_syncing { "syncing" } else { "up" })],
             )
-        });
+        };
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -1237,7 +1236,7 @@ where
         info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
         // set the telemetry for pending pegouts back to 0
         if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.set_pending_pegouts(self.btc_network, self.config.identifier, 0 as i64);
+            telemetry.set_pending_pegouts(self.btc_network, self.config.identifier, 0_i64);
         }
 
         let res = rpc::SigningPackage {
@@ -1973,7 +1972,7 @@ where
                 telemetry.update_dkg_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    &"dkg not initialized".to_string(),
+                    "dkg not initialized",
                 );
             }
             return Err(tonic::Status::internal("dkg not initialized"));

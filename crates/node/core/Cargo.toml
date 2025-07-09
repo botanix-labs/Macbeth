@@ -14,16 +14,16 @@ workspace = true
 
 # ethereum
 alloy-genesis = { workspace = true }
-alloy-rpc-types-engine = { workspace = true }
 
 # askama
 askama = "0.12.1"
 
 # bitcoin
 bitcoin = { workspace = true }
+botanix-btc-wallet = { workspace = true }
 
 # Botanix
-botanix-btc-wallet = { workspace = true }
+btc-server = { path = "../../../bin/btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
 const_format = { workspace = true }
 derive_more = { workspace = true }
@@ -43,6 +43,7 @@ futures = { workspace = true }
 # hex
 hex = "0.4.3"
 humantime = { workspace = true }
+
 rand = { workspace = true }
 
 # reth
@@ -88,6 +89,7 @@ tracing = { workspace = true }
 url = "2.2"
 
 [dev-dependencies]
+assert_matches = { workspace = true }
 # test vectors generation
 proptest = { workspace = true }
 tempfile = { workspace = true }
