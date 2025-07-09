@@ -81,10 +81,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEBUG: semantic-release:*
         with:
-          #branches: ${{ steps.branches_config.outputs.branches }}
+          branches: ${{ steps.branches_config.outputs.branches }}
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
-          dry_run: false
-          ci: false
           extra_plugins: |
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator
