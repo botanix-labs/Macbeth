@@ -23,6 +23,8 @@ members = [
     "crates/botanix-cli",
     "crates/botanix-comet-bft-rpc",
     "crates/botanix-data-parser",
+    "crates/botanix-storage",
+    "crates/btc-wallet",
     "crates/chain-state/",
     "crates/chainspec/",
     "crates/cli/cli/",

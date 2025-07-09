@@ -2315,6 +2315,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-storage"
+version = "1.1.5"
+dependencies = [
+ "arbitrary",
+ "assert_matches",
+ "auto_impl",
+ "botanix-storage",
+ "bytes",
+ "derive_more 2.0.1",
+ "eyre",
+ "itertools 0.14.0",
+ "metrics",
+ "modular-bitfield",
+ "parity-scale-codec",
+ "proptest",
+ "proptest-arbitrary-interop",
+ "rand 0.8.5",
+ "reth-codecs",
+ "reth-db",
+ "reth-db-api",
+ "reth-db-models",
+ "reth-metrics",
+ "reth-primitives",
+ "reth-primitives-traits",
+ "reth-prune-types",
+ "reth-stages-types",
+ "reth-storage-errors",
+ "reth-trie-common",
+ "secp256k1 0.29.1",
+ "serde",
+ "sha2 0.10.9",
+ "tempfile",
+ "test-fuzz",
+ "tokio",
+ "tracing",
+ "uuid 1.16.0",
+]
+
+[[package]]
 name = "botanix-up"
 version = "1.1.5"
 dependencies = [
