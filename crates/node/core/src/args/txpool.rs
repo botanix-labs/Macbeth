@@ -2,7 +2,10 @@
 
 use crate::cli::config::RethTransactionPoolConfig;
 use clap::Args;
-use reth_primitives::{constants::DEFAULT_SUGGESTED_TIP, Address};
+use reth_primitives::{
+    constants::{DEFAULT_SUGGESTED_TIP, MIN_PROTOCOL_BASE_FEE},
+    Address,
+};
 use reth_transaction_pool::{
     blobstore::disk::DEFAULT_MAX_CACHED_BLOBS,
     pool::{NEW_TX_LISTENER_BUFFER_SIZE, PENDING_TX_LISTENER_BUFFER_SIZE},
@@ -86,6 +89,10 @@ pub struct TxPoolArgs {
         default_value_t = DEFAULT_SUGGESTED_TIP
     )]
     pub minimum_priority_fee: u128,
+
+    /// Minimum base fee required by the protocol.
+    #[arg(long = "txpool.minimal-protocol-fee", alias = "txpool.minimal_protocol_fee", default_value_t = MIN_PROTOCOL_BASE_FEE)]
+    pub minimal_protocol_basefee: u64,
 }
 
 impl Default for TxPoolArgs {
@@ -109,6 +116,7 @@ impl Default for TxPoolArgs {
             pending_tx_listener_buffer_size: PENDING_TX_LISTENER_BUFFER_SIZE,
             new_tx_listener_buffer_size: NEW_TX_LISTENER_BUFFER_SIZE,
             minimum_priority_fee: DEFAULT_SUGGESTED_TIP,
+            minimal_protocol_basefee: MIN_PROTOCOL_BASE_FEE,
         }
     }
 }
@@ -146,6 +154,7 @@ impl RethTransactionPoolConfig for TxPoolArgs {
             pending_tx_listener_buffer_size: self.pending_tx_listener_buffer_size,
             new_tx_listener_buffer_size: self.new_tx_listener_buffer_size,
             minimum_priority_fee: self.minimum_priority_fee,
+            minimal_protocol_basefee: self.minimal_protocol_basefee,
         }
     }
 }
