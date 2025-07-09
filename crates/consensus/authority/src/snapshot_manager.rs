@@ -1,9 +1,9 @@
 //! Snapshot manager is responsible for persisting snapshot chunks to disk
 use crate::Storage;
-use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_data_parser::{DataParser, Error as DataParserError};
 use futures::StreamExt;
-use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_db::{
     models::{ChunkId, Snapshot, SnapshotId},
     DatabaseEnv,

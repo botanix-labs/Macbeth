@@ -23,7 +23,7 @@ Options:
 ## Build
 
 ```
- cd bin/federation-utils
+ cd bin/botanix-federation-utils
  cargo build
 
 ```

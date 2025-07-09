@@ -23,13 +23,17 @@ bitcoin_hashes = "0.16.0"
 
 ## Bitcoin rpc
 bitcoincore-rpc = { workspace = true }
+
+# Botanix
+botanix-btc-wallet = { path = "../../crates/botanix-btc-wallet" }
+botanix-comet-bft-rpc = { workspace = true }
+botanix-data-parser = { workspace = true }
 btc-server = { path = "../btc-server" }
+
+# other dependencies
 bytes = "1.4.0"
 clap = "4.3.3"
-
-# own dependencies
 client = { path = "../btc-server/client" }
-comet-bft-rpc = { workspace = true }
 displaydoc = "0.2.4"
 dotenv = { version = "0.15.0" }
 
@@ -48,12 +52,10 @@ rand = "0.8.5"
 regex = "1.11.1"
 reth = { workspace = true }
 reth-authority-consensus = { workspace = true }
-reth-btc-wallet = { path = "../../crates/btc-wallet" }
 reth-chainspec = { workspace = true }
 reth-cli-commands = { workspace = true }
 reth-cli-runner = { workspace = true }
 reth-consensus = { workspace = true }
-reth-data-parser = { workspace = true }
 reth-db = { workspace = true, features = ["mdbx"] }
 reth-network-peers = { workspace = true }
 reth-node-core = { workspace = true }

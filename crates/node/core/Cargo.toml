@@ -20,7 +20,9 @@ askama = "0.12.1"
 
 # bitcoin
 bitcoin = { workspace = true }
+botanix-btc-wallet = { workspace = true }
 
+# Botanix
 btc-server = { path = "../../../bin/btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
 const_format = { workspace = true }
@@ -43,7 +45,7 @@ hex = "0.4.3"
 humantime = { workspace = true }
 
 rand = { workspace = true }
-reth-btc-wallet = { workspace = true }
+
 # reth
 reth-chainspec = { workspace = true }
 reth-cli-util = { workspace = true }

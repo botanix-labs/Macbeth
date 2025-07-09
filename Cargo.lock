@@ -2240,6 +2240,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-btc-wallet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitcoin 0.32.5",
+ "bitcoincore-rpc",
+ "ethers",
+ "frost-secp256k1-tr",
+ "hex",
+ "lazy_static",
+ "miniscript 11.2.0",
+ "mockall",
+ "rand 0.6.5",
+ "secp256k1 0.28.2",
+ "serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "botanix-cli"
 version = "0.1.0"
 dependencies = [
@@ -2248,6 +2271,37 @@ dependencies = [
  "clap",
  "hex",
  "reth-primitives",
+]
+
+[[package]]
+name = "botanix-comet-bft-rpc"
+version = "1.1.5"
+dependencies = [
+ "tendermint-rpc",
+]
+
+[[package]]
+name = "botanix-data-parser"
+version = "1.1.5"
+dependencies = [
+ "async-compression",
+ "async-trait",
+ "bincode 1.3.3",
+ "bitcoin 0.32.5",
+ "bytes",
+ "client",
+ "displaydoc",
+ "lazy_static",
+ "paste",
+ "postcard",
+ "prost 0.13.5",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "strum 0.26.3",
+ "strum_macros 0.26.4",
+ "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]
@@ -2265,6 +2319,26 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "botanix-federation-utils-cli"
+version = "1.1.5"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "clap",
+ "dirs 6.0.0",
+ "ethers",
+ "hex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -2929,13 +3003,6 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
-]
-
-[[package]]
-name = "comet-bft-rpc"
-version = "1.1.5"
-dependencies = [
- "tendermint-rpc",
 ]
 
 [[package]]
@@ -4475,26 +4542,6 @@ checksum = "e182f7dbc2ef73d9ef67351c5fbbea084729c48362d3ce9dd44c28e32e277fe5"
 dependencies = [
  "libc",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "federation-utils-cli"
-version = "1.1.5"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "clap",
- "dirs 6.0.0",
- "ethers",
- "hex",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.12",
- "tokio",
- "toml",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -8703,10 +8750,11 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
  "bitcoincore-zmq",
+ "botanix-btc-wallet",
+ "botanix-comet-bft-rpc",
  "btc-server",
  "clap",
  "client",
- "comet-bft-rpc",
  "confy",
  "eyre",
  "fdlimit",
@@ -8716,7 +8764,6 @@ dependencies = [
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
  "reth-blockchain-tree",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-commands",
  "reth-cli-runner",
@@ -8788,10 +8835,12 @@ dependencies = [
  "async-trait",
  "bitcoin 0.32.5",
  "bitcoincore-zmq",
+ "botanix-btc-wallet",
+ "botanix-comet-bft-rpc",
+ "botanix-data-parser",
  "btc-server",
  "bytes",
  "client",
- "comet-bft-rpc",
  "displaydoc",
  "ethabi",
  "frost-secp256k1-tr",
@@ -8805,13 +8854,11 @@ dependencies = [
  "prost 0.13.5",
  "rand 0.8.5",
  "reth-basic-payload-builder",
- "reth-btc-wallet",
  "reth-chain-state",
  "reth-chainspec",
  "reth-cli-runner",
  "reth-consensus",
  "reth-consensus-common",
- "reth-data-parser",
  "reth-db",
  "reth-db-common",
  "reth-ethereum-consensus",
@@ -9038,29 +9085,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reth-btc-wallet"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "bitcoin 0.32.5",
- "bitcoincore-rpc",
- "ethers",
- "frost-secp256k1-tr",
- "hex",
- "lazy_static",
- "miniscript 11.2.0",
- "mockall",
- "rand 0.6.5",
- "secp256k1 0.28.2",
- "serde",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "reth-chain-state"
 version = "1.1.5"
 dependencies = [
@@ -9265,30 +9289,6 @@ dependencies = [
  "reth-tracing",
  "ringbuffer",
  "serde",
- "tokio",
-]
-
-[[package]]
-name = "reth-data-parser"
-version = "1.1.5"
-dependencies = [
- "async-compression",
- "async-trait",
- "bincode 1.3.3",
- "bitcoin 0.32.5",
- "bytes",
- "client",
- "displaydoc",
- "lazy_static",
- "paste",
- "postcard",
- "prost 0.13.5",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "strum 0.26.3",
- "strum_macros 0.26.4",
- "thiserror 2.0.12",
  "tokio",
 ]
 
@@ -9871,8 +9871,8 @@ dependencies = [
  "alloy-eips",
  "alloy-sol-types",
  "bitcoin 0.32.5",
+ "botanix-btc-wallet",
  "btc-server",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-db",
  "reth-ethereum-consensus",
@@ -10267,6 +10267,7 @@ version = "1.1.5"
 dependencies = [
  "aquamarine",
  "bitcoin 0.32.5",
+ "botanix-btc-wallet",
  "btc-server",
  "eyre",
  "fdlimit",
@@ -10275,7 +10276,6 @@ dependencies = [
  "reth-auto-seal-consensus",
  "reth-beacon-consensus",
  "reth-blockchain-tree",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-util",
  "reth-config",
@@ -10328,6 +10328,7 @@ dependencies = [
  "askama",
  "assert_matches",
  "bitcoin 0.32.5",
+ "botanix-btc-wallet",
  "btc-server",
  "clap",
  "const_format",
@@ -10340,7 +10341,6 @@ dependencies = [
  "humantime",
  "proptest",
  "rand 0.8.5",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-util",
  "reth-config",
@@ -10387,6 +10387,7 @@ dependencies = [
  "alloy-genesis",
  "alloy-primitives 0.7.7",
  "bitcoin 0.32.5",
+ "botanix-btc-wallet",
  "eyre",
  "futures",
  "futures-util",
@@ -10394,7 +10395,6 @@ dependencies = [
  "reth-auto-seal-consensus",
  "reth-basic-payload-builder",
  "reth-beacon-consensus",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-consensus",
  "reth-db",
@@ -10527,6 +10527,7 @@ dependencies = [
  "assert_matches",
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
+ "botanix-btc-wallet",
  "btc-server",
  "bytes",
  "c-kzg",
@@ -10544,7 +10545,6 @@ dependencies = [
  "proptest-arbitrary-interop",
  "rand 0.8.5",
  "rayon",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-codecs",
  "reth-ethereum-forks",
@@ -10909,6 +10909,7 @@ dependencies = [
  "alloy-sol-types",
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
+ "botanix-btc-wallet",
  "btc-server",
  "derive_more 2.0.1",
  "frost-secp256k1-tr",
@@ -10917,7 +10918,6 @@ dependencies = [
  "jsonrpsee-types",
  "metrics",
  "rand 0.8.5",
- "reth-btc-wallet",
  "reth-chain-state",
  "reth-chainspec",
  "reth-errors",
@@ -11015,6 +11015,7 @@ version = "1.1.5"
 dependencies = [
  "alloy-rlp",
  "assert_matches",
+ "botanix-btc-wallet",
  "criterion",
  "futures-util",
  "itertools 0.14.0",
@@ -11023,7 +11024,6 @@ dependencies = [
  "pprof",
  "rand 0.8.5",
  "rayon",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-codecs",
  "reth-config",
@@ -13217,11 +13217,13 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoin_hashes 0.16.0",
  "bitcoincore-rpc",
+ "botanix-btc-wallet",
+ "botanix-comet-bft-rpc",
+ "botanix-data-parser",
  "btc-server",
  "bytes",
  "clap",
  "client",
- "comet-bft-rpc",
  "displaydoc",
  "dotenv",
  "ethers",
@@ -13235,12 +13237,10 @@ dependencies = [
  "regex",
  "reth",
  "reth-authority-consensus",
- "reth-btc-wallet",
  "reth-chainspec",
  "reth-cli-commands",
  "reth-cli-runner",
  "reth-consensus",
- "reth-data-parser",
  "reth-db",
  "reth-network-peers",
  "reth-node-core",

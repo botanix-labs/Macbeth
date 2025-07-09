@@ -16,6 +16,9 @@ workspace = true
 ## misc
 aquamarine = { workspace = true }
 bitcoin = { workspace = true }
+botanix-btc-wallet = { workspace = true }
+
+## Botanix
 btc-server = { path = "../../../bin/btc-server" }
 eyre = { workspace = true }
 fdlimit = { workspace = true }
@@ -27,8 +30,6 @@ reth-auto-seal-consensus = { workspace = true }
 reth-beacon-consensus = { workspace = true }
 reth-blockchain-tree = { workspace = true }
 
-## Botanix things
-reth-btc-wallet = { workspace = true }
 ## reth
 reth-chainspec = { workspace = true }
 reth-cli-util = { workspace = true }

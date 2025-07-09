@@ -11,8 +11,9 @@ use crate::{
 };
 use anyhow::Context;
 use async_trait::async_trait;
+use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use botanix_comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use client::BtcServerClient;
-use comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use common::{
     bitcoind_node::{
         create_bitcoind_node, BitcoindNodeConfig, Notifications as BitcoindNotifications,
@@ -32,7 +33,6 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_db::DatabaseEnv;
 use reth_network_peers::pk2id;
 use reth_primitives::{public_key_to_address, Address};
