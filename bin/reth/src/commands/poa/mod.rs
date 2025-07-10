@@ -296,6 +296,8 @@ impl PoaNodeCommand {
     }
 }
 
+const BOTANIX_DB_PATH: &'static str = "botanix_db";
+
 impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     /// Execute `poa` command
     #[tracing::instrument(skip_all, err)]
@@ -396,7 +398,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let data_dir =
             datadir.datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
         let reth_db_path = data_dir.db();
-        let botanix_db_path = data_dir.data_dir().join("botanix_db");
+        let botanix_db_path = data_dir.data_dir().join(BOTANIX_DB_PATH);
         let executor = ctx.task_executor;
 
         tracing::info!(target: "reth::cli", path = ?reth_db_path, "Opening reth database");
