@@ -44,7 +44,7 @@ use std::{collections::HashSet, ops::RangeInclusive, path::Path, sync::Arc};
 /// let provider = factory.provider()?;
 /// let snapshots = provider.get_snapshots()?;
 ///
-/// // Use for write operations  
+/// // Use for write operations
 /// let provider_rw = factory.provider_rw()?;
 /// let snapshot_id = provider_rw.create_new_snapshot(block_number, block_hash)?;
 /// provider_rw.commit()?;
@@ -442,7 +442,6 @@ impl<DB: Database> WalletStateSyncReader for BotanixProviderFactory<DB> {
 }
 
 impl<DB: Database> WalletStateSyncWriter for BotanixProviderFactory<DB> {
-    /// Create new state sync record
     fn create_new_state_sync_record(
         &self,
         uuid: UuidID,
@@ -459,7 +458,6 @@ impl<DB: Database> WalletStateSyncWriter for BotanixProviderFactory<DB> {
         Ok(peer_id)
     }
 
-    /// Append data to state sync record
     fn append_data_to_state_sync_record(
         &self,
         peer_id: PeerID,
@@ -474,7 +472,6 @@ impl<DB: Database> WalletStateSyncWriter for BotanixProviderFactory<DB> {
         Ok(())
     }
 
-    /// Remove state sync record by `peer_id`
     fn remove_state_sync_record_per_peer_id(&self, peer_id: PeerID) -> ProviderResult<()> {
         let provider = self.provider_rw()?;
 
@@ -485,7 +482,6 @@ impl<DB: Database> WalletStateSyncWriter for BotanixProviderFactory<DB> {
         Ok(())
     }
 
-    /// Removes all state sync records
     fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
         let provider = self.provider_rw()?;
 
