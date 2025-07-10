@@ -1,6 +1,7 @@
 //! POA node command
 
 use bitcoincore_zmq::subscribe_async_wait_handshake;
+use botanix_authority_rsp::RandomSourceProvider;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
@@ -13,7 +14,6 @@ use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
     comet_bft::abci::ABCIDriver,
-    random_source_provider::RandomSourceProvider,
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     wallet_state_sync::WalletStateSync,
