@@ -16,7 +16,6 @@
 use async_trait as _;
 use bytes as _;
 use displaydoc as _;
-use metrics_util as _;
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
     Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,
@@ -56,7 +55,6 @@ pub mod snapshot_manager;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
 pub mod bitcoin_checkpoint;
-pub mod metrics;
 pub mod test_utils;
 pub mod wallet_state_sync;
 

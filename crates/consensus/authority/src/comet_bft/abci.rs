@@ -112,11 +112,11 @@ use crate::{
         utils::transactions_signed_from_bytes,
     },
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
-    metrics::AuthorityMetrics,
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
     utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
     AuthorityConsensus, Storage,
 };
+use botanix_authority_metrics::AuthorityMetrics;
 use tracing::{debug, error, info, instrument, trace, warn};
 
 /// Consts

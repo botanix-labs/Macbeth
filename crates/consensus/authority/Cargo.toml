@@ -17,6 +17,7 @@ async-trait = { workspace = true }
 ## Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-zmq = { workspace = true }
+botanix-authority-metrics = { workspace = true }
 
 ## Botanix
 botanix-authority-rsp = { workspace = true }
@@ -38,9 +39,8 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 
 hex = "0.4.3"
-
-metrics = { workspace = true }
-metrics-util = { workspace = true }
+# metrics = { workspace = true }
+# metrics-util = { workspace = true }
 
 # lazy
 once_cell = { workspace = true }
@@ -58,7 +58,7 @@ reth-ethereum-payload-builder = { workspace = true }
 reth-evm = { workspace = true }
 reth-evm-ethereum = { workspace = true }
 reth-execution-errors = { workspace = true }
-reth-metrics = { workspace = true, features = ["common"] }
+# reth-metrics = { workspace = true, features = ["common"] }
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 reth-node-core = { workspace = true }

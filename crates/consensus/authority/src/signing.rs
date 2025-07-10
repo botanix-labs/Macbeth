@@ -1,7 +1,5 @@
-use crate::{
-    metrics::AuthorityMetrics,
-    utils::{parse_signing_session_id, retry_exec, retry_future, FrostParseError},
-};
+use crate::utils::{parse_signing_session_id, retry_exec, retry_future, FrostParseError};
+use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
 use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};

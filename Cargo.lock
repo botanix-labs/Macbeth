@@ -2240,6 +2240,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-authority-metrics"
+version = "1.1.5"
+dependencies = [
+ "metrics",
+ "metrics-util",
+ "reth-metrics",
+ "tokio",
+]
+
+[[package]]
 name = "botanix-authority-rsp"
 version = "1.1.5"
 dependencies = [
@@ -8843,6 +8853,7 @@ dependencies = [
  "async-trait",
  "bitcoin 0.32.5",
  "bitcoincore-zmq",
+ "botanix-authority-metrics",
  "botanix-authority-rsp",
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
@@ -8856,8 +8867,6 @@ dependencies = [
  "futures",
  "futures-util",
  "hex",
- "metrics",
- "metrics-util",
  "mockall",
  "once_cell",
  "prost 0.13.5",
@@ -8875,7 +8884,6 @@ dependencies = [
  "reth-evm",
  "reth-evm-ethereum",
  "reth-execution-errors",
- "reth-metrics",
  "reth-network",
  "reth-network-peers",
  "reth-node-core",

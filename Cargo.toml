@@ -367,6 +367,7 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 # Botanix deps
 botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
 botanix-authority-rsp = { path = "crates/botanix-authority-rsp" }
+botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }
 

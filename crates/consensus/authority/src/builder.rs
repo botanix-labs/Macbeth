@@ -1,11 +1,11 @@
 use crate::{
     comet_bft::abci::{ABCIClientBuilder, ABCIDriverMessage},
     frost_task::FrostTask,
-    metrics::AuthorityMetrics,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
     wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
+use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};

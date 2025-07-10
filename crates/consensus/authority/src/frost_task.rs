@@ -1,5 +1,4 @@
 use crate::{
-    metrics::AuthorityMetrics,
     signing::SigningStateMachine,
     utils::{
         get_pending_pegouts_from_pegout_data, get_pending_pegouts_from_staged_pegouts,
@@ -8,6 +7,7 @@ use crate::{
     Storage,
 };
 use bitcoin::consensus::Encodable;
+use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{
