@@ -52,7 +52,6 @@ mod signing;
 pub mod snapshot_manager;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
-pub mod bitcoin_checkpoint;
 pub mod test_utils;
 pub mod wallet_state_sync;
 

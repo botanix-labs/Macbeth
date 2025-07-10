@@ -19,6 +19,7 @@ members = [
     "bin/reth/",
     "bin/test-suite",
     "crates/blockchain-tree-api/",
+    "crates/botanix-bitcoin-checkpoint",
     "crates/botanix-btc-wallet",
     "crates/botanix-cli",
     "crates/botanix-comet-bft-rpc",
@@ -367,6 +368,7 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 # Botanix deps
 botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
 botanix-authority-rsp = { path = "crates/botanix-authority-rsp" }
+botanix-bitcoin-checkpoint = { path = "crates/botanix-bitcoin-checkpoint" }
 botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }

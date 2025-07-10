@@ -99,15 +99,14 @@ pub enum ApplySnapshotResult {
     /// Reject this snapshot, try others
     RejectSnapshot = 5,
 }
-
 use crate::{
-    bitcoin_checkpoint::BitcoinCheckpointsChain,
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
     utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
     AuthorityConsensus, Storage,
 };
 use botanix_authority_metrics::AuthorityMetrics;
+use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
 use botanix_comet_bft_rpc::{
     non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
     proto_debug::{
@@ -2316,12 +2315,13 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{bitcoin_checkpoint::BitcoinCheckpoint, Storage};
+    use crate::Storage;
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,
         CompactTarget, TxMerkleNode,
     };
+    use botanix_bitcoin_checkpoint::BitcoinCheckpoint;
     use botanix_btc_wallet::{
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,

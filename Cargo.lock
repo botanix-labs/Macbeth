@@ -2257,6 +2257,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-bitcoin-checkpoint"
+version = "1.1.5"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "bitcoin 0.32.5",
+ "bitcoincore-zmq",
+ "botanix-btc-wallet",
+ "futures",
+ "futures-util",
+ "mockall",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "botanix-btc-wallet"
 version = "0.1.0"
 dependencies = [
@@ -8777,6 +8795,7 @@ dependencies = [
  "bitcoincore-rpc",
  "bitcoincore-zmq",
  "botanix-authority-rsp",
+ "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "btc-server",
@@ -8858,12 +8877,11 @@ name = "reth-authority-consensus"
 version = "1.1.5"
 dependencies = [
  "alloy-rpc-types-engine",
- "arc-swap",
  "async-trait",
  "bitcoin 0.32.5",
- "bitcoincore-zmq",
  "botanix-authority-metrics",
  "botanix-authority-rsp",
+ "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
