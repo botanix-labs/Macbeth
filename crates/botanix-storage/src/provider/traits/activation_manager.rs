@@ -62,9 +62,6 @@ pub trait ActivationManagerReaderWriter: Send + Sync {
     /// with the upgrade out of the total number of validators who have cast
     /// votes, regardless of whether they voted Aye or Nay.
     ///
-    /// The formula used is: `(compliant_votes * 100 + total_votes - 1) / total_votes`
-    /// This implements ceiling division to round up to the nearest percentage point.
-    ///
     /// # Parameters
     /// * `min_validator_count` - The minimum number of validators required to calculate the
     ///   approval rate. `total_votes` is be set to this value if the total number of votes is less
