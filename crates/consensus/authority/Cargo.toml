@@ -39,8 +39,6 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 
 hex = "0.4.3"
-# metrics = { workspace = true }
-# metrics-util = { workspace = true }
 
 # lazy
 once_cell = { workspace = true }
@@ -58,7 +56,6 @@ reth-ethereum-payload-builder = { workspace = true }
 reth-evm = { workspace = true }
 reth-evm-ethereum = { workspace = true }
 reth-execution-errors = { workspace = true }
-# reth-metrics = { workspace = true, features = ["common"] }
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 reth-node-core = { workspace = true }
@@ -84,7 +81,6 @@ tendermint = { version = "0.40.1", features = ["clock"] }
 
 # Tendermint
 tendermint-abci = { workspace = true }
-tendermint-light-client = { workspace = true }
 tendermint-proto = { workspace = true }
 tendermint-rpc = { workspace = true }
 

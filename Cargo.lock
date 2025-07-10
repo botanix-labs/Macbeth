@@ -2294,7 +2294,16 @@ dependencies = [
 name = "botanix-comet-bft-rpc"
 version = "1.1.5"
 dependencies = [
+ "bitcoin 0.32.5",
+ "hex",
+ "prost 0.13.5",
+ "reth-primitives",
+ "secp256k1 0.29.1",
+ "tendermint-light-client",
+ "tendermint-proto",
  "tendermint-rpc",
+ "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
@@ -8903,7 +8912,6 @@ dependencies = [
  "tempfile",
  "tendermint",
  "tendermint-abci",
- "tendermint-light-client",
  "tendermint-proto",
  "tendermint-rpc",
  "thiserror 2.0.12",

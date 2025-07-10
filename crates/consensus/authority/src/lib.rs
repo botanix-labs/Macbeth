@@ -42,12 +42,10 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
 
+pub mod activation_manager;
 mod builder;
 /// Comet BFT abci and consensus driver
 pub mod comet_bft;
-
-pub use comet_bft::light_client::LightCBFTClientBuilder;
-pub mod activation_manager;
 mod excecution_utils;
 mod frost_task;
 mod signing;
