@@ -404,8 +404,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             Arc::new(init_db(reth_db_path.clone(), self.db.database_args())?.with_metrics());
 
         tracing::info!(target: "reth::cli", path = ?botanix_db_path, "Opening botanix database");
-        let botanix_database =
-            Arc::new(init_db(botanix_db_path.clone(), self.db.database_args())?.with_metrics());
+        let botanix_database = init_db(botanix_db_path, self.db.database_args())?;
+        let botanix_database = Arc::new(botanix_database);
 
         // TODO: Migrate data if needed
 
