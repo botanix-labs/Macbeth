@@ -63,6 +63,8 @@ services:
       - --abci-port=26658
       - --ipcdisable
       - --abci-host=0.0.0.0
+      - --txpool.minimum-priority-fee=2500000
+      - --txpool.minimal-protocol-fee=5000000
     ports:
       - 8545:8545
       - 8546:8546
@@ -154,6 +156,8 @@ services:
       - --abci-port=26658
       - --abci-host=0.0.0.0
       - --ipcdisable
+      - --txpool.minimum-priority-fee=2500000
+      - --txpool.minimal-protocol-fee=5000000
     ports:
       - 8547:8545
       - 8548:8546
