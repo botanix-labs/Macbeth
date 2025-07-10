@@ -30,15 +30,47 @@ pub trait WalletStateSyncReader: Send + Sync {
     fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>>;
 
     /// Get all state sync record peer ids
+    ///
+    /// Retrieves the peer IDs of all peers that have active wallet state
+    /// synchronization records. This is useful for getting an overview of
+    /// which peers are participating in wallet state synchronization.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<PeerID>)` - A vector of peer IDs with active sync records
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_state_sync_record_peer_ids(&self) -> ProviderResult<Vec<PeerID>>;
 
     /// Get state sync record by peer id
+    ///
+    /// Retrieves the wallet state synchronization record for a specific peer.
+    /// This is the most efficient way to access a peer's sync data when you
+    /// know their peer ID.
+    ///
+    /// # Parameters
+    ///
+    /// * `peer_id` - The unique identifier of the peer whose sync record to retrieve
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(WalletStateSyncRecord))` - The sync record if found
+    /// * `Ok(None)` - If no sync record exists for the given peer ID
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_state_sync_record_by_peer_id(
         &self,
         peer_id: PeerID,
     ) -> ProviderResult<Option<WalletStateSyncRecord>>;
 
-    /// Get state sync recors count
+    /// Get state sync records count
+    ///
+    /// Returns the total number of active wallet state synchronization records.
+    /// This is useful for monitoring how many peers are currently participating
+    /// in wallet state synchronization.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(usize)` - The number of active sync records
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_state_sync_records_count(&self) -> ProviderResult<usize>;
 
     /// Get minimum superset
@@ -79,6 +111,21 @@ pub trait WalletStateSyncReader: Send + Sync {
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait WalletStateSyncWriter: Send + Sync {
     /// Create new state sync record
+    ///
+    /// Creates a new wallet state synchronization record for a peer. This is
+    /// typically called when a peer begins participating in wallet state sync.
+    ///
+    /// # Parameters
+    ///
+    /// * `uuid` - Unique session identifier for this synchronization session
+    /// * `peer_id` - The peer identifier for the participating peer
+    /// * `chunks_count` - Expected total number of chunks for this session
+    /// * `data` - Optional initial data as (block_number, data) tuples
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(PeerID)` - The peer ID of the created record
+    /// * `Err(ProviderError)` - If there was a database error or the record already exists
     fn create_new_state_sync_record(
         &self,
         uuid: UuidID,
@@ -88,6 +135,19 @@ pub trait WalletStateSyncWriter: Send + Sync {
     ) -> ProviderResult<PeerID>;
 
     /// Append data to state sync record
+    ///
+    /// Appends additional data chunks to an existing wallet state synchronization
+    /// record. This is used to incrementally build up the synchronized state data.
+    ///
+    /// # Parameters
+    ///
+    /// * `peer_id` - The peer ID whose sync record should be updated
+    /// * `data` - Vector of (block_number, data) tuples to append
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - If the data was successfully appended
+    /// * `Err(ProviderError)` - If there was a database error or the peer record doesn't exist
     fn append_data_to_state_sync_record(
         &self,
         peer_id: PeerID,
@@ -95,8 +155,29 @@ pub trait WalletStateSyncWriter: Send + Sync {
     ) -> ProviderResult<()>;
 
     /// Remove state sync record by peer_id
+    ///
+    /// Removes a wallet state synchronization record for a specific peer.
+    /// This is typically called when a peer is no longer participating in
+    /// wallet state synchronization or when cleaning up completed sessions.
+    ///
+    /// # Parameters
+    ///
+    /// * `peer_id` - The peer ID whose sync record should be removed
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - If the record was successfully removed or didn't exist
+    /// * `Err(ProviderError)` - If there was a database error
     fn remove_state_sync_record_per_peer_id(&self, peer_id: PeerID) -> ProviderResult<()>;
 
     /// Removes all state sync records
+    ///
+    /// Removes all wallet state synchronization records from the database.
+    /// This is a destructive operation that clears all synchronization state.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - If all records were successfully removed
+    /// * `Err(ProviderError)` - If there was a database error
     fn remove_all_state_sync_records(&self) -> ProviderResult<()>;
 }

@@ -110,16 +110,38 @@ pub trait SnapshotReader: Send + Sync {
     /// * `Ok(Some(SnapshotChunk))` - The chunk if found
     /// * `Ok(None)` - If no chunk exists with the given ID
     /// * `Err(ProviderError)` - If there was a database error
-    ///
-    /// # Performance
-    ///
-    /// Chunks can be large, so this operation may be I/O intensive.
     fn get_chunk_by_id(&self, chunk_id: ChunkId) -> ProviderResult<Option<SnapshotChunk>>;
 
     /// Get chunk size
+    ///
+    /// Returns the size in bytes of a specific snapshot chunk. This is useful
+    /// for memory management and progress tracking during chunk operations.
+    ///
+    /// # Parameters
+    ///
+    /// * `chunk_id` - The unique identifier of the chunk to measure
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(usize)` - The size of the chunk in bytes
+    /// * `Err(ProviderError)` - If there was a database error or chunk doesn't exist
     fn get_chunk_size(&self, chunk_id: ChunkId) -> ProviderResult<usize>;
 
     /// Get snapshot id by block id
+    ///
+    /// Finds the snapshot that contains or is associated with a specific block number.
+    /// This is useful for determining which snapshot to use when querying historical
+    /// blockchain state at a particular height.
+    ///
+    /// # Parameters
+    ///
+    /// * `block_id` - The block number to look up
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(SnapshotId))` - The snapshot ID if a snapshot contains this block
+    /// * `Ok(None)` - If no snapshot is associated with this block number
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_snapshot_id_by_block_id(
         &self,
         block_id: BlockNumber,
@@ -137,13 +159,42 @@ pub trait SnapshotReader: Send + Sync {
     /// Get snapshot size
     fn get_snapshot_size(&self, snapshot_id: SnapshotId) -> ProviderResult<usize>;
 
-    /// Get snapshot size
+    /// Get snapshots count
+    ///
+    /// Returns the total number of snapshots stored in the database.
+    /// This is useful for monitoring storage usage and determining
+    /// when snapshot cleanup may be needed.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(usize)` - The total number of snapshots
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_snapshots_count(&self) -> ProviderResult<usize>;
 
     /// Get latest chunk id
+    ///
+    /// Returns the ID of the most recently created chunk. This is useful
+    /// for determining the current state of chunk creation and for
+    /// sequential chunk processing.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(ChunkId))` - The ID of the latest chunk
+    /// * `Ok(None)` - If no chunks exist in the database
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>>;
 
     /// Get first chunk id
+    ///
+    /// Returns the ID of the earliest created chunk. This is useful
+    /// for determining the starting point for chunk processing and
+    /// for cleanup operations that need to process chunks in order.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(ChunkId))` - The ID of the first chunk
+    /// * `Ok(None)` - If no chunks exist in the database
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>>;
 }
 
