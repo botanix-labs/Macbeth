@@ -2569,6 +2569,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_new_consensus_checkpoint_no_finalized_pegouts_stored() {
+        let app = setup().await;
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // Add some pegin utxos
+        let mut pegins = vec![];
+        for _ in 0..10 {
+            let dummy_tx = create_tx(1, 1, None);
+            let utxo = crate::database::Utxo::new(
+                dummy_tx.input[0].previous_output,
+                dummy_tx.output[0].clone(),
+                None,
+                None,
+            );
+
+            // create pegins btc client can send
+            let tx_out = dummy_tx.output.get(utxo.outpoint.vout as usize).expect("valid vout");
+            let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+            let utxo = Utxo {
+                outpoint: Some(rpc::OutPoint {
+                    txid: bitcoin::consensus::serialize(&utxo.outpoint.txid),
+                    vout: utxo.outpoint.vout,
+                }),
+                output: Some(rpc::TxOut {
+                    script_pubkey: Some(rpc::ScriptBuf { script: serialized_script_pub_key }),
+                    value: tx_out.value.to_sat(),
+                }),
+                eth_address: hex::encode(&[0; 20]),
+            };
+            pegins.push(utxo);
+        }
+        let req = tonic::Request::new(rpc::ConsensusCheckpointRequest {
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+            pegins: pegins.clone(),
+            pending_pegouts: vec![],
+        });
+        let _res = app.new_consensus_checkpoint(req).await.unwrap();
+
+        // Store finalized pegout
+        let mut rng = thread_rng();
+        let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), 0);
+        let finalized_pegout = btcserverlib::database::FinalizedPegout {
+            id: pegout_id,
+            block_number: 100,
+            timestamp: None,
+        };
+        app.db.store_finalized_pegout_ids(&[&finalized_pegout]).expect("valid finalized pegout");
+
+        // Try and store a pending pegout with the the finalized pegout id
+        let pending_pegout = rpc::PendingPegout {
+            pegout_id: finalized_pegout.id.as_bytes().to_vec(),
+            spk: random_p2wpkh_script().as_bytes().to_vec(),
+            amount: 100_000, // sats
+            height: 1,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("valid duration")
+                .as_secs(),
+        };
+        let req = tonic::Request::new(rpc::ConsensusCheckpointRequest {
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+            pegins: vec![],
+            pending_pegouts: vec![pending_pegout],
+        });
+        let _res = app.new_consensus_checkpoint(req).await.unwrap();
+
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert!(pending_pegouts.is_empty(), "No pending pegouts should be stored");
+    }
+
+    #[tokio::test]
     async fn test_finalized_pegout_ids_streaming_chunksize_gt_chunks() {
         let app = setup().await;
         let num_txs = 52;
