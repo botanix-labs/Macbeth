@@ -31,20 +31,20 @@ pub struct WalletStateSyncRecord {
 
 impl WalletStateSyncRecord {
     /// Creates a new wallet state sync record.
-    /// 
+    ///
     /// This constructor initializes a new synchronization record for a peer,
     /// optionally with initial data. The record tracks wallet state chunks
     /// and their associated block numbers for coordinated synchronization.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `peer_id` - Unique identifier for the peer
     /// * `uuid` - Session UUID for this sync operation
     /// * `chunks_count` - Expected total number of chunks
     /// * `data` - Optional initial data as (block_number, data) tuples
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A new `WalletStateSyncRecord` instance ready for use.
     pub fn new(
         peer_id: PeerID,
@@ -61,11 +61,48 @@ impl WalletStateSyncRecord {
     }
 
     /// Appends data with block number to the existing wallet state sync record.
+    ///
+    /// This method adds a single data chunk along with its associated block number
+    /// to the synchronization record. It ensures data uniqueness by only adding
+    /// the data if it doesn't already exist in the record.
+    ///
+    /// # Parameters
+    ///
+    /// * `additional_data` - The data chunk to append to the record
+    /// * `block_number` - The block number associated with this data chunk
+    ///
+    /// # Behavior
+    ///
+    /// - If the data or block number already exists, the operation is ignored
+    /// - This prevents duplicate data from being stored in the sync record
+    /// - The method is idempotent - calling it multiple times with the same data has no effect
+    #[inline(always)]
     pub fn append_data_with_block(&mut self, additional_data: Bytes, block_number: u64) {
         self.add_data_if_not_exists(additional_data, block_number);
     }
 
     /// Appends additional data chunks with block numbers to the existing wallet state sync record.
+    ///
+    /// This method adds multiple data chunks along with their associated block numbers
+    /// to the synchronization record in a single operation. It processes pairs of
+    /// (block_number, data) and ensures uniqueness for each pair.
+    ///
+    /// # Parameters
+    ///
+    /// * `additional_data_chunks` - Vector of data chunks to append
+    /// * `blocks` - Vector of block numbers corresponding to each data chunk
+    ///
+    /// # Behavior
+    ///
+    /// - Processes data chunks and block numbers in pairs using zip iteration
+    /// - Each (block, data) pair is added only if neither the data nor block already exists
+    /// - If the vectors have different lengths, only pairs up to the shorter length are processed
+    /// - Individual pairs that already exist are skipped without affecting other pairs
+    ///
+    /// # Panics
+    ///
+    /// This method will not panic, but if `additional_data_chunks` and `blocks` have
+    /// different lengths, some data may be ignored.
     pub fn append_data_block_chunks(
         &mut self,
         additional_data_chunks: Vec<Bytes>,
@@ -77,11 +114,51 @@ impl WalletStateSyncRecord {
     }
 
     /// Returns an iterator over block numbers with data.
+    ///
+    /// This method provides an iterator that yields pairs of (block_number, data)
+    /// for all stored data chunks in the synchronization record. The iterator
+    /// allows for efficient processing of all block-data pairs without copying.
+    ///
+    /// # Returns
+    ///
+    /// An iterator yielding tuples of `(&u64, &Bytes)` where:
+    /// - First element is a reference to the block number
+    /// - Second element is a reference to the corresponding data chunk
+    ///
+    /// # Usage
+    ///
+    /// ```rust,ignore
+    /// for (block_number, data) in sync_record.get_blocks_data_iter() {
+    ///     println!("Block {}: {} bytes", block_number, data.len());
+    /// }
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// The iterator pairs blocks and data by their index position. The order
+    /// reflects the order in which data was added to the synchronization record.
     pub fn get_blocks_data_iter(&mut self) -> impl Iterator<Item = (&u64, &Bytes)> {
         self.blocks.iter().zip(&self.data)
     }
 
     /// Return the size of this wallet state sync record.
+    ///
+    /// Calculates the total memory footprint of this synchronization record
+    /// by summing the sizes of all its components. This is useful for memory
+    /// management and for understanding storage requirements.
+    ///
+    /// # Returns
+    ///
+    /// The total size in bytes, including:
+    /// - UUID (32 bytes)
+    /// - Peer ID (32 bytes)
+    /// - All data chunks (variable size)
+    /// - All block numbers (8 bytes each)
+    ///
+    /// # Performance
+    ///
+    /// This method iterates through all data chunks to calculate their total size,
+    /// so the time complexity is O(n) where n is the number of data chunks.
     pub fn size(&self) -> usize {
         let uuid_size = std::mem::size_of::<B256>();
         let peer_id = std::mem::size_of::<B256>();
@@ -91,41 +168,106 @@ impl WalletStateSyncRecord {
     }
 
     /// Return the uuid of this wallet state sync record.
+    ///
+    /// The UUID uniquely identifies this synchronization session and is used
+    /// to coordinate wallet state synchronization between peers. Each sync
+    /// session has a unique UUID that remains constant throughout the session.
+    ///
+    /// # Returns
+    ///
+    /// A 32-byte UUID that identifies this synchronization session.
     pub const fn get_uuid(&self) -> B256 {
         self.uuid
     }
 
     /// Return the data of this wallet state sync record.
+    ///
+    /// Provides read-only access to all data chunks stored in this synchronization
+    /// record. The data represents wallet state information that has been synchronized
+    /// with network peers.
+    ///
+    /// # Returns
+    ///
+    /// A slice containing all data chunks in the order they were added to the record.
     pub fn get_data(&self) -> &[Bytes] {
         self.data.as_ref()
     }
 
     /// Return the blocks of the wallet state sync records.
+    ///
+    /// Provides read-only access to all block numbers associated with the stored
+    /// data chunks. Each block number corresponds to a data chunk at the same index.
+    ///
+    /// # Returns
+    ///
+    /// A slice containing all block numbers in the order they were added to the record.
     pub fn get_blocks(&self) -> &[u64] {
         self.blocks.as_ref()
     }
 
-    /// Return the `peer_id of` this wallet state sync record.
+    /// Return the peer ID of this wallet state sync record.
+    ///
+    /// The peer ID uniquely identifies the network peer that is participating
+    /// in this wallet state synchronization session. It is used to track which
+    /// peer contributed which data during the synchronization process.
+    ///
+    /// # Returns
+    ///
+    /// A 64-byte identifier that uniquely identifies the peer.
     pub const fn get_peer_id(&self) -> B512 {
         self.peer_id
     }
 
     /// Return the chunks count of this wallet state sync record.
+    ///
+    /// Returns the expected total number of chunks for this synchronization session.
+    /// This is used to track progress and determine when synchronization is complete.
+    ///
+    /// # Returns
+    ///
+    /// The total number of chunks expected for this synchronization session.
     pub const fn get_chunks_count(&self) -> u64 {
         self.chunks_count
     }
 
     /// Sets the peer id of the wallet state sync record.
+    ///
+    /// Updates the peer identifier for this synchronization record. This is typically
+    /// used when transferring or reassigning synchronization responsibilities between peers.
+    ///
+    /// # Parameters
+    ///
+    /// * `peer_id` - The new 64-byte peer identifier to assign to this record
     pub fn set_peer_id(&mut self, peer_id: B512) {
         self.peer_id = peer_id;
     }
 
     /// Sets the chunks count for the wallet state sync record.
+    ///
+    /// Updates the expected total number of chunks for this synchronization session.
+    /// This is useful when the total chunk count is determined dynamically or needs
+    /// to be adjusted during synchronization.
+    ///
+    /// # Parameters
+    ///
+    /// * `chunks_count` - The new total number of chunks expected for this session
     pub fn set_chunks_count(&mut self, chunks_count: u64) {
         self.chunks_count = chunks_count;
     }
 
     /// Sets the uuid of the wallet state sync record.
+    ///
+    /// Updates the session UUID for this synchronization record. This should be used
+    /// with caution as it changes the identity of the synchronization session.
+    ///
+    /// # Parameters
+    ///
+    /// * `uuid` - The new 32-byte UUID to assign to this synchronization session
+    ///
+    /// # Warning
+    ///
+    /// Changing the UUID may break synchronization coordination with peers who
+    /// are tracking the original UUID.
     pub fn set_uuid(&mut self, uuid: B256) {
         self.uuid = uuid;
     }
@@ -133,6 +275,30 @@ impl WalletStateSyncRecord {
     /// Adds a data chunk with its block number to the wallet state sync record if it doesn't
     /// already exist. Returns `true` if the data or block was added, `false` if it was already
     /// present.
+    ///
+    /// This method ensures data uniqueness by checking both the data content and block number
+    /// before adding them to the record. It prevents duplicate data from being stored and
+    /// maintains the integrity of the synchronization record.
+    ///
+    /// # Parameters
+    ///
+    /// * `data_chunk` - The data chunk to add to the record
+    /// * `block_number` - The block number associated with the data chunk
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the data chunk and block number were successfully added
+    /// * `false` if either the data chunk or block number already exists in the record
+    ///
+    /// # Behavior
+    ///
+    /// The method performs two uniqueness checks:
+    /// 1. Checks if the data chunk already exists in the record
+    /// 2. Checks if the block number already exists in the record
+    ///
+    /// If either check fails, the method returns `false` without modifying the record.
+    /// If both checks pass, the data chunk and block number are added and the method returns
+    /// `true`.
     pub fn add_data_if_not_exists(&mut self, data_chunk: Bytes, block_number: u64) -> bool {
         if self.data.iter().any(|data| data == &data_chunk) {
             return false;
@@ -146,6 +312,29 @@ impl WalletStateSyncRecord {
     }
 
     /// Converts the blocks and data to a set of unique (block, data) tuples.
+    ///
+    /// This method creates a HashSet containing all (block_number, data_chunk) pairs
+    /// from the synchronization record. The resulting set automatically eliminates
+    /// any duplicate pairs and provides efficient lookup and set operations.
+    ///
+    /// # Returns
+    ///
+    /// A `HashSet<(u64, Bytes)>` containing unique tuples where:
+    /// - First element is the block number
+    /// - Second element is the corresponding data chunk
+    ///
+    /// # Performance
+    ///
+    /// - Time complexity: O(n) where n is the number of data chunks
+    /// - Space complexity: O(n) for the new HashSet
+    /// - Data is cloned during the conversion process
+    ///
+    /// # Usage
+    ///
+    /// This method is useful for:
+    /// - Deduplicating block-data pairs
+    /// - Performing set operations (union, intersection, etc.)
+    /// - Efficient lookups to check if a specific (block, data) pair exists
     pub fn blocks_and_data_to_set(&mut self) -> HashSet<(u64, Bytes)> {
         self.blocks
             .iter()
@@ -155,14 +344,14 @@ impl WalletStateSyncRecord {
     }
 
     /// Gets the hash of the wallet state sync record.
-    /// 
+    ///
     /// This method computes a deterministic hash of the wallet state sync record
     /// by combining the peer ID, UUID, and all data chunks. The hash is computed
     /// using SHA-256 and can be used for verification and comparison of sync
     /// records across network nodes.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A 32-byte SHA-256 hash as a `Vec<u8>`.
     pub fn get_hash(&self) -> Vec<u8> {
         let mut hasher = Sha256::new();
@@ -176,18 +365,18 @@ impl WalletStateSyncRecord {
 }
 
 /// Converts a `uuid::Uuid` to a `UuidID`.
-/// 
+///
 /// This utility function converts a standard UUID (16 bytes) to a 32-byte
 /// `UuidID` by padding with zeros. This is necessary because the storage
 /// system uses 32-byte identifiers for consistency with other hash-based
 /// identifiers in the system.
-/// 
+///
 /// # Parameters
-/// 
+///
 /// * `uuid` - The UUID to convert
-/// 
+///
 /// # Returns
-/// 
+///
 /// A 32-byte `UuidID` with the UUID bytes in the first 16 bytes and zeros
 /// in the remaining 16 bytes.
 pub fn uuid_to_b256(uuid: uuid::Uuid) -> UuidID {

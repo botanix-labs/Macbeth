@@ -17,26 +17,85 @@ use std::{collections::HashSet, ops::RangeInclusive, path::Path, sync::Arc};
 
 /// A common provider that fetches data from a database or static file.
 ///
-/// This provider implements most provider or provider factory traits.
+/// This provider factory implements most provider or provider factory traits and serves
+/// as the primary entry point for accessing the Botanix storage system. It manages
+/// database connections and provides both read-only and read-write access to stored data.
+///
+/// ## Generic Parameters
+///
+/// * `DB` - The database type, typically `DatabaseEnv` for production use
+///
+/// ## Usage
+///
+/// ```rust,ignore
+/// use botanix_storage::BotanixProviderFactory;
+/// use reth_db::{init_db, mdbx::DatabaseArguments};
+///
+/// // Create factory with existing database
+/// let factory = BotanixProviderFactory::new(database);
+///
+/// // Or create with database path
+/// let factory = BotanixProviderFactory::new_with_database_path(
+///     "./data/botanix.db",
+///     DatabaseArguments::default()
+/// )?;
+///
+/// // Use for read operations
+/// let provider = factory.provider()?;
+/// let snapshots = provider.get_snapshots()?;
+///
+/// // Use for write operations  
+/// let provider_rw = factory.provider_rw()?;
+/// let snapshot_id = provider_rw.create_new_snapshot(block_number, block_hash)?;
+/// provider_rw.commit()?;
+/// ```
 #[derive(Debug, Clone)]
 pub struct BotanixProviderFactory<DB> {
-    /// Database
+    /// Database instance wrapped in Arc for thread-safe sharing
     db: Arc<DB>,
 }
 
 impl<DB> BotanixProviderFactory<DB> {
     /// Create new database provider factory.
+    ///
+    /// Creates a new factory instance that wraps the provided database.
+    /// The database is stored in an `Arc` to allow for efficient cloning
+    /// and sharing across multiple threads.
+    ///
+    /// # Parameters
+    ///
+    /// * `db` - The database instance to wrap
+    ///
+    /// # Returns
+    ///
+    /// A new `BotanixProviderFactory` instance
     pub fn new(db: DB) -> Self {
         Self { db: Arc::new(db) }
     }
 
     /// Returns reference to the underlying database.
+    ///
+    /// Provides direct access to the underlying database instance.
+    /// This is useful for advanced operations that require direct
+    /// database access outside of the provider trait methods.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the underlying database instance
     pub fn db_ref(&self) -> &DB {
         self.db.as_ref()
     }
 
     #[cfg(any(test, feature = "test-utils"))]
     /// Consumes Self and returns DB
+    ///
+    /// Consumes the factory and returns the underlying database instance.
+    /// This is primarily useful for testing scenarios where you need to
+    /// access the database directly after using the factory.
+    ///
+    /// # Returns
+    ///
+    /// The underlying database instance wrapped in an `Arc`
     pub fn into_db(self) -> Arc<DB> {
         self.db
     }
@@ -45,6 +104,39 @@ impl<DB> BotanixProviderFactory<DB> {
 impl BotanixProviderFactory<DatabaseEnv> {
     /// Create new database provider by passing a path. [`BotanixProviderFactory`] will own the
     /// database instance.
+    ///
+    /// This constructor initializes a new MDBX database at the specified path and
+    /// wraps it in a provider factory. The factory takes ownership of the database
+    /// instance, ensuring proper lifecycle management.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - The filesystem path where the database should be created or opened
+    /// * `args` - Database configuration arguments (page size, map size, etc.)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(BotanixProviderFactory)` - Successfully created factory with database
+    /// * `Err(eyre::Error)` - If database initialization failed
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if:
+    /// - The specified path is invalid or inaccessible
+    /// - Database initialization fails due to permissions or disk space
+    /// - The database file is corrupted or incompatible
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use botanix_storage::BotanixProviderFactory;
+    /// use reth_db::mdbx::DatabaseArguments;
+    ///
+    /// let factory = BotanixProviderFactory::new_with_database_path(
+    ///     "./data/botanix.db",
+    ///     DatabaseArguments::default()
+    /// )?;
+    /// ```
     pub fn new_with_database_path<P: AsRef<Path>>(
         path: P,
         args: DatabaseArguments,

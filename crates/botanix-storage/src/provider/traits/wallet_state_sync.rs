@@ -18,6 +18,15 @@ use std::collections::HashSet;
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait WalletStateSyncReader: Send + Sync {
     /// Get all state sync records
+    ///
+    /// Retrieves all wallet state synchronization records from the database.
+    /// This method returns records for all peers that are participating in
+    /// wallet state synchronization.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<WalletStateSyncRecord>)` - A vector of all sync records
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>>;
 
     /// Get all state sync record peer ids
@@ -32,9 +41,30 @@ pub trait WalletStateSyncReader: Send + Sync {
     /// Get state sync recors count
     fn get_state_sync_records_count(&self) -> ProviderResult<usize>;
 
-    /// Get miniumm superset
-    /// Returns a tuple of a boolean indicating if the minimum superset is found and a hashset of
-    /// bytes
+    /// Get minimum superset
+    ///
+    /// Calculates the minimum superset of wallet state data across all peer
+    /// synchronization records. This is used to determine the consensus wallet
+    /// state when multiple peers have contributed different data sets.
+    ///
+    /// The algorithm finds the smallest set of (block, data) pairs that appears
+    /// in at least the minimum required number of peer records. This ensures
+    /// that the wallet state reflects data that has been validated by multiple peers.
+    ///
+    /// # Parameters
+    ///
+    /// * `min_required_criterion` - The minimum number of peer records that must contain a data
+    ///   pair for it to be included in the superset
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((true, HashSet<(u64, Bytes)>))` - If a valid superset was found:
+    ///   - First element is `true` indicating success
+    ///   - Second element contains the minimum superset of (block, data) pairs
+    /// * `Ok((false, HashSet<(u64, Bytes)>))` - If no valid superset was found:
+    ///   - First element is `false` indicating failure
+    ///   - Second element is an empty or partial set
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_minimum_superset(
         &self,
         min_required_criterion: u64,

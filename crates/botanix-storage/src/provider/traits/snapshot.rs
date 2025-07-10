@@ -17,21 +17,103 @@ use std::ops::RangeInclusive;
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait SnapshotReader: Send + Sync {
     /// Get snapshots
+    ///
+    /// Retrieves all snapshots stored in the database. This method returns
+    /// a vector containing all snapshot metadata including their IDs, heights,
+    /// chunk references, and block associations.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<Snapshot>)` - A vector of all snapshots in the database
+    /// * `Err(ProviderError)` - If there was an error accessing the database
+    ///
+    /// # Performance
+    ///
+    /// This method loads all snapshots into memory, so it may be expensive
+    /// for databases with many snapshots. Consider using pagination or
+    /// filtering methods for large datasets.
     fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>>;
 
     /// Get snapshot by id
+    ///
+    /// Retrieves a specific snapshot by its unique identifier. This is the most
+    /// efficient way to access a single snapshot when you know its ID.
+    ///
+    /// # Parameters
+    ///
+    /// * `snapshot_id` - The unique identifier of the snapshot to retrieve
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(Snapshot))` - The snapshot if found
+    /// * `Ok(None)` - If no snapshot exists with the given ID
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>>;
 
     /// Get last snapshot sync by id
+    ///
+    /// Retrieves the ID of the most recent snapshot synchronization operation.
+    /// This is useful for tracking synchronization progress and determining
+    /// the next sync operation to perform.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(SnapshotSyncId))` - The ID of the last sync operation
+    /// * `Ok(None)` - If no sync operations have been recorded
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_last_snapshot_sync_id(&self) -> ProviderResult<Option<SnapshotSyncId>>;
 
     /// Get snapshot sync by height
+    ///
+    /// Retrieves a snapshot synchronization record for a specific block height.
+    /// This allows tracking synchronization progress at particular blockchain heights.
+    ///
+    /// # Parameters
+    ///
+    /// * `height` - The block height to query for synchronization data
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(SnapshotSync))` - The sync record if found at the given height
+    /// * `Ok(None)` - If no sync record exists for the given height
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_snapshot_sync_by_height(&self, height: u64) -> ProviderResult<Option<SnapshotSync>>;
 
     /// Get snapshot sync by id
+    ///
+    /// Retrieves a specific snapshot synchronization record by its unique identifier.
+    /// This provides access to detailed synchronization progress information.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - The unique identifier of the synchronization record
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(SnapshotSync))` - The sync record if found
+    /// * `Ok(None)` - If no sync record exists with the given ID
+    /// * `Err(ProviderError)` - If there was a database error
     fn get_snapshot_sync_by_id(&self, id: u64) -> ProviderResult<Option<SnapshotSync>>;
 
     /// Get chunk by chunk id
+    ///
+    /// Retrieves a specific snapshot chunk by its unique identifier. Chunks contain
+    /// the actual snapshot data and can be quite large, so this method should be
+    /// used efficiently.
+    ///
+    /// # Parameters
+    ///
+    /// * `chunk_id` - The unique identifier of the chunk to retrieve
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(SnapshotChunk))` - The chunk if found
+    /// * `Ok(None)` - If no chunk exists with the given ID
+    /// * `Err(ProviderError)` - If there was a database error
+    ///
+    /// # Performance
+    ///
+    /// Chunks can be large, so this operation may be I/O intensive.
     fn get_chunk_by_id(&self, chunk_id: ChunkId) -> ProviderResult<Option<SnapshotChunk>>;
 
     /// Get chunk size
