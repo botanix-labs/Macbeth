@@ -2,7 +2,7 @@ use crate::{
     pool::{NEW_TX_LISTENER_BUFFER_SIZE, PENDING_TX_LISTENER_BUFFER_SIZE},
     PoolSize, TransactionOrigin,
 };
-use reth_primitives::{Address, EIP4844_TX_TYPE_ID};
+use reth_primitives::{constants::MIN_PROTOCOL_BASE_FEE, Address, EIP4844_TX_TYPE_ID};
 use std::collections::HashSet;
 /// Guarantees max transactions for one sender, compatible with geth/erigon
 pub const TXPOOL_MAX_ACCOUNT_SLOTS_PER_SENDER: usize = 16;
@@ -48,6 +48,8 @@ pub struct PoolConfig {
     pub pending_tx_listener_buffer_size: usize,
     /// Bound on number of new transactions from `reth_network::TransactionsManager` to buffer.
     pub new_tx_listener_buffer_size: usize,
+    /// Minimum base fee required by the protocol.
+    pub minimal_protocol_basefee: u64,
 }
 
 impl PoolConfig {
@@ -74,6 +76,7 @@ impl Default for PoolConfig {
             local_transactions_config: Default::default(),
             pending_tx_listener_buffer_size: PENDING_TX_LISTENER_BUFFER_SIZE,
             new_tx_listener_buffer_size: NEW_TX_LISTENER_BUFFER_SIZE,
+            minimal_protocol_basefee: MIN_PROTOCOL_BASE_FEE,
         }
     }
 }
