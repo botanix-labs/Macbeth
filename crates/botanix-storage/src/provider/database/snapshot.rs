@@ -214,7 +214,7 @@ impl<DB: Database> SnapshotReader for BotanixDatabaseProviderRW<DB> {
 
     #[inline(always)]
     fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
-        self.get_first_chunk_id()
+        self.0.get_last_chunk_id()
     }
 
     #[inline(always)]
