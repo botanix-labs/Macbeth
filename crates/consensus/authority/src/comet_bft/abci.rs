@@ -2264,12 +2264,17 @@ where
                             }
                         };
 
+                        // TODO: Check if the block is already in the database
+                        //  then do not call this
+
                         reth_db_rw.append_blocks_with_state(
                             vec![sealed_block_with_senders.clone()],
                             sealed_block_with_context.exec_outcome.clone(),
                             hashed_state.into_sorted(),
                             trie_updates,
                         )?;
+
+                        reth_db_rw.commit()?;
 
                         let botanix_db_rw = self
                             .botanix_database_provider_factory
@@ -2284,10 +2289,8 @@ where
 
                         botanix_db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
 
-                        // TODO: We need two phase commit. For example: https://github.com/emabee/rust-dist_tx/
+                        // TODO: Print detailed error message here
                         botanix_db_rw.commit()?;
-
-                        reth_db_rw.commit()?;
 
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
                             new: vec![executed_block],
