@@ -30,7 +30,22 @@ pub struct WalletStateSyncRecord {
 }
 
 impl WalletStateSyncRecord {
-    /// Creates a new wallet state sync record
+    /// Creates a new wallet state sync record.
+    /// 
+    /// This constructor initializes a new synchronization record for a peer,
+    /// optionally with initial data. The record tracks wallet state chunks
+    /// and their associated block numbers for coordinated synchronization.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `peer_id` - Unique identifier for the peer
+    /// * `uuid` - Session UUID for this sync operation
+    /// * `chunks_count` - Expected total number of chunks
+    /// * `data` - Optional initial data as (block_number, data) tuples
+    /// 
+    /// # Returns
+    /// 
+    /// A new `WalletStateSyncRecord` instance ready for use.
     pub fn new(
         peer_id: PeerID,
         uuid: UuidID,
@@ -140,6 +155,15 @@ impl WalletStateSyncRecord {
     }
 
     /// Gets the hash of the wallet state sync record.
+    /// 
+    /// This method computes a deterministic hash of the wallet state sync record
+    /// by combining the peer ID, UUID, and all data chunks. The hash is computed
+    /// using SHA-256 and can be used for verification and comparison of sync
+    /// records across network nodes.
+    /// 
+    /// # Returns
+    /// 
+    /// A 32-byte SHA-256 hash as a `Vec<u8>`.
     pub fn get_hash(&self) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(self.peer_id.as_slice());
@@ -152,6 +176,20 @@ impl WalletStateSyncRecord {
 }
 
 /// Converts a `uuid::Uuid` to a `UuidID`.
+/// 
+/// This utility function converts a standard UUID (16 bytes) to a 32-byte
+/// `UuidID` by padding with zeros. This is necessary because the storage
+/// system uses 32-byte identifiers for consistency with other hash-based
+/// identifiers in the system.
+/// 
+/// # Parameters
+/// 
+/// * `uuid` - The UUID to convert
+/// 
+/// # Returns
+/// 
+/// A 32-byte `UuidID` with the UUID bytes in the first 16 bytes and zeros
+/// in the remaining 16 bytes.
 pub fn uuid_to_b256(uuid: uuid::Uuid) -> UuidID {
     let mut uuid_fixed_bytes = [0u8; 32];
     uuid_fixed_bytes[0..16].copy_from_slice(uuid.as_bytes());

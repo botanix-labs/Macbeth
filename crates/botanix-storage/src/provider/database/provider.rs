@@ -50,7 +50,10 @@ impl<DB: Database> BotanixDatabaseProviderRW<DB> {
 }
 
 /// A provider struct that fetches data from the database.
-/// Wrapper around [`DbTx`] and [`DbTxMut`]. Example: [`HeaderProvider`] [`BlockHashReader`]
+/// 
+/// This wrapper provides a unified interface around database transactions ([`DbTx`] and [`DbTxMut`])
+/// for accessing Botanix storage data. It serves as the foundation for all database operations
+/// in the storage system.
 #[derive(Debug)]
 pub struct BotanixDatabaseProvider<TX> {
     /// Database transaction.

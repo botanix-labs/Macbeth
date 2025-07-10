@@ -3,7 +3,18 @@ use reth_primitives::Bytes;
 use reth_storage_errors::provider::ProviderResult;
 use std::collections::HashSet;
 
-/// WalletStateSyncReader
+/// Trait for reading wallet state synchronization data from the database.
+///
+/// This trait provides read-only access to wallet state synchronization records,
+/// which coordinate the synchronization of wallet states across network peers.
+/// The wallet state sync system ensures that all peers maintain consistent
+/// wallet information for proper Bitcoin pegin/pegout operations.
+///
+/// ## Synchronization Model
+///
+/// - **Peer-based**: Each peer maintains its own synchronization record
+/// - **Chunked Data**: Wallet state is synchronized in chunks for efficiency
+/// - **Superset Logic**: Minimum supersets are calculated for consensus
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait WalletStateSyncReader: Send + Sync {
     /// Get all state sync records
@@ -30,7 +41,11 @@ pub trait WalletStateSyncReader: Send + Sync {
     ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)>;
 }
 
-/// WalletStateSyncWriter
+/// Trait for writing wallet state synchronization data to the database.
+///
+/// This trait provides write access to wallet state synchronization records,
+/// enabling the creation, updating, and management of peer synchronization state.
+/// Writers can create new sync records, append data, and clean up obsolete records.
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait WalletStateSyncWriter: Send + Sync {
     /// Create new state sync record

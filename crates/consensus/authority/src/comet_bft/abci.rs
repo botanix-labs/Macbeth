@@ -2284,7 +2284,7 @@ where
 
                         botanix_db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
 
-                        // TODO: Do we need two phase commit here?
+                        // TODO: We need two phase commit. For example: https://github.com/emabee/rust-dist_tx/
                         botanix_db_rw.commit()?;
 
                         reth_db_rw.commit()?;

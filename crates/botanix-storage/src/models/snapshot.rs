@@ -39,7 +39,21 @@ pub struct SnapshotChunk {
 }
 
 impl SnapshotChunk {
-    /// Creates a new snapshot chunk for a given snapshot id
+    /// Creates a new snapshot chunk for a given snapshot id.
+    /// 
+    /// This constructor initializes a new chunk with the provided data and sets
+    /// both the starting and ending block numbers to the same value. Additional
+    /// data can be appended later using `append_chunk_data`.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `snapshot_id` - The ID of the snapshot this chunk belongs to
+    /// * `starting_block_number` - The block number where this chunk starts
+    /// * `chunk_data` - The initial data for this chunk
+    /// 
+    /// # Returns
+    /// 
+    /// A new `SnapshotChunk` instance ready for use.
     pub fn new(
         snapshot_id: SnapshotId,
         starting_block_number: BlockNumber,
@@ -76,7 +90,7 @@ impl SnapshotChunk {
     }
 
     /// Return the data of this chunk.
-    /// Each chunk is a [`BlockWithSenders`]
+    /// Each chunk contains block data with associated senders
     pub fn chunk_data(&self) -> &[Bytes] {
         self.chunk_data.as_ref()
     }
@@ -111,7 +125,21 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Creates a new snapshot by given height and `block_hash`
+    /// Creates a new snapshot by given height and `block_hash`.
+    /// 
+    /// This constructor initializes a new snapshot with empty chunk and block
+    /// ID collections. Chunks and blocks can be added later using the
+    /// appropriate methods.
+    /// 
+    /// # Parameters
+    /// 
+    /// * `id` - Unique identifier for this snapshot
+    /// * `height` - Block height at which this snapshot was taken
+    /// * `block_hash` - Hash of the block at the snapshot height
+    /// 
+    /// # Returns
+    /// 
+    /// A new `Snapshot` instance ready for use.
     pub const fn new(id: u64, height: u64, block_hash: B256) -> Self {
         Self { id, height, chunk_ids: Vec::new(), block_ids: Vec::new(), block_hash }
     }
@@ -228,6 +256,15 @@ impl Snapshot {
     }
 
     /// Gets the snapshot hash.
+    /// 
+    /// This method computes a deterministic hash of the snapshot by combining
+    /// all its components: ID, height, chunk IDs, block IDs, and block hash.
+    /// The hash is computed using SHA-256 and can be used for verification
+    /// and comparison of snapshots across network nodes.
+    /// 
+    /// # Returns
+    /// 
+    /// A 32-byte SHA-256 hash as a `Vec<u8>`.
     pub fn get_hash(&self) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(self.id.to_le_bytes());

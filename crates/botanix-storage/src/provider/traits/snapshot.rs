@@ -3,7 +3,17 @@ use reth_primitives::{BlockNumber, B256};
 use reth_storage_errors::provider::ProviderResult;
 use std::ops::RangeInclusive;
 
-/// SnapshotReader
+/// Trait for reading snapshot data from the database.
+///
+/// This trait provides read-only access to blockchain snapshots, chunks, and
+/// synchronization state. Snapshots represent point-in-time states of the
+/// blockchain that can be used for fast synchronization and historical queries.
+///
+/// ## Snapshot Architecture
+///
+/// - **Snapshots**: Metadata about blockchain state at specific heights
+/// - **Chunks**: Segmented data within snapshots for efficient storage/transmission
+/// - **Sync State**: Progress tracking for snapshot synchronization operations
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait SnapshotReader: Send + Sync {
     /// Get snapshots
@@ -55,7 +65,11 @@ pub trait SnapshotReader: Send + Sync {
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>>;
 }
 
-/// SnapshotWriter
+/// Trait for writing snapshot data to the database.
+///
+/// This trait provides write access to blockchain snapshots, chunks, and
+/// synchronization state. It supports creating new snapshots, managing chunks,
+/// and tracking synchronization progress.
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait SnapshotWriter: Send + Sync {
     /// Create new snapshot sync
