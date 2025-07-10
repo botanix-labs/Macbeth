@@ -19,11 +19,6 @@ pub trait StagedHeaderReader: Send + Sync {
     ///   - First element is the header hash (B256)
     ///   - Second element is the header with pegin/pegout data
     /// * `Err(ProviderError)` - If there was a database error
-    ///
-    /// # Performance
-    ///
-    /// This method loads all staged headers into memory. For systems with many
-    /// staged headers, consider implementing pagination or filtering.
     fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>>;
 }
 

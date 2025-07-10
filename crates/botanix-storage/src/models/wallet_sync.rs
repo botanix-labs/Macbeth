@@ -70,12 +70,6 @@ impl WalletStateSyncRecord {
     ///
     /// * `additional_data` - The data chunk to append to the record
     /// * `block_number` - The block number associated with this data chunk
-    ///
-    /// # Behavior
-    ///
-    /// - If the data or block number already exists, the operation is ignored
-    /// - This prevents duplicate data from being stored in the sync record
-    /// - The method is idempotent - calling it multiple times with the same data has no effect
     #[inline(always)]
     pub fn append_data_with_block(&mut self, additional_data: Bytes, block_number: u64) {
         self.add_data_if_not_exists(additional_data, block_number);
@@ -132,11 +126,6 @@ impl WalletStateSyncRecord {
     ///     println!("Block {}: {} bytes", block_number, data.len());
     /// }
     /// ```
-    ///
-    /// # Note
-    ///
-    /// The iterator pairs blocks and data by their index position. The order
-    /// reflects the order in which data was added to the synchronization record.
     pub fn get_blocks_data_iter(&mut self) -> impl Iterator<Item = (&u64, &Bytes)> {
         self.blocks.iter().zip(&self.data)
     }
@@ -154,11 +143,6 @@ impl WalletStateSyncRecord {
     /// - Peer ID (32 bytes)
     /// - All data chunks (variable size)
     /// - All block numbers (8 bytes each)
-    ///
-    /// # Performance
-    ///
-    /// This method iterates through all data chunks to calculate their total size,
-    /// so the time complexity is O(n) where n is the number of data chunks.
     pub fn size(&self) -> usize {
         let uuid_size = std::mem::size_of::<B256>();
         let peer_id = std::mem::size_of::<B256>();
@@ -263,11 +247,6 @@ impl WalletStateSyncRecord {
     /// # Parameters
     ///
     /// * `uuid` - The new 32-byte UUID to assign to this synchronization session
-    ///
-    /// # Warning
-    ///
-    /// Changing the UUID may break synchronization coordination with peers who
-    /// are tracking the original UUID.
     pub fn set_uuid(&mut self, uuid: B256) {
         self.uuid = uuid;
     }
@@ -289,16 +268,6 @@ impl WalletStateSyncRecord {
     ///
     /// * `true` if the data chunk and block number were successfully added
     /// * `false` if either the data chunk or block number already exists in the record
-    ///
-    /// # Behavior
-    ///
-    /// The method performs two uniqueness checks:
-    /// 1. Checks if the data chunk already exists in the record
-    /// 2. Checks if the block number already exists in the record
-    ///
-    /// If either check fails, the method returns `false` without modifying the record.
-    /// If both checks pass, the data chunk and block number are added and the method returns
-    /// `true`.
     pub fn add_data_if_not_exists(&mut self, data_chunk: Bytes, block_number: u64) -> bool {
         if self.data.iter().any(|data| data == &data_chunk) {
             return false;
@@ -322,19 +291,6 @@ impl WalletStateSyncRecord {
     /// A `HashSet<(u64, Bytes)>` containing unique tuples where:
     /// - First element is the block number
     /// - Second element is the corresponding data chunk
-    ///
-    /// # Performance
-    ///
-    /// - Time complexity: O(n) where n is the number of data chunks
-    /// - Space complexity: O(n) for the new HashSet
-    /// - Data is cloned during the conversion process
-    ///
-    /// # Usage
-    ///
-    /// This method is useful for:
-    /// - Deduplicating block-data pairs
-    /// - Performing set operations (union, intersection, etc.)
-    /// - Efficient lookups to check if a specific (block, data) pair exists
     pub fn blocks_and_data_to_set(&mut self) -> HashSet<(u64, Bytes)> {
         self.blocks
             .iter()
