@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate log;
 
+use alloy_primitives::map::HashSet;
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::Decodable, secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
@@ -759,7 +760,20 @@ where
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
         let pegouts = pegouts?;
-        let pegouts_refs: Vec<&PegoutRequest> = pegouts.iter().collect();
+        // Check pegouts are not in the finalized pegout ids list
+        let finalized_pegout_ids: HashSet<_> =
+            self.db.get_finalized_pegout_ids().to_status()?.iter().map(|p| p.id).collect();
+        let pegouts_refs: Vec<&PegoutRequest> = pegouts
+            .iter()
+            .filter(|pegout| {
+                if finalized_pegout_ids.contains(&pegout.id) {
+                    error!("Received a pegout request for finalized id: {:?}", pegout.id);
+                    return false;
+                }
+                true
+            })
+            .collect();
+
         self.db.store_pending_pegouts(&pegouts_refs).to_status()?;
         self.db.flush().to_status()?;
         info!("stored pegouts.len(): {:?}", pegouts.len());
