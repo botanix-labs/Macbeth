@@ -8,54 +8,69 @@ use std::ops::RangeInclusive;
 #[deprecated(note = "Please use `botanix-storage` create")]
 pub trait SnapshotReader: Send + Sync {
     /// Get snapshots
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>>;
 
     /// Get snapshot by id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>>;
 
     /// Get last snapshot sync by id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_last_snapshot_sync_id(&self) -> ProviderResult<Option<SnapshotSyncId>>;
 
     /// Get snapshot sync by height
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_snapshot_sync_by_height(&self, height: u64) -> ProviderResult<Option<SnapshotSync>>;
 
     /// Get snapshot sync by id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_snapshot_sync_by_id(&self, id: u64) -> ProviderResult<Option<SnapshotSync>>;
 
     /// Get chunk by chunk id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_chunk_by_id(
         &self,
         chunk_id: reth_db::models::ChunkId,
     ) -> ProviderResult<Option<SnapshotChunk>>;
 
     /// Get chunk size
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_chunk_size(&self, chunk_id: reth_db::models::ChunkId) -> ProviderResult<usize>;
 
     /// Get snapshot id by block id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_snapshot_id_by_block_id(
         &self,
         block_id: BlockNumber,
     ) -> ProviderResult<Option<SnapshotId>>;
 
     /// Get block number of a chunk
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_chunk_block_number(&self, chunk_id: ChunkId) -> ProviderResult<Option<BlockNumber>>;
 
     /// Get last snapshot height
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_last_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>>;
 
     /// Get first snapshot height
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_first_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>>;
 
     /// Get snapshot size
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_snapshot_size(&self, snapshot_id: SnapshotId) -> ProviderResult<usize>;
 
     /// Get snapshot size
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_snapshots_count(&self) -> ProviderResult<usize>;
 
     /// Get latest chunk id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>>;
 
     /// Get first chunk id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>>;
 }
 

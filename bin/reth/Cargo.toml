@@ -25,6 +25,7 @@ backon = { workspace = true }
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
 bitcoincore-zmq = { workspace = true }
+botanix-storage = { workspace = true }
 
 # Botanix
 botanix-btc-wallet = { workspace = true }

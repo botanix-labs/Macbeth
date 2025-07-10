@@ -24,7 +24,6 @@ members = [
     "crates/botanix-comet-bft-rpc",
     "crates/botanix-data-parser",
     "crates/botanix-storage",
-    "crates/btc-wallet",
     "crates/chain-state/",
     "crates/chainspec/",
     "crates/cli/cli/",
@@ -370,6 +369,7 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }
+botanix-storage = { path = "crates/botanix-storage" }
 
 # frost
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [

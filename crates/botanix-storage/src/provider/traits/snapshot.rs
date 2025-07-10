@@ -80,7 +80,7 @@ pub trait SnapshotWriter: Send + Sync {
         snapshot_id: SnapshotId,
         block_id: BlockNumber,
         chunk_data: Vec<u8>,
-    ) -> ProviderResult<SnapshotId>;
+    ) -> ProviderResult<ChunkId>;
 
     /// Append to chunk
     fn append_to_chunk(

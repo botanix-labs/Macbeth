@@ -65,11 +65,14 @@
 //! switch to "Accept Upgrades" mode to fully participate in the upgrade process.
 
 use crate::comet_bft::non_deterministic_data::NetworkUpgradePayload;
-use reth_provider::{ActivationManagerReaderWriter, ProviderResult};
+use reth_provider::ProviderResult;
 use std::sync::{Arc, RwLock};
 
 // Reexports
-pub use reth_db::models::activation_manager::{RuntimeVersion, Vote};
+pub use botanix_storage::{
+    models::{RuntimeVersion, Vote},
+    ActivationManagerReaderWriter,
+};
 
 #[cfg(test)]
 mod tests;

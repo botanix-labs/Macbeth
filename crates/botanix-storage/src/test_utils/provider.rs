@@ -5,7 +5,7 @@ use reth_db::{
 };
 use std::sync::Arc;
 
-/// Creates test provider factory with mainnet chain spec.
+/// Creates test provider factory.
 pub fn create_test_provider_factory() -> BotanixProviderFactory<Arc<TempDatabase<DatabaseEnv>>> {
     let db = create_test_rw_db();
     BotanixProviderFactory::new(db)

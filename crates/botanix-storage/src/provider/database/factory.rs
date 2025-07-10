@@ -1,10 +1,19 @@
-use crate::provider::database::provider::{
-    BotanixDatabaseProvider, BotanixDatabaseProviderRO, BotanixDatabaseProviderRW,
+use crate::{
+    models::{
+        ChunkId, HeaderWithPegs, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
+        SnapshotSyncId, UuidID, WalletStateSyncRecord,
+    },
+    provider::database::provider::{
+        BotanixDatabaseProvider, BotanixDatabaseProviderRO, BotanixDatabaseProviderRW,
+    },
+    DatabaseProviderFactoryRO, DatabaseProviderFactoryRW, SnapshotReader, SnapshotWriter,
+    StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use reth_db::{init_db, mdbx::DatabaseArguments, DatabaseEnv};
 use reth_db_api::database::Database;
+use reth_primitives::{BlockNumber, Bytes, B256};
 use reth_storage_errors::provider::ProviderResult;
-use std::{path::Path, sync::Arc};
+use std::{collections::HashSet, ops::RangeInclusive, path::Path, sync::Arc};
 
 /// A common provider that fetches data from a database or static file.
 ///
@@ -44,25 +53,386 @@ impl BotanixProviderFactory<DatabaseEnv> {
     }
 }
 
-impl<DB: Database> BotanixProviderFactory<DB> {
-    /// Returns a provider with a created `DbTx` inside, which allows fetching data from the
-    /// database using different types of providers. Example: [`HeaderProvider`]
-    /// [`BlockHashReader`]. This may fail if the inner read database transaction fails to open.
-    ///
-    /// This sets the [`PruneModes`] to [`None`], because they should only be relevant for writing
-    /// data.
+impl<DB> DatabaseProviderFactoryRO for BotanixProviderFactory<DB>
+where
+    DB: Database,
+{
+    type Provider = BotanixDatabaseProviderRO<DB>;
+
     #[track_caller]
-    pub fn provider(&self) -> ProviderResult<BotanixDatabaseProviderRO<DB>> {
+    fn provider(&self) -> ProviderResult<Self::Provider> {
         Ok(BotanixDatabaseProvider::new(self.db.tx()?))
     }
+}
 
-    /// Returns a provider with a created `DbTxMut` inside, which allows fetching and updating
-    /// data from the database using different types of providers. Example: [`HeaderProvider`]
-    /// [`BlockHashReader`].  This may fail if the inner read/write database transaction fails to
-    /// open.
+impl<DB> DatabaseProviderFactoryRW for BotanixProviderFactory<DB>
+where
+    DB: Database,
+{
+    type Provider = BotanixDatabaseProviderRW<DB>;
+
     #[track_caller]
-    pub fn provider_rw(&self) -> ProviderResult<BotanixDatabaseProviderRW<DB>> {
+    fn provider_rw(&self) -> ProviderResult<Self::Provider> {
         Ok(BotanixDatabaseProviderRW(BotanixDatabaseProvider::new_rw(self.db.tx_mut()?)))
+    }
+}
+
+impl<DB: Database> SnapshotReader for BotanixProviderFactory<DB> {
+    #[inline(always)]
+    fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>> {
+        self.provider()?.get_snapshots()
+    }
+
+    #[inline(always)]
+    fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>> {
+        self.provider()?.get_snapshot_by_id(snapshot_id)
+    }
+
+    #[inline(always)]
+    fn get_last_snapshot_sync_id(&self) -> ProviderResult<Option<SnapshotSyncId>> {
+        self.provider()?.get_last_snapshot_sync_id()
+    }
+
+    #[inline(always)]
+    fn get_snapshot_sync_by_height(&self, height: u64) -> ProviderResult<Option<SnapshotSync>> {
+        self.provider()?.get_snapshot_sync_by_height(height)
+    }
+
+    #[inline(always)]
+    fn get_snapshot_sync_by_id(&self, id: u64) -> ProviderResult<Option<SnapshotSync>> {
+        self.provider()?.get_snapshot_sync_by_id(id)
+    }
+
+    #[inline(always)]
+    fn get_chunk_by_id(&self, chunk_id: ChunkId) -> ProviderResult<Option<SnapshotChunk>> {
+        self.provider()?.get_chunk_by_id(chunk_id)
+    }
+
+    #[inline(always)]
+    fn get_chunk_size(&self, chunk_id: ChunkId) -> ProviderResult<usize> {
+        self.provider()?.get_chunk_size(chunk_id)
+    }
+
+    #[inline(always)]
+    fn get_snapshot_id_by_block_id(
+        &self,
+        block_id: BlockNumber,
+    ) -> ProviderResult<Option<SnapshotId>> {
+        self.provider()?.get_snapshot_id_by_block_id(block_id)
+    }
+
+    #[inline(always)]
+    fn get_chunk_block_number(&self, chunk_id: ChunkId) -> ProviderResult<Option<BlockNumber>> {
+        self.provider()?.get_chunk_block_number(chunk_id)
+    }
+
+    #[inline(always)]
+    fn get_last_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        self.provider()?.get_last_snapshot_height()
+    }
+
+    #[inline(always)]
+    fn get_first_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        self.provider()?.get_first_snapshot_height()
+    }
+
+    #[inline(always)]
+    fn get_snapshot_size(&self, snapshot_id: SnapshotId) -> ProviderResult<usize> {
+        self.provider()?.get_snapshot_size(snapshot_id)
+    }
+
+    #[inline(always)]
+    fn get_snapshots_count(&self) -> ProviderResult<usize> {
+        self.provider()?.get_snapshots_count()
+    }
+
+    #[inline(always)]
+    fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        self.provider()?.get_last_chunk_id()
+    }
+
+    #[inline(always)]
+    fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        self.provider()?.get_first_chunk_id()
+    }
+}
+
+impl<DB: Database> SnapshotWriter for BotanixProviderFactory<DB> {
+    fn create_new_snapshot_sync(
+        &self,
+        block_id: BlockNumber,
+        snapshot_hash: B256,
+        total_chunks: u64,
+        format: u64,
+    ) -> ProviderResult<SnapshotId> {
+        let provider = self.provider_rw()?;
+
+        let snapshot_id =
+            provider.create_new_snapshot_sync(block_id, snapshot_hash, total_chunks, format)?;
+
+        provider.commit()?;
+
+        Ok(snapshot_id)
+    }
+
+    fn create_new_snapshot(
+        &self,
+        block_id: BlockNumber,
+        block_hash: B256,
+    ) -> ProviderResult<SnapshotId> {
+        let provider = self.provider_rw()?;
+
+        let snapshot_id = provider.create_new_snapshot(block_id, block_hash)?;
+
+        provider.commit()?;
+
+        Ok(snapshot_id)
+    }
+
+    fn create_new_chunk(
+        &self,
+        snapshot_id: SnapshotId,
+        block_id: BlockNumber,
+        chunk_data: Vec<u8>,
+    ) -> ProviderResult<ChunkId> {
+        let provider = self.provider_rw()?;
+
+        let chunk_id = provider.create_new_chunk(snapshot_id, block_id, chunk_data)?;
+
+        provider.commit()?;
+
+        Ok(chunk_id)
+    }
+
+    fn append_to_chunk(
+        &self,
+        chunk_id: ChunkId,
+        block_number: BlockNumber,
+        data: Vec<u8>,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.append_to_chunk(chunk_id, block_number, data)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn update_snapshot(
+        &self,
+        snapshot_id: SnapshotId,
+        block_id: BlockNumber,
+        chunk_id: ChunkId,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.update_snapshot(snapshot_id, block_id, chunk_id)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn update_snapshot_sync(
+        &self,
+        snapshot_sync_id: SnapshotSyncId,
+        updated_snapshot: SnapshotSync,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.update_snapshot_sync(snapshot_sync_id, updated_snapshot)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn remove_block_snapshot_id_mapping(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.remove_block_snapshot_id_mapping(range)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn insert_block_snapshot_id_mapping(
+        &self,
+        block_id: BlockNumber,
+        snapshot_id: SnapshotId,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.insert_block_snapshot_id_mapping(block_id, snapshot_id)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn remove_snapshots(&self, range: RangeInclusive<SnapshotId>) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.remove_snapshots(range)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn remove_oldest_snapshot(&self) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.remove_oldest_snapshot()?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn remove_chunks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.remove_chunks(range)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn delete_chunks_in_blocks(&self, range: RangeInclusive<ChunkId>) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.delete_chunks_in_blocks(range)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+}
+
+impl<DB: Database> WalletStateSyncReader for BotanixProviderFactory<DB> {
+    #[inline(always)]
+    fn get_state_sync_records(&self) -> ProviderResult<Vec<WalletStateSyncRecord>> {
+        self.provider()?.get_state_sync_records()
+    }
+
+    #[inline(always)]
+    fn get_state_sync_record_peer_ids(&self) -> ProviderResult<Vec<PeerID>> {
+        self.provider()?.get_state_sync_record_peer_ids()
+    }
+
+    #[inline(always)]
+    fn get_state_sync_record_by_peer_id(
+        &self,
+        peer_id: PeerID,
+    ) -> ProviderResult<Option<WalletStateSyncRecord>> {
+        self.provider()?.get_state_sync_record_by_peer_id(peer_id)
+    }
+
+    #[inline(always)]
+    fn get_state_sync_records_count(&self) -> ProviderResult<usize> {
+        self.provider()?.get_state_sync_records_count()
+    }
+
+    #[inline(always)]
+    fn get_minimum_superset(
+        &self,
+        min_required_criterion: u64,
+    ) -> ProviderResult<(bool, HashSet<(u64, Bytes)>)> {
+        self.provider()?.get_minimum_superset(min_required_criterion)
+    }
+}
+
+impl<DB: Database> WalletStateSyncWriter for BotanixProviderFactory<DB> {
+    /// Create new state sync record
+    fn create_new_state_sync_record(
+        &self,
+        uuid: UuidID,
+        peer_id: PeerID,
+        chunks_count: u64,
+        data: Option<Vec<(u64, Bytes)>>,
+    ) -> ProviderResult<PeerID> {
+        let provider = self.provider_rw()?;
+
+        let peer_id = provider.create_new_state_sync_record(uuid, peer_id, chunks_count, data)?;
+
+        provider.commit()?;
+
+        Ok(peer_id)
+    }
+
+    /// Append data to state sync record
+    fn append_data_to_state_sync_record(
+        &self,
+        peer_id: PeerID,
+        data: Vec<(u64, Bytes)>,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.append_data_to_state_sync_record(peer_id, data)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    /// Remove state sync record by `peer_id`
+    fn remove_state_sync_record_per_peer_id(&self, peer_id: PeerID) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.remove_state_sync_record_per_peer_id(peer_id)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    /// Removes all state sync records
+    fn remove_all_state_sync_records(&self) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.remove_all_state_sync_records()?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+}
+
+impl<DB: Database> StagedHeaderReader for BotanixProviderFactory<DB> {
+    #[inline(always)]
+    fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
+        self.provider()?.get_staged_headers()
+    }
+}
+
+impl<DB: Database> StagedHeaderWriter for BotanixProviderFactory<DB> {
+    fn insert_staged_header(&self, id: B256, header: HeaderWithPegs) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+
+        provider.insert_staged_header(id, header)?;
+
+        provider.commit()?;
+
+        Ok(())
+    }
+
+    fn remove_staged_header(&self, id: B256) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+
+        let is_removed = provider.remove_staged_header(id)?;
+
+        if is_removed {
+            provider.commit()?;
+        }
+
+        Ok(is_removed)
     }
 }
 

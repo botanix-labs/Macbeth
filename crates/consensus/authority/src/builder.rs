@@ -10,6 +10,10 @@ use crate::{
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{DataParser, SerializationType};
+use botanix_storage::{
+    SnapshotReader, SnapshotWriter, StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader,
+    WalletStateSyncWriter,
+};
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -25,9 +29,8 @@ use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
-    SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader,
-    WalletStateSyncWriter,
+    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory,
+    StateProviderFactory,
 };
 
 use crate::bitcoin_checkpoint::BitcoinCheckpointsChain;
@@ -41,9 +44,9 @@ use tracing::info;
 
 /// Builder type for configuring the setup
 #[allow(dead_code)]
-pub struct AuthorityConsensusBuilder<EF, BF, DB, BD, ToFrostMan, Source> {
+pub struct AuthorityConsensusBuilder<EF, BF, RDB, BDB, BD, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
-    storage: Storage<EF, BF, DB>,
+    storage: Storage<EF, BF, RDB, BDB>,
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     network_handle: NetworkHandle,
@@ -54,7 +57,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, BD, ToFrostMan, Source> {
     random_source_provider: Source,
     metrics: Arc<AuthorityMetrics>,
     abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
-    provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    reth_provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     state_sync: StateSyncArgs,
     block_fee_recipient_address: Option<reth_primitives::Address>,
     bitcoind_client: BD,
@@ -70,20 +73,23 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<EF, BF, DB, BD, ToFrostMan, Source>
-    AuthorityConsensusBuilder<EF, BF, DB, BD, ToFrostMan, Source>
+impl<EF, BF, RDB, BDB, BD, ToFrostMan, Source>
+    AuthorityConsensusBuilder<EF, BF, RDB, BDB, BD, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send + Sync,
-    DB: BlockReaderIdExt
+    RDB: BlockReaderIdExt
         + StateProviderFactory
         + Clone
-        + SnapshotReader
+        + CanonChainTracker
+        + CanonStateSubscriptions
+        + 'static,
+    BDB: SnapshotReader
         + SnapshotWriter
         + WalletStateSyncWriter
         + WalletStateSyncReader
-        + CanonChainTracker
-        + CanonStateSubscriptions
-        + StagedHeader
+        + StagedHeaderReader
+        + StagedHeaderWriter
+        + Clone
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
@@ -94,7 +100,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         chain_spec: Arc<ChainSpec>,
-        client: DB,
+        reth_provider: RDB,
         btc_server_factory: Option<GrpcClientFactory>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         sk: secp256k1::SecretKey,
@@ -112,14 +118,15 @@ where
         random_source_provider: Source,
         abci_driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         state_sync: StateSyncArgs,
-        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+        reth_provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+        botanix_provider_factory: BDB,
         block_fee_recipient_address: Option<reth_primitives::Address>,
         bitcoind_client: BD,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
 
-        let mut latest_header = client
+        let mut latest_header = reth_provider
             .latest_header()
             .ok()
             .flatten()
@@ -129,7 +136,7 @@ where
         while !latest_header.header().is_poa_epoch() {
             let parent_hash = latest_header.parent_hash;
 
-            if let Some(new_header) = client.header(&parent_hash).ok().flatten() {
+            if let Some(new_header) = reth_provider.header(&parent_hash).ok().flatten() {
                 let old_latest_header =
                     std::mem::replace(&mut latest_header, new_header.seal_slow());
                 headers.push(old_latest_header);
@@ -180,7 +187,8 @@ where
             chain_spec.clone(),
             bitcoind_factory,
             executor_factory,
-            client.clone(),
+            reth_provider.clone(),
+            botanix_provider_factory.clone(),
         );
 
         Ok(Self {
@@ -196,7 +204,7 @@ where
             random_source_provider,
             metrics: Arc::new(AuthorityMetrics::default()),
             abci_driver_tx,
-            provider_factory,
+            reth_provider_factory,
             state_sync,
             block_fee_recipient_address,
             bitcoind_client,
@@ -209,10 +217,10 @@ where
     pub async fn build<BtcServerClient>(
         self,
     ) -> (
-        Option<FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>>,
-        Option<ABCIClientBuilder<EF, BF, DB>>,
-        Option<SnapshotManager<EF, BF, DB>>,
-        Option<WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>>,
+        Option<FrostTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient>>,
+        Option<ABCIClientBuilder<EF, BF, RDB, BDB>>,
+        Option<SnapshotManager<EF, BF, RDB, BDB>>,
+        Option<WalletStateSyncEngine<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>>,
     )
     where
         BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
@@ -231,11 +239,12 @@ where
             random_source_provider,
             metrics,
             abci_driver_tx,
-            provider_factory,
+            reth_provider_factory,
             state_sync,
             block_fee_recipient_address,
             bitcoind_client,
         } = self;
+
         let is_fed_node = btc_server_factory.is_some();
         let chain_spec = storage.chain_spec.clone();
         let parser = DataParser::default().with_serialization_type(SerializationType::Postcard);
@@ -264,7 +273,6 @@ where
                     frost_handle.clone().expect("Requires frost handle"),
                     task_executor.clone(),
                     frost_config.clone().expect("frost config exists"),
-                    provider_factory.clone(),
                 );
                 Some(wallet_state_sync_engine)
             } else {
@@ -307,7 +315,7 @@ where
             task_executor.clone(),
             parser.clone(),
             abci_driver_tx,
-            provider_factory.clone(),
+            reth_provider_factory.clone(),
             Arc::clone(&snapshot_manager_state_lock),
             state_sync.snapshot_message_format,
             block_fee_recipient_address,
@@ -317,7 +325,6 @@ where
             Some(SnapshotManager::new(
                 storage.clone(),
                 parser.clone(),
-                provider_factory,
                 state_sync.num_snapshots_to_keep,
                 state_sync.snapshot_message_format,
                 state_sync.enable_state_sync,

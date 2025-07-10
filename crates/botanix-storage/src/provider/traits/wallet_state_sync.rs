@@ -1,11 +1,7 @@
-use crate::{
-    models::{PeerID, UuidID, WalletStateSyncRecord},
-    tables,
-};
-use reth_db_api::{transaction::DbTx, Database};
+use crate::models::{PeerID, UuidID, WalletStateSyncRecord};
 use reth_primitives::Bytes;
 use reth_storage_errors::provider::ProviderResult;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// WalletStateSyncReader
 #[auto_impl::auto_impl(&, Arc, Box)]

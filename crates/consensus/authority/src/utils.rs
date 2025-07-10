@@ -6,6 +6,7 @@ use bitcoin::{
     witness::Witness,
     Address, Amount, BlockHash,
 };
+use botanix_storage::models;
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
@@ -13,7 +14,6 @@ use btcserverlib::{
 };
 use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
-use reth_db::models;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{
     botanix::{

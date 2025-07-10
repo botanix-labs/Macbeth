@@ -314,8 +314,11 @@ impl Consensus for AuthorityConsensus {
 /// All this struct does is provide a rwlock wrapper around the storage inner
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
-pub(crate) struct Storage<EF, BF, DB> {
-    pub(crate) client: DB,
+pub(crate) struct Storage<EF, BF, RDB, BDB> {
+    /// Reth Database Provider Factory
+    pub(crate) reth_database: RDB,
+    /// Botanix Database Provider Factory
+    pub(crate) botanix_database_factory: BDB,
     /// The authority list in the genesis block
     pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
     /// keep track of my place among the signer
@@ -339,7 +342,7 @@ pub(crate) struct Storage<EF, BF, DB> {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
-impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
+impl<EF, BF, RDB: Clone, BDB: Clone> Storage<EF, BF, RDB, BDB> {
     /// Create a new instance of the storage
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -353,12 +356,14 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
         chain_spec: Arc<ChainSpec>,
         bitcoind_factory: BF,
         executor_factory: EF,
-        client: DB,
+        reth_database: RDB,
+        botanix_database_factory: BDB,
     ) -> Self {
         let storage_inner = StorageInner { aggregate_public_key, is_block_syncing: false };
 
         Self {
-            client,
+            reth_database,
+            botanix_database_factory,
             genesis_authorities,
             signer_index,
             authority,

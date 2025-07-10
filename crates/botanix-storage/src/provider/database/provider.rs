@@ -14,7 +14,6 @@ use std::{
 
 /// A [`BotanixDatabaseProvider`] that holds a read-only database transaction.
 pub type BotanixDatabaseProviderRO<DB> = BotanixDatabaseProvider<<DB as Database>::TX>;
-
 /// A [`BotanixDatabaseProvider`] that holds a read-write database transaction.
 ///
 /// Ideally this would be an alias type. However, there's some weird compiler error (<https://github.com/rust-lang/rust/issues/102211>), that forces us to wrap this in a struct instead.

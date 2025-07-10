@@ -13,6 +13,7 @@ description = "A PoA consensus engine"
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 arc-swap = "1.7.1"
 async-trait = { workspace = true }
+botanix-storage = { workspace = true }
 
 ## Bitcoin
 bitcoin = { workspace = true }
@@ -99,6 +100,7 @@ tracing = { workspace = true }
 uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
+botanix-storage = { workspace = true, features = ["test-utils"] }
 mockall = { workspace = true }
 rand = "0.8.5"
 reth-cli-runner = { workspace = true }

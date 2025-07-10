@@ -1,12 +1,14 @@
 use crate::{
     models::{ChunkId, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync, SnapshotSyncId},
     provider::{database::provider::BotanixDatabaseProvider, SnapshotReader, SnapshotWriter},
-    tables,
+    tables::{BlockSnapshots, ChunkBlocks, Chunks, SnapshotSyncs, Snapshots},
+    BotanixDatabaseProviderRW,
 };
 use itertools::Itertools;
 use reth_db_api::{
     cursor::{DbCursorRO, DbCursorRW},
     transaction::{DbTx, DbTxMut},
+    Database,
 };
 use reth_primitives::{BlockNumber, B256};
 use reth_storage_errors::provider::ProviderResult;
@@ -16,7 +18,7 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
     fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>> {
         Ok(self
             .tx
-            .cursor_read::<tables::Snapshots>()?
+            .cursor_read::<Snapshots>()?
             .walk(None)?
             .collect::<Result<HashMap<_, _>, _>>()?
             .values()
@@ -26,13 +28,13 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
     }
 
     fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>> {
-        Ok(self.tx.get::<tables::Snapshots>(snapshot_id)?)
+        Ok(self.tx.get::<Snapshots>(snapshot_id)?)
     }
 
     fn get_last_snapshot_sync_id(&self) -> ProviderResult<Option<SnapshotSyncId>> {
         Ok(self
             .tx
-            .cursor_read::<tables::SnapshotSyncs>()?
+            .cursor_read::<SnapshotSyncs>()?
             .last()?
             .map(|(snapshot_sync_id, _snapshot_sync)| snapshot_sync_id))
     }
@@ -40,7 +42,7 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
     fn get_snapshot_sync_by_height(&self, height: u64) -> ProviderResult<Option<SnapshotSync>> {
         Ok(self
             .tx
-            .cursor_read::<tables::SnapshotSyncs>()?
+            .cursor_read::<SnapshotSyncs>()?
             .walk(None)?
             .collect::<Result<HashMap<_, _>, _>>()?
             .values()
@@ -51,7 +53,7 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
     fn get_snapshot_sync_by_id(&self, id: SnapshotSyncId) -> ProviderResult<Option<SnapshotSync>> {
         Ok(self
             .tx
-            .cursor_read::<tables::SnapshotSyncs>()?
+            .cursor_read::<SnapshotSyncs>()?
             .seek_exact(id)
             .ok()
             .flatten()
@@ -59,13 +61,13 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
     }
 
     fn get_chunk_by_id(&self, chunk_id: ChunkId) -> ProviderResult<Option<SnapshotChunk>> {
-        Ok(self.tx.get::<tables::Chunks>(chunk_id)?)
+        Ok(self.tx.get::<Chunks>(chunk_id)?)
     }
 
     fn get_chunk_size(&self, chunk_id: ChunkId) -> ProviderResult<usize> {
         Ok(self
             .tx
-            .cursor_read::<tables::Chunks>()?
+            .cursor_read::<Chunks>()?
             .seek_exact(chunk_id)
             .ok()
             .flatten()
@@ -77,17 +79,17 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
         &self,
         block_id: BlockNumber,
     ) -> ProviderResult<Option<SnapshotId>> {
-        Ok(self.tx.get::<tables::BlockSnapshots>(block_id)?)
+        Ok(self.tx.get::<BlockSnapshots>(block_id)?)
     }
 
     fn get_chunk_block_number(&self, chunk_id: ChunkId) -> ProviderResult<Option<BlockNumber>> {
-        Ok(self.tx.get::<tables::ChunkBlocks>(chunk_id)?)
+        Ok(self.tx.get::<ChunkBlocks>(chunk_id)?)
     }
 
     fn get_last_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
         Ok(self
             .tx
-            .cursor_read::<tables::Snapshots>()?
+            .cursor_read::<Snapshots>()?
             .last()?
             .map(|(snapshot_id, snapshot)| (snapshot_id, snapshot.height())))
     }
@@ -95,7 +97,7 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
     fn get_first_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
         Ok(self
             .tx
-            .cursor_read::<tables::Snapshots>()?
+            .cursor_read::<Snapshots>()?
             .first()?
             .map(|(snapshot_id, snapshot)| (snapshot_id, snapshot.height())))
     }
@@ -103,7 +105,7 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
     fn get_snapshot_size(&self, snapshot_id: SnapshotId) -> ProviderResult<usize> {
         let (snapshot_size, chunk_ids) = self
             .tx
-            .cursor_read::<tables::Snapshots>()?
+            .cursor_read::<Snapshots>()?
             .seek_exact(snapshot_id)
             .ok()
             .flatten()
@@ -114,7 +116,7 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
             0
         } else {
             self.tx
-                .cursor_read::<tables::Chunks>()?
+                .cursor_read::<Chunks>()?
                 .walk_range(
                     chunk_ids.first().cloned().unwrap_or_default()..=
                         chunk_ids.last().cloned().unwrap_or_default(),
@@ -129,19 +131,99 @@ impl<TX: DbTx> SnapshotReader for BotanixDatabaseProvider<TX> {
     }
 
     fn get_snapshots_count(&self) -> ProviderResult<usize> {
-        Ok(self.tx.cursor_read::<tables::Snapshots>()?.walk(None)?.count())
+        Ok(self.tx.cursor_read::<Snapshots>()?.walk(None)?.count())
     }
 
     fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
-        Ok(self.tx.cursor_read::<tables::Chunks>()?.last()?.map(|(chunk_id, _chunk)| chunk_id))
+        Ok(self.tx.cursor_read::<Chunks>()?.last()?.map(|(chunk_id, _chunk)| chunk_id))
     }
 
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
-        Ok(self.tx.cursor_read::<tables::Chunks>()?.first()?.map(|(chunk_id, _chunk)| chunk_id))
+        Ok(self.tx.cursor_read::<Chunks>()?.first()?.map(|(chunk_id, _chunk)| chunk_id))
     }
 }
 
-impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
+impl<DB: Database> SnapshotReader for BotanixDatabaseProviderRW<DB> {
+    #[inline(always)]
+    fn get_snapshots(&self) -> ProviderResult<Vec<Snapshot>> {
+        self.0.get_snapshots()
+    }
+
+    #[inline(always)]
+    fn get_snapshot_by_id(&self, snapshot_id: SnapshotId) -> ProviderResult<Option<Snapshot>> {
+        self.0.get_snapshot_by_id(snapshot_id)
+    }
+
+    #[inline(always)]
+    fn get_last_snapshot_sync_id(&self) -> ProviderResult<Option<SnapshotSyncId>> {
+        self.0.get_last_snapshot_sync_id()
+    }
+
+    #[inline(always)]
+    fn get_snapshot_sync_by_height(&self, height: u64) -> ProviderResult<Option<SnapshotSync>> {
+        self.0.get_snapshot_sync_by_height(height)
+    }
+
+    #[inline(always)]
+    fn get_snapshot_sync_by_id(&self, id: u64) -> ProviderResult<Option<SnapshotSync>> {
+        self.0.get_snapshot_sync_by_id(id)
+    }
+
+    #[inline(always)]
+    fn get_chunk_by_id(&self, chunk_id: ChunkId) -> ProviderResult<Option<SnapshotChunk>> {
+        self.0.get_chunk_by_id(chunk_id)
+    }
+
+    #[inline(always)]
+    fn get_chunk_size(&self, chunk_id: ChunkId) -> ProviderResult<usize> {
+        self.0.get_chunk_size(chunk_id)
+    }
+
+    #[inline(always)]
+    fn get_snapshot_id_by_block_id(
+        &self,
+        block_id: BlockNumber,
+    ) -> ProviderResult<Option<SnapshotId>> {
+        self.0.get_snapshot_id_by_block_id(block_id)
+    }
+
+    #[inline(always)]
+    fn get_chunk_block_number(&self, chunk_id: ChunkId) -> ProviderResult<Option<BlockNumber>> {
+        self.0.get_chunk_block_number(chunk_id)
+    }
+
+    #[inline(always)]
+    fn get_last_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        self.0.get_last_snapshot_height()
+    }
+
+    #[inline(always)]
+    fn get_first_snapshot_height(&self) -> ProviderResult<Option<(SnapshotId, BlockNumber)>> {
+        self.0.get_first_snapshot_height()
+    }
+
+    #[inline(always)]
+    fn get_snapshot_size(&self, snapshot_id: SnapshotId) -> ProviderResult<usize> {
+        self.0.get_snapshot_size(snapshot_id)
+    }
+
+    #[inline(always)]
+    fn get_snapshots_count(&self) -> ProviderResult<usize> {
+        self.0.get_snapshots_count()
+    }
+
+    #[inline(always)]
+    fn get_last_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        self.get_first_chunk_id()
+    }
+
+    #[inline(always)]
+    fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
+        self.0.get_first_chunk_id()
+    }
+}
+
+impl<DB: Database> SnapshotWriter for BotanixDatabaseProviderRW<DB> {
     fn create_new_snapshot_sync(
         &self,
         height: u64,
@@ -152,7 +234,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         let last_snapshot_sync_id = self.get_last_snapshot_sync_id()?;
         let new_snapshot_sync_id = last_snapshot_sync_id.unwrap_or_default() + 1;
         let new_snapshot_sync = SnapshotSync::new(height, snapshot_hash, format, total_chunks);
-        self.tx.put::<tables::SnapshotSyncs>(new_snapshot_sync_id, new_snapshot_sync)?;
+        self.tx.put::<SnapshotSyncs>(new_snapshot_sync_id, new_snapshot_sync)?;
         Ok(new_snapshot_sync_id)
     }
 
@@ -168,8 +250,8 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         new_snapshot.set_id(new_snapshot_id);
         new_snapshot.set_height(block_number);
         new_snapshot.set_block_hash(block_hash);
-        self.tx.put::<tables::Snapshots>(new_snapshot_id, new_snapshot)?;
-        self.tx.put::<tables::BlockSnapshots>(block_number, new_snapshot_id)?;
+        self.tx.put::<Snapshots>(new_snapshot_id, new_snapshot)?;
+        self.tx.put::<BlockSnapshots>(block_number, new_snapshot_id)?;
         Ok(new_snapshot_id)
     }
 
@@ -182,8 +264,8 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         let last_chunk_id = self.get_last_chunk_id()?;
         let new_chunk_id = last_chunk_id.unwrap_or_default() + 1;
         let new_chunk = SnapshotChunk::new(snapshot_id, block_number, chunk_data);
-        self.tx.put::<tables::Chunks>(new_chunk_id, new_chunk)?;
-        self.tx.put::<tables::ChunkBlocks>(new_chunk_id, block_number)?;
+        self.tx.put::<Chunks>(new_chunk_id, new_chunk)?;
+        self.tx.put::<ChunkBlocks>(new_chunk_id, block_number)?;
         Ok(new_chunk_id)
     }
 
@@ -195,7 +277,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
     ) -> ProviderResult<()> {
         let mut chunk = self.get_chunk_by_id(chunk_id)?.expect("chunk exists");
         chunk.append_chunk_data(data, block_number);
-        self.tx.put::<tables::Chunks>(chunk_id, chunk)?;
+        self.tx.put::<Chunks>(chunk_id, chunk)?;
         Ok(())
     }
 
@@ -205,7 +287,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         block_number: BlockNumber,
         chunk_id: ChunkId,
     ) -> ProviderResult<()> {
-        let mut plain_cursor = self.tx.cursor_write::<tables::Snapshots>()?;
+        let mut plain_cursor = self.tx.cursor_write::<Snapshots>()?;
         let existing_entry = plain_cursor.seek_exact(snapshot_id)?;
         if let Some((snapshot_id, mut snapshot)) = existing_entry {
             snapshot.add_block_id_if_not_exists(block_number);
@@ -221,7 +303,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         snapshot_sync_id: SnapshotSyncId,
         updated_snapshot: SnapshotSync,
     ) -> ProviderResult<()> {
-        let mut plain_cursor = self.tx.cursor_write::<tables::SnapshotSyncs>()?;
+        let mut plain_cursor = self.tx.cursor_write::<SnapshotSyncs>()?;
         plain_cursor.upsert(snapshot_sync_id, updated_snapshot)?;
         Ok(())
     }
@@ -230,7 +312,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         &self,
         range: RangeInclusive<BlockNumber>,
     ) -> ProviderResult<()> {
-        self.remove::<tables::BlockSnapshots>(*range.start()..=*range.end())?;
+        self.remove::<BlockSnapshots>(*range.start()..=*range.end())?;
         Ok(())
     }
 
@@ -239,14 +321,14 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         block_id: BlockNumber,
         snapshot_id: SnapshotId,
     ) -> ProviderResult<()> {
-        Ok(self.tx.put::<tables::BlockSnapshots>(block_id, snapshot_id)?)
+        Ok(self.tx.put::<BlockSnapshots>(block_id, snapshot_id)?)
     }
 
     fn remove_snapshots(&self, range: RangeInclusive<SnapshotId>) -> ProviderResult<()> {
         if range.is_empty() {
             return Ok(())
         }
-        self.remove::<tables::Snapshots>(*range.start()..=*range.end())?;
+        self.remove::<Snapshots>(*range.start()..=*range.end())?;
         Ok(())
     }
 
@@ -272,7 +354,7 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         if range.is_empty() {
             return Ok(())
         }
-        self.remove::<tables::Chunks>(*range.start()..=*range.end())?;
+        self.remove::<Chunks>(*range.start()..=*range.end())?;
         Ok(())
     }
 
@@ -280,6 +362,6 @@ impl<TX: DbTxMut + DbTx> SnapshotWriter for BotanixDatabaseProvider<TX> {
         if range.is_empty() {
             return Ok(())
         }
-        Ok(self.tx.cursor_write::<tables::ChunkBlocks>()?.walk_range(range)?.delete_current()?)
+        Ok(self.tx.cursor_write::<ChunkBlocks>()?.walk_range(range)?.delete_current()?)
     }
 }

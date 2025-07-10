@@ -12,7 +12,7 @@ tables! {
 
     /// Store staged headers, used to persist pegins and pegouts after
     /// finalizing a block.
-    table StagedHeader<Key = B256, Value = HeaderWithPegs>;
+    table StagedHeaders<Key = B256, Value = HeaderWithPegs>;
 
     /// Store chunk id to chunk data.
     table Chunks<Key = ChunkId, Value = SnapshotChunk>;

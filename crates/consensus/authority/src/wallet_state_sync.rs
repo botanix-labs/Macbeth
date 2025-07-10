@@ -8,16 +8,13 @@ use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_data_parser::{
     prost_parser::ProstMessageSerdelizer, DataParser, Error as CompressorError, SerializationType,
 };
+use botanix_storage::{models::uuid_to_b256, WalletStateSyncReader, WalletStateSyncWriter};
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
 };
 use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
 use once_cell::sync::Lazy;
-use reth_db::{
-    models::{uuid_to_b256, PeerID, UuidID, WalletStateSyncRecord},
-    DatabaseEnv,
-};
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{
     manager::{FrostCommand, FrostConfig, ToFrostManager},
@@ -26,7 +23,6 @@ use reth_network::frost::{
 use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, Bytes};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
-    ProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use reth_tasks::TaskExecutor;
 use std::{
@@ -86,38 +82,32 @@ pub trait WalletStateSync {
 type WalletStateSyncResponseCycle = Arc<RwLock<Option<Uuid>>>;
 #[derive(Clone)]
 /// Engine for synchronizing wallet state
-pub struct WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient> {
-    storage: Storage<EF, BF, DB>,
+pub struct WalletStateSyncEngine<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient> {
+    storage: Storage<EF, BF, RDB, BDB>,
     btc_server: BtcServerClient,
     to_frost_manager: ToFrostMan,
     data_parser: DataParser,
     task_executor: TaskExecutor,
     frost_config: FrostConfig,
     current_response_cycle: WalletStateSyncResponseCycle,
-    provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
 }
 
-impl<EF, BF, DB, ToFrostMan, BtcServerClient>
-    WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>
+impl<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
+    WalletStateSyncEngine<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Sync + Clone + 'static,
-    DB: BlockReaderIdExt
-        + CanonStateSubscriptions
-        + WalletStateSyncWriter
-        + WalletStateSyncReader
-        + Clone
-        + 'static,
+    RDB: BlockReaderIdExt + CanonStateSubscriptions + Clone + 'static,
+    BDB: WalletStateSyncWriter + WalletStateSyncReader + Clone + 'static,
     BtcServerClient: BtcServerExtendedApi + Clone,
 {
     pub(crate) fn new(
-        storage: Storage<EF, BF, DB>,
+        storage: Storage<EF, BF, RDB, BDB>,
         btc_server: BtcServerClient,
         to_frost_manager: ToFrostMan,
         task_executor: TaskExecutor,
         frost_config: FrostConfig,
-        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     ) -> Self {
         let data_parser =
             DataParser::default().with_serialization_type(SerializationType::Postcard);
@@ -129,61 +119,8 @@ where
             task_executor,
             frost_config,
             current_response_cycle: Default::default(),
-            provider_factory,
         }
     }
-}
-
-/// This function creates a new state sync record
-fn create_new_wallet_state_sync_peer_record(
-    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
-    uuid: UuidID,
-    peer_id: PeerID,
-    chunks_count: u64,
-    data: Option<Vec<(u64, Bytes)>>,
-) -> Result<PeerID, WalletStateSyncError> {
-    let provider_rw = provider_factory.provider_rw()?;
-    let record_id = provider_rw.create_new_state_sync_record(uuid, peer_id, chunks_count, data)?;
-    provider_rw.commit()?;
-    Ok(record_id)
-}
-
-/// This function retrieves a state sync record by peer id
-fn get_state_sync_record_by_peer_id(
-    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
-    peer_id: PeerID,
-) -> Result<Option<WalletStateSyncRecord>, WalletStateSyncError> {
-    Ok(provider_factory.provider()?.get_state_sync_record_by_peer_id(peer_id)?)
-}
-
-/// This function is used to append data to an existing state sync record
-fn append_data_to_state_sync_record(
-    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
-    peer_id: PeerID,
-    data: Vec<(u64, Bytes)>,
-) -> Result<(), WalletStateSyncError> {
-    let provider_rw = provider_factory.provider_rw()?;
-    provider_rw.append_data_to_state_sync_record(peer_id, data)?;
-    provider_rw.commit()?;
-    Ok(())
-}
-
-/// Remove all state sync records
-fn remove_all_state_sync_records(
-    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
-) -> Result<(), WalletStateSyncError> {
-    let provider_rw = provider_factory.provider_rw()?;
-    provider_rw.remove_all_state_sync_records()?;
-    provider_rw.commit()?;
-    Ok(())
-}
-
-/// Get the minimum superset of wallet state sync records
-fn get_minimum_superset(
-    provider_factory: &ProviderFactory<Arc<DatabaseEnv>>,
-    min_required_criterion: u64,
-) -> Result<(bool, HashSet<(u64, Bytes)>), WalletStateSyncError> {
-    Ok(provider_factory.provider()?.get_minimum_superset(min_required_criterion)?)
 }
 
 /// check the L2 existence of the pegouts
@@ -244,18 +181,14 @@ async fn hydrate_minimum_superset(
     Ok(hydrated_superset_map)
 }
 
-impl<EF, BF, DB, ToFrostMan, BtcServerClient> WalletStateSync
-    for WalletStateSyncEngine<EF, BF, DB, ToFrostMan, BtcServerClient>
+impl<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient> WalletStateSync
+    for WalletStateSyncEngine<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     ToFrostMan: ToFrostManager + Clone + Sync + 'static,
-    DB: BlockReaderIdExt
-        + CanonStateSubscriptions
-        + WalletStateSyncWriter
-        + WalletStateSyncReader
-        + Clone
-        + 'static,
+    RDB: BlockReaderIdExt + CanonStateSubscriptions + Clone + 'static,
+    BDB: WalletStateSyncWriter + WalletStateSyncReader + Clone + 'static,
     BtcServerClient: BtcServerExtendedApi + Clone,
 {
     // Note: this function should not be called unless we are fully synced
@@ -272,11 +205,14 @@ where
         let data_parser = self.data_parser.clone();
         let frost_config = self.frost_config.clone();
         let current_response_cycle = self.current_response_cycle.clone();
-        let provider_factory = self.provider_factory.clone();
-        let mut canon_events = self.storage.client.subscribe_to_canonical_state();
+        let mut canon_events = self.storage.reth_database.subscribe_to_canonical_state();
         let btc_network = self.storage.btc_network;
         let storage = self.storage.clone();
-        let client = storage.client.clone();
+        let reth_database = storage.reth_database.clone();
+        let botanix_provider_factory = storage.botanix_database_factory.clone();
+
+        // TODO: Currently we commit after each write operation. We need to make sure that the data
+        //  we commit here are consistent.
 
         self.task_executor.clone().spawn(async move {
             // try getting the wallet state from the peers we requested it from
@@ -336,7 +272,7 @@ where
                                     }
 
                                     // update the state
-                                    let state_sync_record_by_peer_id = match get_state_sync_record_by_peer_id(&provider_factory, peer_message_context.peer_id) {
+                                    let state_sync_record_by_peer_id = match botanix_provider_factory.get_state_sync_record_by_peer_id(peer_message_context.peer_id) {
                                         Ok(state_sync_record_by_peer_id) => state_sync_record_by_peer_id,
                                         Err(e) => {
                                             error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to get state sync record by peer id");
@@ -353,8 +289,7 @@ where
                                             }
 
                                             // append the data to the state sync record
-                                            match append_data_to_state_sync_record(
-                                                &provider_factory,
+                                            match botanix_provider_factory.append_data_to_state_sync_record(
                                                 wallet_state_sync_record.get_peer_id(),
                                                 finalized_pegout_ids_decompressed.data.into_iter().map(|pid | (pid.botanix_block_height, Bytes::from(pid.id))).collect::<Vec<_>>(),
                                             ) {
@@ -369,8 +304,7 @@ where
                                         }
                                         None => {
                                             // create a new state sync record for the peer
-                                            match create_new_wallet_state_sync_peer_record(
-                                                &provider_factory,
+                                            match botanix_provider_factory.create_new_state_sync_record(
                                                 uuid_to_b256(uuid),
                                                 peer_message_context.peer_id,
                                                 finalized_pegout_ids_decompressed.total_chunks,
@@ -388,13 +322,13 @@ where
                                     }
 
                                     // check if we have all the chunks and a minimum superset available
-                                    match get_minimum_superset(&provider_factory, frost_config.min_signers as u64) {
+                                    match botanix_provider_factory.get_minimum_superset(frost_config.min_signers as u64) {
                                         Ok((found, minimum_superset)) => {
                                             if found {
                                                 // hydrate the superset
                                                 let hydrated_minimum_superset = match hydrate_minimum_superset(
                                                     minimum_superset,
-                                                    &client,
+                                                    &reth_database,
                                                     btc_network,
                                                 ).await {
                                                     Ok(hydrated_minimum_superset) => hydrated_minimum_superset,
@@ -432,7 +366,7 @@ where
                                                     }
                                                 }
                                                 // Remove from the db all state sync records
-                                                match remove_all_state_sync_records(&provider_factory,) {
+                                                match botanix_provider_factory.remove_all_state_sync_records() {
                                                     Ok(_) => {
                                                         info!(target: "consensus::authority::sync_wallet_state", "Removed all state sync records");
                                                     }

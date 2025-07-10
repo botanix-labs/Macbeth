@@ -1,5 +1,4 @@
 mod factory;
-mod metrics;
 mod provider;
 mod snapshot;
 mod staged_header;
