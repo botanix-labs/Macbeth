@@ -4,7 +4,7 @@ use tracing::error;
 /// Convert bytes to [TransactionSigned] using an iterator
 /// Iterator is passed in case some bytes need to be skipped
 /// For example, if the first Bytes are non-deterministic data
-pub(crate) fn transactions_signed_from_bytes(
+pub fn transactions_signed_from_bytes(
     bytes: impl Iterator<Item = prost::bytes::Bytes>,
 ) -> Result<Vec<TransactionSigned>, Box<dyn std::error::Error>> {
     let mut txs = Vec::new();

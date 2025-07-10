@@ -2240,6 +2240,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-authority-metrics"
+version = "1.1.5"
+dependencies = [
+ "metrics",
+ "metrics-util",
+ "reth-metrics",
+ "tokio",
+]
+
+[[package]]
+name = "botanix-authority-rsp"
+version = "1.1.5"
+dependencies = [
+ "reth-revm",
+]
+
+[[package]]
+name = "botanix-bitcoin-checkpoint"
+version = "1.1.5"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "bitcoin 0.32.5",
+ "bitcoincore-zmq",
+ "botanix-btc-wallet",
+ "futures",
+ "futures-util",
+ "mockall",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "botanix-btc-wallet"
 version = "0.1.0"
 dependencies = [
@@ -2277,7 +2312,16 @@ dependencies = [
 name = "botanix-comet-bft-rpc"
 version = "1.1.5"
 dependencies = [
+ "bitcoin 0.32.5",
+ "hex",
+ "prost 0.13.5",
+ "reth-primitives",
+ "secp256k1 0.29.1",
+ "tendermint-light-client",
+ "tendermint-proto",
  "tendermint-rpc",
+ "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
@@ -8750,6 +8794,8 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
  "bitcoincore-zmq",
+ "botanix-authority-rsp",
+ "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "btc-server",
@@ -8831,10 +8877,11 @@ name = "reth-authority-consensus"
 version = "1.1.5"
 dependencies = [
  "alloy-rpc-types-engine",
- "arc-swap",
  "async-trait",
  "bitcoin 0.32.5",
- "bitcoincore-zmq",
+ "botanix-authority-metrics",
+ "botanix-authority-rsp",
+ "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
@@ -8847,8 +8894,6 @@ dependencies = [
  "futures",
  "futures-util",
  "hex",
- "metrics",
- "metrics-util",
  "mockall",
  "once_cell",
  "prost 0.13.5",
@@ -8866,7 +8911,6 @@ dependencies = [
  "reth-evm",
  "reth-evm-ethereum",
  "reth-execution-errors",
- "reth-metrics",
  "reth-network",
  "reth-network-peers",
  "reth-node-core",
@@ -8886,7 +8930,6 @@ dependencies = [
  "tempfile",
  "tendermint",
  "tendermint-abci",
- "tendermint-light-client",
  "tendermint-proto",
  "tendermint-rpc",
  "thiserror 2.0.12",

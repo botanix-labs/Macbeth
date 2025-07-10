@@ -11,14 +11,15 @@ description = "A PoA consensus engine"
 
 [dependencies]
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
-arc-swap = "1.7.1"
 async-trait = { workspace = true }
 
 ## Bitcoin
 bitcoin = { workspace = true }
-bitcoincore-zmq = { workspace = true }
 
 ## Botanix
+botanix-authority-metrics = { workspace = true }
+botanix-authority-rsp = { workspace = true }
+botanix-bitcoin-checkpoint = { workspace = true }
 botanix-btc-wallet = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
 botanix-data-parser = { workspace = true }
@@ -38,9 +39,6 @@ futures-util = { workspace = true }
 
 hex = "0.4.3"
 
-metrics = { workspace = true }
-metrics-util = { workspace = true }
-
 # lazy
 once_cell = { workspace = true }
 prost = "0.13.3"
@@ -57,7 +55,6 @@ reth-ethereum-payload-builder = { workspace = true }
 reth-evm = { workspace = true }
 reth-evm-ethereum = { workspace = true }
 reth-execution-errors = { workspace = true }
-reth-metrics = { workspace = true, features = ["common"] }
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 reth-node-core = { workspace = true }
@@ -83,7 +80,6 @@ tendermint = { version = "0.40.1", features = ["clock"] }
 
 # Tendermint
 tendermint-abci = { workspace = true }
-tendermint-light-client = { workspace = true }
 tendermint-proto = { workspace = true }
 tendermint-rpc = { workspace = true }
 

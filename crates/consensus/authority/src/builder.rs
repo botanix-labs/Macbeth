@@ -1,12 +1,13 @@
 use crate::{
     comet_bft::abci::{ABCIClientBuilder, ABCIDriverMessage},
     frost_task::FrostTask,
-    metrics::AuthorityMetrics,
-    random_source_provider::RandomSource,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
     wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
+use botanix_authority_metrics::AuthorityMetrics;
+use botanix_authority_rsp::RandomSource;
+use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{DataParser, SerializationType};
@@ -29,8 +30,6 @@ use reth_provider::{
     SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader,
     WalletStateSyncWriter,
 };
-
-use crate::bitcoin_checkpoint::BitcoinCheckpointsChain;
 use reth_tasks::TaskExecutor;
 use std::{
     net::SocketAddr,

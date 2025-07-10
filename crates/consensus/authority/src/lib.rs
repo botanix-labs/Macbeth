@@ -16,7 +16,6 @@
 use async_trait as _;
 use bytes as _;
 use displaydoc as _;
-use metrics_util as _;
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
     Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,
@@ -43,21 +42,16 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
 
+pub mod activation_manager;
 mod builder;
 /// Comet BFT abci and consensus driver
 pub mod comet_bft;
-
-pub use comet_bft::light_client::LightCBFTClientBuilder;
-pub mod activation_manager;
 mod excecution_utils;
 mod frost_task;
 mod signing;
 pub mod snapshot_manager;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
-pub mod bitcoin_checkpoint;
-pub mod metrics;
-pub mod random_source_provider;
 pub mod test_utils;
 pub mod wallet_state_sync;
 
@@ -397,9 +391,7 @@ pub(crate) struct StorageInner {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use random_source_provider::{RandomSource, RandomSourceProvider};
+    use botanix_authority_rsp::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::is_inturn;
@@ -408,6 +400,7 @@ mod tests {
         extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
         Bytes,
     };
+    use std::str::FromStr;
 
     use super::*;
 
