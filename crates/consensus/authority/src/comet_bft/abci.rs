@@ -5,7 +5,8 @@ use reth_chain_state::ExecutedBlock;
 use reth_chainspec::ChainSpec;
 use reth_db::{Database, DatabaseEnv};
 use reth_provider::{
-    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
+    providers::BlockchainProvider2, BlockNumReader, BlockReader, BlockWriter, CanonChainTracker,
+    ExecutionOutcome,
 };
 use reth_trie::{updates::TrieUpdates, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
@@ -2252,20 +2253,38 @@ where
                             header: new_header.header().clone(),
                         };
 
-                        let reth_db_rw = match self.reth_database_provider_factory.provider_rw() {
-                            Ok(db_rw) => db_rw,
-                            Err(e) => {
-                                // Panic bc this causes a db inconsistency:
-                                // CometBFT has already committed the block so if
-                                // the block can't be appended here, there will be an app hash
-                                // mismatch. This requires a manual
-                                // rollback to a healthy state.
-                                panic!("Error getting database rw provider: {:?}", e);
-                            }
-                        };
+                        // Commit block data to both reth and botanix databases
 
-                        // TODO: Check if the block is already in the database
-                        //  then do not call this
+                        // To ensure consistency between databases (one of the commits failed) we
+                        // make the block commitment process idempotent:
+                        // 1. Panic in case any of the commits failed
+                        // 2. Reth process is restarted, that lead CometBFT to restart
+                        // 3. Reth send previous block height CometBFT tries to replay the block
+                        // 4. If botanix database commit failed (it goes first), then we are at the
+                        //    previous block state for both databases
+                        // 5. If reth database commit failed then we should have staged header in
+                        //    the botanix database but reth datbase in previous block state
+                        // 6. This is totally fine because `insert_staged_header` is idempotent
+
+                        let botanix_db_rw = self
+                            .botanix_database_provider_factory
+                            .provider_rw()
+                            .unwrap_or_else(|e| panic!("can't get botanix rw provider: {e}"));
+
+                        let reth_db_rw =
+                            self.reth_database_provider_factory.provider_rw().unwrap_or_else(|e| {
+                                panic!("Error getting database rw provider: {:?}", e);
+                            });
+
+                        // Update botanix database with the new header and pegins/pegouts
+
+                        botanix_db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
+
+                        botanix_db_rw.commit().unwrap_or_else(|err| {
+                            panic!("Failed to commit block to botanix database: {err}");
+                        });
+
+                        // Update reth database with the new block
 
                         reth_db_rw.append_blocks_with_state(
                             vec![sealed_block_with_senders.clone()],
@@ -2274,23 +2293,11 @@ where
                             trie_updates,
                         )?;
 
-                        reth_db_rw.commit()?;
+                        reth_db_rw.commit().unwrap_or_else(|err| {
+                            panic!("Failed to commit block to reth database: {err}");
+                        });
 
-                        let botanix_db_rw = self
-                            .botanix_database_provider_factory
-                            .provider_rw()
-                            .unwrap_or_else(|e|
-                                                // Panic bc this causes a db inconsistency:
-                                                // CometBFT has already committed the block so if
-                                                // the block can't be appended here, there will be an app hash
-                                                // mismatch. This requires a manual
-                                                // rollback to a healthy state.
-                                                panic!("can't get botanix rw provider: {e}"));
-
-                        botanix_db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
-
-                        // TODO: Print detailed error message here
-                        botanix_db_rw.commit()?;
+                        // Update the in-memory state with the new canonical chain
 
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
                             new: vec![executed_block],
