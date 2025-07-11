@@ -1,9 +1,6 @@
 ---
 # Configuration for semantic-release
 
-# Repository URL
-repositoryUrl: https://github.com/botanix-labs/Macbeth
-
 # Branch configuration
 branches:
   # main branch for production releases
@@ -14,7 +11,7 @@ branches:
     channel: rc
     prerelease: rc
   # hotfix branch for urgent fixes
-  - name: refactor/releases # TODO: This only for testing, change to "hotfix" when ready
+  - name: hotfix
     channel: hotfix
     prerelease: hotfix
 
