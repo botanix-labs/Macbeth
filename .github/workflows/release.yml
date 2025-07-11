@@ -515,12 +515,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Download Cargo files
-        uses: actions/download-artifact@v4
         with:
-          name: cargo-files
-          path: .
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Download Release Artifacts
         uses: actions/download-artifact@v4
@@ -560,7 +556,9 @@ jobs:
         run: |
           echo "Performing back-merge from main to develop, rc, and hotfix branches"
           git fetch origin
-          ./.github/scripts/release.sh multi_back_merge main "${{ secrets.GITHUB_TOKEN }}" develop rc hotfix
+          ./.github/scripts/release.sh back_merge main develop "${{ secrets.PAT_TOKEN }}"
+          ./.github/scripts/release.sh back_merge main rc "${{ secrets.PAT_TOKEN }}"
+          ./.github/scripts/release.sh back_merge main hotfix "${{ secrets.PAT_TOKEN }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
