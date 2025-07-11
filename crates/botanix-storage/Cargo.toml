@@ -12,66 +12,36 @@ description = "Botanix storage implementation"
 workspace = true
 
 [dependencies]
-
-# arbitrary utils
 arbitrary = { workspace = true, features = ["derive"], optional = true }
 bytes = { workspace = true }
-
 secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
-
-reth-db-api = { workspace = true }
-reth-db = { workspace = true, features = ["mdbx"] }
 auto_impl = { workspace = true }
-
 tracing = { workspace = true }
-
-reth-metrics = { workspace = true }
-
 itertools = { workspace = true }
-
-# misc
-derive_more = { workspace = true }
-
-# metrics
-metrics = { workspace = true }
-
-# codecs
 modular-bitfield = { workspace = true }
-parity-scale-codec = { version = "3.2.1", features = ["bytes"] }
-proptest = { workspace = true, optional = true }
+uuid = { version = "1.8.0", features = ["v4"] }
+
 # reth
+reth-db = { workspace = true, features = ["mdbx"] }
+reth-db-api = { workspace = true }
 reth-codecs = { workspace = true }
-reth-db-models = { workspace = true }
 reth-primitives = { workspace = true, features = ["reth-codec"] }
-reth-primitives-traits = { workspace = true }
 reth-prune-types = { workspace = true }
-reth-stages-types = { workspace = true }
 reth-storage-errors = { workspace = true }
-reth-trie-common = { workspace = true }
+
 serde = { workspace = true, default-features = false }
 sha2 = { workspace = true }
-uuid = { version = "1.8.0", features = ["v4"] }
-tokio = "1.45.0"
-tempfile = "3.19.1"
 eyre = { workspace = true }
 
 [dev-dependencies]
-
 botanix-storage = { path = ".", features = ["test-utils"]}
-
-arbitrary = { workspace = true, features = ["derive"] }
-
-assert_matches = { workspace = true }
-
+tempfile = { workspace = true }
+reth-primitives = { workspace = true, features = ["arbitrary"] }
 proptest = { workspace = true }
 proptest-arbitrary-interop = { workspace = true }
-
-rand = { workspace = true }
-reth-codecs = { workspace = true }
-# reth libs with arbitrary
-reth-primitives = { workspace = true, features = ["arbitrary"] }
-
 test-fuzz = { workspace = true }
+arbitrary = { workspace = true, features = ["derive"] }
 
 [features]
+arbitrary = ["dep:arbitrary"]
 test-utils = ["reth-db/test-utils"]
