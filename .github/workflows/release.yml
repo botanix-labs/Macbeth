@@ -2,16 +2,12 @@ name: Release
 
 on:
   workflow_dispatch:
-  # TODO: We need to make sure that PR merged to this branch had latest version of the code from this
-  # and we can't merge without PRs
-  # Look at rulesets and protected branch rules
   push:
     branches:
       - main
       - develop
       - rc
       - hotfix
-      - refactor/releases # TODO: This is for testing, remove when done
 
 permissions:
   contents: write
@@ -104,10 +100,18 @@ jobs:
           echo "last_release_git_tag=${{ steps.semantic.outputs.last_release_git_tag }}"
 
       - name: Update Cargo.toml version
-        if: needs.semantic-release.outputs.new_release_published == 'true'
-        run: ./.github/scripts/release.sh update "${{ needs.semantic-release.outputs.new_release_version}}"
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: ./.github/scripts/release.sh update "${{ steps.semantic.outputs.new_release_version}}"
 
-      # TODO: Upload Cargo.toml and Cargo.lock to artifacts
+      - name: Upload Cargo.toml and Cargo.lock to artifacts
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-files
+          path: |
+            Cargo.toml
+            Cargo.lock
+          retention-days: 1
 
   build-binaries:
     name: build release binaries
@@ -226,7 +230,11 @@ jobs:
           export CARGO_TARGET_DIR=/home/runner
 
 
-      # TODO: Download artifacts with Cargo.toml
+      - name: Download Cargo files
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-files
+          path: .
 
       - name: Create sha256sum
         run: |
@@ -437,7 +445,11 @@ jobs:
           echo "btc-server-tags=$BTC_SERVER_TAGS" >> $GITHUB_OUTPUT
           echo "reth-node-tags=$RETH_NODE_TAGS" >> $GITHUB_OUTPUT
 
-      # TODO: Download artifacts with Cargo.toml. # why do we need to do this?
+      - name: Download Cargo files
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-files
+          path: .
       - name: Build Docker Image
         if: matrix.configs.bin == 'btc-server'
         run: |
@@ -506,7 +518,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # TODO: Download artifacts with Cargo.toml
+      - name: Download Cargo files
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-files
+          path: .
 
       - name: Download Release Artifacts
         uses: actions/download-artifact@v4
@@ -527,7 +543,11 @@ jobs:
             cp "$file" ./release-assets/
           done
 
-      # TODO: Download artifacts with Cargo.toml and Cargo.lock
+      - name: Download Cargo files
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-files
+          path: .
 
       - name: Push version update
         run: |
