@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate log;
 
-use alloy_primitives::map::HashSet;
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::Decodable, secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
@@ -46,7 +45,7 @@ use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fmt::Debug,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
