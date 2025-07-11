@@ -256,8 +256,6 @@ jobs:
           name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
           path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
 
-
-      # TODO: Use semantic-release outputs
       - name: Upload Binary to GCP Artifact Storage
         run: |
           VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
