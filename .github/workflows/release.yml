@@ -75,10 +75,10 @@ jobs:
         uses: cycjimmy/semantic-release-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEBUG: semantic-release:*
         with:
           branches: ${{ steps.branches_config.outputs.branches }}
           semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
-          repository_url:
           extra_plugins: |
             @semantic-release/commit-analyzer
             @semantic-release/release-notes-generator

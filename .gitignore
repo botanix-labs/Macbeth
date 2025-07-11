@@ -107,3 +107,7 @@ CometBFT-*.txt
 ACT_TESTING.md
 .actrc
 .github/events/
+
+# Botanix release files
+botanix/
+
