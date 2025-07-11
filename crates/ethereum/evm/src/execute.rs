@@ -4,6 +4,12 @@ use crate::{
     dao_fork::{DAO_HARDFORK_BENEFICIARY, DAO_HARDKFORK_ACCOUNTS},
     EthEvmConfig,
 };
+use botanix_authority_edh::header_ext::HeaderExt;
+use botanix_authority_peg::{
+    consensus_package::BotanixConsensusPackage,
+    mint_validation::{try_parse_burn_event, try_parse_mint_event, MintContractError},
+    peg_contract::{PeginData, PegoutWithId},
+};
 use botanix_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
@@ -27,12 +33,6 @@ use reth_evm::{
 };
 use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{
-    botanix::{
-        consensus_package::BotanixConsensusPackage,
-        mint_validation::{try_parse_burn_event, try_parse_mint_event, MintContractError},
-        peg_contract::{PeginData, PegoutWithId},
-    },
-    header_ext::HeaderExt,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
     U256,
 };
@@ -931,10 +931,10 @@ mod tests {
         eip4788::{BEACON_ROOTS_ADDRESS, BEACON_ROOTS_CODE, SYSTEM_ADDRESS},
         eip7002::{WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS, WITHDRAWAL_REQUEST_PREDEPLOY_CODE},
     };
+    use botanix_authority_edh::extra_data_header::ExtraDataHeader;
     use reth_chainspec::{ChainSpecBuilder, ForkCondition, MAINNET};
     use reth_primitives::{
         constants::{EMPTY_ROOT_HASH, ETH_TO_WEI},
-        extra_data_header::ExtraDataHeader,
         keccak256, public_key_to_address, Account, Block, Transaction, TxKind, TxLegacy, B256,
     };
     use reth_revm::{

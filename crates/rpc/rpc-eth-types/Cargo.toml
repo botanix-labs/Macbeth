@@ -19,6 +19,7 @@ alloy-sol-types = { workspace = true }
 # Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
+botanix-authority-edh = { workspace = true }
 
 # Botanix
 botanix-btc-wallet = { workspace = true }

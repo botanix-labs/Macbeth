@@ -14,6 +14,7 @@
 //! A [Consensus] implementation of Clique Proof of Authority (POA)
 //! that authoritymatically seals blocks.
 use async_trait as _;
+use botanix_authority_edh::header_ext::HeaderExt;
 use bytes as _;
 use displaydoc as _;
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
@@ -34,7 +35,6 @@ use reth_network_peers as _;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
     constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},
-    header_ext::HeaderExt,
     Address, BlockWithSenders, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH, U256,
 };
 use serde_json as _;
@@ -391,13 +391,13 @@ pub(crate) struct StorageInner {
 
 #[cfg(test)]
 mod tests {
+    use botanix_authority_edh::extra_data_header::{ExtraDataHeader, CHAIN_VERSION};
     use botanix_authority_rsp::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::is_inturn;
     use reth_primitives::{
         constants::{ALLOWED_FUTURE_BLOCK_TIME_SECONDS, MAXIMUM_EXTRA_DATA_SIZE},
-        extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
         Bytes,
     };
     use std::str::FromStr;

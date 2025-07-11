@@ -1,13 +1,11 @@
 //! Test utilities for the authority consensus crate.
+use botanix_authority_peg::mint_validation::{BURN_TOPIC, MINT_CONTRACT_ADDRESS};
 use ethabi;
 use reth_chainspec::ChainInfo;
 use reth_primitives::{
-    address, b256,
-    botanix::mint_validation::{BURN_TOPIC, MINT_CONTRACT_ADDRESS},
-    bytes,
-    hex_literal::hex,
-    BlockNumber, Bytes, Header, Log, LogData, Receipt, SealedHeader, TransactionMeta,
-    TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber, TxType, B256, U256,
+    address, b256, bytes, hex_literal::hex, BlockNumber, Bytes, Header, Log, LogData, Receipt,
+    SealedHeader, TransactionMeta, TransactionSigned, TransactionSignedNoHash, TxHash, TxNumber,
+    TxType, B256, U256,
 };
 use reth_provider::{
     BlockHashReader, BlockNumReader, HeaderProvider, ProviderResult, ReceiptProvider,

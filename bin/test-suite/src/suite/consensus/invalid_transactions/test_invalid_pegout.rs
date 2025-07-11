@@ -1,5 +1,5 @@
 use bitcoin::Amount;
-use reth_primitives::botanix::utils::AmountExt;
+use botanix_authority_peg::utils::AmountExt;
 
 use crate::{it_info_print, suite::consensus::ConsensusIntegrationTestSuite};
 

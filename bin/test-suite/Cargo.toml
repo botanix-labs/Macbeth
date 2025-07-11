@@ -23,6 +23,8 @@ bitcoin_hashes = "0.16.0"
 
 ## Bitcoin rpc
 bitcoincore-rpc = { workspace = true }
+botanix-authority-edh = { workspace = true }
+botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 
 # Botanix
 botanix-btc-wallet = { path = "../../crates/botanix-btc-wallet" }

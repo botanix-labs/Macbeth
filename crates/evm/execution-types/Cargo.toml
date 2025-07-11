@@ -11,13 +11,11 @@ repository = { workspace = true }
 workspace = true
 
 [dependencies]
-reth-chainspec = { workspace = true, optional = true }
+botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 reth-execution-errors = { workspace = true }
 reth-primitives = { workspace = true, features = ["secp256k1"] }
 reth-trie = { workspace = true }
-
 revm = { workspace = true }
-
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]

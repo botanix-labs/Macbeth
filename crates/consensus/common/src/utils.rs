@@ -1,9 +1,6 @@
+use botanix_authority_edh::extra_data_header::CHAIN_VERSION;
 use reth_consensus::ConsensusError;
-
-use reth_primitives::{
-    extra_data_header::CHAIN_VERSION, revm_primitives::FixedBytes, Address, Header, U256,
-};
-
+use reth_primitives::{revm_primitives::FixedBytes, Address, Header, U256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Returns the unix timestamp in seconds

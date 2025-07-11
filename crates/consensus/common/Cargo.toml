@@ -11,6 +11,7 @@ repository = { workspace = true }
 workspace = true
 
 [dependencies]
+botanix-authority-edh = { workspace = true }
 # reth
 reth-chainspec = { workspace = true }
 reth-consensus = { workspace = true }

@@ -28,12 +28,11 @@ use reth_consensus_common::utils::unix_timestamp;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 
+use botanix_authority_edh::header_ext::HeaderExt;
+use botanix_authority_peg::block_with_peg::SealedBlockWithPeg;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
-use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, BlockWithSenders, SealedBlock, B256,
-};
+use reth_primitives::{Address, BlockHash, BlockNumber, BlockWithSenders, SealedBlock, B256};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
     SnapshotReader, SnapshotWriter, StateProviderFactory,

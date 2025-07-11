@@ -2,25 +2,20 @@ use std::{str::FromStr, time::Duration};
 
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
+use botanix_authority_peg::{
+    mint_validation::MINT_TOPIC,
+    peg_contract::{
+        PeginData, PeginMeta, PeginMetaV0, PeginMetaV1, PEGIN_META_VERSION_V0,
+        PEGIN_META_VERSION_V1,
+    },
+    utils::AmountExt,
+};
 use ethers::{
     prelude::Provider,
     providers::{Http, PendingTransaction},
 };
-
-use reth_primitives::{
-    botanix::{
-        mint_validation::MINT_TOPIC,
-        peg_contract::{PeginData, PeginMeta, PeginMetaV0, PeginMetaV1},
-        utils::AmountExt,
-    },
-    B256,
-};
-
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::{
-    botanix::peg_contract::{PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1},
-    Address,
-};
+use reth_primitives::{Address, B256};
 
 use crate::{
     it_info_print,

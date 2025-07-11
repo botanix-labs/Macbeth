@@ -1,13 +1,13 @@
-use std::io;
-
-use crate::constants::nums_secp256k1_pk;
 use bitcoin::{
     consensus::encode::{self, Decodable, Encodable},
     hashes::Hash,
 };
 use revm_primitives::Address;
 use serde::{Deserialize, Serialize};
+use std::io;
 use thiserror::Error;
+
+use crate::nums_secp256k1_pk;
 
 /// The version of the extra data header
 pub const EXTRA_HEADER_VERSION: u32 = 0;
@@ -161,8 +161,6 @@ impl ExtraDataHeader {
 
 #[cfg(test)]
 mod tests {
-    use crate::constants::nums_secp256k1_pk;
-
     use super::*;
     use bitcoin::BlockHash;
     use rand::rngs::OsRng;
