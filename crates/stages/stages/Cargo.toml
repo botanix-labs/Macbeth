@@ -57,6 +57,8 @@ tracing = { workspace = true }
 alloy-rlp = { workspace = true }
 assert_matches = { workspace = true }
 
+botanix-authority-edh = { workspace = true }
+
 # Botanix
 botanix-btc-wallet = { workspace = true }
 

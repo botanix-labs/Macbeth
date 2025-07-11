@@ -8939,7 +8939,6 @@ dependencies = [
  "futures",
  "futures-util",
  "hex",
- "mockall",
  "once_cell",
  "prost 0.13.5",
  "rand 0.8.5",
@@ -9133,6 +9132,7 @@ dependencies = [
  "alloy-genesis",
  "aquamarine",
  "assert_matches",
+ "botanix-authority-edh",
  "linked_hash_set",
  "metrics",
  "parking_lot 0.12.3",
@@ -10016,6 +10016,7 @@ dependencies = [
 name = "reth-exex"
 version = "1.1.5"
 dependencies = [
+ "botanix-authority-edh",
  "eyre",
  "futures",
  "metrics",
@@ -11101,6 +11102,7 @@ version = "1.1.5"
 dependencies = [
  "alloy-rlp",
  "assert_matches",
+ "botanix-authority-edh",
  "botanix-btc-wallet",
  "criterion",
  "futures-util",

@@ -49,3 +49,5 @@ pub use manager::*;
 // Re-export exex types
 #[doc(inline)]
 pub use reth_exex_types::*;
+
+use botanix_authority_edh as _;
