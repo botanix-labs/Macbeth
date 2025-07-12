@@ -133,8 +133,11 @@ impl SnapshotChunk {
     /// - Block data chunks (variable size)
     pub fn size(&self) -> usize {
         let chunk_id_size = std::mem::size_of::<u64>();
+        let snapshot_id_size = std::mem::size_of::<u64>();
+        let starting_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
+        let ending_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
         let data_size = self.chunk_data.iter().map(|data| data.len()).sum::<usize>();
-        chunk_id_size + data_size
+        chunk_id_size + snapshot_id_size + starting_block_number_size + ending_block_number_size + data_size
     }
 
     /// Return the snapshot id of this chunk.
