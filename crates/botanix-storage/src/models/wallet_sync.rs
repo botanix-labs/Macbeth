@@ -126,7 +126,7 @@ impl WalletStateSyncRecord {
     ///     println!("Block {}: {} bytes", block_number, data.len());
     /// }
     /// ```
-    pub fn get_blocks_data_iter(&mut self) -> impl Iterator<Item = (&u64, &Bytes)> {
+    pub fn get_blocks_data_iter(&self) -> impl Iterator<Item = (&u64, &Bytes)> {
         self.blocks.iter().zip(&self.data)
     }
 
