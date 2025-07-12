@@ -435,6 +435,9 @@ impl Snapshot {
     /// This does not include the size of the actual chunk data,
     /// only the metadata stored in the snapshot structure.
     pub fn size(&self) -> usize {
+        // Size of u64 ID field (8 bytes)
+        let id_size = std::mem::size_of::<u64>();
+
         // Size of u64 field (8 bytes)
         let height_size = std::mem::size_of::<u64>();
 
@@ -447,7 +450,7 @@ impl Snapshot {
         // Size of all chunk ids (each u64 is 8 bytes)
         let chunk_ids_size = self.chunk_ids.len() * std::mem::size_of::<u64>();
 
-        height_size + hash_size + block_ids_size + chunk_ids_size
+        id_size + height_size + hash_size + block_ids_size + chunk_ids_size
     }
 
     /// Return the snapshot id.
