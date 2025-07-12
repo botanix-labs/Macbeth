@@ -34,10 +34,10 @@ pub type ChunkId = u64;
 /// within its parent snapshot (0, 1, 2, etc.).
 pub type SnapshotChunkIndex = u64;
 
-/// A snapshot hash is a keccak hash of a snapshot.
+/// A snapshot hash is a SHA-256 hash of a snapshot.
 ///
 /// Hash value used to verify the integrity of snapshot chunks. This is typically
-/// a Keccak-256 hash that can be used to validate that chunk data has not been
+/// a SHA-256 hash that can be used to validate that chunk data has not been
 /// corrupted during storage or transmission.
 pub type SnapshotChunkHash = B256;
 
@@ -137,7 +137,11 @@ impl SnapshotChunk {
         let starting_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
         let ending_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
         let data_size = self.chunk_data.iter().map(|data| data.len()).sum::<usize>();
-        chunk_id_size + snapshot_id_size + starting_block_number_size + ending_block_number_size + data_size
+        chunk_id_size
+            + snapshot_id_size
+            + starting_block_number_size
+            + ending_block_number_size
+            + data_size
     }
 
     /// Return the snapshot id of this chunk.
