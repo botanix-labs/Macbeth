@@ -13,7 +13,7 @@ use std::cmp::Ordering;
 /// in the Non-Deterministic Data (NDD) transaction. These votes are then
 /// tracked by the activation manager to calculate support thresholds.
 ///
-/// The default vote is `Nay`, indicating that validators must explicitly
+/// The default vote is `Absent`, indicating that validators must explicitly
 /// opt-in to upgrades rather than being opted-in by default.
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
@@ -30,7 +30,7 @@ pub enum Vote {
     /// Explicit abstention from voting. An `Absent` vote functions the same as
     /// `Nay` in quorum calculations, but communicates the validator's intent to
     /// abstain rather than actively oppose the upgrade. It still counts as
-    /// participation in the voting process.
+    /// participation in the voting process. This is the default vote.
     #[default]
     Absent,
 }
