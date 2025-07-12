@@ -137,11 +137,11 @@ impl SnapshotChunk {
         let starting_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
         let ending_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
         let data_size = self.chunk_data.iter().map(|data| data.len()).sum::<usize>();
-        chunk_id_size
-            + snapshot_id_size
-            + starting_block_number_size
-            + ending_block_number_size
-            + data_size
+        chunk_id_size +
+            snapshot_id_size +
+            starting_block_number_size +
+            ending_block_number_size +
+            data_size
     }
 
     /// Return the snapshot id of this chunk.
@@ -224,6 +224,7 @@ pub struct Snapshot {
     /// The snapshot height (same as the block height)
     height: u64,
     /// The snapshot chunks ids
+    /// TODO: Use HashSet to guarantee uniqueness
     chunk_ids: Vec<ChunkId>,
     /// The snapshot block ids
     /// TODO: this could be start and end block number not a vec
