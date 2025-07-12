@@ -145,7 +145,7 @@ impl WalletStateSyncRecord {
     /// - All block numbers (8 bytes each)
     pub fn size(&self) -> usize {
         let uuid_size = std::mem::size_of::<B256>();
-        let peer_id = std::mem::size_of::<B256>();
+        let peer_id = std::mem::size_of::<B512>();
         let data_size = self.data.iter().map(|data| data.len()).sum::<usize>();
         let blocks_size = self.blocks.len() * std::mem::size_of::<u64>();
         uuid_size + peer_id + data_size + blocks_size
