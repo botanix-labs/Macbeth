@@ -18,6 +18,8 @@ alloy-sol-types = { workspace = true }
 
 # Bitcoin
 bitcoin = { workspace = true }
+botanix-authority-edh = { workspace = true }
+botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 
 # Botanix
 botanix-btc-wallet = { workspace = true }

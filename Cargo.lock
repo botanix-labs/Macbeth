@@ -2240,6 +2240,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-authority-edh"
+version = "1.1.5"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "bitcoin 0.32.5",
+ "bitcoincore-rpc",
+ "botanix-authority-peg",
+ "botanix-btc-wallet",
+ "rand 0.8.5",
+ "reth-primitives-traits",
+ "revm-primitives",
+ "secp256k1 0.29.1",
+ "serde",
+ "thiserror 2.0.12",
+ "tracing",
+]
+
+[[package]]
 name = "botanix-authority-metrics"
 version = "1.1.5"
 dependencies = [
@@ -2247,6 +2265,30 @@ dependencies = [
  "metrics-util",
  "reth-metrics",
  "tokio",
+]
+
+[[package]]
+name = "botanix-authority-peg"
+version = "1.1.5"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "assert_matches",
+ "bitcoin 0.32.5",
+ "bitcoincore-rpc",
+ "botanix-btc-wallet",
+ "btc-server",
+ "ethabi",
+ "ethers",
+ "frost-secp256k1-tr",
+ "lazy_static",
+ "rand 0.8.5",
+ "reth-primitives",
+ "reth-primitives-traits",
+ "revm-primitives",
+ "secp256k1 0.29.1",
+ "serde",
+ "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
@@ -2303,9 +2345,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "botanix-authority-peg",
  "clap",
  "hex",
- "reth-primitives",
 ]
 
 [[package]]
@@ -8794,6 +8836,7 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
  "bitcoincore-zmq",
+ "botanix-authority-peg",
  "botanix-authority-rsp",
  "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
@@ -8879,7 +8922,9 @@ dependencies = [
  "alloy-rpc-types-engine",
  "async-trait",
  "bitcoin 0.32.5",
+ "botanix-authority-edh",
  "botanix-authority-metrics",
+ "botanix-authority-peg",
  "botanix-authority-rsp",
  "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
@@ -8894,7 +8939,6 @@ dependencies = [
  "futures",
  "futures-util",
  "hex",
- "mockall",
  "once_cell",
  "prost 0.13.5",
  "rand 0.8.5",
@@ -9088,6 +9132,7 @@ dependencies = [
  "alloy-genesis",
  "aquamarine",
  "assert_matches",
+ "botanix-authority-edh",
  "linked_hash_set",
  "metrics",
  "parking_lot 0.12.3",
@@ -9134,6 +9179,7 @@ dependencies = [
  "alloy-signer",
  "alloy-signer-local",
  "auto_impl",
+ "botanix-authority-peg",
  "derive_more 2.0.1",
  "metrics",
  "parking_lot 0.12.3",
@@ -9305,6 +9351,7 @@ dependencies = [
 name = "reth-consensus-common"
 version = "1.1.5"
 dependencies = [
+ "botanix-authority-edh",
  "mockall",
  "rand 0.8.5",
  "reth-chainspec",
@@ -9914,6 +9961,8 @@ dependencies = [
  "alloy-eips",
  "alloy-sol-types",
  "bitcoin 0.32.5",
+ "botanix-authority-edh",
+ "botanix-authority-peg",
  "botanix-btc-wallet",
  "btc-server",
  "reth-chainspec",
@@ -9940,10 +9989,10 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives 0.7.7",
  "alloy-rlp",
+ "botanix-authority-edh",
  "derive_more 2.0.1",
  "nybbles",
  "reth-consensus",
- "reth-primitives",
  "reth-prune-types",
  "reth-storage-errors",
  "revm-primitives",
@@ -9955,7 +10004,7 @@ version = "1.1.5"
 dependencies = [
  "alloy-eips",
  "alloy-primitives 0.7.7",
- "reth-chainspec",
+ "botanix-authority-peg",
  "reth-execution-errors",
  "reth-primitives",
  "reth-trie",
@@ -9967,6 +10016,7 @@ dependencies = [
 name = "reth-exex"
 version = "1.1.5"
 dependencies = [
+ "botanix-authority-edh",
  "eyre",
  "futures",
  "metrics",
@@ -10371,6 +10421,7 @@ dependencies = [
  "askama",
  "assert_matches",
  "bitcoin 0.32.5",
+ "botanix-authority-edh",
  "botanix-btc-wallet",
  "btc-server",
  "clap",
@@ -10568,19 +10619,11 @@ dependencies = [
  "alloy-rpc-types-engine",
  "arbitrary",
  "assert_matches",
- "bitcoin 0.32.5",
- "bitcoincore-rpc",
- "botanix-btc-wallet",
- "btc-server",
  "bytes",
  "c-kzg",
  "criterion",
  "derive_more 2.0.1",
- "ethabi",
- "ethers",
- "frost-secp256k1-tr",
  "k256",
- "lazy_static",
  "modular-bitfield",
  "once_cell",
  "pprof",
@@ -10601,7 +10644,6 @@ dependencies = [
  "tempfile",
  "test-fuzz",
  "thiserror 2.0.12",
- "tracing",
  "zstd 0.13.3",
 ]
 
@@ -10917,6 +10959,7 @@ dependencies = [
  "async-trait",
  "auto_impl",
  "bitcoin 0.32.5",
+ "botanix-authority-edh",
  "dyn-clone",
  "futures",
  "jsonrpsee",
@@ -10952,6 +10995,7 @@ dependencies = [
  "alloy-sol-types",
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
+ "botanix-authority-edh",
  "botanix-btc-wallet",
  "btc-server",
  "derive_more 2.0.1",
@@ -11058,6 +11102,7 @@ version = "1.1.5"
 dependencies = [
  "alloy-rlp",
  "assert_matches",
+ "botanix-authority-edh",
  "botanix-btc-wallet",
  "criterion",
  "futures-util",
@@ -13260,6 +13305,8 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoin_hashes 0.16.0",
  "bitcoincore-rpc",
+ "botanix-authority-edh",
+ "botanix-authority-peg",
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",

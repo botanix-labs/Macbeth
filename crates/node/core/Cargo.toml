@@ -20,6 +20,7 @@ askama = "0.12.1"
 
 # bitcoin
 bitcoin = { workspace = true }
+botanix-authority-edh = { workspace = true }
 botanix-btc-wallet = { workspace = true }
 
 # Botanix

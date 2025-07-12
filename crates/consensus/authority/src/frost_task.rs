@@ -7,6 +7,7 @@ use crate::{
     Storage,
 };
 use bitcoin::consensus::Encodable;
+use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
@@ -32,7 +33,7 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_primitives::{header_ext::HeaderExt, Header, B256};
+use reth_primitives::{Header, B256};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StagedHeader,
     StateProviderFactory,

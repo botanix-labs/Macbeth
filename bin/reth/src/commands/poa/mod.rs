@@ -1,6 +1,7 @@
 //! POA node command
 
 use bitcoincore_zmq::subscribe_async_wait_handshake;
+use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use btcserverlib::extended_client::{
@@ -38,7 +39,7 @@ use reth_node_metrics::{
     version::VersionInfo,
 };
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::{botanix::mint_validation::MINT_CONTRACT_ADDRESS, Address};
+use reth_primitives::Address;
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};

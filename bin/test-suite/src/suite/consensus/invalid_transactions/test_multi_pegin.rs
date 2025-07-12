@@ -2,18 +2,15 @@ use crate::{
     suite::consensus::common::events::SEND_AMOUNT,
     utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
-use std::{str::FromStr, time::Duration};
-
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid};
 use bitcoincore_rpc::RpcApi;
-use ethers::{prelude::Provider, providers::Http};
-use reth_primitives::{
-    botanix::{
-        peg_contract::{PeginMeta, PeginMetaV0, PEGIN_META_VERSION_V0},
-        utils::AmountExt,
-    },
-    Address,
+use botanix_authority_peg::{
+    peg_contract::{PeginMeta, PeginMetaV0, PEGIN_META_VERSION_V0},
+    utils::AmountExt,
 };
+use ethers::{prelude::Provider, providers::Http};
+use reth_primitives::Address;
+use std::{str::FromStr, time::Duration};
 
 use crate::{
     it_info_print,

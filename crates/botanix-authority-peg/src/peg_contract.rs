@@ -1,6 +1,5 @@
-use std::str::FromStr;
-
-use crate::{botanix::utils::AmountExt, Address};
+use crate::utils::AmountExt;
+use alloy_primitives::Address;
 use bitcoin::{
     self,
     block::Header,
@@ -20,6 +19,7 @@ use ethers::types::U256;
 use frost_secp256k1_tr as frost;
 use revm_primitives::B256;
 use secp256k1::PublicKey;
+use std::str::FromStr;
 use thiserror::Error;
 
 /// Version 0 of the pegin metadata format

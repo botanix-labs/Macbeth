@@ -5,6 +5,7 @@ use crate::{
     wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
+use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
@@ -24,7 +25,6 @@ use reth_network::{
 };
 use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::EthEvmConfig;
-use reth_primitives::header_ext::HeaderExt;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
     SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader,

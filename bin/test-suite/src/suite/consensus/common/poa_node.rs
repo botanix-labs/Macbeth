@@ -10,6 +10,9 @@ use crate::{
 use anyhow::Context;
 use askama::Template;
 use bitcoin::hashes::Hash;
+use botanix_authority_edh::extra_data_header::{
+    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+};
 use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient};
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::{
@@ -23,10 +26,7 @@ use reth_db::{
     models::ClientVersion,
     open_db_read_only, DatabaseEnv,
 };
-use reth_primitives::{
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    Address,
-};
+use reth_primitives::Address;
 use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};

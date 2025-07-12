@@ -15,9 +15,11 @@ async-trait = { workspace = true }
 
 ## Bitcoin
 bitcoin = { workspace = true }
+botanix-authority-edh = { workspace = true }
 
 ## Botanix
 botanix-authority-metrics = { workspace = true }
+botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 botanix-authority-rsp = { workspace = true }
 botanix-bitcoin-checkpoint = { workspace = true }
 botanix-btc-wallet = { workspace = true }
@@ -95,7 +97,6 @@ tracing = { workspace = true }
 uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
-mockall = { workspace = true }
 rand = "0.8.5"
 reth-cli-runner = { workspace = true }
 reth-db-common = { workspace = true }

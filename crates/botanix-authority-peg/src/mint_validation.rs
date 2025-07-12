@@ -2,15 +2,12 @@ use std::{collections::HashSet, str::FromStr};
 
 use ethers::abi::decode;
 
-use thiserror::Error;
-
 use crate::{
-    botanix::{
-        peg_contract::{PeginData, PeginDataError, PeginMeta, PegoutData, PegoutDataError},
-        utils::AmountExt,
-    },
-    keccak256, Address, B256,
+    peg_contract::{PeginData, PeginDataError, PeginMeta, PegoutData, PegoutDataError},
+    utils::AmountExt,
 };
+use alloy_primitives::{keccak256, Address, B256};
+use thiserror::Error;
 
 use tracing::{debug, error, info};
 

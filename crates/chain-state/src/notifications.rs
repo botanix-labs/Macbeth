@@ -1,12 +1,10 @@
 //! Canonical chain state notification trait and types.
 
 use auto_impl::auto_impl;
+use botanix_authority_peg::peg_contract::{PeginMeta, PegoutWithId};
 use derive_more::{Deref, DerefMut};
 use reth_execution_types::{BlockReceipts, Chain};
-use reth_primitives::{
-    botanix::peg_contract::{PeginMeta, PegoutWithId},
-    SealedBlockWithSenders, SealedHeader,
-};
+use reth_primitives::{SealedBlockWithSenders, SealedHeader};
 use std::{
     pin::Pin,
     sync::Arc,

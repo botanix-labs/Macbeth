@@ -12,7 +12,6 @@ description = "Reth RPC 'eth' namespace API"
 workspace = true
 
 [dependencies]
-
 # ethereum
 alloy-dyn-abi = { workspace = true, features = ["eip712"] }
 
@@ -22,6 +21,7 @@ async-trait = { workspace = true }
 # misc
 auto_impl = { workspace = true }
 bitcoin = { workspace = true }
+botanix-authority-edh = { workspace = true }
 dyn-clone = { workspace = true }
 futures = { workspace = true }
 

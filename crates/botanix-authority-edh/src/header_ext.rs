@@ -1,10 +1,9 @@
-use crate::{
-    botanix::consensus_package::{BotanixConsensusPackage, RecentHeader},
-    extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError},
-    Bytes, Header,
-};
+use super::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError};
+use alloy_primitives::Bytes;
 use bitcoincore_rpc::{Error as BitcoindError, RpcApi};
+use botanix_authority_peg::consensus_package::{BotanixConsensusPackage, RecentHeader};
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use reth_primitives_traits::Header;
 use revm_primitives::Address;
 use secp256k1::ecdsa::RecoverableSignature;
 use thiserror::Error;
@@ -163,7 +162,7 @@ mod tests {
     use botanix_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
 
     use super::*;
-    use crate::Header;
+    use reth_primitives_traits::Header;
 
     #[test]
     fn deserialize_extension_trait() {

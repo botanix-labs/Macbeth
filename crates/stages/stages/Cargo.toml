@@ -12,6 +12,7 @@ description = "Staged syncing primitives used in reth."
 workspace = true
 
 [dependencies]
+
 futures-util = { workspace = true }
 itertools = { workspace = true }
 num-traits = "0.2.15"
@@ -55,6 +56,8 @@ tracing = { workspace = true }
 
 alloy-rlp = { workspace = true }
 assert_matches = { workspace = true }
+
+botanix-authority-edh = { workspace = true }
 
 # Botanix
 botanix-btc-wallet = { workspace = true }
