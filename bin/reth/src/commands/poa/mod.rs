@@ -62,9 +62,6 @@ use botanix_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
 use botanix_storage::BotanixProviderFactory;
-use botanix_btc_wallet::bitcoind::{
-    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
-};
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
