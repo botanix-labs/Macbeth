@@ -1,9 +1,9 @@
+use botanix_rpc_config::botanix_config::Botanix;
 use reth_chainspec::ChainSpec;
 use reth_network_api::NetworkInfo;
 use reth_primitives::U256;
 use reth_provider::{BlockNumReader, ChainSpecProvider, StageCheckpointReader};
 use reth_rpc_eth_api::helpers::EthApiSpec;
-use reth_rpc_eth_types::builder::botanix_config::Botanix;
 use reth_transaction_pool::TransactionPool;
 
 use crate::EthApi;

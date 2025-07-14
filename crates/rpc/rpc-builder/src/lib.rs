@@ -26,6 +26,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use botanix_rpc_config::botanix_config::Botanix;
 use btcserverlib::jwt::{Claims, JwtSecret};
 use error::{ConflictingModules, RpcError, ServerKind};
 use eth::DynEthApiBuilder;
@@ -57,9 +58,7 @@ use reth_rpc_eth_api::{
     },
     EthApiServer, FullEthApiServer, RawTransactionForwarder,
 };
-use reth_rpc_eth_types::{
-    builder::botanix_config::Botanix, EthConfig, EthStateCache, EthSubscriptionIdProvider,
-};
+use reth_rpc_eth_types::{EthConfig, EthStateCache, EthSubscriptionIdProvider};
 use reth_rpc_layer::{AuthLayer, JwtAuthValidator};
 use reth_tasks::{pool::BlockingTaskGuard, TaskSpawner, TokioTaskExecutor};
 use reth_transaction_pool::{noop::NoopTransactionPool, TransactionPool};
