@@ -85,7 +85,7 @@ pub(crate) fn coin_selection(
     let target_change = Amount::from_sat(MIN_CHANGE_SATS);
     let coin_selection_target = total_pegout_target
         .checked_add(target_change)
-        .expect("Bitcoin amounts should never overflow u64");
+        .ok_or(CoinSelectionError::FeeRateOverflow)?;
     let coin_selection_algorithm =
         bdk_wallet::coin_selection::BranchAndBoundCoinSelection::new(0, OldestFirstCoinSelection);
     let selected_inputs = perform_coin_selection(
@@ -157,9 +157,9 @@ fn apply_fees_and_create_psbt(
     change_script: ScriptBuf,
     fee_rate: FeeRate,
 ) -> Result<Psbt, CoinSelectionError> {
-    let change = create_change(&selected_inputs, &pegouts, change_script.clone());
+    let change = create_change(&selected_inputs, &pegouts, change_script.clone())?;
     let absolute_fee = calculate_required_fee(&selected_inputs, &pegouts, &change, fee_rate)?;
-    let pegouts_with_fees = apply_fees(pegouts.clone(), absolute_fee);
+    let pegouts_with_fees = apply_fees(pegouts.clone(), absolute_fee)?;
 
     Ok(crate::wallet::psbt::create_psbt(selected_inputs.to_vec(), pegouts_with_fees, change))
 }
@@ -167,8 +167,8 @@ fn apply_fees_and_create_psbt(
 fn apply_fees(
     pegouts: Vec<(TxOut, PegoutIdBytes)>,
     absolute_fee: Amount,
-) -> Vec<(TxOut, PegoutIdBytes)> {
-    let fees_to_subtract = calculate_fee_distribution(&pegouts, absolute_fee);
+) -> Result<Vec<(TxOut, PegoutIdBytes)>, CoinSelectionError> {
+    let fees_to_subtract = calculate_fee_distribution(&pegouts, absolute_fee)?;
 
     let mut result = Vec::new();
     for (i, (txout, pegout_id)) in pegouts.into_iter().enumerate() {
@@ -179,7 +179,7 @@ fn apply_fees(
         result.push((updated_output, pegout_id));
     }
 
-    result
+    Ok(result)
 }
 
 /// Calculates the required absolute fee for a pegout tx with the given inputs, outputs, and fee
@@ -201,11 +201,14 @@ fn calculate_required_fee(
 fn calculate_fee_distribution(
     pegouts: &[(TxOut, PegoutIdBytes)],
     absolute_fee: Amount,
-) -> Vec<Amount> {
+) -> Result<Vec<Amount>, CoinSelectionError> {
     let num_outputs = pegouts.len();
-    let base_fee_per_output = absolute_fee
-        .checked_div(num_outputs as u64)
-        .expect("Number of pegouts should never be zero");
+    if num_outputs == 0 {
+        return Err(CoinSelectionError::OutputsCannotBeEmpty);
+    }
+
+    let base_fee_per_output =
+        absolute_fee.checked_div(num_outputs as u64).ok_or(CoinSelectionError::FeeRateOverflow)?;
     let remainder = absolute_fee % num_outputs as u64;
 
     let mut fees_to_subtract = vec![base_fee_per_output; num_outputs];
@@ -218,23 +221,26 @@ fn calculate_fee_distribution(
         let index = sorted_indices[sat_index];
         fees_to_subtract[index] = fees_to_subtract[index]
             .checked_add(Amount::from_sat(1))
-            .expect("Fee calculation should not overflow adding single satoshi");
+            .ok_or(CoinSelectionError::FeeRateOverflow)?;
     }
-    fees_to_subtract
+    Ok(fees_to_subtract)
 }
 
 fn create_change(
     selected_inputs: &[crate::wallet::psbt::InputDTO],
     pegouts: &[(TxOut, PegoutIdBytes)],
     change_script: ScriptBuf,
-) -> Option<TxOut> {
+) -> Result<Option<TxOut>, CoinSelectionError> {
     let total_selected_inputs = selected_inputs.iter().map(|i| i.output.value).sum::<Amount>();
     let total_pegout_target = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
-    let final_change_amount = total_selected_inputs
-        .checked_sub(total_pegout_target)
-        .expect("Coin selection should at least cover the pegout target");
+    let final_change_amount = total_selected_inputs.checked_sub(total_pegout_target).ok_or(
+        CoinSelectionError::CoinSelectionBdk(InsufficientFunds {
+            needed: total_selected_inputs,
+            available: total_pegout_target,
+        }),
+    )?;
     let change = Some(TxOut { script_pubkey: change_script.clone(), value: final_change_amount });
-    change
+    Ok(change)
 }
 
 fn sanity_check_psbt(
@@ -253,7 +259,7 @@ fn sanity_check_psbt(
     if change_output_value !=
         total_input_value
             .checked_sub(total_pegout_target)
-            .expect("Bitcoin amounts should never overflow u64")
+            .ok_or(CoinSelectionError::FeeRateOverflow)?
     {
         return Err(SanityCheckError::BadRefundBalance {
             change_output_value,
