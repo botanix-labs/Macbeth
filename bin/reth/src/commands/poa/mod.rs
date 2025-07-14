@@ -1,6 +1,8 @@
 //! POA node command
 
 use bitcoincore_zmq::subscribe_async_wait_handshake;
+use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
+use botanix_authority_rsp::RandomSourceProvider;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
@@ -13,7 +15,6 @@ use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
     comet_bft::abci::ABCIDriver,
-    random_source_provider::RandomSourceProvider,
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     wallet_state_sync::WalletStateSync,
@@ -38,7 +39,7 @@ use reth_node_metrics::{
     version::VersionInfo,
 };
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::{botanix::mint_validation::MINT_CONTRACT_ADDRESS, Address};
+use reth_primitives::Address;
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
@@ -53,13 +54,16 @@ use crate::{
     cli::NoArgs,
     payload::PayloadBuilderService,
 };
+use botanix_bitcoin_checkpoint::{
+    BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
+    DummyHashBlockStream,
+};
 use botanix_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
 use botanix_storage::BotanixProviderFactory;
-use reth_authority_consensus::bitcoin_checkpoint::{
-    BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
-    DummyHashBlockStream,
+use botanix_btc_wallet::bitcoind::{
+    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
@@ -456,7 +460,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.map(Into::into),
+                btc_signing_server_jwt_secret.map(|s| btcserverlib::jwt::JwtSecret(s.0)),
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };

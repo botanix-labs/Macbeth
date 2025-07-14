@@ -240,7 +240,7 @@ impl Telemetry {
                 .with_label_values(&[
                     &btc_chain.to_string(),
                     &self_id.to_string(),
-                    &hex::encode(&session_id),
+                    &hex::encode(session_id),
                 ])
                 .inc();
         });
@@ -259,7 +259,7 @@ impl Telemetry {
                 .with_label_values(&[
                     &btc_chain.to_string(),
                     &self_id.to_string(),
-                    &hex::encode(&session_id),
+                    &hex::encode(session_id),
                     error,
                 ])
                 .inc();
@@ -342,7 +342,7 @@ impl Telemetry {
                 metrics
                     .bitcoind_sync_status
                     .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), service])
-                    .set(if *status == "up" { 1 as i64 } else { 0 as i64 });
+                    .set(if *status == "up" { 1_i64 } else { 0_i64 });
             });
         });
     }

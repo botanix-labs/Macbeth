@@ -26,12 +26,11 @@ use reth_consensus_common::utils::unix_timestamp;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 
+use botanix_authority_edh::header_ext::HeaderExt;
+use botanix_authority_peg::block_with_peg::SealedBlockWithPeg;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
-use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, BlockWithSenders, SealedBlock, B256,
-};
+use reth_primitives::{Address, BlockHash, BlockNumber, BlockWithSenders, SealedBlock, B256};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
     StateProviderFactory,
@@ -97,20 +96,8 @@ pub enum ApplySnapshotResult {
     /// Reject this snapshot, try others
     RejectSnapshot = 5,
 }
-
-use super::proto_debug::{
-    RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
-    RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
-    ResponsePrepareProposalTruncatedDebug,
-};
 use crate::{
-    bitcoin_checkpoint::BitcoinCheckpointsChain,
-    comet_bft::{
-        non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
-        utils::transactions_signed_from_bytes,
-    },
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
-    metrics::AuthorityMetrics,
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
     utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
     AuthorityConsensus, Storage,
@@ -119,6 +106,17 @@ use botanix_storage::{
     models::{HeaderWithPegs, PeginData, PegoutData, SnapshotSync, SnapshotSyncId},
     BotanixProviderFactory, DatabaseProviderFactoryRW, SnapshotReader, SnapshotWriter,
     StagedHeaderWriter,
+};
+use botanix_authority_metrics::AuthorityMetrics;
+use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
+use botanix_comet_bft_rpc::{
+    non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
+    proto_debug::{
+        RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
+        RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
+        ResponsePrepareProposalTruncatedDebug,
+    },
+    utils::transactions_signed_from_bytes,
 };
 use tracing::{debug, error, info, instrument, trace, warn};
 
@@ -2353,12 +2351,13 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{bitcoin_checkpoint::BitcoinCheckpoint, Storage};
+    use crate::Storage;
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,
         CompactTarget, TxMerkleNode,
     };
+    use botanix_bitcoin_checkpoint::BitcoinCheckpoint;
     use botanix_btc_wallet::{
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,

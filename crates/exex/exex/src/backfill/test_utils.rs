@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use botanix_authority_edh::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
 use eyre::OptionExt;
 use reth_chainspec::{ChainSpec, ChainSpecBuilder, EthereumHardfork, MAINNET};
 use reth_evm::execute::{
@@ -7,9 +8,8 @@ use reth_evm::execute::{
 };
 use reth_evm_ethereum::create_noop_executor_provider;
 use reth_primitives::{
-    b256, constants::ETH_TO_WEI, extra_data_header::ExtraDataHeader, header_ext::HeaderExt,
-    Address, Block, BlockWithSenders, Genesis, GenesisAccount, Header, Receipt, Requests,
-    SealedBlockWithSenders, Transaction, TxEip2930, TxKind, U256,
+    b256, constants::ETH_TO_WEI, Address, Block, BlockWithSenders, Genesis, GenesisAccount, Header,
+    Receipt, Requests, SealedBlockWithSenders, Transaction, TxEip2930, TxKind, U256,
 };
 use reth_provider::{BlockWriter as _, ExecutionOutcome, LatestStateProviderRef, ProviderFactory};
 use reth_revm::database::StateProviderDatabase;

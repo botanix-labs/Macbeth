@@ -421,10 +421,8 @@ mod tests {
     use bitcoin::{
         block::Header as BitcoinHeader, hashes::Hash, BlockHash as BitcoinBlockHash, TxMerkleNode,
     };
-
     use botanix_btc_wallet::bitcoind::jsonrpc::serde;
     use mockall::{mock, predicate::*};
-    use tonic::async_trait;
 
     mod sync_new_blocks {
         use super::*;

@@ -4,6 +4,7 @@ use crate::{
     Storage,
 };
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
+use botanix_authority_edh::extra_data_header::ExtraDataHeaderDeserializeError;
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_data_parser::{
     prost_parser::ProstMessageSerdelizer, DataParser, Error as CompressorError, SerializationType,
@@ -20,7 +21,7 @@ use reth_network::frost::{
     manager::{FrostCommand, FrostConfig, ToFrostManager},
     PeerMessageResponse,
 };
-use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, Bytes};
+use reth_primitives::Bytes;
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
 };

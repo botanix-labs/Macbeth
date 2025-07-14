@@ -6,10 +6,10 @@ use crate::helpers::{
     EthFees, EthState, EthTransactions, FullEthApi,
 };
 use alloy_dyn_abi::TypedData;
+use botanix_authority_edh::extra_data_header::ExtraDataHeader;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_primitives::{
-    extra_data_header::ExtraDataHeader, transaction::AccessListResult, Address, BlockId,
-    BlockNumberOrTag, Bytes, B256, B64, U256, U64,
+    transaction::AccessListResult, Address, BlockId, BlockNumberOrTag, Bytes, B256, B64, U256, U64,
 };
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_rpc_types::{

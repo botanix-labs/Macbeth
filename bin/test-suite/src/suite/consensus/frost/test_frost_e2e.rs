@@ -2,17 +2,16 @@ use std::{str::FromStr, time::Duration};
 
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
+use botanix_authority_peg::{
+    mint_validation::{BURN_TOPIC, MINT_TOPIC},
+    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
+    utils::AmountExt,
+};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
-use reth_primitives::botanix::{
-    mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
-    utils::AmountExt,
-};
-
 use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;
 

@@ -9,44 +9,44 @@ use reth_metrics::{
 #[metrics(scope = "authority")]
 pub struct AuthorityMetrics {
     /// Number of currently connected peers
-    pub(crate) signing_sessions: Gauge,
+    pub signing_sessions: Gauge,
 
     /// Number of created agg pub keys
-    pub(crate) created_agg_pub_keys: Counter,
+    pub created_agg_pub_keys: Counter,
 
     /// Number of received round1 signing packages
-    pub(crate) received_round1_signing_packages: Counter,
+    pub received_round1_signing_packages: Counter,
 
     /// Number of received round2 signing packages
-    pub(crate) received_round2_signing_packages: Counter,
+    pub received_round2_signing_packages: Counter,
 
     /// Number of finalized signings
-    pub(crate) finalized_signings: Counter,
+    pub finalized_signings: Counter,
 
     #[allow(dead_code)]
     /// Number of reset wallet states
-    pub(crate) reset_wallet_states: Counter,
+    pub reset_wallet_states: Counter,
 
     /// Number of commet finalized blocks
-    pub(crate) commet_finalized_blocks: Counter,
+    pub commet_finalized_blocks: Counter,
 
     /// Number of commet committed blocks
-    pub(crate) commet_committed_blocks: Counter,
+    pub commet_committed_blocks: Counter,
 
     /// Number of commet prepared proposals
-    pub(crate) commet_prepared_proposals: Counter,
+    pub commet_prepared_proposals: Counter,
 
     /// Number of commet processed proposals
-    pub(crate) commet_processed_proposals: Counter,
+    pub commet_processed_proposals: Counter,
 
     /// Gauge for bitcoind connection status (0 - disconnected, 1 - connected)
-    pub(crate) bitcoind_connection_status: Gauge,
+    pub bitcoind_connection_status: Gauge,
 
     /// Gauge for bitcoin server connection status (0 - disconnected, 1 - connected)
-    pub(crate) btc_server_connection_status: Gauge,
+    pub btc_server_connection_status: Gauge,
 
     /// Gauge for cometbft connection status (0 - disconnected, 1 - connected)
-    pub(crate) cometbft_connection_status: Gauge,
+    pub cometbft_connection_status: Gauge,
 }
 
 /// Measures the duration of executing the given code block. The duration is added to the given

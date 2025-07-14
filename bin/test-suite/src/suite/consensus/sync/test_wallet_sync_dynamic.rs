@@ -6,6 +6,11 @@ use std::{
 
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
+use botanix_authority_peg::{
+    mint_validation::{BURN_TOPIC, MINT_TOPIC},
+    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
+    utils::AmountExt,
+};
 use client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
 use ethers::{
     prelude::Provider,
@@ -14,14 +19,7 @@ use ethers::{
 };
 use futures::StreamExt;
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::{
-    botanix::{
-        mint_validation::{BURN_TOPIC, MINT_TOPIC},
-        peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
-        utils::AmountExt,
-    },
-    Address,
-};
+use reth_primitives::Address;
 use tonic::transport::Channel;
 
 use crate::{

@@ -64,7 +64,6 @@
 //! voting. Once a new node version with upgrade support is released, validators can
 //! switch to "Accept Upgrades" mode to fully participate in the upgrade process.
 
-use crate::comet_bft::non_deterministic_data::NetworkUpgradePayload;
 use reth_provider::ProviderResult;
 use std::sync::{Arc, RwLock};
 
@@ -788,4 +787,31 @@ where
 
         Ok(())
     }
+}
+
+/// Represents a validator's stance on a network upgrade proposal.
+///
+/// This payload is included in each block's non-deterministic data when a node is
+/// configured to participate in the network upgrade voting process. It communicates
+/// the validator's current position on a specific upgrade version.
+///
+/// # Fields
+///
+/// * `version` - The specific runtime version that this vote applies to.
+///
+/// * `vote` - The validator's explicit opinion on the upgrade (Aye/Nay/Absent).
+///
+/// * `is_compliant` - Indicates whether the validator is technically ready to process blocks with
+///   the upgrade version. When `true`, the validator has the necessary software version and
+///   configuration to handle the upgrade. This can be independent of the vote - a validator may
+///   vote `Nay` but still be prepared to follow the network if the upgrade is adopted.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NetworkUpgradePayload {
+    /// The runtime version that this vote applies to.
+    pub version: RuntimeVersion,
+    /// The validator's explicit opinion on the upgrade (Aye/Nay/Absent).
+    pub vote: Vote,
+    /// Indicates whether the validator is technically ready to process blocks with the upgrade
+    /// version.
+    pub is_compliant: bool,
 }

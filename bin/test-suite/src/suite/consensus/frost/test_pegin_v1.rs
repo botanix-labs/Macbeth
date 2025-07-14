@@ -2,22 +2,18 @@ use std::{str::FromStr, time::Duration};
 
 use bitcoin::{merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
+use botanix_authority_peg::{
+    mint_validation::MINT_TOPIC,
+    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PeginMetaV1},
+    utils::AmountExt,
+};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
-use reth_primitives::{
-    botanix::{
-        mint_validation::MINT_TOPIC,
-        peg_contract::{PeginData, PeginMeta, PeginMetaV0, PeginMetaV1},
-        utils::AmountExt,
-    },
-    revm_primitives::FixedBytes,
-};
-
 use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::Address;
+use reth_primitives::{revm_primitives::FixedBytes, Address};
 use serde_json::json;
 
 use crate::{

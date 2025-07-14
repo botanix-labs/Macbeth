@@ -1,5 +1,5 @@
 //! Extended bitcoin server client with authentication
-use alloy_rpc_types_engine::{Claims, JwtSecret};
+use crate::jwt::{Claims, JwtSecret};
 use client::{
     BtcServerClient, ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty,
     FinalizeSignerRequest, FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
@@ -299,7 +299,7 @@ impl GrpcClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use alloy_rpc_types_engine::{Claims, JwtSecret};
+    use crate::jwt::{Claims, JwtSecret};
 
     #[test]
     fn test_metadata_jwt_decode_encode() {

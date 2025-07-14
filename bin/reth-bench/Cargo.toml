@@ -27,6 +27,7 @@ alloy-transport-http = { workspace = true }
 alloy-transport-ipc = { workspace = true }
 alloy-transport-ws = { workspace = true }
 async-trait = { workspace = true }
+btc-server = { path = "../../bin/btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
 csv = "1.3.0"
 eyre = { workspace = true }

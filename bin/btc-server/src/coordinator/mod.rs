@@ -75,6 +75,7 @@ pub fn add_round2_signing(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn make_tx(
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,

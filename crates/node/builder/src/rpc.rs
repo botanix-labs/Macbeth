@@ -1,10 +1,6 @@
 //! Builder support for rpc components.
 
-use std::{
-    fmt,
-    ops::{Deref, DerefMut},
-};
-
+use btcserverlib::jwt::JwtSecret;
 use futures::TryFutureExt;
 use reth_chainspec::ChainSpec;
 use reth_node_api::{BuilderProvider, FullNodeComponents};
@@ -18,10 +14,12 @@ use reth_rpc_builder::{
     config::RethRpcServerConfig,
     RpcModuleBuilder, RpcRegistryInner, RpcServerHandle, TransportRpcModules,
 };
-
-use reth_rpc_layer::JwtSecret;
 use reth_tasks::TaskExecutor;
 use reth_tracing::tracing::{debug, info};
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
 use crate::{EthApiBuilderCtx, RpcAddOns};
 

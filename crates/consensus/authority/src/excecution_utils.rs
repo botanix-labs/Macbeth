@@ -2,6 +2,11 @@ pub(crate) mod authority_execution_utils {
     use botanix_btc_wallet::bitcoind::BitcoindFactory;
     use reth_chainspec::{ChainSpec, EthereumHardforks};
 
+    use botanix_authority_edh::{
+        extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+        header_ext::HeaderExt,
+    };
+    use botanix_authority_peg::block_with_peg::SealedBlockWithPeg;
     use reth_db::Database;
     use reth_evm::execute::{BatchExecutor, BlockExecutorProvider, Executor};
     use reth_evm_ethereum::execute::EthBlockExecutor;
@@ -10,11 +15,8 @@ pub(crate) mod authority_execution_utils {
     };
     use reth_node_ethereum::EthEvmConfig;
     use reth_primitives::{
-        botanix::block_with_peg::SealedBlockWithPeg,
         constants::{EMPTY_RECEIPTS, EMPTY_TRANSACTIONS, ETHEREUM_BLOCK_GAS_LIMIT},
         eip4844::calculate_excess_blob_gas,
-        extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-        header_ext::HeaderExt,
         proofs, Address, Block, BlockHashOrNumber, BlockWithSenders, Bloom, Bytes, Header, Receipt,
         ReceiptWithBloom, Requests, TransactionSigned, EMPTY_OMMER_ROOT_HASH, U256,
     };

@@ -6,5 +6,14 @@ rust-version = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
+bitcoin = { workspace = true }
+hex = "0.4.3"
+prost = "0.13.3"
+reth-primitives = { workspace = true, features = ["secp256k1"] }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
+tendermint-light-client = { workspace = true }
 # tendermint
+tendermint-proto = { workspace = true }
 tendermint-rpc = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

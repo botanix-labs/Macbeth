@@ -7,6 +7,10 @@ use bitcoin::{
     Address, Amount, BlockHash,
 };
 use botanix_storage::models;
+use botanix_authority_peg::{
+    mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
+    peg_contract::{PeginMeta, PegoutData, PegoutWithId},
+};
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
@@ -15,14 +19,7 @@ use btcserverlib::{
 use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo};
-use reth_primitives::{
-    botanix::{
-        mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
-        peg_contract::{PeginMeta, PegoutData, PegoutWithId},
-    },
-    constants::EPOCH_LENGTH,
-    Bloom, BloomInput,
-};
+use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput};
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;

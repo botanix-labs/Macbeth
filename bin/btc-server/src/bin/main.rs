@@ -1,17 +1,6 @@
 #[macro_use]
 extern crate log;
 
-use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::Path,
-    str::FromStr,
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
-
-use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::Decodable, secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
@@ -27,6 +16,7 @@ use btcserverlib::{
     federation_args::FederationTomlConfig,
     frost_id, handle_signing_error,
     http::{create_web_server, state::ServerState},
+    jwt::{JwtError, JwtSecret},
     measure_rpc_latency,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
@@ -54,6 +44,15 @@ use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt::Debug,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+    str::FromStr,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
+};
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
@@ -674,7 +673,7 @@ where
         self.validate_jwt(&request)?;
         info!("Health check request received");
 
-        self.telemetry.as_ref().map(|telemetry| {
+        if let Some(telemetry) = self.telemetry.as_ref() {
             let is_bitcoind_syncing = is_syncing(
                 &self.bitcoind_client,
                 &self.telemetry,
@@ -689,7 +688,7 @@ where
                 self.start_time.elapsed().as_secs(),
                 &[("bitcoind", if is_bitcoind_syncing { "syncing" } else { "up" })],
             )
-        });
+        };
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -760,7 +759,20 @@ where
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
         let pegouts = pegouts?;
-        let pegouts_refs: Vec<&PegoutRequest> = pegouts.iter().collect();
+        // Check pegouts are not in the finalized pegout ids list
+        let finalized_pegout_ids: HashSet<_> =
+            self.db.get_finalized_pegout_ids().to_status()?.iter().map(|p| p.id).collect();
+        let pegouts_refs: Vec<&PegoutRequest> = pegouts
+            .iter()
+            .filter(|pegout| {
+                if finalized_pegout_ids.contains(&pegout.id) {
+                    error!("Received a pegout request for finalized id: {:?}", pegout.id);
+                    return false;
+                }
+                true
+            })
+            .collect();
+
         self.db.store_pending_pegouts(&pegouts_refs).to_status()?;
         self.db.flush().to_status()?;
         info!("stored pegouts.len(): {:?}", pegouts.len());
@@ -1237,7 +1249,7 @@ where
         info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
         // set the telemetry for pending pegouts back to 0
         if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.set_pending_pegouts(self.btc_network, self.config.identifier, 0 as i64);
+            telemetry.set_pending_pegouts(self.btc_network, self.config.identifier, 0_i64);
         }
 
         let res = rpc::SigningPackage {
@@ -1973,7 +1985,7 @@ where
                 telemetry.update_dkg_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    &"dkg not initialized".to_string(),
+                    "dkg not initialized",
                 );
             }
             return Err(tonic::Status::internal("dkg not initialized"));
@@ -2553,6 +2565,83 @@ mod tests {
             assert_eq!(pending_pegout.value.to_sat(), original_pegout.amount);
             assert_eq!(pending_pegout.botanix_height, original_pegout.height);
         }
+    }
+
+    #[tokio::test]
+    async fn test_new_consensus_checkpoint_no_finalized_pegouts_stored() {
+        let app = setup().await;
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // Add some pegin utxos
+        let mut pegins = vec![];
+        for _ in 0..10 {
+            let dummy_tx = create_tx(1, 1, None);
+            let utxo = crate::database::Utxo::new(
+                dummy_tx.input[0].previous_output,
+                dummy_tx.output[0].clone(),
+                None,
+                None,
+            );
+
+            // create pegins btc client can send
+            let tx_out = dummy_tx.output.get(utxo.outpoint.vout as usize).expect("valid vout");
+            let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+            let utxo = Utxo {
+                outpoint: Some(rpc::OutPoint {
+                    txid: bitcoin::consensus::serialize(&utxo.outpoint.txid),
+                    vout: utxo.outpoint.vout,
+                }),
+                output: Some(rpc::TxOut {
+                    script_pubkey: Some(rpc::ScriptBuf { script: serialized_script_pub_key }),
+                    value: tx_out.value.to_sat(),
+                }),
+                eth_address: hex::encode(&[0; 20]),
+            };
+            pegins.push(utxo);
+        }
+        let req = tonic::Request::new(rpc::ConsensusCheckpointRequest {
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+            pegins: pegins.clone(),
+            pending_pegouts: vec![],
+        });
+        let _res = app.new_consensus_checkpoint(req).await.unwrap();
+
+        // Store finalized pegout
+        let mut rng = thread_rng();
+        let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), 0);
+        let finalized_pegout = btcserverlib::database::FinalizedPegout {
+            id: pegout_id,
+            block_number: 100,
+            timestamp: None,
+        };
+        app.db.store_finalized_pegout_ids(&[&finalized_pegout]).expect("valid finalized pegout");
+
+        // Try and store a pending pegout with the the finalized pegout id
+        let pending_pegout = rpc::PendingPegout {
+            pegout_id: finalized_pegout.id.as_bytes().to_vec(),
+            spk: random_p2wpkh_script().as_bytes().to_vec(),
+            amount: 100_000, // sats
+            height: 1,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("valid duration")
+                .as_secs(),
+        };
+        let req = tonic::Request::new(rpc::ConsensusCheckpointRequest {
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+            pegins: vec![],
+            pending_pegouts: vec![pending_pegout],
+        });
+        let _res = app.new_consensus_checkpoint(req).await.unwrap();
+
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert!(pending_pegouts.is_empty(), "No pending pegouts should be stored");
     }
 
     #[tokio::test]

@@ -26,6 +26,9 @@ bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
 bitcoincore-zmq = { workspace = true }
 botanix-storage = { workspace = true }
+botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
+botanix-authority-rsp = { workspace = true }
+botanix-bitcoin-checkpoint = { workspace = true }
 
 # Botanix
 botanix-btc-wallet = { workspace = true }
