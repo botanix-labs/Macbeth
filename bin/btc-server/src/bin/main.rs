@@ -1580,13 +1580,12 @@ impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
     ///
     /// Returns `Ok(())` if all inputs are handled successfully, or an error if any operation fails.
     fn handle_invalid_inputs(&self, tx: &Transaction) -> Result<(), btcserverlib::database::Error> {
-        let tx_id = tx.compute_txid();
         for input in &tx.input {
             if let Some(_utxo) = self.db.get_utxo(input.previous_output)? {
                 // Check on chain if the input is already spent
                 let result = self
                     .bitcoind_client
-                    .get_tx_out(&tx_id, input.previous_output.vout, None)
+                    .get_tx_out(&input.previous_output.txid, input.previous_output.vout, None)
                     .map_err(|e| {
                         error!("Failed to get tx out for input: {}: {}", input.previous_output, e);
                         btcserverlib::database::Error::BitcoindError(e)
