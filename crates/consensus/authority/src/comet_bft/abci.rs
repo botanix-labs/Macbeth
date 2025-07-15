@@ -2076,9 +2076,49 @@ where
                     }
                 };
 
+                // Activation Manager: decide whether we're willing to accept
+                // the runtime version.
+                //
+                // Note that lagging validators will automatically accept an
+                // upgrade as long as they're specifically configured to do so
+                // (non-default behavior) - whether the upgrade conditions are
+                // met or not.
+                let comet_height = request.height as u64;
+                let runtime_version = non_deterministic_data.runtime_version().into();
+                let proposer_address = Address::from_slice(&request.proposer_address);
+                //
+                match self
+                    .activation_manager
+                    .on_finalize_block(runtime_version, comet_height, proposer_address, None)
+                    .expect("db cannot fail")
+                {
+                    OnFinalizeBlockDecision::Finalize { version: _ } => {
+                        // Continue...
+                    }
+                    OnFinalizeBlockDecision::RejectBlockDeadEnd { version } => {
+                        error!("finalize_block: Rejecting finalized block with Botanix runtime version: {version}");
+                        panic!("finalize_block: Rejecting Botanix upgrade '{version}' - can no longer proceed...");
+                    }
+                }
+
+                let mut floor_base_fee_per_gas = None;
+                match runtime_version {
+                    RUNTIME_VERSION_ACTIVE => {
+                        // Continue; do not set a floor base fee per gas.
+                        debug!("finalize_block: Finalizing block with active runtime version: {runtime_version}");
+                    }
+                    RUNTIME_VERSION_UPGRADE => {
+                        // Set floor base fee per gas.
+                        debug!("finalize_block: Finalizing block with UPGRADED version: {runtime_version}");
+                        floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS);
+                    }
+                    _ => unreachable!(),
+                };
+
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
+                    floor_base_fee_per_gas,
                     &non_deterministic_data.block_fee_recipient_address,
                     self.storage.evm_config,
                     &self.provider_factory,
