@@ -5,6 +5,7 @@ use thiserror::Error;
 
 /// Errors that can occur when deserializing NonDeterministicData
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum NonDeterministicDataDeserializeError {
     #[error("I/O error")]
     /// I/O error
@@ -12,10 +13,75 @@ pub enum NonDeterministicDataDeserializeError {
     #[error("invalid data format")]
     /// Invalid data format
     Decoding(#[from] encode::Error),
+    /// Invalid inclusion indicator, equivalent to Some/None
+    #[error("invalid inclusion indicator")]
+    InclusionIndicator,
+    /// // Invalid network upgrade vote
+    #[error("invalid network upgrade vote")]
+    NetworkUpgradePayloadVote,
 }
 
-// The default NDD version.
+/// The implied Botanix runtime version at mainnet launch, created
+/// retroactively.
+pub const GENESIS_RUNTIME_VERSION: (u16, u16) = (0, 1);
+
+/// Represents a validator's vote on a network upgrade proposal.
+///
+/// Validators can explicitly vote in favor of an upgrade (`Aye`),
+/// against an upgrade (`Nay`), or can abstain from voting (`Absent`).
+///
+/// Votes are included in block proposals via the `NetworkUpgradePayload`
+/// in the Non-Deterministic Data (NDD) transaction. These votes are then
+/// tracked by the activation manager to calculate support thresholds.
+///
+/// The default vote is `Nay`, indicating that validators must explicitly
+/// opt-in to upgrades rather than being opted-in by default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Vote {
+    /// Vote in favor of the upgrade. An `Aye` vote contributes to the signaling
+    /// threshold calculations.
+    Aye = 2,
+
+    /// Vote against the upgrade. A `Nay` vote allows validators to signal
+    /// opposition while still being counted in voting statistics.
+    Nay = 1,
+
+    /// Explicit abstention from voting. An `Absent` vote functions the same as
+    /// `Nay` in quorum calculations, but communicates the validator's intent to
+    /// abstain rather than actively oppose the upgrade. It still counts as
+    /// participation in the voting process.
+    Absent = 0,
+}
+
+/// Represents a validator's stance on a network upgrade proposal.
+///
+/// This payload is included in each block's non-deterministic data when a node is
+/// configured to participate in the network upgrade voting process. It communicates
+/// the validator's current position on a specific upgrade version.
+///
+/// # Fields
+///
+/// * `version` - The specific runtime version that this vote applies to.
+///
+/// * `vote` - The validator's explicit opinion on the upgrade (Aye/Nay/Absent).
+///
+/// * `is_compliant` - Indicates whether the validator is technically ready to process blocks with
+///   the upgrade version. When `true`, the validator has the necessary software version and
+///   configuration to handle the upgrade. This can be independent of the vote - a validator may
+///   vote `Nay` but still be prepared to follow the network if the upgrade is adopted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetworkUpgradePayload {
+    /// The runtime version that this vote applies to.
+    pub version: (u16, u16),
+    /// The validator's explicit opinion on the upgrade (Aye/Nay/Absent).
+    pub vote: Vote,
+    /// Indicates whether the validator is technically ready to process blocks with the upgrade
+    /// version.
+    pub is_compliant: bool,
+}
+
 pub const VERSION_1: u16 = 1;
+pub const VERSION_2: u16 = 2;
 
 /// Type that encapsulates non-deterministic data needed for consensus.
 #[derive(Debug, Clone, PartialEq)]
@@ -24,25 +90,36 @@ pub struct NonDeterministicData {
     pub bitcoin_block_hash: bitcoin::hash_types::BlockHash,
     pub aggregated_public_key: secp256k1::PublicKey,
     pub block_fee_recipient_address: Address,
+    pub runtime_version: (u16, u16),
+    pub network_upgrade_payload: Option<NetworkUpgradePayload>,
 }
 
 impl NonDeterministicData {
-    /// Returns the version based on whether a fee recipient address is present.
+    /// Returns the version of the non-deterministic data structure.
     pub fn version(&self) -> u16 {
         self.version
     }
 
-    /// Constructor for the NDD.
+    /// Returns the version of the Botanix runtime logic.
+    pub fn runtime_version(&self) -> (u16, u16) {
+        self.runtime_version
+    }
+
+    /// Constructor for the non-deterministic data (version 2).
     pub fn new(
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
         aggregated_public_key: secp256k1::PublicKey,
         block_fee_recipient_address: Address,
+        runtime_version: (u16, u16),
+        network_upgrade_payload: Option<NetworkUpgradePayload>,
     ) -> Self {
         Self {
-            version: VERSION_1,
+            version: VERSION_2,
             bitcoin_block_hash,
             aggregated_public_key,
             block_fee_recipient_address,
+            runtime_version,
+            network_upgrade_payload,
         }
     }
 
@@ -53,6 +130,19 @@ impl NonDeterministicData {
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
         self.version().consensus_encode(&mut writer)?;
         writer.write_all(self.block_fee_recipient_address.as_slice())?;
+
+        // Serialize runtime version.
+        self.runtime_version.consensus_encode(&mut writer)?;
+
+        // Serialize network upgrade payload, if available.
+        if let Some(p) = &self.network_upgrade_payload {
+            1u8.consensus_encode(&mut writer)?; // ~= Some(_)
+            p.version.consensus_encode(&mut writer)?;
+            (p.vote as u8).consensus_encode(&mut writer)?;
+            p.is_compliant.consensus_encode(&mut writer)?;
+        } else {
+            0u8.consensus_encode(&mut writer)?; // ~= None
+        }
 
         Ok(writer)
     }
@@ -79,16 +169,47 @@ impl NonDeterministicData {
             .map_err(|_e| encode::Error::ParseFailed("malformed block fee recipient address"))?;
         let block_fee_recipient_address = Address::from(address_bytes);
 
-        let this = Self {
+        let mut this = Self {
             version,
             bitcoin_block_hash,
             aggregated_public_key,
             block_fee_recipient_address,
+            runtime_version: GENESIS_RUNTIME_VERSION,
+            network_upgrade_payload: None,
         };
 
         match version {
-            VERSION_1 => {
-                // The expected version 1 NDD.
+            VERSION_2 => {
+                // Decode runtime version.
+                this.runtime_version = <(u16, u16)>::consensus_decode(reader)?;
+
+                // Check whether the network upgrade payload is included.
+                match u8::consensus_decode(reader)? {
+                    0 => {
+                        // Is NOT included, return.
+                        return Ok(this)
+                    }
+                    1 => {
+                        // Is included, proceed...
+                    }
+                    _ => return Err(NonDeterministicDataDeserializeError::InclusionIndicator),
+                }
+
+                // Decode payload information
+                let version = <(u16, u16)>::consensus_decode(reader)?;
+                let vote = match u8::consensus_decode(reader)? {
+                    0 => Vote::Absent,
+                    1 => Vote::Nay,
+                    2 => Vote::Aye,
+                    _ => {
+                        return Err(NonDeterministicDataDeserializeError::NetworkUpgradePayloadVote)
+                    }
+                };
+                let is_compliant = bool::consensus_decode(reader)?;
+
+                this.network_upgrade_payload =
+                    Some(NetworkUpgradePayload { version, vote, is_compliant });
+
                 Ok(this)
             }
             _ => {
