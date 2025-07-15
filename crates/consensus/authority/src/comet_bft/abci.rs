@@ -113,7 +113,7 @@ use super::proto_debug::{
     ResponsePrepareProposalTruncatedDebug,
 };
 use crate::{
-    activation_manager::{ActivationManager, OnProcessProposalDecision},
+    activation_manager::{ActivationManager, OnFinalizeBlockDecision, OnProcessProposalDecision},
     builder::BitcoinCheckpoint,
     comet_bft::{
         non_deterministic_data::{
@@ -2070,10 +2070,30 @@ where
                     }
                 };
 
+                let runtime_version = non_deterministic_data.runtime_version();
+                let network_upgrade_payload =
+                    non_deterministic_data.network_upgrade_payload().copied();
+
+                let floor_base_fee_per_gas = match runtime_version {
+                    RUNTIME_VERSION_ACTIVE => {
+                        // Continue; do not set a floor base fee per gas.
+                        debug!("finalize_block: Finalizing block with active runtime version: {runtime_version}");
+                        None
+                    }
+                    RUNTIME_VERSION_UPGRADE => {
+                        // Set floor base fee per gas.
+                        debug!("finalize_block: Finalizing block with UPGRADED version: {runtime_version}");
+                        Some(FLOOR_BASE_FEE_PER_GAS)
+                    }
+                    _ => unreachable!(),
+                };
+
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
-                    None,
+                    runtime_version,
+                    network_upgrade_payload,
+                    floor_base_fee_per_gas,
                     &block_fee_recipient_address,
                     self.storage.evm_config,
                     &self.provider_factory,
@@ -2102,6 +2122,32 @@ where
                 }
             }
         };
+
+        // Activation Manager: decide whether we're willing to accept
+        // the runtime version.
+        //
+        // Note that lagging validators will automatically accept an
+        // upgrade as long as they're specifically configured to do so
+        // (non-default behavior) - whether the upgrade conditions are
+        // met or not.
+        let comet_height = request.height as u64;
+        let runtime_version = block_with_context.runtime_version;
+        let proposer_address = Address::from_slice(&request.proposer_address);
+        let proposer_vote = block_with_context.network_upgrade_payload;
+        //
+        match self
+            .activation_manager
+            .on_finalize_block(runtime_version, comet_height, proposer_address, proposer_vote)
+            .expect("db cannot fail")
+        {
+            OnFinalizeBlockDecision::Finalize { version: _ } => {
+                // Continue...
+            }
+            OnFinalizeBlockDecision::RejectBlockDeadEnd { version } => {
+                error!("finalize_block: Rejecting finalized block with Botanix runtime version: {version}");
+                panic!("finalize_block: Rejecting Botanix upgrade '{version}' - can no longer proceed...");
+            }
+        }
 
         // Rpc node needs to store aggregate public key from block height 1
         let block_height = block_with_context.sealed_block_with_peg.block().number;
