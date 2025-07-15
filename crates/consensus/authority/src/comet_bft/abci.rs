@@ -32,7 +32,7 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, BlockWithSenders, SealedBlock, B256,
+    BlockNumber, BlockWithSenders, SealedBlock, B256, U256,
 };
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
@@ -58,6 +58,13 @@ use tendermint_proto::{
         Snapshot,
     },
 };
+
+/// The currently active Botanix runtime version.
+pub const RUNTIME_VERSION_ACTIVE: RuntimeVersion = GENESIS_RUNTIME_VERSION;
+/// The Botanix runtime version to eventually upgrade to.
+pub const RUNTIME_VERSION_UPGRADE: RuntimeVersion = RuntimeVersion::new(0, 2);
+/// The floor base fee per gas to be used for the upgraded Botanix runtime version.
+const FLOOR_BASE_FEE_PER_GAS: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
 
 impl From<&Snapshot> for SnapshotSyncStateLock {
     fn from(snapshot: &Snapshot) -> Self {
@@ -109,7 +116,9 @@ use crate::{
     activation_manager::ActivationManager,
     builder::BitcoinCheckpoint,
     comet_bft::{
-        non_deterministic_data::{NetworkUpgradePayload, NonDeterministicData},
+        non_deterministic_data::{
+            NetworkUpgradePayload, NonDeterministicData, GENESIS_RUNTIME_VERSION,
+        },
         utils::transactions_signed_from_bytes,
         vote_tracker::VoteWatcher,
     },
@@ -1299,8 +1308,19 @@ where
         let max_tx_bytes: usize =
             request.max_tx_bytes.try_into().expect("Invalid request proposal max_tx_bytes value");
 
-        // create non-deterministic data tx at index 0 so historical sync will pass verification
-        let non_deterministic_data = match self.non_deterministic_data() {
+        // Activation Manager: decide whether we should build for the current or
+        // upgraded runtime version.
+        let decision = self
+            .activation_manager
+            .on_prepare_proposal(request.height as u64)
+            .expect("db cannot fail");
+
+        let use_version = decision.version;
+        let upgrade_vote = decision.vote;
+
+        // Construct the NDD version 2 with a runtime version indicator
+        // and an (optional) network upgrade payload.
+        let non_deterministic_data = match self.non_deterministic_data(use_version, upgrade_vote) {
             Ok(ndd) => ndd,
             Err(e) => {
                 panic!(
@@ -1310,9 +1330,27 @@ where
             }
         };
 
+        let floor_base_fee_per_gas = match use_version {
+            RUNTIME_VERSION_ACTIVE => {
+                // Continue with active version.
+                debug!("prepare_proposal: Building with active version: {use_version}");
+
+                // Do not set a floor base fee per gas.
+                None
+            }
+            RUNTIME_VERSION_UPGRADE => {
+                debug!("prepare_proposal: Building with UPGRADED version: {use_version}");
+
+                // Set floor base fee per gas.
+                Some(FLOOR_BASE_FEE_PER_GAS)
+            }
+            _ => unreachable!(),
+        };
+
         trace!("non_deterministic_data={:?}", non_deterministic_data);
 
-        // serialize non-deterministic data tx to bytes
+        // serialize non-deterministic data tx at index 0 to bytes so historical
+        // sync will pass verification
         let non_deterministic_data_bytes = match self
             .serialize_non_deterministic_data_to_bytes(non_deterministic_data)
         {
@@ -1361,7 +1399,7 @@ where
             return response;
         }
 
-        let payload_config = match self.payload_builder_arguments() {
+        let mut payload_config = match self.payload_builder_arguments() {
             Ok(payload_config) => payload_config,
             Err(e) => {
                 panic!(
@@ -1371,6 +1409,14 @@ where
             }
         };
         let client = self.storage.client.clone();
+
+        // Set the floor base fee per gas if provided.
+        if let Some(floor) = floor_base_fee_per_gas {
+            let basefee = payload_config.initialized_block_env.basefee.to::<u64>();
+            let min_basefee = basefee.max(floor);
+
+            payload_config.initialized_block_env.basefee = U256::from(min_basefee);
+        }
 
         let build_args = BuildArguments {
             client,
