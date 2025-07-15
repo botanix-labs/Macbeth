@@ -113,7 +113,7 @@ use super::proto_debug::{
     ResponsePrepareProposalTruncatedDebug,
 };
 use crate::{
-    activation_manager::ActivationManager,
+    activation_manager::{ActivationManager, OnProcessProposalDecision},
     builder::BitcoinCheckpoint,
     comet_bft::{
         non_deterministic_data::{
@@ -1785,6 +1785,37 @@ where
             }
         };
 
+        // Activation Manager: decide whether we should process for the current
+        // or upgraded runtime version.
+        let floor_base_fee_per_gas;
+        let comet_height = request.height as u64;
+        let runtime_version = non_deterministic_data.runtime_version();
+        let network_upgrade_payload = non_deterministic_data.network_upgrade_payload().copied();
+        //
+        match self
+            .activation_manager
+            .on_process_proposal(comet_height, runtime_version)
+            .expect("db cannot fail")
+        {
+            OnProcessProposalDecision::Process { version, conditions: _ } => match version {
+                RUNTIME_VERSION_ACTIVE => {
+                    // Continue; do not set a floor base fee per gas.
+                    debug!("process_proposal: Processing with active version: {version}");
+                    floor_base_fee_per_gas = None;
+                }
+                RUNTIME_VERSION_UPGRADE => {
+                    // Set floor base fee per gas.
+                    debug!("process_proposal: Processing with UPGRADED version: {version}");
+                    floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS);
+                }
+                _ => unreachable!(),
+            },
+            OnProcessProposalDecision::RejectBlock { version, conditions: _ } => {
+                warn!("process_proposal: Rejecting block using Botanix runtime version: {version}");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        }
+
         // Validation done as a result of this call:
         // - botanix consensus package created on the fly and compared to the incoming block EDH
         // - mint validation checks
@@ -1794,6 +1825,9 @@ where
         match build_and_execute(
             txs,
             self.storage.chain_spec.clone(),
+            runtime_version,
+            network_upgrade_payload,
+            floor_base_fee_per_gas,
             &block_fee_recipient_address,
             self.storage.evm_config,
             &self.provider_factory,
@@ -2039,6 +2073,7 @@ where
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
+                    None,
                     &block_fee_recipient_address,
                     self.storage.evm_config,
                     &self.provider_factory,
