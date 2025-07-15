@@ -30,10 +30,10 @@ const VERSION_1: u16 = 1;
 /// Otherwise VERSION_1.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NonDeterministicData {
-    pub(crate) version: u16,
-    pub(crate) bitcoin_block_hash: bitcoin::hash_types::BlockHash,
-    pub(crate) aggregated_public_key: secp256k1::PublicKey,
-    pub(crate) block_fee_recipient_address: Option<Address>,
+    version: u16,
+    bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+    aggregated_public_key: secp256k1::PublicKey,
+    block_fee_recipient_address: Option<Address>,
 }
 
 impl NonDeterministicData {
@@ -43,6 +43,21 @@ impl NonDeterministicData {
             Some(_) => VERSION_1,
             None => VERSION_0,
         }
+    }
+
+    /// The Bitcoin block hash.
+    pub(crate) fn bitcoin_block_hash(&self) -> bitcoin::hash_types::BlockHash {
+        self.bitcoin_block_hash
+    }
+
+    /// The aggregate public key.
+    pub(crate) fn aggregated_public_key(&self) -> secp256k1::PublicKey {
+        self.aggregated_public_key
+    }
+
+    /// The block fee recipient, only available in version 1.
+    pub(crate) fn block_fee_recipient_address(&self) -> Option<Address> {
+        self.block_fee_recipient_address
     }
 
     /// Constructor for version 0 (without a fee recipient).

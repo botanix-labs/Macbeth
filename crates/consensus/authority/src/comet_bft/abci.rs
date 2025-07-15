@@ -1568,7 +1568,8 @@ where
 
         // Only NDD V1 is supported for block production so validate `block_fee_recipient_address`
         // exists
-        let block_fee_recipient_address = match non_deterministic_data.block_fee_recipient_address {
+        let block_fee_recipient_address = match non_deterministic_data.block_fee_recipient_address()
+        {
             Some(address) => address,
             None => {
                 warn!("Block fee recipient address is not set in process proposal");
@@ -1634,7 +1635,7 @@ where
         };
 
         // check non-deterministic data: btc block hash and aggregate public key
-        if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash {
+        if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash() {
             warn!("Bitcoin checkpoint block hash mismatch");
 
             if tracing::enabled!(tracing::Level::WARN) {
@@ -1661,7 +1662,7 @@ where
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
-        if agg_pk != non_deterministic_data.aggregated_public_key {
+        if agg_pk != non_deterministic_data.aggregated_public_key() {
             warn!("Aggregate public key mismatch");
 
             if tracing::enabled!(tracing::Level::WARN) {
@@ -1923,7 +1924,7 @@ where
                 // NDD V0 (no block_fee_recipient_address) is supported only for historical sync on
                 // testnet
                 let block_fee_recipient_address = match non_deterministic_data
-                    .block_fee_recipient_address
+                    .block_fee_recipient_address()
                 {
                     Some(address) => {
                         debug!(%address, "use proposed block fee recipient address");
@@ -1978,8 +1979,8 @@ where
                     &self.provider_factory,
                     &self.storage.bitcoind_factory,
                     self.storage.btc_network,
-                    &non_deterministic_data.bitcoin_block_hash,
-                    &non_deterministic_data.aggregated_public_key,
+                    &non_deterministic_data.bitcoin_block_hash(),
+                    &non_deterministic_data.aggregated_public_key(),
                     block_time,
                 ) {
                     Ok(block_with_context) => {
