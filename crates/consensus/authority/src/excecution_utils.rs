@@ -41,6 +41,7 @@ pub(crate) mod authority_execution_utils {
     pub(crate) fn build_and_execute<BF, DB>(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
+        floor_base_fee: Option<u64>,
         block_fee_recipient_address: &Address,
         evm_config: EthEvmConfig,
         database_provider: &ProviderFactory<DB>,
@@ -67,7 +68,7 @@ pub(crate) mod authority_execution_utils {
         );
 
         // Construct block and header
-        let header = build_header_template(
+        let mut header = build_header_template(
             &transactions,
             database_provider,
             bitcoin_checkpoint_block_hash,
@@ -76,6 +77,15 @@ pub(crate) mod authority_execution_utils {
             timestamp,
             block_fee_recipient_address,
         )?;
+
+        debug_assert!(header.base_fee_per_gas.is_some());
+
+        // Set the floor base fee per gas if provided.
+        header.base_fee_per_gas.as_mut().map(|base_fee| {
+            if let Some(floor) = floor_base_fee {
+                *base_fee = (*base_fee).max(floor);
+            }
+        });
 
         let mut block =
             Block { header, body: transactions, ommers: vec![], withdrawals: None, requests: None };
