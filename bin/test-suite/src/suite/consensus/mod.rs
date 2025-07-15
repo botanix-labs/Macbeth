@@ -11,8 +11,9 @@ use crate::{
 };
 use anyhow::Context;
 use async_trait::async_trait;
+use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use botanix_comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use client::BtcServerClient;
-use comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use common::{
     bitcoind_node::{
         create_bitcoind_node, BitcoindNodeConfig, Notifications as BitcoindNotifications,
@@ -32,7 +33,6 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_db::DatabaseEnv;
 use reth_network_peers::pk2id;
 use reth_primitives::{public_key_to_address, Address};
@@ -106,7 +106,7 @@ impl LocalContext {
     pub fn get_btc_server_process_port(&self, instance: usize) -> Option<u16> {
         self.btc_processes
             .as_ref()
-            .and_then(|processes| processes.iter().nth(instance).map(|val| val.port))
+            .and_then(|processes| processes.iter().nth(instance).map(|val| val.btc_server_port))
     }
 
     pub fn get_btc_server_processes_ids(&self) -> Vec<u32> {
@@ -129,7 +129,7 @@ impl LocalContext {
             .btc_processes
             .as_ref()
             .map(|btc_processes| {
-                btc_processes.iter().map(|process| process.port).collect::<Vec<u16>>()
+                btc_processes.iter().map(|process| process.btc_server_port).collect::<Vec<u16>>()
             })
             .unwrap_or_default();
 

@@ -19,6 +19,10 @@ alloy-sol-types = { workspace = true }
 # Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
+botanix-authority-edh = { workspace = true }
+
+# Botanix
+botanix-btc-wallet = { workspace = true }
 
 # Bitcoin signing server
 btc-server = { path = "../../../bin/btc-server" }
@@ -38,7 +42,6 @@ jsonrpsee-types = { workspace = true }
 # metrics
 metrics = { workspace = true }
 rand = { workspace = true }
-reth-btc-wallet = { workspace = true }
 reth-chain-state = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-errors = { workspace = true }

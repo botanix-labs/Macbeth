@@ -10,6 +10,9 @@ use crate::{
 use anyhow::Context;
 use askama::Template;
 use bitcoin::hashes::Hash;
+use botanix_authority_edh::extra_data_header::{
+    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+};
 use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient};
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::{
@@ -23,10 +26,7 @@ use reth_db::{
     models::ClientVersion,
     open_db_read_only, DatabaseEnv,
 };
-use reth_primitives::{
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    Address,
-};
+use reth_primitives::Address;
 use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
@@ -720,8 +720,10 @@ pub async fn create_poa_nodes(
     let poa_instances = global_context.fed_instances - global_context.syncing_instances;
 
     for member_index in 0..global_context.fed_instances {
-        let port = btc_server_processes
-            .and_then(|processes| processes.iter().nth(member_index as usize).map(|val| val.port))
+        let btc_server_port = btc_server_processes
+            .and_then(|processes| {
+                processes.iter().nth(member_index as usize).map(|val| val.btc_server_port)
+            })
             .context("Btc server process port must already exist")?;
 
         let (member_secretkey, _, member_peerid, _) = members_keypairs
@@ -739,7 +741,7 @@ pub async fn create_poa_nodes(
             global_context.bitcoind_user.clone(),
             global_context.bitcoind_pass.clone(),
             global_context.bitcoind_zmq_hash_block_address.clone(),
-            format!("localhost:{}", port),
+            format!("localhost:{}", btc_server_port),
             global_context.min_signers,
             global_context.max_signers,
             global_context.num_snapshots_to_keep,

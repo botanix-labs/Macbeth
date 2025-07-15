@@ -13,6 +13,8 @@ workspace = true
 
 [dependencies]
 
+botanix-authority-edh = { workspace = true }
+
 ## misc
 eyre = { workspace = true }
 

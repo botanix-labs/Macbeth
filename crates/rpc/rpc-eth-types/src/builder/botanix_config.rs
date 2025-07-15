@@ -3,12 +3,12 @@
 use std::{fmt, str::FromStr};
 
 use bitcoincore_rpc::RpcApi;
+use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use frost_secp256k1_tr::{self as frost};
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 
+use botanix_authority_edh::header_ext::HeaderExt;
 use btcserverlib::wallet::address::{generate_taproot_address, generate_tweaked_public_key};
-
-use reth_primitives::{header_ext::HeaderExt, U256};
+use reth_primitives::U256;
 use reth_storage_api::BlockReaderIdExt;
 use thiserror::Error;
 use tracing::error;

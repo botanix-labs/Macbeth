@@ -55,13 +55,13 @@ For example, to create a 3/3/3 federation, set `NODES_NUMBER=3`.
 
 Use `botanix-up` directly to specify max/min signers count.
 
-```bash
+````bash
 
 2. Start local-federation:
 
 ```bash
 make start-docker-local
-```
+````
 
 3. To stop the local federation, use:
 
@@ -91,9 +91,9 @@ make reset-docker-local
 
 ## Known issues
 
-- This setup is not tested on Windows.
-- You may see `permission denied` errors running `make clean-docker-local` on Ubuntu.
-  Please use `sudo` to remove CometBFT data files.
+-   This setup is not tested on Windows.
+-   You may see `permission denied` errors running `make clean-docker-local` on Ubuntu.
+    Please use `sudo` to remove CometBFT data files.
 
 ## Getting Help
 

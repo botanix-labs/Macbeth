@@ -1,9 +1,8 @@
 use bitcoin::Address;
 
+use botanix_authority_edh::extra_data_header::ExtraDataHeader;
 use ethers::types::H256;
 use hex::{self, encode as hex_encode};
-use reth_primitives::extra_data_header::ExtraDataHeader;
-
 use std::{collections::HashSet, str::FromStr, time::Duration};
 
 use crate::{

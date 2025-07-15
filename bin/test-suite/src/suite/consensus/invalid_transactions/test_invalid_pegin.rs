@@ -5,16 +5,14 @@ use bitcoin::{
     blockdata::block::Header, hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid,
 };
 use bitcoincore_rpc::RpcApi;
-use ethers::{prelude::Provider, providers::Http};
-use reth_primitives::{
-    botanix::{
-        peg_contract::{
-            PeginMeta, PeginMetaV0, PeginMetaV1, PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1,
-        },
-        utils::AmountExt,
+use botanix_authority_peg::{
+    peg_contract::{
+        PeginMeta, PeginMetaV0, PeginMetaV1, PEGIN_META_VERSION_V0, PEGIN_META_VERSION_V1,
     },
-    revm_primitives::{Address, FixedBytes, B256},
+    utils::AmountExt,
 };
+use ethers::{prelude::Provider, providers::Http};
+use reth_primitives::revm_primitives::{Address, FixedBytes, B256};
 use serde_json::json;
 
 use crate::{

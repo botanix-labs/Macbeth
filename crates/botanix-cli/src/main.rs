@@ -1,6 +1,6 @@
 use anyhow::Context;
+use botanix_authority_peg::peg_contract::PeginMeta;
 use clap::{Parser, Subcommand};
-use reth_primitives::botanix::peg_contract::PeginMeta;
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -43,8 +43,8 @@ fn main() {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use botanix_authority_peg::peg_contract::PeginMeta;
     use clap::CommandFactory;
-    use reth_primitives::botanix::peg_contract::PeginMeta;
     use std::{ffi::OsString, str::FromStr};
 
     // Helper function to parse command line arguments

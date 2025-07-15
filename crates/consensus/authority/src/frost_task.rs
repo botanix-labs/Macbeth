@@ -1,9 +1,4 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
-
 use crate::{
-    metrics::AuthorityMetrics,
-    prost_parser::{ProstError, ProstMessageSerdelizer},
-    random_source_provider::RandomSource,
     signing::SigningStateMachine,
     utils::{
         get_pending_pegouts_from_pegout_data, get_pending_pegouts_from_staged_pegouts,
@@ -12,15 +7,21 @@ use crate::{
     Storage,
 };
 use bitcoin::consensus::Encodable;
+use botanix_authority_edh::header_ext::HeaderExt;
+use botanix_authority_metrics::AuthorityMetrics;
+use botanix_authority_rsp::RandomSource;
+use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_data_parser::{
+    prost_parser::{ProstError, ProstMessageSerdelizer},
+    DataParser, Error as DataParserError,
+};
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     wallet::psbt::frost_id_from_bytes,
 };
 use client::{ConsensusCheckpointRequest, PendingPegout, Utxo};
-use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use futures::{pin_mut, StreamExt};
 use reth_chainspec::ChainSpec;
-use reth_data_parser::{DataParser, Error as DataParserError};
 use reth_network::{
     frost::{
         manager::{
@@ -32,12 +33,13 @@ use reth_network::{
     },
     NetworkHandle,
 };
-use reth_primitives::{header_ext::HeaderExt, Header, B256};
+use reth_primitives::{Header, B256};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StagedHeader,
     StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tendermint_rpc::client::HttpClient;
 use tokio::sync::mpsc::{self, error::SendError};
 use tracing::{error, info, warn};
@@ -384,7 +386,7 @@ where
         };
 
         if let Err(e) =
-            validate_psbt_by_ids(self.storage.client.clone(), self.storage.btc_network, &psbt).await
+            validate_psbt_by_ids(&self.storage.client, self.storage.btc_network, &psbt).await
         {
             error!(
                 target: "consensus::authority::frost_task::handle_canon_state_commit",
@@ -530,7 +532,8 @@ where
                     let header = entry.header;
 
                     let pegins = get_utxos_from_staged_pegins(entry.pegins);
-                    let pegouts = get_pending_pegouts_from_staged_pegouts(entry.pegouts);
+                    let pegouts =
+                        get_pending_pegouts_from_staged_pegouts(entry.pegouts, header.timestamp);
 
                     self.handle_canon_state_commit(header_hash, &header, pegins, pegouts).await;
                 }
@@ -550,9 +553,13 @@ where
                             get_utxos_from_pegin_meta(pegins.as_slice())
                         });
 
-                        // Convert pegouts into correct format
+                        // convert pegouts into correct format
                         let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {
-                            get_pending_pegouts_from_pegout_data(pegouts.as_slice(), header.number)
+                            get_pending_pegouts_from_pegout_data(
+                                pegouts,
+                                tip.number,
+                                tip.header().timestamp,
+                            )
                         });
 
                         self.handle_canon_state_commit(
@@ -663,7 +670,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    self.storage.client.clone(),
+                                    &self.storage.client,
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -695,7 +702,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    self.storage.client.clone(),
+                                    &self.storage.client,
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -727,7 +734,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    self.storage.client.clone(),
+                                    &self.storage.client,
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -759,7 +766,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    self.storage.client.clone(),
+                                    &self.storage.client,
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )

@@ -1,17 +1,20 @@
 //! Wallet state sync module
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
+use crate::{
+    utils::{get_block_pegouts, EpochPegoutsError},
+    Storage,
 };
-
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
+use botanix_authority_edh::extra_data_header::ExtraDataHeaderDeserializeError;
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_data_parser::{
+    prost_parser::ProstMessageSerdelizer, DataParser, Error as CompressorError, SerializationType,
+};
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
 };
 use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
-use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_data_parser::{DataParser, Error as CompressorError, SerializationType};
+use once_cell::sync::Lazy;
 use reth_db::{
     models::{uuid_to_b256, PeerID, UuidID, WalletStateSyncRecord},
     DatabaseEnv,
@@ -21,21 +24,27 @@ use reth_network::frost::{
     manager::{FrostCommand, FrostConfig, ToFrostManager},
     PeerMessageResponse,
 };
-use reth_primitives::{extra_data_header::ExtraDataHeaderDeserializeError, Bytes};
+use reth_primitives::Bytes;
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
     ProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use reth_tasks::TaskExecutor;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::{mpsc::error::SendError, RwLock};
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
-use crate::{
-    prost_parser::ProstMessageSerdelizer,
-    utils::{get_block_pegouts, EpochPegoutsError},
-    Storage,
-};
+const MAX_BLOCK_TS_CUTOFF_DURATION_SECS: u64 = 30 * 24 * 60 * 60 * 3; // 3 months
+
+/// Maximum duration for block timestamp cutoff
+/// This is used to determine how far back we should consider finalized pegouts when syncing.
+pub static MAX_BLOCK_TS_CUTOFF_DURATION: Lazy<Duration> =
+    Lazy::new(|| Duration::from_secs(MAX_BLOCK_TS_CUTOFF_DURATION_SECS));
 
 #[derive(Debug, thiserror::Error)]
 /// Wallet state synchronization errors
@@ -183,7 +192,7 @@ async fn hydrate_minimum_superset(
     minimum_superset: HashSet<(u64, Bytes)>,
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
-) -> Result<HashMap<u64, Vec<Bytes>>, EpochPegoutsError> {
+) -> Result<HashMap<u64, Vec<(PegoutId, u64)>>, EpochPegoutsError> {
     // Group data by block number
     let mut superset_map: HashMap<u64, Vec<Bytes>> = HashMap::new();
     for (block_num, data) in minimum_superset {
@@ -193,16 +202,21 @@ async fn hydrate_minimum_superset(
     // Create futures for each block
     let futures = superset_map.into_iter().map(|(block, data)| async move {
         // Get valid pegout IDs for this block
-        let pegouts_result = get_block_pegouts(block, client, btc_network).await;
+        let pegouts_result =
+            get_block_pegouts(block, client, btc_network, Some(*MAX_BLOCK_TS_CUTOFF_DURATION))
+                .await;
 
         match pegouts_result {
             Ok(pegouts_in_block) => {
                 // Filter data to only include valid pegout IDs
                 let hydrated_data = data
                     .into_iter()
-                    .filter(|item| match PegoutId::from_bytes(item) {
-                        Ok(pegout_id) => pegouts_in_block.contains(&pegout_id),
-                        Err(_) => false,
+                    .filter_map(|item| match PegoutId::from_bytes(&item) {
+                        Ok(pegout_id) => pegouts_in_block
+                            .iter()
+                            .find(|(block_pegout_id, _)| *block_pegout_id == pegout_id)
+                            .cloned(),
+                        Err(_) => None,
                     })
                     .collect::<Vec<_>>();
 
@@ -394,10 +408,11 @@ where
                                                 let finalized_pegout_ids = hydrated_minimum_superset
                                                 .into_iter()
                                                 .flat_map(|(block, data)| {
-                                                    data.into_iter().map(move |pegout_id| {
+                                                    data.into_iter().map(move |(pegout_id, timestamp)| {
                                                         FinalizedPegout {
                                                             botanix_block_height: block,
-                                                            id: pegout_id.to_vec(),
+                                                            id: pegout_id.as_bytes().to_vec(),
+                                                            botanix_block_timestamp: timestamp,
                                                         }
                                                     })
                                                 })

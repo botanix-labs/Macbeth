@@ -1,19 +1,20 @@
 //! POA node command
 
 use bitcoincore_zmq::subscribe_async_wait_handshake;
+use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
+use botanix_authority_rsp::RandomSourceProvider;
+use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use clap::{value_parser, Parser};
 use client::Empty;
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
     comet_bft::abci::ABCIDriver,
-    random_source_provider::RandomSourceProvider,
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     wallet_state_sync::WalletStateSync,
@@ -38,7 +39,7 @@ use reth_node_metrics::{
     version::VersionInfo,
 };
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::{botanix::mint_validation::MINT_CONTRACT_ADDRESS, Address};
+use reth_primitives::Address;
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
 use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
@@ -53,14 +54,14 @@ use crate::{
     cli::NoArgs,
     payload::PayloadBuilderService,
 };
-use reth_authority_consensus::bitcoin_checkpoint::{
+use botanix_bitcoin_checkpoint::{
     BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
     DummyHashBlockStream,
 };
-use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_btc_wallet::bitcoind::{
+use botanix_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
+use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
@@ -445,12 +446,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.map(Into::into),
+                btc_signing_server_jwt_secret.map(|s| btcserverlib::jwt::JwtSecret(s.0)),
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };
 
-            let mut client =
+            let mut btc_server_client =
                 match retry_exec("btc_server_start", fut, 3, Duration::from_secs(2)).await {
                     Ok(client) => client,
                     Err(err) => {
@@ -461,7 +462,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             info!(target: "reth::cli", "Btc server connected");
 
             // Check our connection to the btc server is authenticated properly
-            client.health_check(Empty {}).await.map_err(|err| {
+            btc_server_client.health_check(Empty {}).await.map_err(|err| {
                 error!(target: "reth::cli", "Failed to authenticate to btc server: {}", err);
                 eyre::eyre!("Failed to authenticate to btc server: {}", err)
             })?;
@@ -832,6 +833,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
+        let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
         let (frost_task, abci_client_builder, snapshot_manager, wallet_sync) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
@@ -855,6 +857,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 node_config.clone().state_sync,
                 provider_factory.clone(),
                 *block_fee_recipient_address,
+                bitcoind_client,
             ) {
                 Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
                 Err(e) => {
