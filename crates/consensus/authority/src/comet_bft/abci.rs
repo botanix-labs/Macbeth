@@ -1406,8 +1406,32 @@ where
         let max_tx_bytes: usize =
             request.max_tx_bytes.try_into().expect("Invalid request proposal max_tx_bytes value");
 
+        // Activation Manager: decide whether we should build for the current or
+        // upgraded runtime version.
+        let decision = self
+            .activation_manager
+            .on_prepare_proposal(request.height as u64)
+            .expect("db cannot fail");
+
+        let use_version = decision.version;
+        let upgrade_vote = decision.vote;
+
+        let mut floor_base_fee_per_gas = None;
+        match use_version {
+            RUNTIME_VERSION_ACTIVE => {
+                // Continue; do not set a floor base fee per gas.
+                debug!("prepare_proposal: Building with active version: {use_version}");
+            }
+            RUNTIME_VERSION_UPGRADE => {
+                // Set floor base fee per gas.
+                debug!("prepare_proposal: Building with UPGRADED version: {use_version}");
+                floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS);
+            }
+            _ => unreachable!(),
+        };
+
         // create non-deterministic data tx at index 0 so historical sync will pass verification
-        let non_deterministic_data = match self.non_deterministic_data() {
+        let non_deterministic_data = match self.non_deterministic_data(use_version, upgrade_vote) {
             Ok(ndd) => ndd,
             Err(e) => {
                 panic!(
@@ -1468,7 +1492,7 @@ where
             return response;
         }
 
-        let payload_config = match self.payload_builder_arguments() {
+        let mut payload_config = match self.payload_builder_arguments() {
             Ok(payload_config) => payload_config,
             Err(e) => {
                 panic!(
@@ -1477,7 +1501,15 @@ where
                 );
             }
         };
+
         let client = self.storage.client.clone();
+
+        // Set the floor base fee per gas if provided.
+        if let Some(floor) = floor_base_fee_per_gas {
+            let basefee = payload_config.initialized_block_env.basefee.to::<u64>();
+
+            payload_config.initialized_block_env.basefee = U256::from(basefee.max(floor));
+        }
 
         let build_args = BuildArguments {
             client,
