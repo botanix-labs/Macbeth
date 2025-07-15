@@ -1,5 +1,9 @@
 use crate::{
-    comet_bft::abci::{ABCIClientBuilder, ABCIDriverMessage},
+    activation_manager::ActivationManager,
+    comet_bft::{
+        abci::{ABCIClientBuilder, ABCIDriverMessage},
+        vote_tracker::VoteWatcher,
+    },
     frost_task::FrostTask,
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
@@ -22,9 +26,11 @@ use reth_network::{
 };
 use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::EthEvmConfig;
-use reth_primitives::header_ext::HeaderExt;
+use reth_primitives::{header_ext::HeaderExt, Address};
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader, SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader, WalletStateSyncWriter
+    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
+    SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader,
+    WalletStateSyncWriter,
 };
 
 use reth_tasks::TaskExecutor;
@@ -42,6 +48,7 @@ pub(crate) type BitcoinCheckpoint = Arc<TokioRwLock<Option<(bitcoin::block::Head
 pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_block_header: Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>,
     network_handle: NetworkHandle,
@@ -90,6 +97,7 @@ where
     pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         client: DB,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         btc_server_factory: Option<GrpcClientFactory>,
         bitcoin_block_header: BitcoinCheckpoint,
         sk: secp256k1::SecretKey,
@@ -179,6 +187,7 @@ where
 
         Ok(Self {
             storage,
+            activation_manager,
             consensus: AuthorityConsensus::new(chain_spec),
             btc_server_factory,
             bitcoin_block_header,
@@ -215,6 +224,7 @@ where
             btc_server_factory,
             consensus,
             storage,
+            activation_manager,
             bitcoin_block_header,
             network_handle,
             frost_handle,
@@ -291,6 +301,7 @@ where
         // all nodes will have an abci client builder
         let abci_client_builder = Some(ABCIClientBuilder::new(
             storage.clone(),
+            activation_manager,
             bitcoin_block_header,
             consensus.clone(),
             cometbft_rpc_factory.clone(),

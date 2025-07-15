@@ -106,10 +106,12 @@ use super::proto_debug::{
     ResponsePrepareProposalTruncatedDebug,
 };
 use crate::{
+    activation_manager::ActivationManager,
     builder::BitcoinCheckpoint,
     comet_bft::{
         non_deterministic_data::{NetworkUpgradePayload, NonDeterministicData},
         utils::transactions_signed_from_bytes,
+        vote_tracker::VoteWatcher,
     },
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     metrics::AuthorityMetrics,
@@ -201,6 +203,7 @@ pub struct BlockWithContext {
 #[derive(Clone)]
 pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoint: BitcoinCheckpoint,
     authority_consensus: AuthorityConsensus,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -231,6 +234,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         authority_consensus: AuthorityConsensus,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -246,6 +250,7 @@ where
     ) -> Self {
         Self {
             storage,
+            activation_manager,
             bitcoin_checkpoint,
             authority_consensus,
             cbft_rpc_client_factory,
@@ -273,6 +278,7 @@ where
         let app = ABCIClient::new(
             self.storage.clone(),
             tx_pool,
+            self.activation_manager.clone(),
             self.bitcoin_checkpoint.clone(),
             self.abci_driver_tx.clone(),
             self.cbft_rpc_client_factory.clone(),
@@ -337,6 +343,7 @@ enum PayloadBuilderError {
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
     pool: Pool,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, BlockWithContext>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
@@ -372,6 +379,7 @@ where
     fn new(
         storage: Storage<EF, BF, DB>,
         pool: Pool,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -389,6 +397,7 @@ where
         Self {
             storage: storage.clone(),
             pool,
+            activation_manager,
             bitcoin_checkpoint,
             // Saving the last 5 blocks that were proposed
             block_cache: Arc::new(RwLock::new(LruMap::new(ByLength::new(5)))),
@@ -2335,7 +2344,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{builder::BitcoinCheckpoint, Storage};
+    use crate::{
+        activation_manager::ActivationManagerBuilder, builder::BitcoinCheckpoint,
+        comet_bft::non_deterministic_data::GENESIS_RUNTIME_VERSION, Storage,
+    };
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,
@@ -2434,6 +2446,10 @@ mod tests {
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
 
+        let activation_manager =
+            ActivationManagerBuilder::new(VoteWatcher::default(), GENESIS_RUNTIME_VERSION)
+                .build_ignore_nework_upgrade();
+
         let bitcoin_header = Header {
             version: Version::default(),
             prev_blockhash: BlockHash::all_zeros(),
@@ -2453,6 +2469,7 @@ mod tests {
         ABCIClient::new(
             storage,
             transaction_pool,
+            activation_manager,
             bitcoin_checkpoint,
             driver_tx,
             cometbft_rpc_factory,
