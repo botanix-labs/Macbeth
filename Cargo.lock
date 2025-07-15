@@ -2456,6 +2456,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-storage-migrate"
+version = "1.1.5"
+dependencies = [
+ "botanix-storage",
+ "eyre",
+ "reth-db",
+ "reth-db-api",
+ "reth-primitives",
+ "tracing",
+]
+
+[[package]]
 name = "botanix-up"
 version = "1.1.5"
 dependencies = [
@@ -8870,6 +8882,7 @@ dependencies = [
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "botanix-storage",
+ "botanix-storage-migrate",
  "btc-server",
  "clap",
  "client",

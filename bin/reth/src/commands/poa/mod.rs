@@ -46,7 +46,7 @@ use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
-use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, ffi::OsString, fmt, fs, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
@@ -62,6 +62,7 @@ use botanix_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
 use botanix_storage::BotanixProviderFactory;
+use botanix_storage_migrate::migrate_botanix_tables;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
@@ -402,15 +403,30 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let botanix_db_path = data_dir.data_dir().join(BOTANIX_DB_PATH);
         let executor = ctx.task_executor;
 
+        // If botanix database path does not exist, it means we didn't migrate botanix tables yet.
+        let is_migration_needed = fs::exists(&reth_db_path)? && !fs::exists(&botanix_db_path)?;
+
         tracing::info!(target: "reth::cli", path = ?reth_db_path, "Opening reth database");
         let reth_database =
-            Arc::new(init_db(reth_db_path.clone(), self.db.database_args())?.with_metrics());
+            Arc::new(init_db(&reth_db_path, self.db.database_args())?.with_metrics());
 
         tracing::info!(target: "reth::cli", path = ?botanix_db_path, "Opening botanix database");
-        let botanix_database = init_db(botanix_db_path, self.db.database_args())?;
+        let botanix_database = init_db(&botanix_db_path, self.db.database_args())?;
         let botanix_database = Arc::new(botanix_database);
 
-        // TODO: Migrate data if needed
+        // Move botanix tables from reth to botanix database
+        if is_migration_needed {
+            migrate_botanix_tables(&reth_database, &botanix_database).or_else(|e| {
+                // If migration fails, we remove the botanix database directory to start from
+                // scratch on the next run.
+                fs::remove_dir_all(&botanix_db_path).wrap_err(format!(
+                    "Failed to remove botanix database directory {}",
+                    botanix_db_path.display()
+                ))?;
+
+                Err(e)
+            })?;
+        }
 
         if *with_unused_ports {
             node_config = node_config.with_unused_ports();
