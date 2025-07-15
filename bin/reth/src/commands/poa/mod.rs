@@ -13,7 +13,11 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
-    comet_bft::abci::ABCIDriver,
+    activation_manager::ActivationManagerBuilder,
+    comet_bft::{
+        abci::{ABCIDriver, RUNTIME_VERSION_ACTIVE, RUNTIME_VERSION_UPGRADE},
+        vote_tracker::VoteWatcher,
+    },
     random_source_provider::RandomSourceProvider,
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
@@ -57,7 +61,7 @@ use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
 use reth_consensus_common::utils;
-use reth_db::{database::Database, init_db, DatabaseEnv};
+use reth_db::{database::Database, init_db, models::Vote, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
     frost::{manager::FrostConfig, protocol::FrostProtoHandler},
@@ -771,12 +775,42 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
+        let quorum;
+        let min_validator_count;
+        let target_height;
+        let our_vote;
+
+        // ActivationManager: setup parameters and conditions.
+        if *is_testnet {
+            quorum = 100; // 100% ~= 3/3 members must approve
+            min_validator_count = 3;
+            target_height = 1; // Activate as soon as possible
+            our_vote = Vote::Aye;
+        } else {
+            quorum = 100; // 100% ~= 15/15 members must approve
+            min_validator_count = 15;
+            target_height = 1; // Activate as soon as possible
+            our_vote = Vote::Aye;
+        }
+
+        // ActivationManager: setup compliance and vote inclusion.
+        let activation_manager =
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_ACTIVE)
+                .build_COMPLIANT_network_upgrade(
+                    RUNTIME_VERSION_UPGRADE,
+                    quorum,
+                    min_validator_count,
+                    target_height,
+                    Some(our_vote),
+                );
+
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
         let (frost_task, abci_client_builder, snapshot_manager, wallet_sync) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
                 blockchain_db.clone(),
+                activation_manager,
                 btc_server_factory.clone(),
                 bitcoin_block_header_clone.clone(),
                 secret_key,
