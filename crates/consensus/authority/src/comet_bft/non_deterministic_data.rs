@@ -344,6 +344,7 @@ pub struct NetworkUpgradePayload {
 #[cfg(test)]
 mod tests {
     use bitcoin::{hashes::Hash, BlockHash};
+    use reth_db::models::Vote;
 
     use super::*;
 
@@ -430,7 +431,7 @@ mod tests {
             pk,
             block_fee_recipient_address,
             runtime_version,
-            payload.clone(),
+            payload,
         );
         assert_eq!(ndd.version, VERSION_2);
         assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
@@ -475,13 +476,85 @@ mod tests {
         let block_fee_recipient_address =
             Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
                 .expect("valid address");
+
         let ndd = NonDeterministicData::new_v1(bitcoin_block_hash, pk, block_fee_recipient_address);
         let res = ndd.serialize().unwrap();
         let mut reader = io::Cursor::new(res);
         let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
+
         assert_eq!(deserialized.version, ndd.version);
         assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
         assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
         assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
+        assert_eq!(deserialized.runtime_version, ndd.runtime_version);
+        assert_eq!(deserialized.network_upgrade_payload, ndd.network_upgrade_payload);
+    }
+
+    #[test]
+    fn test_non_deterministic_data_serde_v2() {
+        let bitcoin_block_hash = BlockHash::all_zeros();
+        let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
+            hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let block_fee_recipient_address =
+            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
+                .expect("valid address");
+
+        let runtime_version = RuntimeVersion::new(1, 0);
+
+        let assert_ndd = |network_upgrade_payload: Option<NetworkUpgradePayload>| {
+            let ndd = NonDeterministicData::new_v2(
+                bitcoin_block_hash,
+                pk,
+                block_fee_recipient_address,
+                runtime_version,
+                network_upgrade_payload,
+            );
+            let res = ndd.serialize().unwrap();
+            let mut reader = io::Cursor::new(res);
+            let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
+
+            // TODO (lamafab): This must be updated to `VERSION_2` post-fork.
+            assert_eq!(deserialized.version, VERSION_1);
+            assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
+            assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
+            assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
+            assert_eq!(deserialized.runtime_version, ndd.runtime_version);
+            // Check network upgrade payload.
+            assert_eq!(deserialized.network_upgrade_payload, ndd.network_upgrade_payload);
+            assert_eq!(deserialized.network_upgrade_payload, network_upgrade_payload);
+        };
+
+        // Without network upgrade payload
+        let payload = None;
+        assert_ndd(payload);
+
+        // With network upgrade payloads
+        let payload = Some(NetworkUpgradePayload {
+            version: RuntimeVersion::new(2, 5),
+            vote: Vote::Absent,
+            is_compliant: false,
+        });
+
+        assert_ndd(payload);
+
+        let payload = Some(NetworkUpgradePayload {
+            version: RuntimeVersion::new(2, 5),
+            vote: Vote::Nay,
+            is_compliant: true,
+        });
+
+        assert_ndd(payload);
+
+        let payload = Some(NetworkUpgradePayload {
+            version: RuntimeVersion::new(2, 5),
+            vote: Vote::Aye,
+            is_compliant: true,
+        });
+
+        assert_ndd(payload);
     }
 }
