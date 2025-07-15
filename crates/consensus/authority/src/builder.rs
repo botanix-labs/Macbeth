@@ -1,5 +1,9 @@
 use crate::{
-    comet_bft::abci::{ABCIClientBuilder, ABCIDriverMessage},
+    activation_manager::ActivationManager,
+    comet_bft::{
+        abci::{ABCIClientBuilder, ABCIDriverMessage},
+        vote_tracker::VoteWatcher,
+    },
     frost_task::FrostTask,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
     wallet_state_sync::WalletStateSyncEngine,
@@ -25,6 +29,7 @@ use reth_network::{
 };
 use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::EthEvmConfig;
+use reth_primitives::Address;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
     SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader,
@@ -44,6 +49,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, DB, BD, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
     btc_server_factory: Option<GrpcClientFactory>,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     network_handle: NetworkHandle,
     frost_handle: Option<ToFrostMan>,
@@ -95,6 +101,7 @@ where
         chain_spec: Arc<ChainSpec>,
         client: DB,
         btc_server_factory: Option<GrpcClientFactory>,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         sk: secp256k1::SecretKey,
         network_handle: NetworkHandle,
@@ -186,6 +193,7 @@ where
             storage,
             consensus: AuthorityConsensus::new(chain_spec),
             btc_server_factory,
+            activation_manager,
             bitcoin_checkpoints,
             network_handle,
             frost_handle,
@@ -221,6 +229,7 @@ where
             btc_server_factory,
             consensus,
             storage,
+            activation_manager,
             bitcoin_checkpoints,
             network_handle,
             frost_handle,
@@ -298,6 +307,7 @@ where
         // all nodes will have an abci client builder
         let abci_client_builder = Some(ABCIClientBuilder::new(
             storage.clone(),
+            activation_manager,
             bitcoin_checkpoints,
             consensus.clone(),
             cometbft_rpc_factory.clone(),

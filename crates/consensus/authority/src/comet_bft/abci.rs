@@ -99,6 +99,11 @@ pub enum ApplySnapshotResult {
     RejectSnapshot = 5,
 }
 use crate::{
+    activation_manager::{
+        ActivationManager, NetworkUpgradePayload, OnFinalizeBlockDecision,
+        OnProcessProposalDecision,
+    },
+    comet_bft::vote_tracker::VoteWatcher,
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
     utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
@@ -199,6 +204,7 @@ pub struct BlockWithContext {
 #[derive(Clone)]
 pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     authority_consensus: AuthorityConsensus,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -230,6 +236,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         authority_consensus: AuthorityConsensus,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -255,6 +262,7 @@ where
 
         Self {
             storage,
+            activation_manager,
             bitcoin_checkpoints,
             authority_consensus,
             cbft_rpc_client_factory,
@@ -283,6 +291,7 @@ where
         let app = ABCIClient::new(
             self.storage.clone(),
             tx_pool,
+            self.activation_manager.clone(),
             self.bitcoin_checkpoints.clone(),
             self.abci_driver_tx.clone(),
             self.cbft_rpc_client_factory.clone(),
@@ -357,6 +366,7 @@ struct BlockCache {
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
     pool: Pool,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     block_cache: Arc<RwLock<BlockCache>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
@@ -392,6 +402,7 @@ where
     fn new(
         storage: Storage<EF, BF, DB>,
         pool: Pool,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -416,6 +427,7 @@ where
         Self {
             storage: storage.clone(),
             pool,
+            activation_manager,
             bitcoin_checkpoints,
             // Saving the last 5 blocks that were proposed
             block_cache,
