@@ -62,6 +62,13 @@ use tendermint_proto::{
     },
 };
 
+/// The currently active Botanix runtime version.
+pub const RUNTIME_VERSION_ACTIVE: RuntimeVersion = RuntimeVersion::new(0, 1);
+/// The Botanix runtime version to eventually upgrade to.
+pub const RUNTIME_VERSION_UPGRADE: RuntimeVersion = RuntimeVersion::new(0, 2);
+/// The floor base fee per gas to be used for the upgraded Botanix runtime version.
+const FLOOR_BASE_FEE_PER_GAS: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
+
 impl From<&Snapshot> for SnapshotSyncStateLock {
     fn from(snapshot: &Snapshot) -> Self {
         let mut s = SnapshotSyncStateLock::default();
@@ -116,7 +123,7 @@ use crate::{
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
 use botanix_comet_bft_rpc::{
-    non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
+    non_deterministic_data::{NonDeterministicData, VERSION_2 as LATEST_NDD_VERSION},
     proto_debug::{
         RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
         RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
