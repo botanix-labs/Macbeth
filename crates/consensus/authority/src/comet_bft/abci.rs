@@ -202,6 +202,10 @@ impl SnapshotSyncStateLock {
 pub struct BlockWithContext {
     /// The sealed block with peg data
     pub sealed_block_with_peg: SealedBlockWithPeg,
+    /// The Botanix runtime version.
+    pub runtime_version: RuntimeVersion,
+    /// The optional network upgrade payload.
+    pub network_upgrade_payload: Option<NetworkUpgradePayload>,
     /// The execution outcome
     pub exec_outcome: ExecutionOutcome,
     /// The trie updates

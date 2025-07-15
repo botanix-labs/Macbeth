@@ -2,7 +2,7 @@ pub(crate) mod authority_execution_utils {
     use reth_btc_wallet::bitcoind::BitcoindFactory;
     use reth_chainspec::{ChainSpec, EthereumHardforks};
 
-    use reth_db::Database;
+    use reth_db::{models::RuntimeVersion, Database};
     use reth_evm::execute::{BatchExecutor, BlockExecutorProvider, Executor};
     use reth_evm_ethereum::execute::EthBlockExecutor;
     use reth_execution_errors::{
@@ -27,7 +27,7 @@ pub(crate) mod authority_execution_utils {
     use reth_trie::StateRoot;
     use reth_trie_db::DatabaseStateRoot;
 
-    use crate::comet_bft::abci::BlockWithContext;
+    use crate::comet_bft::{abci::BlockWithContext, non_deterministic_data::NetworkUpgradePayload};
     use std::sync::Arc;
     use tendermint_proto::google::protobuf::Timestamp;
 
@@ -39,6 +39,9 @@ pub(crate) mod authority_execution_utils {
     pub(crate) fn build_and_execute<BF, DB>(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<ChainSpec>,
+        runtime_version: RuntimeVersion,
+        network_upgrade_payload: Option<NetworkUpgradePayload>,
+        floor_base_fee: Option<u64>,
         block_fee_recipient_address: &Address,
         evm_config: EthEvmConfig,
         database_provider: &ProviderFactory<DB>,
@@ -65,7 +68,7 @@ pub(crate) mod authority_execution_utils {
         );
 
         // Construct block and header
-        let header = build_header_template(
+        let mut header = build_header_template(
             &transactions,
             database_provider,
             bitcoin_checkpoint_block_hash,
@@ -74,6 +77,15 @@ pub(crate) mod authority_execution_utils {
             timestamp,
             block_fee_recipient_address,
         )?;
+
+        debug_assert!(header.base_fee_per_gas.is_some());
+
+        // Set the floor base fee per gas if provided.
+        if let Some(base_fee) = header.base_fee_per_gas.as_mut() {
+            if let Some(floor) = floor_base_fee {
+                *base_fee = (*base_fee).max(floor);
+            }
+        }
 
         let mut block =
             Block { header, body: transactions, ommers: vec![], withdrawals: None, requests: None };
@@ -129,8 +141,13 @@ pub(crate) mod authority_execution_utils {
         )
         .map_err(|e| BlockExecutionError::Validation(BlockValidationError::StateRoot(e)))?;
 
-        let block_with_context =
-            BlockWithContext { sealed_block_with_peg, exec_outcome, trie_updates };
+        let block_with_context = BlockWithContext {
+            sealed_block_with_peg,
+            runtime_version,
+            network_upgrade_payload,
+            exec_outcome,
+            trie_updates,
+        };
 
         if tracing::enabled!(tracing::Level::INFO) {
             let block_with_pegs = &block_with_context.sealed_block_with_peg;
@@ -164,6 +181,8 @@ pub(crate) mod authority_execution_utils {
                     block_slow_hash = ?block.hash_slow(),
                     block_sealed_hash = ?block.hash(),
                     eth_block = ?block,
+                    runtimve_version = ?block_with_context.runtime_version,
+                    network_upgrade_payload = ?block_with_context.network_upgrade_payload,
                     pegins = ?block_with_pegs.pegins(),
                     pegouts = ?block_with_pegs.pegouts(),
                     receipts = ?exec_outcome.receipts,
