@@ -4,7 +4,7 @@ use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::ExecutedBlock;
 use reth_chainspec::{ChainSpec, BOTANIX_TESTNET_CHAIN_ID};
 use reth_db::{
-    models::{self, SnapshotSync, SnapshotSyncId},
+    models::{self, RuntimeVersion, SnapshotSync, SnapshotSyncId},
     Database, DatabaseEnv,
 };
 use reth_provider::{
@@ -108,7 +108,8 @@ use super::proto_debug::{
 use crate::{
     builder::BitcoinCheckpoint,
     comet_bft::{
-        non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
+        non_deterministic_data::{NetworkUpgradePayload, NonDeterministicData},
+        utils::transactions_signed_from_bytes,
     },
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     metrics::AuthorityMetrics,
@@ -448,18 +449,23 @@ where
         ))
     }
 
-    pub(crate) fn non_deterministic_data(&self) -> Result<NonDeterministicData, ConsensusError> {
+    pub(crate) fn non_deterministic_data(
+        &self,
+        runtime_version: RuntimeVersion,
+        network_upgrade_payload: Option<NetworkUpgradePayload>,
+    ) -> Result<NonDeterministicData, ConsensusError> {
         let aggregate_public_key = self.aggregate_public_key()?;
         let block_fee_recipient_address = self
             .block_fee_recipient_address
             .ok_or(ConsensusError::MissingBlockFeeRecipientAddress)?;
 
-        // Only v1 is supported for block production
-        // v0 is only used for historical syncing in testnet
-        let ndd = NonDeterministicData::new_v1(
+        // Construct a NDD using version 2.
+        let ndd = NonDeterministicData::new_v2(
             self.bitcoin_blockhash()?,
             aggregate_public_key,
             block_fee_recipient_address,
+            runtime_version,
+            network_upgrade_payload,
         );
 
         Ok(ndd)
@@ -2467,7 +2473,7 @@ mod tests {
         client: &ABCIClientType,
     ) -> Result<prost::bytes::Bytes, ConsensusError> {
         client
-            .non_deterministic_data()
+            .non_deterministic_data(GENESIS_RUNTIME_VERSION, None)
             .and_then(|ndd| client.serialize_non_deterministic_data_to_bytes(ndd))
     }
 
@@ -2683,7 +2689,8 @@ mod tests {
         let mut request = RequestFinalizeBlock::default();
 
         // first tx should be non-deterministic data
-        let ndd = abci_client.non_deterministic_data().expect("to have ndd");
+        let ndd =
+            abci_client.non_deterministic_data(GENESIS_RUNTIME_VERSION, None).expect("to have ndd");
         let ndd_bytes =
             abci_client.serialize_non_deterministic_data_to_bytes(ndd).expect("to serialize ndd");
 
