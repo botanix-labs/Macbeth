@@ -5,7 +5,6 @@ use crate::activation_manager::{
 };
 use reth_db::models::activation_manager::{RuntimeVersion, Vote};
 use reth_provider::ActivationManagerReaderWriter;
-use secp256k1::{generate_keypair, rand::thread_rng};
 
 /// Index for the ALICE validator in the test fixture
 pub(super) const ALICE: usize = 0;
@@ -36,6 +35,9 @@ struct VoteDetails {
     is_compliant: bool,
 }
 
+/// Internal address to distinguish between members.
+pub(super) type Address = Vec<u8>;
+
 /// Main test fixture for network upgrade scenarios.
 ///
 /// This fixture manages the state for multiple validators in upgrade testing
@@ -56,11 +58,11 @@ pub(super) struct UpgradeTestFixture {
     vote_retention_period: u64,
 
     /// The public keys representing each validator's identity
-    addrs: [secp256k1::PublicKey; 3],
+    addrs: [Address; 3],
     /// In-memory databases for each validator
     dbs: [Db; 3],
     /// The activation manager instances for each validator
-    managers: [Option<ActivationManager<Db>>; 3],
+    managers: [Option<ActivationManager<Db, Address>>; 3],
     /// Expected votes to be included in block proposals for each validator
     expected_votes: [Option<VoteDetails>; 3],
 }
@@ -79,10 +81,9 @@ impl UpgradeTestFixture {
     /// # Returns
     /// * A new `UpgradeTestFixture` with default values and generated validator keys
     pub(super) fn new(upgrade_height: u64, approval_rate: usize) -> Self {
-        // Generate keypairs
-        let (_, alice_addr) = generate_keypair(&mut thread_rng());
-        let (_, bob_addr) = generate_keypair(&mut thread_rng());
-        let (_, eve_addr) = generate_keypair(&mut thread_rng());
+        let alice_addr = b"alice".to_vec();
+        let bob_addr = b"bob".to_vec();
+        let eve_addr = b"eve".to_vec();
 
         Self {
             upgrade_height,
@@ -404,7 +405,7 @@ impl ProposingTestFixture<'_> {
         dbg!(self.i.block_height);
 
         let proposer = self.i.managers[self.proposer_index].as_mut().unwrap();
-        let proposer_addr = &self.i.addrs[self.proposer_index];
+        let proposer_addr = self.i.addrs[self.proposer_index].clone();
 
         // Proposer builds the block
         let OnPrepareProposalDecision {
@@ -483,7 +484,7 @@ impl ProposingTestFixture<'_> {
                 .on_finalize_block(
                     proposer_version,
                     self.i.block_height,
-                    *proposer_addr,
+                    proposer_addr.clone(),
                     proposer_vote.clone(),
                 )
                 .unwrap();
