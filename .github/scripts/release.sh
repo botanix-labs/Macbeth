@@ -6,8 +6,6 @@ set -e
 
 COMMAND="$1"
 
-VERSION="$2"
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -38,8 +36,10 @@ fi
 
 # Update version in Cargo.toml workspace file
 update_cargo_version() {
+  local VERSION="$1"
+
   if [ -z "$VERSION" ]; then
-    log_error "Version is required for update command"
+    log_error "Version is required for update_cargo_version command"
   fi
 
   log_info "Updating Cargo.toml version to $VERSION"
@@ -61,6 +61,7 @@ back_merge() {
   local SOURCE_BRANCH="$1"
   local TARGET_BRANCH="$2"
   local GITHUB_TOKEN="$3"
+  local VERSION="$4"
 
   if [ -z "$SOURCE_BRANCH" ] || [ -z "$TARGET_BRANCH" ]; then
     log_error "Source and target branches are required for back-merge"
@@ -88,7 +89,12 @@ back_merge() {
   git checkout -b "$TEMP_BRANCH" "origin/${TARGET_BRANCH}"
 
   # Try to merge, but if it fails, create a PR instead
-  if git merge --no-ff "origin/${SOURCE_BRANCH}" -m "chore(release): back-merge from $SOURCE_BRANCH to $TARGET_BRANCH" 2>/dev/null; then
+  set +e
+  MERGE_OUTPUT=$(git merge --no-ff "origin/${SOURCE_BRANCH}" -m "chore(release): back-merge v$VERSION from $SOURCE_BRANCH to $TARGET_BRANCH" 2>&1)
+  MERGE_EXIT_CODE=$?
+  set -e
+
+  if [ $MERGE_EXIT_CODE -eq 0 ]; then
     log_info "No conflicts detected, performing direct merge"
 
     # No conflicts, push directly
@@ -96,8 +102,16 @@ back_merge() {
     log_info "Successfully back-merged from $SOURCE_BRANCH to $TARGET_BRANCH"
   else
     # Merge conflict detected, abort merge and create PR
-    log_warn "Merge conflicts detected when back-merging from $SOURCE_BRANCH to $TARGET_BRANCH"
-    git merge --abort
+    log_warn "Automatic back merge failed: $MERGE_OUTPUT"
+
+    git merge --abort || true
+
+    # Delete temp from made from target
+    git checkout "$SOURCE_BRANCH"
+    git branch -D "$TEMP_BRANCH"
+
+    # Create a new temp branch made from source
+    git checkout -b "$TEMP_BRANCH" "origin/${SOURCE_BRANCH}"
 
     log_info "Creating pull request for manual resolution"
 
@@ -108,44 +122,38 @@ back_merge() {
     local REPO_PATH=$(echo "$REPO_URL" | sed -n 's/.*github\.com[:\/]\([^\.]*\).*/\1/p')
 
     # Create PR if GitHub token is provided
-    if [ -n "$GITHUB_TOKEN" ]; then
-      PR_TITLE="chore(release): back-merge from $SOURCE_BRANCH to $TARGET_BRANCH"
+    PR_TITLE="chore(release): back-merge v$VERSION from $SOURCE_BRANCH to $TARGET_BRANCH"
 
-      # Create a more detailed PR description with conflict information
-      PR_BODY="## Automated Back-merge PR\n\nThis PR was automatically created to back-merge changes from \`$SOURCE_BRANCH\` to \`$TARGET_BRANCH\`.\n\n### ⚠️ Merge conflicts detected!"
-      PR_BODY+="### Steps to resolve\n\n1. Checkout this branch: \`git checkout $TEMP_BRANCH\`\n2. Merge target branch: \`git merge origin/$TARGET_BRANCH\`\n3. Resolve conflicts manually\n4. Commit and push: \`git commit -m 'chore(release): resolve back-merge conflicts' && git push\`\n\nOnce all conflicts are resolved, this PR can be merged to complete the back-merge operation."
+    # Create a more detailed PR description with conflict information
+    PR_BODY="## Automated Back-merge PR\n\nThis PR was automatically created to back-merge changes from \`$SOURCE_BRANCH\` to \`$TARGET_BRANCH\`.\n\n### ⚠️ Merge conflicts detected!"
+    PR_BODY+="### Steps to resolve\n\n1. Checkout this branch: \`git checkout $TEMP_BRANCH\`\n2. Merge target branch: \`git merge origin/$TARGET_BRANCH\`\n3. Resolve conflicts manually\n4. Commit and push: \`git commit -m 'chore(release): resolve back-merge conflicts' && git push\`\n\nOnce all conflicts are resolved, this PR can be merged to complete the back-merge operation."
 
-      # Create the PR using GitHub API
-      curl -s -X POST \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        -H "Accept: application/vnd.github.v3+json" \
-        "https://api.github.com/repos/$REPO_PATH/pulls" \
-        -d '{"title":"'"$PR_TITLE"'","body":"'"$PR_BODY"'","head":"'"$TEMP_BRANCH"'","base":"'"$TARGET_BRANCH"'"}' || echo "Failed to create PR"
-    else
-      log_warn "No GitHub token provided, cannot create PR automatically."
-      log_info "Please create PR manually from branch '$TEMP_BRANCH' to '$TARGET_BRANCH'"
-    fi
+    # Create the PR using GitHub API
+    curl -s -X POST \
+      -H "Authorization: token $GITHUB_TOKEN" \
+      -H "Accept: application/vnd.github.v3+json" \
+      "https://api.github.com/repos/$REPO_PATH/pulls" \
+      -d '{"title":"'"$PR_TITLE"'","body":"'"$PR_BODY"'","head":"'"$TEMP_BRANCH"'","base":"'"$TARGET_BRANCH"'"}' || echo "Failed to create PR"
   fi
 
   # Return to original branch
+  git reset --hard HEAD
   git checkout "$SOURCE_BRANCH"
 }
 
 # Create a git tag for the release
-create_tag() {
+commit_cargo_files() {
+  local VERSION="$1"
+
   if [ -z "$VERSION" ]; then
-    log_error "Version is required for tag command"
+    log_error "Version is required for push_new_version_and_tag command"
   fi
 
-  TAG="v$VERSION"
+  git config --global user.name "github-actions[bot]"
+  git config --global user.email "github-actions[bot]@users.noreply.github.com"
+  git add Cargo.toml Cargo.lock
+  git commit -m "chore(release): bump version to $VERSION"
 
-  # Check if tag already exists
-  if git tag -l | grep -q "^$TAG$"; then
-    log_error "Tag $TAG already exists"
-  fi
-
-  log_info "Creating tag $TAG"
-  git tag -a "$TAG" -m "Release $TAG"
   log_info "Tag $TAG created"
 }
 
@@ -153,27 +161,27 @@ show_help() {
   echo "Usage: release.sh COMMAND [ARGS...]"
   echo
   echo "Commands:"
-  echo "  update VERSION            Update version in Cargo.toml"
-  echo "  tag VERSION               Create a git tag for the release"
-  echo "  back_merge SRC DST TOKEN  Back-merge from source branch to destination branch"
-  echo "  help                      Show this help message"
+  echo "  update VERSION                   Update version in Cargo.toml"
+  echo "  tag VERSION                      Create a git tag for the release"
+  echo "  back_merge SRC DST TOKEN VERSION Back-merge from source branch to destination branch"
+  echo "  help                             Show this help message"
   echo
   echo "Examples:"
-  echo "  release.sh update 1.2.3             Update version to 1.2.3"
-  echo "  release.sh tag 1.2.3                Create tag v1.2.3"
-  echo "  release.sh back_merge main rc TOKEN Back-merge from main to rc branch"
+  echo "  release.sh update 1.2.3                     Update version to 1.2.3"
+  echo "  release.sh tag 1.2.3                        Create tag v1.2.3"
+  echo "  release.sh back_merge main rc TOKEN VERSION Back-merge from main to rc branch"
 }
 
 
 case "$COMMAND" in
-  update)
-    update_cargo_version
+  update_cargo_version)
+    update_cargo_version "$2"
     ;;
-  tag)
-    create_tag
+  commit_cargo_files)
+    commit_cargo_files "$2"
     ;;
   back_merge)
-    back_merge "$2" "$3" "$4"
+    back_merge "$2" "$3" "$4" "$5"
     ;;
   help)
     show_help

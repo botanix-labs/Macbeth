@@ -20,6 +20,10 @@ tagFormat: v${version}
 
 # Plugins that control the release process
 plugins:
+  # Skip release in case of back-merge
+  - "./.github/semantic-release-plugins/skip-backmerge.js"
+
+  # Analyze commits to determine the type of release
   - - "@semantic-release/commit-analyzer"
     - preset: conventionalcommits
       releaseRules:
@@ -40,12 +44,10 @@ plugins:
         - type: ci
           release: patch
         - type: chore
+          release: patch
+        - type: chore
           scope: release
           release: false
-        - type: chore
-          release: patch
-        - breaking: true
-          release: major
 
   - - "@semantic-release/release-notes-generator"
     - preset: conventionalcommits
@@ -71,3 +73,13 @@ plugins:
             section: Miscellaneous
           - type: style
             section: Miscellaneous
+      writerOpts:
+        headerPartial: ""
+
+      # Publish to GitHub
+  - - "@semantic-release/github"
+    - assets:
+        - path: "./release-assets/*"
+      successCommentCondition: false
+      failTitle: false
+      failComment: false

@@ -32,7 +32,7 @@ jobs:
       new_release_minor_version: ${{ steps.semantic.outputs.new_release_minor_version }}
       # Patch version of the new release'
       new_release_patch_version: ${{ steps.semantic.outputs.new_release_patch_version }}
-      # The distribution channel on which the last release was initially made available (undefined for the default distribution channel).
+      # The distribution channel on which the last release was initially made available (undefined for the default distribution channel)
       new_release_channel: ${{ steps.semantic.outputs.new_release_channel }}
       # The release notes for the new release.
       new_release_notes: ${{ steps.semantic.outputs.new_release_notes }}
@@ -46,62 +46,78 @@ jobs:
       last_release_git_head: ${{ steps.semantic.outputs.last_release_git_head }}
       # The Git tag associated with the last release, if there was one.
       last_release_git_tag: ${{ steps.semantic.outputs.last_release_git_tag }}
+      # Branches configuration for manual dispatch
+      branches_config: ${{ steps.branches_config.outputs.branches }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Prepare branches configuration for manual dispatch
         id: branches_config
         if: github.event_name == 'workflow_dispatch'
         run: |
-          channel_name=${GITHUB_REF_NAME//[^a-z0-9]/}
-
-          if [ "$GITHUB_REF_NAME" == "develop" ]; then
-            echo "branches='[{name: \"develop\", channel: \"alpha\", prerelease: true}]'" >> $GITHUB_OUTPUT
-          else
-            echo "branches='[{name: \"${GITHUB_REF_NAME}\", channel: \"${channel_name}\", prerelease: true}]'" >> $GITHUB_OUTPUT
+          # Check if .releaserc exists
+          if [ ! -f ".releaserc" ]; then
+            echo "::error::No .releaserc file found. Please create a .releaserc file to define branch configurations."
+            exit 1
           fi
 
-      - name: Install dependencies
-        run: |
-          npm install --save-dev conventional-changelog-conventionalcommits 
+          # Read existing branches configuration from .releaserc
+          EXISTING_BRANCHES=$(yq eval '.branches' .releaserc -o=json)
 
-      - name: Run Semantic Release
+          # Check if current branch already exists in configuration
+          BRANCH_EXISTS=$(echo "$EXISTING_BRANCHES" | jq -r --arg branch "$GITHUB_REF_NAME" '.[] | select(.name == $branch) | .name')
+
+          if [ ! -n "$BRANCH_EXISTS" ]; then
+            # Branch not found, add current branch to existing configuration
+            if [ "$GITHUB_REF_NAME" = "develop" ]; then
+              # Special case for develop branch - use alpha channel
+              CHANNEL="alpha"
+              PRERELEASE="alpha"
+            else
+              # Use sanitized branch name as channel
+              CHANNEL=${GITHUB_REF_NAME//[^a-z0-9]/}
+              PRERELEASE="$CHANNEL"
+            fi
+
+            # Create new branch configuration
+            NEW_BRANCH_CONFIG=$(echo "$EXISTING_BRANCHES" | jq --arg name "$GITHUB_REF_NAME" --arg channel "$CHANNEL" --arg prerelease "$PRERELEASE" '. + [{name: $name, channel: $channel, prerelease: $prerelease}]')
+
+            echo "branches<<EOF" >> $GITHUB_OUTPUT
+            echo "$NEW_BRANCH_CONFIG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "Added branch $GITHUB_REF_NAME with channel $CHANNEL to existing configuration"
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install NPM dependencies
+        run: pnpm install
+
+      - name: Determine semantic version
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEBUG: semantic-release:*
         with:
           branches: ${{ steps.branches_config.outputs.branches }}
-          semantic_version: 21.1.1 # This refers to the version range of the semantic release plugin
-          extra_plugins: |
-            @semantic-release/commit-analyzer
-            @semantic-release/release-notes-generator
-            @semantic-release/changelog
+          dry_run: true
 
-      - name: Output semantic-release results
+      - name: Fail if no release is published
+        if: steps.semantic.outputs.new_release_published == 'false'
         run: |
-          echo "new_release_published=${{ steps.semantic.outputs.new_release_published }}"
-          echo "new_release_version=${{ steps.semantic.outputs.new_release_version }}"
-          echo "new_release_major_version=${{ steps.semantic.outputs.new_release_major_version }}"
-          echo "new_release_minor_version=${{ steps.semantic.outputs.new_release_minor_version }}"
-          echo "new_release_patch_version=${{ steps.semantic.outputs.new_release_patch_version }}"
-          echo "new_release_channel=${{ steps.semantic.outputs.new_release_channel }}"
-          echo "new_release_notes=${{ steps.semantic.outputs.new_release_notes }}"
-          echo "new_release_git_head=${{ steps.semantic.outputs.new_release_git_head }}"
-          echo "new_release_git_tag=${{ steps.semantic.outputs.new_release_git_tag }}"
-          echo "last_release_version=${{ steps.semantic.outputs.last_release_version }}"
-          echo "last_release_git_head=${{ steps.semantic.outputs.last_release_git_head }}"
-          echo "last_release_git_tag=${{ steps.semantic.outputs.last_release_git_tag }}"
+          echo "::error::No appropriate commits to release. Skip release workflow."
+          exit 1
 
       - name: Update Cargo.toml version
         if: steps.semantic.outputs.new_release_published == 'true'
-        run: ./.github/scripts/release.sh update "${{ steps.semantic.outputs.new_release_version}}"
+        run: ./.github/scripts/release.sh update_cargo_version "${{ steps.semantic.outputs.new_release_version}}"
 
       - name: Upload Cargo.toml and Cargo.lock to artifacts
         if: steps.semantic.outputs.new_release_published == 'true'
@@ -114,7 +130,7 @@ jobs:
           retention-days: 1
 
   build-binaries:
-    name: build release binaries
+    name: Build Binaries
     needs: semantic-release
     if: needs.semantic-release.outputs.new_release_published == 'true'
     runs-on: binary-builer
@@ -504,19 +520,20 @@ jobs:
 
 
   # This job waits for the binary release workflow to complete before finalizing the release
-  finalize-release:
-    name: Finalize Release
+  publish-release:
+    name: Publish Release
     runs-on: ubuntu-latest
     needs:
       - semantic-release
-      - build-docker-images
       - build-binaries
+      - build-docker-images
     if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
 
       - name: Download Release Artifacts
         uses: actions/download-artifact@v4
@@ -543,41 +560,32 @@ jobs:
           name: cargo-files
           path: .
 
-      - name: Push version update
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
-          git commit -m "chore(release): bump version to ${{ needs.semantic-release.outputs.new_release_version }}"
-          git push origin HEAD --tags
+      - name: Commit Cargo files
+        run: ./.github/scripts/release.sh commit_cargo_files "${{ needs.semantic-release.outputs.new_release_version }}"
 
-      - name: Back-merge to other branches
-        if: github.ref_name == 'main'
-        run: |
-          echo "Performing back-merge from main to develop, rc, and hotfix branches"
-          git fetch origin
-          ./.github/scripts/release.sh back_merge main develop "${{ secrets.PAT_TOKEN }}"
-          ./.github/scripts/release.sh back_merge main rc "${{ secrets.PAT_TOKEN }}"
-          ./.github/scripts/release.sh back_merge main hotfix "${{ secrets.PAT_TOKEN }}"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Install NPM dependencies
+        run: pnpm install
+
+      - name: Publish semantic release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: ./release-assets/*
-          tag_name: v${{ needs.semantic-release.outputs.new_release_version }}
-          name: Botanix Release v${{ needs.semantic-release.outputs.new_release_version }}
-          body: ${{ needs.semantic-release.outputs.new_release_notes }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          draft: false
-          make_latest: ${{ needs.semantic-release.outputs.new_release_channel == 'latest' }}
-          prerelease: ${{ needs.semantic-release.outputs.new_release_channel != 'latest' }}
+          branches: ${{ needs.semantic-release.outputs.branches_config }}
 
-  publish-release:
+      - name: Push Cargo files
+        run: git push origin HEAD
+
+  publish-public-github-release:
     name: Publish to Botanix Releases Repository
     runs-on: ubuntu-latest
     needs:
       - semantic-release
-      - finalize-release
+      - publish-release
     if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
       - name: Checkout Main Repository
@@ -609,10 +617,30 @@ jobs:
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-            ./.github/scripts/publish-release.sh full-publish \
-              "${{ needs.semantic-release.outputs.new_release_version }}" \
-              "${{ needs.semantic-release.outputs.new_release_channel }}" \
-              "${{ needs.semantic-release.outputs.new_release_notes }}" \
-              "${{ needs.semantic-release.outputs.new_release_git_tag }}" \
-              "${{ needs.semantic-release.outputs.new_release_git_head }}" \
-              "${{ needs.semantic-release.outputs.last_release_version }}"
+          ./.github/scripts/publish-release.sh full-publish \
+            "${{ needs.semantic-release.outputs.new_release_version }}" \
+            "${{ needs.semantic-release.outputs.new_release_channel }}" \
+            "${{ needs.semantic-release.outputs.new_release_notes }}" \
+            "${{ needs.semantic-release.outputs.new_release_git_tag }}" \
+            "${{ needs.semantic-release.outputs.new_release_git_head }}" \
+            "${{ needs.semantic-release.outputs.last_release_version }}"
+
+  back-merge:
+    name: Back-merge Main Branch
+    runs-on: ubuntu-latest
+    needs:
+      - semantic-release
+      - publish-release
+    if: github.ref_name == 'main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Back-merge to other branches
+        run: |
+          ./.github/scripts/release.sh back_merge main develop "${{ secrets.PAT_TOKEN }}" "${{ needs.semantic-release.outputs.new_release_version }}"
+          ./.github/scripts/release.sh back_merge main rc "${{ secrets.PAT_TOKEN }}" "${{ needs.semantic-release.outputs.new_release_version }}"
+          ./.github/scripts/release.sh back_merge main hotfix "${{ secrets.PAT_TOKEN }}" "${{ needs.semantic-release.outputs.new_release_version }}"
