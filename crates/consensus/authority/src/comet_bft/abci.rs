@@ -2472,7 +2472,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::Storage;
+    use crate::{activation_manager::ActivationManagerBuilder, Storage};
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,
@@ -2483,7 +2483,9 @@ mod tests {
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,
     };
-    use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+    use botanix_comet_bft_rpc::{
+        non_deterministic_data::GENESIS_RUNTIME_VERSION, HttpCometBFTRpcClientFactory,
+    };
     use rand::thread_rng;
     use reth_chainspec::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use reth_cli_runner::tokio_runtime;
@@ -2523,6 +2525,18 @@ mod tests {
 
     /// Build the db and the ABCI client
     fn abci_client_builder() -> ABCIClientType {
+        // By default, ignore/reject any unexpected upgrades.
+        let activation_manager =
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_ACTIVE)
+                .build_ignore_nework_upgrade();
+
+        abci_client_builder_with_activation_manager(activation_manager)
+    }
+
+    /// Build the db and the ABCI client with a custom activation manager
+    fn abci_client_builder_with_activation_manager(
+        activation_manager: ActivationManager<VoteWatcher, Address>,
+    ) -> ABCIClientType {
         let secp = secp256k1::Secp256k1::new();
         let sk = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
@@ -2594,6 +2608,7 @@ mod tests {
         ABCIClient::new(
             storage,
             transaction_pool,
+            activation_manager,
             Arc::new(bitcoin_checkpoints_chain),
             driver_tx,
             cometbft_rpc_factory,
@@ -2615,7 +2630,7 @@ mod tests {
         client: &ABCIClientType,
     ) -> Result<prost::bytes::Bytes, ConsensusError> {
         client
-            .non_deterministic_data()
+            .non_deterministic_data(RuntimeVersion::new(0, 1), None)
             .and_then(|ndd| client.serialize_non_deterministic_data_to_bytes(ndd))
     }
 
@@ -2672,6 +2687,57 @@ mod tests {
     }
 
     #[test]
+    fn test_prepare_proposal_empty_mempool_with_network_upgrade_vote() {
+        let quorum = 100;
+        let min_validator_count = 10;
+        let target_height = 1_000;
+        let our_vote = Vote::Aye;
+
+        // Set the activation manager to include a vote in each NDD.
+        let activation_manager =
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_ACTIVE)
+                .build_COMPLIANT_network_upgrade(
+                    RuntimeVersion::new(2, 0),
+                    quorum,
+                    min_validator_count,
+                    target_height,
+                    Some(our_vote),
+                );
+
+        let abci_client = abci_client_builder_with_activation_manager(activation_manager);
+
+        let request = RequestPrepareProposal {
+            max_tx_bytes: 100,
+            time: Some(Default::default()),
+            ..Default::default()
+        };
+
+        let response = abci_client.prepare_proposal(request);
+
+        // The expected payload to be included in the NDD.
+        let expected_payload = non_deterministic_data::NetworkUpgradePayload {
+            version: (2, 0),
+            vote: non_deterministic_data::Vote::Aye,
+            is_compliant: true,
+        };
+
+        let expected_ndd = NonDeterministicData::new(
+            abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
+            abci_client.aggregate_public_key().expect("to have agg pk"),
+            Address::ZERO,
+            GENESIS_RUNTIME_VERSION,
+            Some(expected_payload),
+        );
+        let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
+        let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
+        let reader = &mut io::Cursor::new(reader_inner);
+        let response_ndd = NonDeterministicData::deserialize(reader).expect("to deserialize");
+
+        assert_eq!(response.txs.len(), 1);
+        assert_eq!(response_ndd, expected_ndd);
+    }
+
+    #[test]
     fn test_prepare_proposal_empty_mempool() {
         let abci_client = abci_client_builder();
 
@@ -2687,6 +2753,8 @@ mod tests {
             abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
+            GENESIS_RUNTIME_VERSION,
+            None,
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
@@ -2724,6 +2792,8 @@ mod tests {
             abci_client.bitcoin_blockhash().expect("to have agg bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
+            GENESIS_RUNTIME_VERSION,
+            None,
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
@@ -2831,7 +2901,9 @@ mod tests {
         let mut request = RequestFinalizeBlock::default();
 
         // first tx should be non-deterministic data
-        let ndd = abci_client.non_deterministic_data().expect("to have ndd");
+        let ndd = abci_client
+            .non_deterministic_data(RuntimeVersion::new(0, 1), None)
+            .expect("to have ndd");
         let ndd_bytes =
             abci_client.serialize_non_deterministic_data_to_bytes(ndd).expect("to serialize ndd");
 
