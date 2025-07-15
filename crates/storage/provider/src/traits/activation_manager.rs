@@ -9,7 +9,7 @@ use reth_errors::ProviderResult;
 /// Implementations should maintain persistence of votes between blocks and handle
 /// the removal of expired votes.
 #[auto_impl::auto_impl(&, Arc, Box)]
-pub trait ActivationManagerReaderWriter: Send + Sync {
+pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     /// Records or updates a validator's vote for a network upgrade.
     ///
     /// This method stores a validator's vote and acceptance status for a network upgrade
@@ -27,7 +27,7 @@ pub trait ActivationManagerReaderWriter: Send + Sync {
     /// * `Err` if there was an error recording the vote
     fn update_upgrading_vote(
         &self,
-        auth: secp256k1::PublicKey,
+        auth: Auth,
         vote: Vote,
         is_compliant: bool,
         botanix_height: u64,

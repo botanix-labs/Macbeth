@@ -259,7 +259,7 @@ impl ConditionList {
 /// This builder provides methods to configure how a validator will handle
 /// network upgrades - whether it will ignore them, signal votes without
 /// being compliant, or fully accept upgrades when conditions are met.
-pub struct ActivationManagerBuilder<DB> {
+pub struct ActivationManagerBuilder<DB, Auth> {
     /// The database client implementing ActivationManagerReaderWriter
     client: DB,
 
@@ -271,11 +271,13 @@ pub struct ActivationManagerBuilder<DB> {
 
     /// Configuration for a pending network upgrade, if any
     upgrade: Option<NetworkUpgrade>,
+
+    _p: std::marker::PhantomData<Auth>,
 }
 
-impl<DB> ActivationManagerBuilder<DB>
+impl<DB, Auth> ActivationManagerBuilder<DB, Auth>
 where
-    DB: ActivationManagerReaderWriter,
+    DB: ActivationManagerReaderWriter<Auth>,
 {
     /// Creates a new ActivationManagerBuilder with specified database client and active version.
     ///
@@ -294,6 +296,7 @@ where
             active_version,
             vote_retention_period: VOTE_RETENTION_PERIOD,
             upgrade: None,
+            _p: std::marker::PhantomData,
         }
     }
 
@@ -326,7 +329,7 @@ where
     ///
     /// # Returns
     /// * An ActivationManager configured to ignore network upgrades
-    pub fn build_ignore_nework_upgrade(self) -> ActivationManager<DB> {
+    pub fn build_ignore_nework_upgrade(self) -> ActivationManager<DB, Auth> {
         debug_assert!(self.upgrade.is_none());
         self._finalize()
     }
@@ -355,7 +358,7 @@ where
         mut self,
         upgrade_version: RuntimeVersion,
         our_vote: Vote,
-    ) -> ActivationManager<DB> {
+    ) -> ActivationManager<DB, Auth> {
         assert!(self.active_version < upgrade_version);
 
         #[rustfmt::skip]
@@ -407,7 +410,7 @@ where
         min_validator_count: usize,
         target_height: u64,
         our_vote: Option<Vote>,
-    ) -> ActivationManager<DB> {
+    ) -> ActivationManager<DB, Auth> {
         assert!(
             self.active_version < upgrade_version,
             "upgrade version is older than the active version"
@@ -436,12 +439,13 @@ where
         self._finalize()
     }
 
-    fn _finalize(self) -> ActivationManager<DB> {
+    fn _finalize(self) -> ActivationManager<DB, Auth> {
         ActivationManager {
             client: self.client,
             vote_retention_period: self.vote_retention_period,
             active_version: Arc::new(RwLock::new(self.active_version)),
             upgrade: Arc::new(RwLock::new(self.upgrade)),
+            _p: std::marker::PhantomData,
         }
     }
 }
@@ -466,7 +470,7 @@ where
 /// state through atomic reference counting and read-write locks, allowing it to
 /// be shared between concurrent contexts.
 #[derive(Clone)]
-pub struct ActivationManager<DB> {
+pub struct ActivationManager<DB, Auth> {
     /// Database client for persisting and retrieving votes
     client: DB,
 
@@ -480,11 +484,13 @@ pub struct ActivationManager<DB> {
     /// Configuration for a pending network upgrade, if any
     /// Protected by a read-write lock for thread-safe updates
     upgrade: Arc<RwLock<Option<NetworkUpgrade>>>,
+
+    _p: std::marker::PhantomData<Auth>,
 }
 
-impl<DB> ActivationManager<DB>
+impl<DB, Auth> ActivationManager<DB, Auth>
 where
-    DB: ActivationManagerReaderWriter,
+    DB: ActivationManagerReaderWriter<Auth>,
 {
     /// Prepares a proposal decision based on the current upgrade state.
     ///
@@ -632,7 +638,7 @@ where
         &self,
         block_version: RuntimeVersion,
         block_height: u64,
-        proposer_address: secp256k1::PublicKey,
+        proposer_address: Auth,
         proposer_vote: Option<NetworkUpgradePayload>,
     ) -> ProviderResult<OnFinalizeBlockDecision> {
         // Track the proposer's vote for upgrade intention, if provided
@@ -756,7 +762,7 @@ where
     fn _track_vote(
         &self,
         block_height: u64,
-        addr: secp256k1::PublicKey,
+        addr: Auth,
         vote: Option<NetworkUpgradePayload>,
     ) -> ProviderResult<()> {
         // If the proposer made a vote...
