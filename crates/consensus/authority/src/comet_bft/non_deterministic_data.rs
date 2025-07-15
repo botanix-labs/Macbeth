@@ -388,6 +388,59 @@ mod tests {
     }
 
     #[test]
+    fn test_non_deterministic_data_new_v2() {
+        let bitcoin_block_hash = BlockHash::all_zeros();
+        let pk = secp256k1::PublicKey::from_slice(
+            hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let block_fee_recipient_address =
+            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
+                .expect("valid address");
+
+        // Without network upgrade payload.
+        let runtime_version = RuntimeVersion::new(1, 5);
+        let payload = None;
+
+        let ndd = NonDeterministicData::new_v2(
+            bitcoin_block_hash,
+            pk,
+            block_fee_recipient_address,
+            runtime_version,
+            payload,
+        );
+        assert_eq!(ndd.version, VERSION_2);
+        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
+        assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, Some(block_fee_recipient_address));
+        assert_eq!(ndd.runtime_version, runtime_version);
+        assert_eq!(ndd.network_upgrade_payload, None);
+
+        // With network upgrade payload.
+        let payload = Some(NetworkUpgradePayload {
+            version: RuntimeVersion::new(2, 5),
+            vote: Vote::Aye,
+            is_compliant: true,
+        });
+
+        let ndd = NonDeterministicData::new_v2(
+            bitcoin_block_hash,
+            pk,
+            block_fee_recipient_address,
+            runtime_version,
+            payload.clone(),
+        );
+        assert_eq!(ndd.version, VERSION_2);
+        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
+        assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, Some(block_fee_recipient_address));
+        assert_eq!(ndd.runtime_version, runtime_version);
+        assert_eq!(ndd.network_upgrade_payload, payload); // IS SOME
+    }
+
+    #[test]
     fn test_non_deterministic_data_serde_v0() {
         let bitcoin_block_hash = BlockHash::all_zeros();
         let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
