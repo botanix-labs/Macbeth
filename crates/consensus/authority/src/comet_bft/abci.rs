@@ -4,7 +4,11 @@ use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::ExecutedBlock;
 use reth_chainspec::ChainSpec;
 use reth_db::{
-    models::{self, SnapshotSync, SnapshotSyncId},
+    models::{
+        self,
+        activation_manager::{MajorVersion, MinorVersion},
+        RuntimeVersion, SnapshotSync, SnapshotSyncId, Vote,
+    },
     Database, DatabaseEnv,
 };
 use reth_provider::{
@@ -30,9 +34,9 @@ use reth_evm::execute::BlockExecutorProvider;
 
 use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_peg::block_with_peg::SealedBlockWithPeg;
-use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_comet_bft_rpc::{non_deterministic_data, HttpCometBFTRpcClientFactory};
 use reth_payload_builder::EthPayloadBuilderAttributes;
-use reth_primitives::{Address, BlockHash, BlockNumber, BlockWithSenders, SealedBlock, B256};
+use reth_primitives::{Address, BlockHash, BlockNumber, BlockWithSenders, SealedBlock, B256, U256};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
     SnapshotReader, SnapshotWriter, StateProviderFactory,
@@ -488,16 +492,49 @@ where
         ))
     }
 
-    pub(crate) fn non_deterministic_data(&self) -> Result<NonDeterministicData, ConsensusError> {
+    pub(crate) fn non_deterministic_data(
+        &self,
+        runtime_version: RuntimeVersion,
+        network_upgrade_payload: Option<NetworkUpgradePayload>,
+    ) -> Result<NonDeterministicData, ConsensusError> {
         let aggregate_public_key = self.aggregate_public_key()?;
         let block_fee_recipient_address = self
             .block_fee_recipient_address
             .ok_or(ConsensusError::MissingBlockFeeRecipientAddress)?;
 
+        // Convert ActivationManager types to the corresponding NDD types.
+        // TODO (lamafab): Those types should ideally be unified asap, depending
+        // on the larger modularization overhaul.
+        let network_upgrade_payload = if let Some(p) = network_upgrade_payload {
+            let vote = match p.vote {
+                Vote::Absent => non_deterministic_data::Vote::Absent,
+                Vote::Nay => non_deterministic_data::Vote::Nay,
+                Vote::Aye => non_deterministic_data::Vote::Aye,
+            };
+
+            // Botanix runtime upgrade version to be voted on.
+            let RuntimeVersion(MajorVersion(major), MinorVersion(minor)) = p.version;
+
+            let network_upgrade_payload = non_deterministic_data::NetworkUpgradePayload {
+                version: (major, minor),
+                vote,
+                is_compliant: p.is_compliant,
+            };
+
+            Some(network_upgrade_payload)
+        } else {
+            None
+        };
+
+        // The actively used Botanix runtime version.
+        let RuntimeVersion(MajorVersion(major), MinorVersion(minor)) = runtime_version;
+
         let ndd = NonDeterministicData::new(
             self.bitcoin_blockhash()?,
             aggregate_public_key,
             block_fee_recipient_address,
+            (major, minor),
+            network_upgrade_payload,
         );
 
         Ok(ndd)
