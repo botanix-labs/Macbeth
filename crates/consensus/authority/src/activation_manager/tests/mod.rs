@@ -1,8 +1,7 @@
 use super::*;
-use rand::thread_rng;
 use reth_provider::ProviderResult;
-use secp256k1::generate_keypair;
 use std::{collections::HashMap, sync::Arc};
+use utils::Address;
 
 mod accept_lagging_validator;
 mod reject_ignored_upgrade;
@@ -18,7 +17,7 @@ mod wait_for_compliance;
 /// In-Memory database that integrates the `ActivationManagerReaderWriter` trait.
 #[derive(Clone)]
 struct Db {
-    votes: Arc<RwLock<HashMap<secp256k1::PublicKey, VoteEntry>>>,
+    votes: Arc<RwLock<HashMap<Address, VoteEntry>>>,
 }
 
 impl Db {
@@ -33,10 +32,10 @@ struct VoteEntry {
     botanix_height: u64,
 }
 
-impl ActivationManagerReaderWriter for Db {
+impl ActivationManagerReaderWriter<utils::Address> for Db {
     fn update_upgrading_vote(
         &self,
-        auth: secp256k1::PublicKey,
+        auth: Address,
         vote: Vote,
         is_compliant: bool,
         botanix_height: u64,
@@ -104,10 +103,10 @@ impl ActivationManagerReaderWriter for Db {
 fn activation_manager_basic_db_interface() {
     let db = Db::new();
 
-    // Generate keypairs
-    let (_, alice) = generate_keypair(&mut thread_rng());
-    let (_, bob) = generate_keypair(&mut thread_rng());
-    let (_, eve) = generate_keypair(&mut thread_rng());
+    // Generate addresses
+    let alice = b"alice".to_vec();
+    let bob = b"bob".to_vec();
+    let eve = b"eve".to_vec();
 
     let min_validator_count = 3;
 
