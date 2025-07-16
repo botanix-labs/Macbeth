@@ -1580,13 +1580,12 @@ impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
     ///
     /// Returns `Ok(())` if all inputs are handled successfully, or an error if any operation fails.
     fn handle_invalid_inputs(&self, tx: &Transaction) -> Result<(), btcserverlib::database::Error> {
-        let tx_id = tx.compute_txid();
         for input in &tx.input {
             if let Some(_utxo) = self.db.get_utxo(input.previous_output)? {
                 // Check on chain if the input is already spent
                 let result = self
                     .bitcoind_client
-                    .get_tx_out(&tx_id, input.previous_output.vout, None)
+                    .get_tx_out(&input.previous_output.txid, input.previous_output.vout, None)
                     .map_err(|e| {
                         error!("Failed to get tx out for input: {}: {}", input.previous_output, e);
                         btcserverlib::database::Error::BitcoindError(e)
@@ -2144,5 +2143,151 @@ mod tests {
             collected_chunks.extend_from_slice(&item.data);
         }
         assert_eq!(collected_chunks.len(), num_txs);
+    }
+
+    /// Helper function to create test input from OutPoint
+    fn create_test_input(outpoint: OutPoint) -> bitcoin::TxIn {
+        bitcoin::TxIn {
+            previous_output: outpoint,
+            script_sig: ScriptBuf::new(),
+            sequence: bitcoin::Sequence::MAX,
+            witness: bitcoin::Witness::default(),
+        }
+    }
+
+    /// Helper function to create test transaction with given inputs and outputs
+    fn create_test_transaction(inputs: Vec<OutPoint>) -> Transaction {
+        Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: inputs.into_iter().map(create_test_input).collect(),
+            output: vec![bitcoin::TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_invalid_inputs_removes_spent_utxos() {
+        let app = setup().await;
+        let mut rng = thread_rng();
+
+        // Generate 3 different outpoints for testing
+        let input_1 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 0);
+        let input_2 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 1);
+        let input_3 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 0);
+
+        // Create transaction with these inputs
+        let tx = create_test_transaction(vec![input_1, input_2, input_3]);
+
+        // Set up mock responses: input_1 is spent, input_2 and input_3 are unspent
+        app.bitcoind_client.remove_utxo(input_1);
+        app.bitcoind_client.add_utxo(input_2, Amount::from_sat(5000), ScriptBuf::new());
+        app.bitcoind_client.add_utxo(input_3, Amount::from_sat(3000), ScriptBuf::new());
+
+        // Add all 3 UTXOs to the database initially
+        let utxos = vec![
+            database::Utxo::new(
+                input_1,
+                bitcoin::TxOut { value: Amount::from_sat(2000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+            database::Utxo::new(
+                input_2,
+                bitcoin::TxOut { value: Amount::from_sat(5000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+            database::Utxo::new(
+                input_3,
+                bitcoin::TxOut { value: Amount::from_sat(3000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+        ];
+        let utxo_refs: Vec<&database::Utxo> = utxos.iter().collect();
+        app.db.store_utxos(&utxo_refs).expect("Failed to store UTXOs");
+
+        // Verify all UTXOs are in database initially
+        assert!(app.db.get_utxo(input_1).unwrap().is_some());
+        assert!(app.db.get_utxo(input_2).unwrap().is_some());
+        assert!(app.db.get_utxo(input_3).unwrap().is_some());
+
+        // Call handle_invalid_inputs
+        let result = app.handle_invalid_inputs(&tx);
+        assert!(result.is_ok(), "handle_invalid_inputs should succeed");
+
+        // Verify that spent UTXOs (input_1 and input_3) are removed from database
+        assert!(
+            app.db.get_utxo(input_1).unwrap().is_none(),
+            "Spent UTXO input_1 should be removed"
+        );
+        assert!(app.db.get_utxo(input_2).unwrap().is_some(), "Unspent UTXO input_2 should remain");
+        assert!(app.db.get_utxo(input_3).unwrap().is_some(), "Unspent UTXO input_3 should remain");
+    }
+
+    #[tokio::test]
+    async fn test_handle_invalid_inputs_ignores_missing_utxos() {
+        let app = setup().await;
+
+        // Create transaction with input that doesn't exist in database
+        let missing_input =
+            OutPoint::new(Txid::from_slice(&thread_rng().gen::<[u8; 32]>()).unwrap(), 0);
+        let tx = create_test_transaction(vec![missing_input]);
+
+        // Verify UTXO doesn't exist in database
+        assert!(app.db.get_utxo(missing_input).unwrap().is_none());
+
+        // Call handle_invalid_inputs - should not error even though UTXO doesn't exist
+        let result = app.handle_invalid_inputs(&tx);
+        assert!(result.is_ok(), "handle_invalid_inputs should succeed even with missing UTXOs");
+    }
+
+    #[tokio::test]
+    async fn test_handle_invalid_inputs_handles_all_unspent() {
+        let app = setup().await;
+        let mut rng = thread_rng();
+
+        // Create test outpoints
+        let input_1 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 0);
+        let input_2 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 1);
+
+        let tx = create_test_transaction(vec![input_1, input_2]);
+
+        // Set both inputs as unspent
+        app.bitcoind_client.add_utxo(input_1, Amount::from_sat(2000), ScriptBuf::new()); // Changed
+        app.bitcoind_client.add_utxo(input_2, Amount::from_sat(3000), ScriptBuf::new()); // Changed
+
+        // Add both UTXOs to the database
+        let utxos = vec![
+            database::Utxo::new(
+                input_1,
+                bitcoin::TxOut { value: Amount::from_sat(2000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+            database::Utxo::new(
+                input_2,
+                bitcoin::TxOut { value: Amount::from_sat(3000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+        ];
+        let utxo_refs: Vec<&database::Utxo> = utxos.iter().collect();
+        app.db.store_utxos(&utxo_refs).expect("Failed to store UTXOs");
+
+        // Verify both UTXOs are in database initially
+        assert!(app.db.get_utxo(input_1).unwrap().is_some());
+        assert!(app.db.get_utxo(input_2).unwrap().is_some());
+
+        // Call handle_invalid_inputs
+        let result = app.handle_invalid_inputs(&tx);
+        assert!(result.is_ok(), "handle_invalid_inputs should succeed");
+
+        // Verify that both UTXOs remain in database since they're unspent
+        assert!(app.db.get_utxo(input_1).unwrap().is_some(), "Unspent UTXO input_1 should remain");
+        assert!(app.db.get_utxo(input_2).unwrap().is_some(), "Unspent UTXO input_2 should remain");
     }
 }
