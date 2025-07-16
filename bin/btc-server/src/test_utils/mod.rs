@@ -29,9 +29,61 @@ macro_rules! frost_id {
 const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
 const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
 
-#[derive(Clone, Debug)]
-pub struct MockBitcoind;
+pub struct MockBitcoind {
+    utxo_set: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<OutPoint, bitcoincore_rpc::json::GetTxOutResult>,
+        >,
+    >,
+}
+
+impl MockBitcoind {
+    pub fn new() -> Self {
+        Self { utxo_set: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())) }
+    }
+
+    /// Remove an output from the UTXO set (simulating a spent UTXO)
+    pub fn remove_utxo(&self, outpoint: OutPoint) {
+        self.utxo_set.lock().unwrap().remove(&outpoint);
+    }
+
+    /// Add a output to the UTXO set
+    pub fn add_utxo(&self, outpoint: OutPoint, value: Amount, script_pubkey: ScriptBuf) {
+        let script_hex = bitcoin::consensus::encode::serialize_hex(&script_pubkey);
+        let json_str = format!(
+            r#"{{
+            "bestblock": "0000000000000000000000000000000000000000000000000000000000000000",
+            "confirmations": 6,
+            "value": {},
+            "scriptPubKey": {{
+                "asm": "",
+                "hex": "{}",
+                "type": "nonstandard"
+            }},
+            "coinbase": false
+        }}"#,
+            value.to_btc(),
+            script_hex
+        );
+
+        let result: bitcoincore_rpc::json::GetTxOutResult =
+            serde_json::from_str(&json_str).expect("valid JSON");
+        self.utxo_set.lock().unwrap().insert(outpoint, result);
+    }
+}
+
 impl bitcoincore_rpc::RpcApi for MockBitcoind {
+    fn get_tx_out(
+        &self,
+        txid: &Txid,
+        vout: u32,
+        _include_mempool: Option<bool>,
+    ) -> bitcoincore_rpc::Result<Option<bitcoincore_rpc::json::GetTxOutResult>> {
+        let outpoint = OutPoint::new(*txid, vout);
+        let utxo_set = self.utxo_set.lock().unwrap();
+        Ok(utxo_set.get(&outpoint).cloned())
+    }
+
     fn get_block_count(&self) -> Result<u64, bitcoincore_rpc::Error> {
         Ok(1)
     }
@@ -176,12 +228,6 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
         }
 
         unimplemented!()
-    }
-}
-
-impl MockBitcoind {
-    pub fn new() -> Self {
-        Self {}
     }
 }
 
