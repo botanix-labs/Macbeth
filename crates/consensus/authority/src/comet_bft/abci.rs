@@ -102,11 +102,6 @@ use crate::{
     utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
     AuthorityConsensus, Storage,
 };
-use botanix_storage::{
-    models::{HeaderWithPegs, PeginData, PegoutData, SnapshotSync, SnapshotSyncId},
-    BotanixProviderFactory, DatabaseProviderFactoryRW, SnapshotReader, SnapshotWriter,
-    StagedHeaderWriter,
-};
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
 use botanix_comet_bft_rpc::{
@@ -117,6 +112,11 @@ use botanix_comet_bft_rpc::{
         ResponsePrepareProposalTruncatedDebug,
     },
     utils::transactions_signed_from_bytes,
+};
+use botanix_storage::{
+    models::{HeaderWithPegs, PeginData, PegoutData, SnapshotSync, SnapshotSyncId},
+    BotanixProviderFactory, DatabaseProviderFactoryRW, SnapshotReader, SnapshotWriter,
+    StagedHeaderWriter,
 };
 use tracing::{debug, error, info, instrument, trace, warn};
 
@@ -241,7 +241,7 @@ where
         snapshot_format: u32,
         block_fee_recipient_address: Option<reth_primitives::Address>,
     ) -> Self {
-        // TODO: What is the differnce with storage.reth_database? Why we have it instead of using
+        // TODO: What is the difference with storage.reth_database? Why we have it instead of using
         // storage?
         let latest_sealed_header = storage
             .reth_database
@@ -2261,7 +2261,7 @@ where
                         // 4. If botanix database commit failed (it goes first), then we are at the
                         //    previous block state for both databases
                         // 5. If reth database commit failed then we should have staged header in
-                        //    the botanix database but reth datbase in previous block state
+                        //    the botanix database but reth database in previous block state
                         // 6. This is totally fine because `insert_staged_header` is idempotent
 
                         let botanix_db_rw = self
