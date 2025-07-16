@@ -1,8 +1,10 @@
 //! Contains RPC handler implementations specific to botanix.
 
 use crate::EthApi;
+use botanix_rpc_client::botanix::EthBotanixApi;
+use botanix_rpc_config::botanix_config::Botanix;
 use reth_provider::BlockReaderIdExt;
-use reth_rpc_eth_api::helpers::{botanix::EthBotanixApi, LoadBlock};
+use reth_rpc_eth_api::helpers::LoadBlock;
 
 impl<Provider, Pool, Network, EvmConfig> EthBotanixApi
     for EthApi<Provider, Pool, Network, EvmConfig>
@@ -15,7 +17,7 @@ where
         self.inner.provider()
     }
 
-    fn botanix_provider(&self) -> &reth_rpc_eth_types::builder::botanix_config::Botanix {
+    fn botanix_provider(&self) -> &Botanix {
         self.inner.botanix_provider()
     }
 }

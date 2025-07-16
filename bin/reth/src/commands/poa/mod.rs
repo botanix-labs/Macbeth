@@ -4,6 +4,7 @@ use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -42,7 +43,6 @@ use reth_payload_builder::PayloadBuilderHandle;
 use reth_primitives::Address;
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
-use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};

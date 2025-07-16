@@ -13,6 +13,8 @@ workspace = true
 
 [dependencies]
 
+botanix-rpc-types = { workspace = true }
+
 # misc
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 reth-engine-primitives = { workspace = true }

@@ -16,21 +16,10 @@ workspace = true
 # ethereum
 alloy-sol-types = { workspace = true }
 
-# Bitcoin
-bitcoin = { workspace = true }
-bitcoincore-rpc = { workspace = true }
-botanix-authority-edh = { workspace = true }
-
 # Botanix
-botanix-btc-wallet = { workspace = true }
-
-# Bitcoin signing server
-btc-server = { path = "../../../bin/btc-server" }
+botanix-rpc-config = { workspace = true }
 
 derive_more = { workspace = true }
-
-# FROST dependencies
-frost-secp256k1-tr = { workspace = true }
 
 # async
 futures = { workspace = true }
@@ -61,7 +50,6 @@ revm = { workspace = true }
 revm-inspectors = { workspace = true }
 revm-primitives = { workspace = true, features = ["dev"] }
 schnellru = { workspace = true }
-secp256k1 = { workspace = true }
 
 # misc
 serde = { workspace = true, features = ["derive"] }
@@ -70,8 +58,6 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
-# url
-url = "2.2"
 [dev-dependencies]
 serde_json = { workspace = true }
 

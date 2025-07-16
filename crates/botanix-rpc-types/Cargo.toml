@@ -1,0 +1,10 @@
+[package]
+name = "botanix-rpc-types"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+alloy-primitives = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

@@ -9,8 +9,7 @@ use crate::{
     fee_history::fee_history_cache_new_blocks_task, EthConfig, EthStateCache, FeeHistoryCache,
     GasPriceOracle,
 };
-
-use super::botanix_config::Botanix;
+use botanix_rpc_config::botanix_config::Botanix;
 
 /// Context for building the `eth` namespace API.
 #[derive(Debug, Clone)]
