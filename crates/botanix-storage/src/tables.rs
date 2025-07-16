@@ -16,7 +16,7 @@
 //! - [`SnapshotSyncs`]: Tracks snapshot synchronization progress
 //!
 //! ### Header Tables
-//! - [`StagedHeaders`]: Maps block hashes to headers with pegin/pegout data
+//! - [`StagedHeader`]: Maps block hashes to headers with pegin/pegout data
 //!
 //! ### Wallet Sync Tables
 //! - [`WalletStateSyncs`]: Maps peer IDs to wallet state sync records
@@ -53,7 +53,7 @@ tables! {
     /// Staged headers contain Bitcoin pegin/pegout transaction data that
     /// has been extracted from finalized blocks. This staging mechanism
     /// ensures no pegin or pegout data is lost during block processing.
-    table StagedHeaders<Key = B256, Value = HeaderWithPegs>;
+    table StagedHeader<Key = B256, Value = HeaderWithPegs>;
 
     /// Store chunk id to chunk data.
     ///

@@ -1,56 +1,71 @@
-use botanix_storage_migrate::migrate_botanix_tables;
-use eyre;
+//! Test migration of botanix storage tables to reth database
+
+use botanix_storage_migrate::{
+    migrate_botanix_tables,
+    test_utils::fixtures::{
+        create_test_block_snapshots, create_test_chunk_blocks, create_test_chunks,
+        create_test_snapshot_syncs, create_test_snapshots, create_test_staged_headers,
+        create_test_wallet_state_syncs,
+    },
+};
+use eyre::Context;
 use reth_db::{test_utils::create_test_rw_db, DatabaseEnv};
 use reth_db_api::{
     cursor::{DbCursorRO, DbCursorRW},
-    database::Database,
     table::Table,
     transaction::{DbTx, DbTxMut},
+    Database,
 };
 use reth_primitives::BlockNumber;
 
 /// Helper function to populate test data in botanix-storage tables
-fn populate_botanix_test_data(db: &DatabaseEnv) -> eyre::Result<()> {
+pub fn populate_botanix_test_data(db: &DatabaseEnv) -> eyre::Result<()> {
     let tx = db.tx_mut()?;
 
-    // Populate Chunks table
-    let mut chunks_cursor = tx.cursor_write::<reth_db::tables::Chunks>()?;
-    for i in 1..=3 {
-        let chunk_id = i as u64;
-        let chunk = reth_db::models::SnapshotChunk::new(
-            i as u64,
-            BlockNumber::from(i as u64),
-            vec![i as u8; 100],
-        );
-        chunks_cursor.append(chunk_id, chunk)?;
+    let count = 3; // Number of entries to insert in each table
+
+    // Insert minimal test data for each table
+    for table in reth_db::Tables::ALL {
+        match table {
+            reth_db::Tables::Snapshots => {
+                create_test_snapshots(&tx, count)?;
+            }
+            reth_db::Tables::WalletStateSyncs => {
+                create_test_wallet_state_syncs(&tx, count)?;
+            }
+            reth_db::Tables::StagedHeader => {
+                create_test_staged_headers(&tx, count)?;
+            }
+            reth_db::Tables::Chunks => {
+                create_test_chunks(&tx, count)?;
+            }
+            reth_db::Tables::BlockSnapshots => {
+                create_test_block_snapshots(&tx, count)?;
+            }
+            reth_db::Tables::ChunkBlocks => {
+                create_test_chunk_blocks(&tx, count)?;
+            }
+            reth_db::Tables::SnapshotSyncs => {
+                create_test_snapshot_syncs(&tx, count)?;
+            }
+            _ => {} // Skip other tables
+        }
     }
 
-    // Populate BlockSnapshots table
-    let mut block_snapshots_cursor = tx.cursor_write::<reth_db::tables::BlockSnapshots>()?;
-    for i in 1..=3 {
-        let block_number = BlockNumber::from(i as u64);
-        let snapshot_id = i as u64;
-        block_snapshots_cursor.append(block_number, snapshot_id)?;
-    }
-
-    // Populate ChunkBlocks table
-    let mut chunk_blocks_cursor = tx.cursor_write::<reth_db::tables::ChunkBlocks>()?;
-    for i in 1..=3 {
-        let chunk_id = i as u64;
-        let block_number = BlockNumber::from(i as u64 * 10);
-        chunk_blocks_cursor.append(chunk_id, block_number)?;
-    }
+    // The tables are now populated using the helper functions in the match statement above
 
     tx.commit()?;
+
     Ok(())
 }
 
 /// Helper function to populate test data in regular reth tables
-fn populate_reth_test_data(db: &DatabaseEnv) -> eyre::Result<()> {
+pub fn populate_reth_test_data(db: &DatabaseEnv) -> eyre::Result<()> {
     let tx = db.tx_mut()?;
 
     // Populate Headers table (regular reth table)
     let mut headers_cursor = tx.cursor_write::<reth_db::tables::Headers>()?;
+
     for i in 1..=5 {
         let block_number = BlockNumber::from(i as u64);
         let header = reth_primitives::Header {
@@ -64,14 +79,42 @@ fn populate_reth_test_data(db: &DatabaseEnv) -> eyre::Result<()> {
     }
 
     tx.commit()?;
+
     Ok(())
 }
 
 /// Helper function to count entries in a table
-fn count_table_entries<T: Table>(db: &DatabaseEnv) -> eyre::Result<usize> {
+pub fn count_table_entries<T: Table>(db: &DatabaseEnv) -> eyre::Result<usize> {
     let tx = db.tx()?;
-    let count = tx.entries::<T>().unwrap_or_else(|_| 0);
+
+    let count = tx.entries::<T>().unwrap_or(0);
+
     Ok(count)
+}
+
+fn count_botanix_db_tables(db: &DatabaseEnv, expected_count: usize) -> eyre::Result<()> {
+    use botanix_storage::tables::Tables;
+
+    for table in Tables::ALL {
+        botanix_storage::tables_to_generic!(table, |Table| {
+            assert_eq!(count_table_entries::<Table>(db)?, expected_count);
+        });
+    }
+
+    Ok(())
+}
+
+fn count_reth_db_botanix_tables(db: &DatabaseEnv, expected_count: usize) -> eyre::Result<()> {
+    use botanix_storage::tables::Tables;
+
+    for table in Tables::ALL {
+        botanix_storage::tables_to_generic!(table, |Table| {
+            // Count entries in the botanix table
+            assert_eq!(count_table_entries::<Table>(db)?, expected_count);
+        });
+    }
+
+    Ok(())
 }
 
 #[test]
@@ -83,46 +126,38 @@ fn test_migration() -> eyre::Result<()> {
     let botanix_db = botanix_temp_db.db();
 
     // Populate test data in reth database
-    populate_botanix_test_data(&reth_db)?;
-    populate_reth_test_data(&reth_db)?;
+    populate_botanix_test_data(reth_db).wrap_err("failed to populate botanix test data")?;
+    populate_reth_test_data(reth_db).wrap_err("failed to populate reth test data")?;
 
     // Verify initial state
 
     // Botanix and reth tables have data in reth db
-    assert_eq!(count_table_entries::<reth_db::tables::Chunks>(&reth_db)?, 3);
-    assert_eq!(count_table_entries::<reth_db::tables::BlockSnapshots>(&reth_db)?, 3);
-    assert_eq!(count_table_entries::<reth_db::tables::ChunkBlocks>(&reth_db)?, 3);
-    assert_eq!(count_table_entries::<reth_db::tables::Headers>(&reth_db)?, 5);
 
     // Botanix db should be empty
-    assert_eq!(count_table_entries::<botanix_storage::tables::Chunks>(&botanix_db)?, 0);
-    assert_eq!(count_table_entries::<botanix_storage::tables::BlockSnapshots>(&botanix_db)?, 0);
-    assert_eq!(count_table_entries::<botanix_storage::tables::ChunkBlocks>(&botanix_db)?, 0);
+    count_botanix_db_tables(botanix_db, 0).wrap_err("failed to count botanix tables")?;
 
     // Perform migration
-    migrate_botanix_tables(reth_db, botanix_db)?;
+    migrate_botanix_tables(reth_db, botanix_db).wrap_err("failed to migrate botanix tables")?;
 
     // Verify migration results
 
     // Botanix tables in reth db should be empty
-    assert_eq!(count_table_entries::<reth_db::tables::Chunks>(&reth_db)?, 0);
-    assert_eq!(count_table_entries::<reth_db::tables::BlockSnapshots>(&reth_db)?, 0);
-    assert_eq!(count_table_entries::<reth_db::tables::ChunkBlocks>(&reth_db)?, 0);
+    count_reth_db_botanix_tables(reth_db, 0)
+        .wrap_err("failed to count reth botanix tables after migration")?;
 
     // Regular reth tables should still have data
-    assert_eq!(count_table_entries::<reth_db::tables::Headers>(&reth_db)?, 5);
+    assert_eq!(count_table_entries::<reth_db::tables::Headers>(reth_db)?, 5);
 
     // Botanix db should have all migrated data
-    assert_eq!(count_table_entries::<botanix_storage::tables::Chunks>(&botanix_db)?, 3);
-    assert_eq!(count_table_entries::<botanix_storage::tables::BlockSnapshots>(&botanix_db)?, 3);
-    assert_eq!(count_table_entries::<botanix_storage::tables::ChunkBlocks>(&botanix_db)?, 3);
+    count_botanix_db_tables(botanix_db, 3).wrap_err("failed to count botanix tables")?;
 
     // Verify data integrity by checking specific entries
-    let botanix_tx = botanix_db.tx()?;
+    let botanix_tx = botanix_db.tx().wrap_err("failed to get tx")?;
 
     // Check Chunks data
     let mut chunks_cursor = botanix_tx.cursor_read::<botanix_storage::tables::Chunks>()?;
     let chunk_data = chunks_cursor.walk(None)?.collect::<Result<Vec<_>, _>>()?;
+
     assert_eq!(chunk_data.len(), 3);
 
     // Check that the first chunk has expected data

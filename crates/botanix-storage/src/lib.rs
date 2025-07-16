@@ -51,7 +51,7 @@
 //!
 //! - `Snapshots`: Snapshot metadata and chunk references
 //! - `Chunks`: Individual snapshot chunk data
-//! - `StagedHeaders`: Headers with pegin/pegout data
+//! - `StagedHeader`: Headers with pegin/pegout data
 //! - `WalletStateSyncs`: Wallet synchronization records
 //! - `BlockSnapshots`: Block number to snapshot ID mappings
 //! - `SnapshotSyncs`: Snapshot synchronization progress tracking

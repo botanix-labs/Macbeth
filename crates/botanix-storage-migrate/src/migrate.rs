@@ -1,11 +1,8 @@
+use crate::table_transporter::TableTransporter;
 use botanix_storage::tables::Tables;
 use eyre::Context;
-use reth_db::{mdbx::tx::Tx, Database, DatabaseEnv, TableViewer};
-use reth_db_api::{
-    cursor::{DbCursorRO, DbCursorRW},
-    table::Table,
-    transaction::{DbTx, DbTxMut},
-};
+use reth_db::{Database, DatabaseEnv};
+use reth_db_api::transaction::DbTx;
 
 /// Migrates botanix-storage tables from a reth database to a botanix database.
 ///
@@ -16,7 +13,7 @@ use reth_db_api::{
 /// The migrated tables are:
 /// - Snapshots
 /// - WalletStateSyncs
-/// - StagedHeaders
+/// - StagedHeader
 /// - Chunks
 /// - BlockSnapshots
 /// - ChunkBlocks
@@ -45,107 +42,41 @@ use reth_db_api::{
 /// # Ok::<(), eyre::Error>(())
 /// ```
 pub fn migrate_botanix_tables(reth_db: &DatabaseEnv, botanix_db: &DatabaseEnv) -> eyre::Result<()> {
+    let start_time = std::time::Instant::now();
+
+    // Open mutable transactions for both databases
+
     let reth_tx =
         reth_db.tx_mut().wrap_err("Failed to create write transaction for reth database")?;
 
     let botanix_tx =
         botanix_db.tx_mut().wrap_err("Failed to create write transaction for botanix database")?;
 
+    let transporter = TableTransporter::new(&reth_tx, &botanix_tx);
+
     tracing::info!("Migrate {} botanix tables from reth to botanix database", Tables::ALL.len());
 
     for table in Tables::ALL {
         tracing::info!("Migrating table {}...", table.name());
 
-        let migrator = TableMigrator { reth_tx: &reth_tx, botanix_tx: &botanix_tx };
+        // Migrate the table and receive a report
+        let report = table
+            .view(&transporter)
+            .wrap_err(format!("Failed to migrate {} table", table.name()))?;
 
-        let report =
-            table.view(&migrator).wrap_err(format!("Failed to migrate {} table", table.name()))?;
-
-        tracing::info!(?report, "Successfully migrated table {}", table.name());
+        tracing::info!("Successfully migrated table {}: {}", table.name(), report);
     }
+
+    // Commit the transactions
 
     botanix_tx.commit().context("failed to commit botanix transaction")?;
     reth_tx.commit().wrap_err("Failed to commit reth transaction")?;
 
-    tracing::info!("Migration completed successfully for {} tables", Tables::ALL.len());
+    tracing::info!(
+        "Migration completed successfully for {} tables in {} secs",
+        Tables::ALL.len(),
+        start_time.elapsed().as_secs_f64()
+    );
 
     Ok(())
-}
-
-/// An intermediary struct to get generic from the tables enum
-struct TableMigrator<'a> {
-    reth_tx: &'a Tx<reth_db::mdbx::RW>,
-    botanix_tx: &'a Tx<reth_db::mdbx::RW>,
-}
-
-impl TableViewer<MigrationReport> for TableMigrator<'_> {
-    type Error = eyre::Error;
-
-    fn view<T: Table>(&self) -> Result<MigrationReport, Self::Error> {
-        migrate_table::<T>(self.reth_tx, self.botanix_tx)
-    }
-}
-
-#[derive(Debug, Default)]
-struct MigrationReport {
-    migrated_count: usize,
-    cleared_count: usize,
-    elapsed_time: std::time::Duration,
-}
-
-impl MigrationReport {
-    fn new(migrated_count: usize, cleared_count: usize, start_time: std::time::Instant) -> Self {
-        Self { migrated_count, cleared_count, elapsed_time: start_time.elapsed() }
-    }
-}
-
-/// Generic function to migrate data from one table type to another and clear the source.
-fn migrate_table<T: Table>(
-    reth_tx: &Tx<reth_db::mdbx::RW>,
-    botanix_tx: &Tx<reth_db::mdbx::RW>,
-) -> eyre::Result<MigrationReport> {
-    let start_time = std::time::Instant::now();
-
-    // Check if table exists in source database by counting entries
-    let Ok(source_count) = reth_tx.entries::<T>() else {
-        // Table doesn't exist or is empty, nothing to migrate
-        return Ok(MigrationReport::default());
-    };
-
-    if source_count == 0 {
-        // Table is empty, nothing to migrate
-        return Ok(MigrationReport::default());
-    }
-
-    let mut source_cursor = reth_tx
-        .cursor_read::<T>()
-        .wrap_err(format!("Failed to create read cursor for table '{}'", T::NAME))?;
-    let mut dest_cursor = botanix_tx
-        .cursor_write::<T>()
-        .wrap_err(format!("Failed to create write cursor for table '{}'", T::NAME))?;
-
-    let mut migrated_count = 0;
-
-    // Walk through all entries in the source table and copy to destination
-    for result in
-        source_cursor.walk(None).wrap_err(format!("Failed to walk table '{}'", T::NAME))?
-    {
-        let (key, value) =
-            result.wrap_err(format!("Failed to read entry from table '{}'", T::NAME))?;
-
-        dest_cursor
-            .append(key, value)
-            .wrap_err(format!("Failed to append entry to table '{}'", T::NAME))?;
-
-        migrated_count += 1;
-    }
-
-    // Clear the source table after a successful migration
-    let cleared_count = reth_tx
-        .entries::<T>()
-        .wrap_err(format!("Failed to count entries in table '{}'", T::NAME))?;
-
-    reth_tx.clear::<T>().wrap_err(format!("Failed to clear table '{}'", T::NAME))?;
-
-    Ok(MigrationReport::new(migrated_count, cleared_count, start_time))
 }

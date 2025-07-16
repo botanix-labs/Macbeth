@@ -23,6 +23,12 @@ reth-db-api = { workspace = true }
 tracing = { workspace = true }
 eyre = { workspace = true }
 
+reth-primitives = { workspace = true, optional = true }
+
 [dev-dependencies]
-reth-primitives = { workspace = true }
 reth-db = { workspace = true, features = ["mdbx", "test-utils"] }
+botanix-storage = { workspace = true, features = ["test-utils"] }
+botanix-storage-migrate = { workspace = true, features = ["test-utils"] }
+
+[features]
+test-utils = ["reth-db/test-utils", "botanix-storage/test-utils", "dep:reth-primitives"]
