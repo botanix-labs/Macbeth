@@ -958,6 +958,8 @@ pub enum BlockError {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use bitcoin::{
         absolute::LockTime,
         blockdata::{
@@ -1576,5 +1578,44 @@ mod tests {
 
         // assert there are no tracked txs
         assert_eq!(pegout_scheduler.txs.len(), 0);
+    }
+
+    #[test]
+    fn test_add_missing_change_outputs() {
+        let db = setup_db().0;
+        let mut pegout_scheduler =
+            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+
+        // Add utxo to db
+        let tx = create_tx(2, 1, None);
+        let utxo = Utxo::new(
+            OutPoint::new(tx.compute_txid(), 0),
+            tx.output.get(0).unwrap().clone(),
+            None,
+            None,
+        );
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
+
+        let mock_bitcoind = MockBitcoind::new();
+        let result = pegout_scheduler.add_missing_change_outputs(&mock_bitcoind);
+        assert!(result.is_ok());
+
+        let utxos = db.get_all_utxos().unwrap();
+
+        // There should be 2 UTXOs now
+        assert_eq!(utxos.len(), 2);
+
+        // This is the txid returned from mock bitcoind
+        let target_txid = bitcoin::Txid::from_str(
+            "0101010101010101010101010101010101010101010101010101010101010101",
+        )
+        .unwrap();
+        // Check that the missing change output was added back
+        assert!(
+            utxos.iter().any(|utxo| utxo.outpoint.txid == target_txid),
+            "Expected to find UTXO with txid {}, but it was not found in the collection",
+            target_txid
+        );
     }
 }
