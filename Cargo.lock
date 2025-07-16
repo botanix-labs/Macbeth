@@ -13355,6 +13355,7 @@ dependencies = [
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
+ "botanix-storage",
  "btc-server",
  "bytes",
  "clap",

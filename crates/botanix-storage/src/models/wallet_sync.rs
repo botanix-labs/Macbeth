@@ -357,7 +357,7 @@ mod tests {
         let chunks_count = 1;
         let block_number = 100;
         let wallet_state_sync_record = WalletStateSyncRecord {
-            uuid: uuid_fixed_bytes.into(),
+            uuid: uuid_fixed_bytes,
             peer_id,
             data: vec![data_chunk.clone()],
             blocks: vec![block_number],
@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(wallet_state_sync_record.get_data(), [data_chunk]);
         assert_eq!(wallet_state_sync_record.get_blocks(), [block_number]);
         assert_eq!(wallet_state_sync_record.get_chunks_count(), chunks_count);
-        assert_eq!(wallet_state_sync_record.size(), 32 + 32 + 3 + 8);
+        assert_eq!(wallet_state_sync_record.size(), 32 + 32 + 32 + 3 + 8);
 
         let hash = wallet_state_sync_record.get_hash();
         assert_eq!(hex::encode(hash).len(), 64);

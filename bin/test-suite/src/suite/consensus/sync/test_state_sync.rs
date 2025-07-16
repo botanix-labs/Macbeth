@@ -1,12 +1,8 @@
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory};
 use botanix_data_parser::{DataParser, SerializationType};
+use botanix_storage::SnapshotReader;
 use reth_primitives::BlockWithSenders;
-use reth_provider::{BlockNumReader, SnapshotReader};
-
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use reth_provider::BlockNumReader;
 
 use crate::{
     it_info_print,
@@ -17,6 +13,10 @@ use crate::{
         },
         ConsensusIntegrationTestSuite,
     },
+};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
 };
 
 const MAX_RETRIES: u8 = 10;
@@ -72,26 +72,29 @@ pub async fn test_state_sync(
                 "Received block number from engine = ",
                 canon_state_notification.block.number.map(|n| n.as_u64())
             );
-            let db_provider = suite
+            let botanix_db_provider = suite
                 .local_context
-                .get_dbs()
+                .get_botanix_dbs()
                 .get(canon_state_notification.engine_index as usize)
                 .cloned()
-                .unwrap();
-            let snapshots = db_provider.get_snapshots().unwrap_or_default();
+                .expect("to have db provider for engine index");
+            let snapshots = botanix_db_provider.get_snapshots().unwrap_or_default();
             if snapshots.len() >= REQUIRED_SNAPSHOTS {
                 let first_snapshot_block_id = snapshots.first().unwrap().height();
-                let snapshot_id = db_provider
+                let snapshot_id = botanix_db_provider
                     .get_snapshot_id_by_block_id(first_snapshot_block_id)
-                    .unwrap()
-                    .unwrap();
+                    .expect("failed to get snapshot id by block id")
+                    .expect("snapshot id not present");
                 let data_parser =
                     DataParser::default().with_serialization_type(SerializationType::Postcard);
-                let snapshot = db_provider.get_snapshot_by_id(snapshot_id).unwrap().unwrap();
+                let snapshot = botanix_db_provider
+                    .get_snapshot_by_id(snapshot_id)
+                    .expect("failed to get snapshot by id")
+                    .expect("snapshot not present");
                 let chunk_ids = snapshot.chunk_ids().to_vec();
                 let mut snapshot_chunks_data: Vec<(u64, Vec<Vec<u8>>)> = Vec::new();
                 for id in chunk_ids {
-                    let chunk = db_provider.get_chunk_by_id(id).unwrap().unwrap();
+                    let chunk = botanix_db_provider.get_chunk_by_id(id).unwrap().unwrap();
                     snapshot_chunks_data.push((
                         chunk.get_ending_block_number(),
                         chunk.chunk_data().iter().map(|b| b.as_ref().to_vec()).collect(),
@@ -171,9 +174,9 @@ pub async fn test_state_sync(
     let mut snapshots_per_fed_member: HashMap<u16, usize> = HashMap::new();
     let expected_sync_height = 'outer: loop {
         for memeber_id in member_ids.clone() {
-            let db_provider =
-                suite.local_context.get_dbs().get(memeber_id as usize).cloned().unwrap();
-            let snapshots = db_provider.get_snapshots().unwrap_or_default();
+            let botanix_provider =
+                suite.local_context.get_botanix_dbs().get(memeber_id as usize).cloned().unwrap();
+            let snapshots = botanix_provider.get_snapshots().unwrap_or_default();
             snapshots_per_fed_member.insert(memeber_id, snapshots.len());
 
             let expected_sync_height =
@@ -213,12 +216,12 @@ pub async fn test_state_sync(
     }
 
     // get the syncing node db
-    let db_provider_syncing_member =
-        suite.local_context.get_dbs().get(member_ids.len()).cloned().unwrap();
+    let reth_db_provider_syncing_member =
+        suite.local_context.get_reth_dbs().get(member_ids.len()).cloned().unwrap();
 
     let mut retries = 0;
     loop {
-        let last_block_number = db_provider_syncing_member.last_block_number().unwrap();
+        let last_block_number = reth_db_provider_syncing_member.last_block_number().unwrap();
         it_info_print!("Syncing last block number ", last_block_number);
 
         if last_block_number >= expected_sync_height {

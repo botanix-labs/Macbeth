@@ -2366,7 +2366,7 @@ mod tests {
     use rand::thread_rng;
     use reth_chainspec::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use reth_cli_runner::tokio_runtime;
-    use reth_db::test_utils::{create_test_ro_db, create_test_static_files_dir};
+    use reth_db::test_utils::{create_test_rw_db, create_test_static_files_dir};
     use reth_db_common::init::init_genesis;
     use reth_evm::test_utils::MockExecutorProvider;
     use reth_node_core::{args::TxPoolArgs, cli::config::RethTransactionPoolConfig};
@@ -2404,22 +2404,22 @@ mod tests {
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
 
         // setup db client
-        let reth_db = Arc::new(Arc::try_unwrap(create_test_ro_db()).unwrap().into_inner_db());
+        let reth_db = Arc::try_unwrap(create_test_rw_db()).unwrap().into_inner_db();
         let (_, reth_static_path) = create_test_static_files_dir();
 
         let spec = Arc::new(BOTANIX_TESTNET.as_ref().to_owned());
         let factory = ProviderFactory::new(
-            reth_db.clone(),
+            Arc::new(reth_db),
             spec.clone(),
-            StaticFileProvider::read_only(reth_static_path).expect("to create provider factory"),
+            StaticFileProvider::read_write(reth_static_path).expect("to create provider factory"),
         );
         let _ = init_genesis(factory.clone()).expect("to init genesis");
 
         let reth_provider =
             BlockchainProvider2::new(factory.clone()).expect("to create blockchain provider");
 
-        let botanix_db = Arc::new(Arc::try_unwrap(create_test_ro_db()).unwrap().into_inner_db());
-        let botanix_provider_factory = BotanixProviderFactory::new(botanix_db);
+        let botanix_db = Arc::try_unwrap(create_test_rw_db()).unwrap().into_inner_db();
+        let botanix_provider_factory = BotanixProviderFactory::new(Arc::new(botanix_db));
 
         let storage = Storage::new(
             Vec::new(),
