@@ -10,9 +10,9 @@ use std::{
 
 use askama::Template;
 use bitcoin::hashes::Hash;
+use botanix_authority_edh::nums_secp256k1_pk;
 use reth_primitives::{
     chain::spec::BotanixTestnetGenesisConfig,
-    constants::nums_secp256k1_pk,
     create_botanix_config_with_genesis,
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     fs, Address, AllGenesisFormats, BlockHashOrNumber, ChainSpec, B256,

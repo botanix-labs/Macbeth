@@ -125,15 +125,6 @@ pub const HOLESKY_GENESIS_HASH: B256 =
 pub const DEV_GENESIS_HASH: B256 =
     b256!("2f980576711e3617a5e4d83dd539548ec0f7792007d505a3d2e9674833af2d7c");
 
-/// Botanix Mainnet genesis hash:
-/// `0x0210ae550e730d0e18f96896b80caad6f59dcc0b83b67421975716d155d027c6`
-pub const BOTANIX_MAINNET_GENESIS: B256 =
-    b256!("0210ae550e730d0e18f96896b80caad6f59dcc0b83b67421975716d155d027c6");
-
-/// Botanix Testnet genesis hash.
-pub const BOTANIX_TESTNET_GENESIS: B256 =
-    b256!("3797638175875c37cefa72ef546db685e43c81ba4af8238b48a495f98d61588d");
-
 /// Keccak256 over empty array: `0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`
 pub const KECCAK_EMPTY: B256 =
     b256!("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
@@ -190,22 +181,6 @@ pub const NONCE_AUTH: u64 = 0xffffffffffffffff;
 
 /// Magic nonce number 0x0000000000000000 to vote on removing a signer. Used in `PoA`
 pub const NONCE_DROP: u64 = 0x0000000000000000;
-
-/// "nothing up my sleve" NUMS point for the secp256k1 curve.
-/// Used as the first aggregate key for the botanix gensis block
-/// consensus should check that this key is being used in genesis and post genesis block is not
-/// being used
-// Pulled from secp256k1 crate `secp256k1::constants::GENERATOR_X`
-#[inline]
-pub fn nums_secp256k1_pk() -> secp256k1::PublicKey {
-    let nums_point = [
-        121, 190, 102, 126, 249, 220, 187, 172, 85, 160, 98, 149, 206, 135, 11, 7, 2, 155, 252,
-        219, 45, 206, 40, 217, 89, 242, 129, 91, 22, 248, 23, 152,
-    ];
-    secp256k1::XOnlyPublicKey::from_slice(&nums_point)
-        .expect("valid nums point")
-        .public_key(secp256k1::Parity::Even)
-}
 
 #[cfg(test)]
 mod tests {

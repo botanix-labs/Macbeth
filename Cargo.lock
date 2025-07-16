@@ -2340,6 +2340,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-chainspec"
+version = "1.1.5"
+dependencies = [
+ "alloy-chains",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives 0.7.7",
+ "askama",
+ "once_cell",
+ "reth-chainspec",
+ "reth-ethereum-forks",
+ "serde_json",
+]
+
+[[package]]
 name = "botanix-cli"
 version = "0.1.0"
 dependencies = [
@@ -9208,7 +9223,6 @@ dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rlp",
  "alloy-trie",
- "askama",
  "auto_impl",
  "derive_more 2.0.1",
  "once_cell",

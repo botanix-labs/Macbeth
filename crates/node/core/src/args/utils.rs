@@ -3,8 +3,9 @@
 use alloy_genesis::Genesis;
 use askama::Template;
 use bitcoin::hashes::Hash;
-use botanix_authority_edh::extra_data_header::{
-    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+use botanix_authority_edh::{
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+    nums_secp256k1_pk,
 };
 use reth_chainspec::{
     create_botanix_config_with_genesis, BotanixMainnetGenesisConfig, BotanixTestnetGenesisConfig,
@@ -12,7 +13,7 @@ use reth_chainspec::{
     BOTANIX_TESTNET_CHAIN_ID, DEV,
 };
 use reth_fs_util as fs;
-use reth_primitives::{constants::nums_secp256k1_pk, Address};
+use reth_primitives::Address;
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tracing::info;
 

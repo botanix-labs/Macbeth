@@ -23,6 +23,7 @@ members = [
     "crates/botanix-authority-peg",
     "crates/botanix-bitcoin-checkpoint",
     "crates/botanix-btc-wallet",
+    "crates/botanix-chainspec",
     "crates/botanix-cli",
     "crates/botanix-comet-bft-rpc",
     "crates/botanix-data-parser",
@@ -376,6 +377,7 @@ botanix-bitcoin-checkpoint = { path = "crates/botanix-bitcoin-checkpoint" }
 botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }
+botanix-chainspec = { path = "crates/botanix-chainspec" }
 
 # frost
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
