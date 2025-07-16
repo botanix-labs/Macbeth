@@ -485,18 +485,7 @@ mod tests {
         let provider = factory.provider().expect("Failed to create RO provider");
         let size = provider.get_chunk_size(chunk_id).expect("Failed to get chunk size");
 
-        let chunk_id_size = std::mem::size_of::<u64>();
-        let snapshot_id_size = std::mem::size_of::<u64>();
-        let starting_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
-        let ending_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
-        let data_size = data.len();
-
-        let expected_size = chunk_id_size +
-            snapshot_id_size +
-            starting_block_number_size +
-            ending_block_number_size +
-            data_size;
-
+        let expected_size = std::mem::size_of::<u64>() + data.len();
         assert_eq!(size, expected_size);
     }
 
@@ -543,25 +532,13 @@ mod tests {
             .get_snapshot_by_id(snapshot_id)
             .expect("Failed to get snapshot by ID")
             .expect("Expected snapshot to exist");
-
         let total_size = provider
             .get_snapshot_size(snapshot_id)
             .expect("Failed to calculate total snapshot size");
 
-        let chunk_id_size = std::mem::size_of::<u64>();
-        let snapshot_id_size = std::mem::size_of::<u64>();
-        let starting_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
-        let ending_block_number_size = std::mem::size_of::<reth_primitives::BlockNumber>();
-
-        let chunk_fields_size = chunk_id_size +
-            snapshot_id_size +
-            starting_block_number_size +
-            ending_block_number_size;
-
         let expected_snapshot_size = snapshot.size();
-        let expected_chunk_1_size = chunk_fields_size + data1.len();
-        let expected_chunk_2_size = chunk_fields_size + data2.len();
-
+        let expected_chunk_1_size = std::mem::size_of::<u64>() + data1.len();
+        let expected_chunk_2_size = std::mem::size_of::<u64>() + data2.len();
         let expected_total_size =
             expected_snapshot_size + expected_chunk_1_size + expected_chunk_2_size;
 

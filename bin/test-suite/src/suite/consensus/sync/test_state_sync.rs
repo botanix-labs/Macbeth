@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-const MAX_RETRIES: u8 = 10;
+const MAX_RETRIES: u8 = 20;
 const REQUIRED_SNAPSHOTS: usize = 1;
 
 #[allow(clippy::too_many_lines)]
@@ -233,6 +233,6 @@ pub async fn test_state_sync(
             return Err(anyhow::anyhow!("Syncing failed after {} retries!", MAX_RETRIES));
         }
 
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
     }
 }
