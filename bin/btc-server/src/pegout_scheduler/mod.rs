@@ -723,20 +723,44 @@ impl PegoutScheduler {
         // Add back missing change outputs to the UTXO set
         let mut missing_utxos = Vec::new();
         for unspent in change_utxos {
+            info!(
+                "PegoutScheduler::add_missing_change_outputs: Found unspent change output: {:?}",
+                unspent
+            );
+
+            // Create a UTXO for the change output
             let utxo = Utxo {
                 outpoint: OutPoint { txid: unspent.txid, vout: unspent.vout },
                 output: TxOut { value: unspent.amount, script_pubkey: unspent.script_pub_key },
-                eth_address: None,     // Assuming this is None for change outputs
-                version: utxo_version, // Set to appropriate default or version
+                eth_address: None, // Assuming this is None for change outputs
+                version: utxo_version,
             };
 
-            // Check if this UTXO already exists in the database
-            if !utxos.contains(&utxo) {
+            // Check if this UTXO already exists in the database by outpoint
+            let outpoints = utxos.iter().map(|u| u.outpoint).collect::<HashSet<_>>();
+            if !outpoints.contains(&utxo.outpoint) {
                 info!(
                     "PegoutScheduler::add_missing_change_outputs: Adding missing change UTXO: {:?}",
                     utxo
                 );
                 missing_utxos.push(utxo);
+            } else {
+                // Sanity check that the utxo we create does match the utxo from the db.
+                // This ensures that we're creating the correct change outputs.
+                let utxo_is_exact_match = utxos.contains(&utxo);
+                if !utxo_is_exact_match {
+                    let db_utxo = utxos
+                        .iter()
+                        .find(|u| u.outpoint == utxo.outpoint)
+                        .expect("utxo should exist in db");
+
+                    error!(
+                        "PegoutScheduler::add_missing_change_outputs: UTXO from db does not match the one we created: {:?} != {:?}",
+                        db_utxo, utxo
+                    );
+
+                    return Err(SyncError::IncorrectChangeOutputCreated);
+                }
             }
         }
         let missing_utxo_refs: Vec<&Utxo> = missing_utxos.iter().collect();
@@ -948,6 +972,8 @@ pub enum SyncError {
     TrackedTxNotInBlock(Txid),
     #[error("deeply confirmed tx not finalized: {0}")]
     DeeplyConfirmedTxNotFinalized(Txid),
+    #[error("incorrect change output created")]
+    IncorrectChangeOutputCreated,
 }
 
 #[derive(Debug, Error)]
