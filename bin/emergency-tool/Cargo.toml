@@ -1,0 +1,26 @@
+[package]
+name = "botanix-emergency-tool"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "botanix-emergency-tool"
+path = "src/main.rs"
+
+[dependencies]
+botanix-btc-wallet = { path = "../../crates/botanix-btc-wallet" }
+
+anyhow = "1.0.75"
+bdk = { version = "0.29.0", features = ["rpc"] }
+bitcoin = { version = "0.32.5", features = ["base64", "rand", "serde"] }
+bitcoincore-rpc = "0.19.0"
+clap = { version = "4.3.22", features = ["derive"] }
+confy = "0.6"
+futures = "0.3"
+serde = { version = "1.0.171", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0.11"
+tokio = { version = "1.45.0", features = ["full"] }
+toml = "0.8.4"
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] } 
