@@ -5,8 +5,7 @@ use reth_chain_state::ExecutedBlock;
 use reth_chainspec::ChainSpec;
 use reth_db::{Database, DatabaseEnv};
 use reth_provider::{
-    providers::BlockchainProvider2, BlockNumReader, BlockReader, BlockWriter, CanonChainTracker,
-    ExecutionOutcome,
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
 };
 use reth_trie::{updates::TrieUpdates, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
