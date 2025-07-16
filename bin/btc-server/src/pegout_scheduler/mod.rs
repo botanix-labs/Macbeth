@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::{
-    database::FinalizedPegout,
+    database::{FinalizedPegout, Utxo},
     pegout_id::PegoutId,
     telemetry::Telemetry,
     update_telemetry_error,
@@ -22,7 +22,7 @@ use crate::{
     },
 };
 use bitcoin::{Amount, Block, BlockHash, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
-use bitcoincore_rpc::RpcApi;
+use bitcoincore_rpc::{json::ScanTxOutRequest, RpcApi};
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -219,6 +219,8 @@ pub struct PegoutScheduler {
     last_finalized: BlockHash,
     /// Database handle
     db: database::Db,
+    /// Whether we should scan for missing change outputs
+    scan_for_change_outputs: bool,
 }
 
 impl PegoutScheduler {
@@ -237,6 +239,7 @@ impl PegoutScheduler {
             last_blocks: VecDeque::with_capacity(conf_window as usize),
             last_finalized,
             db,
+            scan_for_change_outputs: true,
         };
 
         ret.last_blocks.push_back(BlockInfo {
@@ -687,6 +690,65 @@ impl PegoutScheduler {
         Ok(())
     }
 
+    /// Add missing change outputs to the UTXO set.
+    ///
+    /// This is a temporary fix to ensure change outputs are added back to the UTXO set.
+    /// Args:
+    /// - `bitcoind`: The RPC client to use to scan the UTXO set.
+    ///   Returns:
+    /// - `Ok(())` if successful.
+    /// - `Err(SyncError)` if there was an error.
+    pub fn add_missing_change_outputs(&mut self, bitcoind: &impl RpcApi) -> Result<(), SyncError> {
+        info!("PegoutScheduler::add_missing_change_outputs: Adding missing change outputs to the UTXO set.");
+
+        // Get the UTXO set from the db
+        let utxos = self.db.get_all_utxos()?;
+        if utxos.is_empty() {
+            info!("PegoutScheduler::add_missing_change_outputs: No UTXOs found in the database.");
+            return Ok(());
+        }
+        info!(
+            "PegoutScheduler::add_missing_change_outputs: Found {} UTXOs in the database.",
+            utxos.len()
+        );
+        // This is safe because of the empty check above
+        let utxo_version = utxos[0].version;
+
+        // Get the unspent utxo for the change address
+        let change_address = ScanTxOutRequest::Single(
+            "addr(bc1p780f20323vt8nq0f42hr7q59dh2fr3p3uz3h2d9rskdpszt0at5qc3rk74)".to_string(),
+        );
+        let change_utxos = bitcoind.scan_tx_out_set_blocking(&[change_address])?.unspents;
+
+        // Add back missing change outputs to the UTXO set
+        let mut missing_utxos = Vec::new();
+        for unspent in change_utxos {
+            let utxo = Utxo {
+                outpoint: OutPoint { txid: unspent.txid, vout: unspent.vout },
+                output: TxOut { value: unspent.amount, script_pubkey: unspent.script_pub_key },
+                eth_address: None,     // Assuming this is None for change outputs
+                version: utxo_version, // Set to appropriate default or version
+            };
+
+            // Check if this UTXO already exists in the database
+            if !utxos.contains(&utxo) {
+                info!(
+                    "PegoutScheduler::add_missing_change_outputs: Adding missing change UTXO: {:?}",
+                    utxo
+                );
+                missing_utxos.push(utxo);
+            }
+        }
+        let missing_utxo_refs: Vec<&Utxo> = missing_utxos.iter().collect();
+        info!(
+            "PegoutScheduler::add_missing_change_outputs: Storing {} missing change outputs.",
+            missing_utxo_refs.len()
+        );
+        self.db.store_utxos(&missing_utxo_refs)?;
+
+        Ok(())
+    }
+
     /// Sync with new blocks and stop when the [checkpoint] block gets finalized.
     ///
     /// We take the database closure to reduce coupling with database module.
@@ -712,6 +774,16 @@ impl PegoutScheduler {
         if is_syncing(bitcoind)? {
             update_telemetry_error!(telemetry, SyncError::NodeNotSynced);
             return Err(SyncError::NodeNotSynced);
+        }
+
+        // Add back missing change outputs to the utxo set.
+        // TODO(Scott): This is a temporary fix to ensure change outputs are added back
+        // to the UTXO set. We will remove this logic in another release.
+        // Check if we have any missing change outputs
+        if self.scan_for_change_outputs {
+            // Setting to false immediately to avoid infinite retrying
+            self.scan_for_change_outputs = false;
+            self.add_missing_change_outputs(bitcoind)?;
         }
 
         // First find the latest block that we have that is still in the blockchain.
