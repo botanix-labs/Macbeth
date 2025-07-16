@@ -2,20 +2,21 @@
 
 mod cli;
 use anyhow::Result as AnyResult;
+use botanix_storage::BotanixProviderFactory;
 use clap::Parser;
 use cli::Cli;
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_db::{
     mdbx::{DatabaseArguments, MaxReadTransactionDuration},
     models::ClientVersion,
     open_db, DatabaseEnv,
 };
-use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
+use reth_provider::errors::db::LogLevel;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
+use tokio::time::sleep;
 
 /// db scopes
 pub mod scopes;
@@ -35,8 +36,6 @@ async fn main() -> AnyResult<()> {
         .with_log_level(Some(LogLevel::Debug))
         .with_max_read_transaction_duration(Some(MaxReadTransactionDuration::Unbounded));
     let db_dir = Path::new(&db_path).join("db");
-    let node_config = BOTANIX_TESTNET.clone();
-    let static_files_dir = Path::new(&db_path).join("static_files");
 
     tracing::info!(target: "db_cleaner::cli", path = ?db_dir, "Opening database ...");
 
@@ -47,17 +46,14 @@ async fn main() -> AnyResult<()> {
             }
             Err(e) => {
                 tracing::error!(target: "db_cleaner::cli", path = ?db_path, "Opening database failed - retrying. Error = {e:?}");
-                std::thread::sleep(Duration::from_secs(1));
-                continue;
+                sleep(Duration::from_secs(1)).await;
             }
         }
     };
     tracing::info!(target: "db_cleaner::cli", path = ?db_path, "Database successfully opened!");
     let database = Arc::new(db);
 
-    let static_file_provider = StaticFileProvider::read_write(static_files_dir)?;
-    let provider_factory =
-        ProviderFactory::<Arc<DatabaseEnv>>::new(database, node_config, static_file_provider);
+    let provider_factory = BotanixProviderFactory::<Arc<DatabaseEnv>>::new(database);
 
     match cli.entity {
         cli::Entity::Snapshots => {
