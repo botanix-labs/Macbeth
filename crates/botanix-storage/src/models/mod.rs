@@ -7,7 +7,7 @@
 //! ## Module Organization
 //!
 //! - **activation_manager**: Network upgrade voting and version management models
-//! - **snapshot**: Blockchain snapshot and chunk data structures  
+//! - **snapshot**: Blockchain snapshot and chunk data structures
 //! - **staged_header**: Headers with associated pegin/pegout transaction data
 //! - **wallet_sync**: Wallet state synchronization coordination models
 //!

@@ -6,11 +6,11 @@ use bitcoin::{
     witness::Witness,
     Address, Amount, BlockHash,
 };
-use botanix_storage::models;
 use botanix_authority_peg::{
     mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
     peg_contract::{PeginMeta, PegoutData, PegoutWithId},
 };
+use botanix_storage::models;
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
