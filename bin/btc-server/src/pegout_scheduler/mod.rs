@@ -239,7 +239,7 @@ impl PegoutScheduler {
             last_blocks: VecDeque::with_capacity(conf_window as usize),
             last_finalized,
             db,
-            scan_for_change_outputs: true,
+            scan_for_change_outputs: false,
         };
 
         ret.last_blocks.push_back(BlockInfo {
