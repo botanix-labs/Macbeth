@@ -2438,6 +2438,7 @@ dependencies = [
  "bitcoin 0.32.5",
  "bitcoincore-rpc",
  "botanix-btc-wallet",
+ "chrono",
  "clap",
  "confy",
  "futures",
