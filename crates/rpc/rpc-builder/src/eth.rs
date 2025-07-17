@@ -1,9 +1,9 @@
+use botanix_rpc_config::botanix_config::Botanix;
 use reth_evm::ConfigureEvm;
 use reth_provider::{BlockReader, CanonStateSubscriptions, EvmEnvProvider, StateProviderFactory};
 use reth_rpc::{EthFilter, EthPubSub};
 use reth_rpc_eth_types::{
-    builder::botanix_config::Botanix, cache::cache_new_blocks_task, EthApiBuilderCtx, EthConfig,
-    EthStateCache,
+    cache::cache_new_blocks_task, EthApiBuilderCtx, EthConfig, EthStateCache,
 };
 use reth_tasks::TaskSpawner;
 

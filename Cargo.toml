@@ -135,6 +135,136 @@ default-members = ["bin/reth"]
 # Explicitly set the resolver to version 2, which is the default for packages with edition >= 2021
 # https://doc.rust-lang.org/edition-guide/rust-2021/default-cargo-resolver.html
 
+
+[workspace]
+resolver = "2"
+
+members = [
+    "bin/botanix-db-cleaner",
+    "bin/botanix-federation-utils",
+    "bin/botanix-up",
+    "bin/btc-server",
+    "bin/reth-bench/",
+    "bin/reth/",
+    "bin/test-suite",
+    "crates/blockchain-tree-api/",
+    "crates/botanix-authority-edh",
+    "crates/botanix-authority-peg",
+    "crates/botanix-bitcoin-checkpoint",
+    "crates/botanix-btc-wallet",
+    "crates/botanix-cli",
+    "crates/botanix-comet-bft-rpc",
+    "crates/botanix-data-parser",
+    "crates/botanix-rpc-client",
+    "crates/botanix-rpc-config",
+    "crates/botanix-rpc-types",
+    "crates/chain-state/",
+    "crates/chainspec/",
+    "crates/cli/cli/",
+    "crates/cli/commands/",
+    "crates/cli/runner/",
+    "crates/cli/util/",
+    "crates/config/",
+    "crates/consensus/authority",
+    "crates/consensus/auto-seal/",
+    "crates/consensus/beacon/",
+    "crates/consensus/common/",
+    "crates/consensus/consensus/",
+    "crates/consensus/debug-client/",
+    "crates/e2e-test-utils/",
+    "crates/engine/primitives/",
+    "crates/engine/service",
+    "crates/engine/tree/",
+    "crates/engine/util/",
+    "crates/errors/",
+    "crates/ethereum-forks/",
+    "crates/ethereum/cli/",
+    "crates/ethereum/consensus/",
+    "crates/ethereum/engine-primitives/",
+    "crates/ethereum/evm",
+    "crates/ethereum/node",
+    "crates/ethereum/payload/",
+    "crates/etl/",
+    "crates/evm/",
+    "crates/evm/execution-errors",
+    "crates/evm/execution-types",
+    "crates/exex/exex/",
+    "crates/exex/test-utils/",
+    "crates/exex/types/",
+    "crates/metrics/",
+    "crates/metrics/metrics-derive/",
+    "crates/net/banlist/",
+    "crates/net/discv4/",
+    "crates/net/discv5/",
+    "crates/net/dns/",
+    "crates/net/downloaders/",
+    "crates/net/ecies/",
+    "crates/net/eth-wire-types",
+    "crates/net/eth-wire/",
+    "crates/net/nat/",
+    "crates/net/network-api/",
+    "crates/net/network-types/",
+    "crates/net/network/",
+    "crates/net/p2p/",
+    "crates/net/peers/",
+    "crates/node/api/",
+    "crates/node/builder/",
+    "crates/node/core/",
+    "crates/node/events/",
+    "crates/node/metrics",
+    "crates/payload/basic/",
+    "crates/payload/builder/",
+    "crates/payload/primitives/",
+    "crates/payload/validator/",
+    "crates/primitives-traits/",
+    "crates/primitives/",
+    "crates/prune/prune",
+    "crates/prune/types",
+    "crates/revm/",
+    "crates/rpc/ipc/",
+    "crates/rpc/rpc-api/",
+    "crates/rpc/rpc-builder/",
+    "crates/rpc/rpc-engine-api/",
+    "crates/rpc/rpc-eth-api/",
+    "crates/rpc/rpc-eth-types/",
+    "crates/rpc/rpc-layer",
+    "crates/rpc/rpc-server-types/",
+    "crates/rpc/rpc-testing-util/",
+    "crates/rpc/rpc-types-compat/",
+    "crates/rpc/rpc-types/",
+    "crates/rpc/rpc/",
+    "crates/stages/api/",
+    "crates/stages/stages/",
+    "crates/stages/types/",
+    "crates/static-file/static-file",
+    "crates/static-file/types/",
+    "crates/storage/codecs/",
+    "crates/storage/codecs/derive/",
+    "crates/storage/db-api/",
+    "crates/storage/db-common",
+    "crates/storage/db-models/",
+    "crates/storage/db/",
+    "crates/storage/errors/",
+    "crates/storage/libmdbx-rs/",
+    "crates/storage/libmdbx-rs/mdbx-sys/",
+    "crates/storage/nippy-jar/",
+    "crates/storage/provider/",
+    "crates/storage/storage-api/",
+    "crates/tasks/",
+    "crates/tokio-util/",
+    "crates/tracing/",
+    "crates/transaction-pool/",
+    "crates/trie/common",
+    "crates/trie/db",
+    "crates/trie/parallel/",
+    "crates/trie/trie",
+    "testing/ef-tests/",
+    "testing/testing-utils",
+]
+default-members = ["bin/reth"]
+# Explicitly set the resolver to version 2, which is the default for packages with edition >= 2021
+# https://doc.rust-lang.org/edition-guide/rust-2021/default-cargo-resolver.html
+
 [workspace.lints.rust]
 missing_debug_implementations = "warn"
 missing_docs = "warn"
@@ -371,6 +501,9 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 
 # Botanix deps
 botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
+botanix-rpc-config = { path = "crates/botanix-rpc-config" }
+botanix-rpc-types = { path = "crates/botanix-rpc-types" }
+botanix-rpc-client = { path = "crates/botanix-rpc-client" }
 botanix-authority-rsp = { path = "crates/botanix-authority-rsp" }
 botanix-authority-edh = { path = "crates/botanix-authority-edh" }
 botanix-authority-peg = { path = "crates/botanix-authority-peg" }
@@ -380,7 +513,7 @@ botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }
 botanix-storage = { path = "crates/botanix-storage" }
 botanix-storage-migrate = { path = "crates/botanix-storage-migrate" }
-
+# frost
 # frost
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
     "serde",

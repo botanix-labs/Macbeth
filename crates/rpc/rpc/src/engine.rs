@@ -1,11 +1,12 @@
+use botanix_rpc_types::types::GatewayAddress;
 use jsonrpsee::core::RpcResult as Result;
 use reth_primitives::{Address, BlockId, BlockNumberOrTag, Bytes, B256, U256, U64};
 use reth_rpc_api::{EngineEthApiServer, EthApiServer, EthFilterApiServer};
 /// Re-export for convenience
 pub use reth_rpc_engine_api::EngineApi;
 use reth_rpc_types::{
-    botanix::GatewayAddress, state::StateOverride, BlockOverrides, EIP1186AccountProofResponse,
-    Filter, JsonStorageKey, Log, RichBlock, SyncStatus, TransactionRequest,
+    state::StateOverride, BlockOverrides, EIP1186AccountProofResponse, Filter, JsonStorageKey, Log,
+    RichBlock, SyncStatus, TransactionRequest,
 };
 use tracing_futures::Instrument;
 

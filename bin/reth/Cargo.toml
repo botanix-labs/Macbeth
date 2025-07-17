@@ -34,6 +34,7 @@ botanix-storage-migrate = { workspace = true }
 # Botanix
 botanix-btc-wallet = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
+botanix-rpc-config = { workspace = true }
 btc-server = { path = "../btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
 
