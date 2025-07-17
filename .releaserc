@@ -76,7 +76,7 @@ plugins:
       writerOpts:
         headerPartial: ""
 
-      # Publish to GitHub
+  # Publish to GitHub
   - - "@semantic-release/github"
     - assets:
         - path: "./release-assets/*"
