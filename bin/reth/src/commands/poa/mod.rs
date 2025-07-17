@@ -787,8 +787,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             target_height = 1; // Activate as soon as possible
             our_vote = Vote::Aye;
         } else {
-            quorum = 100; // 100% ~= 15/15 members must approve
-            min_validator_count = 15;
+            quorum = 100; // 100% ~= 16/16 members must approve
+            min_validator_count = 16;
             target_height = 1; // Activate as soon as possible
             our_vote = Vote::Aye;
         }

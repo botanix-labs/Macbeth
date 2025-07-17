@@ -2085,7 +2085,13 @@ where
                         debug!("finalize_block: Finalizing block with UPGRADED version: {runtime_version}");
                         Some(FLOOR_BASE_FEE_PER_GAS)
                     }
-                    _ => unreachable!(),
+                    // This software is outdated and just encountered an
+                    // upgraded runtime version; this will be rejected in the
+                    // upcoming `ActivationManager::on_finalize_block(..)` call.
+                    _ => {
+                        warn!("finalize_block: Unrecognized runtime version: {runtime_version}");
+                        Some(FLOOR_BASE_FEE_PER_GAS) // just apply the latest change.
+                    }
                 };
 
                 match build_and_execute(
