@@ -29,6 +29,7 @@ reth-primitives = { workspace = true, optional = true }
 reth-db = { workspace = true, features = ["mdbx", "test-utils"] }
 botanix-storage = { workspace = true, features = ["test-utils"] }
 botanix-storage-migrate = { workspace = true, features = ["test-utils"] }
+tempfile = { workspace = true }
 
 [features]
 test-utils = ["reth-db/test-utils", "botanix-storage/test-utils", "dep:reth-primitives"]
