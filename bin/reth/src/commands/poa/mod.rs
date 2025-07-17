@@ -4,8 +4,8 @@ use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
-use botanix_storage_migrate::is_migration_needed;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
+use botanix_storage_migrate::is_migration_needed;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
