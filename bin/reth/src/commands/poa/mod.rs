@@ -4,6 +4,7 @@ use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_storage_migrate::is_migration_needed;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -404,7 +405,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let executor = ctx.task_executor;
 
         // If botanix database path does not exist, it means we didn't migrate botanix tables yet.
-        let is_migration_needed = fs::exists(&reth_db_path)? && !fs::exists(&botanix_db_path)?;
+        let is_migration_needed = is_migration_needed(&reth_db_path, &botanix_db_path)?;
 
         tracing::info!(target: "reth::cli", path = ?reth_db_path, "Opening reth database");
         let reth_database =

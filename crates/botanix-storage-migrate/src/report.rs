@@ -39,4 +39,13 @@ impl MigrationReport {
     pub(crate) fn new(keys_count: usize, start_time: std::time::Instant) -> Self {
         Self { keys_count, elapsed_time: start_time.elapsed() }
     }
+
+    /// Checks if the migration has been performed by verifying if any keys were migrated.
+    ///
+    /// # Returns
+    ///
+    /// `true` if at least one key was migrated, `false` otherwise.
+    pub(crate) fn is_migrated(&self) -> bool {
+        self.keys_count > 0
+    }
 }

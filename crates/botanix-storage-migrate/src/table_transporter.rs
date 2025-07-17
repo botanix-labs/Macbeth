@@ -91,7 +91,7 @@ impl<'a> TableTransporter<'a> {
             T::NAME
         ))?;
 
-        let mut migrated_count = 0;
+        let mut migrated_keys_count = 0;
 
         // Walk through all entries in the source table and copy to destination
         for result in
@@ -104,20 +104,24 @@ impl<'a> TableTransporter<'a> {
                 .append(key, value)
                 .wrap_err(format!("Failed to append entry to table '{}'", T::NAME))?;
 
-            migrated_count += 1;
+            migrated_keys_count += 1;
         }
 
-        if reth_table_keys_count != migrated_count {
+        if reth_table_keys_count != migrated_keys_count {
             return Err(eyre::eyre!(
                 "Mismatch in migrated entries: expected {}, got {}",
                 reth_table_keys_count,
-                migrated_count
+                migrated_keys_count
             ));
         }
 
         self.reth_tx.clear::<T>().wrap_err(format!("Failed to clear table '{}'", T::NAME))?;
 
-        Ok(MigrationReport::new(migrated_count, start_time))
+        let report = MigrationReport::new(migrated_keys_count, start_time);
+
+        tracing::info!("Successfully migrated table {}: {}", T::NAME, report);
+
+        Ok(report)
     }
 }
 
