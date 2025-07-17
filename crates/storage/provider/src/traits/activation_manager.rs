@@ -9,6 +9,7 @@ use reth_errors::ProviderResult;
 /// Implementations should maintain persistence of votes between blocks and handle
 /// the removal of expired votes.
 #[auto_impl::auto_impl(&, Arc, Box)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub trait ActivationManagerReaderWriter: Send + Sync {
     /// Records or updates a validator's vote for a network upgrade.
     ///
@@ -25,6 +26,7 @@ pub trait ActivationManagerReaderWriter: Send + Sync {
     /// # Returns
     /// * `Ok(())` if the vote was successfully recorded
     /// * `Err` if there was an error recording the vote
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn update_upgrading_vote(
         &self,
         auth: secp256k1::PublicKey,
@@ -51,6 +53,7 @@ pub trait ActivationManagerReaderWriter: Send + Sync {
     ///   - `approval_rate` is the percentage (0-100) of Aye votes
     ///   - `total_votes` is the number of distinct validators who have voted
     /// * `Err` if there was an error calculating the approval rate
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_upgrading_approval_rate_ayes(
         &self,
         min_validator_count: usize,
@@ -75,6 +78,7 @@ pub trait ActivationManagerReaderWriter: Send + Sync {
     ///   - `approval_rate` is the percentage (0-100) of accepting validators
     ///   - `total_votes` is the number of distinct validators who have voted
     /// * `Err` if there was an error calculating the approval
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_upgrading_approval_rate_compliance(
         &self,
         min_validator_count: usize,
@@ -92,5 +96,6 @@ pub trait ActivationManagerReaderWriter: Send + Sync {
     /// # Returns
     /// * `Ok(count)` - The number of votes that were removed
     /// * `Err` if there was an error removing votes
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn remove_upgrading_votes(&self, botanix_height: u64) -> ProviderResult<usize>;
 }

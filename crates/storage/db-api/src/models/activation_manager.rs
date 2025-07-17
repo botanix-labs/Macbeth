@@ -18,6 +18,7 @@ use std::cmp::Ordering;
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub enum Vote {
     /// Vote in favor of the upgrade. An `Aye` vote contributes to the signaling
     /// threshold calculations.
@@ -50,6 +51,7 @@ pub enum Vote {
 /// 2. The activation manager can enforce one-way upgrade progression
 /// 3. Historical blocks during sync can be validated against appropriate version thresholds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct RuntimeVersion(
     /// Major version component, incremented for breaking changes (hard fork)
     pub MajorVersion,
@@ -87,10 +89,12 @@ impl From<(u16, u16)> for RuntimeVersion {
 
 /// Represents a major version component of a runtime version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct MajorVersion(pub u16);
 
 /// Represents a minor version component of a runtime version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct MinorVersion(pub u16);
 
 #[test]
