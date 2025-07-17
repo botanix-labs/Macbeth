@@ -12,6 +12,7 @@ description = "Helpers for configuring RPC"
 workspace = true
 
 [dependencies]
+botanix-rpc-config = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 http = { workspace = true }
 

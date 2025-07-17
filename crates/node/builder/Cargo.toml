@@ -18,6 +18,8 @@ aquamarine = { workspace = true }
 bitcoin = { workspace = true }
 botanix-btc-wallet = { workspace = true }
 
+botanix-rpc-config = { workspace = true }
+
 ## Botanix
 btc-server = { path = "../../../bin/btc-server" }
 eyre = { workspace = true }
