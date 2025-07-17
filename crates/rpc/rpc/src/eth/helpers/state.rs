@@ -43,6 +43,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use botanix_rpc_config::botanix_config::Botanix;
     use reth_evm_ethereum::EthEvmConfig;
     use reth_primitives::{
         constants::ETHEREUM_BLOCK_GAS_LIMIT, Address, StorageKey, StorageValue, KECCAK_EMPTY, U256,
@@ -50,8 +51,7 @@ mod tests {
     use reth_provider::test_utils::{ExtendedAccount, MockEthProvider, NoopProvider};
     use reth_rpc_eth_api::helpers::EthState;
     use reth_rpc_eth_types::{
-        builder::botanix_config::Botanix, EthStateCache, FeeHistoryCache, FeeHistoryCacheConfig,
-        GasPriceOracle,
+        EthStateCache, FeeHistoryCache, FeeHistoryCacheConfig, GasPriceOracle,
     };
     use reth_rpc_server_types::constants::{DEFAULT_ETH_PROOF_WINDOW, DEFAULT_PROOF_PERMITS};
     use reth_tasks::pool::BlockingTaskPool;

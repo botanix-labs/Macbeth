@@ -16,7 +16,6 @@
 
 pub mod block;
 pub mod blocking_task;
-pub mod botanix;
 pub mod call;
 pub mod error;
 pub mod fee;
@@ -31,7 +30,7 @@ pub mod types;
 
 pub use block::{EthBlocks, LoadBlock};
 pub use blocking_task::SpawnBlocking;
-use botanix::EthBotanixApi;
+use botanix_rpc_client::botanix::EthBotanixApi;
 pub use call::{Call, EthCall};
 pub use fee::{EthFees, LoadFee};
 pub use pending_block::LoadPendingBlock;

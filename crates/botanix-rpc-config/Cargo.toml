@@ -1,0 +1,25 @@
+[package]
+name = "botanix-rpc-config"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+alloy-primitives = { workspace = true }
+bitcoin = { workspace = true }
+bitcoincore-rpc = { workspace = true }
+botanix-authority-edh = { workspace = true }
+botanix-btc-wallet = { workspace = true }
+btc-server = { path = "../../bin/btc-server" }
+frost-secp256k1-tr = { workspace = true }
+jsonrpsee-types = { workspace = true }
+reth-primitives = { workspace = true, features = ["secp256k1"] }
+
+# reth libs
+reth-storage-api = { workspace = true }
+revm-primitives = { workspace = true }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }

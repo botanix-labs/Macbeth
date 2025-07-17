@@ -14,8 +14,8 @@ use reth_ethereum_forks::{
 use reth_network_peers::NodeRecord;
 use reth_primitives_traits::{
     constants::{
-        BOTANIX_INITIAL_BASE_FEE, DEV_GENESIS_HASH, EIP1559_INITIAL_BASE_FEE, EMPTY_WITHDRAWALS,
-        ETHEREUM_BLOCK_GAS_LIMIT, HOLESKY_GENESIS_HASH, MAINNET_GENESIS_HASH, SEPOLIA_GENESIS_HASH,
+        DEV_GENESIS_HASH, EIP1559_INITIAL_BASE_FEE, EMPTY_WITHDRAWALS, ETHEREUM_BLOCK_GAS_LIMIT,
+        HOLESKY_GENESIS_HASH, MAINNET_GENESIS_HASH, SEPOLIA_GENESIS_HASH,
     },
     Header, SealedHeader,
 };
@@ -52,12 +52,6 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 20000,
-        bitcoin_checkpoint_confirmation_depth: 0,
-        weak_bitcoin_checkpoints_count: 0,
-        historical_bitcoin_checkpoints_count: 0,
-        leader_selection_window: None,
-        botanix_fee_recipient: None,
-        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -82,12 +76,6 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 10000,
-        bitcoin_checkpoint_confirmation_depth: 0,
-        weak_bitcoin_checkpoints_count: 0,
-        historical_bitcoin_checkpoints_count: 0,
-        leader_selection_window: None,
-        botanix_fee_recipient: None,
-        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -110,12 +98,6 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 10000,
-        bitcoin_checkpoint_confirmation_depth: 0,
-        weak_bitcoin_checkpoints_count: 0,
-        historical_bitcoin_checkpoints_count: 0,
-        leader_selection_window: None,
-        botanix_fee_recipient: None,
-        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -221,26 +203,6 @@ pub struct ChainSpec {
 
     /// The delete limit for pruner, per run.
     pub prune_delete_limit: usize,
-
-    /// The number of confirmations we require for pegins from the mainchain.
-    pub bitcoin_checkpoint_confirmation_depth: u32,
-
-    /// How many checkpoints before the strong confirmation depth to keep (depth < strong)
-    /// for validation
-    pub historical_bitcoin_checkpoints_count: usize,
-
-    /// How many historical checkpoints to keep (depth > strong) for validation
-    pub weak_bitcoin_checkpoints_count: usize,
-
-    /// Block times in seconds
-    pub leader_selection_window: Option<u64>,
-
-    /// Botanix fee recipient
-    pub botanix_fee_recipient: Option<String>,
-
-    /// LST fee receiver
-    /// This is the contract address that receives block fees as part of native staking
-    pub lst_fee_receiver: Option<String>,
 }
 
 impl Default for ChainSpec {
@@ -255,12 +217,6 @@ impl Default for ChainSpec {
             base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
             max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
             prune_delete_limit: MAINNET.prune_delete_limit,
-            bitcoin_checkpoint_confirmation_depth: 0,
-            weak_bitcoin_checkpoints_count: 0,
-            historical_bitcoin_checkpoints_count: 0,
-            leader_selection_window: None,
-            botanix_fee_recipient: None,
-            lst_fee_receiver: None,
         }
     }
 }
@@ -367,19 +323,11 @@ impl ChainSpec {
     /// Get the initial base fee of the genesis block.
     pub fn initial_base_fee(&self) -> Option<u64> {
         // If the base fee is set in the genesis block, we use that instead of the default.
-        let genesis_base_fee = self.clone().initial_base_fee_by_chain_id();
+        let genesis_base_fee =
+            self.genesis.base_fee_per_gas.unwrap_or(EIP1559_INITIAL_BASE_FEE as u128) as u64;
 
         // If London is activated at genesis, we set the initial base fee as per EIP-1559.
         self.hardforks.fork(EthereumHardfork::London).active_at_block(0).then_some(genesis_base_fee)
-    }
-
-    /// Returns the initial base fee based on chain id
-    pub fn initial_base_fee_by_chain_id(self) -> u64 {
-        if self.chain().id() == BOTANIX_TESTNET.chain().id() {
-            BOTANIX_INITIAL_BASE_FEE
-        } else {
-            EIP1559_INITIAL_BASE_FEE
-        }
     }
 
     /// Get the [`BaseFeeParams`] for the chain at the given timestamp.

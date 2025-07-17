@@ -10,8 +10,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-/// Botanix specific rpc types and endpoints
-pub mod botanix;
 #[allow(hidden_glob_reexports)]
 mod eth;
 
