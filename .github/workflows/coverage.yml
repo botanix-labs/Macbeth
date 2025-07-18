@@ -15,8 +15,7 @@ env:
 jobs:
   coverage:
     name: Coverage
-    runs-on:
-      group: macbeth
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

@@ -1,0 +1,642 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - develop
+      - rc
+      - hotfix
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  packages: write
+  id-token: write
+  actions: write
+
+jobs:
+  semantic-release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    outputs:
+      # Whether a new release was published
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      # Version of the new release
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
+      # Major version of the new release
+      new_release_major_version: ${{ steps.semantic.outputs.new_release_major_version }}
+      # Minor version of the new release'
+      new_release_minor_version: ${{ steps.semantic.outputs.new_release_minor_version }}
+      # Patch version of the new release'
+      new_release_patch_version: ${{ steps.semantic.outputs.new_release_patch_version }}
+      # The distribution channel on which the last release was initially made available (undefined for the default distribution channel)
+      new_release_channel: ${{ steps.semantic.outputs.new_release_channel }}
+      # The release notes for the new release.
+      new_release_notes: ${{ steps.semantic.outputs.new_release_notes }}
+      # The sha of the last commit being part of the new release.
+      new_release_git_head: ${{ steps.semantic.outputs.new_release_git_head }}
+      # The Git tag associated with the new release.
+      new_release_git_tag: ${{ steps.semantic.outputs.new_release_git_tag }}
+      # Version of the previous release, if there was one.
+      last_release_version: ${{ steps.semantic.outputs.last_release_version }}
+      # The sha of the last commit being part of the last release, if there was one.
+      last_release_git_head: ${{ steps.semantic.outputs.last_release_git_head }}
+      # The Git tag associated with the last release, if there was one.
+      last_release_git_tag: ${{ steps.semantic.outputs.last_release_git_tag }}
+      # Branches configuration for manual dispatch
+      branches_config: ${{ steps.branches_config.outputs.branches }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare branches configuration for manual dispatch
+        id: branches_config
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          # Check if .releaserc exists
+          if [ ! -f ".releaserc" ]; then
+            echo "::error::No .releaserc file found. Please create a .releaserc file to define branch configurations."
+            exit 1
+          fi
+
+          # Read existing branches configuration from .releaserc
+          EXISTING_BRANCHES=$(yq eval '.branches' .releaserc -o=json)
+
+          # Check if current branch already exists in configuration
+          BRANCH_EXISTS=$(echo "$EXISTING_BRANCHES" | jq -r --arg branch "$GITHUB_REF_NAME" '.[] | select(.name == $branch) | .name')
+
+          if [ ! -n "$BRANCH_EXISTS" ]; then
+            # Branch not found, add current branch to existing configuration
+            if [ "$GITHUB_REF_NAME" = "develop" ]; then
+              # Special case for develop branch - use alpha channel
+              CHANNEL="alpha"
+              PRERELEASE="alpha"
+            else
+              # Use sanitized branch name as channel
+              CHANNEL=${GITHUB_REF_NAME//[^a-z0-9]/}
+              PRERELEASE="$CHANNEL"
+            fi
+
+            # Create new branch configuration
+            NEW_BRANCH_CONFIG=$(echo "$EXISTING_BRANCHES" | jq --arg name "$GITHUB_REF_NAME" --arg channel "$CHANNEL" --arg prerelease "$PRERELEASE" '. + [{name: $name, channel: $channel, prerelease: $prerelease}]')
+
+            echo "branches<<EOF" >> $GITHUB_OUTPUT
+            echo "$NEW_BRANCH_CONFIG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "Added branch $GITHUB_REF_NAME with channel $CHANNEL to existing configuration"
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install NPM dependencies
+        run: pnpm install
+
+      - name: Determine semantic version
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          branches: ${{ steps.branches_config.outputs.branches }}
+          dry_run: true
+
+      - name: Fail if no release is published
+        if: steps.semantic.outputs.new_release_published == 'false'
+        run: |
+          echo "::error::No appropriate commits to release. Skip release workflow."
+          exit 1
+
+      - name: Update Cargo.toml version
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: ./.github/scripts/release.sh update_cargo_version "${{ steps.semantic.outputs.new_release_version}}"
+
+      - name: Upload Cargo.toml and Cargo.lock to artifacts
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-files
+          path: |
+            Cargo.toml
+            Cargo.lock
+          retention-days: 1
+
+  build-binaries:
+    name: Build Binaries
+    needs: semantic-release
+    if: needs.semantic-release.outputs.new_release_published == 'true'
+    runs-on: binary-builder
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        configs:
+          - target: x86_64-unknown-linux-gnu
+            profile: maxperf
+          - target: aarch64-unknown-linux-gnu
+            profile: maxperf
+        build:
+          - command: build
+            binary: reth
+          - command: build-btc-server
+            binary: btc-server
+    env:
+      # sccache configuration
+      RUSTC_WRAPPER: "sccache"
+      SCCACHE_GHA_ENABLED: "false"  # Disable GitHub Actions cache in favor of GCS
+      SCCACHE_GCS_RW_MODE: "READ_WRITE"
+      SCCACHE_GCS_BUCKET: "macbeth-sccache-bucket"
+      SCCACHE_ERROR_LOG: "/tmp/sccache_log.txt"
+      SCCACHE_LOG: "warn"
+      GCP_PROJECT_ID: botanix-391913
+      SCCACHE_GCS_KEY_PATH: "/tmp/gcs-key.json"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rui314/setup-mold@v1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.configs.target }}
+          toolchain: stable
+
+      - name: gcloud auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: botanix-391913
+          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+
+      - name: gcloud setup
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: 'Create GCS credentials file for sccache'
+        run: |
+          echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
+          chmod 600 ${SCCACHE_GCS_KEY_PATH}
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure sccache
+        run: |
+          sccache --start-server
+          sccache --show-stats
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+          env-vars: |
+            RUSTC_WRAPPER
+
+      - name: Install cross main
+        id: cross_main
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Reth Binary
+        if: matrix.build.binary == 'reth'
+        run: |
+          export CARGO_BUILD_JOBS=2
+          unset CARGO_TARGET_DIR 
+          make PROFILE=${{ matrix.configs.profile }} build-${{ matrix.configs.target }}
+
+      - name: Build Bitcoin Server Binary
+        if: matrix.build.binary == 'btc-server'
+        run: |
+          unset CARGO_TARGET_DIR 
+          cross build --package btc-server --bin btc-server --target ${{ matrix.configs.target }} --release
+
+      - name: Move Binary to Artifacts
+        run: |
+          mkdir -p artifacts
+          [[ "${{ matrix.configs.target }}" == *windows* ]] && ext=".exe"
+          
+          echo "Looking for binaries in target/${{ matrix.configs.target }}/"
+          find target/${{ matrix.configs.target }}/ -name "*${{ matrix.build.binary }}*" -type f || echo "No binaries found"
+          
+          if [[ "${{ matrix.build.binary }}" == "reth" && "${{ matrix.configs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
+            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
+          elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
+            mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
+          elif [[ "${{ matrix.build.binary }}" == "reth" && "${{ matrix.configs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            mv "target/${{ matrix.configs.target }}/${{ matrix.configs.profile }}/reth${ext}" ./artifacts/
+          elif [[ "${{ matrix.build.binary }}" == "btc-server" && "${{ matrix.configs.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            mv "target/${{ matrix.configs.target }}/release/btc-server${ext}" ./artifacts/
+          fi
+          export CARGO_TARGET_DIR=/home/runner
+
+
+      - name: Download Cargo files
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-files
+          path: .
+
+      - name: Create sha256sum
+        run: |
+          cd artifacts
+          echo "Artifacts: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz"
+          tar -czf ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
+          sha256sum ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz > ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+          mv ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum ..
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
+          path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
+
+      - name: Upload Signature
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+          path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+
+      - name: Upload Binary to GCP Artifact Storage
+        run: |
+          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
+          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel }}"
+          
+          # Map channel names
+          case "$CHANNEL" in
+            "latest") CHANNEL="stable" ;;
+          esac
+          
+          echo "Uploading $VERSION to channel: $CHANNEL"
+          
+          # Upload to specific channel directory
+          gcloud storage cp ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${CHANNEL}/${VERSION}/
+          gcloud storage cp ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${CHANNEL}/${VERSION}/
+          
+          # Set Content-Type and Cache-Control headers
+          gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${CHANNEL}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
+          gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://botanix-artifact-registry/releases/${{ matrix.build.binary }}/${CHANNEL}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
+          
+          echo "Binary uploaded to:"
+          echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${CHANNEL}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz"
+          echo "https://storage.googleapis.com/botanix-artifact-registry/releases/${{ matrix.build.binary }}/${CHANNEL}/${VERSION}/${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum"
+
+
+# TODO: @shumkov test it and make sure it's not taking more than 20 mins.
+# TODO: Use sccache for docker builds
+# TODO: store docker layer cache in GCS
+#  build-docker-images:
+#    name: Build Docker Images
+#    runs-on: ubuntu-latest
+#    needs: semantic-release
+#    #if: needs.semantic-release.outputs.new_release_published == 'true'
+#    steps:
+#      - name: Checkout
+#        uses: actions/checkout@v4
+#
+#      - name: Set up Docker Buildx
+#        uses: docker/setup-buildx-action@v3
+#
+#      - name: Auth gcloud
+#        uses: google-github-actions/auth@v2
+#        with:
+#          project_id: botanix-391913
+#          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+#          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+#
+#      - name: Setup gcloud
+#        uses: google-github-actions/setup-gcloud@v2
+#        with:
+#          project_id: botanix-391913
+#
+#      - name: Login to GHCR
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.repository_owner }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Generate Docker tags
+#        id: generate-tags
+#        run: |
+#          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
+#          MAJOR="${{ needs.semantic-release.outputs.new_release_major_version }}"
+#          MINOR="${{ needs.semantic-release.outputs.new_release_minor_version }}"
+#          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel || 'latest' }}"
+#
+#          # Determine Docker tags based on release channel
+#          case "$CHANNEL" in
+#            "latest") DOCKER_TAGS="latest,$VERSION,$MAJOR.$MINOR,$MAJOR" ;;
+#            *) DOCKER_TAGS="$CHANNEL,$VERSION" ;;
+#          esac
+#
+#          # Generate fully qualified tags
+#          BTC_SERVER_TAGS=""
+#          RETH_NODE_TAGS=""
+#
+#          for tag in $(echo "$DOCKER_TAGS" | tr ',' ' '); do
+#            if [ -z "$BTC_SERVER_TAGS" ]; then
+#              BTC_SERVER_TAGS="ghcr.io/botanix-labs/botanix-btc-server:$tag"
+#              RETH_NODE_TAGS="ghcr.io/botanix-labs/botanix-reth-node:$tag"
+#            else
+#              BTC_SERVER_TAGS="$BTC_SERVER_TAGS,ghcr.io/botanix-labs/botanix-btc-server:$tag"
+#              RETH_NODE_TAGS="$RETH_NODE_TAGS,ghcr.io/botanix-labs/botanix-reth-node:$tag"
+#            fi
+#          done
+#
+#          echo "btc-server-tags=$BTC_SERVER_TAGS" >> $GITHUB_OUTPUT
+#          echo "reth-node-tags=$RETH_NODE_TAGS" >> $GITHUB_OUTPUT
+#
+#      # TODO: Download artifacts with Cargo.toml. # why do we need to do this?
+#
+#      - name: Build and push
+#        uses: docker/bake-action@v6
+#        with:
+#          source: .
+#          push: true
+#          set: |
+#            btc-server.tags=${{ steps.generate-tags.outputs.btc-server-tags }}
+#            reth-node.tags=${{ steps.generate-tags.outputs.reth-node-tags }}
+#            *.labels.org.opencontainers.image.version=${{ needs.semantic-release.outputs.new_release_version }}
+#            *.labels.org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+#            *.labels.org.opencontainers.image.revision=${{ github.sha }}
+#            *.labels.org.opencontainers.image.source=https://github.com/${{ github.repository }}
+#            *.labels.org.opencontainers.image.channel=${{ needs.semantic-release.outputs.new_release_channel }}
+#            *.platforms=linux/amd64
+
+  build-docker-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: semantic-release
+    if: needs.semantic-release.outputs.new_release_published == 'true'
+    strategy:
+      matrix:
+        configs:
+          - bin: btc-server
+            package: btc-server
+          - bin: reth
+            package: reth
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Auth gcloud
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: botanix-391913
+          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: botanix-391913
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Docker tags
+        id: generate-tags
+        run: |
+          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
+          MAJOR="${{ needs.semantic-release.outputs.new_release_major_version }}"
+          MINOR="${{ needs.semantic-release.outputs.new_release_minor_version }}"
+          CHANNEL="${{ needs.semantic-release.outputs.new_release_channel }}"
+
+          # Determine Docker tags based on release channel
+          case "$CHANNEL" in
+            "latest") 
+              DOCKER_TAGS="latest,$VERSION"
+              if [ -n "$MAJOR" ] && [ -n "$MINOR" ]; then
+                DOCKER_TAGS="$DOCKER_TAGS,$MAJOR.$MINOR"
+              fi
+              if [ -n "$MAJOR" ]; then
+                DOCKER_TAGS="$DOCKER_TAGS,$MAJOR"
+              fi
+              ;;
+            *) DOCKER_TAGS="$CHANNEL,$VERSION" ;;
+          esac
+
+          # Generate fully qualified tags
+          BTC_SERVER_TAGS=""
+          RETH_NODE_TAGS=""
+
+          for tag in $(echo "$DOCKER_TAGS" | tr ',' ' '); do
+            # Skip empty tags
+            if [ -n "$tag" ]; then
+              if [ -z "$BTC_SERVER_TAGS" ]; then
+                BTC_SERVER_TAGS="ghcr.io/botanix-labs/botanix-btc-server:$tag"
+                RETH_NODE_TAGS="ghcr.io/botanix-labs/botanix-reth-node:$tag"
+              else
+                BTC_SERVER_TAGS="$BTC_SERVER_TAGS,ghcr.io/botanix-labs/botanix-btc-server:$tag"
+                RETH_NODE_TAGS="$RETH_NODE_TAGS,ghcr.io/botanix-labs/botanix-reth-node:$tag"
+              fi
+            fi
+          done
+
+          echo "btc-server-tags=$BTC_SERVER_TAGS" >> $GITHUB_OUTPUT
+          echo "reth-node-tags=$RETH_NODE_TAGS" >> $GITHUB_OUTPUT
+
+      - name: Download Cargo files
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-files
+          path: .
+      - name: Build Docker Image
+        if: matrix.configs.bin == 'btc-server'
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -t botanix_btc_server:latest \
+            -f Dockerfile \
+            --build-arg PACKAGE=btc-server \
+            --build-arg BIN=btc-server \
+            .
+
+      - name: Build Reth Docker Image
+        if: matrix.configs.bin == 'reth'
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -t botanix_reth_node:latest \
+            -f Dockerfile \
+            --build-arg PACKAGE=reth \
+            --build-arg BIN=reth \
+            .
+
+      - name: Tag Docker Image
+        if: matrix.configs.bin == 'btc-server'
+        run: |
+          IFS=',' read -ra TAGS <<< "${{ steps.generate-tags.outputs.btc-server-tags }}"
+          for tag in "${TAGS[@]}"; do
+            docker tag botanix_btc_server:latest "$tag"
+          done
+
+      - name: Tag Docker Image
+        if: matrix.configs.bin == 'reth'
+        run: |
+          IFS=',' read -ra TAGS <<< "${{ steps.generate-tags.outputs.reth-node-tags }}"
+          for tag in "${TAGS[@]}"; do
+            docker tag botanix_reth_node:latest "$tag"
+          done
+
+      - name: Push Docker Image
+        if: matrix.configs.bin == 'btc-server'
+        run: |
+          IFS=',' read -ra TAGS <<< "${{ steps.generate-tags.outputs.btc-server-tags }}"
+          for tag in "${TAGS[@]}"; do
+            docker push "$tag"
+          done
+
+      - name: Push Docker Image
+        if: matrix.configs.bin == 'reth'
+        run: |
+          IFS=',' read -ra TAGS <<< "${{ steps.generate-tags.outputs.reth-node-tags }}"
+          for tag in "${TAGS[@]}"; do
+            docker push "$tag"
+          done
+
+
+  # This job waits for the binary release workflow to complete before finalizing the release
+  publish-release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs:
+      - semantic-release
+      - build-binaries
+      - build-docker-images
+    if: needs.semantic-release.outputs.new_release_published == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./binaries
+
+      - name: List Available Artifacts
+        run: |
+          find ./binaries -type f | sort
+
+      - name: Prepare Artifacts for GitHub Release
+        run: |
+          mkdir -p ./release-assets
+          version=${{ needs.semantic-release.outputs.new_release_version }}
+
+          # Copy artifacts to the release-assets directory with proper naming
+          find ./binaries -type f \( -name "*.tar.gz" -o -name "*.sha256sum" \) | while read file; do
+            cp "$file" ./release-assets/
+          done
+
+      - name: Download Cargo files
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-files
+          path: .
+
+      - name: Commit Cargo files
+        run: ./.github/scripts/release.sh commit_cargo_files "${{ needs.semantic-release.outputs.new_release_version }}"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install NPM dependencies
+        run: pnpm install
+
+      - name: Publish semantic release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          branches: ${{ needs.semantic-release.outputs.branches_config }}
+
+      - name: Push Cargo files
+        run: git push origin HEAD
+
+  publish-public-github-release:
+    name: Publish to Botanix Releases Repository
+    runs-on: ubuntu-latest
+    needs:
+      - semantic-release
+      - publish-release
+    if: needs.semantic-release.outputs.new_release_published == 'true'
+    steps:
+      - name: Checkout Main Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout Public Repository
+        uses: actions/checkout@v4
+        with:
+          repository: botanix-labs/botanix-releases  # Replace with your public repo
+          token: ${{ secrets.PAT_TOKEN }}
+          path: botanix
+          fetch-depth: 0
+
+      - name: Setup Git for Public Repo
+        run: |
+          cd botanix
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Publish Release
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          ./.github/scripts/publish-release.sh full-publish \
+            "${{ needs.semantic-release.outputs.new_release_version }}" \
+            "${{ needs.semantic-release.outputs.new_release_channel }}" \
+            "${{ needs.semantic-release.outputs.new_release_notes }}" \
+            "${{ needs.semantic-release.outputs.new_release_git_tag }}" \
+            "${{ needs.semantic-release.outputs.new_release_git_head }}" \
+            "${{ needs.semantic-release.outputs.last_release_version }}"
+
+  back-merge:
+    name: Back-merge Main Branch
+    runs-on: ubuntu-latest
+    needs:
+      - semantic-release
+      - publish-release
+    if: github.ref_name == 'main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Back-merge to other branches
+        run: |
+          ./.github/scripts/release.sh back_merge main develop "${{ secrets.PAT_TOKEN }}" "${{ needs.semantic-release.outputs.new_release_version }}"
+          ./.github/scripts/release.sh back_merge main rc "${{ secrets.PAT_TOKEN }}" "${{ needs.semantic-release.outputs.new_release_version }}"
+          ./.github/scripts/release.sh back_merge main hotfix "${{ secrets.PAT_TOKEN }}" "${{ needs.semantic-release.outputs.new_release_version }}"
