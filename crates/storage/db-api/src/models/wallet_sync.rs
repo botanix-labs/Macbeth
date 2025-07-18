@@ -7,15 +7,18 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 /// A peer id is a hexified peer if of a wallet state sync record.
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub type PeerID = B512;
 
 /// A peer id is the hexified uuid for a wallet state sync record.
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub type UuidID = B256;
 
 /// Wallet state sync record
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct WalletStateSyncRecord {
     /// the uuid of the session
     uuid: B256,
@@ -46,11 +49,13 @@ impl WalletStateSyncRecord {
     }
 
     /// Appends data with block number to the existing wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn append_data_with_block(&mut self, additional_data: Bytes, block_number: u64) {
         self.add_data_if_not_exists(additional_data, block_number);
     }
 
     /// Appends additional data chunks with block numbers to the existing wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn append_data_block_chunks(
         &mut self,
         additional_data_chunks: Vec<Bytes>,
@@ -62,11 +67,13 @@ impl WalletStateSyncRecord {
     }
 
     /// Returns an iterator over block numbers with data.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn get_blocks_data_iter(&mut self) -> impl Iterator<Item = (&u64, &Bytes)> {
         self.blocks.iter().zip(&self.data)
     }
 
     /// Return the size of this wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn size(&self) -> usize {
         let uuid_size = std::mem::size_of::<B256>();
         let peer_id = std::mem::size_of::<B256>();
@@ -76,41 +83,49 @@ impl WalletStateSyncRecord {
     }
 
     /// Return the uuid of this wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn get_uuid(&self) -> B256 {
         self.uuid
     }
 
     /// Return the data of this wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn get_data(&self) -> &[Bytes] {
         self.data.as_ref()
     }
 
     /// Return the blocks of the wallet state sync records.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn get_blocks(&self) -> &[u64] {
         self.blocks.as_ref()
     }
 
     /// Return the `peer_id of` this wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn get_peer_id(&self) -> B512 {
         self.peer_id
     }
 
     /// Return the chunks count of this wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn get_chunks_count(&self) -> u64 {
         self.chunks_count
     }
 
     /// Sets the peer id of the wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_peer_id(&mut self, peer_id: B512) {
         self.peer_id = peer_id;
     }
 
     /// Sets the chunks count for the wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_chunks_count(&mut self, chunks_count: u64) {
         self.chunks_count = chunks_count;
     }
 
     /// Sets the uuid of the wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_uuid(&mut self, uuid: B256) {
         self.uuid = uuid;
     }
@@ -118,6 +133,7 @@ impl WalletStateSyncRecord {
     /// Adds a data chunk with its block number to the wallet state sync record if it doesn't
     /// already exist. Returns `true` if the data or block was added, `false` if it was already
     /// present.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn add_data_if_not_exists(&mut self, data_chunk: Bytes, block_number: u64) -> bool {
         if self.data.iter().any(|data| data == &data_chunk) {
             return false;
@@ -131,6 +147,7 @@ impl WalletStateSyncRecord {
     }
 
     /// Converts the blocks and data to a set of unique (block, data) tuples.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn blocks_and_data_to_set(&mut self) -> HashSet<(u64, Bytes)> {
         self.blocks
             .iter()
@@ -140,6 +157,7 @@ impl WalletStateSyncRecord {
     }
 
     /// Gets the hash of the wallet state sync record.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn get_hash(&self) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(self.peer_id.as_slice());
@@ -152,6 +170,7 @@ impl WalletStateSyncRecord {
 }
 
 /// Converts a `uuid::Uuid` to a `UuidID`.
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub fn uuid_to_b256(uuid: uuid::Uuid) -> UuidID {
     let mut uuid_fixed_bytes = [0u8; 32];
     uuid_fixed_bytes[0..16].copy_from_slice(uuid.as_bytes());

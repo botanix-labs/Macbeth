@@ -26,6 +26,8 @@ members = [
     "crates/botanix-cli",
     "crates/botanix-comet-bft-rpc",
     "crates/botanix-data-parser",
+    "crates/botanix-storage",
+    "crates/botanix-storage-migrate",
     "crates/botanix-rpc-client",
     "crates/botanix-rpc-config",
     "crates/botanix-rpc-types",
@@ -382,7 +384,9 @@ botanix-bitcoin-checkpoint = { path = "crates/botanix-bitcoin-checkpoint" }
 botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }
-
+botanix-storage = { path = "crates/botanix-storage" }
+botanix-storage-migrate = { path = "crates/botanix-storage-migrate" }
+# frost
 # frost
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
     "serde",

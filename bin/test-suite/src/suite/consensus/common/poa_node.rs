@@ -13,6 +13,7 @@ use bitcoin::hashes::Hash;
 use botanix_authority_edh::extra_data_header::{
     ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
 };
+use botanix_storage::BotanixProviderFactory;
 use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient};
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::{
@@ -75,7 +76,8 @@ pub struct SpawnedPoaServerProcess {
     pub ws_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
-    pub provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    pub reth_provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    pub botanix_provider_factory: BotanixProviderFactory<Arc<DatabaseEnv>>,
 }
 
 impl SpawnedPoaServerProcess {
@@ -379,41 +381,56 @@ impl FederationMemberTestConfig {
         let child_process =
             spawn_child_process(Scope::PoaNode(self.index), command, args, working_directory)?;
 
-        // database provider
+        // Reth database provider
         let db_args = DatabaseArguments::new(ClientVersion::default())
             .with_exclusive(Some(false))
             .with_log_level(Some(LogLevel::Debug))
             .with_max_read_transaction_duration(Some(MaxReadTransactionDuration::Unbounded));
         let node_config = BOTANIX_TESTNET.clone();
-        let db_dir = Path::new(&self.temp_path).join("db");
-        let static_files_dir = Path::new(&self.temp_path).join("static_files");
+        let reth_db_dir = Path::new(&self.temp_path).join("db");
+        let reth_static_files_dir = Path::new(&self.temp_path).join("static_files");
 
-        let db = loop {
-            match open_db_read_only(&db_dir, db_args.clone()) {
+        let reth_db = loop {
+            match open_db_read_only(&reth_db_dir, db_args.clone()) {
                 Ok(db) => {
-                    break db;
+                    break Arc::new(db);
                 }
                 Err(_) => {
                     std::thread::sleep(Duration::from_secs(1));
-                    continue;
                 }
             }
         };
 
-        let database = Arc::new(db);
-        let static_file_provider = StaticFileProvider::read_only(static_files_dir)?;
-        let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
-            database,
+        let reth_static_file_provider = StaticFileProvider::read_only(reth_static_files_dir)?;
+        let reth_provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+            reth_db,
             node_config,
-            static_file_provider.clone(),
+            reth_static_file_provider.clone(),
         );
+
+        // Botanix database provider
+
+        let botanix_db_path = Path::new(&self.temp_path).join("botanix_db");
+        let botanix_db = loop {
+            match open_db_read_only(&botanix_db_path, db_args.clone()) {
+                Ok(db) => {
+                    break Arc::new(db);
+                }
+                Err(_) => {
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            }
+        };
+
+        let botanix_provider_factory = BotanixProviderFactory::<Arc<DatabaseEnv>>::new(botanix_db);
 
         Ok(SpawnedPoaServerProcess {
             child_process,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
             ws_port: self.ws_port,
-            provider_factory,
+            reth_provider_factory,
+            botanix_provider_factory,
         })
     }
 

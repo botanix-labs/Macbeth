@@ -5,6 +5,7 @@ use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
+use botanix_storage_migrate::is_migration_needed;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -46,7 +47,7 @@ use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
 use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
-use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, ffi::OsString, fmt, fs, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
@@ -61,6 +62,8 @@ use botanix_bitcoin_checkpoint::{
 use botanix_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
+use botanix_storage::BotanixProviderFactory;
+use botanix_storage_migrate::migrate_botanix_tables;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
@@ -296,6 +299,8 @@ impl PoaNodeCommand {
     }
 }
 
+const BOTANIX_DB_PATH: &'static str = "botanix_db";
+
 impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     /// Execute `poa` command
     #[tracing::instrument(skip_all, err)]
@@ -395,11 +400,34 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let data_dir =
             datadir.datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
-        let db_path = data_dir.db();
+        let reth_db_path = data_dir.db();
+        let botanix_db_path = data_dir.data_dir().join(BOTANIX_DB_PATH);
         let executor = ctx.task_executor;
 
-        tracing::info!(target: "reth::cli", path = ?db_path, "Opening database");
-        let database = Arc::new(init_db(db_path.clone(), self.db.database_args())?.with_metrics());
+        // If botanix database path does not exist, it means we didn't migrate botanix tables yet.
+        let is_migration_needed = is_migration_needed(&reth_db_path, &botanix_db_path)?;
+
+        tracing::info!(target: "reth::cli", path = ?reth_db_path, "Opening reth database");
+        let reth_database =
+            Arc::new(init_db(&reth_db_path, self.db.database_args())?.with_metrics());
+
+        tracing::info!(target: "reth::cli", path = ?botanix_db_path, "Opening botanix database");
+        let botanix_database = init_db(&botanix_db_path, self.db.database_args())?;
+        let botanix_database = Arc::new(botanix_database);
+
+        // Move botanix tables from reth to botanix database
+        if is_migration_needed {
+            migrate_botanix_tables(&reth_database, &botanix_database).or_else(|e| {
+                // If migration fails, we remove the botanix database directory to start from
+                // scratch on the next run.
+                fs::remove_dir_all(&botanix_db_path).wrap_err(format!(
+                    "Failed to remove botanix database directory {}",
+                    botanix_db_path.display()
+                ))?;
+
+                Err(e)
+            })?;
+        }
 
         if *with_unused_ports {
             node_config = node_config.with_unused_ports();
@@ -569,19 +597,21 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         info!(target: "reth::cli", "Spawned async bitcoin task for block headers");
 
-        let static_file_provider = StaticFileProvider::read_write(data_dir.static_files())?;
-        let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
-            database.clone(),
+        let reth_static_file_provider = StaticFileProvider::read_write(data_dir.static_files())?;
+        let reth_provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+            Arc::clone(&reth_database),
             node_config.chain.clone(),
-            static_file_provider.clone(),
+            reth_static_file_provider.clone(),
         );
 
-        let genesis_hash = init_genesis(provider_factory.clone())?;
+        let genesis_hash = init_genesis(reth_provider_factory.clone())?;
         info!(target: "reth::cli", "Genesis hash: {}", genesis_hash);
 
         // Configure static file producer
-        let static_file_producer =
-            StaticFileProducer::new(provider_factory.clone(), PruneModes::default());
+        let reth_static_file_producer =
+            StaticFileProducer::new(reth_provider_factory.clone(), PruneModes::default());
+
+        let botanix_database_provider_factory = BotanixProviderFactory::new(botanix_database);
 
         let network_secret_path =
             self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret());
@@ -639,12 +669,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             evm_config,
             bitcoind_factory.clone(),
             node_config.rpc.btc_network,
-            Arc::new(provider_factory.database_provider_ro()?),
+            Arc::new(reth_provider_factory.database_provider_ro()?),
         );
 
         // fetch the head block from the database
-        let head = self.lookup_head(provider_factory.clone());
-        let latest_sealed_header = provider_factory
+        let head = self.lookup_head(reth_provider_factory.clone());
+        let latest_sealed_header = reth_provider_factory
             .header(&head.hash)
             .expect("latest block to exist")
             .expect("latest block to exist")
@@ -653,14 +683,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
-        let state_provider = provider_factory.latest().expect("provider factory to exist");
+        let state_provider = reth_provider_factory.latest().expect("provider factory to exist");
         let blockchain_db =
-            BlockchainProvider2::with_latest(provider_factory.clone(), latest_sealed_header)
+            BlockchainProvider2::with_latest(reth_provider_factory.clone(), latest_sealed_header)
                 .expect("blockchain db to exist");
 
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(1);
-        let mut abci_driver =
-            ABCIDriver::new(driver_rx, provider_factory.clone(), blockchain_db.clone());
+        let mut abci_driver = ABCIDriver::new(
+            driver_rx,
+            reth_provider_factory.clone(),
+            botanix_database_provider_factory.clone(),
+            blockchain_db.clone(),
+        );
 
         // check Minting.sol deployed bytecode matches known bytecode
         info!(target: "reth::cli", "Checking minting contract bytecode");
@@ -776,7 +810,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
         }
 
-        let network_config = network_cfg_builder.build(provider_factory.clone());
+        let network_config = network_cfg_builder.build(reth_provider_factory.clone());
 
         // Now we need to build the network components including frost p2p, txpool p2p, eth request
         // handling p2p, as well as the general p2p network
@@ -784,7 +818,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             NetworkManager::builder(network_config)
                 .await?
                 .frost(frost_config.clone())
-                .request_handler(provider_factory.clone())
+                .request_handler(reth_provider_factory.clone())
                 .transactions(transaction_pool.clone(), Default::default())
                 .split_with_handle();
         // Start all the p2p tasks
@@ -855,7 +889,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 RandomSourceProvider::new(),
                 driver_tx,
                 node_config.clone().state_sync,
-                provider_factory.clone(),
+                reth_provider_factory.clone(),
+                botanix_database_provider_factory,
                 *block_fee_recipient_address,
                 bitcoind_client,
             ) {
@@ -892,17 +927,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let exex_manager = ExExManagerHandle::empty();
 
         // Configure pipeline
-        let max_block = node_config.max_block(&network_client, provider_factory.clone()).await?;
+        let max_block =
+            node_config.max_block(&network_client, reth_provider_factory.clone()).await?;
         build_networked_pipeline(
             &StageConfig::default(),
             network_client.clone(),
             Arc::new(consensus.clone()),
-            provider_factory,
+            reth_provider_factory,
             &executor,
             sync_metrics_tx,
             node_config.prune_config(),
             max_block,
-            static_file_producer.clone(),
+            reth_static_file_producer.clone(),
             executor_factory.clone(),
             exex_manager,
             bitcoind_factory.clone(),
@@ -977,7 +1013,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     build_profile: BUILD_PROFILE_NAME,
                 },
                 executor.clone(),
-                Hooks::new(database.clone(), static_file_provider),
+                Hooks::new(reth_database.clone(), reth_static_file_provider),
             );
             MetricServer::new(config).serve().await?;
         }

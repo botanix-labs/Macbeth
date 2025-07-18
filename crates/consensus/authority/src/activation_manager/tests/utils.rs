@@ -3,8 +3,10 @@ use crate::activation_manager::{
     ActivationManager, ActivationManagerBuilder, ConditionList, OnFinalizeBlockDecision,
     OnPrepareProposalDecision, OnProcessProposalDecision, VOTE_RETENTION_PERIOD,
 };
-use reth_db::models::activation_manager::{RuntimeVersion, Vote};
-use reth_provider::ActivationManagerReaderWriter;
+use botanix_storage::{
+    models::{RuntimeVersion, Vote},
+    ActivationManagerReaderWriter,
+};
 use secp256k1::{generate_keypair, rand::thread_rng};
 
 /// Index for the ALICE validator in the test fixture

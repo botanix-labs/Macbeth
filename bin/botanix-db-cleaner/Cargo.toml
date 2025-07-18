@@ -19,6 +19,7 @@ reth-chainspec = { workspace = true }
 reth-db = { workspace = true, features = ["mdbx"] }
 reth-node-core = { workspace = true }
 reth-provider = { workspace = true }
+botanix-storage = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1.45.0", features = ["full"] }

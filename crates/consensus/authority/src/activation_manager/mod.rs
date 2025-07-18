@@ -64,11 +64,14 @@
 //! voting. Once a new node version with upgrade support is released, validators can
 //! switch to "Accept Upgrades" mode to fully participate in the upgrade process.
 
-use reth_provider::{ActivationManagerReaderWriter, ProviderResult};
+use reth_provider::ProviderResult;
 use std::sync::{Arc, RwLock};
 
 // Reexports
-pub use reth_db::models::activation_manager::{RuntimeVersion, Vote};
+pub use botanix_storage::{
+    models::{RuntimeVersion, Vote},
+    ActivationManagerReaderWriter,
+};
 
 #[cfg(test)]
 mod tests;

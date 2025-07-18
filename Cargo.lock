@@ -2395,6 +2395,7 @@ name = "botanix-db-cleaner"
 version = "1.1.5"
 dependencies = [
  "anyhow",
+ "botanix-storage",
  "clap",
  "reth-chainspec",
  "reth-db",
@@ -2481,6 +2482,48 @@ version = "1.1.5"
 dependencies = [
  "alloy-primitives 0.7.7",
  "serde",
+]
+
+[[package]]
+name = "botanix-storage"
+version = "1.1.5"
+dependencies = [
+ "arbitrary",
+ "auto_impl",
+ "botanix-storage",
+ "bytes",
+ "eyre",
+ "itertools 0.14.0",
+ "modular-bitfield",
+ "proptest",
+ "proptest-arbitrary-interop",
+ "reth-codecs",
+ "reth-db",
+ "reth-db-api",
+ "reth-primitives",
+ "reth-prune-types",
+ "reth-storage-errors",
+ "secp256k1 0.29.1",
+ "serde",
+ "sha2 0.10.9",
+ "tempfile",
+ "test-fuzz",
+ "tracing",
+ "uuid 1.16.0",
+]
+
+[[package]]
+name = "botanix-storage-migrate"
+version = "1.1.5"
+dependencies = [
+ "botanix-storage",
+ "botanix-storage-migrate",
+ "eyre",
+ "reth-db",
+ "reth-db-api",
+ "reth-primitives",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -9050,6 +9093,8 @@ dependencies = [
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "botanix-rpc-config",
+ "botanix-storage",
+ "botanix-storage-migrate",
  "btc-server",
  "clap",
  "client",
@@ -9139,6 +9184,7 @@ dependencies = [
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
+ "botanix-storage",
  "btc-server",
  "bytes",
  "client",
@@ -13543,6 +13589,7 @@ dependencies = [
  "botanix-btc-wallet",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
+ "botanix-storage",
  "btc-server",
  "bytes",
  "clap",

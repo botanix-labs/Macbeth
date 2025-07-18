@@ -15,6 +15,7 @@ use botanix_data_parser::{
     prost_parser::{ProstError, ProstMessageSerdelizer},
     DataParser, Error as DataParserError,
 };
+use botanix_storage::{StagedHeaderReader, StagedHeaderWriter};
 use btcserverlib::{
     extended_client::{BtcServerExtendedApi, GrpcClientError},
     wallet::psbt::frost_id_from_bytes,
@@ -35,8 +36,7 @@ use reth_network::{
 };
 use reth_primitives::{Header, B256};
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StagedHeader,
-    StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
@@ -68,7 +68,7 @@ pub(crate) enum FinalizedPegoutIdsSyncSerializationError {
 }
 
 #[allow(dead_code)]
-pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
+pub struct FrostTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient> {
     /// Network Handler
     pub(crate) network_handle: NetworkHandle,
     /// Frost network Handler
@@ -78,7 +78,7 @@ pub struct FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient> {
     /// signing state machine
     pub(crate) signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
     /// Shared storage to insert aggregate public key
-    pub(crate) storage: Storage<EF, BF, DB>,
+    pub(crate) storage: Storage<EF, BF, RDB, BDB>,
     /// A handle to the `DkgRunnerTask` task. This is only `Some` if no
     /// aggregate public key is available, and the `start_task` method has hence
     /// started the DKG process.
@@ -105,17 +105,13 @@ pub(crate) enum FrostTaskError {
     UnableToGetAllConnectedPeers(#[from] SendError<FrostCommand>),
 }
 
-impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
-    FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
+impl<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient>
+    FrostTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: 'static + Send + Sync + ToFrostManager + Clone,
     BF: Clone + 'static + Send + Sync,
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonStateSubscriptions
-        + StagedHeader
-        + Clone
-        + 'static,
+    RDB: BlockReaderIdExt + StateProviderFactory + CanonStateSubscriptions + Clone + 'static,
+    BDB: StagedHeaderReader + StagedHeaderWriter + Clone + 'static,
     EF: Clone + 'static + Send + Sync,
     Source: RandomSource,
     BtcServerClient: BtcServerExtendedApi + Clone,
@@ -128,7 +124,7 @@ where
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,
         config: FrostConfig,
-        storage: Storage<EF, BF, DB>,
+        storage: Storage<EF, BF, RDB, BDB>,
         compressor: DataParser,
         random_source_provider: Source,
         metrics: Arc<AuthorityMetrics>,
@@ -321,7 +317,7 @@ where
                 // and pegouts.
                 let existed = self
                     .storage
-                    .client
+                    .botanix_database_factory
                     .remove_staged_header(header_hash)
                     .expect("to remove staged header");
 
@@ -386,7 +382,7 @@ where
         };
 
         if let Err(e) =
-            validate_psbt_by_ids(&self.storage.client, self.storage.btc_network, &psbt).await
+            validate_psbt_by_ids(&self.storage.reth_database, self.storage.btc_network, &psbt).await
         {
             error!(
                 target: "consensus::authority::frost_task::handle_canon_state_commit",
@@ -476,7 +472,7 @@ where
 
             info!(target: "consensus::authority::frost_task::start_task", "DKG runner task started...");
         }
-        let mut canon_state_notifs = self.storage.client.subscribe_to_canonical_state();
+        let mut canon_state_notifs = self.storage.reth_database.subscribe_to_canonical_state();
 
         let mut abci_started = false;
 
@@ -512,8 +508,11 @@ where
             // This can happen if the connection to the btc-server has been
             // interrupted while block production is continuing.
             if self.check_staged_headers {
-                let mut staged_headers =
-                    self.storage.client.get_staged_headers().expect("to get staged headers");
+                let mut staged_headers = self
+                    .storage
+                    .botanix_database_factory
+                    .get_staged_headers()
+                    .expect("to get staged headers");
 
                 if staged_headers.is_empty() {
                     info!(target: "consensus::authority::frost_task::start_task", "No staged headers found, proceeding with frost task");
@@ -670,7 +669,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    &self.storage.client,
+                                    &self.storage.reth_database,
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -702,7 +701,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    &self.storage.client,
+                                    &self.storage.reth_database,
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -734,7 +733,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    &self.storage.client,
+                                    &self.storage.reth_database,
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -766,7 +765,7 @@ where
                                 };
 
                                 if let Err(e) = validate_psbt_by_ids(
-                                    &self.storage.client,
+                                    &self.storage.reth_database,
                                     self.storage.btc_network,
                                     &psbt_res,
                                 )
@@ -799,8 +798,8 @@ where
     }
 }
 
-impl<EF, BF, DB, ToFrostMan, Source, BtcServerClient> std::fmt::Debug
-    for FrostTask<EF, BF, DB, ToFrostMan, Source, BtcServerClient>
+impl<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient> std::fmt::Debug
+    for FrostTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
     Source: RandomSource,
@@ -811,31 +810,33 @@ where
     }
 }
 
-struct DkgRunnerTask<EF, BF, DB, ToFrostMan, BtcServerClient> {
+struct DkgRunnerTask<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient> {
     rx: mpsc::Receiver<DkgResponse>,
     // Frost network Handler
     frost_handle: ToFrostMan,
     // Frost Id lookup table
     frost_ids: HashMap<frost_secp256k1_tr::Identifier, secp256k1::PublicKey>,
     // Shared storage to insert aggregate public key
-    storage: Storage<EF, BF, DB>,
+    storage: Storage<EF, BF, RDB, BDB>,
     // btc-server client
     btc_server: BtcServerClient,
     // Authority Metrics
     metrics: Arc<AuthorityMetrics>,
 }
 
-impl<EF, BF, DB, ToFrostMan, BtcServerClient> DkgRunnerTask<EF, BF, DB, ToFrostMan, BtcServerClient>
+impl<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
+    DkgRunnerTask<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
 where
     EF: 'static + Send + Sync,
     BF: 'static + Send + Sync,
-    DB: BlockReaderIdExt
+    RDB: BlockReaderIdExt
         + StateProviderFactory
         + CanonStateSubscriptions
         + Clone
         + 'static
         + Send
         + Sync,
+    BDB: Clone + 'static + Send + Sync,
     ToFrostMan: 'static + Send + Sync + ToFrostManager,
     BtcServerClient: BtcServerExtendedApi,
 {
@@ -843,7 +844,7 @@ where
     fn new(
         frost_handle: ToFrostMan,
         authorities: &[secp256k1::PublicKey],
-        storage: Storage<EF, BF, DB>,
+        storage: Storage<EF, BF, RDB, BDB>,
         btc_server: BtcServerClient,
         metrics: Arc<AuthorityMetrics>,
     ) -> mpsc::Sender<DkgResponse> {
