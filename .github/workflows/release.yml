@@ -205,10 +205,6 @@ jobs:
         run: |
           cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: 'Create GCS credentials file for sccache'
-        run: |
-          echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
-          chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -256,7 +252,7 @@ jobs:
         run: |
           cd artifacts
           echo "Artifacts: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz"
-          tar -cvf ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
+          tar -czf ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}*
           sha256sum ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz > ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
           mv ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum ..
 
@@ -469,7 +465,7 @@ jobs:
         run: |
           docker build \
             --platform linux/amd64 \
-            -t botanix_btc_server \
+            -t botanix_btc_server:latest \
             -f Dockerfile \
             --build-arg PACKAGE=btc-server \
             --build-arg BIN=btc-server \
@@ -480,7 +476,7 @@ jobs:
         run: |
           docker build \
             --platform linux/amd64 \
-            -t botanix_reth_node \
+            -t botanix_reth_node:latest \
             -f Dockerfile \
             --build-arg PACKAGE=reth \
             --build-arg BIN=reth \

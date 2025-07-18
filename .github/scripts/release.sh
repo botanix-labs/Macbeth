@@ -44,8 +44,8 @@ update_cargo_version() {
 
   log_info "Updating Cargo.toml version to $VERSION"
 
-  # Use sed to replace the version line in Cargo.toml
-  sed -i "s/^version = .*$/version = \"$VERSION\"/" "$CARGO_TOML"
+  # Use sed to replace the version line only in [workspace.package] section
+  sed -i '/^\[workspace\.package\]/,/^\[/{s/^version = .*$/version = "'"$VERSION"'"/}' "$CARGO_TOML"
 
   if ! grep -q "version = \"$VERSION\"" "$CARGO_TOML"; then
     log_error "Failed to update version in $CARGO_TOML"
