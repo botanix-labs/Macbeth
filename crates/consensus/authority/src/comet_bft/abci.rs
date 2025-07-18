@@ -96,22 +96,22 @@ pub enum ApplySnapshotResult {
     RejectSnapshot = 5,
 }
 use crate::{
-    excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
-    snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
-    utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
-    AuthorityConsensus, Storage,
-};
-use botanix_authority_metrics::AuthorityMetrics;
-use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
-use botanix_comet_bft_rpc::{
-    non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
-    proto_debug::{
+    comet_bft::proto_debug::{
         RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
         RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
         ResponsePrepareProposalTruncatedDebug,
     },
-    utils::transactions_signed_from_bytes,
+    excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
+    non_deterministic_data::{NonDeterministicData, LATEST_NDD_VERSION},
+    snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
+    utils::{
+        get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data,
+        transactions_signed_from_bytes,
+    },
+    AuthorityConsensus, Storage,
 };
+use botanix_authority_metrics::AuthorityMetrics;
+use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
 use botanix_storage::{
     models::{HeaderWithPegs, PeginData, PegoutData, SnapshotSync, SnapshotSyncId},
     BotanixProviderFactory, DatabaseProviderFactoryRW, SnapshotReader, SnapshotWriter,

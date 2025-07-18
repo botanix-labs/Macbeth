@@ -17,6 +17,8 @@ pub enum NonDeterministicDataDeserializeError {
 // The default NDD version.
 pub const VERSION_1: u16 = 1;
 
+pub const LATEST_NDD_VERSION: u16 = VERSION_1;
+
 /// Type that encapsulates non-deterministic data needed for consensus.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NonDeterministicData {

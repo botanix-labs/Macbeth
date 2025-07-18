@@ -52,6 +52,7 @@ mod signing;
 pub mod snapshot_manager;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
+pub mod non_deterministic_data;
 pub mod test_utils;
 pub mod wallet_state_sync;
 
