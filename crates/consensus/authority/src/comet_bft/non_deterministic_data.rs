@@ -1,3 +1,5 @@
+//! Non-deterministic data (NDD) used for extend cometbft blocks with botanix specific data.
+
 use bitcoin::consensus::encode::{self, Decodable, Encodable};
 use reth_primitives::Address;
 use std::io::{self, Write};
@@ -5,7 +7,7 @@ use thiserror::Error;
 
 /// Errors that can occur when deserializing NonDeterministicData
 #[derive(Debug, Error)]
-pub enum NonDeterministicDataDeserializeError {
+pub(crate) enum NonDeterministicDataDeserializeError {
     #[error("I/O error")]
     /// I/O error
     Io(#[from] io::Error),
@@ -15,25 +17,27 @@ pub enum NonDeterministicDataDeserializeError {
 }
 
 // The default NDD version.
-pub const VERSION_1: u16 = 1;
+pub(crate) const VERSION_1: u16 = 1;
+
+pub(crate) const LATEST_NDD_VERSION: u16 = VERSION_1;
 
 /// Type that encapsulates non-deterministic data needed for consensus.
 #[derive(Debug, Clone, PartialEq)]
-pub struct NonDeterministicData {
-    pub version: u16,
-    pub bitcoin_block_hash: bitcoin::hash_types::BlockHash,
-    pub aggregated_public_key: secp256k1::PublicKey,
-    pub block_fee_recipient_address: Address,
+pub(crate) struct NonDeterministicData {
+    pub(crate) version: u16,
+    pub(crate) bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+    pub(crate) aggregated_public_key: secp256k1::PublicKey,
+    pub(crate) block_fee_recipient_address: Address,
 }
 
 impl NonDeterministicData {
     /// Returns the version based on whether a fee recipient address is present.
-    pub fn version(&self) -> u16 {
+    pub(crate) fn version(&self) -> u16 {
         self.version
     }
 
     /// Constructor for the NDD.
-    pub fn new(
+    pub(crate) fn new(
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
         aggregated_public_key: secp256k1::PublicKey,
         block_fee_recipient_address: Address,
@@ -47,7 +51,7 @@ impl NonDeterministicData {
     }
 
     /// Serializes the non-deterministic data.
-    pub fn serialize(&self) -> Result<Vec<u8>, io::Error> {
+    pub(crate) fn serialize(&self) -> Result<Vec<u8>, io::Error> {
         let mut writer = Vec::new();
         self.bitcoin_block_hash.consensus_encode(&mut writer)?;
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
@@ -58,7 +62,7 @@ impl NonDeterministicData {
     }
 
     /// Deserializes the non-deterministic data.
-    pub fn deserialize(
+    pub(crate) fn deserialize(
         reader: &mut impl bitcoin::io::Read,
     ) -> Result<Self, NonDeterministicDataDeserializeError> {
         // Read the bitcoin block hash.
