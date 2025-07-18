@@ -171,7 +171,7 @@ pub fn spawn_n_btc_server_processes(
     for i in 0..global_context.fed_instances {
         let temp_db_path = tempfile::TempDir::new()
             .context("error creating tempdir")?
-            .keep()
+            .into_path()
             .join(format!("_{}", unix_timestamp().to_string()));
         std::fs::create_dir_all(&temp_db_path)
             .context("failed to create tempdir with db subdir")?;
