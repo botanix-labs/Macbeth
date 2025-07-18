@@ -1,3 +1,4 @@
 /// ABCI client implementation and consensus engine
 pub mod abci;
-mod proto_debug;
+pub(crate) mod non_deterministic_data;
+pub(crate) mod proto_debug;

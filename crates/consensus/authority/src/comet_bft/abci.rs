@@ -95,6 +95,7 @@ pub enum ApplySnapshotResult {
     /// Reject this snapshot, try others
     RejectSnapshot = 5,
 }
+use super::non_deterministic_data::{NonDeterministicData, LATEST_NDD_VERSION};
 use crate::{
     comet_bft::proto_debug::{
         RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
@@ -102,7 +103,6 @@ use crate::{
         ResponsePrepareProposalTruncatedDebug,
     },
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
-    non_deterministic_data::{NonDeterministicData, LATEST_NDD_VERSION},
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
     utils::{
         get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data,
