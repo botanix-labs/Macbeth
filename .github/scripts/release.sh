@@ -30,7 +30,7 @@ log_error() {
 }
 
 if [ -z "$COMMAND" ]; then
-  log_error "Command is required. Use: update, tag, or help"
+  log_error "Command is required. Use: update_cargo_version, commit_cargo_files, back_merge, or help"
 fi
 
 
@@ -141,35 +141,37 @@ back_merge() {
   git checkout "$SOURCE_BRANCH"
 }
 
-# Create a git tag for the release
+# Commit Cargo.toml and Cargo.lock files with version bump
 commit_cargo_files() {
   local VERSION="$1"
 
   if [ -z "$VERSION" ]; then
-    log_error "Version is required for push_new_version_and_tag command"
+    log_error "Version is required for commit_cargo_files command"
   fi
+
+  log_info "Committing Cargo.toml and Cargo.lock for version $VERSION"
 
   git config --global user.name "github-actions[bot]"
   git config --global user.email "github-actions[bot]@users.noreply.github.com"
   git add Cargo.toml Cargo.lock
   git commit -m "chore(release): bump version to $VERSION"
 
-  log_info "Tag $TAG created"
+  log_info "Successfully committed version bump to $VERSION"
 }
 
 show_help() {
   echo "Usage: release.sh COMMAND [ARGS...]"
   echo
   echo "Commands:"
-  echo "  update VERSION                   Update version in Cargo.toml"
-  echo "  tag VERSION                      Create a git tag for the release"
-  echo "  back_merge SRC DST TOKEN VERSION Back-merge from source branch to destination branch"
-  echo "  help                             Show this help message"
+  echo "  update_cargo_version VERSION       Update version in Cargo.toml"
+  echo "  commit_cargo_files VERSION         Commit Cargo.toml and Cargo.lock with version bump"
+  echo "  back_merge SRC DST TOKEN VERSION   Back-merge from source branch to destination branch"
+  echo "  help                                Show this help message"
   echo
   echo "Examples:"
-  echo "  release.sh update 1.2.3                     Update version to 1.2.3"
-  echo "  release.sh tag 1.2.3                        Create tag v1.2.3"
-  echo "  release.sh back_merge main rc TOKEN VERSION Back-merge from main to rc branch"
+  echo "  release.sh update_cargo_version 1.2.3                     Update version to 1.2.3"
+  echo "  release.sh commit_cargo_files 1.2.3                       Commit version bump files"
+  echo "  release.sh back_merge main rc TOKEN 1.2.3                 Back-merge from main to rc branch"
 }
 
 
@@ -187,7 +189,7 @@ case "$COMMAND" in
     show_help
     ;;
   *)
-    log_error "Unknown command: $COMMAND. Use: update, tag, back_merge, or help"
+    log_error "Unknown command: $COMMAND. Use: update_cargo_version, commit_cargo_files, back_merge, or help"
     ;;
 esac
 
