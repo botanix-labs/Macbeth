@@ -2155,6 +2155,21 @@ where
             }
         }
 
+        // Metrics
+        //
+        // Only create metrics if there's an actual upgrade event ongoing.
+        if let Some((upgrade_version, polling)) =
+            self.activation_manager.get_upgrade_polling().expect("db cannot fail")
+        {
+            // Track the raw vote by the proposer. Note that the proposer might
+            // be voting for a different version than the one we're interested
+            // in, or for none at all. The rendered metric is labeled accurately.
+            self.metrics.runtime_upgrade_vote(&proposer_address, &proposer_vote);
+
+            // Track the polling results for the specific version we're interested in.
+            self.metrics.runtime_upgrade_polling(&upgrade_version, &polling);
+        }
+
         // Rpc node needs to store aggregate public key from block height 1
         let block_height = block_with_context.sealed_block_with_peg.block().number;
         let sealed_block_with_peg_binding = block_with_context.sealed_block_with_peg.clone();

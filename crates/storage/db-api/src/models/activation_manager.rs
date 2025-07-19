@@ -35,6 +35,17 @@ pub enum Vote {
     Absent,
 }
 
+impl std::fmt::Display for Vote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Aye => "Aye",
+            Self::Nay => "Nay",
+            Self::Absent => "Absent",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 /// Represents a protocol version in the Botanix blockchain.
 ///
 /// A runtime version consists of two components:
