@@ -42,19 +42,24 @@ impl ActivationManagerReaderWriter<utils::Address> for Db {
     ) -> ProviderResult<()> {
         let mut votes = self.votes.write().unwrap();
 
-        #[rustfmt::skip]
-        votes
-            .entry(auth)
-            .and_modify(|e| {
+        match votes.entry(auth) {
+            Entry::Occupied(mut e) => {
+                // If the validator has previously voted, their vote will be
+                // updated to the new values if and only if the botanix height
+                // is greater than the existing botanix height.
+                if e.get().botanix_height >= botanix_height {
+                    return Ok(())
+                }
+
+                let e = e.get_mut();
                 e.vote = vote;
                 e.is_compliant = is_compliant;
                 e.botanix_height = botanix_height;
-            })
-            .or_insert(VoteEntry {
-                vote,
-                is_compliant,
-                botanix_height,
-            });
+            }
+            Entry::Vacant(v) => {
+                let _ = v.insert(VoteEntry { vote, is_compliant, botanix_height });
+            }
+        }
 
         Ok(())
     }
