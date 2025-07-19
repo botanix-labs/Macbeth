@@ -261,7 +261,8 @@ pub struct Polling {
     pub ayes: usize,
     /// Number of validators who have voted "Nay" against the upgrade.
     pub nays: usize,
-    /// Number of validators who have abstained from voting (voted "Absent").
+    /// Number of validators who have abstained from voting (or explicitly voted
+    /// "Abstain").
     pub abstained: usize,
     /// Number of validators who are compliant with the upgrade (ready to
     /// accept it).
@@ -835,7 +836,7 @@ where
 
         let abstained_vote = || NetworkUpgradePayload {
             version: upgrade.version,
-            vote: Vote::Absent,
+            vote: Vote::Abstain,
             is_compliant: false,
         };
 

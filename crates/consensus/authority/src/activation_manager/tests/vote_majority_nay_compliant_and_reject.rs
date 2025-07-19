@@ -25,7 +25,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
     let mut f = UpgradeTestFixture::new(upgrade_height, required_approval_rate)
         .setup_compliant_validator(ALICE, Vote::Aye)
         .setup_compliant_validator(BOB, Vote::Nay)
-        .setup_compliant_validator(EVE, Vote::Absent);
+        .setup_compliant_validator(EVE, Vote::Abstain);
 
     assert_eq!(f.next_height(), 0);
 

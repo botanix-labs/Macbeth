@@ -81,7 +81,7 @@ impl ActivationManagerReaderWriter<utils::Address> for Db {
 
     fn get_abstained_votes(&self) -> ProviderResult<(usize, usize)> {
         let votes = self.votes.read().unwrap();
-        let abstains = votes.iter().filter(|(_, e)| e.vote == Vote::Absent).count();
+        let abstains = votes.iter().filter(|(_, e)| e.vote == Vote::Abstain).count();
         Ok((abstains, votes.len()))
     }
 

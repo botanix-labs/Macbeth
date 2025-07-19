@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 /// Represents a validator's vote on a network upgrade proposal.
 ///
 /// Validators can explicitly vote in favor of an upgrade (`Aye`),
-/// against an upgrade (`Nay`), or can abstain from voting (`Absent`).
+/// against an upgrade (`Nay`), or can abstain from voting (`Abstain`).
 ///
 /// Votes are included in block proposals via the `NetworkUpgradePayload`
 /// in the Non-Deterministic Data (NDD) transaction. These votes are then
@@ -27,12 +27,12 @@ pub enum Vote {
     /// opposition while still being counted in voting statistics.
     Nay,
 
-    /// Explicit abstention from voting. An `Absent` vote functions the same as
+    /// Explicit abstention from voting. An `Abstain` vote functions the same as
     /// `Nay` in quorum calculations, but communicates the validator's intent to
     /// abstain rather than actively oppose the upgrade. It still counts as
     /// participation in the voting process.
     #[default]
-    Absent,
+    Abstain,
 }
 
 impl std::fmt::Display for Vote {
@@ -40,7 +40,7 @@ impl std::fmt::Display for Vote {
         let s = match self {
             Self::Aye => "Aye",
             Self::Nay => "Nay",
-            Self::Absent => "Absent",
+            Self::Abstain => "Abstain",
         };
         write!(f, "{}", s)
     }

@@ -63,12 +63,12 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     /// Returns the count of validators who have abstained from voting and the
     /// total number of validators who have voted.
     ///
-    /// This method counts all validators who have cast an "Absent" (abstain)
+    /// This method counts all validators who have cast an "Abstain"
     /// vote for the network upgrade, regardless of their compliance status.
     ///
     /// # Returns
     /// * `Ok((abstain_count, total_voters))` where:
-    ///   - `abstain_count` is the number of validators who voted "Absent" (abstained)
+    ///   - `abstain_count` is the number of validators who voted "Abstain"
     ///   - `total_voters` is the total number of distinct validators who have cast any vote
     /// * `Err` if there was an error retrieving the vote counts
     fn get_abstained_votes(&self) -> ProviderResult<(usize, usize)>;
@@ -78,7 +78,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     ///
     /// This method counts all validators who have indicated they are ready to
     /// accept the upgrade by setting `is_compliant` to `true` when casting
-    /// their vote, regardless of whether they voted "Aye", "Nay", or "Absent".
+    /// their vote, regardless of whether they voted "Aye", "Nay", or "Abstain".
     ///
     /// # Returns
     /// * `Ok((compliant_count, total_voters))` where:
@@ -213,7 +213,7 @@ pub mod tests {
         assert_eq!(res, (0, 3));
 
         // Eve votes Abstain, is not compliant
-        db.update_upgrading_vote(eve.clone(), Vote::Absent, false, 1).unwrap();
+        db.update_upgrading_vote(eve.clone(), Vote::Abstain, false, 1).unwrap();
         let res = db.get_upgrading_approval_rate_ayes(min_validator_count).unwrap();
         assert_eq!(res, (34, 3));
         let res = db.get_upgrading_approval_rate_compliance(min_validator_count).unwrap();
@@ -287,7 +287,7 @@ pub mod tests {
     ///
     /// This function validates that an `ActivationManagerReaderWriter`
     /// implementation correctly handles:
-    /// - Counting individual vote types (Aye, Nay, Absent)
+    /// - Counting individual vote types (Aye, Nay, Abstain)
     /// - Tracking compliance status independently of vote choice
     /// - Maintaining consistent total voter counts across all query methods
     /// - Replacing previous votes when block height increases
@@ -346,7 +346,7 @@ pub mod tests {
         assert_eq!(total, t4);
 
         // Eve votes Abstain, is not compliant
-        db.update_upgrading_vote(eve.clone(), Vote::Absent, false, 1).unwrap();
+        db.update_upgrading_vote(eve.clone(), Vote::Abstain, false, 1).unwrap();
         let (ayes, total) = db.get_aye_votes().unwrap();
         let (nays, t2) = db.get_nay_votes().unwrap();
         let (abstains, t3) = db.get_abstained_votes().unwrap();
