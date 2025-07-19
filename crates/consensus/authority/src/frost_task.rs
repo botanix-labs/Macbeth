@@ -36,7 +36,8 @@ use reth_network::{
 };
 use reth_primitives::{Header, B256};
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StagedHeader,
+    StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};

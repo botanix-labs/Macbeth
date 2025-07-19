@@ -31,10 +31,12 @@ pub enum Error {
     HashEngine(#[from] std::io::Error),
     #[error("Invalid UTXO version number {0}")]
     InvalidUTXOVersion(u32),
-    #[error("Tracked tx not found in Pegout Scheduler")]
-    TrackedTxNotFoundInPegoutScheduler,
     #[error("Error getting duration since epoch: {0}")]
     DurationSinceEpoch(#[from] SystemTimeError),
+    #[error("Failed to get tx out for input: {0}")]
+    BitcoindError(#[from] bitcoincore_rpc::Error),
+    #[error("Tracked tx not found in Pegout Scheduler")]
+    TrackedTxNotFoundInPegoutScheduler,
 }
 
 impl PartialEq for Error {
