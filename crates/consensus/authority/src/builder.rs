@@ -81,7 +81,6 @@ where
         + Clone
         + CanonChainTracker
         + CanonStateSubscriptions
-        + StagedHeader
         + 'static,
     BDB: SnapshotReader
         + SnapshotWriter

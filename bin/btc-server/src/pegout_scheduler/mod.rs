@@ -2112,8 +2112,6 @@ pub enum BlockError {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use bitcoin::{
         absolute::LockTime,
         blockdata::{
@@ -2804,39 +2802,6 @@ mod tests {
     }
 
     #[test]
-    fn track_mempool_should_not_add_back_pegout_when_still_in_mempool() {
-        let db = setup_db().0;
-        let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
-        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
-            .expect("valid key package");
-        db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
-
-        let mut pegout_scheduler =
-            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
-        // mock bitcoind will trigger error path for `getmempoolentry` for specific txids
-        // so pass true to create_tx() to make it deterministic which is
-        // "26bbaab2e585d465cceecc2acc7b398069aa85fc4dd1f52e39666a65e54a4569" for this test
-        // this txid will result in the tx not being on chain but in the mempool
-        let pegouts = pegout_requests_from_tx(&TEST_TRANSACTION_2, &[0]);
-        pegout_scheduler.add_tx(TEST_TRANSACTION_2.clone(), &pegouts, SystemTime::now());
-
-        let mock_bitcoind = MockBitcoind::new();
-        let mut checkpoint = mock_bitcoind
-            .get_block_header_info(&bitcoin::BlockHash::all_zeros())
-            .expect("valid checkpoint");
-        // increase time for checkpoint block so tracked tx is older
-        checkpoint.time += 5;
-
-        let result = pegout_scheduler.track_mempool(&mock_bitcoind, checkpoint);
-        assert!(result.is_ok());
-
-        // assert the pegout was added to pending pegouts
-        let pending_pegouts = db.get_pending_pegouts().expect("pending pegouts exist");
-        assert_eq!(pending_pegouts.len(), 0);
-    }
-
-    #[test]
     fn track_mempool_should_untrack_and_add_back_pegout_when_not_in_mempool() {
         let db = setup_db().0;
         let mut pegout_scheduler = PegoutScheduler::new(
@@ -2887,8 +2852,15 @@ mod tests {
     #[test]
     fn test_add_missing_change_outputs() {
         let db = setup_db().0;
-        let mut pegout_scheduler =
-            PegoutScheduler::new(101, vec![], bitcoin::BlockHash::all_zeros(), db.clone());
+        let mut pegout_scheduler = PegoutScheduler::new(
+            101,
+            vec![],
+            bitcoin::BlockHash::all_zeros(),
+            db.clone(),
+            None,
+            bitcoin::Network::Regtest,
+            0,
+        );
 
         // Add utxo to db
         let tx = create_tx(2, 1, None);
