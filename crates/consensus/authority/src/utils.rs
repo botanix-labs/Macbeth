@@ -18,7 +18,6 @@ use btcserverlib::{
 };
 use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
-use reth_db::models;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
