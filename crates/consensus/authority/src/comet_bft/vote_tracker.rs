@@ -124,68 +124,26 @@ impl ActivationManagerReaderWriter<Address> for VoteWatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reth_provider::activation_manager_conformance_tests;
 
     #[test]
-    fn test_vote_watcher_basic_properties() {
-        let watcher = VoteWatcher::default();
-
+    fn vote_watcher_db_conformance() {
         let alice = Address::from_slice(&[0; 20]);
         let bob = Address::from_slice(&[1; 20]);
         let eve = Address::from_slice(&[2; 20]);
 
-        let min_val_count = 10;
-        let botanix_height = 500;
+        activation_manager_conformance_tests::assert_threshold_rates(
+            alice,
+            bob,
+            eve,
+            VoteWatcher::default(),
+        );
 
-        // Check basic init properties.
-        //
-        let ayes = watcher.get_upgrading_approval_rate_ayes(min_val_count).unwrap();
-        assert_eq!(ayes, (0, min_val_count));
-
-        let compliant = watcher.get_upgrading_approval_rate_compliance(min_val_count).unwrap();
-        assert_eq!(compliant, (0, min_val_count));
-
-        let removed = watcher.remove_upgrading_votes(botanix_height).unwrap();
-        assert_eq!(removed, 0);
-
-        // Track votes.
-        //
-        watcher.update_upgrading_vote(alice, Vote::Aye, true, botanix_height).unwrap();
-        watcher.update_upgrading_vote(bob, Vote::Aye, false, botanix_height).unwrap();
-        watcher.update_upgrading_vote(eve, Vote::Nay, false, botanix_height).unwrap();
-
-        let ayes = watcher.get_upgrading_approval_rate_ayes(min_val_count).unwrap();
-        assert_eq!(ayes, (20, min_val_count)); // 20%
-
-        let compliant = watcher.get_upgrading_approval_rate_compliance(min_val_count).unwrap();
-        assert_eq!(compliant, (10, min_val_count)); // 10%
-
-        // Eve votes again
-        //
-        watcher.update_upgrading_vote(eve, Vote::Aye, true, botanix_height).unwrap();
-
-        let ayes = watcher.get_upgrading_approval_rate_ayes(min_val_count).unwrap();
-        assert_eq!(ayes, (30, min_val_count)); // 30%
-
-        let compliant = watcher.get_upgrading_approval_rate_compliance(min_val_count).unwrap();
-        assert_eq!(compliant, (20, min_val_count)); // 20%
-
-        // Remove votes
-        //
-        let removed = watcher.remove_upgrading_votes(botanix_height).unwrap();
-        assert_eq!(removed, 0);
-
-        let removed = watcher.remove_upgrading_votes(botanix_height + 1).unwrap();
-        assert_eq!(removed, 3); // alice, bob and eve
-
-        // Removed; all is gone
-        //
-        let ayes = watcher.get_upgrading_approval_rate_ayes(min_val_count).unwrap();
-        assert_eq!(ayes, (0, min_val_count));
-
-        let compliant = watcher.get_upgrading_approval_rate_compliance(min_val_count).unwrap();
-        assert_eq!(compliant, (0, min_val_count));
-
-        let removed = watcher.remove_upgrading_votes(botanix_height).unwrap();
-        assert_eq!(removed, 0);
+        activation_manager_conformance_tests::assert_polling(
+            alice,
+            bob,
+            eve,
+            VoteWatcher::default(),
+        );
     }
 }
