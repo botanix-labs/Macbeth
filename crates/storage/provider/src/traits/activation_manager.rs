@@ -33,6 +33,59 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
         botanix_height: u64,
     ) -> ProviderResult<()>;
 
+    /// Returns the count of validators who have voted "Aye" and the total
+    /// number of validators who have voted.
+    ///
+    /// This method counts all validators who have cast an "Aye" vote for the
+    /// network upgrade, regardless of their compliance status.
+    ///
+    /// # Returns
+    /// * `Ok((aye_count, total_voters))` where:
+    ///   - `aye_count` is the number of validators who voted "Aye"
+    ///   - `total_voters` is the total number of distinct validators who have cast any vote
+    /// * `Err` if there was an error retrieving the vote counts
+    fn get_aye_votes(&self) -> ProviderResult<(usize, usize)>;
+
+    /// Returns the count of validators who have voted "Nay" and the total
+    /// number of validators who have voted.
+    ///
+    /// This method counts all validators who have cast a "Nay" vote for the
+    /// network upgrade, regardless of their compliance status.
+    ///
+    /// # Returns
+    /// * `Ok((nay_count, total_voters))` where:
+    ///   - `nay_count` is the number of validators who voted "Nay"
+    ///   - `total_voters` is the total number of distinct validators who have cast any vote
+    /// * `Err` if there was an error retrieving the vote counts
+    fn get_nay_votes(&self) -> ProviderResult<(usize, usize)>;
+
+    /// Returns the count of validators who have abstained from voting and the
+    /// total number of validators who have voted.
+    ///
+    /// This method counts all validators who have cast an "Absent" (abstain)
+    /// vote for the network upgrade, regardless of their compliance status.
+    ///
+    /// # Returns
+    /// * `Ok((abstain_count, total_voters))` where:
+    ///   - `abstain_count` is the number of validators who voted "Absent" (abstained)
+    ///   - `total_voters` is the total number of distinct validators who have cast any vote
+    /// * `Err` if there was an error retrieving the vote counts
+    fn get_abstained_votes(&self) -> ProviderResult<(usize, usize)>;
+
+    /// Returns the count of validators who are compliant with the upgrade and
+    /// the total number of validators who have voted.
+    ///
+    /// This method counts all validators who have indicated they are ready to
+    /// accept the upgrade by setting `is_compliant` to `true` when casting
+    /// their vote, regardless of whether they voted "Aye", "Nay", or "Absent".
+    ///
+    /// # Returns
+    /// * `Ok((compliant_count, total_voters))` where:
+    ///   - `compliant_count` is the number of validators who are compliant with the upgrade
+    ///   - `total_voters` is the total number of distinct validators who have cast any vote
+    /// * `Err` if there was an error retrieving the compliance counts
+    fn get_compliance_count(&self) -> ProviderResult<(usize, usize)>;
+
     /// Calculates the approval rate of validators signaling support (voting Aye) for an upgrade.
     ///
     /// This method calculates the percentage of validators voting "Aye" out of the total
