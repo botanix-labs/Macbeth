@@ -1,7 +1,7 @@
 use super::Db;
 use crate::activation_manager::{
     ActivationManager, ActivationManagerBuilder, ConditionList, OnFinalizeBlockDecision,
-    OnPrepareProposalDecision, OnProcessProposalDecision, VOTE_RETENTION_PERIOD,
+    OnPrepareProposalDecision, OnProcessProposalDecision, Polling, VOTE_RETENTION_PERIOD,
 };
 use reth_db::models::activation_manager::{RuntimeVersion, Vote};
 use reth_provider::ActivationManagerReaderWriter;
@@ -279,6 +279,17 @@ pub(super) struct Expectations {
     pub(super) aye_approval_rate: usize,
     /// The expected percentage (0-100) of compliant validators
     pub(super) comp_approval_rate: usize,
+    /// The expected number of validators who voted "Aye"
+    pub(super) aye_votes: usize,
+    /// The expected number of validators who voted "Nay"
+    pub(super) nay_votes: usize,
+    /// The expected number of validators who abstained from voting
+    pub(super) abstained_votes: usize,
+    /// The expected number of validators who are compliant with the upgrade
+    pub(super) compliant_count: usize,
+    /// The expected total number of distinct validators who have voted,
+    /// including abstained votes.
+    pub(super) total_votes: usize,
 }
 
 /// Fixture for testing the block proposal and validation flow.
@@ -512,6 +523,18 @@ impl ProposingTestFixture<'_> {
 
             assert_eq!(ayes, expect.aye_approval_rate, "ayes approval_rate mismatch");
             assert_eq!(compliance, expect.comp_approval_rate, "compliant approval_rate mismatch");
+
+            // Verify polling
+            let (_, polling) = manager.get_upgrade_polling().unwrap().unwrap_or((
+                RuntimeVersion::from((0, 0)), // throwaway
+                Polling { ayes: 0, nays: 0, abstained: 0, compliant: 0, total: 0 },
+            ));
+
+            assert_eq!(polling.ayes, expect.aye_votes, "aye votes mismatch");
+            assert_eq!(polling.nays, expect.nay_votes, "nay votes mismatch");
+            assert_eq!(polling.abstained, expect.abstained_votes, "abstain votes mismatch");
+            assert_eq!(polling.compliant, expect.compliant_count, "compliant count mismatch");
+            assert_eq!(polling.total, expect.total_votes, "total votes mismatch");
         }
 
         self.i.block_height += 1;
