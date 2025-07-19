@@ -59,6 +59,30 @@ impl ActivationManagerReaderWriter<utils::Address> for Db {
         Ok(())
     }
 
+    fn get_aye_votes(&self) -> ProviderResult<(usize, usize)> {
+        let votes = self.votes.read().unwrap();
+        let ayes = votes.iter().filter(|(_, e)| e.vote == Vote::Aye).count();
+        Ok((ayes, votes.len()))
+    }
+
+    fn get_nay_votes(&self) -> ProviderResult<(usize, usize)> {
+        let votes = self.votes.read().unwrap();
+        let nays = votes.iter().filter(|(_, e)| e.vote == Vote::Nay).count();
+        Ok((nays, votes.len()))
+    }
+
+    fn get_abstained_votes(&self) -> ProviderResult<(usize, usize)> {
+        let votes = self.votes.read().unwrap();
+        let abstains = votes.iter().filter(|(_, e)| e.vote == Vote::Absent).count();
+        Ok((abstains, votes.len()))
+    }
+
+    fn get_compliance_count(&self) -> ProviderResult<(usize, usize)> {
+        let votes = self.votes.read().unwrap();
+        let compliant = votes.iter().filter(|(_, e)| e.is_compliant).count();
+        Ok((compliant, votes.len()))
+    }
+
     fn get_upgrading_approval_rate_ayes(
         &self,
         min_validator_count: usize,
