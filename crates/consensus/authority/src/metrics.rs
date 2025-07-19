@@ -1,8 +1,13 @@
 //! Module for providing authority metrics.
+use crate::{
+    activation_manager::Polling, comet_bft::non_deterministic_data::NetworkUpgradePayload,
+};
+use reth_db::models::RuntimeVersion;
 use reth_metrics::{
     metrics::{Counter, Gauge},
     Metrics,
 };
+use reth_primitives::Address;
 
 /// Metrics for the entire network, handled by `NetworkManager`
 #[derive(Clone, Metrics)]
@@ -38,6 +43,70 @@ pub struct AuthorityMetrics {
 
     /// Number of commet processd\ed proposals
     pub(crate) commet_processed_proposals: Counter,
+}
+
+impl AuthorityMetrics {
+    /// Create metrics for federation member vote for a given proposal.
+    pub fn runtime_upgrade_vote(&self, member: &Address, payload: &Option<NetworkUpgradePayload>) {
+        if let Some(p) = payload {
+            metrics::gauge!(
+                "authority_runtime_upgrade_vote_details",
+                "version" => p.version.to_string(),
+                "member" => member.to_string(),
+                "vote" => p.vote.to_string(),
+                "is_compliant" => p.is_compliant.to_string(),
+            )
+            .set(1.0);
+        }
+
+        metrics::gauge!(
+            "authority_runtime_upgrade_vote_included",
+            "member" => member.to_string()
+        )
+        .set(if payload.is_some() { 1.0 } else { 0.0 });
+    }
+
+    /// Create metrics for the runtime upgrade polling results.
+    pub fn runtime_upgrade_polling(&self, upgrade: &RuntimeVersion, polling: &Polling) {
+        let p = polling;
+
+        // Metrics for each individual requirement.
+        metrics::gauge!(
+            "authority_runtime_upgrade_polling",
+            "version" => upgrade.to_string(),
+            "type" => "ayes"
+        )
+        .set(p.ayes as f64);
+
+        metrics::gauge!(
+            "authority_runtime_upgrade_polling",
+            "version" => upgrade.to_string(),
+            "type" => "nays"
+        )
+        .set(p.nays as f64);
+
+        metrics::gauge!(
+            "authority_runtime_upgrade_polling",
+            "version" => upgrade.to_string(),
+            "type" => "abstained"
+        )
+        .set(p.abstained as f64);
+
+        metrics::gauge!(
+            "authority_runtime_upgrade_polling",
+            "version" => upgrade.to_string(),
+            "type" => "compliant"
+        )
+        .set(p.compliant as f64);
+
+        // Summy metric; all-passing.
+        metrics::gauge!(
+            "authority_runtime_upgrade_polling",
+            "version" => upgrade.to_string(),
+            "type" => "total"
+        )
+        .set(p.total as f64);
+    }
 }
 
 /// Measures the duration of executing the given code block. The duration is added to the given

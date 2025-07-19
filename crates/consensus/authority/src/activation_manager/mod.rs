@@ -119,6 +119,11 @@ pub const MIN_VALIDATOR_COUNT: usize = 3;
 /// 3. Switch their configuration to accept the upgrade
 ///
 /// While ensuring votes eventually expire if an upgrade does not proceed.
+//
+// TODO (lamafab): This should probably be based on validator set count, not
+// some specific time period. Measuring sentiment over time and actually
+// validating upgrade conditions are two separate things. Having to validate
+// that many DB entries on each block is too expensive...
 pub const VOTE_RETENTION_PERIOD: u64 = 518_400;
 
 /// The decision returned by the activation manager during the prepare proposal
@@ -233,16 +238,37 @@ struct NetworkUpgrade {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConditionList {
     /// Whether the validator is compliant with the upgrade
-    comp_req: bool,
+    pub comp_req: bool,
 
     /// Whether the quorum approval rate for Aye votes has been reached
-    aye_approval_req: bool,
+    pub aye_approval_req: bool,
 
     /// Whether the quorum approval rate for compliant validators has been reached
-    comp_approval_req: bool,
+    pub comp_approval_req: bool,
 
     /// Whether the current block height is at or above the target height
-    block_height_req: bool,
+    pub block_height_req: bool,
+}
+
+/// Current voting statistics for a network upgrade.
+///
+/// This struct provides a snapshot of validator voting activity for a pending
+/// network upgrade, including the breakdown of different vote types and
+/// compliance status.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Polling {
+    /// Number of validators who have voted "Aye" for the upgrade.
+    pub ayes: usize,
+    /// Number of validators who have voted "Nay" against the upgrade.
+    pub nays: usize,
+    /// Number of validators who have abstained from voting (or explicitly voted
+    /// "Abstain").
+    pub abstained: usize,
+    /// Number of validators who are compliant with the upgrade (ready to
+    /// accept it).
+    pub compliant: usize,
+    /// Total number of distinct validators who have cast any vote.
+    pub total: usize,
 }
 
 impl ConditionList {
@@ -629,8 +655,10 @@ where
     /// # Parameters
     /// * `block_version` - The runtime version of the block being finalized
     /// * `block_height` - The height of the block being finalized
-    /// * `proposer_address` - The public key of the block proposer
-    /// * `proposer_vote` - The proposer's vote on a network upgrade, if any
+    /// * `proposer_address` - The address of the block proposer
+    /// * `proposer_vote` - The proposer's vote on a network upgrade, if any.
+    ///   If `None` or if the vote's version doesn't match the tracked upgrade,
+    ///   it's counted as abstained.
     ///
     /// # Returns
     /// * `OnFinalizeBlockDecision::Finalize` if the block should be finalized
@@ -702,6 +730,40 @@ where
         Ok(OnFinalizeBlockDecision::RejectBlockDeadEnd { version: block_version })
     }
 
+    /// Returns current voting statistics for the tracked network upgrade.
+    ///
+    /// This method provides a snapshot of validator voting activity for the
+    /// currently tracked upgrade, including vote counts and compliance status.
+    /// The returned data can be used for monitoring upgrade progress and
+    /// displaying voting statistics to users.
+    ///
+    /// # Returns
+    /// * `Ok(Some((version, polling)))` if an upgrade is being tracked, where:
+    ///   - `version` is the runtime version of the tracked upgrade
+    ///   - `polling` contains current vote counts and compliance statistics
+    /// * `Ok(None)` if no upgrade is currently being tracked
+    /// * `Err` if there was an error retrieving voting data from the database
+    pub fn get_upgrade_polling(&self) -> ProviderResult<Option<(RuntimeVersion, Polling)>> {
+        let maybe_upgrade = self.upgrade.read().expect("poisoned lock");
+        let Some(upgrade) = maybe_upgrade.as_ref() else {
+            return Ok(None);
+        };
+
+        let (ayes, total) = self.client.get_aye_votes()?;
+        let (nays, t2) = self.client.get_nay_votes()?;
+        let (abstained, t3) = self.client.get_abstained_votes()?;
+        let (compliant, t4) = self.client.get_compliance_count()?;
+
+        debug_assert_eq!(total, t2);
+        debug_assert_eq!(total, t3);
+        debug_assert_eq!(total, t4);
+        debug_assert_eq!(ayes + nays + abstained, total);
+
+        let polling = Polling { ayes, nays, abstained, compliant, total };
+
+        Ok(Some((upgrade.version, polling)))
+    }
+
     /// Validates all conditions required for an upgrade to proceed.
     ///
     /// This internal method checks whether all conditions required for a network
@@ -766,21 +828,32 @@ where
         addr: Auth,
         vote: Option<NetworkUpgradePayload>,
     ) -> ProviderResult<()> {
-        // If the proposer made a vote...
-        let Some(vote) = vote else {
-            return Ok(());
-        };
-
-        // And we're tracking an upgrade...
+        // Check if we're tracking an upgrade.
         let maybe_upgrade = self.upgrade.read().expect("poisoned lock");
         let Some(upgrade) = maybe_upgrade.as_ref() else {
             return Ok(());
         };
 
-        // And the proposers' version matches our upgrade version...
-        if vote.version != upgrade.version {
-            return Ok(());
-        }
+        let abstained_vote = || NetworkUpgradePayload {
+            version: upgrade.version,
+            vote: Vote::Abstain,
+            is_compliant: false,
+        };
+
+        // If the proposer provided an explicit vote, we check whether the
+        // version matches our upgrade version. If the version is mismatched or
+        // if no vote is provided at all, then we implicilty mark the vote as
+        // abstained.
+        let vote = if let Some(vote) = vote {
+            if vote.version == upgrade.version {
+                vote
+            } else {
+                abstained_vote()
+            }
+        } else {
+            // Abstained vote
+            abstained_vote()
+        };
 
         // Then track the vote.
         self.client.update_upgrading_vote(addr, vote.vote, vote.is_compliant, block_height)?;

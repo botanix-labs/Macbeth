@@ -53,9 +53,14 @@ fn activation_manager_reject_mismatched_vote() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
-        // Eve does not count Alices' vote (different version).
+        // Eve counts Alices' vote as abstained (different version)
         .expectations(
             &[EVE],
             Expectations {
@@ -63,6 +68,11 @@ fn activation_manager_reject_mismatched_vote() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 1,
+                compliant_count: 0,
+                total_votes: 1,
             },
         )
         .build_block();
@@ -91,9 +101,14 @@ fn activation_manager_reject_mismatched_vote() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
             },
         )
-        // Eve does not count Bobs' vote (different version).
+        // Eve counts Bobs' vote as abstained (different version)
         .expectations(
             &[EVE],
             Expectations {
@@ -101,6 +116,11 @@ fn activation_manager_reject_mismatched_vote() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 2,
+                compliant_count: 0,
+                total_votes: 2,
             },
         )
         .build_block();
@@ -121,7 +141,7 @@ fn activation_manager_reject_mismatched_vote() {
                 block_height_req: false,
             },
         )
-        // Alice and Bob DO NOT count Eves' vote (different version).
+        // Alice and Bob count Eves' vote as abstained (different version).
         .expectations(
             &[ALICE, BOB],
             Expectations {
@@ -129,6 +149,11 @@ fn activation_manager_reject_mismatched_vote() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 1,
+                compliant_count: 2,
+                total_votes: 3,
             },
         )
         // Eve counts his own vote
@@ -139,6 +164,11 @@ fn activation_manager_reject_mismatched_vote() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 2,
+                compliant_count: 1,
+                total_votes: 3,
             },
         )
         .build_block();
@@ -168,6 +198,11 @@ fn activation_manager_reject_mismatched_vote() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 1,
+                compliant_count: 2,
+                total_votes: 3,
             },
         )
         .expectations(
@@ -177,6 +212,11 @@ fn activation_manager_reject_mismatched_vote() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 2,
+                compliant_count: 1,
+                total_votes: 3,
             },
         )
         .build_blocks_until(21);

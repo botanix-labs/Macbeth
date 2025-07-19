@@ -194,7 +194,7 @@ impl NonDeterministicData {
 
                 // Serialize upgrade vote
                 match upgrade.vote {
-                    activation_manager::Vote::Absent => 0u8.consensus_encode(&mut writer)?,
+                    activation_manager::Vote::Abstain => 0u8.consensus_encode(&mut writer)?,
                     activation_manager::Vote::Nay => 1u8.consensus_encode(&mut writer)?,
                     activation_manager::Vote::Aye => 2u8.consensus_encode(&mut writer)?,
                 };
@@ -305,7 +305,7 @@ impl NonDeterministicData {
         // Decode payload information
         let upgrade_version = <(u16, u16)>::consensus_decode(reader)?.into();
         let vote = match u8::consensus_decode(reader)? {
-            0 => activation_manager::Vote::Absent,
+            0 => activation_manager::Vote::Abstain,
             1 => activation_manager::Vote::Nay,
             2 => activation_manager::Vote::Aye,
             _ => return Err(NonDeterministicDataDeserializeError::NetworkUpgradePayloadVote),
@@ -328,7 +328,7 @@ impl NonDeterministicData {
 ///
 /// * `version` - The specific runtime version that this vote applies to.
 ///
-/// * `vote` - The validator's explicit opinion on the upgrade (Aye/Nay/Absent).
+/// * `vote` - The validator's explicit opinion on the upgrade (Aye/Nay/Abstain).
 ///
 /// * `is_compliant` - Indicates whether the validator is technically ready to process blocks with
 ///   the upgrade version. When `true`, the validator has the necessary software version and
@@ -535,7 +535,7 @@ mod tests {
         // With network upgrade payloads
         let payload = Some(NetworkUpgradePayload {
             version: RuntimeVersion::new(2, 5),
-            vote: Vote::Absent,
+            vote: Vote::Abstain,
             is_compliant: false,
         });
 

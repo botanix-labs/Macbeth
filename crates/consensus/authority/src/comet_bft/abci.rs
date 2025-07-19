@@ -2132,15 +2132,15 @@ where
         // Activation Manager: decide whether we're willing to accept
         // the runtime version.
         //
-        // Note that lagging validators will automatically accept an
-        // upgrade as long as they're specifically configured to do so
-        // (non-default behavior) - whether the upgrade conditions are
-        // met or not.
+        // Note that lagging validators will automatically accept an upgrade as
+        // long as they're specifically configured to do so (non-default
+        // behavior), whether - from their perspective - the upgrade conditions
+        // are met or not.
         let comet_height = request.height as u64;
         let runtime_version = block_with_context.runtime_version;
         let proposer_address = Address::from_slice(&request.proposer_address);
         let proposer_vote = block_with_context.network_upgrade_payload;
-        //
+
         match self
             .activation_manager
             .on_finalize_block(runtime_version, comet_height, proposer_address, proposer_vote)
@@ -2153,6 +2153,21 @@ where
                 error!("finalize_block: Rejecting finalized block with Botanix runtime version: {version}");
                 panic!("finalize_block: Rejecting Botanix upgrade '{version}' - can no longer proceed...");
             }
+        }
+
+        // Metrics
+        //
+        // Only create metrics if there's an actual upgrade event ongoing.
+        if let Some((upgrade_version, polling)) =
+            self.activation_manager.get_upgrade_polling().expect("db cannot fail")
+        {
+            // Track the raw vote by the proposer. Note that the proposer might
+            // be voting for a different version than the one we're interested
+            // in, or for none at all. The rendered metric is labeled accurately.
+            self.metrics.runtime_upgrade_vote(&proposer_address, &proposer_vote);
+
+            // Track the polling results for the specific version we're interested in.
+            self.metrics.runtime_upgrade_polling(&upgrade_version, &polling);
         }
 
         // Rpc node needs to store aggregate public key from block height 1

@@ -61,6 +61,11 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         .build_block();
@@ -98,6 +103,11 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
             },
         )
         .build_block();
@@ -137,6 +147,11 @@ fn activation_manager_vote_nay_and_reject() {
                 // NOTE: Eve: votes Nay and rejects.
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 1,
+                abstained_votes: 0,
+                compliant_count: 2, // Not compliant
+                total_votes: 3,
             },
         )
         .build_block();
@@ -179,6 +194,11 @@ fn activation_manager_vote_nay_and_reject() {
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve REJECTS the upgrade.
@@ -190,6 +210,11 @@ fn activation_manager_vote_nay_and_reject() {
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -210,6 +235,11 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve REJECTS the upgrade.
@@ -220,6 +250,11 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: false, // Reject!
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_blocks_until(21);

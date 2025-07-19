@@ -52,6 +52,11 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         .build_block();
@@ -79,6 +84,11 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
             },
         )
         .build_block();
@@ -106,6 +116,11 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 finalize_pass: true,
                 aye_approval_rate: 100,
                 comp_approval_rate: 100,
+                aye_votes: 3,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 3,
+                total_votes: 3,
             },
         )
         .build_block();
@@ -135,6 +150,11 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -166,6 +186,11 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 finalize_pass: true, // Accept
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve (producer) accepts the outdated block.
@@ -176,6 +201,11 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_blocks_until(21);
@@ -196,6 +226,11 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve REJECTS the upgraded blocks, both during the backing and
@@ -208,6 +243,11 @@ fn activation_manager_reject_outdated_or_unsupported_version() {
                 finalize_pass: false, // Reject!
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_blocks_until(41);
