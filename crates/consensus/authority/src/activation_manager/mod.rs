@@ -233,16 +233,36 @@ struct NetworkUpgrade {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConditionList {
     /// Whether the validator is compliant with the upgrade
-    comp_req: bool,
+    pub comp_req: bool,
 
     /// Whether the quorum approval rate for Aye votes has been reached
-    aye_approval_req: bool,
+    pub aye_approval_req: bool,
 
     /// Whether the quorum approval rate for compliant validators has been reached
-    comp_approval_req: bool,
+    pub comp_approval_req: bool,
 
     /// Whether the current block height is at or above the target height
-    block_height_req: bool,
+    pub block_height_req: bool,
+}
+
+/// Current voting statistics for a network upgrade.
+///
+/// This struct provides a snapshot of validator voting activity for a pending
+/// network upgrade, including the breakdown of different vote types and
+/// compliance status.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Polling {
+    /// Number of validators who have voted "Aye" for the upgrade.
+    pub ayes: usize,
+    /// Number of validators who have voted "Nay" against the upgrade.
+    pub nays: usize,
+    /// Number of validators who have abstained from voting (voted "Absent").
+    pub abstained: usize,
+    /// Number of validators who are compliant with the upgrade (ready to
+    /// accept it).
+    pub compliant: usize,
+    /// Total number of distinct validators who have cast any vote.
+    pub total: usize,
 }
 
 impl ConditionList {
@@ -700,6 +720,40 @@ where
         // outdated version of this software that cannot handle those finalized
         // blocks.
         Ok(OnFinalizeBlockDecision::RejectBlockDeadEnd { version: block_version })
+    }
+
+    /// Returns current voting statistics for the tracked network upgrade.
+    ///
+    /// This method provides a snapshot of validator voting activity for the
+    /// currently tracked upgrade, including vote counts and compliance status.
+    /// The returned data can be used for monitoring upgrade progress and
+    /// displaying voting statistics to users.
+    ///
+    /// # Returns
+    /// * `Ok(Some((version, polling)))` if an upgrade is being tracked, where:
+    ///   - `version` is the runtime version of the tracked upgrade
+    ///   - `polling` contains current vote counts and compliance statistics
+    /// * `Ok(None)` if no upgrade is currently being tracked
+    /// * `Err` if there was an error retrieving voting data from the database
+    pub fn get_upgrade_polling(&self) -> ProviderResult<Option<(RuntimeVersion, Polling)>> {
+        let maybe_upgrade = self.upgrade.read().expect("poisoned lock");
+        let Some(upgrade) = maybe_upgrade.as_ref() else {
+            return Ok(None);
+        };
+
+        let (ayes, total) = self.client.get_aye_votes()?;
+        let (nays, t2) = self.client.get_nay_votes()?;
+        let (abstained, t3) = self.client.get_abstained_votes()?;
+        let (compliant, t4) = self.client.get_compliance_count()?;
+
+        debug_assert_eq!(total, t2);
+        debug_assert_eq!(total, t3);
+        debug_assert_eq!(total, t4);
+        debug_assert_eq!(ayes + nays + abstained, total);
+
+        let polling = Polling { ayes, nays, abstained, compliant, total };
+
+        Ok(Some((upgrade.version, polling)))
     }
 
     /// Validates all conditions required for an upgrade to proceed.
