@@ -93,7 +93,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     /// number of validators who have cast votes, regardless of their compliance status.
     ///
     /// The formula used is:
-    /// ```
+    /// ```text
     /// let total = total_votes.max(min_validator_count);
     /// let rate = (aye_votes * 100 + total - 1) / total
     /// ```
@@ -122,7 +122,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     /// votes, regardless of whether they voted Aye or Nay.
     ///
     /// The formula used is:
-    /// ```
+    /// ```text
     /// let total = total_votes.max(min_validator_count);
     /// let rate = (compliant_votes * 100 + total - 1) / total
     /// ```
@@ -227,7 +227,7 @@ pub mod tests {
         assert_eq!(res, (0, 3));
 
         // Eve votes Aye, IS compliant - IS counted, incremented height
-        db.update_upgrading_vote(eve.clone(), Vote::Aye, true, 2).unwrap();
+        db.update_upgrading_vote(eve, Vote::Aye, true, 2).unwrap();
         let res = db.get_upgrading_approval_rate_ayes(min_validator_count).unwrap();
         assert_eq!(res, (67, 3));
         let res = db.get_upgrading_approval_rate_compliance(min_validator_count).unwrap();
@@ -380,7 +380,7 @@ pub mod tests {
         assert_eq!(total, t4);
 
         // Eve votes Aye, is compliant - IS counted, incremented height
-        db.update_upgrading_vote(eve.clone(), Vote::Aye, true, 2).unwrap();
+        db.update_upgrading_vote(eve, Vote::Aye, true, 2).unwrap();
         let (ayes, total) = db.get_aye_votes().unwrap();
         let (nays, t2) = db.get_nay_votes().unwrap();
         let (abstains, t3) = db.get_abstained_votes().unwrap();
