@@ -2132,15 +2132,15 @@ where
         // Activation Manager: decide whether we're willing to accept
         // the runtime version.
         //
-        // Note that lagging validators will automatically accept an
-        // upgrade as long as they're specifically configured to do so
-        // (non-default behavior) - whether the upgrade conditions are
-        // met or not.
+        // Note that lagging validators will automatically accept an upgrade as
+        // long as they're specifically configured to do so (non-default
+        // behavior), whether - from their perspective - the upgrade conditions
+        // are met or not.
         let comet_height = request.height as u64;
         let runtime_version = block_with_context.runtime_version;
         let proposer_address = Address::from_slice(&request.proposer_address);
         let proposer_vote = block_with_context.network_upgrade_payload;
-        //
+
         match self
             .activation_manager
             .on_finalize_block(runtime_version, comet_height, proposer_address, proposer_vote)

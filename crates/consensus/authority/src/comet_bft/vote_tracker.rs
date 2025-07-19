@@ -1,4 +1,4 @@
-//! A simple in-memory vote tracker used by the ActivationManager which only
+//! A simple in-memory vote tracker used by the ActivationManager that only
 //! tracks the last vote.
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -9,7 +9,7 @@ use reth_db::models::Vote;
 use reth_primitives::Address;
 use reth_provider::{ActivationManagerReaderWriter, ProviderResult};
 
-/// A simple in-memory vote tracker used by the ActivationManager which only
+/// A simple in-memory vote tracker used by the ActivationManager that only
 /// tracks the last vote.
 #[derive(Debug, Clone, Default)]
 pub struct VoteWatcher {

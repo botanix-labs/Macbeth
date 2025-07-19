@@ -51,12 +51,10 @@ pub(super) struct UpgradeTestFixture {
     required_approval_rate: usize,
     /// The minimum number of distinct validators required to participate in voting
     min_validator_count: usize,
-
     /// The current block height in the simulation
     block_height: u64,
     /// How long votes are retained before expiring (in blocks)
     vote_retention_period: u64,
-
     /// The public keys representing each validator's identity
     addrs: [Address; 3],
     /// In-memory databases for each validator
@@ -300,12 +298,10 @@ pub(super) struct Expectations {
 /// finalizing blocks.
 pub(super) struct ProposingTestFixture<'a> {
     i: &'a mut UpgradeTestFixture,
-
     /// The index of the validator proposing the current block
     proposer_index: usize,
     /// The runtime version expected in the proposal
     expected_proposal_version: RuntimeVersion,
-
     /// Expectations for each validator's behavior when processing the block
     expectations: [Option<Expectations>; 3],
     /// Expected upgrade conditions for each validator
@@ -413,8 +409,6 @@ impl ProposingTestFixture<'_> {
     /// 4. Verifies that all validators behave according to expectations
     /// 5. Advances the block height
     fn do_build_block(&mut self) {
-        dbg!(self.i.block_height);
-
         let proposer = self.i.managers[self.proposer_index].as_mut().unwrap();
         let proposer_addr = self.i.addrs[self.proposer_index].clone();
 
@@ -446,17 +440,14 @@ impl ProposingTestFixture<'_> {
 
         // Each party processes and finalizes the block
         for (i, (manager, db)) in self.i.managers.iter_mut().zip(self.i.dbs.iter()).enumerate() {
-            let auth_idx = i;
-            dbg!(auth_idx);
-
             let Some(manager) = manager.as_mut() else {
                 assert!(
                     self.expectations[i].is_none(),
-                    "expected expectations for non-existent manager"
+                    "expectations set for non-existent manager"
                 );
                 assert!(
                     self.expected_conditions[i].is_none(),
-                    "expected conditions for non-existent manager"
+                    "conditions set for non-existent manager"
                 );
 
                 continue;

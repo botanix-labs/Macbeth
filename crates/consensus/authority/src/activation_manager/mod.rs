@@ -119,6 +119,11 @@ pub const MIN_VALIDATOR_COUNT: usize = 3;
 /// 3. Switch their configuration to accept the upgrade
 ///
 /// While ensuring votes eventually expire if an upgrade does not proceed.
+//
+// TODO (lamafab): This should probably be based on validator set count, not
+// some specific time period. Measuring sentiment over time and actually
+// validating upgrade conditions are two separate things. Having to validate
+// that many DB entries on each block is too expensive...
 pub const VOTE_RETENTION_PERIOD: u64 = 518_400;
 
 /// The decision returned by the activation manager during the prepare proposal
@@ -649,8 +654,10 @@ where
     /// # Parameters
     /// * `block_version` - The runtime version of the block being finalized
     /// * `block_height` - The height of the block being finalized
-    /// * `proposer_address` - The public key of the block proposer
-    /// * `proposer_vote` - The proposer's vote on a network upgrade, if any
+    /// * `proposer_address` - The address of the block proposer
+    /// * `proposer_vote` - The proposer's vote on a network upgrade, if any.
+    ///   If `None` or if the vote's version doesn't match the tracked upgrade,
+    ///   it's counted as abstained.
     ///
     /// # Returns
     /// * `OnFinalizeBlockDecision::Finalize` if the block should be finalized

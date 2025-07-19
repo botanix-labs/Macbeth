@@ -10,12 +10,12 @@ mod accept_lagging_validator;
 mod reject_ignored_upgrade;
 mod reject_mismatched_vote;
 mod reject_outdated_or_unsupported_version;
-mod utils;
 mod vote_expiration;
 mod vote_majority_nay_compliant_and_reject;
 mod vote_nay_and_accept;
 mod vote_nay_and_reject;
 mod wait_for_compliance;
+mod utils;
 
 /// In-Memory database that integrates the `ActivationManagerReaderWriter` trait.
 #[derive(Clone)]
