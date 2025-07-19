@@ -766,21 +766,32 @@ where
         addr: Auth,
         vote: Option<NetworkUpgradePayload>,
     ) -> ProviderResult<()> {
-        // If the proposer made a vote...
-        let Some(vote) = vote else {
-            return Ok(());
-        };
-
-        // And we're tracking an upgrade...
+        // Check if we're tracking an upgrade.
         let maybe_upgrade = self.upgrade.read().expect("poisoned lock");
         let Some(upgrade) = maybe_upgrade.as_ref() else {
             return Ok(());
         };
 
-        // And the proposers' version matches our upgrade version...
-        if vote.version != upgrade.version {
-            return Ok(());
-        }
+        let abstained_vote = || NetworkUpgradePayload {
+            version: upgrade.version,
+            vote: Vote::Absent,
+            is_compliant: false,
+        };
+
+        // If the proposer provided an explicit vote, we check whether the
+        // version matches our upgrade version. If the version is mismatched or
+        // if no vote is provided at all, then we implicilty mark the vote as
+        // abstained.
+        let vote = if let Some(vote) = vote {
+            if vote.version == upgrade.version {
+                vote
+            } else {
+                abstained_vote()
+            }
+        } else {
+            // Abstained vote
+            abstained_vote()
+        };
 
         // Then track the vote.
         self.client.update_upgrading_vote(addr, vote.vote, vote.is_compliant, block_height)?;
