@@ -4,9 +4,10 @@ use crate::{
     traits::{BlockSource, ReceiptProvider},
     BlockHashReader, BlockNumReader, BlockReader, ChainSpecProvider, DatabaseProviderFactory,
     EvmEnvProvider, HeaderProvider, HeaderSyncGap, HeaderSyncGapProvider, ProviderError,
-    PruneCheckpointReader, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
-    StagedHeader, StateProviderBox, StaticFileProviderFactory, TransactionVariant,
-    TransactionsProvider, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
+    PruneCheckpointReader, RequestsProvider, RuntimeTransitionsReadWrite, SnapshotReader,
+    SnapshotWriter, StageCheckpointReader, StagedHeader, StateProviderBox,
+    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WalletStateSyncReader,
+    WalletStateSyncWriter, WithdrawalsProvider,
 };
 use reth_chainspec::{ChainInfo, ChainSpec, EthChainSpec};
 use reth_db::{
@@ -928,7 +929,6 @@ impl<DB, Spec> Clone for ProviderFactory<DB, Spec> {
 impl<DB: Database> StagedHeader for ProviderFactory<DB> {
     fn insert_staged_header(&self, id: B256, header: HeaderWithPegs) -> ProviderResult<()> {
         let provider = self.provider_rw()?;
-
         provider.insert_staged_header(id, header)?;
 
         provider.commit()?;
@@ -938,7 +938,6 @@ impl<DB: Database> StagedHeader for ProviderFactory<DB> {
 
     fn remove_staged_header(&self, id: B256) -> ProviderResult<bool> {
         let provider = self.provider_rw()?;
-
         let is_removed = provider.remove_staged_header(id)?;
 
         if is_removed {
@@ -950,6 +949,33 @@ impl<DB: Database> StagedHeader for ProviderFactory<DB> {
 
     fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
         self.provider_rw()?.get_staged_headers()
+    }
+}
+
+impl<DB: Database> RuntimeTransitionsReadWrite for ProviderFactory<DB> {
+    fn insert_runtime_upgrade_version(
+        &self,
+        height: BlockNumber,
+        version: reth_db::models::RuntimeVersion,
+    ) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+        let did_change = provider.insert_runtime_upgrade_version(height, version)?;
+
+        if did_change {
+            provider.commit()?;
+        }
+
+        Ok(did_change)
+    }
+
+    fn get_runtime_versions(
+        &self,
+    ) -> ProviderResult<Vec<(BlockNumber, reth_db::models::RuntimeVersion)>> {
+        self.provider_rw()?.get_runtime_versions()
+    }
+
+    fn get_last_runtime_version(&self) -> ProviderResult<Option<reth_db::models::RuntimeVersion>> {
+        self.provider_rw()?.get_last_runtime_version()
     }
 }
 
