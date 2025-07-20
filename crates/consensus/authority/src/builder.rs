@@ -28,9 +28,9 @@ use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{header_ext::HeaderExt, Address};
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader,
-    SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader,
-    WalletStateSyncWriter,
+    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory,
+    RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter, StagedHeader,
+    StateProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
 };
 
 use reth_tasks::TaskExecutor;
@@ -39,7 +39,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 use tokio::sync::RwLock as TokioRwLock;
-use tracing::info;
+use tracing::{info, warn};
 
 pub(crate) type BitcoinCheckpoint = Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>;
 
@@ -87,6 +87,7 @@ where
         + CanonChainTracker
         + CanonStateSubscriptions
         + StagedHeader
+        + RuntimeTransitionsReadWrite
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
@@ -120,6 +121,17 @@ where
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
+
+        // Check the local database if a runtime upgrade has occurred which the
+        // ActivationManager does not know about.
+        if let Some(runtime_version) =
+            client.get_last_runtime_version().expect("local db must be available")
+        {
+            let was_forced = activation_manager.force_upgrade_checked(runtime_version);
+            if was_forced {
+                warn!("Detected completed network upgrade to version '{runtime_version}' that was unknown to initiated ActivationManager");
+            }
+        }
 
         let mut latest_header = client
             .latest_header()
