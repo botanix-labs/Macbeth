@@ -60,3 +60,6 @@ pub use finalized_block::{FinalizedBlockReader, FinalizedBlockWriter};
 
 mod staged_header;
 pub use staged_header::StagedHeader;
+
+mod runtime_transitions;
+pub use runtime_transitions::RuntimeTransitionsReadWrite;
