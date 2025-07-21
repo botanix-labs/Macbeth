@@ -250,5 +250,14 @@ pub async fn frost_e2e_stable(
     // TODO We could do a precise amounts check here
     assert!(pegout_tx.output[1].value > Amount::from_sat(0));
 
+    // Verify the fee is exactly what we expect
+    let total_input_value = pegin_tx.output.iter().map(|o| o.value).sum::<Amount>();
+    let total_output_value = pegout_tx.output.iter().map(|o| o.value).sum::<Amount>();
+    let actual_fee = total_input_value - total_output_value;
+    let weight = pegout_tx.weight();
+    let expected_fee_rate = 1250; // 1250 is the fallbackfee set in bitcoin conf
+    let expected_fee = (expected_fee_rate * weight.to_wu() + 999) / 1000; // Rounding up to nearest sat
+    assert_eq!(actual_fee, Amount::from_sat(expected_fee));
+
     Ok(())
 }
