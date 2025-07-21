@@ -106,7 +106,7 @@ pub(crate) fn coin_selection(
         .ok_or(InsufficientFunds { needed: total_pegout_target, available: total_utxos_value })?;
 
     // Coin selection using BDK
-    let target_change = calculate_target_change(total_pegout_target, remaining_utxos_value);
+    let target_change = calculate_target_change(total_pegout_target, remaining_utxos_value)?;
     let coin_selection_target = total_pegout_target
         .checked_add(target_change)
         .ok_or(CoinSelectionError::FeeRateOverflow)?;
@@ -313,19 +313,22 @@ fn calculate_required_fee(
 ///
 /// The target change is calculated as a percentage of the pegout value, with a ceiling
 /// to prevent excessive liquidity lockup and a floor to prevent the change from being too small.
-fn calculate_target_change(total_pegout_value: Amount, remaining_utxos_value: Amount) -> Amount {
+fn calculate_target_change(
+    total_pegout_value: Amount,
+    remaining_utxos_value: Amount,
+) -> Result<Amount, CoinSelectionError> {
     // default target change is a percentage of the total pegout value
     let mut target_change = total_pegout_value
         .checked_mul(TARGET_CHANGE_PERCENT)
-        .expect("Bitcoin amounts should never overflow u64")
+        .ok_or(CoinSelectionError::FeeRateOverflow)?
         .checked_div(100)
-        .expect("Division by 100 should never fail");
+        .ok_or(CoinSelectionError::FeeRateOverflow)?;
 
     let max_change_value = remaining_utxos_value
         .checked_mul(MAX_CHANGE_PERCENT)
-        .expect("Bitcoin amounts should never overflow u64")
+        .ok_or(CoinSelectionError::FeeRateOverflow)?
         .checked_div(100)
-        .expect("Division by 100 should never fail");
+        .ok_or(CoinSelectionError::FeeRateOverflow)?;
     if target_change > max_change_value {
         target_change = max_change_value;
     }
@@ -342,7 +345,7 @@ fn calculate_target_change(total_pegout_value: Amount, remaining_utxos_value: Am
         target_change = remaining_utxos_value;
     }
 
-    target_change
+    Ok(target_change)
 }
 
 fn calculate_fee_distribution(
@@ -465,31 +468,36 @@ mod tests {
         // Test default case: 50% of pegout value
         let total_pegout = Amount::from_sat(100_000);
         let remaining_utxos = Amount::from_sat(1_000_000);
-        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        let target_change =
+            calculate_target_change(total_pegout, remaining_utxos).expect("should not fail");
         assert_eq!(target_change, Amount::from_sat(50_000)); // 50% of 100k
 
         // Test max cap: 5% of remaining UTXOs
         let total_pegout = Amount::from_sat(20_000_000);
         let remaining_utxos = Amount::from_sat(100_000_000);
-        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        let target_change =
+            calculate_target_change(total_pegout, remaining_utxos).expect("should not fail");
         assert_eq!(target_change, Amount::from_sat(5_000_000)); // 5% of 100M, not 50% of 20M
 
         // Test min floor: at least 10,000 sats
         let total_pegout = Amount::from_sat(10_000);
         let remaining_utxos = Amount::from_sat(1_000_000);
-        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        let target_change =
+            calculate_target_change(total_pegout, remaining_utxos).expect("should not fail");
         assert_eq!(target_change, Amount::from_sat(MIN_CHANGE_SATS)); // Min of 10k, not 50% of 1k (500)
 
         // Test edge case: min > 5% of remaining UTXOs
         let total_pegout = Amount::from_sat(100_000);
         let remaining_utxos = Amount::from_sat(15_000);
-        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        let target_change =
+            calculate_target_change(total_pegout, remaining_utxos).expect("should not fail");
         assert_eq!(target_change, Amount::from_sat(MIN_CHANGE_SATS));
 
         // Test edge case: min > remaining UTXOs
         let total_pegout = Amount::from_sat(100_000);
         let remaining_utxos = Amount::from_sat(9_000);
-        let target_change = calculate_target_change(total_pegout, remaining_utxos);
+        let target_change =
+            calculate_target_change(total_pegout, remaining_utxos).expect("should not fail");
         assert_eq!(target_change, remaining_utxos);
     }
 
