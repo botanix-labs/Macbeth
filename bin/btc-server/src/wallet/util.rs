@@ -81,50 +81,61 @@ mod tests {
         test_utils::{create_random_pegout_id, random_compute_txid, random_p2tr_keyspend_script},
         wallet::psbt::{create_psbt, InputDTO},
     };
-    use bitcoin::{Amount, OutPoint, TxOut};
+
+    use bitcoin::{
+        taproot::Signature as TaprootSignature, Amount, OutPoint, TapSighashType, TxOut, Witness,
+    };
 
     #[test]
-    // Test based on mainnet pegout tx https://mempool.space/tx/fc9aaae314c366956bf74e184ba3759b56031ab7c9eddf206d3231ca382abbe8
-    fn test_mainnet_example_2_inputs_2_outputs() {
-        let psbt = create_mainnet_example_psbt_2_inputs_2_outputs();
+    fn test_calculate_signed_tx_weight_and_fee_rate() {
+        let test_cases = vec![
+            ("1_input_1_output", psbt_1_input_1_output()),
+            ("2_inputs_2_outputs", psbt_2_inputs_2_outputs()),
+            ("4_inputs_2_outputs", psbt_4_inputs_2_outputs()),
+        ];
 
-        let weight = calculate_signed_tx_weight(&psbt);
-        assert_eq!(weight.to_wu(), 848);
+        for (name, psbt) in test_cases {
+            let psbt_with_signatures =
+                add_dummy_signatures_to_psbt(psbt.clone(), TapSighashType::All);
+            let tx = psbt_with_signatures.clone().extract_tx().expect("Failed to extract tx");
 
-        let absolute_fee = psbt.fee_amount().unwrap();
-        assert_eq!(absolute_fee.to_sat(), 1_713);
+            let expected_fee_rate = psbt_with_signatures.fee_rate().unwrap();
+            let expected_weight = tx.weight();
 
-        let fee_rate = calculate_signed_tx_fee_rate(&psbt);
-        assert_eq!(fee_rate.to_sat_per_kwu(), 2_020);
+            let calculated_weight = calculate_signed_tx_weight(&psbt_with_signatures);
+            let calculated_fee_rate = calculate_signed_tx_fee_rate(&psbt_with_signatures);
+
+            assert_eq!(calculated_weight.to_wu(), expected_weight.to_wu(), "{}", name);
+            assert_eq!(
+                calculated_fee_rate.to_sat_per_kwu(),
+                expected_fee_rate.to_sat_per_kwu(),
+                "{}",
+                name
+            );
+        }
     }
 
-    #[test]
-    // Test based on mainnet pegout tx https://mempool.space/tx/a8a7197d99fedc6b366671a22d9312f7e5ed9869f53e61359995ee96ee65fed8
-    fn test_mainnet_example_4_inputs_2_outputs() {
-        let psbt = create_mainnet_example_psbt_4_inputs_2_outputs();
+    fn add_dummy_signatures_to_psbt(mut psbt: Psbt, sighash_type: TapSighashType) -> Psbt {
+        for input in psbt.inputs.iter_mut() {
+            // For Taproot (P2TR) transactions
+            if let Some(_witness_utxo) = &input.witness_utxo {
+                let dummy_schnorr_sig_bytes = vec![0x42u8; 64];
+                let dummy_schnorr_sig =
+                    secp256k1::schnorr::Signature::from_slice(&dummy_schnorr_sig_bytes)
+                        .expect("Valid dummy signature");
 
-        let weight = calculate_signed_tx_weight(&psbt);
-        assert_eq!(weight.to_wu(), 1310);
+                let taproot_sig = TaprootSignature { signature: dummy_schnorr_sig, sighash_type };
 
-        let absolute_fee = psbt.fee_amount().unwrap();
-        assert_eq!(absolute_fee.to_sat(), 2_162);
+                // Set the taproot signature
+                input.tap_key_sig = Some(taproot_sig.clone());
 
-        let fee_rate = calculate_signed_tx_fee_rate(&psbt);
-        assert_eq!(fee_rate.to_sat_per_kwu(), 1_650);
-    }
+                // Create the witness item with the signature
+                let witness = Witness::from_slice(&[taproot_sig.to_vec()]);
+                input.final_script_witness = Some(witness);
+            }
+        }
 
-    #[test]
-    // Made up example without change output
-    fn test_1_input_1_output() {
-        let psbt = create_psbt_1_input_1_output();
-        let weight = calculate_signed_tx_weight(&psbt);
-        assert_eq!(weight.to_wu(), 445);
-
-        let absolute_fee = psbt.fee_amount().unwrap();
-        assert_eq!(absolute_fee.to_sat(), 445);
-
-        let fee_rate = calculate_signed_tx_fee_rate(&psbt);
-        assert_eq!(fee_rate.to_sat_per_kwu(), 1000);
+        psbt
     }
 
     fn create_random_input(value_sats: u64) -> InputDTO {
@@ -139,7 +150,8 @@ mod tests {
         }
     }
 
-    fn create_mainnet_example_psbt_2_inputs_2_outputs() -> Psbt {
+    // Example based on mainnet pegout tx https://mempool.space/tx/fc9aaae314c366956bf74e184ba3759b56031ab7c9eddf206d3231ca382abbe8
+    fn psbt_2_inputs_2_outputs() -> Psbt {
         let mut inputs = vec![];
         let input1 = create_random_input(3_000);
         inputs.push(input1);
@@ -164,7 +176,8 @@ mod tests {
         create_psbt(inputs, outputs, change)
     }
 
-    fn create_mainnet_example_psbt_4_inputs_2_outputs() -> Psbt {
+    // Example based on mainnet pegout tx https://mempool.space/tx/a8a7197d99fedc6b366671a22d9312f7e5ed9869f53e61359995ee96ee65fed8
+    fn psbt_4_inputs_2_outputs() -> Psbt {
         let mut inputs = vec![];
         let input1 = create_random_input(9_425);
         inputs.push(input1);
@@ -193,7 +206,7 @@ mod tests {
         create_psbt(inputs, outputs, change)
     }
 
-    fn create_psbt_1_input_1_output() -> Psbt {
+    fn psbt_1_input_1_output() -> Psbt {
         let mut inputs = vec![];
         let input1 = create_random_input(100_000);
         inputs.push(input1);
