@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::{
-    database::FinalizedPegout,
+    database::{FinalizedPegout, Utxo},
     measure_rpc_latency,
     pegout_id::PegoutId,
     telemetry::Telemetry,
@@ -229,6 +229,8 @@ pub struct PegoutScheduler {
     bitcoin_network: bitcoin::Network,
     /// Identifier
     identifier: u16,
+    /// Whether we should scan for missing change outputs
+    scan_for_change_outputs: bool,
 }
 
 impl PegoutScheduler {
@@ -253,6 +255,7 @@ impl PegoutScheduler {
             telemetry,
             bitcoin_network,
             identifier,
+            scan_for_change_outputs: false,
         };
 
         ret.last_blocks.push_back(BlockInfo {
@@ -742,6 +745,898 @@ impl PegoutScheduler {
         Ok(())
     }
 
+    pub fn change_utxos(
+        &self,
+    ) -> Result<Vec<bitcoincore_rpc::json::Utxo>, Box<dyn std::error::Error>> {
+        let json_data = r#"[{
+      "txid": "d8b268a579ffbc5e425d69ef5f7e0f1c8db8c73b6b13b6f5a06caf4788129705",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00180655,
+      "height": 903664
+    },
+    {
+      "txid": "2792d9c79713b7b3d2c1d0267ec567a9e05f79b18355c782f379b35ca08bd50d",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.01088904,
+      "height": 904468
+    },
+    {
+      "txid": "365e926b53fd9c01bda2d44b4ce2fd04eb97c63fffc732c8813cb7f0e625c40e",
+      "vout": 2,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00146289,
+      "height": 904173
+    },
+    {
+      "txid": "96de65caabd74b37d20af813900982692634aed9d7f791f37a71f504cbd91c10",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00005919,
+      "height": 904336
+    },
+    {
+      "txid": "7a5816ae0b9bfa77bd370e2af034737823107038ac96ce125b2d2aec95ff3e13",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00088026,
+      "height": 898617
+    },
+    {
+      "txid": "13850e99025ab1939d5e4bae8a2f11c33dd9001246fa783a74aefd2193166518",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00002113,
+      "height": 905207
+    },
+    {
+      "txid": "7aa9b9970a64165db172dd9323f737da3df4198421669cf80fd03b158a930b26",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 3.82140592,
+      "height": 904497
+    },
+    {
+      "txid": "d21e070af5873c7a53f8b7c256761f98ac1f2ee3a2b41a661f0a45354ec29b27",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.02964490,
+      "height": 904197
+    },
+    {
+      "txid": "5ebb7e5ae06fc9021c6594f431bf176f5aa6fc899ef3e4aa3f8ea7642071b32c",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.01840367,
+      "height": 905032
+    },
+    {
+      "txid": "21d4ff70ebb204ccf3f446965e0bb85497b2ea9204d83e975dfe7af28dfbd12d",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000948,
+      "height": 904518
+    },
+    {
+      "txid": "e29b4113f84159680ef6bbe82f9130ac30256b210c50df60689fe8c2cabf072e",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00002406,
+      "height": 905558
+    },
+    {
+      "txid": "bb87d8378b9330ad8c871e44ac7002bfcf6920ff84484952f20c5b125420b131",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00001000,
+      "height": 904775
+    },
+    {
+      "txid": "dc1b4792b979b01b3e95161184a09fff84833f39b3ab626767b3c96d71edb533",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.09888828,
+      "height": 905081
+    },
+    {
+      "txid": "a7c33cdc276cc8bbb58226bfe5dc5e239fe49e07469a683a976a27a0fe8ae433",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00040831,
+      "height": 904870
+    },
+    {
+      "txid": "a70f4cb320ef64743fb0cc3533cea75101f98b2d5ea782348b34c74ef5670c38",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000780,
+      "height": 905202
+    },
+    {
+      "txid": "1af9199e9169932a4ea480e9a0b91a176e2f80d64425cc7b0d48a086ba28c23d",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00137815,
+      "height": 904558
+    },
+    {
+      "txid": "69cf7f9031d03edac31cb0c8bd78ed87dc308522b71480344c37b62d3fbb6e3e",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00088510,
+      "height": 904131
+    },
+    {
+      "txid": "16e8043850ac28719531b0f6e401633a0354461991d3dd259a3dc4b8a0edca3e",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.89566335,
+      "height": 905641
+    },
+    {
+      "txid": "caed1b0db19031996358b352b630a01076c0c28e08e131efa36313810826d340",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00089000,
+      "height": 904146
+    },
+    {
+      "txid": "3143b6e9e958fcd85f7de16d036dcadae22007a1e8828e609405379c90614947",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.01481902,
+      "height": 905594
+    },
+    {
+      "txid": "e6c687666b3cc0a19d22777f91770ff4141231707916e8baf0dd384afa691948",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00001875,
+      "height": 905066
+    },
+    {
+      "txid": "3a63f0974c8d39df4061efd0d43db0e470092e8fe39ea6e0dc8bec9561078e48",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00195000,
+      "height": 903776
+    },
+    {
+      "txid": "2eabc349ebb6bd8034d3cac949db37ef6816d19ff49329518b094f5071acb64a",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00005288,
+      "height": 905415
+    },
+    {
+      "txid": "136826625fd60ca433ae504ea50c70f17dd40d5f0682bf6fdfe6749077beb24e",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.01113138,
+      "height": 904672
+    },
+    {
+      "txid": "ab49044d92450b7e27e45d6037b173df44736ecb98ee351814b71abc0ca9c34e",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000954,
+      "height": 904882
+    },
+    {
+      "txid": "d7edb0fd708ac6a066a323a6a7d5fd42cddaf760a351f2ef8bf84a3acb41064f",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.24384767,
+      "height": 904516
+    },
+    {
+      "txid": "c40cb287d597105717e0489797b2afb4639783675d530f32f951c4c5802d4c50",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00547007,
+      "height": 903598
+    },
+    {
+      "txid": "6f8cf71035a0b60c4e68ed0b9be1d0cbbcd66a3a87bfc2a2cc6e356e7768e651",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00112548,
+      "height": 903654
+    },
+    {
+      "txid": "36a685708cdd57004b72935be746aa937ad753f46d5ef568779fff24fb72ef53",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00010200,
+      "height": 898168
+    },
+    {
+      "txid": "e857e2355c498bbb6045228dd98d23cf61770b30f9eae9b468ba20f29e9da455",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00973239,
+      "height": 905045
+    },
+    {
+      "txid": "8a309ec550ec2eb2ef79caceb602cd5a217dcae333ff7fe67c938b84ece4785d",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000744,
+      "height": 903945
+    },
+    {
+      "txid": "ec1668bfd5e0436c00cca8d332e4a14fd2d1eb4bcf6b9a1ba1f5f0b04b41b25d",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.02760234,
+      "height": 905350
+    },
+    {
+      "txid": "46f2daf45b03c8d2247b06655e29efe320a2b1c083faed94e3f59f5682685e5f",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00033092,
+      "height": 904940
+    },
+    {
+      "txid": "4bc47a982a3176069e8f4bc4e2d0110d0ff3ecd1d33aa81b4bfdfade63b28761",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000918,
+      "height": 903868
+    },
+    {
+      "txid": "bbf3a0e12fb46b7192c882fa03e2d048eb127ce4a7174ae5ab6ab0becc0a1664",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00090000,
+      "height": 902646
+    },
+    {
+      "txid": "f8fba67eb70df4c88ad1d903c50c2f541664e437350f057bea31b957e98b8064",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00050777,
+      "height": 905253
+    },
+    {
+      "txid": "98e874b8dc093aa92690944a8f7c3711e81d3ba5f5b56fc3075a2d5b4c423465",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 9.99989400,
+      "height": 903827
+    },
+    {
+      "txid": "380ecdca6243896daffa6e7152dd1121ceec0a0a1fc3cb4e76d10f9fabe61b68",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00529845,
+      "height": 904307
+    },
+    {
+      "txid": "0c1ba242f76569d9cef5d21bf29f83c635a2efc1d2646526bfc77439b21c4569",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00076000,
+      "height": 904743
+    },
+    {
+      "txid": "fe4a4319f226f912018f97cba78618f6591be9f091fce2d376aef942e1a18a6a",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.01157242,
+      "height": 905217
+    },
+    {
+      "txid": "98b9fb4c61c61f9213d4545e9d80351a91e4c79f371fe9afa9ed5f42aa4db470",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00190000,
+      "height": 903567
+    },
+    {
+      "txid": "c4d70932d7873d434de92b160a745e349eeb263ffae011fde212d890cda12a73",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00461000,
+      "height": 905213
+    },
+    {
+      "txid": "7ac930b1624e207abf3bd70d9de221a6156e51c9956b29a339210baed2a86477",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00001092,
+      "height": 903680
+    },
+    {
+      "txid": "7c2a3789b7f2a0f788506a7968f511b76024cde3d0af28c9932d3a923718577b",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00030390,
+      "height": 904027
+    },
+    {
+      "txid": "ab43495626f39186237b055601b6bb25b8d047151bb7232678b71c1e84f5a27e",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00322118,
+      "height": 904496
+    },
+    {
+      "txid": "92fc7ebffbd6850a10dd4859a9fe7ac85e7e8ed8a60e203c64a5650deed58c80",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00051000,
+      "height": 903684
+    },
+    {
+      "txid": "83b0cc60eb0c95829abd9ad6d71c3daae0b805618df3e946ab1479dafcbbc280",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 19.99952184,
+      "height": 904626
+    },
+    {
+      "txid": "b378d804724799805f42dc6c319c1af58aa8e1a6758b68e43d2583e13c53a284",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00028163,
+      "height": 905374
+    },
+    {
+      "txid": "87f78d536e78c35e1c94f5e08f39fe000ea452a909acffd8db4b85ea4085f686",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000579,
+      "height": 903945
+    },
+    {
+      "txid": "3e5868e713ce0655eb022540d82355248b2cf13dee85161b2c7bdb3087104388",
+      "vout": 2,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.26821487,
+      "height": 904443
+    },
+    {
+      "txid": "02f76dc542648b798b303226562ae0909cd4b3ffd896e7eadd22336f86b40e89",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.75018870,
+      "height": 904870
+    },
+    {
+      "txid": "de88b0ec3084571c3845d94701afafceb3cabec0c76b7839431a2382c8d6ae8a",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000918,
+      "height": 905476
+    },
+    {
+      "txid": "30dfe32376dbccb41dd0115a5747978c0ab154b8d906ba6fa31d51ed987d408d",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00406000,
+      "height": 903565
+    },
+    {
+      "txid": "50dfb17c1299ead183fdb49aaa5417b6a92e55835f76a571e78f11c1d95b0d8e",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00059799,
+      "height": 904142
+    },
+    {
+      "txid": "51320ba039bb17cf227a0fe156de8724d222af894c4172638eb0da472f667892",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00008238,
+      "height": 903567
+    },
+    {
+      "txid": "e7e5bda2ae3cf9cea79e5579732e51a5186970bf5b8ea1a711779e7bbecffa92",
+      "vout": 3,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00492680,
+      "height": 904500
+    },
+    {
+      "txid": "0810ab8d186215de8f663d4de2fb00fe666d5dc213455adb8b4020d9c2c38396",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00008863,
+      "height": 905327
+    },
+    {
+      "txid": "97af3a2de8c6f5d463b09d954b3a72ca848cc72fa591a8ab2cc6bb8a3d98cb99",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00002699,
+      "height": 905415
+    },
+    {
+      "txid": "739596e2b468ea45b27f1d5f40b69fab1f1e51ed4bf254047f7cbd85b0654b9d",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00016695,
+      "height": 904522
+    },
+    {
+      "txid": "de0613fe79eb8089167c90eaf542b01c6ead67f7081d6710e9d4decbd03862a5",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00001706,
+      "height": 905451
+    },
+    {
+      "txid": "5ece66de83110d635e4b5b2fc7a11cdbc4e6303674149ee71046289953dd6ca6",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00090000,
+      "height": 904483
+    },
+    {
+      "txid": "791f179c7ae0eb99cbcf1e7877166c5f3488ba9f5de0f1d12b0bfa5096ab94ad",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 5.94216557,
+      "height": 904957
+    },
+    {
+      "txid": "567a5d3328fd104900a552e81095be3917e492427f0060e0d512f8d7fb330eaf",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00992000,
+      "height": 904601
+    },
+    {
+      "txid": "5b92f6021e8029d507b394472225125e087f7eaad2ab3586e4af7785c7c0e9af",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00041910,
+      "height": 899689
+    },
+    {
+      "txid": "919d5e9c6dbcfbfed5a3035c488665424c9b2b8b4d69d1b9f98c90a07c8b35b0",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00478350,
+      "height": 899677
+    },
+    {
+      "txid": "ba65a72e1a42508456f7dc573078ca2170b7a592bf0c1e1380ded129632709b1",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00235100,
+      "height": 905448
+    },
+    {
+      "txid": "a191ffa5ecd88b721932e7f11e7f02322c929519d61357c08d780edc8c33fbb1",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 15.73915865,
+      "height": 904854
+    },
+    {
+      "txid": "d3b2b0c79b5511480920c445d6a6812c65ed9a507202d18f1cc244c90941e2b3",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00020858,
+      "height": 904524
+    },
+    {
+      "txid": "6a98e963205baca92c9146fee3b1ab6c8e7e1c8c01c1610e19c269346be19db5",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00386202,
+      "height": 905415
+    },
+    {
+      "txid": "f747df9cd0efa4990ac8588fdaebe2535b6a78e1fc6102cd23bfef49f9d2c0b5",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00427075,
+      "height": 905265
+    },
+    {
+      "txid": "5c1e2c73de7fd428134cd04b9a5c09bfe6672cafd967d087bdc9114183d8eeb6",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 2.99961791,
+      "height": 904317
+    },
+    {
+      "txid": "7479e38f7626d89160547a9180890112460486d07785dad6f117b7cc835466ba",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00077943,
+      "height": 904142
+    },
+    {
+      "txid": "4028bcc7c49790c96121e933bca5e93f04ccf9e61eed52394f6cede81eb12bbb",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.02053229,
+      "height": 903567
+    },
+    {
+      "txid": "4cda1d173b931fb4709758713641057983217d4b38454e09e88169d64bfba1bb",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000758,
+      "height": 905244
+    },
+    {
+      "txid": "eb08d107666e8b9cc2619159f0d1427a47309ba877229a5e94a2df4f8c41cdbf",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00001275,
+      "height": 903945
+    },
+    {
+      "txid": "c2e7be6f3f37f188cc46e522b8eaf3cb4a3145cd7ef54515d5cdaeee13511cc7",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.29242708,
+      "height": 905397
+    },
+    {
+      "txid": "1d97a3c06a8ea9e85ed3cacaca925616d2043f5991f04d6430342bfe0e2a3fc8",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.03554840,
+      "height": 903418
+    },
+    {
+      "txid": "8a979811c28cf6542cd97358a5c50e425e5e7589053dcc31caa8784423faaecb",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00180963,
+      "height": 904318
+    },
+    {
+      "txid": "56a66e66ec565225d313597c22178f5d4b106a46fc74a96202ecf507463906cc",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 9.99970001,
+      "height": 901969
+    },
+    {
+      "txid": "2a5500afd3e5d2691492587b21631b0677e25c958ac8fc4dd161549208cdb8cd",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00087096,
+      "height": 904937
+    },
+    {
+      "txid": "49deec5d030b50b5c6540e444c66aebeada64230e241009b4be2886b7cb072d0",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00950000,
+      "height": 903391
+    },
+    {
+      "txid": "2111e48aeac5f8a2f3451967b1f40252ac1c3049697049fdc168f1eebae724d1",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00971486,
+      "height": 904340
+    },
+    {
+      "txid": "8eda0abb2f3dc1b940cb56e1a8efe0a3aa7353a5dc689776f7d8c542f0bb59d1",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00269469,
+      "height": 904612
+    },
+    {
+      "txid": "893039aa55b6be069fc8c7c368f8abcc5d3d335c8e31fa5ad823f1212eea2cd5",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00032785,
+      "height": 904324
+    },
+    {
+      "txid": "747bc47123338a482f219dff5755e8b6c4bb2d6c37a7a14f91b57725163165d5",
+      "vout": 2,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.02897600,
+      "height": 904323
+    },
+    {
+      "txid": "3ffcc9130717c25738914e0504602805cc967436db2a95a0781edbd80dc303dc",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00313730,
+      "height": 904489
+    },
+    {
+      "txid": "71d4698c78fcd18b4103a83cdd2d454bd6919f27507bfbc3b051e78b008a18dc",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00682110,
+      "height": 905386
+    },
+    {
+      "txid": "9e29c613281603cca16b1be5a8bcca2c4a3bc38bf79450b0ebdb8caf134823e1",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.10815552,
+      "height": 904343
+    },
+    {
+      "txid": "81a71fc01d9d2045486a441118e120754289d5376c7b3e11185d8060059609e6",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00001814,
+      "height": 905449
+    },
+    {
+      "txid": "8fa99adad904472157718aa23a612a8c63f372ab0516a10d486b193fb607b9e6",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00084000,
+      "height": 904856
+    },
+    {
+      "txid": "a6e6257e99fb8690a5f0adf17aa9760d726c3a1dd93cbb8778e8b0e14da08bec",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.02213641,
+      "height": 900549
+    },
+    {
+      "txid": "7a1c99da0ce75262ec59cffbb0963e885145f0fabc157f93bab1e8f4ac43ecf3",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00031891,
+      "height": 904494
+    },
+    {
+      "txid": "d4f1df3e213de0bb2bcb4748fef00d103d55d44af9ffecfc298e5f2aa2a383f5",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00856634,
+      "height": 904322
+    },
+    {
+      "txid": "30335c714ee8293ddbd5f97ff09013ba9337ee2d7415e81a7c5cd2a8c2fcdbf6",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 1.79550000,
+      "height": 905081
+    },
+    {
+      "txid": "a8cb8857cf6ddde4e19d3b11890b9bc72659aaf9b03cd38debf06257192b77f7",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00008575,
+      "height": 904148
+    },
+    {
+      "txid": "74e5f9b6b8378b0f6a29c19570cb3211f96c581f3684c6bbb8da74d29669b1fa",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00000918,
+      "height": 903570
+    },
+    {
+      "txid": "175695532095e6701f469fa03bbef59fbef7687ea3de5b932bc0d94c58a501fb",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.01669400,
+      "height": 904911
+    },
+    {
+      "txid": "0cde9db130ba81ead97233ff935c3e0bf5d55182448efb0ba4ceb425dbeb5ffc",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00536462,
+      "height": 903565
+    },
+    {
+      "txid": "1238d0289d49f2d95bd247aeaaf2aeedc5a3222e964441c9b40b0df93982a1fd",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00774225,
+      "height": 905081
+    },
+    {
+      "txid": "5fd64c910a3e8f46ba240b3ac03c19d96a869f7f54197169045015b36c230dff",
+      "vout": 1,
+      "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+      "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+      "amount": 0.00014403,
+      "height": 904167
+    }
+  ]"#; // Add the rest of your JSON data here
+
+        // Parse the JSON into a Vec<Utxo>
+        let utxos: Vec<bitcoincore_rpc::json::Utxo> = serde_json::from_str(json_data)?;
+
+        // Print the results
+        println!("Parsed {} UTXOs", utxos.len());
+
+        Ok(utxos)
+    }
+
+    /// Add missing change outputs to the UTXO set.
+    ///
+    /// This is a temporary fix to ensure change outputs are added back to the UTXO set.
+    ///   Returns:
+    /// - `Ok(())` if successful.
+    /// - `Err(SyncError)` if there was an error.
+    pub fn add_missing_change_outputs(&mut self) -> Result<(), SyncError> {
+        info!("PegoutScheduler::add_missing_change_outputs: Adding missing change outputs to the UTXO set.");
+
+        // Get the UTXO set from the db
+        let utxos = self.db.get_all_utxos()?;
+        if utxos.is_empty() {
+            info!("PegoutScheduler::add_missing_change_outputs: No UTXOs found in the database.");
+            return Ok(());
+        }
+        info!(
+            "PegoutScheduler::add_missing_change_outputs: Found {} UTXOs in the database.",
+            utxos.len()
+        );
+        // This is safe because of the empty check above
+        let utxo_version = utxos[0].version;
+
+        // Get the unspent utxos for the change address
+        let change_utxos = self.change_utxos().expect("change_utxos should parse correctly");
+
+        // Add back missing change outputs to the UTXO set
+        let mut missing_utxos = Vec::new();
+        for unspent in change_utxos {
+            info!(
+                "PegoutScheduler::add_missing_change_outputs: Found unspent change output: {:?}",
+                unspent
+            );
+
+            // Create a UTXO for the change output
+            let utxo = Utxo {
+                outpoint: OutPoint { txid: unspent.txid, vout: unspent.vout },
+                output: TxOut { value: unspent.amount, script_pubkey: unspent.script_pub_key },
+                eth_address: None, // Assuming this is None for change outputs
+                version: utxo_version,
+            };
+
+            // Check if this UTXO already exists in the database by outpoint
+            let outpoints = utxos.iter().map(|u| u.outpoint).collect::<HashSet<_>>();
+            if !outpoints.contains(&utxo.outpoint) {
+                info!(
+                    "PegoutScheduler::add_missing_change_outputs: Adding missing change UTXO: {:?}",
+                    utxo
+                );
+                missing_utxos.push(utxo);
+            } else {
+                // Sanity check that the utxo we create does match the utxo from the db.
+                // This ensures that we're creating the correct change outputs.
+                let utxo_is_exact_match = utxos.contains(&utxo);
+                if !utxo_is_exact_match {
+                    let db_utxo = utxos
+                        .iter()
+                        .find(|u| u.outpoint == utxo.outpoint)
+                        .expect("utxo should exist in db");
+
+                    error!(
+                        "PegoutScheduler::add_missing_change_outputs: UTXO from db does not match the one we created: {:?} != {:?}",
+                        db_utxo, utxo
+                    );
+
+                    return Err(SyncError::IncorrectChangeOutputCreated);
+                }
+            }
+        }
+        let missing_utxo_refs: Vec<&Utxo> = missing_utxos.iter().collect();
+        info!(
+            "PegoutScheduler::add_missing_change_outputs: Storing {} missing change outputs.",
+            missing_utxo_refs.len()
+        );
+        self.db.store_utxos(&missing_utxo_refs)?;
+
+        Ok(())
+    }
+
     /// Sync with new blocks and stop when the [checkpoint] block gets finalized.
     ///
     /// We take the database closure to reduce coupling with database module.
@@ -797,6 +1692,16 @@ impl PegoutScheduler {
                 SyncError::NodeNotSynced
             );
             return Err(SyncError::NodeNotSynced);
+        }
+
+        // Add back missing change outputs to the utxo set.
+        // TODO(Scott): This is a temporary fix to ensure change outputs are added back
+        // to the UTXO set. We will remove this logic in another release.
+        // Check if we have any missing change outputs
+        if self.scan_for_change_outputs {
+            // Setting to false immediately to avoid infinite retrying
+            self.scan_for_change_outputs = false;
+            self.add_missing_change_outputs()?;
         }
 
         // First find the latest block that we have that is still in the blockchain.
@@ -1195,6 +2100,8 @@ pub enum SyncError {
     TrackedTxNotInBlock(Txid),
     #[error("deeply confirmed tx not finalized: {0}")]
     DeeplyConfirmedTxNotFinalized(Txid),
+    #[error("incorrect change output created")]
+    IncorrectChangeOutputCreated,
 }
 
 #[derive(Debug, Error)]
@@ -1940,5 +2847,41 @@ mod tests {
 
         // assert there are no tracked txs
         assert_eq!(pegout_scheduler.txs.len(), 0);
+    }
+
+    #[test]
+    fn test_add_missing_change_outputs() {
+        let db = setup_db().0;
+        let mut pegout_scheduler = PegoutScheduler::new(
+            101,
+            vec![],
+            bitcoin::BlockHash::all_zeros(),
+            db.clone(),
+            None,
+            bitcoin::Network::Regtest,
+            0,
+        );
+
+        // Add utxo to db
+        let tx = create_tx(2, 1, None);
+        let utxo = Utxo::new(
+            OutPoint::new(tx.compute_txid(), 0),
+            tx.output.get(0).unwrap().clone(),
+            None,
+            None,
+        );
+        db.store_utxos(&[&utxo]).unwrap();
+        db.flush().unwrap();
+
+        let change = pegout_scheduler.change_utxos().expect("change_utxos should parse correctly");
+
+        pegout_scheduler
+            .add_missing_change_outputs()
+            .expect("add_missing_change_outputs should succeed");
+
+        let utxos = db.get_all_utxos().unwrap();
+
+        // The db should have all the change outputs plus one added during db setup
+        assert_eq!(utxos.len(), change.len() + 1);
     }
 }

@@ -705,7 +705,9 @@ start-poa-server-1:
 	--abci-port=26658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" \
+	--txpool.minimum-priority-fee 2500000 \
+	--txpool.minimal-protocol-fee 5000000
 
 start-poa-server-2:
 	cd ./bin/reth && \
@@ -741,7 +743,9 @@ start-poa-server-2:
 	--abci-port=36658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" \
+	--txpool.minimum-priority-fee 2500000 \
+	--txpool.minimal-protocol-fee 5000000
 
 start-poa-server-3:
 	cd ./bin/reth && \
@@ -777,7 +781,9 @@ start-poa-server-3:
 	--abci-port=46658 \
     --sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" \
+	--txpool.minimum-priority-fee 2500000 \
+	--txpool.minimal-protocol-fee 5000000
 
 start-non-fed-server-1:
 	cd ./bin/reth && \
@@ -806,6 +812,8 @@ start-non-fed-server-1:
 	--abci-port=56658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
+  --txpool.minimum-priority-fee 2500000 \
+  --txpool.minimal-protocol-fee 5000000
 
 clean-poa-3:
 	cd ${NODE_3_DIR} && \
