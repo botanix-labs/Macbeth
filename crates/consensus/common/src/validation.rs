@@ -1,6 +1,7 @@
 //! Collection of methods for block validation.
 
-use reth_chainspec::{ChainSpec, EthereumHardforks, BOTANIX_MAINNET, BOTANIX_TESTNET};
+use botanix_chainspec::constants::{BOTANIX_MAINNET, BOTANIX_TESTNET};
+use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_consensus::ConsensusError;
 use reth_primitives::{
     constants::{
@@ -63,8 +64,8 @@ pub fn validate_block_pre_execution(
     // EIP-4895: Beacon chain push withdrawals as operations
     // Botanix chain will skip withdrawals root check
     if chain_spec.is_shanghai_active_at_timestamp(block.timestamp) &&
-        chain_spec.chain.id() != BOTANIX_TESTNET.chain.id() &&
-        chain_spec.chain.id() != BOTANIX_MAINNET.chain.id()
+        chain_spec.chain.id() != BOTANIX_TESTNET.chainspec().chain.id() &&
+        chain_spec.chain.id() != BOTANIX_MAINNET.chainspec().chain.id()
     {
         let withdrawals =
             block.withdrawals.as_ref().ok_or(ConsensusError::BodyWithdrawalsMissing)?;

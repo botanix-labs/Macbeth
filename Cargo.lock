@@ -2349,13 +2349,18 @@ dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-serde",
  "askama",
+ "botanix-hardforks",
+ "clap",
  "derive_more 2.0.1",
+ "eyre",
  "once_cell",
  "reth-chainspec",
+ "reth-cli",
  "reth-ethereum-forks",
  "reth-primitives-traits",
  "serde",
  "serde_json",
+ "shellexpand",
 ]
 
 [[package]]
@@ -2444,6 +2449,29 @@ dependencies = [
  "toml",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "botanix-hardforks"
+version = "1.1.5"
+dependencies = [
+ "alloy-chains",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives 0.7.7",
+ "alloy-serde",
+ "askama",
+ "clap",
+ "derive_more 2.0.1",
+ "eyre",
+ "once_cell",
+ "reth-chainspec",
+ "reth-cli",
+ "reth-ethereum-forks",
+ "reth-primitives-traits",
+ "serde",
+ "serde_json",
+ "shellexpand",
 ]
 
 [[package]]
@@ -9427,6 +9455,7 @@ name = "reth-consensus-common"
 version = "1.1.5"
 dependencies = [
  "botanix-authority-edh",
+ "botanix-chainspec",
  "mockall",
  "rand 0.8.5",
  "reth-chainspec",
@@ -10849,6 +10878,7 @@ name = "reth-revm"
 version = "1.1.5"
 dependencies = [
  "alloy-eips",
+ "botanix-chainspec",
  "reth-chainspec",
  "reth-consensus-common",
  "reth-ethereum-forks",

@@ -3,12 +3,15 @@ use alloy_eips::eip1559::ETHEREUM_BLOCK_GAS_LIMIT;
 use alloy_genesis::Genesis;
 use alloy_primitives::{address, b256, Address, BlockNumber, B256, U256};
 use askama::Template;
+use botanix_hardforks::BotanixHardfork;
 use derive_more::From;
 use once_cell::sync::Lazy;
-use reth_chainspec::{BaseFeeParams, BaseFeeParamsKind, ChainSpec, DepositContract};
+use reth_chainspec::{
+    BaseFeeParams, BaseFeeParamsKind, ChainSpec, DepositContract, EthereumHardfork,
+};
 use reth_ethereum_forks::{
-    ChainHardforks, DisplayHardforks, EthereumHardfork, EthereumHardforks, ForkCondition,
-    ForkFilter, ForkFilterKey, ForkHash, ForkId, Hardfork, Head, DEV_HARDFORKS,
+    ChainHardforks, DisplayHardforks, ForkCondition, ForkFilter, ForkFilterKey, ForkHash, ForkId,
+    Hardfork, Head, DEV_HARDFORKS,
 };
 use std::sync::Arc;
 
@@ -64,7 +67,9 @@ pub static BOTANIX_TESTNET: Lazy<Arc<BotanixChainSpec>> = Lazy::new(|| {
             .expect("Can't deserialize Botanix Testnet genesis json"),
         genesis_hash: Some(BOTANIX_TESTNET_GENESIS),
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        hardforks: EthereumHardfork::botanix().into(),
+        hardforks: BotanixHardfork::botanix()
+            .map(|(bot_hf, fk)| (EthereumHardfork::from(bot_hf), fk))
+            .into(),
         deposit_contract: None, // only relevant for PoS chains
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
@@ -91,7 +96,9 @@ pub static BOTANIX_MAINNET: Lazy<Arc<BotanixChainSpec>> = Lazy::new(|| {
             .expect("Can't deserialize Botanix Mainnet genesis json"),
         genesis_hash: Some(BOTANIX_MAINNET_GENESIS),
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        hardforks: EthereumHardfork::botanix().into(),
+        hardforks: BotanixHardfork::botanix()
+            .map(|(bot_hf, fk)| (EthereumHardfork::from(bot_hf), fk))
+            .into(),
         deposit_contract: None, // only relevant for PoS chains
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
@@ -124,7 +131,9 @@ pub fn create_botanix_config_with_genesis(
         genesis,
         genesis_hash,
         paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        hardforks: EthereumHardfork::botanix().into(),
+        hardforks: BotanixHardfork::botanix()
+            .map(|(bot_hf, fk)| (EthereumHardfork::from(bot_hf), fk))
+            .into(),
         deposit_contract: None, // Only relevant for PoS chains
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 1700,

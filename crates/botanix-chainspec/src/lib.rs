@@ -1,10 +1,10 @@
-use alloy_eips::eip1559::ETHEREUM_BLOCK_GAS_LIMIT;
-use alloy_primitives::B256;
+use botanix_hardforks::BotanixHardfork;
 use reth_chainspec::{ChainSpec, EthChainSpec, EthereumHardfork, Hardforks};
 use reth_primitives_traits::constants::EIP1559_INITIAL_BASE_FEE;
 
 use crate::constants::{BOTANIX_INITIAL_BASE_FEE, BOTANIX_TESTNET};
 pub mod constants;
+pub mod parser;
 
 /// Botanix chain spec type.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +67,7 @@ impl BotanixChainSpec {
         let genesis_base_fee = self.clone().initial_base_fee_by_chain_id();
 
         // If London is activated at genesis, we set the initial base fee as per EIP-1559.
-        (self.inner.fork(EthereumHardfork::London).active_at_block(0)).then_some(genesis_base_fee)
+        (self.inner.fork(BotanixHardfork::Berlin).active_at_block(0)).then_some(genesis_base_fee)
     }
 }
 

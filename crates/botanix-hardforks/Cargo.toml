@@ -1,5 +1,5 @@
 [package]
-name = "botanix-chainspec"
+name = "botanix-hardforks"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -15,7 +15,6 @@ alloy-serde = { workspace = true }
 
 # askama
 askama = "0.12.1"
-botanix-hardforks = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 derive_more = { workspace = true }
 eyre = { workspace = true }

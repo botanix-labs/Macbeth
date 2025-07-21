@@ -27,6 +27,7 @@ members = [
     "crates/botanix-cli",
     "crates/botanix-comet-bft-rpc",
     "crates/botanix-data-parser",
+    "crates/botanix-hardforks",
     "crates/botanix-rpc-client",
     "crates/botanix-rpc-config",
     "crates/botanix-rpc-types",
@@ -379,6 +380,7 @@ botanix-rpc-client = { path = "crates/botanix-rpc-client" }
 botanix-authority-rsp = { path = "crates/botanix-authority-rsp" }
 botanix-authority-edh = { path = "crates/botanix-authority-edh" }
 botanix-authority-peg = { path = "crates/botanix-authority-peg" }
+botanix-hardforks = { path = "crates/botanix-hardforks" }
 botanix-bitcoin-checkpoint = { path = "crates/botanix-bitcoin-checkpoint" }
 botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
