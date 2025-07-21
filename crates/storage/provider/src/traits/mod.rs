@@ -10,7 +10,9 @@ mod block;
 pub use block::*;
 
 mod activation_manager;
-pub use activation_manager::ActivationManagerReaderWriter;
+pub use activation_manager::{
+    tests as activation_manager_conformance_tests, ActivationManagerReaderWriter,
+};
 
 mod snapshot;
 pub use snapshot::*;
@@ -58,3 +60,6 @@ pub use finalized_block::{FinalizedBlockReader, FinalizedBlockWriter};
 
 mod staged_header;
 pub use staged_header::StagedHeader;
+
+mod runtime_transitions;
+pub use runtime_transitions::RuntimeTransitionsReadWrite;

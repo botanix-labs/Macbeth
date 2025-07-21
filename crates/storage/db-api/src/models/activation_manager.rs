@@ -4,10 +4,12 @@ use reth_codecs::{add_arbitrary_tests, Compact};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
+use crate::table::{Compress, Decompress};
+
 /// Represents a validator's vote on a network upgrade proposal.
 ///
 /// Validators can explicitly vote in favor of an upgrade (`Aye`),
-/// against an upgrade (`Nay`), or can abstain from voting (`Absent`).
+/// against an upgrade (`Nay`), or can abstain from voting (`Abstain`).
 ///
 /// Votes are included in block proposals via the `NetworkUpgradePayload`
 /// in the Non-Deterministic Data (NDD) transaction. These votes are then
@@ -27,12 +29,23 @@ pub enum Vote {
     /// opposition while still being counted in voting statistics.
     Nay,
 
-    /// Explicit abstention from voting. An `Absent` vote functions the same as
+    /// Explicit abstention from voting. An `Abstain` vote functions the same as
     /// `Nay` in quorum calculations, but communicates the validator's intent to
     /// abstain rather than actively oppose the upgrade. It still counts as
     /// participation in the voting process.
     #[default]
-    Absent,
+    Abstain,
+}
+
+impl std::fmt::Display for Vote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Aye => "Aye",
+            Self::Nay => "Nay",
+            Self::Abstain => "Abstain",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 /// Represents a protocol version in the Botanix blockchain.
@@ -49,7 +62,7 @@ pub enum Vote {
 /// 1. Nodes can determine whether a version is an upgrade or downgrade
 /// 2. The activation manager can enforce one-way upgrade progression
 /// 3. Historical blocks during sync can be validated against appropriate version thresholds
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeVersion(
     /// Major version component, incremented for breaking changes (hard fork)
     pub MajorVersion,
@@ -61,6 +74,32 @@ impl RuntimeVersion {
     /// Creates a new runtime version from major and minor components.
     pub const fn new(major: u16, minor: u16) -> Self {
         Self(MajorVersion(major), MinorVersion(minor))
+    }
+}
+
+impl Compress for RuntimeVersion {
+    type Compressed = Vec<u8>;
+
+    fn compress_to_buf<B: bytes::BufMut + AsMut<[u8]>>(self, buf: &mut B) {
+        buf.put_u16_le(self.0 .0); // major
+        buf.put_u16_le(self.1 .0); // minor
+    }
+}
+
+impl Decompress for RuntimeVersion {
+    fn decompress<B: AsRef<[u8]>>(
+        value: B,
+    ) -> Result<Self, reth_storage_errors::db::DatabaseError> {
+        let v = value.as_ref();
+
+        if v.len() < 4 {
+            unreachable!("passed on wrong value to decompress");
+        }
+
+        let major = u16::from_le_bytes(v[0..2].try_into().expect("size must be valid"));
+        let minor = u16::from_le_bytes(v[2..4].try_into().expect("size must be valid"));
+
+        Ok(Self(MajorVersion(major), MinorVersion(minor)))
     }
 }
 
@@ -85,12 +124,18 @@ impl From<(u16, u16)> for RuntimeVersion {
     }
 }
 
+impl std::fmt::Display for RuntimeVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.0 .0, self.1 .0)
+    }
+}
+
 /// Represents a major version component of a runtime version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct MajorVersion(pub u16);
 
 /// Represents a minor version component of a runtime version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct MinorVersion(pub u16);
 
 #[test]
@@ -116,4 +161,16 @@ fn runtime_version_ordering() {
     assert!(v1_0 > v0_10);
     assert!(v0_10 > v0_1);
     assert!(v0_1 > v0_0);
+}
+
+#[test]
+fn test_runtime_version_compress_decompress() {
+    let original = RuntimeVersion::new(1234, 5678);
+    let mut buf = vec![];
+
+    original.compress_to_buf(&mut buf);
+    assert_eq!(buf.len(), 4);
+
+    let decompressed = RuntimeVersion::decompress(buf).unwrap();
+    assert_eq!(original, decompressed);
 }

@@ -55,6 +55,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         // Eve DOES NOT participate in voting.
@@ -65,6 +70,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -93,6 +103,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
             },
         )
         .expectations(
@@ -102,6 +117,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -130,6 +150,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 1, // Eve is counted as abstained
+                compliant_count: 2,
+                total_votes: 3,
             },
         )
         .expectations(
@@ -139,6 +164,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -169,6 +199,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve REJECTS the upgrade.
@@ -179,6 +214,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: false, // Reject!
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -199,6 +239,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve REJECTS the upgrade.
@@ -209,6 +254,11 @@ fn activation_manager_reject_ignored_upgrade() {
                 finalize_pass: false, // Reject!
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_blocks_until(21);

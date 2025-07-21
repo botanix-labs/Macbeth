@@ -27,7 +27,7 @@ use reth_db_api::{
         client_version::ClientVersion,
         staged_header::HeaderWithPegs,
         storage_sharded_key::StorageShardedKey,
-        AccountBeforeTx, CompactU256, PeerID, ShardedKey, StoredBlockBodyIndices,
+        AccountBeforeTx, CompactU256, PeerID, RuntimeVersion, ShardedKey, StoredBlockBodyIndices,
         StoredBlockWithdrawals, WalletStateSyncRecord,
     },
     table::{Decode, DupSort, Encode, Table},
@@ -319,6 +319,10 @@ tables! {
     /// Store staged headers, used to persist pegins and pegouts after
     /// finalizing a block.
     table StagedHeader<Key = B256, Value = HeaderWithPegs>;
+
+    /// Stores runtime version transitions across blocks encountered during
+    /// finalization.
+    table RuntimeTransitions<Key = BlockNumber, Value = RuntimeVersion>;
 
     /// Store chunk id to chunk data.
     table Chunks<Key = ChunkId, Value = SnapshotChunk>;

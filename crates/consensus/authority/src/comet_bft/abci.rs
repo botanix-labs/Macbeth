@@ -4,11 +4,12 @@ use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::ExecutedBlock;
 use reth_chainspec::{ChainSpec, BOTANIX_TESTNET_CHAIN_ID};
 use reth_db::{
-    models::{self, SnapshotSync, SnapshotSyncId},
+    models::{self, RuntimeVersion, SnapshotSync, SnapshotSyncId},
     Database, DatabaseEnv,
 };
 use reth_provider::{
-    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome, StagedHeader,
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
+    RuntimeTransitionsReadWrite, StagedHeader,
 };
 use reth_trie::{updates::TrieUpdates, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
@@ -32,7 +33,7 @@ use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
 use reth_primitives::{
     botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, BlockWithSenders, SealedBlock, B256,
+    BlockNumber, BlockWithSenders, SealedBlock, B256, U256,
 };
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
@@ -58,6 +59,13 @@ use tendermint_proto::{
         Snapshot,
     },
 };
+
+/// The currently active Botanix runtime version.
+pub const RUNTIME_VERSION_ACTIVE: RuntimeVersion = GENESIS_RUNTIME_VERSION;
+/// The Botanix runtime version to eventually upgrade to.
+pub const RUNTIME_VERSION_UPGRADE: RuntimeVersion = RuntimeVersion::new(0, 2);
+/// The floor base fee per gas to be used for the upgraded Botanix runtime version.
+const FLOOR_BASE_FEE_PER_GAS: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
 
 impl From<&Snapshot> for SnapshotSyncStateLock {
     fn from(snapshot: &Snapshot) -> Self {
@@ -106,9 +114,14 @@ use super::proto_debug::{
     ResponsePrepareProposalTruncatedDebug,
 };
 use crate::{
+    activation_manager::{ActivationManager, OnFinalizeBlockDecision, OnProcessProposalDecision},
     builder::BitcoinCheckpoint,
     comet_bft::{
-        non_deterministic_data::NonDeterministicData, utils::transactions_signed_from_bytes,
+        non_deterministic_data::{
+            NetworkUpgradePayload, NonDeterministicData, GENESIS_RUNTIME_VERSION,
+        },
+        utils::transactions_signed_from_bytes,
+        vote_tracker::VoteWatcher,
     },
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
     metrics::AuthorityMetrics,
@@ -190,6 +203,10 @@ impl SnapshotSyncStateLock {
 pub struct BlockWithContext {
     /// The sealed block with peg data
     pub sealed_block_with_peg: SealedBlockWithPeg,
+    /// The Botanix runtime version.
+    pub runtime_version: RuntimeVersion,
+    /// The optional network upgrade payload.
+    pub network_upgrade_payload: Option<NetworkUpgradePayload>,
     /// The execution outcome
     pub exec_outcome: ExecutionOutcome,
     /// The trie updates
@@ -200,6 +217,7 @@ pub struct BlockWithContext {
 #[derive(Clone)]
 pub struct ABCIClientBuilder<EF, BF, DB> {
     storage: Storage<EF, BF, DB>,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoint: BitcoinCheckpoint,
     authority_consensus: AuthorityConsensus,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -230,6 +248,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         storage: Storage<EF, BF, DB>,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         authority_consensus: AuthorityConsensus,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -245,6 +264,7 @@ where
     ) -> Self {
         Self {
             storage,
+            activation_manager,
             bitcoin_checkpoint,
             authority_consensus,
             cbft_rpc_client_factory,
@@ -272,6 +292,7 @@ where
         let app = ABCIClient::new(
             self.storage.clone(),
             tx_pool,
+            self.activation_manager.clone(),
             self.bitcoin_checkpoint.clone(),
             self.abci_driver_tx.clone(),
             self.cbft_rpc_client_factory.clone(),
@@ -336,6 +357,7 @@ enum PayloadBuilderError {
 pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     storage: Storage<EF, BF, DB>,
     pool: Pool,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoint: BitcoinCheckpoint,
     block_cache: Arc<RwLock<LruMap<BlockHash, BlockWithContext>>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
@@ -371,6 +393,7 @@ where
     fn new(
         storage: Storage<EF, BF, DB>,
         pool: Pool,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoint: BitcoinCheckpoint,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -388,6 +411,7 @@ where
         Self {
             storage: storage.clone(),
             pool,
+            activation_manager,
             bitcoin_checkpoint,
             // Saving the last 5 blocks that were proposed
             block_cache: Arc::new(RwLock::new(LruMap::new(ByLength::new(5)))),
@@ -448,18 +472,23 @@ where
         ))
     }
 
-    pub(crate) fn non_deterministic_data(&self) -> Result<NonDeterministicData, ConsensusError> {
+    pub(crate) fn non_deterministic_data(
+        &self,
+        runtime_version: RuntimeVersion,
+        network_upgrade_payload: Option<NetworkUpgradePayload>,
+    ) -> Result<NonDeterministicData, ConsensusError> {
         let aggregate_public_key = self.aggregate_public_key()?;
         let block_fee_recipient_address = self
             .block_fee_recipient_address
             .ok_or(ConsensusError::MissingBlockFeeRecipientAddress)?;
 
-        // Only v1 is supported for block production
-        // v0 is only used for historical syncing in testnet
-        let ndd = NonDeterministicData::new_v1(
+        // Construct a NDD using version 2.
+        let ndd = NonDeterministicData::new_v2(
             self.bitcoin_blockhash()?,
             aggregate_public_key,
             block_fee_recipient_address,
+            runtime_version,
+            network_upgrade_payload,
         );
 
         Ok(ndd)
@@ -1284,8 +1313,19 @@ where
         let max_tx_bytes: usize =
             request.max_tx_bytes.try_into().expect("Invalid request proposal max_tx_bytes value");
 
-        // create non-deterministic data tx at index 0 so historical sync will pass verification
-        let non_deterministic_data = match self.non_deterministic_data() {
+        // Activation Manager: decide whether we should build for the current or
+        // upgraded runtime version.
+        let decision = self
+            .activation_manager
+            .on_prepare_proposal(request.height as u64)
+            .expect("db cannot fail");
+
+        let use_version = decision.version;
+        let upgrade_vote = decision.vote;
+
+        // Construct the NDD version 2 with a runtime version indicator
+        // and an (optional) network upgrade payload.
+        let non_deterministic_data = match self.non_deterministic_data(use_version, upgrade_vote) {
             Ok(ndd) => ndd,
             Err(e) => {
                 panic!(
@@ -1295,9 +1335,27 @@ where
             }
         };
 
+        let floor_base_fee_per_gas = match use_version {
+            RUNTIME_VERSION_ACTIVE => {
+                // Continue with active version.
+                debug!("prepare_proposal: Building with active version: {use_version}");
+
+                // Do not set a floor base fee per gas.
+                None
+            }
+            RUNTIME_VERSION_UPGRADE => {
+                debug!("prepare_proposal: Building with UPGRADED version: {use_version}");
+
+                // Set floor base fee per gas.
+                Some(FLOOR_BASE_FEE_PER_GAS)
+            }
+            _ => unreachable!(),
+        };
+
         trace!("non_deterministic_data={:?}", non_deterministic_data);
 
-        // serialize non-deterministic data tx to bytes
+        // serialize non-deterministic data tx at index 0 to bytes so historical
+        // sync will pass verification
         let non_deterministic_data_bytes = match self
             .serialize_non_deterministic_data_to_bytes(non_deterministic_data)
         {
@@ -1346,7 +1404,7 @@ where
             return response;
         }
 
-        let payload_config = match self.payload_builder_arguments() {
+        let mut payload_config = match self.payload_builder_arguments() {
             Ok(payload_config) => payload_config,
             Err(e) => {
                 panic!(
@@ -1356,6 +1414,14 @@ where
             }
         };
         let client = self.storage.client.clone();
+
+        // Set the floor base fee per gas if provided.
+        if let Some(floor) = floor_base_fee_per_gas {
+            let basefee = payload_config.initialized_block_env.basefee.to::<u64>();
+            let min_basefee = basefee.max(floor);
+
+            payload_config.initialized_block_env.basefee = U256::from(min_basefee);
+        }
 
         let build_args = BuildArguments {
             client,
@@ -1568,7 +1634,8 @@ where
 
         // Only NDD V1 is supported for block production so validate `block_fee_recipient_address`
         // exists
-        let block_fee_recipient_address = match non_deterministic_data.block_fee_recipient_address {
+        let block_fee_recipient_address = match non_deterministic_data.block_fee_recipient_address()
+        {
             Some(address) => address,
             None => {
                 warn!("Block fee recipient address is not set in process proposal");
@@ -1634,7 +1701,7 @@ where
         };
 
         // check non-deterministic data: btc block hash and aggregate public key
-        if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash {
+        if bitcoin_checkpoint_block_hash != non_deterministic_data.bitcoin_block_hash() {
             warn!("Bitcoin checkpoint block hash mismatch");
 
             if tracing::enabled!(tracing::Level::WARN) {
@@ -1661,7 +1728,7 @@ where
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
-        if agg_pk != non_deterministic_data.aggregated_public_key {
+        if agg_pk != non_deterministic_data.aggregated_public_key() {
             warn!("Aggregate public key mismatch");
 
             if tracing::enabled!(tracing::Level::WARN) {
@@ -1719,6 +1786,37 @@ where
             }
         };
 
+        // Activation Manager: decide whether we should process for the current
+        // or upgraded runtime version.
+        let floor_base_fee_per_gas;
+        let comet_height = request.height as u64;
+        let runtime_version = non_deterministic_data.runtime_version();
+        let network_upgrade_payload = non_deterministic_data.network_upgrade_payload().copied();
+        //
+        match self
+            .activation_manager
+            .on_process_proposal(comet_height, runtime_version)
+            .expect("db cannot fail")
+        {
+            OnProcessProposalDecision::Process { version, conditions: _ } => match version {
+                RUNTIME_VERSION_ACTIVE => {
+                    // Continue; do not set a floor base fee per gas.
+                    debug!("process_proposal: Processing with active version: {version}");
+                    floor_base_fee_per_gas = None;
+                }
+                RUNTIME_VERSION_UPGRADE => {
+                    // Set floor base fee per gas.
+                    debug!("process_proposal: Processing with UPGRADED version: {version}");
+                    floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS);
+                }
+                _ => unreachable!(),
+            },
+            OnProcessProposalDecision::RejectBlock { version, conditions: _ } => {
+                warn!("process_proposal: Rejecting block using Botanix runtime version: {version}");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        }
+
         // Validation done as a result of this call:
         // - botanix consensus package created on the fly and compared to the incoming block EDH
         // - mint validation checks
@@ -1728,6 +1826,9 @@ where
         match build_and_execute(
             txs,
             self.storage.chain_spec.clone(),
+            runtime_version,
+            network_upgrade_payload,
+            floor_base_fee_per_gas,
             &block_fee_recipient_address,
             self.storage.evm_config,
             &self.provider_factory,
@@ -1923,7 +2024,7 @@ where
                 // NDD V0 (no block_fee_recipient_address) is supported only for historical sync on
                 // testnet
                 let block_fee_recipient_address = match non_deterministic_data
-                    .block_fee_recipient_address
+                    .block_fee_recipient_address()
                 {
                     Some(address) => {
                         debug!(%address, "use proposed block fee recipient address");
@@ -1970,16 +2071,43 @@ where
                     }
                 };
 
+                let runtime_version = non_deterministic_data.runtime_version();
+                let network_upgrade_payload =
+                    non_deterministic_data.network_upgrade_payload().copied();
+
+                let floor_base_fee_per_gas = match runtime_version {
+                    RUNTIME_VERSION_ACTIVE => {
+                        // Continue; do not set a floor base fee per gas.
+                        debug!("finalize_block: Finalizing block with active runtime version: {runtime_version}");
+                        None
+                    }
+                    RUNTIME_VERSION_UPGRADE => {
+                        // Set floor base fee per gas.
+                        debug!("finalize_block: Finalizing block with UPGRADED version: {runtime_version}");
+                        Some(FLOOR_BASE_FEE_PER_GAS)
+                    }
+                    // This software is outdated and just encountered an
+                    // upgraded runtime version; this will be rejected in the
+                    // upcoming `ActivationManager::on_finalize_block(..)` call.
+                    _ => {
+                        warn!("finalize_block: Unrecognized runtime version: {runtime_version}");
+                        Some(FLOOR_BASE_FEE_PER_GAS) // just apply the latest change.
+                    }
+                };
+
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
+                    runtime_version,
+                    network_upgrade_payload,
+                    floor_base_fee_per_gas,
                     &block_fee_recipient_address,
                     self.storage.evm_config,
                     &self.provider_factory,
                     &self.storage.bitcoind_factory,
                     self.storage.btc_network,
-                    &non_deterministic_data.bitcoin_block_hash,
-                    &non_deterministic_data.aggregated_public_key,
+                    &non_deterministic_data.bitcoin_block_hash(),
+                    &non_deterministic_data.aggregated_public_key(),
                     block_time,
                 ) {
                     Ok(block_with_context) => {
@@ -2001,6 +2129,47 @@ where
                 }
             }
         };
+
+        // Activation Manager: decide whether we're willing to accept
+        // the runtime version.
+        //
+        // Note that lagging validators will automatically accept an upgrade as
+        // long as they're specifically configured to do so (non-default
+        // behavior), whether - from their perspective - the upgrade conditions
+        // are met or not.
+        let comet_height = request.height as u64;
+        let runtime_version = block_with_context.runtime_version;
+        let proposer_address = Address::from_slice(&request.proposer_address);
+        let proposer_vote = block_with_context.network_upgrade_payload;
+
+        match self
+            .activation_manager
+            .on_finalize_block(runtime_version, comet_height, proposer_address, proposer_vote)
+            .expect("db cannot fail")
+        {
+            OnFinalizeBlockDecision::Finalize { version: _ } => {
+                // Continue...
+            }
+            OnFinalizeBlockDecision::RejectBlockDeadEnd { version } => {
+                error!("finalize_block: Rejecting finalized block with Botanix runtime version: {version}");
+                panic!("finalize_block: Rejecting Botanix upgrade '{version}' - can no longer proceed...");
+            }
+        }
+
+        // Metrics
+        //
+        // Only create metrics if there's an actual upgrade event ongoing.
+        if let Some((upgrade_version, polling)) =
+            self.activation_manager.get_upgrade_polling().expect("db cannot fail")
+        {
+            // Track the raw vote by the proposer. Note that the proposer might
+            // be voting for a different version than the one we're interested
+            // in, or for none at all. The rendered metric is labeled accurately.
+            self.metrics.runtime_upgrade_vote(&proposer_address, &proposer_vote);
+
+            // Track the polling results for the specific version we're interested in.
+            self.metrics.runtime_upgrade_polling(&upgrade_version, &polling);
+        }
 
         // Rpc node needs to store aggregate public key from block height 1
         let block_height = block_with_context.sealed_block_with_peg.block().number;
@@ -2272,6 +2441,12 @@ where
 
                         db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
 
+                        // Track the last known runtime version.
+                        db_rw.insert_runtime_upgrade_version(
+                            new_header.number,
+                            sealed_block_with_context.runtime_version,
+                        )?;
+
                         db_rw.commit()?;
 
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
@@ -2328,7 +2503,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{builder::BitcoinCheckpoint, Storage};
+    use crate::{
+        activation_manager::ActivationManagerBuilder, builder::BitcoinCheckpoint,
+        comet_bft::non_deterministic_data::GENESIS_RUNTIME_VERSION, Storage,
+    };
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,
@@ -2427,6 +2605,10 @@ mod tests {
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
 
+        let activation_manager =
+            ActivationManagerBuilder::new(VoteWatcher::default(), GENESIS_RUNTIME_VERSION)
+                .build_ignore_nework_upgrade();
+
         let bitcoin_header = Header {
             version: Version::default(),
             prev_blockhash: BlockHash::all_zeros(),
@@ -2446,6 +2628,7 @@ mod tests {
         ABCIClient::new(
             storage,
             transaction_pool,
+            activation_manager,
             bitcoin_checkpoint,
             driver_tx,
             cometbft_rpc_factory,
@@ -2466,7 +2649,7 @@ mod tests {
         client: &ABCIClientType,
     ) -> Result<prost::bytes::Bytes, ConsensusError> {
         client
-            .non_deterministic_data()
+            .non_deterministic_data(GENESIS_RUNTIME_VERSION, None)
             .and_then(|ndd| client.serialize_non_deterministic_data_to_bytes(ndd))
     }
 
@@ -2682,7 +2865,8 @@ mod tests {
         let mut request = RequestFinalizeBlock::default();
 
         // first tx should be non-deterministic data
-        let ndd = abci_client.non_deterministic_data().expect("to have ndd");
+        let ndd =
+            abci_client.non_deterministic_data(GENESIS_RUNTIME_VERSION, None).expect("to have ndd");
         let ndd_bytes =
             abci_client.serialize_non_deterministic_data_to_bytes(ndd).expect("to serialize ndd");
 

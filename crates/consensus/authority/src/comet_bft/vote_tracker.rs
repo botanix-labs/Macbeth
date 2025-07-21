@@ -1,42 +1,31 @@
-use super::*;
-use reth_provider::{activation_manager_conformance_tests, ProviderResult};
+//! A simple in-memory vote tracker used by the ActivationManager that only
+//! tracks the last vote.
 use std::{
     collections::{hash_map::Entry, HashMap},
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
-use utils::Address;
 
-mod accept_lagging_validator;
-mod reject_ignored_upgrade;
-mod reject_mismatched_vote;
-mod reject_outdated_or_unsupported_version;
-mod vote_expiration;
-mod vote_majority_nay_compliant_and_reject;
-mod vote_nay_and_accept;
-mod vote_nay_and_reject;
-mod wait_for_compliance;
-mod force_upgrade_checked;
-mod utils;
+use reth_db::models::Vote;
+use reth_primitives::Address;
+use reth_provider::{ActivationManagerReaderWriter, ProviderResult};
 
-/// In-Memory database that integrates the `ActivationManagerReaderWriter` trait.
-#[derive(Clone)]
-struct Db {
+/// A simple in-memory vote tracker used by the ActivationManager that only
+/// tracks the last vote.
+#[derive(Debug, Clone, Default)]
+pub struct VoteWatcher {
     votes: Arc<RwLock<HashMap<Address, VoteEntry>>>,
 }
 
-impl Db {
-    fn new() -> Self {
-        Db { votes: Arc::new(RwLock::new(HashMap::new())) }
-    }
-}
-
+#[derive(Debug)]
 struct VoteEntry {
     vote: Vote,
     is_compliant: bool,
     botanix_height: u64,
 }
 
-impl ActivationManagerReaderWriter<utils::Address> for Db {
+// NOTE: This implementation was essentially copied 1-to-1 from the
+// ActivationManager unit tests.
+impl ActivationManagerReaderWriter<Address> for VoteWatcher {
     fn update_upgrading_vote(
         &self,
         auth: Address,
@@ -132,25 +121,29 @@ impl ActivationManagerReaderWriter<utils::Address> for Db {
     }
 }
 
-#[test]
-fn unit_test_db_conformance() {
-    let alice = b"alice".to_vec();
-    let bob = b"bob".to_vec();
-    let eve = b"eve".to_vec();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reth_provider::activation_manager_conformance_tests;
 
-    #[rustfmt::skip]
-    activation_manager_conformance_tests::assert_threshold_rates(
-        alice.clone(),
-        bob.clone(),
-        eve.clone(),
-        Db::new(),
-    );
+    #[test]
+    fn vote_watcher_db_conformance() {
+        let alice = Address::from_slice(&[0; 20]);
+        let bob = Address::from_slice(&[1; 20]);
+        let eve = Address::from_slice(&[2; 20]);
 
-    #[rustfmt::skip]
-    activation_manager_conformance_tests::assert_polling(
-        alice,
-        bob,
-        eve,
-        Db::new()
-    );
+        activation_manager_conformance_tests::assert_threshold_rates(
+            alice,
+            bob,
+            eve,
+            VoteWatcher::default(),
+        );
+
+        activation_manager_conformance_tests::assert_polling(
+            alice,
+            bob,
+            eve,
+            VoteWatcher::default(),
+        );
+    }
 }
