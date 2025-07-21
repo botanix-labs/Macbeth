@@ -8,7 +8,8 @@ use reth_db::{
     Database, DatabaseEnv,
 };
 use reth_provider::{
-    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome, StagedHeader,
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
+    RuntimeTransitionsReadWrite, StagedHeader,
 };
 use reth_trie::{updates::TrieUpdates, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
@@ -2439,6 +2440,12 @@ where
                         )?;
 
                         db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
+
+                        // Track the last known runtime version.
+                        db_rw.insert_runtime_upgrade_version(
+                            new_header.number,
+                            sealed_block_with_context.runtime_version,
+                        )?;
 
                         db_rw.commit()?;
 

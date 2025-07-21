@@ -656,9 +656,8 @@ where
     /// * `block_version` - The runtime version of the block being finalized
     /// * `block_height` - The height of the block being finalized
     /// * `proposer_address` - The address of the block proposer
-    /// * `proposer_vote` - The proposer's vote on a network upgrade, if any.
-    ///   If `None` or if the vote's version doesn't match the tracked upgrade,
-    ///   it's counted as abstained.
+    /// * `proposer_vote` - The proposer's vote on a network upgrade, if any. If `None` or if the
+    ///   vote's version doesn't match the tracked upgrade, it's counted as abstained.
     ///
     /// # Returns
     /// * `OnFinalizeBlockDecision::Finalize` if the block should be finalized
@@ -693,15 +692,15 @@ where
 
         let mut maybe_upgrade = self.upgrade.write().expect("poisoned lock");
         if let Some(upgrade) = maybe_upgrade.as_ref() {
+            // Prune **all** votes since the decision is now finalized.
+            self.client.remove_upgrading_votes(block_height.saturating_add(1))?;
+
             // Future version detected, reject the block; this node is running an
             // outdated version of this software that cannot handle those finalized
             // blocks.
             if block_version != upgrade.version {
                 return Ok(OnFinalizeBlockDecision::RejectBlockDeadEnd { version: block_version });
             }
-
-            // Prune **all** votes since the decision is now finalized.
-            self.client.remove_upgrading_votes(block_height.saturating_add(1))?;
 
             // For nodes that are explicitly not accepting this upgrade version,
             // reject the block and halt further processing.
@@ -762,6 +761,65 @@ where
         let polling = Polling { ayes, nays, abstained, compliant, total };
 
         Ok(Some((upgrade.version, polling)))
+    }
+
+    /// Forces an upgrade to the specified version if it matches the currently
+    /// tracked upgrade and the node is compliant.
+    ///
+    /// This method bypasses all normal upgrade conditions and immediately
+    /// activates the specified upgrade version. It should only be called when
+    /// the caller is certain that the upgrade has already been activated on the
+    /// network, but the activation manager is unaware of this state (for
+    /// example, due to a node restart after the upgrade was finalized).
+    ///
+    /// This method serves as a fast-track mechanism to synchronize the
+    /// activation manager's internal state with the actual network state
+    /// without waiting for upgraded blocks to be processed through the normal
+    /// consensus flow.
+    ///
+    /// ## Safety
+    ///
+    /// This method should only be used when you are absolutely certain that:
+    /// - The specified upgrade version has already been activated on the network
+    /// - The node is capable of processing blocks with this version
+    /// - The upgrade conditions were previously met through normal consensus
+    ///
+    /// Using this method incorrectly could cause the node to accept or propose blocks
+    /// that the rest of the network rejects.
+    ///
+    /// # Parameters
+    /// * `version` - The runtime version to force activate. Must match the currently tracked
+    ///   upgrade version.
+    ///
+    /// # Returns
+    /// * `true` if the upgrade was successfully forced (version matched, node is compliant)
+    /// * `false` if no upgrade is being tracked, the version doesn't match, or the node is not
+    ///   compliant with the upgrade
+    pub fn force_upgrade_checked(&self, version: RuntimeVersion) -> bool {
+        let maybe_upgrade = self.upgrade.read().expect("poisoned lock");
+        let Some(upgrade) = maybe_upgrade.as_ref() else {
+            return false;
+        };
+
+        if upgrade.version != version {
+            return false;
+        }
+
+        if !upgrade.is_compliant {
+            return false;
+        }
+
+        std::mem::drop(maybe_upgrade);
+
+        // Upgrade is immediately active and mandatory for all future block
+        // production. Update our active version and clear the pending upgrade.
+        let mut upgrade = self.upgrade.write().expect("poisoned lock");
+        *upgrade = None;
+        //
+        let mut active_version = self.active_version.write().expect("poisoned lock");
+        *active_version = version;
+
+        true
     }
 
     /// Validates all conditions required for an upgrade to proceed.

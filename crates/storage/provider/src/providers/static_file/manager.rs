@@ -5,9 +5,10 @@ use super::{
 };
 use crate::{
     to_range, BlockHashReader, BlockNumReader, BlockReader, BlockSource, DatabaseProvider,
-    HeaderProvider, ReceiptProvider, RequestsProvider, SnapshotReader, SnapshotWriter,
-    StageCheckpointReader, StagedHeader, StatsReader, TransactionVariant, TransactionsProvider,
-    TransactionsProviderExt, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
+    HeaderProvider, ReceiptProvider, RequestsProvider, RuntimeTransitionsReadWrite, SnapshotReader,
+    SnapshotWriter, StageCheckpointReader, StagedHeader, StatsReader, TransactionVariant,
+    TransactionsProvider, TransactionsProviderExt, WalletStateSyncReader, WalletStateSyncWriter,
+    WithdrawalsProvider,
 };
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -15,8 +16,8 @@ use reth_chainspec::ChainInfo;
 use reth_db::{
     lockfile::StorageLock,
     models::{
-        ChunkId, HeaderWithPegs, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
-        SnapshotSyncId, UuidID, WalletStateSyncRecord,
+        ChunkId, HeaderWithPegs, PeerID, RuntimeVersion, Snapshot, SnapshotChunk, SnapshotId,
+        SnapshotSync, SnapshotSyncId, UuidID, WalletStateSyncRecord,
     },
     static_file::{iter_static_files, HeaderMask, ReceiptMask, StaticFileCursor, TransactionMask},
     tables,
@@ -1754,6 +1755,24 @@ impl StagedHeader for StaticFileProvider {
     }
 
     fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+}
+
+impl RuntimeTransitionsReadWrite for StaticFileProvider {
+    fn insert_runtime_upgrade_version(
+        &self,
+        _height: BlockNumber,
+        _version: RuntimeVersion,
+    ) -> ProviderResult<bool> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn get_runtime_versions(&self) -> ProviderResult<Vec<(BlockNumber, RuntimeVersion)>> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn get_last_runtime_version(&self) -> ProviderResult<Option<RuntimeVersion>> {
         Err(ProviderError::UnsupportedProvider)
     }
 }

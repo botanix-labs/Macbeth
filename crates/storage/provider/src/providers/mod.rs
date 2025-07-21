@@ -3,10 +3,11 @@ use crate::{
     BlockSource, BlockchainTreePendingStateProvider, CanonChainTracker, CanonStateNotifications,
     CanonStateSubscriptions, ChainSpecProvider, ChangeSetReader, DatabaseProviderFactory,
     EvmEnvProvider, FinalizedBlockReader, FullExecutionDataProvider, HeaderProvider, ProviderError,
-    PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt, RequestsProvider, SnapshotReader,
-    SnapshotWriter, StageCheckpointReader, StagedHeader, StateProviderBox, StateProviderFactory,
-    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, TreeViewer,
-    WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
+    PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt, RequestsProvider,
+    RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter, StageCheckpointReader, StagedHeader,
+    StateProviderBox, StateProviderFactory, StaticFileProviderFactory, TransactionVariant,
+    TransactionsProvider, TreeViewer, WalletStateSyncReader, WalletStateSyncWriter,
+    WithdrawalsProvider,
 };
 use reth_blockchain_tree_api::{
     error::{CanonicalError, InsertBlockError},
@@ -726,6 +727,29 @@ where
 
     fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
         self.database.provider_rw()?.get_staged_headers()
+    }
+}
+
+impl<DB> RuntimeTransitionsReadWrite for BlockchainProvider<DB>
+where
+    DB: Database,
+{
+    fn insert_runtime_upgrade_version(
+        &self,
+        height: BlockNumber,
+        version: reth_db::models::RuntimeVersion,
+    ) -> ProviderResult<bool> {
+        self.database.provider_rw()?.insert_runtime_upgrade_version(height, version)
+    }
+
+    fn get_runtime_versions(
+        &self,
+    ) -> ProviderResult<Vec<(BlockNumber, reth_db::models::RuntimeVersion)>> {
+        self.database.provider_rw()?.get_runtime_versions()
+    }
+
+    fn get_last_runtime_version(&self) -> ProviderResult<Option<reth_db::models::RuntimeVersion>> {
+        self.database.provider_rw()?.get_last_runtime_version()
     }
 }
 

@@ -15,6 +15,7 @@ mod vote_majority_nay_compliant_and_reject;
 mod vote_nay_and_accept;
 mod vote_nay_and_reject;
 mod wait_for_compliance;
+mod force_upgrade_checked;
 mod utils;
 
 /// In-Memory database that integrates the `ActivationManagerReaderWriter` trait.
