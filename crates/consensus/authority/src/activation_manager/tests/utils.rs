@@ -1,11 +1,10 @@
 use super::Db;
 use crate::activation_manager::{
     ActivationManager, ActivationManagerBuilder, ConditionList, OnFinalizeBlockDecision,
-    OnPrepareProposalDecision, OnProcessProposalDecision, VOTE_RETENTION_PERIOD,
+    OnPrepareProposalDecision, OnProcessProposalDecision, Polling, VOTE_RETENTION_PERIOD,
 };
 use reth_db::models::activation_manager::{RuntimeVersion, Vote};
 use reth_provider::ActivationManagerReaderWriter;
-use secp256k1::{generate_keypair, rand::thread_rng};
 
 /// Index for the ALICE validator in the test fixture
 pub(super) const ALICE: usize = 0;
@@ -36,6 +35,9 @@ struct VoteDetails {
     is_compliant: bool,
 }
 
+/// Internal address to distinguish between members.
+pub(super) type Address = Vec<u8>;
+
 /// Main test fixture for network upgrade scenarios.
 ///
 /// This fixture manages the state for multiple validators in upgrade testing
@@ -49,18 +51,16 @@ pub(super) struct UpgradeTestFixture {
     required_approval_rate: usize,
     /// The minimum number of distinct validators required to participate in voting
     min_validator_count: usize,
-
     /// The current block height in the simulation
     block_height: u64,
     /// How long votes are retained before expiring (in blocks)
     vote_retention_period: u64,
-
     /// The public keys representing each validator's identity
-    addrs: [secp256k1::PublicKey; 3],
+    addrs: [Address; 3],
     /// In-memory databases for each validator
     dbs: [Db; 3],
     /// The activation manager instances for each validator
-    managers: [Option<ActivationManager<Db>>; 3],
+    managers: [Option<ActivationManager<Db, Address>>; 3],
     /// Expected votes to be included in block proposals for each validator
     expected_votes: [Option<VoteDetails>; 3],
 }
@@ -79,10 +79,9 @@ impl UpgradeTestFixture {
     /// # Returns
     /// * A new `UpgradeTestFixture` with default values and generated validator keys
     pub(super) fn new(upgrade_height: u64, approval_rate: usize) -> Self {
-        // Generate keypairs
-        let (_, alice_addr) = generate_keypair(&mut thread_rng());
-        let (_, bob_addr) = generate_keypair(&mut thread_rng());
-        let (_, eve_addr) = generate_keypair(&mut thread_rng());
+        let alice_addr = b"alice".to_vec();
+        let bob_addr = b"bob".to_vec();
+        let eve_addr = b"eve".to_vec();
 
         Self {
             upgrade_height,
@@ -278,6 +277,17 @@ pub(super) struct Expectations {
     pub(super) aye_approval_rate: usize,
     /// The expected percentage (0-100) of compliant validators
     pub(super) comp_approval_rate: usize,
+    /// The expected number of validators who voted "Aye"
+    pub(super) aye_votes: usize,
+    /// The expected number of validators who voted "Nay"
+    pub(super) nay_votes: usize,
+    /// The expected number of validators who abstained from voting
+    pub(super) abstained_votes: usize,
+    /// The expected number of validators who are compliant with the upgrade
+    pub(super) compliant_count: usize,
+    /// The expected total number of distinct validators who have voted,
+    /// including abstained votes.
+    pub(super) total_votes: usize,
 }
 
 /// Fixture for testing the block proposal and validation flow.
@@ -288,12 +298,10 @@ pub(super) struct Expectations {
 /// finalizing blocks.
 pub(super) struct ProposingTestFixture<'a> {
     i: &'a mut UpgradeTestFixture,
-
     /// The index of the validator proposing the current block
     proposer_index: usize,
     /// The runtime version expected in the proposal
     expected_proposal_version: RuntimeVersion,
-
     /// Expectations for each validator's behavior when processing the block
     expectations: [Option<Expectations>; 3],
     /// Expected upgrade conditions for each validator
@@ -401,10 +409,8 @@ impl ProposingTestFixture<'_> {
     /// 4. Verifies that all validators behave according to expectations
     /// 5. Advances the block height
     fn do_build_block(&mut self) {
-        dbg!(self.i.block_height);
-
         let proposer = self.i.managers[self.proposer_index].as_mut().unwrap();
-        let proposer_addr = &self.i.addrs[self.proposer_index];
+        let proposer_addr = self.i.addrs[self.proposer_index].clone();
 
         // Proposer builds the block
         let OnPrepareProposalDecision {
@@ -434,17 +440,14 @@ impl ProposingTestFixture<'_> {
 
         // Each party processes and finalizes the block
         for (i, (manager, db)) in self.i.managers.iter_mut().zip(self.i.dbs.iter()).enumerate() {
-            let auth_idx = i;
-            dbg!(auth_idx);
-
             let Some(manager) = manager.as_mut() else {
                 assert!(
                     self.expectations[i].is_none(),
-                    "expected expectations for non-existent manager"
+                    "expectations set for non-existent manager"
                 );
                 assert!(
                     self.expected_conditions[i].is_none(),
-                    "expected conditions for non-existent manager"
+                    "conditions set for non-existent manager"
                 );
 
                 continue;
@@ -483,8 +486,8 @@ impl ProposingTestFixture<'_> {
                 .on_finalize_block(
                     proposer_version,
                     self.i.block_height,
-                    *proposer_addr,
-                    proposer_vote.clone(),
+                    proposer_addr.clone(),
+                    proposer_vote,
                 )
                 .unwrap();
 
@@ -511,6 +514,18 @@ impl ProposingTestFixture<'_> {
 
             assert_eq!(ayes, expect.aye_approval_rate, "ayes approval_rate mismatch");
             assert_eq!(compliance, expect.comp_approval_rate, "compliant approval_rate mismatch");
+
+            // Verify polling
+            let (_, polling) = manager.get_upgrade_polling().unwrap().unwrap_or((
+                RuntimeVersion::from((0, 0)), // throwaway
+                Polling { ayes: 0, nays: 0, abstained: 0, compliant: 0, total: 0 },
+            ));
+
+            assert_eq!(polling.ayes, expect.aye_votes, "aye votes mismatch");
+            assert_eq!(polling.nays, expect.nay_votes, "nay votes mismatch");
+            assert_eq!(polling.abstained, expect.abstained_votes, "abstain votes mismatch");
+            assert_eq!(polling.compliant, expect.compliant_count, "compliant count mismatch");
+            assert_eq!(polling.total, expect.total_votes, "total votes mismatch");
         }
 
         self.i.block_height += 1;

@@ -1,5 +1,9 @@
 use crate::{
-    comet_bft::abci::{ABCIClientBuilder, ABCIDriverMessage},
+    activation_manager::ActivationManager,
+    comet_bft::{
+        abci::{ABCIClientBuilder, ABCIDriverMessage},
+        vote_tracker::VoteWatcher,
+    },
     frost_task::FrostTask,
     metrics::AuthorityMetrics,
     random_source_provider::RandomSource,
@@ -22,9 +26,11 @@ use reth_network::{
 };
 use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::EthEvmConfig;
-use reth_primitives::header_ext::HeaderExt;
+use reth_primitives::{header_ext::HeaderExt, Address};
 use reth_provider::{
-    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory, SnapshotReader, SnapshotWriter, StagedHeader, StateProviderFactory, WalletStateSyncReader, WalletStateSyncWriter
+    BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory,
+    RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter, StagedHeader,
+    StateProviderFactory, WalletStateSyncReader, WalletStateSyncWriter,
 };
 
 use reth_tasks::TaskExecutor;
@@ -33,7 +39,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 use tokio::sync::RwLock as TokioRwLock;
-use tracing::info;
+use tracing::{info, warn};
 
 pub(crate) type BitcoinCheckpoint = Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>;
 
@@ -42,6 +48,7 @@ pub(crate) type BitcoinCheckpoint = Arc<TokioRwLock<Option<(bitcoin::block::Head
 pub struct AuthorityConsensusBuilder<EF, BF, DB, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, DB>,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_block_header: Arc<TokioRwLock<Option<(bitcoin::block::Header, u32)>>>,
     network_handle: NetworkHandle,
@@ -80,6 +87,7 @@ where
         + CanonChainTracker
         + CanonStateSubscriptions
         + StagedHeader
+        + RuntimeTransitionsReadWrite
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
@@ -90,6 +98,7 @@ where
     pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         client: DB,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         btc_server_factory: Option<GrpcClientFactory>,
         bitcoin_block_header: BitcoinCheckpoint,
         sk: secp256k1::SecretKey,
@@ -112,6 +121,17 @@ where
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
+
+        // Check the local database if a runtime upgrade has occurred which the
+        // ActivationManager does not know about.
+        if let Some(runtime_version) =
+            client.get_last_runtime_version().expect("local db must be available")
+        {
+            let was_forced = activation_manager.force_upgrade_checked(runtime_version);
+            if was_forced {
+                warn!("Detected completed network upgrade to version '{runtime_version}' that was unknown to initiated ActivationManager");
+            }
+        }
 
         let mut latest_header = client
             .latest_header()
@@ -179,6 +199,7 @@ where
 
         Ok(Self {
             storage,
+            activation_manager,
             consensus: AuthorityConsensus::new(chain_spec),
             btc_server_factory,
             bitcoin_block_header,
@@ -215,6 +236,7 @@ where
             btc_server_factory,
             consensus,
             storage,
+            activation_manager,
             bitcoin_block_header,
             network_handle,
             frost_handle,
@@ -291,6 +313,7 @@ where
         // all nodes will have an abci client builder
         let abci_client_builder = Some(ABCIClientBuilder::new(
             storage.clone(),
+            activation_manager,
             bitcoin_block_header,
             consensus.clone(),
             cometbft_rpc_factory.clone(),

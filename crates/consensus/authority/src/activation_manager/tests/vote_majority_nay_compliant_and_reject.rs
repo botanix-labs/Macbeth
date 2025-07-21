@@ -9,7 +9,7 @@ use reth_db::models::activation_manager::Vote;
 ///
 /// This test verifies that:
 /// 1. All validators are configured to accept an upgrade (is_compliant = true)
-/// 2. ALICE votes Aye, but BOB and EVE vote Nay
+/// 2. ALICE votes Aye, but BOB votes Nay and EVE votes Abstain
 /// 3. Despite having 100% of validators being compliant with the upgrade, it does not activate
 ///    because the Aye vote approval_rate (only 34%) is below the required quorum
 /// 4. This demonstrates that both acceptance and explicit Aye votes are required for an upgrade to
@@ -25,7 +25,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
     let mut f = UpgradeTestFixture::new(upgrade_height, required_approval_rate)
         .setup_compliant_validator(ALICE, Vote::Aye)
         .setup_compliant_validator(BOB, Vote::Nay)
-        .setup_compliant_validator(EVE, Vote::Nay);
+        .setup_compliant_validator(EVE, Vote::Abstain);
 
     assert_eq!(f.next_height(), 0);
 
@@ -51,6 +51,11 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         .build_block();
@@ -78,6 +83,11 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 67,
+                aye_votes: 1,
+                nay_votes: 1,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
             },
         )
         .build_block();
@@ -85,7 +95,7 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
     assert_eq!(f.next_height(), 2);
 
     //
-    // Block 2: Eve proposes and votes Nay, but is willing to upgrade.
+    // Block 2: Eve proposes and votes Abstain, but is willing to upgrade.
     //
 
     f.start_proposal(EVE, ACTIVE_VERSION)
@@ -105,6 +115,11 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 100,
+                aye_votes: 1,
+                nay_votes: 1,
+                abstained_votes: 1,
+                compliant_count: 3,
+                total_votes: 3,
             },
         )
         .build_block();
@@ -133,6 +148,11 @@ fn activation_manager_vote_majority_nay_compliant_and_reject() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 100,
+                aye_votes: 1,
+                nay_votes: 1,
+                abstained_votes: 1,
+                compliant_count: 3,
+                total_votes: 3,
             },
         )
         .build_blocks_until(21);
