@@ -295,7 +295,8 @@ jobs:
 
 # TODO: @shumkov test it and make sure it's not taking more than 20 mins.
 # TODO: Use sccache for docker builds
-# TODO: store docker layer cache in GCS
+# TODO: store docker layer cache in GHCR
+# TODO: Use mount cache
 #  build-docker-images:
 #    name: Build Docker Images
 #    runs-on: ubuntu-latest
