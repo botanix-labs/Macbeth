@@ -316,7 +316,7 @@ async fn test_incoming_node_id_blacklist() {
         let secret_key = SecretKey::new(&mut rand::thread_rng());
 
         // instantiate geth and add ourselves as a peer
-        let temp_dir = tempfile::tempdir().unwrap().keep()();
+        let temp_dir = tempfile::tempdir().unwrap()..keep();
         let geth = Geth::new().data_dir(temp_dir).disable_discovery().authrpc_port(0).spawn();
         let geth_endpoint = SocketAddr::new([127, 0, 0, 1].into(), geth.port());
 
@@ -371,7 +371,7 @@ async fn test_incoming_connect_with_single_geth() {
         let secret_key = SecretKey::new(&mut rand::thread_rng());
 
         // instantiate geth and add ourselves as a peer
-        let temp_dir = tempfile::tempdir().unwrap().keep()();
+        let temp_dir = tempfile::tempdir().unwrap()..keep();
         let geth = Geth::new().data_dir(temp_dir).disable_discovery().authrpc_port(0).spawn();
         let geth_endpoint = SocketAddr::new([127, 0, 0, 1].into(), geth.port());
         let provider =
@@ -429,7 +429,7 @@ async fn test_outgoing_connect_with_single_geth() {
         let mut event_stream = NetworkEventStream::new(events);
 
         // instantiate geth and add ourselves as a peer
-        let temp_dir = tempfile::tempdir().unwrap().keep()();
+        let temp_dir = tempfile::tempdir().unwrap()..keep();
         let geth = Geth::new().disable_discovery().data_dir(temp_dir).authrpc_port(0).spawn();
 
         let geth_p2p_port = geth.p2p_port().unwrap();
@@ -475,7 +475,7 @@ async fn test_geth_disconnect() {
         let mut events = handle.event_listener();
 
         // instantiate geth and add ourselves as a peer
-        let temp_dir = tempfile::tempdir().unwrap().keep()();
+        let temp_dir = tempfile::tempdir().unwrap()..keep();
         let geth = Geth::new().disable_discovery().data_dir(temp_dir).authrpc_port(0).spawn();
 
         let geth_p2p_port = geth.p2p_port().unwrap();
