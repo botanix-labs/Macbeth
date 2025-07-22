@@ -6,12 +6,16 @@ target "btc-server" {
   dockerfile = "Dockerfile"
   context = "."
   platforms = ["linux/amd64", "linux/arm64"]
-  target = "btc-server"
+  args = {
+    BIN = "btc-server"
+  }
 }
 
 target "reth-node" {
   dockerfile = "Dockerfile"
   context = "."
   platforms = ["linux/amd64", "linux/arm64"]
-  target = "reth"
+  args = {
+    BIN = "reth"
+  }
 }
