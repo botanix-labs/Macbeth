@@ -468,8 +468,7 @@ jobs:
             --platform linux/amd64 \
             -t botanix_btc_server:latest \
             -f Dockerfile \
-            --build-arg PACKAGE=btc-server \
-            --build-arg BIN=btc-server \
+            --target btc-server \
             .
 
       - name: Build Reth Docker Image
@@ -479,8 +478,7 @@ jobs:
             --platform linux/amd64 \
             -t botanix_reth_node:latest \
             -f Dockerfile \
-            --build-arg PACKAGE=reth \
-            --build-arg BIN=reth \
+            --target reth \
             .
 
       - name: Tag Docker Image
