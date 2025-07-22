@@ -405,7 +405,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.map(Into::into),
+                btc_signing_server_jwt_secret,
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };
@@ -1293,7 +1293,7 @@ mod tests {
         let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let authority = FedMemberPubKey {
             key: secret_key.public_key(SECP256K1).to_string(),
-            socket_addr: format!("127.0.0.1:30303"),
+            socket_addr: "127.0.0.1:30303".to_string(),
         };
         let authorities = vec![authority];
         let federation_config = FederationTomlConfig::new(
@@ -1327,7 +1327,7 @@ mod tests {
         let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let authority = FedMemberPubKey {
             key: secret_key.public_key(SECP256K1).to_string(),
-            socket_addr: format!("127.0.0.1:30303"),
+            socket_addr: "127.0.0.1:30303".to_string(),
         };
         let authorities = vec![authority];
         let federation_config = FederationTomlConfig::new(
@@ -1363,7 +1363,7 @@ mod tests {
         let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
         let authority = FedMemberPubKey {
             key: secret_key.public_key(SECP256K1).to_string(),
-            socket_addr: format!("127.0.0.1:30303"),
+            socket_addr: "127.0.0.1:30303".to_string(),
         };
         let authorities = vec![authority];
         let federation_config = FederationTomlConfig::new(
