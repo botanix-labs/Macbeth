@@ -13,34 +13,34 @@ workspace = true
 
 [dependencies]
 arbitrary = { workspace = true, features = ["derive"], optional = true }
-bytes = { workspace = true }
-secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 auto_impl = { workspace = true }
-tracing = { workspace = true }
+bytes = { workspace = true }
+eyre = { workspace = true }
 itertools = { workspace = true }
 modular-bitfield = { workspace = true }
-uuid = { version = "1.8.0", features = ["v4"] }
+reth-codecs = { workspace = true }
 
 # reth
 reth-db = { workspace = true, features = ["mdbx"] }
 reth-db-api = { workspace = true }
-reth-codecs = { workspace = true }
 reth-primitives = { workspace = true, features = ["reth-codec"] }
 reth-prune-types = { workspace = true }
 reth-storage-errors = { workspace = true }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 
 serde = { workspace = true, default-features = false }
 sha2 = { workspace = true }
-eyre = { workspace = true }
+tracing = { workspace = true }
+uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
-botanix-storage = { path = ".", features = ["test-utils"]}
-tempfile = { workspace = true }
-reth-primitives = { workspace = true, features = ["arbitrary"] }
+arbitrary = { workspace = true, features = ["derive"] }
+botanix-storage = { path = ".", features = ["test-utils"] }
 proptest = { workspace = true }
 proptest-arbitrary-interop = { workspace = true }
+reth-primitives = { workspace = true, features = ["arbitrary"] }
+tempfile = { workspace = true }
 test-fuzz = { workspace = true }
-arbitrary = { workspace = true, features = ["derive"] }
 
 [features]
 arbitrary = ["dep:arbitrary"]

@@ -3,6 +3,7 @@
 use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
+use botanix_cli_parsers::parsers::parse_ethereum_address;
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use botanix_storage_migrate::is_migration_needed;
@@ -22,7 +23,7 @@ use reth_authority_consensus::{
     wallet_state_sync::WalletStateSync,
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
-use reth_cli_util::{get_secret_key, parse_ethereum_address, parse_socket_address};
+use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_network_peers::pk2id;

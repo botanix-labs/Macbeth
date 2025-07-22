@@ -250,13 +250,13 @@ update_release_index() {
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
 
     # Use jq if available, otherwise create manually
-    if command -v jq >/dev/null 2>&1; then
+    if command -v jq > /dev/null 2>&1; then
         jq --arg version "$VERSION" \
-           --arg channel "$CHANNEL" \
-           --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-           --arg prerelease "$prerelease_flag" \
-           '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
-           "$INDEX_FILE" > "$INDEX_FILE.tmp"
+            --arg channel "$CHANNEL" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg prerelease "$prerelease_flag" \
+            '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
+            "$INDEX_FILE" > "$INDEX_FILE.tmp"
 
         mv "$INDEX_FILE.tmp" "$INDEX_FILE"
     else
@@ -300,7 +300,7 @@ This repository contains public release artifacts, documentation, and changelogs
 EOF
 
     # Add release information from index
-    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+    if [[ -f "releases/index.json" ]] && command -v jq > /dev/null 2>&1; then
         jq -r '.channels | to_entries[] | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
     else
         echo "| $CHANNEL | $VERSION | $(date -u +%Y-%m-%d) | [Download](releases/$VERSION) |" >> README.md
