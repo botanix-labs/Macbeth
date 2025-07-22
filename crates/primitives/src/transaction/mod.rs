@@ -1,5 +1,10 @@
 //! Transaction types.
 
+#![allow(
+    clippy::missing_const_for_fn,
+    reason = "https://users.rust-lang.org/t/invalid-clippy-missing-const-for-fn/128550/3"
+)]
+
 use crate::{
     eip7702::SignedAuthorization, keccak256, Address, BlockHashOrNumber, Bytes, TxHash, TxKind,
     B256, U256,
