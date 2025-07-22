@@ -78,13 +78,14 @@ mod tests {
     use super::*;
     use crate::{
         database::version::UtxoVersion,
-        test_utils::{create_random_pegout_id, random_compute_txid, random_p2tr_keyspend_script},
+        test_utils::{
+            add_dummy_signatures_to_psbt, create_random_pegout_id, random_compute_txid,
+            random_p2tr_keyspend_script,
+        },
         wallet::psbt::{create_psbt, InputDTO},
     };
 
-    use bitcoin::{
-        taproot::Signature as TaprootSignature, Amount, OutPoint, TapSighashType, TxOut, Witness,
-    };
+    use bitcoin::{Amount, OutPoint, TapSighashType, TxOut};
 
     #[test]
     fn test_calculate_signed_tx_weight_and_fee_rate() {
@@ -113,29 +114,6 @@ mod tests {
                 name
             );
         }
-    }
-
-    fn add_dummy_signatures_to_psbt(mut psbt: Psbt, sighash_type: TapSighashType) -> Psbt {
-        for input in psbt.inputs.iter_mut() {
-            // For Taproot (P2TR) transactions
-            if let Some(_witness_utxo) = &input.witness_utxo {
-                let dummy_schnorr_sig_bytes = vec![0x42u8; 64];
-                let dummy_schnorr_sig =
-                    secp256k1::schnorr::Signature::from_slice(&dummy_schnorr_sig_bytes)
-                        .expect("Valid dummy signature");
-
-                let taproot_sig = TaprootSignature { signature: dummy_schnorr_sig, sighash_type };
-
-                // Set the taproot signature
-                input.tap_key_sig = Some(taproot_sig.clone());
-
-                // Create the witness item with the signature
-                let witness = Witness::from_slice(&[taproot_sig.to_vec()]);
-                input.final_script_witness = Some(witness);
-            }
-        }
-
-        psbt
     }
 
     fn create_random_input(value_sats: u64) -> InputDTO {

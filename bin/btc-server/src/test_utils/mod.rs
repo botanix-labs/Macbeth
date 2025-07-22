@@ -9,7 +9,8 @@ use crate::{
 };
 use bitcoin::{
     absolute::LockTime, block::Header, blockdata::transaction::TxOut, hashes::Hash, psbt::Psbt,
-    Amount, Block, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid,
+    secp256k1, taproot::Signature as TaprootSignature, Amount, Block, FeeRate, OutPoint, ScriptBuf,
+    Sequence, TapSighashType, Transaction, TxIn, Txid, Witness,
 };
 use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult, StringOrStringArray};
 use frost_secp256k1_tr as frost;
@@ -422,4 +423,28 @@ pub fn store_pending_pegout(db: &database::Db) -> PegoutId {
     let _ = db.store_pending_pegout(&pegout_request);
 
     pegout_id
+}
+
+// Add dummy signatures to a PSBT to help calculate weight and fee rate
+pub fn add_dummy_signatures_to_psbt(mut psbt: Psbt, sighash_type: TapSighashType) -> Psbt {
+    for input in psbt.inputs.iter_mut() {
+        // For Taproot (P2TR) transactions
+        if let Some(_witness_utxo) = &input.witness_utxo {
+            let dummy_schnorr_sig_bytes = vec![0x42u8; 64];
+            let dummy_schnorr_sig =
+                secp256k1::schnorr::Signature::from_slice(&dummy_schnorr_sig_bytes)
+                    .expect("Valid dummy signature");
+
+            let taproot_sig = TaprootSignature { signature: dummy_schnorr_sig, sighash_type };
+
+            // Set the taproot signature
+            input.tap_key_sig = Some(taproot_sig.clone());
+
+            // Create the witness item with the signature
+            let witness = Witness::from_slice(&[taproot_sig.to_vec()]);
+            input.final_script_witness = Some(witness);
+        }
+    }
+
+    psbt
 }
