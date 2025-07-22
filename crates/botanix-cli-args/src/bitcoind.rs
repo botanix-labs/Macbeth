@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 /// Default bitcoind url
-pub(crate) const DEFAULT_BITCOIND_URL: &str = "localhost:18443";
+pub const DEFAULT_BITCOIND_URL: &str = "localhost:18443";
 
 /// Default bitcoind username
-pub(crate) const DEFAULT_BITCOIND_USERNAME: &str = "foo";
+pub const DEFAULT_BITCOIND_USERNAME: &str = "foo";
 
 /// Default bitcoind password
-pub(crate) const DEFAULT_BITCOIND_PASSWORD: &str = "bar";
+pub const DEFAULT_BITCOIND_PASSWORD: &str = "bar";
 
 /// Parameters to configure Bitcoind.
 #[derive(Debug, Clone, Args, PartialEq, Eq, Serialize, Deserialize)]

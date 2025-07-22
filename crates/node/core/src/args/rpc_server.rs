@@ -1,5 +1,8 @@
 //! clap [Args](clap::Args) for RPC related arguments.
 
+use botanix_cli_args::bitcoind::{
+    BitcoindArgs, DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME,
+};
 use clap::{
     builder::{PossibleValue, RangedU64ValueParser, TypedValueParser},
     Arg, Args, Command,
@@ -14,10 +17,6 @@ use std::{
 };
 use url::Url;
 
-use super::{
-    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
-    BitcoindArgs,
-};
 use crate::{
     args::{
         types::{MaxU32, ZeroAsNoneU64},

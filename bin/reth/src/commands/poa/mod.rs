@@ -3,9 +3,11 @@
 use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
+use botanix_cli_args::{bitcoind::BitcoindArgs, poa_node::PoaNodeArgs};
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use botanix_storage_migrate::is_migration_needed;
+use botanix_utils::panic_hook::set_panic_hook;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
@@ -22,12 +24,12 @@ use reth_authority_consensus::{
     wallet_state_sync::WalletStateSync,
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
-use reth_cli_util::{get_secret_key, parse_ethereum_address, parse_socket_address};
+use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_network_peers::pk2id;
 use reth_node_core::{
-    args::{DatadirArgs, StateSyncArgs},
+    args::DatadirArgs,
     cli::config::BtcServerConfig,
     version::{
         BUILD_PROFILE_NAME, CARGO_PKG_VERSION, VERGEN_BUILD_TIMESTAMP, VERGEN_CARGO_FEATURES,
@@ -41,7 +43,6 @@ use reth_node_metrics::{
     version::VersionInfo,
 };
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::Address;
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
 use reth_stages::StageId;
@@ -80,10 +81,7 @@ use reth_node_builder::{
     setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig,
 };
 use reth_node_core::{
-    args::{
-        utils::{get_chain_from_federation_config, load_federation_config_toml},
-        BitcoindArgs,
-    },
+    args::utils::{get_chain_from_federation_config, load_federation_config_toml},
     node_config::NodeConfig,
     version,
 };
@@ -106,28 +104,6 @@ use tokio::{
 };
 use tracing::{debug, error, info};
 
-/// Adds a panic hook to log the panic information
-pub fn set_panic_hook() {
-    std::panic::set_hook(Box::new(|panic_info| {
-        let payload = panic_info.payload();
-
-        #[allow(clippy::manual_map)]
-        let payload = if let Some(s) = payload.downcast_ref::<&str>() {
-            Some(&**s)
-        } else if let Some(s) = payload.downcast_ref::<String>() {
-            Some(s.as_str())
-        } else {
-            None
-        };
-
-        let location = panic_info.location().map(|l| l.to_string());
-
-        error!(panic.payload = payload, panic.location = location, "Uncaught panic");
-
-        std::process::exit(1);
-    }));
-}
-
 /// Start the node
 #[derive(Debug, Parser)]
 pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
@@ -140,47 +116,6 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// - macOS: `$HOME/Library/Application Support/reth/`
     #[command(flatten)]
     pub datadir: DatadirArgs,
-
-    /// The path to the configuration file to use for network properties.
-    #[arg(
-        long,
-        value_name = "NETWORK_CONFIG_FILE",
-        env = "RETH_NETWORK_CONFIG_PATH",
-        verbatim_doc_comment
-    )]
-    pub network_config_path: Option<PathBuf>,
-
-    /// Indicates whether we are running in testnet or not.
-    #[arg(long, value_name = "IS_TESTNET", env = "RETH_TESTNET")]
-    pub is_testnet: bool,
-
-    /// The NTP server url
-    #[arg(
-        long,
-        value_name = "NTP_SERVER",
-        env = "RETH_NTP_SERVER",
-        default_value = "time.cloudflare.com"
-    )]
-    pub ntp_server: String,
-
-    /// The path to the configuration file for the federation setup.
-    #[arg(
-        long,
-        value_name = "FEDERATION_CONFIG_FILE",
-        env = "RETH_FEDERATION_CONFIG_FILE",
-        verbatim_doc_comment
-    )]
-    pub federation_config_path: PathBuf,
-
-    /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
-    /// Only nodes defined in chain.toml can enable this flag
-    #[arg(
-        long,
-        value_name = "FEDERATION_MODE",
-        env = "RETH_FEDERATION_MODE",
-        default_value = "false"
-    )]
-    pub federation_mode: bool,
 
     /// Enable Prometheus metrics.
     ///
@@ -215,10 +150,6 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[command(flatten)]
     pub network: NetworkArgs,
 
-    /// All state sync related arguments
-    #[command(flatten)]
-    pub state_sync: StateSyncArgs,
-
     /// All rpc related arguments
     #[command(flatten)]
     pub rpc: RpcServerArgs,
@@ -235,52 +166,13 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[command(flatten)]
     pub db: DatabaseArgs,
 
-    /// The path to the configuration file to use for network properties.
-    #[arg(
-        long,
-        value_name = "BITCOIND_CONFIG_FILE",
-        env = "RETH_BITCOIND_CONFIG_PATH",
-        verbatim_doc_comment
-    )]
-    pub bitcoind_config_path: Option<PathBuf>,
-
     /// Additional cli arguments
     #[command(flatten, next_help_heading = "Extension")]
     pub ext: Ext,
 
-    /// ABCI client host to listen on
-    #[arg(long, value_name = "ABCI_HOST", env = "RETH_ABCI_HOST", default_value_t = String::from("0.0.0.0"))]
-    pub abci_host: String,
-
-    /// ABCI client port to listen on
-    #[arg(long, value_name = "ABCI_PORT", env = "RETH_ABCI_PORT", default_value_t = 26658)]
-    pub abci_port: u16,
-
-    /// `CometBFT` RPC Port
-    #[arg(
-        long,
-        value_name = "COMETBFT_RPC_PORT",
-        env = "RETH_COMETBFT_RPC_PORT",
-        default_value_t = 26657
-    )]
-    pub cometbft_rpc_port: u16,
-
-    // TODO parse to a better type
-    /// `CometBFT` RPC Host
-    #[arg(long, value_name = "COMETBFT_RPC_HOST", env = "RETH_COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
-    pub cometbft_rpc_host: String,
-
-    /// Block fee recipient address.
-    ///
-    /// The input should be a hex string with exactly 40 hex characters.
-    /// An optional "0x" prefix is allowed.
-    #[arg(
-        long,
-        value_name = "BLOCK_FEE_RECIPIENT_ADDRESS",
-        env = "RETH_BLOCK_FEE_RECIPIENT_ADDRESS",
-        value_parser = parse_ethereum_address,
-    )]
-    pub block_fee_recipient_address: Option<Address>,
+    /// Botanix specific configurations
+    #[command(flatten)]
+    pub botanix_args: PoaNodeArgs,
 }
 
 impl PoaNodeCommand {
@@ -299,7 +191,7 @@ impl PoaNodeCommand {
     }
 }
 
-const BOTANIX_DB_PATH: &'static str = "botanix_db";
+const BOTANIX_DB_PATH: &str = "botanix_db";
 
 impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     /// Execute `poa` command
@@ -309,12 +201,22 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         set_panic_hook();
 
         let Self {
+            botanix_args:
+                PoaNodeArgs {
+                    network_config_path,
+                    is_testnet,
+                    ntp_server,
+                    federation_config_path: _,
+                    federation_mode,
+                    state_sync,
+                    bitcoind_config_path,
+                    abci_host,
+                    abci_port,
+                    cometbft_rpc_port,
+                    cometbft_rpc_host,
+                    block_fee_recipient_address,
+                },
             datadir,
-            network_config_path,
-            is_testnet,
-            ntp_server,
-            federation_config_path: _,
-            federation_mode,
             metrics,
             instance,
             with_unused_ports,
@@ -323,14 +225,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             txpool,
             debug,
             db,
-            bitcoind_config_path,
             ext: _,
-            abci_host,
-            abci_port,
-            cometbft_rpc_port,
-            cometbft_rpc_host,
-            state_sync,
-            block_fee_recipient_address,
         } = self;
 
         // Load reth config which is a bit different than cli config
@@ -338,7 +233,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // get the botanix chain spec
         let chain = get_chain_from_federation_config(
-            self.federation_config_path.clone().to_str().expect("federation config path to exist"),
+            self.botanix_args
+                .federation_config_path
+                .clone()
+                .to_str()
+                .expect("federation config path to exist"),
             *is_testnet,
         )?;
         let chain_arc = Arc::new(chain.clone());
@@ -545,7 +444,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             let connection_timeout = Duration::from_secs(5);
 
             match timeout(
-                connection_timeout.clone(),
+                connection_timeout,
                 subscribe_async_wait_handshake(&[zmq_hash_block_address.as_str()]),
             )
             .await
@@ -631,13 +530,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         }
 
         // add trusted nodes (federation members) with federation.toml
-        let federation_config = match load_federation_config_toml(&self.federation_config_path) {
-            Ok(federation_config) => federation_config,
-            Err(_) => {
-                error!(target: "reth::cli", "Failed to read federation config file");
-                return Err(eyre::eyre!("Failed to read federation config file"));
-            }
-        };
+        let federation_config =
+            match load_federation_config_toml(&self.botanix_args.federation_config_path) {
+                Ok(federation_config) => federation_config,
+                Err(_) => {
+                    error!(target: "reth::cli", "Failed to read federation config file");
+                    return Err(eyre::eyre!("Failed to read federation config file"));
+                }
+            };
         let federation_authorities = federation_config.get_federation_pks_from_path()?;
 
         if let Some(max_signers) = rpc.max_signers {
@@ -1071,7 +971,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
     /// Loads the reth config with the given datadir root
     fn load_config(&self) -> eyre::Result<Config> {
-        match <std::option::Option<PathBuf> as Clone>::clone(&self.network_config_path) {
+        match <std::option::Option<PathBuf> as Clone>::clone(&self.botanix_args.network_config_path)
+        {
             Some(config_path) => {
                 let mut config = confy::load_path::<Config>(&config_path)
                     .wrap_err_with(|| format!("Could not load config file {:?}", config_path))?;
@@ -1238,8 +1139,9 @@ async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use botanix_cli_args::federation_args::{FedMemberPubKey, FederationTomlConfig};
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
-    use reth_node_core::args::{utils::get_botanix_chain, FedMemberPubKey, FederationTomlConfig};
+    use reth_node_core::args::utils::get_botanix_chain;
     use std::{
         net::{IpAddr, Ipv4Addr},
         path::Path,
@@ -1369,13 +1271,13 @@ mod tests {
         );
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
-            cmd.is_testnet,
+            cmd.botanix_args.is_testnet,
         )
         .expect("chain is to exist");
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir =
             cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
-        let config_path = cmd.network_config_path.unwrap_or_else(|| data_dir.config());
+        let config_path = cmd.botanix_args.network_config_path.unwrap_or_else(|| data_dir.config());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
         // assert doesn't apply anymore
@@ -1412,7 +1314,7 @@ mod tests {
         .unwrap();
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
-            cmd.is_testnet,
+            cmd.botanix_args.is_testnet,
         )
         .expect("chain is to exist");
         assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);
@@ -1449,7 +1351,7 @@ mod tests {
         .unwrap();
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
-            cmd.is_testnet,
+            cmd.botanix_args.is_testnet,
         )
         .expect("chain is to exist");
         assert_eq!(chain.chain.id(), BOTANIX_MAINNET_CHAIN_ID);

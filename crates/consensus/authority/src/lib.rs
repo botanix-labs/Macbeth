@@ -32,6 +32,7 @@ use reth_consensus_common::{
 };
 use reth_ethereum_consensus::validate_block_post_execution;
 use reth_network_peers as _;
+use reth_node_core as _;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
     constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},

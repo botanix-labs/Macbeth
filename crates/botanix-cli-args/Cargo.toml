@@ -1,0 +1,24 @@
+[package]
+name = "botanix-cli-args"
+description = "Cli arguments for Botanix"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+botanix-btc-wallet = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+displaydoc = "0.2"
+reth-cli-util = { workspace = true }
+reth-primitives = { workspace = true }
+secp256k1 = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+url = { workspace = true }
+
+[features]
+default = []
