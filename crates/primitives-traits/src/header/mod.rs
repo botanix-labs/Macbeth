@@ -220,7 +220,7 @@ impl Header {
     pub fn is_empty(&self) -> bool {
         self.transaction_root_is_empty() &&
             self.ommers_hash_is_empty() &&
-            self.withdrawals_root.map_or(true, |root| root == EMPTY_ROOT_HASH)
+            self.withdrawals_root.is_none_or(|root| root == EMPTY_ROOT_HASH)
     }
 
     /// Check if the ommers hash equals to empty hash list.
