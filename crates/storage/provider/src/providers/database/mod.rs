@@ -1036,7 +1036,7 @@ mod tests {
         let chain_spec = ChainSpecBuilder::mainnet().build();
         let (_static_dir, static_dir_path) = create_test_static_files_dir();
         let factory = ProviderFactory::new_with_database_path(
-            tempfile::TempDir::new().expect(ERROR_TEMPDIR)..keep(),
+            tempfile::TempDir::new().expect(ERROR_TEMPDIR).keep(),
             Arc::new(chain_spec),
             DatabaseArguments::new(Default::default()),
             StaticFileProvider::read_write(static_dir_path).unwrap(),
