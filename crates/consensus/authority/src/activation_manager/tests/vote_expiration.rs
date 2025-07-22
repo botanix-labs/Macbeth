@@ -2,7 +2,7 @@ use crate::activation_manager::{
     tests::utils::{Expectations, UpgradeTestFixture, ACTIVE_VERSION, ALICE, BOB, EVE},
     ConditionList,
 };
-use reth_db::models::activation_manager::Vote;
+use botanix_storage::models::Vote;
 
 /// Tests that votes expire after the retention period and are no longer counted.
 ///

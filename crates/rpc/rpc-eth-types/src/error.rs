@@ -394,6 +394,12 @@ pub enum RpcInvalidTransactionError {
     /// EIP-7702 transaction has invalid fields set.
     #[error("EIP-7702 authorization list has invalid fields")]
     AuthorizationListInvalidFields,
+    /// Transaction priority fee is below the minimum required priority fee.
+    #[error("transaction priority fee below minimum required priority fee {minimum_priority_fee}")]
+    PriorityFeeBelowMinimum {
+        /// Minimum required priority fee.
+        minimum_priority_fee: u128,
+    },
     /// Any other error
     #[error("{0}")]
     Other(Box<dyn ToRpcError>),
@@ -665,6 +671,11 @@ impl From<InvalidPoolTransactionError> for RpcPoolError {
             InvalidPoolTransactionError::Eip4844(err) => Self::Eip4844(err),
             InvalidPoolTransactionError::Overdraft => {
                 Self::Invalid(RpcInvalidTransactionError::InsufficientFunds)
+            }
+            InvalidPoolTransactionError::PriorityFeeBelowMinimum { minimum_priority_fee } => {
+                Self::Invalid(RpcInvalidTransactionError::PriorityFeeBelowMinimum {
+                    minimum_priority_fee,
+                })
             }
         }
     }

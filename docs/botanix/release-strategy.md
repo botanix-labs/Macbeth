@@ -60,7 +60,7 @@ We follow [Semantic Versioning 2.0.0](https://semver.org/) with the format `MAJO
 -   Used for urgent fixes to production code
 -   Only bug fixes can be merged (branches named `fix/...`)
 -   Bumps only PATCH version from current `main` version
--   Adds `-hotfix.N` pre-release segment (e.g., `v1.0.1-hotfix.1+a30ddd1`)
+-   Adds `-hotfix.N+SHA` pre-release segment (e.g., `v1.0.1-hotfix.1+a30ddd1`)
 -   No breaking changes allowed
 -   Can be merged directly to `main` after testing
 
@@ -83,6 +83,7 @@ We follow [Semantic Versioning 2.0.0](https://semver.org/) with the format `MAJO
 -   Version bumped based on changes:
     -   New features: `MINOR` version bump
     -   Other changes: `PATCH` version bump
+    - Breaking changes: `MAJOR` version bump
 
 ## Release Process
 

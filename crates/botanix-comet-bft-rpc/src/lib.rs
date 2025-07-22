@@ -5,9 +5,6 @@ use tendermint_rpc::{client::HttpClient, Error, HttpClientUrl};
 pub use tendermint_rpc::Client;
 
 pub mod light_client;
-pub mod non_deterministic_data;
-pub mod proto_debug;
-pub mod utils;
 
 const DEFAULT_RPC_HOST: &str = "localhost";
 const DEFAULT_RPC_PORT: u16 = 26657;

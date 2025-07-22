@@ -433,6 +433,16 @@ TxPool:
 
           [default: 100]
 
+      --txpool.minimum-priority-fee <MINIMUM_PRIORITY_FEE>
+          Minimum priority fee required for transaction acceptance into the pool. Transactions with priority fee below this value will be rejected
+
+          [default: 25000000]
+
+      --txpool.minimal-protocol-fee <MINIMAL_PROTOCOL_BASEFEE>
+          Minimum base fee required by the protocol
+
+          [default: 7]
+
       --txpool.max-tx-input-bytes <MAX_TX_INPUT_BYTES>
           Max size in bytes of a single transaction allowed to enter the pool
 

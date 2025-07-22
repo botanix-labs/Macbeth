@@ -1,5 +1,5 @@
 [workspace.package]
-version = "1.1.5"
+version = "1.1.11"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -31,6 +31,8 @@ members = [
     "crates/botanix-rpc-client",
     "crates/botanix-rpc-config",
     "crates/botanix-rpc-types",
+    "crates/botanix-storage",
+    "crates/botanix-storage-migrate",
     "crates/chain-state/",
     "crates/chainspec/",
     "crates/cli/cli/",
@@ -386,6 +388,8 @@ botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }
 botanix-chainspec = { path = "crates/botanix-chainspec" }
+botanix-storage = { path = "crates/botanix-storage" }
+botanix-storage-migrate = { path = "crates/botanix-storage-migrate" }
 
 # frost
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [

@@ -13,6 +13,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use botanix_comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_storage::BotanixProviderFactory;
 use client::BtcServerClient;
 use common::{
     bitcoind_node::{
@@ -50,6 +51,7 @@ use std::{
 };
 use tonic::transport::Channel;
 use tracing::info;
+
 // scopes
 pub mod common;
 pub mod frost;
@@ -220,15 +222,29 @@ impl LocalContext {
         hs.into_iter().collect()
     }
 
-    pub fn get_dbs(&self) -> Vec<ProviderFactory<Arc<DatabaseEnv>>> {
+    pub fn get_reth_dbs(&self) -> Vec<ProviderFactory<Arc<DatabaseEnv>>> {
         let db_provider_factories = self
             .poa_processes
             .as_ref()
             .map(|poa_processes| {
                 poa_processes
                     .iter()
-                    .map(|process| process.provider_factory.clone())
+                    .map(|process| process.reth_provider_factory.clone())
                     .collect::<Vec<ProviderFactory<Arc<DatabaseEnv>>>>()
+            })
+            .unwrap_or_default();
+        db_provider_factories
+    }
+
+    pub fn get_botanix_dbs(&self) -> Vec<BotanixProviderFactory<Arc<DatabaseEnv>>> {
+        let db_provider_factories = self
+            .poa_processes
+            .as_ref()
+            .map(|poa_processes| {
+                poa_processes
+                    .iter()
+                    .map(|process| process.botanix_provider_factory.clone())
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default();
         db_provider_factories

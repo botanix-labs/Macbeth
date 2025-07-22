@@ -4,7 +4,7 @@ use crate::activation_manager::{
     },
     ConditionList,
 };
-use reth_db::models::activation_manager::Vote;
+use botanix_storage::models::Vote;
 
 /// Tests the upgrade flow where validators first signal support, then later accept.
 ///

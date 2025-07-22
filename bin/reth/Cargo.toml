@@ -33,6 +33,8 @@ botanix-bitcoin-checkpoint = { workspace = true }
 botanix-btc-wallet = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
 botanix-rpc-config = { workspace = true }
+botanix-storage = { workspace = true }
+botanix-storage-migrate = { workspace = true }
 btc-server = { path = "../btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }
 

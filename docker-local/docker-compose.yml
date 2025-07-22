@@ -87,8 +87,9 @@ services:
       - --authrpc.port=8551
       - --metrics=0.0.0.0:9001
       - --ipcdisable
-      - --cometbft-rpc-host=${COMPOSE_PROJECT_NAME?:err}-cometbft-1
-      - --cometbft-rpc-port=26657
+      - --abci-host=0.0.0.0
+      - --txpool.minimum-priority-fee=2500000
+      - --txpool.minimal-protocol-fee=5000000
     ports:
       - 127.0.0.1:${POA_RPC_PORT:?err}:8545 # RPC
       - 127.0.0.1:${POA_WS_PORT:?err}:8546 # Websocket
@@ -98,7 +99,8 @@ services:
       - cometbft
     volumes:
       - ${BOTANIX_HOME:?err}/poa:/app/config:ro
-      - poa_db:/app/db:rw
+      - poa_reth_db:/app/db:rw
+      - poa_botanix_db:/app/botanix_db:rw
       - poa_logs:/root/.cache/reth/logs:rw
     restart: on-failure
     networks:
