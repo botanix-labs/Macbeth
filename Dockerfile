@@ -61,8 +61,8 @@ ENV RUSTFLAGS="$RUSTFLAGS"
 # Features to enable
 ARG FEATURES=""
 
-# Target to build (reth or btc-server)
-ARG TARGET="reth"
+# Package to build (reth or btc-server)
+ARG BIN=reth
 
 # Builds dependencies
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -72,8 +72,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --profile $PROFILE \
     --features "$FEATURES" \
     --recipe-path recipe.json \
-    --package "$TARGET" \
-    --bin "$TARGET" \
+    --package "$BIN" \
+    --bin "$BIN" \
     --locked
 
 COPY --parents .cargo bin crates testing Cargo.toml Cargo.lock  ./
@@ -90,34 +90,21 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build \
     --profile $PROFILE \
     --features "$FEATURES" \
-    --package "$TARGET" \
-    --bin "$TARGET" \
+    --package "$BIN" \
+    --bin "$BIN" \
     --locked && \
-    cp target/$OUT_DIRECTORY/$TARGET /usr/local/bin/
+    cp target/$OUT_DIRECTORY/$BIN /usr/local/bin/app
 
 # Use Ubuntu as the release image
-FROM ubuntu AS reth
+FROM ubuntu AS runtime
 
 WORKDIR /app
 
 # Copy reth over from the build stage
-COPY --from=builder /usr/local/bin/reth /usr/local/bin/
+COPY --from=builder /usr/local/bin/app /usr/local/bin/
 
 # Copy licenses
 COPY LICENSE-* ./
 
-EXPOSE 30303 30303/udp 30304 9001 8545 8546
-ENTRYPOINT ["/usr/local/bin/reth"]
-
-FROM ubuntu AS btc-server
-
-WORKDIR /app
-
-# Copy reth over from the build stage
-COPY --from=builder /usr/local/bin/btc-server /usr/local/bin/server
-
-# Copy licenses
-COPY LICENSE-* ./
-
-EXPOSE 8080 7000
-ENTRYPOINT ["/usr/local/bin/server"]
+EXPOSE 30303 30303/udp 30304 9001 8545 8546 8080 7000
+ENTRYPOINT ["/usr/local/bin/app"]
