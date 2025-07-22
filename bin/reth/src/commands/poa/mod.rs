@@ -775,23 +775,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
-        let quorum;
-        let min_validator_count;
-        let target_height;
-        let our_vote;
-
         // ActivationManager: setup parameters and conditions.
-        if *is_testnet {
-            quorum = 100; // 100% ~= 3/3 members must approve
-            min_validator_count = 3;
-            target_height = 1; // Activate as soon as possible
-            our_vote = Vote::Aye;
+
+        let quorum = 100; // 100%
+        let min_validator_count = if *is_testnet {
+            // 3/3 members must approve
+            3
         } else {
-            quorum = 100; // 100% ~= 16/16 members must approve
-            min_validator_count = 16;
-            target_height = 1; // Activate as soon as possible
-            our_vote = Vote::Aye;
-        }
+            // 16/16 members must approve
+            16
+        };
+        let target_height = 1; // Activate as soon as possible
+        let our_vote = Vote::Aye;
 
         // ActivationManager: setup compliance and vote inclusion.
         let activation_manager =
