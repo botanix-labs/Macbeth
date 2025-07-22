@@ -182,7 +182,7 @@ impl Transaction {
     /// receive the transfer.
     ///
     /// Returns `None` if this is a `CREATE` transaction.
-    pub fn to(&self) -> Option<Address> {
+    pub const fn to(&self) -> Option<Address> {
         self.kind().to().copied()
     }
 
