@@ -450,16 +450,16 @@ mod tests {
     use crate::{
         database::Utxo,
         test_utils::{
-            create_random_pegout_id, random_compute_txid, random_p2tr_keyspend_script,
-            random_p2wpkh_script, random_p2wpkh_scriptpubkey,
+            add_dummy_signatures_to_psbt, create_random_pegout_id, random_compute_txid,
+            random_p2tr_keyspend_script, random_p2wpkh_script, random_p2wpkh_scriptpubkey,
         },
         wallet::{
             coin_selection::{calculate_target_change, CoinSelectionError, MIN_CHANGE_SATS},
             util::calculate_signed_tx_fee_rate,
         },
     };
-    use bdk_wallet::coin_selection::InsufficientFunds;
-    use bitcoin::{Amount, FeeRate, OutPoint, Psbt, TxOut};
+    use bdk_wallet::{coin_selection::InsufficientFunds, psbt::PsbtUtils};
+    use bitcoin::{Amount, FeeRate, OutPoint, Psbt, TapSighashType, TxOut};
 
     use super::coin_selection;
 
@@ -625,48 +625,79 @@ mod tests {
 
     #[derive(Debug)]
     struct TestScenario {
+        name: String,
         utxo_values_sats: Vec<u64>,   // in sats
         pegout_values_sats: Vec<u64>, // in sats
         fee_rate: FeeRate,
         expected_dust_pegout_removed: Vec<u64>,
+        expected_change_output_value: u64, // in sats
     }
 
     fn create_test_scenarios() -> Vec<TestScenario> {
         vec![
-            // Simple case: plenty of funds, low fee
             TestScenario {
-                utxo_values_sats: vec![100_000, 50_000, 20_000, 10_000],
-                pegout_values_sats: vec![10_000, 20_000],
+                name: "change_targets_50%_of_pegout_value".to_string(),
+                utxo_values_sats: vec![10_000; 1_000],
+                pegout_values_sats: vec![100_000, 100_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 100_000 + 10_000,
             },
-            // Multiple small outputs
+            // 100k is 50% of 200k
+            // change output has one additional utxo value (10k) as the coin selection algorithm
+            // anticipates needing extra to pay fees
             TestScenario {
+                name: "change_targets_doesnt_exceed_5%_of_remaining_utxos".to_string(),
+                utxo_values_sats: vec![10_000; 60],
+                pegout_values_sats: vec![100_000, 100_000],
+                fee_rate: FeeRate::from_sat_per_kwu(750),
+                expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 20_000 + 10_000,
+                // 20k is 5% of ((60 * 10k) - 200k)
+                // change output has one additional utxo value (10k) as the coin selection algorithm
+                // anticipates needing extra to pay fees
+            },
+            TestScenario {
+                name: "change_minimum_is_10k".to_string(),
+                utxo_values_sats: vec![2_000; 100],
+                pegout_values_sats: vec![10_000],
+                fee_rate: FeeRate::from_sat_per_kwu(750),
+                expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 10_000 + 2_000,
+                // change output has one additional utxo value (2k) as the coin selection algorithm
+                // anticipates needing extra to pay fees
+            },
+            TestScenario {
+                name: "multiple_small_outputs".to_string(),
                 utxo_values_sats: vec![200_000],
                 pegout_values_sats: vec![5_000, 8_000, 12_000, 15_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 160_000,
             },
-            // High fee rate
             TestScenario {
-                utxo_values_sats: vec![100_000, 80_000],
-                pegout_values_sats: vec![25_000, 30_000],
+                name: "high_fee_rate".to_string(),
+                utxo_values_sats: vec![20_000; 5],
+                pegout_values_sats: vec![10_000, 30_000],
                 fee_rate: FeeRate::from_sat_per_kwu(10_000),
                 expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 20_000,
             },
-            // 1 dust pegout to be removed (no fees)
             TestScenario {
+                name: "1_dust_pegout_to_be_removed".to_string(),
                 utxo_values_sats: vec![100_000],
                 pegout_values_sats: vec![293, 294, 10_000], // 294 is dust threshold for p2wpkh
                 fee_rate: FeeRate::from_sat_per_kwu(0),
                 expected_dust_pegout_removed: vec![293],
+                expected_change_output_value: 89_706,
             },
-            // 2 dust pegouts to be removed after considering fees
             TestScenario {
+                name: "2_dust_pegouts_to_be_removed".to_string(),
                 utxo_values_sats: vec![100_000],
                 pegout_values_sats: vec![293, 294, 10_000], // 294 is dust threshold for p2wpkh
                 fee_rate: FeeRate::from_sat_per_kwu(1000),
                 expected_dust_pegout_removed: vec![293, 294],
+                expected_change_output_value: 90_000,
             },
         ]
     }
@@ -720,7 +751,7 @@ mod tests {
             .sum();
         let total_pegout_value: u64 = scenario.pegout_values_sats.iter().sum::<u64>() -
             scenario.expected_dust_pegout_removed.iter().sum::<u64>();
-        let expected_change = total_input_value - total_pegout_value;
+        let remaining_value = total_input_value - total_pegout_value;
 
         // Find pegout outputs (p2wpkh) vs change output (p2tr)
         let pegout_outputs: Vec<_> =
@@ -728,29 +759,47 @@ mod tests {
         let change_outputs: Vec<_> =
             tx.output.iter().filter(|o| o.script_pubkey.is_p2tr()).collect();
 
-        assert_eq!(change_outputs.len(), 1, "Should have exactly one change output");
+        assert_eq!(
+            change_outputs.len(),
+            1,
+            "Scenario: {} - Should have exactly one change output",
+            scenario.name
+        );
 
         assert_eq!(
             pegout_outputs.len(),
             scenario.pegout_values_sats.len() - scenario.expected_dust_pegout_removed.len(),
-            "Should have {} pegout outputs",
+            "Scenario: {} - Should have {} pegout outputs",
+            scenario.name,
             scenario.pegout_values_sats.len() - scenario.expected_dust_pegout_removed.len()
         );
 
         let actual_change = change_outputs[0].value.to_sat();
 
+        // Check that no fee is taken from the change output
         assert_eq!(
-            actual_change, expected_change,
-            "Change mismatch: expected {}, got {}",
-            expected_change, actual_change
+            actual_change, remaining_value,
+            "Scenario: {} - Change value mismatch: expected {}, got {}",
+            scenario.name, remaining_value, actual_change
+        );
+
+        // Check the change output value to validate the change value targeting
+        assert_eq!(
+            actual_change, scenario.expected_change_output_value,
+            "Scenario: {} - Change targeting mismatch: expected {}, got {}",
+            scenario.name, scenario.expected_change_output_value, actual_change
         );
 
         // assert fee rate is correct
         let actual_fee_rate = calculate_signed_tx_fee_rate(&psbt);
         assert_eq!(
             actual_fee_rate, scenario.fee_rate,
-            "Fee rate mismatch: expected {}, got {}",
-            scenario.fee_rate, actual_fee_rate
+            "Scenario: {} - Fee rate mismatch: expected {}, got {}",
+            scenario.name, scenario.fee_rate, actual_fee_rate
         );
+
+        let psbt_with_signatures = add_dummy_signatures_to_psbt(psbt.clone(), TapSighashType::All);
+        let fee_rate = psbt_with_signatures.fee_rate().unwrap();
+        assert_eq!(fee_rate, scenario.fee_rate);
     }
 }
