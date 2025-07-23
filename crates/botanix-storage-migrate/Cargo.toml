@@ -15,20 +15,20 @@ workspace = true
 
 # botanix
 botanix-storage = { workspace = true }
+eyre = { workspace = true }
 
 # reth
 reth-db = { workspace = true, features = ["mdbx"] }
 reth-db-api = { workspace = true }
 
-tracing = { workspace = true }
-eyre = { workspace = true }
-
 reth-primitives = { workspace = true, optional = true }
 
+tracing = { workspace = true }
+
 [dev-dependencies]
-reth-db = { workspace = true, features = ["mdbx", "test-utils"] }
 botanix-storage = { workspace = true, features = ["test-utils"] }
 botanix-storage-migrate = { workspace = true, features = ["test-utils"] }
+reth-db = { workspace = true, features = ["mdbx", "test-utils"] }
 tempfile = { workspace = true }
 
 [features]

@@ -1,11 +1,11 @@
 //! clap [Args](clap::Args) for RPC related arguments.
 
+use botanix_cli_parsers::parsers::parse_grpc_address;
 use clap::{
     builder::{PossibleValue, RangedU64ValueParser, TypedValueParser},
     Arg, Args, Command,
 };
 use rand::Rng;
-use reth_cli_util::parsers::parse_grpc_address;
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
 use std::{
     ffi::OsStr,

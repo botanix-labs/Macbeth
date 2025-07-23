@@ -12,7 +12,6 @@ description = "A PoA consensus engine"
 [dependencies]
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
 async-trait = { workspace = true }
-botanix-storage = { workspace = true }
 
 ## Bitcoin
 bitcoin = { workspace = true }
@@ -26,6 +25,7 @@ botanix-bitcoin-checkpoint = { workspace = true }
 botanix-btc-wallet = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
 botanix-data-parser = { workspace = true }
+botanix-storage = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 
 # others
