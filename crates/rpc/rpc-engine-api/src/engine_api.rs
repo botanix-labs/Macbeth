@@ -2,6 +2,7 @@ use crate::{
     capabilities::EngineCapabilities, metrics::EngineApiMetrics, EngineApiError, EngineApiResult,
 };
 use async_trait::async_trait;
+use botanix_rpc_config::botanix_config::Botanix;
 use jsonrpsee_core::RpcResult;
 use reth_beacon_consensus::BeaconConsensusEngineHandle;
 use reth_chainspec::ChainSpec;
@@ -16,7 +17,6 @@ use reth_primitives::{
     Block, BlockHash, BlockHashOrNumber, BlockNumber, EthereumHardfork, B256, U64,
 };
 use reth_rpc_api::EngineApiServer;
-use reth_rpc_eth_types::builder::botanix_config::Botanix;
 use reth_rpc_types::engine::{
     CancunPayloadFields, ClientVersionV1, ExecutionPayload, ExecutionPayloadBodiesV1,
     ExecutionPayloadBodiesV2, ExecutionPayloadInputV2, ExecutionPayloadV1, ExecutionPayloadV3,
@@ -930,18 +930,17 @@ where
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
     use reth_beacon_consensus::{BeaconConsensusEngineEvent, BeaconEngineMessage};
-    use reth_ethereum_engine_primitives::EthEngineTypes;
-    use reth_rpc_eth_types::builder::botanix_config::BotanixConfig;
-    use reth_testing_utils::generators::random_block;
-
     use reth_chainspec::MAINNET;
+    use reth_ethereum_engine_primitives::EthEngineTypes;
     use reth_payload_builder::test_utils::spawn_test_payload_service;
     use reth_primitives::{SealedBlock, B256};
     use reth_provider::test_utils::MockEthProvider;
     use reth_rpc_types::engine::{ClientCode, ClientVersionV1};
     use reth_rpc_types_compat::engine::payload::execution_payload_from_sealed_block;
     use reth_tasks::TokioTaskExecutor;
+    use reth_testing_utils::generators::random_block;
     use reth_tokio_util::EventSender;
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 

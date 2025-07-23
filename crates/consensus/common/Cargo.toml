@@ -11,12 +11,13 @@ repository = { workspace = true }
 workspace = true
 
 [dependencies]
+botanix-authority-edh = { workspace = true }
 # reth
 reth-chainspec = { workspace = true }
 reth-consensus = { workspace = true }
 reth-primitives = { workspace = true, features = ["secp256k1"] }
 
 [dev-dependencies]
-mockall = "0.12"
+mockall = { workspace = true }
 rand = { workspace = true }
 reth-storage-api = { workspace = true }

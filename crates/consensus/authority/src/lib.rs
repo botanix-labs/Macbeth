@@ -13,7 +13,10 @@
 
 //! A [Consensus] implementation of Clique Proof of Authority (POA)
 //! that authoritymatically seals blocks.
-
+use async_trait as _;
+use botanix_authority_edh::header_ext::HeaderExt;
+use bytes as _;
+use displaydoc as _;
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
     Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,
@@ -27,36 +30,27 @@ use reth_consensus_common::{
         validate_header_extradata, validate_header_gas,
     },
 };
-use reth_network_peers as _;
-use serde_json as _;
-
-use metrics_util as _;
 use reth_ethereum_consensus::validate_block_post_execution;
+use reth_network_peers as _;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
     constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},
-    header_ext::HeaderExt,
     Address, BlockWithSenders, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH, U256,
 };
+use serde_json as _;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
-
 mod builder;
 /// Comet BFT abci and consensus driver
 pub mod comet_bft;
-
-pub use comet_bft::light_client::LightCBFTClientBuilder;
-pub mod activation_manager;
 mod excecution_utils;
 mod frost_task;
-mod prost_parser;
 mod signing;
 pub mod snapshot_manager;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
-pub mod metrics;
-pub mod random_source_provider;
+pub mod test_utils;
 pub mod wallet_state_sync;
 
 /// Max EDH size; for specific details see [ExtraDataHeader]
@@ -312,8 +306,11 @@ impl Consensus for AuthorityConsensus {
 /// All this struct does is provide a rwlock wrapper around the storage inner
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
-pub(crate) struct Storage<EF, BF, DB> {
-    pub(crate) client: DB,
+pub(crate) struct Storage<EF, BF, RDB, BDB> {
+    /// Reth Database Provider Factory
+    pub(crate) reth_database: RDB,
+    /// Botanix Database Provider Factory
+    pub(crate) botanix_database_factory: BDB,
     /// The authority list in the genesis block
     pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
     /// keep track of my place among the signer
@@ -337,7 +334,7 @@ pub(crate) struct Storage<EF, BF, DB> {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
-impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
+impl<EF, BF, RDB: Clone, BDB: Clone> Storage<EF, BF, RDB, BDB> {
     /// Create a new instance of the storage
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -351,12 +348,14 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
         chain_spec: Arc<ChainSpec>,
         bitcoind_factory: BF,
         executor_factory: EF,
-        client: DB,
+        reth_database: RDB,
+        botanix_database_factory: BDB,
     ) -> Self {
         let storage_inner = StorageInner { aggregate_public_key, is_block_syncing: false };
 
         Self {
-            client,
+            reth_database,
+            botanix_database_factory,
             genesis_authorities,
             signer_index,
             authority,
@@ -395,17 +394,16 @@ pub(crate) struct StorageInner {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use random_source_provider::{RandomSource, RandomSourceProvider};
+    use botanix_authority_edh::extra_data_header::{ExtraDataHeader, CHAIN_VERSION};
+    use botanix_authority_rsp::{RandomSource, RandomSourceProvider};
     use reth_chainspec::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::is_inturn;
     use reth_primitives::{
         constants::{ALLOWED_FUTURE_BLOCK_TIME_SECONDS, MAXIMUM_EXTRA_DATA_SIZE},
-        extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
         Bytes,
     };
+    use std::str::FromStr;
 
     use super::*;
 

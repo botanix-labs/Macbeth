@@ -11,17 +11,29 @@ description = "A PoA consensus engine"
 
 [dependencies]
 alloy-rpc-types-engine = { version = "0.2.1", default-features = false }
+async-trait = { workspace = true }
 
 ## Bitcoin
 bitcoin = { workspace = true }
+botanix-authority-edh = { workspace = true }
+
+## Botanix
+botanix-authority-metrics = { workspace = true }
+botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
+botanix-authority-rsp = { workspace = true }
+botanix-bitcoin-checkpoint = { workspace = true }
+botanix-btc-wallet = { workspace = true }
+botanix-comet-bft-rpc = { workspace = true }
+botanix-data-parser = { workspace = true }
+botanix-storage = { workspace = true }
+botanix-activation-manager = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 
+# others
 bytes = "1.6.0"
 client = { path = "../../../bin/btc-server/client" }
-
-# CometBFT
-comet-bft-rpc = { workspace = true }
 displaydoc = "0.2"
+ethabi = "18.0.0"
 
 # frost
 frost-secp256k1-tr = { workspace = true }
@@ -30,27 +42,23 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 
 hex = "0.4.3"
-metrics = { workspace = true }
-metrics-util = { workspace = true }
+
+# lazy
+once_cell = { workspace = true }
 prost = "0.13.3"
 reth-basic-payload-builder = { workspace = true }
 
-## Botanix
-reth-btc-wallet = { workspace = true }
 # reth
 reth-chain-state = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-consensus = { workspace = true }
 reth-consensus-common = { path = "../common" }
-reth-data-parser = { workspace = true }
-
 reth-db = { workspace = true }
 reth-ethereum-consensus = { workspace = true }
 reth-ethereum-payload-builder = { workspace = true }
 reth-evm = { workspace = true }
 reth-evm-ethereum = { workspace = true }
 reth-execution-errors = { workspace = true }
-reth-metrics = { workspace = true, features = ["common"] }
 reth-network = { path = "../../net/network", features = ["serde"] }
 reth-network-peers = { workspace = true, features = ["secp256k1"] }
 reth-node-core = { workspace = true }
@@ -76,7 +84,6 @@ tendermint = { version = "0.40.1", features = ["clock"] }
 
 # Tendermint
 tendermint-abci = { workspace = true }
-tendermint-light-client = { workspace = true }
 tendermint-proto = { workspace = true }
 tendermint-rpc = { workspace = true }
 
@@ -92,7 +99,7 @@ tracing = { workspace = true }
 uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
-ethabi = "18.0.0"
+botanix-storage = { workspace = true, features = ["test-utils"] }
 rand = "0.8.5"
 reth-cli-runner = { workspace = true }
 reth-db-common = { workspace = true }

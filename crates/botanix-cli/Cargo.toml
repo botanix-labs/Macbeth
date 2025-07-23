@@ -10,8 +10,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.75"
 assert_matches = "1.5"
+botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
 hex = "0.4.3"
-reth-primitives = { workspace = true, features = ["secp256k1"] }

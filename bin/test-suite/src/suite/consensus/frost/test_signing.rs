@@ -37,7 +37,7 @@ pub async fn do_signing(
     bitcoind: &bitcoincore_rpc::Client,
     signing_session_id: &[u8; 32],
 ) -> anyhow::Result<bitcoin::Transaction, anyhow::Error> {
-    let pegin_conf_depth = BOTANIX_TESTNET.parent_confirmation_depth;
+    let pegin_conf_depth = BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
 
     // Currently we support a static coordinator
     // this is always the first client
@@ -300,7 +300,7 @@ pub async fn test_many_inputs_signing(
         rand.fill_bytes(&mut pegout_id_bytes);
         let pegout_id = PegoutId::from_bytes(&pegout_id_bytes)
             .map_err(|_| anyhow::anyhow!("invalid pegout id"))?;
-        let rand_amount = rand.gen::<u64>() % 75_000;
+        let rand_amount = rand.gen_range(25_000..50_000); // Range: 25,000 to 49,999 sats
         let amount = bitcoin::Amount::from_sat(rand_amount);
 
         // get new a key
@@ -411,8 +411,8 @@ pub async fn test_many_inputs_signing(
     let mut pegout_id_bytes = [0u8; 36];
     rand.fill_bytes(&mut pegout_id_bytes);
     let pegout_id = PegoutId::from_bytes(&pegout_id_bytes).unwrap();
-    let rand_amount = 100_000;
-    // get new a key
+    let rand_amount = rand.gen_range(25_000..50_000); // Range: 25,000 to 49,999 sats
+                                                      // get new a key
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
     let spk = pk.p2wpkh_script_code().expect("valid pk");

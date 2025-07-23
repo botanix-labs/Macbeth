@@ -1,6 +1,6 @@
 use bitcoin::psbt::{self};
 use frost_secp256k1_tr as frost;
-use std::{array::TryFromSliceError, io};
+use std::{array::TryFromSliceError, io, time::SystemTimeError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,6 +31,8 @@ pub enum Error {
     HashEngine(#[from] std::io::Error),
     #[error("Invalid UTXO version number {0}")]
     InvalidUTXOVersion(u32),
+    #[error("Error getting duration since epoch: {0}")]
+    DurationSinceEpoch(#[from] SystemTimeError),
     #[error("Failed to get tx out for input: {0}")]
     BitcoindError(#[from] bitcoincore_rpc::Error),
     #[error("Tracked tx not found in Pegout Scheduler")]

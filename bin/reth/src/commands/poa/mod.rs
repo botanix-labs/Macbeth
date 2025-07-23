@@ -1,30 +1,29 @@
 //! POA node command
 
-use bitcoin::hashes::Hash;
-use bitcoincore_rpc::RpcApi;
+use bitcoincore_zmq::subscribe_async_wait_handshake;
+use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
+use botanix_authority_rsp::RandomSourceProvider;
+use botanix_cli_parsers::parsers::parse_ethereum_address;
+use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
+use botanix_storage_migrate::is_migration_needed;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use clap::{value_parser, Parser};
 use client::Empty;
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
-    activation_manager::ActivationManagerBuilder,
-    comet_bft::{
-        abci::{ABCIDriver, RUNTIME_VERSION_ACTIVE, RUNTIME_VERSION_UPGRADE},
-        vote_tracker::VoteWatcher,
-    },
-    random_source_provider::RandomSourceProvider,
+    comet_bft::abci::{ABCIDriver, RUNTIME_VERSION_ACTIVE, RUNTIME_VERSION_UPGRADE},
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     wallet_state_sync::WalletStateSync,
     AuthorityConsensus, AuthorityConsensusBuilder,
 };
-use reth_cli_util::{get_secret_key, parse_ethereum_address, parse_socket_address};
+use reth_cli_util::{get_secret_key, parse_socket_address};
 use reth_db_common::init::init_genesis;
 use reth_discv4::NodeRecord;
 use reth_network_peers::pk2id;
@@ -43,25 +42,36 @@ use reth_node_metrics::{
     version::VersionInfo,
 };
 use reth_payload_builder::PayloadBuilderHandle;
-use reth_primitives::{botanix::mint_validation::MINT_CONTRACT_ADDRESS, Address};
+use reth_primitives::Address;
 use reth_prune::PruneModes;
 use reth_rpc_builder::{config::RethRpcServerConfig, RpcModuleBuilder};
-use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_stages::StageId;
 use reth_tasks::TaskExecutor;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
-use std::{borrow::Cow, ffi::OsString, fmt, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, ffi::OsString, fmt, fs, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio_stream::wrappers::ReceiverStream;
 
-use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_btc_wallet::bitcoind::{
+use crate::{
+    args::{DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs},
+    cli::NoArgs,
+    payload::PayloadBuilderService,
+};
+use botanix_activation_manager::{ActivationManagerBuilder, VoteWatcher};
+use botanix_bitcoin_checkpoint::{
+    BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
+    DummyHashBlockStream,
+};
+use botanix_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
+use botanix_storage::{models::Vote, BotanixProviderFactory};
+use botanix_storage_migrate::migrate_botanix_tables;
+use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
 use reth_consensus_common::utils;
-use reth_db::{database::Database, init_db, models::Vote, DatabaseEnv};
+use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
     frost::{manager::FrostConfig, protocol::FrostProtoHandler},
@@ -93,25 +103,29 @@ use reth_transaction_pool::{
 };
 use rsntp::AsyncSntpClient;
 use tokio::{
-    sync::{mpsc::unbounded_channel, oneshot, RwLock},
-    time::Duration,
+    sync::{mpsc::unbounded_channel, oneshot},
+    time::{timeout, Duration},
 };
-
 use tracing::{debug, error, info};
-
-use crate::{
-    args::{DatabaseArgs, DebugArgs, NetworkArgs, PayloadBuilderArgs, RpcServerArgs, TxPoolArgs},
-    cli::NoArgs,
-    payload::PayloadBuilderService,
-};
 
 /// Adds a panic hook to log the panic information
 pub fn set_panic_hook() {
     std::panic::set_hook(Box::new(|panic_info| {
-        let payload = panic_info.payload().downcast_ref::<&str>().cloned().unwrap_or_default();
+        let payload = panic_info.payload();
+
+        #[allow(clippy::manual_map)]
+        let payload = if let Some(s) = payload.downcast_ref::<&str>() {
+            Some(&**s)
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            Some(s.as_str())
+        } else {
+            None
+        };
+
         let location = panic_info.location().map(|l| l.to_string());
 
-        tracing::error!(panic.payload = payload, panic.location = location, "Uncaught panic");
+        error!(panic.payload = payload, panic.location = location, "Uncaught panic");
+
         std::process::exit(1);
     }));
 }
@@ -130,30 +144,50 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub datadir: DatadirArgs,
 
     /// The path to the configuration file to use for network properties.
-    #[arg(long, value_name = "NETWORK_CONFIG_FILE", verbatim_doc_comment)]
+    #[arg(
+        long,
+        value_name = "NETWORK_CONFIG_FILE",
+        env = "RETH_NETWORK_CONFIG_PATH",
+        verbatim_doc_comment
+    )]
     pub network_config_path: Option<PathBuf>,
 
     /// Indicates whether we are running in testnet or not.
-    #[arg(long, value_name = "IS_TESTNET")]
+    #[arg(long, value_name = "IS_TESTNET", env = "RETH_TESTNET")]
     pub is_testnet: bool,
 
     /// The NTP server url
-    #[arg(long, value_name = "NTP_SERVER", default_value = "time.cloudflare.com")]
+    #[arg(
+        long,
+        value_name = "NTP_SERVER",
+        env = "RETH_NTP_SERVER",
+        default_value = "time.cloudflare.com"
+    )]
     pub ntp_server: String,
 
     /// The path to the configuration file for the federation setup.
-    #[arg(long, value_name = "FEDERATION_CONFIG_FILE", verbatim_doc_comment)]
+    #[arg(
+        long,
+        value_name = "FEDERATION_CONFIG_FILE",
+        env = "RETH_FEDERATION_CONFIG_FILE",
+        verbatim_doc_comment
+    )]
     pub federation_config_path: PathBuf,
 
     /// Run in federation mode. Only the nodes in the federation will be able to produce blocks.
     /// Only nodes defined in chain.toml can enable this flag
-    #[arg(long, value_name = "FEDERATION_MODE", default_value = "false")]
+    #[arg(
+        long,
+        value_name = "FEDERATION_MODE",
+        env = "RETH_FEDERATION_MODE",
+        default_value = "false"
+    )]
     pub federation_mode: bool,
 
     /// Enable Prometheus metrics.
     ///
     /// The metrics will be served at the given interface and port.
-    #[arg(long, value_name = "SOCKET", value_parser = parse_socket_address, help_heading = "Metrics")]
+    #[arg(long, value_name = "SOCKET", env = "RETH_METRICS_ADDRESS", value_parser = parse_socket_address, help_heading = "Metrics")]
     pub metrics: Option<SocketAddr>,
 
     /// Add a new instance of a node.
@@ -169,14 +203,14 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// - `AUTH_PORT`: default + `instance` * 100 - 100
     /// - `HTTP_RPC_PORT`: default - `instance` + 1
     /// - `WS_RPC_PORT`: default + `instance` * 2 - 2
-    #[arg(long, value_name = "INSTANCE", global = true, default_value_t = 1, value_parser = value_parser!(u16).range(..=200))]
+    #[arg(long, value_name = "INSTANCE", global = true, default_value_t = 1, env="RETH_INSTANCE", value_parser = value_parser!(u16).range(..=200))]
     pub instance: u16,
 
     /// Sets all ports to unused, allowing the OS to choose random unused ports when sockets are
     /// bound.
     ///
     /// Mutually exclusive with `--instance`.
-    #[arg(long, conflicts_with = "instance", global = true)]
+    #[arg(long, conflicts_with = "instance", env = "RETH_UNUSED_PORTS", global = true)]
     pub with_unused_ports: bool,
 
     /// All networking related arguments
@@ -204,7 +238,12 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub db: DatabaseArgs,
 
     /// The path to the configuration file to use for network properties.
-    #[arg(long, value_name = "BITCOIND_CONFIG_FILE", verbatim_doc_comment)]
+    #[arg(
+        long,
+        value_name = "BITCOIND_CONFIG_FILE",
+        env = "RETH_BITCOIND_CONFIG_PATH",
+        verbatim_doc_comment
+    )]
     pub bitcoind_config_path: Option<PathBuf>,
 
     /// Additional cli arguments
@@ -212,20 +251,25 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     pub ext: Ext,
 
     /// ABCI client host to listen on
-    #[arg(long, value_name = "ABCI_HOST", default_value_t = String::from("0.0.0.0"))]
+    #[arg(long, value_name = "ABCI_HOST", env = "RETH_ABCI_HOST", default_value_t = String::from("0.0.0.0"))]
     pub abci_host: String,
 
     /// ABCI client port to listen on
-    #[arg(long, value_name = "ABCI_PORT", default_value_t = 26658)]
+    #[arg(long, value_name = "ABCI_PORT", env = "RETH_ABCI_PORT", default_value_t = 26658)]
     pub abci_port: u16,
 
     /// `CometBFT` RPC Port
-    #[arg(long, value_name = "COMETBFT_RPC_PORT", default_value_t = 26657)]
+    #[arg(
+        long,
+        value_name = "COMETBFT_RPC_PORT",
+        env = "RETH_COMETBFT_RPC_PORT",
+        default_value_t = 26657
+    )]
     pub cometbft_rpc_port: u16,
 
     // TODO parse to a better type
     /// `CometBFT` RPC Host
-    #[arg(long, value_name = "COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
+    #[arg(long, value_name = "COMETBFT_RPC_HOST", env = "RETH_COMETBFT_RPC_HOST", default_value_t = String::from("127.0.0.1"))]
     pub cometbft_rpc_host: String,
 
     /// Block fee recipient address.
@@ -235,6 +279,7 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(
         long,
         value_name = "BLOCK_FEE_RECIPIENT_ADDRESS",
+        env = "RETH_BLOCK_FEE_RECIPIENT_ADDRESS",
         value_parser = parse_ethereum_address,
     )]
     pub block_fee_recipient_address: Option<Address>,
@@ -256,8 +301,11 @@ impl PoaNodeCommand {
     }
 }
 
+const BOTANIX_DB_PATH: &'static str = "botanix_db";
+
 impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
     /// Execute `poa` command
+    #[tracing::instrument(skip_all, err)]
     pub async fn execute(&self, ctx: CliContext) -> eyre::Result<()> {
         tracing::info!(target: "reth::cli", version = ?version::SHORT_VERSION, "Starting reth with poa");
         set_panic_hook();
@@ -354,11 +402,34 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let data_dir =
             datadir.datadir.unwrap_or_chain_default(node_config.chain.chain, datadir.clone());
-        let db_path = data_dir.db();
+        let reth_db_path = data_dir.db();
+        let botanix_db_path = data_dir.data_dir().join(BOTANIX_DB_PATH);
         let executor = ctx.task_executor;
 
-        tracing::info!(target: "reth::cli", path = ?db_path, "Opening database");
-        let database = Arc::new(init_db(db_path.clone(), self.db.database_args())?.with_metrics());
+        // If botanix database path does not exist, it means we didn't migrate botanix tables yet.
+        let is_migration_needed = is_migration_needed(&reth_db_path, &botanix_db_path)?;
+
+        tracing::info!(target: "reth::cli", path = ?reth_db_path, "Opening reth database");
+        let reth_database =
+            Arc::new(init_db(&reth_db_path, self.db.database_args())?.with_metrics());
+
+        tracing::info!(target: "reth::cli", path = ?botanix_db_path, "Opening botanix database");
+        let botanix_database = init_db(&botanix_db_path, self.db.database_args())?;
+        let botanix_database = Arc::new(botanix_database);
+
+        // Move botanix tables from reth to botanix database
+        if is_migration_needed {
+            migrate_botanix_tables(&reth_database, &botanix_database).or_else(|e| {
+                // If migration fails, we remove the botanix database directory to start from
+                // scratch on the next run.
+                fs::remove_dir_all(&botanix_db_path).wrap_err(format!(
+                    "Failed to remove botanix database directory {}",
+                    botanix_db_path.display()
+                ))?;
+
+                Err(e)
+            })?;
+        }
 
         if *with_unused_ports {
             node_config = node_config.with_unused_ports();
@@ -405,12 +476,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.map(Into::into),
+                btc_signing_server_jwt_secret.map(|s| btcserverlib::jwt::JwtSecret(s.0)),
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };
 
-            let mut client =
+            let mut btc_server_client =
                 match retry_exec("btc_server_start", fut, 3, Duration::from_secs(2)).await {
                     Ok(client) => client,
                     Err(err) => {
@@ -421,7 +492,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             info!(target: "reth::cli", "Btc server connected");
 
             // Check our connection to the btc server is authenticated properly
-            client.health_check(Empty {}).await.map_err(|err| {
+            btc_server_client.health_check(Empty {}).await.map_err(|err| {
                 error!(target: "reth::cli", "Failed to authenticate to btc server: {}", err);
                 eyre::eyre!("Failed to authenticate to btc server: {}", err)
             })?;
@@ -431,10 +502,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         } else {
             None
         };
-
-        let bitcoin_block_header: Arc<RwLock<Option<(bitcoin::block::Header, u32)>>> =
-            Arc::new(RwLock::new(None));
-        let bitcoin_block_header_clone = bitcoin_block_header.clone();
 
         // create bitcoind client and make sure its synced
         let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
@@ -454,77 +521,99 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             }
         }
 
-        let bitcoind_factory_clone = bitcoind_factory.clone();
-        let pegin_conf_depth = chain.parent_confirmation_depth;
-        assert_ne!(pegin_conf_depth, 0, "pegin conf depth not set correctly");
-        executor.spawn_critical(
-            "async bitcoin task for block headers",
-            Box::pin(async move {
-                /// Sleep interval between wake-ups.
-                const SLEEP: tokio::time::Duration = tokio::time::Duration::from_secs(1);
+        let bitcoin_checkpoints = Arc::new(BitcoinCheckpointsChain::try_new(
+            chain.bitcoin_checkpoint_confirmation_depth as usize,
+            chain.historical_bitcoin_checkpoints_count,
+            chain.weak_bitcoin_checkpoints_count,
+        )?);
 
-                macro_rules! or_continue {
-                    ($e:expr) => {{
-                        match $e {
-                            Ok(r) => r,
-                            Err(_) => {
-                                error!(
-                                    target: "reth::cli",
-                                    "Async bitcoin task error calling '{}'. Retrying...",
-                                    stringify!($e),
-                                );
-                                tokio::time::sleep(SLEEP).await;
-                                continue;
-                            }
-                        }
-                    }};
-                }
-
-                // Note: we should be panicking if our connection to bitcoind is severed
-                let bitcoind =
-                    bitcoind_factory_clone.build_and_connect().expect("can connect to bitcoind");
-                let mut last_tip = bitcoin::BlockHash::all_zeros();
-                loop {
-                    let tip_hash = or_continue!(bitcoind.get_best_block_hash());
-                    if last_tip != tip_hash {
-                        let tip_block = or_continue!(bitcoind.get_block_info(&tip_hash));
-                        let height = tip_block.height;
-                        let finalized = {
-                            let height = height.saturating_sub(pegin_conf_depth as usize);
-                            let hash = or_continue!(bitcoind.get_block_hash(height as u64));
-                            or_continue!(bitcoind.get_block_info(&hash))
-                        };
-                        let header = or_continue!(bitcoind.get_block_header(&finalized.hash));
-
-                        info!(
-                            "Async bitcoin task setting checkpoint to {}:{}",
-                            finalized.height,
-                            header.block_hash(),
-                        );
-                        info!("Async bitcoin Tip {}:{}", height, tip_hash,);
-                        *bitcoin_block_header.write().await =
-                            Some((header, finalized.height as u32));
-                        last_tip = tip_hash;
-                    }
-                    tokio::time::sleep(SLEEP).await;
-                }
-            }),
+        let checkpoints_synchronizer = BitcoinCheckpointsChainSynchronizer::new(
+            Arc::clone(&bitcoin_checkpoints),
+            bitcoind_client,
         );
+
+        // Connect to Bitcoin ZMQ socket to receive new block notifications
+        // to synchronize the bitcoin checkpoints chain with the bitcoind node
+
+        let bitcoin_zmq_block_hash_stream: BitcoinHashBlockStream = if let Some(
+            zmq_hash_block_address,
+        ) =
+            &rpc.bitcoind.zmq_hash_block_address
+        {
+            // Connect to the ZMQ socket for block hash notifications
+            // if the zmq hash block address is provided
+
+            // Timeout if we cannot connect to the ZMQ socket after 5 seconds
+            let connection_timeout = Duration::from_secs(5);
+
+            match timeout(
+                connection_timeout.clone(),
+                subscribe_async_wait_handshake(&[zmq_hash_block_address.as_str()]),
+            )
+            .await
+            {
+                Ok(Ok(stream)) => {
+                    info!(target: "reth::cli", "Connected to bitcoind ZMQ hashblock socket {}", zmq_hash_block_address);
+
+                    Box::new(stream)
+                }
+                Ok(Err(err)) => {
+                    // Ok from `timeout` but an error from the subscribe function.
+                    return Err(eyre::eyre!(
+                        "Failed to subscribe to bitcoind ZMQ hashblock socket {}: {}",
+                        zmq_hash_block_address,
+                        err
+                    ));
+                }
+                Err(_) => {
+                    // Timeout error
+                    return Err(eyre::eyre!(
+                        "Timeout to subscribe to bitcoind ZMQ hashblock socket {} after {} secs",
+                        zmq_hash_block_address,
+                        connection_timeout.as_secs_f64(),
+                    ));
+                }
+            }
+        } else {
+            // ZMQ socket for block hash notifications
+            // is not provided. Fall back to an interval update logic
+
+            // TODO: Remove this fallback and make zmq socket mandatory when we release
+            //  version 2
+
+            let update_interval = Duration::from_secs(5);
+
+            tracing::warn!(target: "reth::cli", "No ZMQ hash block address provided. Using dummy block hash stream with checkpoints update interval of {} seconds", update_interval.as_secs_f64());
+
+            let stream = DummyHashBlockStream::new(update_interval);
+
+            Box::new(stream)
+        };
+
+        // Synchronize the local bitcoin checkpoints chain with the bitcoind node
+
+        executor.spawn_critical(
+            "async bitcoin checkpoint chain synchronization task",
+            checkpoints_synchronizer.sync(bitcoin_zmq_block_hash_stream),
+        );
+
         info!(target: "reth::cli", "Spawned async bitcoin task for block headers");
 
-        let static_file_provider = StaticFileProvider::read_write(data_dir.static_files())?;
-        let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
-            database.clone(),
+        let reth_static_file_provider = StaticFileProvider::read_write(data_dir.static_files())?;
+        let reth_provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+            Arc::clone(&reth_database),
             node_config.chain.clone(),
-            static_file_provider.clone(),
+            reth_static_file_provider.clone(),
         );
 
-        let genesis_hash = init_genesis(provider_factory.clone())?;
+        let genesis_hash = init_genesis(reth_provider_factory.clone())?;
         info!(target: "reth::cli", "Genesis hash: {}", genesis_hash);
 
         // Configure static file producer
-        let static_file_producer =
-            StaticFileProducer::new(provider_factory.clone(), PruneModes::default());
+        let reth_static_file_producer =
+            StaticFileProducer::new(reth_provider_factory.clone(), PruneModes::default());
+
+        let botanix_database_provider_factory = BotanixProviderFactory::new(botanix_database);
 
         let network_secret_path =
             self.network.p2p_secret_key.clone().unwrap_or_else(|| data_dir.p2p_secret());
@@ -582,12 +671,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             evm_config,
             bitcoind_factory.clone(),
             node_config.rpc.btc_network,
-            Arc::new(provider_factory.database_provider_ro()?),
+            Arc::new(reth_provider_factory.database_provider_ro()?),
         );
 
         // fetch the head block from the database
-        let head = self.lookup_head(provider_factory.clone());
-        let latest_sealed_header = provider_factory
+        let head = self.lookup_head(reth_provider_factory.clone());
+        let latest_sealed_header = reth_provider_factory
             .header(&head.hash)
             .expect("latest block to exist")
             .expect("latest block to exist")
@@ -596,14 +685,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Authority consensus
         let consensus = Arc::new(AuthorityConsensus::new(Arc::new(chain)));
-        let state_provider = provider_factory.latest().expect("provider factory to exist");
+        let state_provider = reth_provider_factory.latest().expect("provider factory to exist");
         let blockchain_db =
-            BlockchainProvider2::with_latest(provider_factory.clone(), latest_sealed_header)
+            BlockchainProvider2::with_latest(reth_provider_factory.clone(), latest_sealed_header)
                 .expect("blockchain db to exist");
 
         let (driver_tx, driver_rx) = tokio::sync::mpsc::channel(1);
-        let mut abci_driver =
-            ABCIDriver::new(driver_rx, provider_factory.clone(), blockchain_db.clone());
+        let mut abci_driver = ABCIDriver::new(
+            driver_rx,
+            reth_provider_factory.clone(),
+            botanix_database_provider_factory.clone(),
+            blockchain_db.clone(),
+        );
 
         // check Minting.sol deployed bytecode matches known bytecode
         info!(target: "reth::cli", "Checking minting contract bytecode");
@@ -720,7 +813,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 .add_rlpx_sub_protocol(protocol_handler.into_rlpx_sub_protocol());
         }
 
-        let network_config = network_cfg_builder.build(provider_factory.clone());
+        let network_config = network_cfg_builder.build(reth_provider_factory.clone());
 
         // Now we need to build the network components including frost p2p, txpool p2p, eth request
         // handling p2p, as well as the general p2p network
@@ -728,7 +821,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             NetworkManager::builder(network_config)
                 .await?
                 .frost(frost_config.clone())
-                .request_handler(provider_factory.clone())
+                .request_handler(reth_provider_factory.clone())
                 .transactions(transaction_pool.clone(), Default::default())
                 .split_with_handle();
         // Start all the p2p tasks
@@ -806,13 +899,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
+        let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
         let (frost_task, abci_client_builder, snapshot_manager, wallet_sync) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
                 blockchain_db.clone(),
                 activation_manager,
                 btc_server_factory.clone(),
-                bitcoin_block_header_clone.clone(),
+                bitcoin_checkpoints.clone(),
                 secret_key,
                 network_handle.clone(),
                 frost_handle,
@@ -828,8 +922,10 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 RandomSourceProvider::new(),
                 driver_tx,
                 node_config.clone().state_sync,
-                provider_factory.clone(),
+                reth_provider_factory.clone(),
+                botanix_database_provider_factory,
                 *block_fee_recipient_address,
+                bitcoind_client,
             ) {
                 Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
                 Err(e) => {
@@ -864,17 +960,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let exex_manager = ExExManagerHandle::empty();
 
         // Configure pipeline
-        let max_block = node_config.max_block(&network_client, provider_factory.clone()).await?;
+        let max_block =
+            node_config.max_block(&network_client, reth_provider_factory.clone()).await?;
         build_networked_pipeline(
             &StageConfig::default(),
             network_client.clone(),
             Arc::new(consensus.clone()),
-            provider_factory,
+            reth_provider_factory,
             &executor,
             sync_metrics_tx,
             node_config.prune_config(),
             max_block,
-            static_file_producer.clone(),
+            reth_static_file_producer.clone(),
             executor_factory.clone(),
             exex_manager,
             bitcoind_factory.clone(),
@@ -949,7 +1046,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     build_profile: BUILD_PROFILE_NAME,
                 },
                 executor.clone(),
-                Hooks::new(database.clone(), static_file_provider),
+                Hooks::new(reth_database.clone(), reth_static_file_provider),
             );
             MetricServer::new(config).serve().await?;
         }

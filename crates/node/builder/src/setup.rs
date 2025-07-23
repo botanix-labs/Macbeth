@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use reth_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use reth_config::{config::StageConfig, PruneConfig};
 use reth_consensus::Consensus;
 use reth_db_api::database::Database;

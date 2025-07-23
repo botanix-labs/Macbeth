@@ -20,6 +20,7 @@ pub mod lockfile;
 #[cfg(feature = "mdbx")]
 mod metrics;
 pub mod static_file;
+#[allow(deprecated)]
 pub mod tables;
 #[cfg(feature = "mdbx")]
 mod utils;

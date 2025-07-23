@@ -51,6 +51,7 @@ pub struct Cli<Ext: clap::Args + fmt::Debug = NoArgs> {
     #[arg(
         long,
         value_name = "CHAIN_OR_PATH",
+        env = "RETH_CHAIN",
         long_help = chain_help(),
         default_value = SUPPORTED_CHAINS[0],
         value_parser = chain_value_parser,
@@ -71,7 +72,7 @@ pub struct Cli<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// - `AUTH_PORT`: default + `instance` * 100 - 100
     /// - `HTTP_RPC_PORT`: default - `instance` + 1
     /// - `WS_RPC_PORT`: default + `instance` * 2 - 2
-    #[arg(long, value_name = "INSTANCE", global = true, default_value_t = 1, value_parser = value_parser!(u16).range(..=200))]
+    #[arg(long, value_name = "INSTANCE", env = "RETH_INSTANCE", global = true, default_value_t = 1, value_parser = value_parser!(u16).range(..=200))]
     instance: u16,
 
     #[command(flatten)]

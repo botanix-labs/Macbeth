@@ -10,6 +10,10 @@ use crate::{
 use anyhow::Context;
 use askama::Template;
 use bitcoin::hashes::Hash;
+use botanix_authority_edh::extra_data_header::{
+    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+};
+use botanix_storage::BotanixProviderFactory;
 use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient};
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
 use ethers::{
@@ -23,10 +27,7 @@ use reth_db::{
     models::ClientVersion,
     open_db_read_only, DatabaseEnv,
 };
-use reth_primitives::{
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    Address,
-};
+use reth_primitives::Address;
 use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
@@ -46,9 +47,10 @@ use url::Url;
 
 pub const RPC_PORT_BASE: u16 = 8545;
 pub const WS_PORT_BASE: u16 = 9545;
-pub const DISCOVERY_PORT_BASE: u16 = 30330;
+pub const DISCOVERY_PORT_BASE: u16 = 30303;
 pub const ABCI_PORT_BASE: u16 = 26658;
 #[derive(Template, Clone, Debug)]
+#[allow(dead_code)]
 #[template(path = "botanix_testnet.json", ext = "json", escape = "none")]
 struct BotanixTestnetGenesisConfig<'a> {
     edh: &'a str,
@@ -74,7 +76,8 @@ pub struct SpawnedPoaServerProcess {
     pub ws_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
-    pub provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    pub reth_provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    pub botanix_provider_factory: BotanixProviderFactory<Arc<DatabaseEnv>>,
 }
 
 impl SpawnedPoaServerProcess {
@@ -129,6 +132,7 @@ pub struct FederationMemberTestConfig {
     pub bitcoind_url: Url,
     pub bitcoind_username: String,
     pub bitcoind_password: String,
+    pub bitcoind_zmq_hash_block_address: Url,
     pub bitcoin_server_url: String,
     pub peers_list: Vec<FederationMemberTestConfig>,
     pub sender: tokio::sync::broadcast::Sender<Notifications>,
@@ -154,6 +158,7 @@ impl FederationMemberTestConfig {
         bitcoind_url: Url,
         bitcoind_username: String,
         bitcoind_password: String,
+        bitcoind_zmq_hashblock_address: Url,
         bitcoin_server_url: String,
         frost_min_signers: u16,
         frost_max_signers: u16,
@@ -180,6 +185,7 @@ impl FederationMemberTestConfig {
             bitcoind_url,
             bitcoind_username,
             bitcoind_password,
+            bitcoind_zmq_hash_block_address: bitcoind_zmq_hashblock_address,
             bitcoin_server_url,
             peers_list: vec![],
             sender,
@@ -375,41 +381,56 @@ impl FederationMemberTestConfig {
         let child_process =
             spawn_child_process(Scope::PoaNode(self.index), command, args, working_directory)?;
 
-        // database provider
+        // Reth database provider
         let db_args = DatabaseArguments::new(ClientVersion::default())
             .with_exclusive(Some(false))
             .with_log_level(Some(LogLevel::Debug))
             .with_max_read_transaction_duration(Some(MaxReadTransactionDuration::Unbounded));
         let node_config = BOTANIX_TESTNET.clone();
-        let db_dir = Path::new(&self.temp_path).join("db");
-        let static_files_dir = Path::new(&self.temp_path).join("static_files");
+        let reth_db_dir = Path::new(&self.temp_path).join("db");
+        let reth_static_files_dir = Path::new(&self.temp_path).join("static_files");
 
-        let db = loop {
-            match open_db_read_only(&db_dir, db_args.clone()) {
+        let reth_db = loop {
+            match open_db_read_only(&reth_db_dir, db_args.clone()) {
                 Ok(db) => {
-                    break db;
+                    break Arc::new(db);
                 }
                 Err(_) => {
                     std::thread::sleep(Duration::from_secs(1));
-                    continue;
                 }
             }
         };
 
-        let database = Arc::new(db);
-        let static_file_provider = StaticFileProvider::read_only(static_files_dir)?;
-        let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
-            database,
+        let reth_static_file_provider = StaticFileProvider::read_only(reth_static_files_dir)?;
+        let reth_provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+            reth_db,
             node_config,
-            static_file_provider.clone(),
+            reth_static_file_provider.clone(),
         );
+
+        // Botanix database provider
+
+        let botanix_db_path = Path::new(&self.temp_path).join("botanix_db");
+        let botanix_db = loop {
+            match open_db_read_only(&botanix_db_path, db_args.clone()) {
+                Ok(db) => {
+                    break Arc::new(db);
+                }
+                Err(_) => {
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            }
+        };
+
+        let botanix_provider_factory = BotanixProviderFactory::<Arc<DatabaseEnv>>::new(botanix_db);
 
         Ok(SpawnedPoaServerProcess {
             child_process,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
             ws_port: self.ws_port,
-            provider_factory,
+            reth_provider_factory,
+            botanix_provider_factory,
         })
     }
 
@@ -716,8 +737,10 @@ pub async fn create_poa_nodes(
     let poa_instances = global_context.fed_instances - global_context.syncing_instances;
 
     for member_index in 0..global_context.fed_instances {
-        let port = btc_server_processes
-            .and_then(|processes| processes.iter().nth(member_index as usize).map(|val| val.port))
+        let btc_server_port = btc_server_processes
+            .and_then(|processes| {
+                processes.iter().nth(member_index as usize).map(|val| val.btc_server_port)
+            })
             .context("Btc server process port must already exist")?;
 
         let (member_secretkey, _, member_peerid, _) = members_keypairs
@@ -734,7 +757,8 @@ pub async fn create_poa_nodes(
             global_context.bitcoind_url.clone(),
             global_context.bitcoind_user.clone(),
             global_context.bitcoind_pass.clone(),
-            format!("localhost:{}", port),
+            global_context.bitcoind_zmq_hash_block_address.clone(),
+            format!("localhost:{}", btc_server_port),
             global_context.min_signers,
             global_context.max_signers,
             global_context.num_snapshots_to_keep,

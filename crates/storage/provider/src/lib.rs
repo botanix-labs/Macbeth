@@ -13,10 +13,12 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 /// Various provider traits.
+#[allow(deprecated)]
 mod traits;
 pub use traits::*;
 
 /// Provider trait implementations.
+#[allow(deprecated)]
 pub mod providers;
 pub use providers::{
     DatabaseProvider, DatabaseProviderRO, DatabaseProviderRW, HistoricalStateProvider,
@@ -26,6 +28,7 @@ pub use providers::{
 
 #[cfg(any(test, feature = "test-utils"))]
 /// Common test helpers for mocking the Provider.
+#[allow(deprecated)]
 pub mod test_utils;
 
 /// Re-export provider error.

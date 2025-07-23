@@ -1,9 +1,8 @@
-use crate::activation_manager;
+//! Non-deterministic data (NDD) used for extend cometbft blocks with botanix specific data.
+
 use bitcoin::consensus::encode::{self, Decodable, Encodable};
-use reth_db::models::{
-    activation_manager::{MajorVersion, MinorVersion},
-    RuntimeVersion,
-};
+use botanix_activation_manager::NetworkUpgradePayload;
+use botanix_storage::models::{MajorVersion, MinorVersion, RuntimeVersion, Vote};
 use reth_primitives::Address;
 use std::io::{self, Write};
 use thiserror::Error;
@@ -33,19 +32,17 @@ pub(crate) enum NonDeterministicDataDeserializeError {
 /// retroactively.
 pub(crate) const GENESIS_RUNTIME_VERSION: RuntimeVersion = RuntimeVersion::new(0, 1);
 
-// Does not require `block_fee_recipient_address` to be present in NDD
-// Only supported on testnet for historical syncing purposes
+/// Does not require `block_fee_recipient_address` to be present in NDD
+/// Only supported on testnet for historical syncing purposes
 const VERSION_0: u16 = 0;
-// Requires `block_fee_recipient_address` to be present in NDD
-// Supported on testnet and mainnet
+/// Requires `block_fee_recipient_address` to be present in NDD
+/// Supported on testnet and mainnet
 const VERSION_1: u16 = 1;
-// Allows for custom runtime version indicators and an optional network upgrade
-// payload.
+/// Allows for custom runtime version indicators and an optional network upgrade
+/// payload.
 const VERSION_2: u16 = 2;
 
 /// Type that encapsulates non-deterministic data needed for consensus.
-/// When `block_fee_recipient_address` is `None`, the instance corresponds to VERSION_0.
-/// Otherwise VERSION_1.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NonDeterministicData {
     version: u16,
@@ -88,9 +85,8 @@ impl NonDeterministicData {
     }
 
     /// Constructor for version 0 (without a fee recipient).
-    /// Deprecated in favor of `new_v1`.
     #[allow(dead_code)]
-    pub(crate) fn new(
+    pub(crate) fn new_v0(
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
         aggregated_public_key: secp256k1::PublicKey,
     ) -> Self {
@@ -194,9 +190,9 @@ impl NonDeterministicData {
 
                 // Serialize upgrade vote
                 match upgrade.vote {
-                    activation_manager::Vote::Abstain => 0u8.consensus_encode(&mut writer)?,
-                    activation_manager::Vote::Nay => 1u8.consensus_encode(&mut writer)?,
-                    activation_manager::Vote::Aye => 2u8.consensus_encode(&mut writer)?,
+                    Vote::Abstain => 0u8.consensus_encode(&mut writer)?,
+                    Vote::Nay => 1u8.consensus_encode(&mut writer)?,
+                    Vote::Aye => 2u8.consensus_encode(&mut writer)?,
                 };
 
                 upgrade.is_compliant.consensus_encode(&mut writer)?;
@@ -305,9 +301,9 @@ impl NonDeterministicData {
         // Decode payload information
         let upgrade_version = <(u16, u16)>::consensus_decode(reader)?.into();
         let vote = match u8::consensus_decode(reader)? {
-            0 => activation_manager::Vote::Abstain,
-            1 => activation_manager::Vote::Nay,
-            2 => activation_manager::Vote::Aye,
+            0 => Vote::Abstain,
+            1 => Vote::Nay,
+            2 => Vote::Aye,
             _ => return Err(NonDeterministicDataDeserializeError::NetworkUpgradePayloadVote),
         };
         let is_compliant = bool::consensus_decode(reader)?;
@@ -318,35 +314,11 @@ impl NonDeterministicData {
     }
 }
 
-/// Represents a validator's stance on a network upgrade proposal.
-///
-/// This payload is included in each block's non-deterministic data when a node is
-/// configured to participate in the network upgrade voting process. It communicates
-/// the validator's current position on a specific upgrade version.
-///
-/// # Fields
-///
-/// * `version` - The specific runtime version that this vote applies to.
-///
-/// * `vote` - The validator's explicit opinion on the upgrade (Aye/Nay/Abstain).
-///
-/// * `is_compliant` - Indicates whether the validator is technically ready to process blocks with
-///   the upgrade version. When `true`, the validator has the necessary software version and
-///   configuration to handle the upgrade. This can be independent of the vote - a validator may
-///   vote `Nay` but still be prepared to follow the network if the upgrade is adopted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NetworkUpgradePayload {
-    pub version: activation_manager::RuntimeVersion,
-    pub vote: activation_manager::Vote,
-    pub is_compliant: bool,
-}
-
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, BlockHash};
-    use reth_db::models::Vote;
-
     use super::*;
+
+    use bitcoin::{hashes::Hash, BlockHash};
 
     #[test]
     fn test_non_deterministic_data_new() {
@@ -357,7 +329,7 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk);
+        let ndd = NonDeterministicData::new_v0(bitcoin_block_hash, pk);
         assert_eq!(ndd.version, VERSION_0);
         assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
         assert_eq!(ndd.aggregated_public_key, pk);
@@ -451,7 +423,7 @@ mod tests {
         )
         .unwrap();
 
-        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk);
+        let ndd = NonDeterministicData::new_v0(bitcoin_block_hash, pk);
         let res = ndd.serialize().unwrap();
         let mut reader = io::Cursor::new(res);
         let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();

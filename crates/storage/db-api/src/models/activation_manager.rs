@@ -1,10 +1,9 @@
 //! Activation manager models for network upgrades and voting.
 
+use crate::table::{Compress, Decompress};
 use reth_codecs::{add_arbitrary_tests, Compact};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-
-use crate::table::{Compress, Decompress};
 
 /// Represents a validator's vote on a network upgrade proposal.
 ///
@@ -20,6 +19,7 @@ use crate::table::{Compress, Decompress};
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub enum Vote {
     /// Vote in favor of the upgrade. An `Aye` vote contributes to the signaling
     /// threshold calculations.
@@ -63,6 +63,7 @@ impl std::fmt::Display for Vote {
 /// 2. The activation manager can enforce one-way upgrade progression
 /// 3. Historical blocks during sync can be validated against appropriate version thresholds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct RuntimeVersion(
     /// Major version component, incremented for breaking changes (hard fork)
     pub MajorVersion,
@@ -132,10 +133,12 @@ impl std::fmt::Display for RuntimeVersion {
 
 /// Represents a major version component of a runtime version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct MajorVersion(pub u16);
 
 /// Represents a minor version component of a runtime version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct MinorVersion(pub u16);
 
 #[test]

@@ -1,4 +1,4 @@
-use crate::{Claims, JwtSecret};
+use btcserverlib::jwt::{Claims, JwtSecret};
 use http::{header::AUTHORIZATION, HeaderValue};
 use std::{
     task::{Context, Poll},

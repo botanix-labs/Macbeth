@@ -9,6 +9,7 @@ use reth_errors::ProviderResult;
 /// Implementations should maintain persistence of votes between blocks and handle
 /// the removal of expired votes.
 #[auto_impl::auto_impl(&, Arc, Box)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     /// Records or updates a validator's vote for a network upgrade.
     ///
@@ -26,6 +27,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     /// # Returns
     /// * `Ok(())` if the vote was successfully recorded
     /// * `Err` if there was an error recording the vote
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn update_upgrading_vote(
         &self,
         auth: Auth,
@@ -45,6 +47,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     ///   - `aye_count` is the number of validators who voted "Aye"
     ///   - `total_voters` is the total number of distinct validators who have cast any vote
     /// * `Err` if there was an error retrieving the vote counts
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_aye_votes(&self) -> ProviderResult<(usize, usize)>;
 
     /// Returns the count of validators who have voted "Nay" and the total
@@ -58,6 +61,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     ///   - `nay_count` is the number of validators who voted "Nay"
     ///   - `total_voters` is the total number of distinct validators who have cast any vote
     /// * `Err` if there was an error retrieving the vote counts
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_nay_votes(&self) -> ProviderResult<(usize, usize)>;
 
     /// Returns the count of validators who have abstained from voting and the
@@ -71,6 +75,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     ///   - `abstain_count` is the number of validators who voted "Abstain"
     ///   - `total_voters` is the total number of distinct validators who have cast any vote
     /// * `Err` if there was an error retrieving the vote counts
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_abstained_votes(&self) -> ProviderResult<(usize, usize)>;
 
     /// Returns the count of validators who are compliant with the upgrade and
@@ -85,6 +90,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     ///   - `compliant_count` is the number of validators who are compliant with the upgrade
     ///   - `total_voters` is the total number of distinct validators who have cast any vote
     /// * `Err` if there was an error retrieving the compliance counts
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_compliance_count(&self) -> ProviderResult<(usize, usize)>;
 
     /// Calculates the approval rate of validators signaling support (voting Aye) for an upgrade.
@@ -110,6 +116,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     ///   - `total` is the number of distinct validators who have voted or `min_validator_count`,
     ///     whichever is greater.
     /// * `Err` if there was an error calculating the approval rate
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_upgrading_approval_rate_ayes(
         &self,
         min_validator_count: usize,
@@ -139,6 +146,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     ///   - `total` is the number of distinct validators who have voted or `min_validator_count`,
     ///     whichever is greater.
     /// * `Err` if there was an error calculating the approval
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn get_upgrading_approval_rate_compliance(
         &self,
         min_validator_count: usize,
@@ -156,6 +164,7 @@ pub trait ActivationManagerReaderWriter<Auth>: Send + Sync {
     /// # Returns
     /// * `Ok(count)` - The number of votes that were removed
     /// * `Err` if there was an error removing votes
+    #[deprecated(note = "Please use `botanix-storage` create")]
     fn remove_upgrading_votes(&self, botanix_height: u64) -> ProviderResult<usize>;
 }
 

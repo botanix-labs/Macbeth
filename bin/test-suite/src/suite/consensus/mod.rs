@@ -11,8 +11,10 @@ use crate::{
 };
 use anyhow::Context;
 use async_trait::async_trait;
+use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use botanix_comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_storage::BotanixProviderFactory;
 use client::BtcServerClient;
-use comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use common::{
     bitcoind_node::{
         create_bitcoind_node, BitcoindNodeConfig, Notifications as BitcoindNotifications,
@@ -32,7 +34,6 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_db::DatabaseEnv;
 use reth_network_peers::pk2id;
 use reth_primitives::{public_key_to_address, Address};
@@ -50,6 +51,7 @@ use std::{
 };
 use tonic::transport::Channel;
 use tracing::info;
+
 // scopes
 pub mod common;
 pub mod frost;
@@ -106,7 +108,7 @@ impl LocalContext {
     pub fn get_btc_server_process_port(&self, instance: usize) -> Option<u16> {
         self.btc_processes
             .as_ref()
-            .and_then(|processes| processes.iter().nth(instance).map(|val| val.port))
+            .and_then(|processes| processes.iter().nth(instance).map(|val| val.btc_server_port))
     }
 
     pub fn get_btc_server_processes_ids(&self) -> Vec<u32> {
@@ -129,7 +131,7 @@ impl LocalContext {
             .btc_processes
             .as_ref()
             .map(|btc_processes| {
-                btc_processes.iter().map(|process| process.port).collect::<Vec<u16>>()
+                btc_processes.iter().map(|process| process.btc_server_port).collect::<Vec<u16>>()
             })
             .unwrap_or_default();
 
@@ -220,15 +222,29 @@ impl LocalContext {
         hs.into_iter().collect()
     }
 
-    pub fn get_dbs(&self) -> Vec<ProviderFactory<Arc<DatabaseEnv>>> {
+    pub fn get_reth_dbs(&self) -> Vec<ProviderFactory<Arc<DatabaseEnv>>> {
         let db_provider_factories = self
             .poa_processes
             .as_ref()
             .map(|poa_processes| {
                 poa_processes
                     .iter()
-                    .map(|process| process.provider_factory.clone())
+                    .map(|process| process.reth_provider_factory.clone())
                     .collect::<Vec<ProviderFactory<Arc<DatabaseEnv>>>>()
+            })
+            .unwrap_or_default();
+        db_provider_factories
+    }
+
+    pub fn get_botanix_dbs(&self) -> Vec<BotanixProviderFactory<Arc<DatabaseEnv>>> {
+        let db_provider_factories = self
+            .poa_processes
+            .as_ref()
+            .map(|poa_processes| {
+                poa_processes
+                    .iter()
+                    .map(|process| process.botanix_provider_factory.clone())
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default();
         db_provider_factories
@@ -370,6 +386,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         "ConsensusIntegrationTestSuite"
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn run(&mut self, test_to_run: String) -> Vec<Outcome> {
         self.set_panic_hook();
         match test_to_run.as_str() {
@@ -779,6 +796,7 @@ impl Suite for ConsensusIntegrationTestSuite {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn create_new_local_context(
         &mut self,
         create_test_config: CreateTestConfig,
@@ -886,7 +904,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
 
-        // =================== COMMETBFT NODES ================== //
+        // =================== COMETBFT NODES ================== //
         let mut cometbft_rpc_clients = vec![];
         let mut spawned_cometbft_processes = vec![];
         if create_test_config.create_cometbft_nodes {
@@ -894,8 +912,23 @@ impl Suite for ConsensusIntegrationTestSuite {
             let (cometbft_nodes, tx) = create_cometbft_nodes(self.global_context.clone()).await?;
             let poa_instances =
                 self.global_context.fed_instances - self.global_context.syncing_instances;
-            let (cometbft_nodes, cometbft_nodes_syncing) =
+            // split cometbft nodes into syncing and non-syncing or rpc nodes
+            // then create 2 separate BTreeMaps:
+            // 1. cometbft_nodes - nodes that are fed members (non-syncing) or rpc nodes
+            // 2. cometbft_nodes_syncing - nodes that are fed members (syncing)
+            // These maps are added to the local context and used later in tests
+            let (mut cometbft_nodes, mut cometbft_nodes_syncing_and_rpcs) =
                 split_members_at(cometbft_nodes, poa_instances as usize);
+            // get cometbft rpc nodes
+            let cometbft_rpc_nodes = cometbft_nodes_syncing_and_rpcs
+                .iter()
+                .filter(|(_, node)| node.is_rpc_node)
+                .collect::<Vec<_>>();
+            // add to cometbft nodes so they will be spawned
+            cometbft_nodes.extend(cometbft_rpc_nodes.iter().map(|(&k, &ref v)| (k, v.clone())));
+            // remove rpc cometbft nodes
+            cometbft_nodes_syncing_and_rpcs.retain(|_, node| !node.is_rpc_node);
+            let cometbft_nodes_syncing = cometbft_nodes_syncing_and_rpcs;
 
             for (_, cometbft_node) in cometbft_nodes.iter() {
                 // spawn cometbft node as a process
@@ -903,10 +936,9 @@ impl Suite for ConsensusIntegrationTestSuite {
 
                 // create cometbft client
                 let cometbft_client = HttpCometBFTRpcClientFactory::new(
-                    "0.0.0.0".to_string(),
-                    cometbft_node.cometbft_rpc_app_port,
+                    cometbft_node.rpc_listen_address.ip().to_string(),
+                    cometbft_node.rpc_listen_address.port(),
                 );
-                let _cometbft_http_client = cometbft_client.build_and_connect()?;
                 cometbft_rpc_clients.push(cometbft_client);
 
                 // await initialization
@@ -1037,7 +1069,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
 
-            // loop over the poa nodes and wait until they become initialized so the eth clients can
+            // loop over the rpc nodes and wait until they become initialized so the eth clients can
             // connect with them
             for (index, rpc_node) in rpc_nodes.iter_mut() {
                 // create botanix client and await initialization
@@ -1062,7 +1094,7 @@ impl Suite for ConsensusIntegrationTestSuite {
                 };
                 rpc_node.botanix_eth_client = Some(botanix_eth_client.clone());
                 rpc_botanix_clients.push(botanix_eth_client);
-                it_info_print!("Botanix client created for poa member {}", index);
+                it_info_print!("Botanix client created for rpc member {}", index);
 
                 // await initialization
                 rpc_node.await_initialization()?;
@@ -1070,7 +1102,7 @@ impl Suite for ConsensusIntegrationTestSuite {
 
             // update local context
             self.local_context.rpc_processes = Some(spawned_rpc_processes);
-            self.local_context.rpc_nodes = Some(rpc_nodes);
+            self.local_context.rpc_nodes = Some(rpc_nodes.clone());
             self.local_context.rpc_notification = Some(tx);
             self.local_context.rpc_eth_providers = Some(rpc_botanix_clients);
         }

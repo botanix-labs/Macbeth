@@ -2,18 +2,19 @@
 //! the `eth_` namespace.
 
 use crate::helpers::{
-    botanix::EthBotanixApi, transaction::UpdateRawTxForwarder, EthApiSpec, EthBlocks, EthCall,
-    EthFees, EthState, EthTransactions, FullEthApi,
+    transaction::UpdateRawTxForwarder, EthApiSpec, EthBlocks, EthCall, EthFees, EthState,
+    EthTransactions, FullEthApi,
 };
 use alloy_dyn_abi::TypedData;
+use botanix_authority_edh::extra_data_header::ExtraDataHeader;
+use botanix_rpc_client::botanix::EthBotanixApi;
+use botanix_rpc_types::types::GatewayAddress;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use reth_primitives::{
-    extra_data_header::ExtraDataHeader, transaction::AccessListResult, Address, BlockId,
-    BlockNumberOrTag, Bytes, B256, B64, U256, U64,
+    transaction::AccessListResult, Address, BlockId, BlockNumberOrTag, Bytes, B256, B64, U256, U64,
 };
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
 use reth_rpc_types::{
-    botanix::GatewayAddress,
     serde_helpers::JsonStorageKey,
     simulate::{SimBlock, SimulatedBlock},
     state::{EvmOverrides, StateOverride},

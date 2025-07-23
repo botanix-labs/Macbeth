@@ -75,6 +75,7 @@ pub mod transaction;
 /// Re-exports
 pub use reth_storage_errors::db::{DatabaseError, DatabaseWriteOperation};
 
+#[allow(deprecated)]
 pub mod models;
 mod scale;
 

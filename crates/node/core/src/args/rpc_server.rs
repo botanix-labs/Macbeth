@@ -1,21 +1,23 @@
 //! clap [Args](clap::Args) for RPC related arguments.
 
-use std::{
-    ffi::OsStr,
-    net::{IpAddr, Ipv4Addr},
-    path::PathBuf,
-};
-
-use alloy_rpc_types_engine::{JwtError, JwtSecret};
+use botanix_cli_parsers::parsers::parse_grpc_address;
 use clap::{
     builder::{PossibleValue, RangedU64ValueParser, TypedValueParser},
     Arg, Args, Command,
 };
 use rand::Rng;
-use reth_cli_util::parsers::parse_grpc_address;
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
+use std::{
+    ffi::OsStr,
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+};
 use url::Url;
 
+use super::{
+    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
+    BitcoindArgs,
+};
 use crate::{
     args::{
         types::{MaxU32, ZeroAsNoneU64},
@@ -23,11 +25,7 @@ use crate::{
     },
     cli::config::BtcServerConfig,
 };
-
-use super::{
-    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
-    BitcoindArgs,
-};
+use btcserverlib::jwt::{JwtError, JwtSecret};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
@@ -54,59 +52,67 @@ pub(crate) const DEFAULT_BITCOIN_NETWORK: bitcoin::Network = bitcoin::Network::R
 #[command(next_help_heading = "RPC")]
 pub struct RpcServerArgs {
     /// Enable the HTTP-RPC server
-    #[arg(long, default_value_if("dev", "true", "true"))]
+    #[arg(long, default_value_if("dev", "true", "true"), env = "RETH_HTTP")]
     pub http: bool,
 
     /// Http server address to listen on
-    #[arg(long = "http.addr", default_value_t = IpAddr::V4(Ipv4Addr::LOCALHOST))]
+    #[arg(long = "http.addr", default_value_t = IpAddr::V4(Ipv4Addr::LOCALHOST), env = "RETH_HTTP_ADDR"
+    )]
     pub http_addr: IpAddr,
 
     /// Http server port to listen on
-    #[arg(long = "http.port", default_value_t = constants::DEFAULT_HTTP_RPC_PORT)]
+    #[arg(long = "http.port", default_value_t = constants::DEFAULT_HTTP_RPC_PORT, env = "RETH_HTTP_PORT"
+    )]
     pub http_port: u16,
 
     /// Rpc Modules to be configured for the HTTP server
-    #[arg(long = "http.api", value_parser = RpcModuleSelectionValueParser::default())]
+    #[arg(long = "http.api", value_parser = RpcModuleSelectionValueParser::default(), env = "RETH_HTTP_API"
+    )]
     pub http_api: Option<RpcModuleSelection>,
 
     /// Http Corsdomain to allow request from
-    #[arg(long = "http.corsdomain")]
+    #[arg(long = "http.corsdomain", env = "RETH_HTTP_CORS_DOMAIN", value_name = "DOMAIN")]
     pub http_corsdomain: Option<String>,
 
     /// Enable the WS-RPC server
-    #[arg(long)]
+    #[arg(long, env = "RETH_WS")]
     pub ws: bool,
 
     /// Ws server address to listen on
-    #[arg(long = "ws.addr", default_value_t = IpAddr::V4(Ipv4Addr::LOCALHOST))]
+    #[arg(long = "ws.addr", default_value_t = IpAddr::V4(Ipv4Addr::LOCALHOST), env = "RETH_WS_ADDR"
+    )]
     pub ws_addr: IpAddr,
 
     /// Ws server port to listen on
-    #[arg(long = "ws.port", default_value_t = constants::DEFAULT_WS_RPC_PORT)]
+    #[arg(long = "ws.port", default_value_t = constants::DEFAULT_WS_RPC_PORT, env = "RETH_WS_PORT")]
     pub ws_port: u16,
 
     /// Origins from which to accept `WebSocket` requests
-    #[arg(id = "ws.origins", long = "ws.origins")]
+    #[arg(id = "ws.origins", long = "ws.origins", env = "RETH_WS_ORIGINS", value_name = "ORIGINS")]
     pub ws_allowed_origins: Option<String>,
 
     /// Rpc Modules to be configured for the WS server
-    #[arg(long = "ws.api", value_parser = RpcModuleSelectionValueParser::default())]
+    #[arg(long = "ws.api", value_parser = RpcModuleSelectionValueParser::default(), env = "RETH_WS_API"
+    )]
     pub ws_api: Option<RpcModuleSelection>,
 
     /// Disable the IPC-RPC server
-    #[arg(long)]
+    #[arg(long, env = "RETH_IPC_DISABLE")]
     pub ipcdisable: bool,
 
     /// Filename for IPC socket/pipe within the datadir
-    #[arg(long, default_value_t = constants::DEFAULT_IPC_ENDPOINT.to_string())]
+    #[arg(long, default_value_t = constants::DEFAULT_IPC_ENDPOINT.to_string(), env = "RETH_IPC_PATH"
+    )]
     pub ipcpath: String,
 
     /// Auth server address to listen on
-    #[arg(long = "authrpc.addr", default_value_t = IpAddr::V4(Ipv4Addr::LOCALHOST))]
+    #[arg(long = "authrpc.addr", default_value_t = IpAddr::V4(Ipv4Addr::LOCALHOST), env = "RETH_AUTH_ADDR"
+    )]
     pub auth_addr: IpAddr,
 
     /// Auth server port to listen on
-    #[arg(long = "authrpc.port", default_value_t = constants::DEFAULT_AUTH_PORT)]
+    #[arg(long = "authrpc.port", default_value_t = constants::DEFAULT_AUTH_PORT, env = "RETH_AUTH_PORT"
+    )]
     pub auth_port: u16,
 
     /// Path to a JWT secret to use for the authenticated engine-API RPC server.
@@ -115,15 +121,25 @@ pub struct RpcServerArgs {
     ///
     /// If no path is provided, a secret will be generated and stored in the datadir under
     /// `<DIR>/<CHAIN_ID>/jwt.hex`. For mainnet this would be `~/.reth/mainnet/jwt.hex` by default.
-    #[arg(long = "authrpc.jwtsecret", value_name = "PATH", global = true, required = false)]
+    #[arg(
+        long = "authrpc.jwtsecret",
+        value_name = "PATH",
+        global = true,
+        required = false,
+        env = "RETH_AUTH_JWT_SECRET"
+    )]
     pub auth_jwtsecret: Option<PathBuf>,
 
     /// Enable auth engine API over IPC
-    #[arg(long)]
+    #[arg(long, env = "RETH_AUTH_IPC")]
     pub auth_ipc: bool,
 
     /// Filename for auth IPC socket/pipe within the datadir
-    #[arg(long = "auth-ipc.path", default_value_t = constants::DEFAULT_ENGINE_API_IPC_ENDPOINT.to_string())]
+    #[arg(
+        long = "auth-ipc.path",
+        default_value_t = constants::DEFAULT_ENGINE_API_IPC_ENDPOINT.to_string(),
+        env = "RETH_AUTH_IPC_PATH",
+    )]
     pub auth_ipc_path: String,
 
     /// Hex encoded JWT secret to authenticate the regular RPC server(s), see `--http.api` and
@@ -131,35 +147,57 @@ pub struct RpcServerArgs {
     ///
     /// This is __not__ used for the authenticated engine-API RPC server, see
     /// `--authrpc.jwtsecret`.
-    #[arg(long = "rpc.jwtsecret", value_name = "HEX", global = true, required = false)]
+    #[arg(
+        long = "rpc.jwtsecret",
+        value_name = "HEX",
+        global = true,
+        required = false,
+        env = "RETH_RPC_JWT_SECRET"
+    )]
     pub rpc_jwtsecret: Option<JwtSecret>,
 
     /// Set the maximum RPC request payload size for both HTTP and WS in megabytes.
-    #[arg(long = "rpc.max-request-size", alias = "rpc-max-request-size", default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB.into())]
+    #[arg(
+        long = "rpc.max-request-size",
+        alias = "rpc-max-request-size",
+        default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MB.into(),
+        env = "RETH_RPC_MAX_REQUEST_SIZE"
+    )]
     pub rpc_max_request_size: MaxU32,
 
     /// Set the maximum RPC response payload size for both HTTP and WS in megabytes.
-    #[arg(long = "rpc.max-response-size", alias = "rpc-max-response-size", visible_alias = "rpc.returndata.limit", default_value_t = RPC_DEFAULT_MAX_RESPONSE_SIZE_MB.into())]
+    #[arg(
+        long = "rpc.max-response-size",
+        alias = "rpc-max-response-size",
+        visible_alias = "rpc.returndata.limit",
+        default_value_t = RPC_DEFAULT_MAX_RESPONSE_SIZE_MB.into(),
+        env = "RETH_RPC_MAX_RESPONSE_SIZE"
+    )]
     pub rpc_max_response_size: MaxU32,
 
     /// Set the maximum concurrent subscriptions per connection.
-    #[arg(long = "rpc.max-subscriptions-per-connection", alias = "rpc-max-subscriptions-per-connection", default_value_t = RPC_DEFAULT_MAX_SUBS_PER_CONN.into())]
+    #[arg(long = "rpc.max-subscriptions-per-connection", alias = "rpc-max-subscriptions-per-connection", default_value_t = RPC_DEFAULT_MAX_SUBS_PER_CONN.into(), env = "RETH_RPC_MAX_SUBSCRIPTIONS_PER_CONNECTION"
+    )]
     pub rpc_max_subscriptions_per_connection: MaxU32,
 
     /// Maximum number of RPC server connections.
-    #[arg(long = "rpc.max-connections", alias = "rpc-max-connections", value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS.into())]
+    #[arg(long = "rpc.max-connections", alias = "rpc-max-connections", value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS.into(), env = "RETH_RPC_MAX_CONNECTIONS"
+    )]
     pub rpc_max_connections: MaxU32,
 
     /// Maximum number of concurrent tracing requests.
-    #[arg(long = "rpc.max-tracing-requests", alias = "rpc-max-tracing-requests", value_name = "COUNT", default_value_t = constants::default_max_tracing_requests())]
+    #[arg(long = "rpc.max-tracing-requests", alias = "rpc-max-tracing-requests", value_name = "COUNT", default_value_t = constants::default_max_tracing_requests(), env = "RETH_RPC_MAX_TRACING_REQUESTS"
+    )]
     pub rpc_max_tracing_requests: usize,
 
     /// Maximum number of blocks that could be scanned per filter request. (0 = entire chain)
-    #[arg(long = "rpc.max-blocks-per-filter", alias = "rpc-max-blocks-per-filter", value_name = "COUNT", default_value_t = ZeroAsNoneU64::new(constants::DEFAULT_MAX_BLOCKS_PER_FILTER))]
+    #[arg(long = "rpc.max-blocks-per-filter", alias = "rpc-max-blocks-per-filter", value_name = "COUNT", default_value_t = ZeroAsNoneU64::new(constants::DEFAULT_MAX_BLOCKS_PER_FILTER), env = "RETH_RPC_MAX_BLOCKS_PER_FILTER"
+    )]
     pub rpc_max_blocks_per_filter: ZeroAsNoneU64,
 
     /// Maximum number of logs that can be returned in a single response. (0 = no limit)
-    #[arg(long = "rpc.max-logs-per-response", alias = "rpc-max-logs-per-response", value_name = "COUNT", default_value_t = ZeroAsNoneU64::new(constants::DEFAULT_MAX_LOGS_PER_RESPONSE as u64))]
+    #[arg(long = "rpc.max-logs-per-response", alias = "rpc-max-logs-per-response", value_name = "COUNT", default_value_t = ZeroAsNoneU64::new(constants::DEFAULT_MAX_LOGS_PER_RESPONSE as u64), env = "RETH_RPC_MAX_LOGS_PER_RESPONSE"
+    )]
     pub rpc_max_logs_per_response: ZeroAsNoneU64,
 
     /// Maximum gas limit for `eth_call` and call tracing RPC methods.
@@ -168,7 +206,8 @@ pub struct RpcServerArgs {
         alias = "rpc-gascap",
         value_name = "GAS_CAP",
         value_parser = RangedU64ValueParser::<u64>::new().range(1..),
-        default_value_t = constants::gas_oracle::RPC_DEFAULT_GAS_CAP
+        default_value_t = constants::gas_oracle::RPC_DEFAULT_GAS_CAP,
+        env = "RETH_RPC_GASCAP"
     )]
     pub rpc_gas_cap: u64,
 
@@ -178,12 +217,14 @@ pub struct RpcServerArgs {
     #[arg(
         long = "rpc.eth-proof-window",
         default_value_t = constants::DEFAULT_ETH_PROOF_WINDOW,
-        value_parser = RangedU64ValueParser::<u64>::new().range(..=constants::MAX_ETH_PROOF_WINDOW)
+        value_parser = RangedU64ValueParser::<u64>::new().range(..=constants::MAX_ETH_PROOF_WINDOW),
+        env = "RETH_RPC_ETH_PROOF_WINDOW"
     )]
     pub rpc_eth_proof_window: u64,
 
     /// Maximum number of concurrent getproof requests.
-    #[arg(long = "rpc.proof-permits", alias = "rpc-proof-permits", value_name = "COUNT", default_value_t = constants::DEFAULT_PROOF_PERMITS)]
+    #[arg(long = "rpc.proof-permits", alias = "rpc-proof-permits", value_name = "COUNT", default_value_t = constants::DEFAULT_PROOF_PERMITS, env = "RETH_RPC_PROOF_PERMITS"
+    )]
     pub rpc_proof_permits: usize,
 
     /// State cache configuration.
@@ -197,7 +238,8 @@ pub struct RpcServerArgs {
     /// Btc signing service
     ///
     /// The metrics will be served at the given interface and port.
-    #[arg(long, value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server")]
+    #[arg(long, value_name = "BTC_SERVER", value_parser = parse_grpc_address, help_heading = "Btc_server", env = "RETH_BTC_SERVER"
+    )]
     pub btc_server: Option<String>,
 
     /// Btc server JWT secret
@@ -206,7 +248,8 @@ pub struct RpcServerArgs {
     #[arg(
         long,
         value_name = "BTC_SIGNING_SERVER_JWT_SECRET",
-        help_heading = "btc_signing_server_jwt_secret"
+        help_heading = "btc_signing_server_jwt_secret",
+        env = "RETH_BTC_SIGNING_SERVER_JWT_SECRET"
     )]
     pub btc_signing_server_jwt_secret: Option<PathBuf>,
 
@@ -217,15 +260,26 @@ pub struct RpcServerArgs {
     pub bitcoind: BitcoindArgs,
 
     /// The bitcoin network to operate on.
-    #[arg(long, default_value_t = DEFAULT_BITCOIN_NETWORK, value_name = "BITCOIN_NETWORK", help_heading = "Btc_network")]
+    #[arg(long, default_value_t = DEFAULT_BITCOIN_NETWORK, value_name = "BITCOIN_NETWORK", help_heading = "Btc_network", env = "RETH_BTC_NETWORK"
+    )]
     pub btc_network: bitcoin::Network,
 
     /// The minimum number required for frost signing.
-    #[arg(long = "frost.min_signers", name = "frost.min_signers", value_name = "MIN_SIGNERS")]
+    #[arg(
+        long = "frost.min_signers",
+        name = "frost.min_signers",
+        value_name = "MIN_SIGNERS",
+        env = "RETH_FROST_MIN_SIGNERS"
+    )]
     pub min_signers: Option<u16>,
 
     /// The maximum number required for frost signing.
-    #[arg(long = "frost.max_signers", name = "frost.max_signers", value_name = "MAX_SIGNERS")]
+    #[arg(
+        long = "frost.max_signers",
+        name = "frost.max_signers",
+        value_name = "MAX_SIGNERS",
+        env = "RETH_FROST_MAX_SIGNERS"
+    )]
     pub max_signers: Option<u16>,
 }
 
@@ -618,6 +672,7 @@ impl Default for RpcServerArgs {
                 url: "localhost:18443".parse::<Url>().expect("valid bitcoind address"),
                 username: DEFAULT_BITCOIND_USERNAME.to_string(),
                 password: DEFAULT_BITCOIND_PASSWORD.to_string(),
+                zmq_hash_block_address: None,
             },
             btc_network: bitcoin::Network::Regtest,
             min_signers: Some(2),

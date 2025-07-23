@@ -1,0 +1,18 @@
+[package]
+name = "botanix-activation-manager"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+botanix-storage = { workspace = true }
+reth-storage-errors = { workspace = true }
+reth-primitives = { workspace = true }
+
+[dev-dependencies]
+botanix-activation-manager = { workspace = true, features = ["test-utils"] }
+
+
+[features]
+test-utils = []

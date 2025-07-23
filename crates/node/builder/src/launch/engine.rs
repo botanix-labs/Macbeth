@@ -1,15 +1,16 @@
 //! Engine node related functionality.
 
+use botanix_btc_wallet::{
+    bitcoind::{BitcoindConfig, BitcoindFactory},
+    test_utils::MockBitcoindFactory,
+};
+use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use futures::{future::Either, stream, stream_select, StreamExt};
 use reth_beacon_consensus::{
     hooks::{EngineHooks, StaticFileHook},
     BeaconConsensusEngineHandle,
 };
 use reth_blockchain_tree::BlockchainTreeConfig;
-use reth_btc_wallet::{
-    bitcoind::{BitcoindConfig, BitcoindFactory},
-    test_utils::MockBitcoindFactory,
-};
 use reth_chainspec::ChainSpec;
 use reth_engine_service::service::{ChainEvent, EngineService};
 use reth_engine_tree::{
@@ -31,7 +32,6 @@ use reth_node_core::{
 use reth_node_events::{cl::ConsensusLayerHealthEvents, node};
 use reth_provider::providers::BlockchainProvider2;
 use reth_rpc_engine_api::{capabilities::EngineCapabilities, EngineApi};
-use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
 use reth_rpc_types::engine::ClientVersionV1;
 use reth_tasks::TaskExecutor;
 use reth_tokio_util::EventSender;

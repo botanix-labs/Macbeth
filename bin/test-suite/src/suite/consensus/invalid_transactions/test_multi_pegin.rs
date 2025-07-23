@@ -2,18 +2,15 @@ use crate::{
     suite::consensus::common::events::SEND_AMOUNT,
     utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
-use std::{str::FromStr, time::Duration};
-
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid};
 use bitcoincore_rpc::RpcApi;
-use ethers::{prelude::Provider, providers::Http};
-use reth_primitives::{
-    botanix::{
-        peg_contract::{PeginMeta, PeginMetaV0, PEGIN_META_VERSION_V0},
-        utils::AmountExt,
-    },
-    Address,
+use botanix_authority_peg::{
+    peg_contract::{PeginMeta, PeginMetaV0, PEGIN_META_VERSION_V0},
+    utils::AmountExt,
 };
+use ethers::{prelude::Provider, providers::Http};
+use reth_primitives::Address;
+use std::{str::FromStr, time::Duration};
 
 use crate::{
     it_info_print,
@@ -24,7 +21,7 @@ use crate::{
 pub async fn multi_pegin_revert_scenarios(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::InvalidTransactionError> {
-    let pegin_conf_depth = reth_chainspec::BOTANIX_TESTNET.parent_confirmation_depth;
+    let pegin_conf_depth = reth_chainspec::BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
 
     // Set up regtest connection
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();
@@ -358,7 +355,7 @@ pub async fn multi_pegin_revert_scenarios(
             bitcoin_block_height,
             ethers::core::types::Bytes::from(serialized_valid_meta.clone()), // Clone valid meta
             ethers::core::types::Address::random(),
-            eth_destination1, // Invalid Pegin (Dest 1)
+            eth_destination1,                    // Invalid Pegin (Dest 1)
             1_000_000_000_000_000_000u64.into(), // Amount irrelevant
             bitcoin_block_height,
             ethers::core::types::Bytes::from(serialized_invalid_meta_s2.clone()), // Clone invalid meta
@@ -436,7 +433,7 @@ pub async fn multi_pegin_revert_scenarios(
     it_info_print!("Calling multiMintTwo with invalid then valid pegin...");
     let tx_receipt_s3 = botanix_eth_client
         .multi_mint_two(
-            eth_destination1, // Invalid Pegin (Dest 1)
+            eth_destination1,                    // Invalid Pegin (Dest 1)
             1_000_000_000_000_000_000u64.into(), // Amount irrelevant
             bitcoin_block_height,
             ethers::core::types::Bytes::from(serialized_invalid_meta_s2.clone()), // Clone invalid meta first

@@ -3,17 +3,16 @@
 use alloy_genesis::Genesis;
 use askama::Template;
 use bitcoin::hashes::Hash;
+use botanix_authority_edh::extra_data_header::{
+    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+};
 use reth_chainspec::{
     create_botanix_config_with_genesis, BotanixMainnetGenesisConfig, BotanixTestnetGenesisConfig,
     ChainSpec, BOTANIX_MAINNET, BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET,
     BOTANIX_TESTNET_CHAIN_ID, DEV,
 };
 use reth_fs_util as fs;
-use reth_primitives::{
-    constants::nums_secp256k1_pk,
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    Address,
-};
+use reth_primitives::{constants::nums_secp256k1_pk, Address};
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tracing::info;
 
@@ -75,7 +74,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
             let genesis = serde_json::from_str(&rendered_json)?;
             (
                 genesis,
-                BOTANIX_MAINNET.parent_confirmation_depth,
+                BOTANIX_MAINNET.bitcoin_checkpoint_confirmation_depth,
                 BOTANIX_MAINNET_CHAIN_ID,
                 BOTANIX_MAINNET.genesis_hash,
             )
@@ -86,7 +85,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
             let genesis = serde_json::from_str(&rendered_json)?;
             (
                 genesis,
-                BOTANIX_TESTNET.parent_confirmation_depth,
+                BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth,
                 BOTANIX_TESTNET_CHAIN_ID,
                 BOTANIX_TESTNET.genesis_hash,
             )
@@ -204,7 +203,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
             let genesis = serde_json::from_str(&rendered_json)?;
             let botanix_testnet = create_botanix_config_with_genesis(
                 genesis,
-                BOTANIX_TESTNET.parent_confirmation_depth,
+                BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth,
                 botanix_fee_recipient,
                 BOTANIX_TESTNET_CHAIN_ID,
                 BOTANIX_TESTNET.genesis_hash,

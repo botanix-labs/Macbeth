@@ -1,0 +1,9 @@
+[package]
+name = "botanix-authority-rsp"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+reth-revm = { workspace = true }

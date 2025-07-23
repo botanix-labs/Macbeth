@@ -929,6 +929,7 @@ impl<DB, Spec> Clone for ProviderFactory<DB, Spec> {
 impl<DB: Database> StagedHeader for ProviderFactory<DB> {
     fn insert_staged_header(&self, id: B256, header: HeaderWithPegs) -> ProviderResult<()> {
         let provider = self.provider_rw()?;
+
         provider.insert_staged_header(id, header)?;
 
         provider.commit()?;
@@ -938,6 +939,7 @@ impl<DB: Database> StagedHeader for ProviderFactory<DB> {
 
     fn remove_staged_header(&self, id: B256) -> ProviderResult<bool> {
         let provider = self.provider_rw()?;
+
         let is_removed = provider.remove_staged_header(id)?;
 
         if is_removed {
