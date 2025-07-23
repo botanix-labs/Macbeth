@@ -27,6 +27,14 @@ pub enum VerifyingKeyExtError {
     FailedToConvertToFrostPk(frost::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum WalletCalculationError {
+    #[error("Transaction weight overflow")]
+    WeightOverflow,
+    #[error("Invalid parameters")]
+    InvalidParameters,
+}
+
 /// Extension trait for Frost verifying key (aggregate key)
 pub trait VerifyingKeyExt: Into<frost::VerifyingKey> {
     fn to_secp_pk(self) -> Result<bitcoin::secp256k1::PublicKey, VerifyingKeyExtError> {
@@ -51,7 +59,7 @@ pub trait VerifyingKeyExt: Into<frost::VerifyingKey> {
 impl VerifyingKeyExt for frost::VerifyingKey {}
 
 /// Calculates the total weight of a PSBT after it has been fully signed with P2TR keyspend inputs.
-pub fn calculate_signed_tx_weight(psbt: &Psbt) -> Weight {
+pub fn calculate_signed_tx_weight(psbt: &Psbt) -> Result<Weight, WalletCalculationError> {
     let unsigned_tx_weight = psbt.unsigned_tx.weight();
 
     // calculate the weight of the signatures (assuming all inputs are p2tr)
@@ -60,17 +68,26 @@ pub fn calculate_signed_tx_weight(psbt: &Psbt) -> Weight {
     let total_signature_weight = (TAPROOT_KEYSPEND_SATISFACTION_WEIGHT +
         per_input_witness_item_count)
         .checked_mul(num_inputs as u64)
-        .expect("Bitcoin amounts should never overflow u64");
+        .ok_or(WalletCalculationError::WeightOverflow)?; // or changeoverflow
 
-    // total including base weights for segwit transactions
-    unsigned_tx_weight + total_signature_weight + SEGWIT_FLAG_WEIGHT + SEGWIT_MARKER_WEIGHT
+    // total including base weights for segwit transactions. use checked add to avoid overflow
+    unsigned_tx_weight
+        .checked_add(total_signature_weight)
+        .and_then(|w| w.checked_add(SEGWIT_FLAG_WEIGHT))
+        .and_then(|w| w.checked_add(SEGWIT_MARKER_WEIGHT))
+        .ok_or(WalletCalculationError::WeightOverflow)
 }
 
 // Calculates the fee rate of a PSBT after it has been fully signed with P2TR keyspend inputs.
-pub fn calculate_signed_tx_fee_rate(psbt: &Psbt) -> FeeRate {
-    let tx_weight = calculate_signed_tx_weight(psbt);
+pub fn calculate_signed_tx_fee_rate(psbt: &Psbt) -> Result<FeeRate, WalletCalculationError> {
+    let tx_weight = calculate_signed_tx_weight(psbt)?;
+    if tx_weight.to_wu() == 0 {
+        return Err(WalletCalculationError::InvalidParameters);
+    }
+
     let absolute_fee = psbt.fee_amount().unwrap();
-    FeeRate::from_sat_per_kwu((absolute_fee.to_sat() * 1000) / tx_weight.to_wu())
+    let fee_rate = FeeRate::from_sat_per_kwu((absolute_fee.to_sat() * 1000) / tx_weight.to_wu());
+    Ok(fee_rate)
 }
 
 #[cfg(test)]
@@ -96,15 +113,17 @@ mod tests {
         ];
 
         for (name, psbt) in test_cases {
-            let psbt_with_signatures =
-                add_dummy_signatures_to_psbt(psbt.clone(), TapSighashType::All);
+            let mut psbt_with_signatures = psbt;
+            add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::All);
             let tx = psbt_with_signatures.clone().extract_tx().expect("Failed to extract tx");
 
             let expected_fee_rate = psbt_with_signatures.fee_rate().unwrap();
             let expected_weight = tx.weight();
 
-            let calculated_weight = calculate_signed_tx_weight(&psbt_with_signatures);
-            let calculated_fee_rate = calculate_signed_tx_fee_rate(&psbt_with_signatures);
+            let calculated_weight =
+                calculate_signed_tx_weight(&psbt_with_signatures).expect("should not fail");
+            let calculated_fee_rate =
+                calculate_signed_tx_fee_rate(&psbt_with_signatures).expect("should not fail");
 
             assert_eq!(calculated_weight.to_wu(), expected_weight.to_wu(), "{}", name);
             assert_eq!(

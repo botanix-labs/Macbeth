@@ -1,7 +1,8 @@
 use crate::{
     database::version::UtxoVersion,
     wallet::{
-        psbt::PegoutId as PegoutIdBytes, util::calculate_signed_tx_weight,
+        psbt::PegoutId as PegoutIdBytes,
+        util::{calculate_signed_tx_weight, WalletCalculationError},
         TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
     },
 };
@@ -38,6 +39,8 @@ pub enum CoinSelectionError {
     SanityCheckError(#[from] SanityCheckError),
     #[error("No viable outputs after applying fees and filtering dust")]
     NoViableOutputs,
+    #[error("Wallet calculation error: {0}")]
+    WalletCalculationError(#[from] WalletCalculationError),
 }
 
 #[derive(Debug, Error)]
@@ -98,7 +101,7 @@ pub(crate) fn coin_selection(
         .map(|(txout, pegout_id)| (txout, pegout_id.as_bytes()))
         .collect::<Vec<_>>();
     let total_utxos_value = available_utxos.values().map(|u| u.output.value).sum::<Amount>();
-    let total_pegout_target = pegouts.clone().iter().map(|(txout, _)| txout.value).sum::<Amount>();
+    let total_pegout_target = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
 
     // return InsufficientFunds error
     let remaining_utxos_value = total_utxos_value
@@ -129,12 +132,17 @@ pub(crate) fn coin_selection(
     )?;
 
     // update total pegout target to reflect the filtered pegout ids
-    let updated_pegout_target = pegouts
-        .clone()
-        .iter()
-        .filter(|(_, pegout_id)| !filtered_pegout_ids.contains(pegout_id))
-        .map(|(txout, _)| txout.value)
-        .sum::<Amount>();
+    let updated_pegout_target =
+        pegouts
+            .iter()
+            .filter_map(|(txout, pegout_id)| {
+                if filtered_pegout_ids.contains(pegout_id) {
+                    None
+                } else {
+                    Some(txout.value)
+                }
+            })
+            .sum::<Amount>();
 
     sanity_check_psbt(&psbt, &selected_inputs, change_script.clone(), updated_pegout_target)?;
 
@@ -296,7 +304,7 @@ fn calculate_required_fee(
     fee_rate: FeeRate,
 ) -> Result<Amount, CoinSelectionError> {
     let psbt = crate::wallet::psbt::create_psbt(inputs.to_vec(), outputs.to_vec(), change.clone());
-    let total_weight = calculate_signed_tx_weight(&psbt);
+    let total_weight = calculate_signed_tx_weight(&psbt)?;
     let absolute_fee = fee_rate.fee_wu(total_weight).ok_or(CoinSelectionError::FeeRateOverflow)?;
 
     Ok(absolute_fee)
@@ -791,15 +799,16 @@ mod tests {
         );
 
         // assert fee rate is correct
-        let actual_fee_rate = calculate_signed_tx_fee_rate(&psbt);
+        let actual_fee_rate = calculate_signed_tx_fee_rate(&psbt).expect("should not fail");
         assert_eq!(
             actual_fee_rate, scenario.fee_rate,
             "Scenario: {} - Fee rate mismatch: expected {}, got {}",
             scenario.name, scenario.fee_rate, actual_fee_rate
         );
 
-        let psbt_with_signatures = add_dummy_signatures_to_psbt(psbt.clone(), TapSighashType::All);
-        let fee_rate = psbt_with_signatures.fee_rate().unwrap();
+        let mut psbt_with_signatures = psbt.clone();
+        add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::All);
+        let fee_rate = psbt_with_signatures.fee_rate().expect("should not fail");
         assert_eq!(fee_rate, scenario.fee_rate);
     }
 }

@@ -426,7 +426,7 @@ pub fn store_pending_pegout(db: &database::Db) -> PegoutId {
 }
 
 // Add dummy signatures to a PSBT to help calculate weight and fee rate
-pub fn add_dummy_signatures_to_psbt(mut psbt: Psbt, sighash_type: TapSighashType) -> Psbt {
+pub fn add_dummy_signatures_to_psbt(psbt: &mut Psbt, sighash_type: TapSighashType) {
     for input in psbt.inputs.iter_mut() {
         // For Taproot (P2TR) transactions
         if let Some(_witness_utxo) = &input.witness_utxo {
@@ -445,6 +445,4 @@ pub fn add_dummy_signatures_to_psbt(mut psbt: Psbt, sighash_type: TapSighashType
             input.final_script_witness = Some(witness);
         }
     }
-
-    psbt
 }
