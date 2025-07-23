@@ -10,6 +10,7 @@ repository = { workspace = true }
 
 [dependencies]
 botanix-btc-wallet = { workspace = true }
+botanix-cli-parsers = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 displaydoc = "0.2"
 reth-cli-util = { workspace = true }

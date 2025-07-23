@@ -22,6 +22,8 @@ askama = "0.12.1"
 bitcoin = { workspace = true }
 botanix-authority-edh = { workspace = true }
 botanix-cli-args = { workspace = true }
+# botanix-btc-wallet = { workspace = true }
+botanix-cli-parsers = { workspace = true }
 
 # Botanix
 btc-server = { path = "../../../bin/btc-server" }

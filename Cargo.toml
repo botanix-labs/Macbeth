@@ -25,6 +25,7 @@ members = [
     "crates/botanix-btc-wallet",
     "crates/botanix-cli",
     "crates/botanix-cli-args",
+    "crates/botanix-cli-parsers",
     "crates/botanix-comet-bft-rpc",
     "crates/botanix-data-parser",
     "crates/botanix-rpc-client",
@@ -388,6 +389,7 @@ botanix-bitcoin-checkpoint = { path = "crates/botanix-bitcoin-checkpoint" }
 botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }
+botanix-cli-parsers = { path = "crates/botanix-cli-parsers" }
 botanix-storage = { path = "crates/botanix-storage" }
 botanix-storage-migrate = { path = "crates/botanix-storage-migrate" }
 # frost

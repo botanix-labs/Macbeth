@@ -1,5 +1,5 @@
+use botanix_cli_parsers::parsers::parse_ethereum_address;
 use clap::Parser;
-use reth_cli_util::parse_ethereum_address;
 use reth_primitives::Address;
 use std::path::PathBuf;
 
