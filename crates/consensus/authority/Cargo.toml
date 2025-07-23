@@ -23,6 +23,7 @@ botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 botanix-authority-rsp = { workspace = true }
 botanix-bitcoin-checkpoint = { workspace = true }
 botanix-btc-wallet = { workspace = true }
+botanix-cli-args = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
 botanix-data-parser = { workspace = true }
 botanix-storage = { workspace = true }
@@ -103,4 +104,3 @@ rand = "0.8.5"
 reth-cli-runner = { workspace = true }
 reth-db-common = { workspace = true }
 reth-evm = { workspace = true, features = ["test-utils"] }
-tempfile = { workspace = true }

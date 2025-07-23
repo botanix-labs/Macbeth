@@ -10,6 +10,7 @@ use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_cli_args::state_sync::StateSyncArgs;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{DataParser, SerializationType};
 use botanix_storage::{
@@ -27,7 +28,6 @@ use reth_network::{
     frost::manager::{FrostConfig, ToFrostManager},
     NetworkHandle,
 };
-use reth_node_core::args::StateSyncArgs;
 use reth_node_ethereum::EthEvmConfig;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory,

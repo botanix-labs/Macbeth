@@ -2306,6 +2306,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-cli-args"
+version = "1.1.11"
+dependencies = [
+ "botanix-btc-wallet",
+ "botanix-cli-parsers",
+ "clap",
+ "displaydoc",
+ "reth-cli-util",
+ "reth-primitives",
+ "secp256k1 0.29.1",
+ "serde",
+ "thiserror 2.0.12",
+ "toml",
+ "url",
+]
+
+[[package]]
 name = "botanix-cli-parsers"
 version = "1.1.11"
 dependencies = [
@@ -2499,6 +2516,7 @@ name = "botanix-up"
 version = "1.1.11"
 dependencies = [
  "anyhow",
+ "botanix-cli-args",
  "clap",
  "hex",
  "rand 0.8.5",
@@ -2512,6 +2530,13 @@ dependencies = [
  "toml",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "botanix-utils"
+version = "1.1.11"
+dependencies = [
+ "tracing",
 ]
 
 [[package]]
@@ -8886,11 +8911,13 @@ dependencies = [
  "botanix-authority-rsp",
  "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
+ "botanix-cli-args",
  "botanix-cli-parsers",
  "botanix-comet-bft-rpc",
  "botanix-rpc-config",
  "botanix-storage",
  "botanix-storage-migrate",
+ "botanix-utils",
  "btc-server",
  "clap",
  "client",
@@ -8978,6 +9005,7 @@ dependencies = [
  "botanix-authority-rsp",
  "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
+ "botanix-cli-args",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
  "botanix-storage",
@@ -9022,7 +9050,6 @@ dependencies = [
  "schnellru",
  "secp256k1 0.29.1",
  "serde_json",
- "tempfile",
  "tendermint",
  "tendermint-abci",
  "tendermint-proto",
@@ -10472,14 +10499,13 @@ dependencies = [
  "assert_matches",
  "bitcoin 0.32.5",
  "botanix-authority-edh",
- "botanix-btc-wallet",
+ "botanix-cli-args",
  "botanix-cli-parsers",
  "btc-server",
  "clap",
  "const_format",
  "derive_more 2.0.1",
  "dirs-next",
- "displaydoc",
  "eyre",
  "futures",
  "hex",
@@ -10517,7 +10543,6 @@ dependencies = [
  "serde_json",
  "shellexpand",
  "tempfile",
- "thiserror 2.0.12",
  "tokio",
  "toml",
  "tracing",
@@ -13358,6 +13383,7 @@ dependencies = [
  "botanix-authority-edh",
  "botanix-authority-peg",
  "botanix-btc-wallet",
+ "botanix-cli-args",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
  "botanix-storage",
