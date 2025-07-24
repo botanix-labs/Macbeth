@@ -1,10 +1,10 @@
 use clap::Args;
 
 /// Default min signers
-pub(crate) const DEFAULT_MIN_SIGNERS: u16 = 2;
+pub const DEFAULT_MIN_SIGNERS: u16 = 2;
 
 /// Default max signers
-pub(crate) const DEFAULT_MAX_SIGNERS: u16 = 2;
+pub const DEFAULT_MAX_SIGNERS: u16 = 2;
 
 /// Parameters to configure Frost.
 #[derive(Debug, Clone, Args, PartialEq, Eq)]

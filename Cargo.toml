@@ -25,6 +25,7 @@ members = [
     "crates/botanix-bitcoin-checkpoint",
     "crates/botanix-btc-wallet",
     "crates/botanix-cli",
+    "crates/botanix-cli-args",
     "crates/botanix-cli-parsers",
     "crates/botanix-comet-bft-rpc",
     "crates/botanix-data-parser",
@@ -33,6 +34,7 @@ members = [
     "crates/botanix-rpc-types",
     "crates/botanix-storage",
     "crates/botanix-storage-migrate",
+    "crates/botanix-utils",
     "crates/chain-state/",
     "crates/chainspec/",
     "crates/cli/cli/",
@@ -377,8 +379,10 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 # Botanix deps
 botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
 botanix-rpc-config = { path = "crates/botanix-rpc-config" }
+botanix-cli-args = { path = "crates/botanix-cli-args" }
 botanix-rpc-types = { path = "crates/botanix-rpc-types" }
 botanix-rpc-client = { path = "crates/botanix-rpc-client" }
+botanix-utils = { path = "crates/botanix-utils" }
 botanix-authority-rsp = { path = "crates/botanix-authority-rsp" }
 botanix-authority-edh = { path = "crates/botanix-authority-edh" }
 botanix-authority-peg = { path = "crates/botanix-authority-peg" }

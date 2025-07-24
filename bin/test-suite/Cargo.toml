@@ -28,6 +28,7 @@ botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 
 # Botanix
 botanix-btc-wallet = { path = "../../crates/botanix-btc-wallet" }
+botanix-cli-args = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
 botanix-data-parser = { workspace = true }
 botanix-storage = { workspace = true }

@@ -3,11 +3,12 @@
 use crate::{
     args::{
         DatabaseArgs, DatadirArgs, DebugArgs, DevArgs, NetworkArgs, PayloadBuilderArgs,
-        PruningArgs, RpcServerArgs, StateSyncArgs, TxPoolArgs,
+        PruningArgs, RpcServerArgs, TxPoolArgs,
     },
     dirs::{ChainPath, DataDirPath},
     utils::get_single_header,
 };
+use botanix_cli_args::state_sync::StateSyncArgs;
 use eyre::eyre;
 use reth_chainspec::{ChainSpec, MAINNET};
 use reth_config::config::PruneConfig;

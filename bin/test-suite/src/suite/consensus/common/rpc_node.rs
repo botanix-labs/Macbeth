@@ -9,10 +9,8 @@ use crate::{
     },
 };
 use anyhow::Context;
+use botanix_cli_args::federation_args::{FedMemberPubKey, FederationTomlConfig};
 use reth_network_peers::pk2id;
-use reth_node_core::args::FederationTomlConfig;
-
-use reth::args::FedMemberPubKey;
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
