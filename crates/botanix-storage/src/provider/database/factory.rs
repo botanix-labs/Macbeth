@@ -559,7 +559,7 @@ mod tests {
     #[test]
     fn test_provider_factory_with_database_path() {
         let factory = BotanixProviderFactory::new_with_database_path(
-            tempfile::TempDir::new().expect("can't create temp directory").into_path(),
+            tempfile::TempDir::new().expect("can't create temp directory").keep(),
             DatabaseArguments::new(Default::default()),
         )
         .unwrap();

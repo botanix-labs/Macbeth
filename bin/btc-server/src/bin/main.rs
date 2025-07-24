@@ -2269,7 +2269,7 @@ mod tests {
         let bitcoind_client = MockBitcoind::new();
 
         let config = Config {
-            db: temp_db.into_path(),
+            db: temp_db.keep(),
             btc_network: bitcoin::Network::Regtest,
             identifier: 0,
             coordinator: Some(0),
