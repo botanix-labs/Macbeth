@@ -645,7 +645,8 @@ mod tests {
     #[derive(Debug)]
     struct TestScenario {
         name: String,
-        utxo_values_sats: Vec<u64>,   // in sats
+        optional_utxo_values_sats: Vec<u64>,   // in sats
+        required_utxo_values_sats: Vec<u64>,   // in sats
         pegout_values_sats: Vec<u64>, // in sats
         fee_rate: FeeRate,
         expected_dust_pegout_removed: Vec<u64>,
@@ -656,7 +657,8 @@ mod tests {
         vec![
             TestScenario {
                 name: "change_targets_50%_of_pegout_value".to_string(),
-                utxo_values_sats: vec![10_000; 1_000],
+                optional_utxo_values_sats: vec![10_000; 1_000],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![100_000, 100_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
@@ -667,7 +669,8 @@ mod tests {
             // anticipates needing extra to pay fees
             TestScenario {
                 name: "change_targets_doesnt_exceed_5%_of_remaining_utxos".to_string(),
-                utxo_values_sats: vec![10_000; 60],
+                optional_utxo_values_sats: vec![10_000; 60],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![100_000, 100_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
@@ -678,7 +681,8 @@ mod tests {
             },
             TestScenario {
                 name: "change_minimum_is_10k".to_string(),
-                utxo_values_sats: vec![2_000; 100],
+                optional_utxo_values_sats: vec![2_000; 100],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![10_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
@@ -688,7 +692,8 @@ mod tests {
             },
             TestScenario {
                 name: "multiple_small_outputs".to_string(),
-                utxo_values_sats: vec![200_000],
+                optional_utxo_values_sats: vec![200_000],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![5_000, 8_000, 12_000, 15_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
@@ -696,7 +701,8 @@ mod tests {
             },
             TestScenario {
                 name: "high_fee_rate".to_string(),
-                utxo_values_sats: vec![20_000; 5],
+                optional_utxo_values_sats: vec![20_000; 5],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![10_000, 30_000],
                 fee_rate: FeeRate::from_sat_per_kwu(10_000),
                 expected_dust_pegout_removed: vec![],
@@ -704,7 +710,8 @@ mod tests {
             },
             TestScenario {
                 name: "1_dust_pegout_to_be_removed".to_string(),
-                utxo_values_sats: vec![100_000],
+                optional_utxo_values_sats: vec![100_000],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![293, 294, 10_000], // 294 is dust threshold for p2wpkh
                 fee_rate: FeeRate::from_sat_per_kwu(0),
                 expected_dust_pegout_removed: vec![293],
@@ -712,7 +719,8 @@ mod tests {
             },
             TestScenario {
                 name: "2_dust_pegouts_to_be_removed".to_string(),
-                utxo_values_sats: vec![100_000],
+                optional_utxo_values_sats: vec![100_000],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![293, 294, 10_000], // 294 is dust threshold for p2wpkh
                 fee_rate: FeeRate::from_sat_per_kwu(1000),
                 expected_dust_pegout_removed: vec![293, 294],
@@ -725,19 +733,8 @@ mod tests {
         let change_script = random_p2tr_keyspend_script();
 
         // Create UTXOs
-        let mut optional_utxos = HashMap::new();
-        for (i, &value_sats) in scenario.utxo_values_sats.iter().enumerate() {
-            let utxo = Utxo::new(
-                OutPoint::new(random_compute_txid(), i as u32),
-                TxOut {
-                    value: Amount::from_sat(value_sats),
-                    script_pubkey: random_p2tr_keyspend_script(),
-                },
-                None,
-                None,
-            );
-            optional_utxos.insert(utxo.outpoint, utxo);
-        }
+        let optional_utxos = create_utxos_from_values(&scenario.optional_utxo_values_sats);
+        let required_utxos = create_utxos_from_values(&scenario.required_utxo_values_sats);
 
         // Create pegouts. Using p2wpkh scriptpubkey to help identify pegouts in the tx.
         let pegouts: Vec<_> = scenario
@@ -753,8 +750,6 @@ mod tests {
                 )
             })
             .collect();
-
-        let required_utxos = HashMap::new();
 
         coin_selection(optional_utxos, required_utxos, pegouts, scenario.fee_rate, change_script)
     }
@@ -821,5 +816,24 @@ mod tests {
         add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::All);
         let fee_rate = psbt_with_signatures.fee_rate().expect("should not fail");
         assert_eq!(fee_rate, scenario.fee_rate);
+    }
+
+    fn create_utxos_from_values(values: &[u64]) -> HashMap<OutPoint, Utxo> {
+        values
+            .iter()
+            .enumerate()
+            .map(|(i, &value_sats)| {
+                let utxo = Utxo::new(
+                    OutPoint::new(random_compute_txid(), i as u32),
+                    TxOut {
+                        value: Amount::from_sat(value_sats),
+                        script_pubkey: random_p2tr_keyspend_script(),
+                    },
+                    None,
+                    None,
+                );
+                (utxo.outpoint, utxo)
+            })
+            .collect()
     }
 }
