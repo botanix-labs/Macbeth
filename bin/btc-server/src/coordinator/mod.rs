@@ -117,13 +117,14 @@ pub fn make_tx(
     debug!("tracked_inputs = {:?}", tracked_inputs);
 
     // Filter utxos that are still pending and conflict with pending txs.
-    let mut available_utxos = utxos
+    // These utxos are 'optional' in that they are not required to be included in the coin selection
+    let optional_utxos = utxos
         .clone()
         .into_iter()
         .filter(|(p, _u)| !tracked_inputs.contains(p))
         .collect::<HashMap<_, _>>();
-    debug!("available_utxos len = {:?}", available_utxos.len());
-    debug!("available_utxos = {:?}", available_utxos);
+    debug!("optional_utxos len = {:?}", optional_utxos.len());
+    debug!("optional_utxos = {:?}", optional_utxos);
 
     // if we are retrying pegouts, we need to add a conflicting input for each tracked tx
     // that honors each pegout
@@ -157,8 +158,6 @@ pub fn make_tx(
         .map(|op| {
             utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
                 |u: &Utxo| {
-                    // Conflicting utxos will be added to available utxos before finishing
-                    // coin selection
                     conflicting_utxos.insert(*op, u.clone());
                     u.clone()
                 },
@@ -169,13 +168,8 @@ pub fn make_tx(
     let _ = conflicting_inputs?;
     debug!("conflicting_utxos = {:?}", conflicting_utxos);
 
-    // include conflicting utxos when selecting from available utxos
-    conflicting_utxos.iter().for_each(|(op, u)| {
-        available_utxos.insert(*op, u.clone());
-    });
-
     let psbt = coin_selection::coin_selection(
-        available_utxos,
+        optional_utxos,
         conflicting_utxos,
         outputs,
         fee_rate,
