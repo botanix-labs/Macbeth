@@ -113,6 +113,7 @@ where
     rpc_service.call(req).await
 }
 
+#[allow(dead_code)]
 #[instrument(name = "notification", fields(method = notif.method.as_ref()), skip(notif, max_log_length), level = "TRACE")]
 fn execute_notification(notif: &Notif<'_>, max_log_length: u32) -> MethodResponse {
     rx_log_from_json(notif, max_log_length);

@@ -4,8 +4,8 @@ use botanix_storage_migrate::{
     migrate_botanix_tables,
     test_utils::fixtures::{
         create_test_block_snapshots, create_test_chunk_blocks, create_test_chunks,
-        create_test_snapshot_syncs, create_test_snapshots, create_test_staged_headers,
-        create_test_wallet_state_syncs,
+        create_test_runtime_transitions, create_test_snapshot_syncs, create_test_snapshots,
+        create_test_staged_headers, create_test_wallet_state_syncs,
     },
 };
 use eyre::Context;
@@ -47,6 +47,9 @@ pub fn populate_botanix_test_data(db: &DatabaseEnv) -> eyre::Result<()> {
             }
             reth_db::Tables::SnapshotSyncs => {
                 create_test_snapshot_syncs(&tx, count)?;
+            }
+            reth_db::Tables::RuntimeTransitions => {
+                create_test_runtime_transitions(&tx, count)?;
             }
             _ => {} // Skip other tables
         }

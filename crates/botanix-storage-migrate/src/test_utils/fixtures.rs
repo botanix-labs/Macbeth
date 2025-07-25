@@ -125,3 +125,16 @@ pub fn create_test_snapshot_syncs<TX: DbTxMut>(tx: &TX, count: usize) -> eyre::R
 
     Ok(())
 }
+
+/// Helper function to create test runtime transitions
+pub fn create_test_runtime_transitions(tx: &impl DbTxMut, count: usize) -> eyre::Result<()> {
+    let mut cursor = tx.cursor_write::<reth_db::tables::RuntimeTransitions>()?;
+
+    for i in 1..=count {
+        let height = i as u64;
+        let transition = reth_db::models::RuntimeVersion::new(1, i as u16);
+        cursor.append(height, transition)?;
+    }
+
+    Ok(())
+}

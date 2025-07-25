@@ -1,5 +1,5 @@
-use crate::activation_manager::{
-    tests::utils::{Expectations, UpgradeTestFixture, ACTIVE_VERSION, ALICE, BOB, EVE},
+use botanix_activation_manager::{
+    test_utils::{Expectations, UpgradeTestFixture, ACTIVE_VERSION, ALICE, BOB, EVE},
     ConditionList,
 };
 use botanix_storage::models::Vote;
@@ -51,6 +51,11 @@ fn activation_manager_vote_expiration() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         .build_block();
@@ -78,6 +83,11 @@ fn activation_manager_vote_expiration() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
             },
         )
         .build_block();
@@ -105,6 +115,11 @@ fn activation_manager_vote_expiration() {
                 finalize_pass: true,
                 aye_approval_rate: 100,
                 comp_approval_rate: 100,
+                aye_votes: 3,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 3,
+                total_votes: 3,
             },
         )
         .build_block();
@@ -135,6 +150,11 @@ fn activation_manager_vote_expiration() {
                 finalize_pass: true,
                 aye_approval_rate: 100,
                 comp_approval_rate: 100,
+                aye_votes: 3,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 3,
+                total_votes: 3,
             },
         )
         .build_blocks_until(12);
@@ -164,6 +184,11 @@ fn activation_manager_vote_expiration() {
                 // NOTE: Bob's vote expired!
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
             },
         )
         .build_block();
@@ -193,6 +218,11 @@ fn activation_manager_vote_expiration() {
                 // NOTE: Eve's vote expired!
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         .build_block();
@@ -220,6 +250,11 @@ fn activation_manager_vote_expiration() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         .build_blocks_until(20);
@@ -248,6 +283,11 @@ fn activation_manager_vote_expiration() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         .build_blocks_until(31);

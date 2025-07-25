@@ -43,7 +43,6 @@ fn main() {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use botanix_authority_peg::peg_contract::PeginMeta;
     use clap::CommandFactory;
     use std::{ffi::OsString, str::FromStr};
 

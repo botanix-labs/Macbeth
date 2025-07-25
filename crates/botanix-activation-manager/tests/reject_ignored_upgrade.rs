@@ -1,36 +1,37 @@
-use crate::activation_manager::{
-    tests::utils::{
+use botanix_activation_manager::{
+    test_utils::{
         Expectations, UpgradeTestFixture, ACTIVE_VERSION, ALICE, BOB, EVE, UPGRADE_VERSION,
     },
     ConditionList,
 };
 use botanix_storage::models::Vote;
 
-/// Tests that a validator can vote Nay and reject an upgrade.
+/// Tests that a validator can reject an upgrade that it ignores.
 ///
 /// This test verifies that:
-/// 1. Two validators (ALICE, BOB) vote Aye and are willing to accept an upgrade
-/// 2. One validator (EVE) votes Nay and is configured to reject the upgrade (is_compliant = false)
-/// 3. When conditions are met, ALICE proposes upgraded blocks
-/// 4. EVE consistently rejects these upgraded blocks in both process_proposal and finalize_block
-///    phases
+/// 1. Two validators (ALICE, BOB) vote for and are compliant with the upgrade
+/// 2. A third validator (EVE) ignores the upgrade entirely
+/// 3. When conditions are met (2 validators required, height reached), ALICE proposes upgraded
+///    blocks
+/// 4. EVE consistently rejects these upgraded blocks in both the process_proposal and
+///    finalize_block phases
 /// 5. This leads to a consensus split where ALICE and BOB operate on the upgraded chain while EVE
 ///    rejects those blocks as dead ends
 #[test]
-fn activation_manager_vote_nay_and_reject() {
+fn activation_manager_reject_ignored_upgrade() {
     let upgrade_height = 3;
     let required_approval_rate = 67;
 
     let mut f = UpgradeTestFixture::new(upgrade_height, required_approval_rate)
         .setup_compliant_validator(ALICE, Vote::Aye)
         .setup_compliant_validator(BOB, Vote::Aye)
-        // NOTE: Eve votes Nay, and rejects the upgrade if all conditions are met.
-        .setup_signaling_validator(EVE, Vote::Nay);
+        // NOTE: Eve ignores the upgrade.
+        .setup_ignoring_validator(EVE);
 
     assert_eq!(f.next_height(), 0);
 
     //
-    // Block 0: Alice proposes and votes Aye.
+    // Block 0: Alice proposes and votes.
     //
 
     f.start_proposal(ALICE, ACTIVE_VERSION)
@@ -45,22 +46,35 @@ fn activation_manager_vote_nay_and_reject() {
             },
         )
         // Eve DOES NOT accept the upgrade.
-        .upgrade_conditions(
-            &[EVE],
-            ConditionList {
-                comp_req: false, // IS NOT met!
-                comp_approval_req: false,
-                aye_approval_req: false,
-                block_height_req: false,
-            },
-        )
+        .upgrade_conditions_empty(&[EVE])
+        // Alice and Bob do participate in voting.
         .expectations(
-            &[ALICE, BOB, EVE],
+            &[ALICE, BOB],
             Expectations {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
+            },
+        )
+        // Eve DOES NOT participate in voting.
+        .expectations(
+            &[EVE],
+            Expectations {
+                process_pass: true,
+                finalize_pass: true,
+                aye_approval_rate: 0,
+                comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -68,7 +82,7 @@ fn activation_manager_vote_nay_and_reject() {
     assert_eq!(f.next_height(), 1);
 
     //
-    // Block 1: Bob proposes and votes Aye.
+    // Block 1: Bob proposes and votes.
     //
 
     f.start_proposal(BOB, ACTIVE_VERSION)
@@ -81,23 +95,33 @@ fn activation_manager_vote_nay_and_reject() {
                 block_height_req: false,
             },
         )
-        // Eve DOES NOT accept the upgrade.
-        .upgrade_conditions(
-            &[EVE],
-            ConditionList {
-                comp_req: false,
-                comp_approval_req: false,
-                aye_approval_req: false,
-                block_height_req: false,
-            },
-        )
+        .upgrade_conditions_empty(&[EVE])
         .expectations(
-            &[ALICE, BOB, EVE],
+            &[ALICE, BOB],
             Expectations {
                 process_pass: true,
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
+            },
+        )
+        .expectations(
+            &[EVE],
+            Expectations {
+                process_pass: true,
+                finalize_pass: true,
+                aye_approval_rate: 0,
+                comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -105,7 +129,7 @@ fn activation_manager_vote_nay_and_reject() {
     assert_eq!(f.next_height(), 2);
 
     //
-    // Block 2: Eve proposes and votes NAY, and rejects the upgrade.
+    // Block 2: Eve proposes, but DOES NOT participate in voting.
     //
 
     f.start_proposal(EVE, ACTIVE_VERSION)
@@ -118,25 +142,33 @@ fn activation_manager_vote_nay_and_reject() {
                 block_height_req: false,
             },
         )
-        .upgrade_conditions(
-            &[EVE],
-            ConditionList {
-                comp_req: false,
-                // NOTE: rejecting validators simply use `u64::MAX` as the
-                // approval_rate.
-                comp_approval_req: false,
-                aye_approval_req: false,
-                block_height_req: false,
-            },
-        )
+        .upgrade_conditions_empty(&[EVE])
         .expectations(
-            &[ALICE, BOB, EVE],
+            &[ALICE, BOB],
             Expectations {
                 process_pass: true,
                 finalize_pass: true,
-                // NOTE: Eve: votes Nay and rejects.
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 1, // Eve is counted as abstained
+                compliant_count: 2,
+                total_votes: 3,
+            },
+        )
+        .expectations(
+            &[EVE],
+            Expectations {
+                process_pass: true,
+                finalize_pass: true,
+                aye_approval_rate: 0,
+                comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -158,19 +190,7 @@ fn activation_manager_vote_nay_and_reject() {
                 block_height_req: true,  // IS met!
             },
         )
-        // Eve DOES NOT accept the upgrade.
-        //
-        // NOTE: rejecting validators simply use `u64::MAX` as the minimum
-        // validator requirement and target height.
-        .upgrade_conditions(
-            &[EVE],
-            ConditionList {
-                comp_req: false,
-                comp_approval_req: false, // IS NOT met!
-                aye_approval_req: false,  // IS NOT met!
-                block_height_req: false,  // IS NOT met!
-            },
-        )
+        .upgrade_conditions_empty(&[EVE])
         .expectations(
             &[ALICE, BOB],
             Expectations {
@@ -179,6 +199,11 @@ fn activation_manager_vote_nay_and_reject() {
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve REJECTS the upgrade.
@@ -187,9 +212,13 @@ fn activation_manager_vote_nay_and_reject() {
             Expectations {
                 process_pass: false,  // Reject!
                 finalize_pass: false, // Reject!
-                // Votes pruned after upgrade
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -202,7 +231,7 @@ fn activation_manager_vote_nay_and_reject() {
 
     f.start_proposal(ALICE, UPGRADE_VERSION)
         // No upgrade ongoing.
-        .upgrade_conditions_empty(&[ALICE, BOB, EVE])
+        .upgrade_conditions_empty(&[ALICE, BOB])
         .expectations(
             &[ALICE, BOB],
             Expectations {
@@ -210,6 +239,11 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve REJECTS the upgrade.
@@ -220,6 +254,11 @@ fn activation_manager_vote_nay_and_reject() {
                 finalize_pass: false, // Reject!
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_blocks_until(21);

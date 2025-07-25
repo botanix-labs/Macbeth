@@ -61,11 +61,8 @@ ENV RUSTFLAGS="$RUSTFLAGS"
 # Features to enable
 ARG FEATURES=""
 
-# Package to build. This image builds the reth package by default.
-ARG PACKAGE="reth"
-
-# Binary to build. This image builds the reth binary by default.
-ARG BIN="reth"
+# Package to build (reth or btc-server)
+ARG BIN=reth
 
 # Builds dependencies
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -75,7 +72,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --profile $PROFILE \
     --features "$FEATURES" \
     --recipe-path recipe.json \
-    --package "$PACKAGE" \
+    --package "$BIN" \
     --bin "$BIN" \
     --locked
 
@@ -93,7 +90,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build \
     --profile $PROFILE \
     --features "$FEATURES" \
-    --package "$PACKAGE" \
+    --package "$BIN" \
     --bin "$BIN" \
     --locked && \
     cp target/$OUT_DIRECTORY/$BIN /usr/local/bin/app
@@ -109,5 +106,5 @@ COPY --from=builder /usr/local/bin/app /usr/local/bin/
 # Copy licenses
 COPY LICENSE-* ./
 
-EXPOSE 30303 30303/udp 9001 8545 8546 8080 7000
+EXPOSE 30303 30303/udp 30304 9001 8545 8546 8080 7000
 ENTRYPOINT ["/usr/local/bin/app"]

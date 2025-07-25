@@ -34,6 +34,7 @@
 
 mod factory;
 mod provider;
+mod runtime_transitions;
 mod snapshot;
 mod staged_header;
 mod wallet_state_sync;
