@@ -1,5 +1,5 @@
-use crate::activation_manager::{
-    tests::utils::{
+use botanix_activation_manager::{
+    test_utils::{
         Expectations, UpgradeTestFixture, ACTIVE_VERSION, ALICE, BOB, EVE, UPGRADE_VERSION,
     },
     ConditionList,
@@ -53,6 +53,11 @@ fn activation_manager_wait_for_compliance() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 0,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0, // Not compliant!
+                total_votes: 1,
             },
         )
         .build_block();
@@ -82,6 +87,11 @@ fn activation_manager_wait_for_compliance() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 0,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 2,
             },
         )
         .build_block();
@@ -97,8 +107,6 @@ fn activation_manager_wait_for_compliance() {
             &[ALICE, BOB, EVE],
             ConditionList {
                 comp_req: false,
-                // NOTE: signaling validators simply use `u64::MAX` as the
-                // approval_rate.
                 comp_approval_req: false,
                 aye_approval_req: false,
                 block_height_req: false,
@@ -111,6 +119,11 @@ fn activation_manager_wait_for_compliance() {
                 finalize_pass: true,
                 aye_approval_rate: 100,
                 comp_approval_rate: 0,
+                aye_votes: 3,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 3,
             },
         )
         .build_block();
@@ -148,6 +161,11 @@ fn activation_manager_wait_for_compliance() {
                 finalize_pass: true,
                 aye_approval_rate: 100,
                 comp_approval_rate: 34,
+                aye_votes: 3,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1, // Compliance count starts!
+                total_votes: 3,
             },
         )
         .build_block();
@@ -175,6 +193,11 @@ fn activation_manager_wait_for_compliance() {
                 finalize_pass: true,
                 aye_approval_rate: 100,
                 comp_approval_rate: 67,
+                aye_votes: 3,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 3,
             },
         )
         .build_block();
@@ -203,6 +226,11 @@ fn activation_manager_wait_for_compliance() {
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -223,6 +251,11 @@ fn activation_manager_wait_for_compliance() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_blocks_until(21);

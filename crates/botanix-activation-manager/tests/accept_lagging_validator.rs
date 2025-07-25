@@ -1,5 +1,5 @@
-use crate::activation_manager::{
-    tests::utils::{
+use botanix_activation_manager::{
+    test_utils::{
         Expectations, UpgradeTestFixture, ACTIVE_VERSION, ALICE, BOB, EVE, UPGRADE_VERSION,
     },
     ConditionList,
@@ -54,6 +54,11 @@ fn activation_manager_accept_lagging_validator() {
                 finalize_pass: true,
                 aye_approval_rate: 34,
                 comp_approval_rate: 34,
+                aye_votes: 1,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 1,
+                total_votes: 1,
             },
         )
         // Eve is not configured.
@@ -84,6 +89,11 @@ fn activation_manager_accept_lagging_validator() {
                 finalize_pass: true,
                 aye_approval_rate: 67,
                 comp_approval_rate: 67,
+                aye_votes: 2,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 2,
+                total_votes: 2,
             },
         )
         .expectations_empty(&[EVE])
@@ -115,6 +125,11 @@ fn activation_manager_accept_lagging_validator() {
                 // Votes pruned after upgrade
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve is not configured.
@@ -154,6 +169,11 @@ fn activation_manager_accept_lagging_validator() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         // Eve REJECTS the upgrade during the backing phase, but ACCEPTS it
@@ -165,6 +185,11 @@ fn activation_manager_accept_lagging_validator() {
                 finalize_pass: true, // Accept
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_block();
@@ -187,6 +212,11 @@ fn activation_manager_accept_lagging_validator() {
                 finalize_pass: true,
                 aye_approval_rate: 0,
                 comp_approval_rate: 0,
+                aye_votes: 0,
+                nay_votes: 0,
+                abstained_votes: 0,
+                compliant_count: 0,
+                total_votes: 0,
             },
         )
         .build_blocks_until(21);

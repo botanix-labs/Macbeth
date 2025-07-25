@@ -5,6 +5,7 @@ use crate::{
     wallet_state_sync::WalletStateSyncEngine,
     AuthorityConsensus, Storage,
 };
+use botanix_activation_manager::{ActivationManager, VoteWatcher};
 use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
@@ -14,8 +15,8 @@ use botanix_cli_args::state_sync::StateSyncArgs;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{DataParser, SerializationType};
 use botanix_storage::{
-    SnapshotReader, SnapshotWriter, StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader,
-    WalletStateSyncWriter,
+    RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter, StagedHeaderReader,
+    StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
@@ -29,6 +30,7 @@ use reth_network::{
     NetworkHandle,
 };
 use reth_node_ethereum::EthEvmConfig;
+use reth_primitives::Address;
 use reth_provider::{
     BlockReaderIdExt, CanonChainTracker, CanonStateSubscriptions, ProviderFactory,
     StateProviderFactory,
@@ -39,13 +41,14 @@ use std::{
     sync::{Arc, RwLock},
     time::Duration,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 /// Builder type for configuring the setup
 #[allow(dead_code)]
 pub struct AuthorityConsensusBuilder<EF, BF, RDB, BDB, BD, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
     storage: Storage<EF, BF, RDB, BDB>,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     network_handle: NetworkHandle,
@@ -88,6 +91,7 @@ where
         + WalletStateSyncReader
         + StagedHeaderReader
         + StagedHeaderWriter
+        + RuntimeTransitionsReadWrite
         + Clone
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
@@ -100,6 +104,7 @@ where
     pub fn try_new(
         chain_spec: Arc<ChainSpec>,
         reth_provider: RDB,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         btc_server_factory: Option<GrpcClientFactory>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         sk: secp256k1::SecretKey,
@@ -124,6 +129,17 @@ where
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
+
+        // Check the local database if a runtime upgrade has occurred which the
+        // ActivationManager does not know about.
+        if let Some(runtime_version) =
+            botanix_provider_factory.get_last_runtime_version().expect("local db must be available")
+        {
+            let was_forced = activation_manager.force_upgrade_checked(runtime_version);
+            if was_forced {
+                warn!("Detected completed network upgrade to version '{runtime_version}' that was unknown to initiated ActivationManager");
+            }
+        }
 
         let mut latest_header = reth_provider
             .latest_header()
@@ -192,6 +208,7 @@ where
 
         Ok(Self {
             storage,
+            activation_manager,
             consensus: AuthorityConsensus::new(chain_spec),
             btc_server_factory,
             bitcoin_checkpoints,
@@ -229,6 +246,7 @@ where
             btc_server_factory,
             consensus,
             storage,
+            activation_manager,
             bitcoin_checkpoints,
             network_handle,
             frost_handle,
@@ -306,6 +324,7 @@ where
         // all nodes will have an abci client builder
         let abci_client_builder = Some(ABCIClientBuilder::new(
             storage.clone(),
+            activation_manager,
             bitcoin_checkpoints,
             consensus.clone(),
             cometbft_rpc_factory.clone(),

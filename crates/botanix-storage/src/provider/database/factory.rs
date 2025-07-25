@@ -1,13 +1,14 @@
 use crate::{
     models::{
-        ChunkId, HeaderWithPegs, PeerID, Snapshot, SnapshotChunk, SnapshotId, SnapshotSync,
-        SnapshotSyncId, UuidID, WalletStateSyncRecord,
+        ChunkId, HeaderWithPegs, PeerID, RuntimeVersion, Snapshot, SnapshotChunk, SnapshotId,
+        SnapshotSync, SnapshotSyncId, UuidID, WalletStateSyncRecord,
     },
     provider::database::provider::{
         BotanixDatabaseProvider, BotanixDatabaseProviderRO, BotanixDatabaseProviderRW,
     },
-    DatabaseProviderFactoryRO, DatabaseProviderFactoryRW, SnapshotReader, SnapshotWriter,
-    StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
+    DatabaseProviderFactoryRO, DatabaseProviderFactoryRW, RuntimeTransitionsReadWrite,
+    SnapshotReader, SnapshotWriter, StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader,
+    WalletStateSyncWriter,
 };
 use reth_db::{init_db, mdbx::DatabaseArguments, DatabaseEnv};
 use reth_db_api::database::Database;
@@ -524,6 +525,31 @@ impl<DB: Database> StagedHeaderWriter for BotanixProviderFactory<DB> {
     }
 }
 
+impl<DB: Database> RuntimeTransitionsReadWrite for BotanixProviderFactory<DB> {
+    fn insert_runtime_upgrade_version(
+        &self,
+        height: BlockNumber,
+        version: RuntimeVersion,
+    ) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+        let did_change = provider.insert_runtime_upgrade_version(height, version)?;
+
+        if did_change {
+            provider.commit()?;
+        }
+
+        Ok(did_change)
+    }
+
+    fn get_runtime_versions(&self) -> ProviderResult<Vec<(BlockNumber, RuntimeVersion)>> {
+        self.provider_rw()?.get_runtime_versions()
+    }
+
+    fn get_last_runtime_version(&self) -> ProviderResult<Option<RuntimeVersion>> {
+        self.provider_rw()?.get_last_runtime_version()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -533,7 +559,7 @@ mod tests {
     #[test]
     fn test_provider_factory_with_database_path() {
         let factory = BotanixProviderFactory::new_with_database_path(
-            tempfile::TempDir::new().expect("can't create temp directory").into_path(),
+            tempfile::TempDir::new().expect("can't create temp directory").keep(),
             DatabaseArguments::new(Default::default()),
         )
         .unwrap();

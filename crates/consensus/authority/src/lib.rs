@@ -42,8 +42,6 @@ use serde_json as _;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
-
-pub mod activation_manager;
 mod builder;
 /// Comet BFT abci and consensus driver
 pub mod comet_bft;

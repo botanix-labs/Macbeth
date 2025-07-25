@@ -7,7 +7,6 @@ target "btc-server" {
   context = "."
   platforms = ["linux/amd64", "linux/arm64"]
   args = {
-    PACKAGE = "btc-server"
     BIN = "btc-server"
   }
 }
@@ -17,7 +16,6 @@ target "reth-node" {
   context = "."
   platforms = ["linux/amd64", "linux/arm64"]
   args = {
-    PACKAGE = "reth"
     BIN = "reth"
   }
 }

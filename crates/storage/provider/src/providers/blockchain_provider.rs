@@ -4,9 +4,10 @@ use crate::{
     CanonStateSubscriptions, ChainSpecProvider, ChangeSetReader, DatabaseProviderFactory,
     DatabaseProviderRO, EvmEnvProvider, FinalizedBlockReader, HeaderProvider, ProviderError,
     ProviderFactory, PruneCheckpointReader, ReceiptProvider, ReceiptProviderIdExt,
-    RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader, StagedHeader,
-    StateProviderBox, StateProviderFactory, StaticFileProviderFactory, TransactionVariant,
-    TransactionsProvider, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
+    RequestsProvider, RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter,
+    StageCheckpointReader, StagedHeader, StateProviderBox, StateProviderFactory,
+    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WalletStateSyncReader,
+    WalletStateSyncWriter, WithdrawalsProvider,
 };
 use alloy_rpc_types_engine::ForkchoiceState;
 use reth_chain_state::{
@@ -1729,6 +1730,29 @@ where
 
     fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, HeaderWithPegs)>> {
         self.database.get_staged_headers()
+    }
+}
+
+impl<DB> RuntimeTransitionsReadWrite for BlockchainProvider2<DB>
+where
+    DB: Database + Sync + Send,
+{
+    fn insert_runtime_upgrade_version(
+        &self,
+        height: BlockNumber,
+        version: reth_db::models::RuntimeVersion,
+    ) -> ProviderResult<bool> {
+        self.database.insert_runtime_upgrade_version(height, version)
+    }
+
+    fn get_runtime_versions(
+        &self,
+    ) -> ProviderResult<Vec<(BlockNumber, reth_db::models::RuntimeVersion)>> {
+        self.database.get_runtime_versions()
+    }
+
+    fn get_last_runtime_version(&self) -> ProviderResult<Option<reth_db::models::RuntimeVersion>> {
+        self.database.get_last_runtime_version()
     }
 }
 

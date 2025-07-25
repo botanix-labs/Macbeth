@@ -33,6 +33,7 @@ if [ -z "$COMMAND" ]; then
     log_error "Command is required. Use: update_cargo_version, commit_cargo_files, back_merge, or help"
 fi
 
+
 # Update version in Cargo.toml workspace file
 update_cargo_version() {
     local VERSION="$1"
@@ -172,6 +173,7 @@ show_help() {
     echo "  release.sh commit_cargo_files 1.2.3                       Commit version bump files"
     echo "  release.sh back_merge main rc TOKEN 1.2.3                 Back-merge from main to rc branch"
 }
+
 
 case "$COMMAND" in
     update_cargo_version)

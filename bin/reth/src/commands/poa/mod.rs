@@ -18,7 +18,7 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
-    comet_bft::abci::ABCIDriver,
+    comet_bft::abci::{ABCIDriver, RUNTIME_VERSION_ACTIVE, RUNTIME_VERSION_UPGRADE},
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     wallet_state_sync::WalletStateSync,
@@ -56,6 +56,7 @@ use crate::{
     cli::NoArgs,
     payload::PayloadBuilderService,
 };
+use botanix_activation_manager::{ActivationManagerBuilder, VoteWatcher};
 use botanix_bitcoin_checkpoint::{
     BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
     DummyHashBlockStream,
@@ -63,7 +64,7 @@ use botanix_bitcoin_checkpoint::{
 use botanix_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
-use botanix_storage::BotanixProviderFactory;
+use botanix_storage::{models::Vote, BotanixProviderFactory};
 use botanix_storage_migrate::migrate_botanix_tables;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
@@ -766,6 +767,35 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
+        let quorum;
+        let min_validator_count;
+        let target_height;
+        let our_vote;
+
+        // ActivationManager: setup parameters and conditions.
+        if *is_testnet {
+            quorum = 100; // 100% ~= 3/3 members must approve
+            min_validator_count = 3;
+            target_height = 1; // Activate as soon as possible
+            our_vote = Vote::Aye;
+        } else {
+            quorum = 100; // 100% ~= 16/16 members must approve
+            min_validator_count = 16;
+            target_height = 1; // Activate as soon as possible
+            our_vote = Vote::Aye;
+        }
+
+        // ActivationManager: setup compliance and vote inclusion.
+        let activation_manager =
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_ACTIVE)
+                .build_COMPLIANT_network_upgrade(
+                    RUNTIME_VERSION_UPGRADE,
+                    quorum,
+                    min_validator_count,
+                    target_height,
+                    Some(our_vote),
+                );
+
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
         let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
@@ -773,6 +803,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
                 blockchain_db.clone(),
+                activation_manager,
                 btc_server_factory.clone(),
                 bitcoin_checkpoints.clone(),
                 secret_key,
