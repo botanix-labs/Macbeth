@@ -326,7 +326,7 @@ fn calculate_target_change(
     remaining_utxos_value: Amount,
 ) -> Result<Amount, CoinSelectionError> {
     // default target change is a percentage of the total pegout value
-    let mut target_change = total_pegout_value
+    let target_change = total_pegout_value
         .checked_mul(TARGET_CHANGE_PERCENT)
         .ok_or(CoinSelectionError::FeeRateOverflow)?
         .checked_div(100)
@@ -337,23 +337,14 @@ fn calculate_target_change(
         .ok_or(CoinSelectionError::FeeRateOverflow)?
         .checked_div(100)
         .ok_or(CoinSelectionError::FeeRateOverflow)?;
-    if target_change > max_change_value {
-        target_change = max_change_value;
-    }
 
-    // for small pegouts, set the change is at least the minimum change amount
-    let min_change_value = Amount::from_sat(MIN_CHANGE_SATS);
-    if target_change < min_change_value {
-        target_change = min_change_value;
-    }
-
-    // this is an edge case, probably only relevant for test cases,
-    // if the minimum is more than the remaining utxos just return the remaining utxos value
-    if target_change > remaining_utxos_value {
-        target_change = remaining_utxos_value;
-    }
-
-    Ok(target_change)
+    Ok(target_change
+        .min(max_change_value)
+        // for small pegouts, set the change is at least the minimum change amount
+        .max(Amount::from_sat(MIN_CHANGE_SATS))
+        // this is an edge case, probably only relevant for test cases,
+        // if the minimum is more than the remaining utxos just return the remaining utxos value
+        .min(remaining_utxos_value))
 }
 
 fn calculate_fee_distribution(
