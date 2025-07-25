@@ -188,8 +188,12 @@ fn perform_coin_selection<T: CoinSelectionAlgorithm>(
     let selected = selection
         .selected
         .iter()
-        .map(|s| optional_utxos.get(&OutPoint::from_bdk(s.outpoint())))
-        .filter_map(|s| if s.is_some() { s } else { None })
+        .map(|s| {
+            let outpoint = OutPoint::from_bdk(s.outpoint());
+            // Check both optional and required UTXOs
+            optional_utxos.get(&outpoint).or_else(|| required_utxos.get(&outpoint))
+        })
+        .filter_map(|s| s)
         .collect::<Vec<_>>();
 
     let selected_inputs: Vec<crate::wallet::psbt::InputDTO> = selected
@@ -645,9 +649,9 @@ mod tests {
     #[derive(Debug)]
     struct TestScenario {
         name: String,
-        optional_utxo_values_sats: Vec<u64>,   // in sats
-        required_utxo_values_sats: Vec<u64>,   // in sats
-        pegout_values_sats: Vec<u64>, // in sats
+        optional_utxo_values_sats: Vec<u64>, // in sats
+        required_utxo_values_sats: Vec<u64>, // in sats
+        pegout_values_sats: Vec<u64>,        // in sats
         fee_rate: FeeRate,
         expected_dust_pegout_removed: Vec<u64>,
         expected_change_output_value: u64, // in sats
@@ -726,10 +730,31 @@ mod tests {
                 expected_dust_pegout_removed: vec![293, 294],
                 expected_change_output_value: 90_000,
             },
+            TestScenario {
+                name: "required_utxos_are_used_first_1".to_string(),
+                optional_utxo_values_sats: vec![50_000, 100_000, 150_000, 1_000_000],
+                required_utxo_values_sats: vec![150_123],
+                pegout_values_sats: vec![50_000, 50_000],
+                fee_rate: FeeRate::from_sat_per_kwu(0),
+                expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 50_123, /* change value indicates that required
+                                                       * utxos were used */
+            },
+            TestScenario {
+                name: "required_utxos_are_used_first_2".to_string(),
+                optional_utxo_values_sats: vec![100_000; 100],
+                required_utxo_values_sats: vec![110_000, 101_000, 100_100, 100_010, 100_001],
+                pegout_values_sats: vec![200_000, 200_000],
+                fee_rate: FeeRate::from_sat_per_kwu(0),
+                expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 211_111, /* change value indicates that required
+                                                        * utxos were used */
+            },
         ]
     }
 
     fn run_scenario(scenario: &TestScenario) -> Result<Psbt, CoinSelectionError> {
+        println!("Running scenario: {}", scenario.name);
         let change_script = random_p2tr_keyspend_script();
 
         // Create UTXOs
