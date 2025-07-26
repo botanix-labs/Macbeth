@@ -7,6 +7,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("internal DB error")]
     Db(#[from] sled::Error),
+    #[error("database error: {0}")]
+    Database(String),
     #[error("data corruption error")]
     DataCorruption(#[from] ciborium::de::Error<io::Error>),
     #[error("Frost serialization error {0}")]

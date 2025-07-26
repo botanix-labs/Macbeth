@@ -5,7 +5,7 @@ use crate::{
         utils::{chain_help, chain_value_parser, SUPPORTED_CHAINS},
         LogArgs,
     },
-    commands::poa::PoaNodeCommand,
+    commands::{poa::PoaNodeCommand, sweep::SweepCommand},
     version::{LONG_VERSION, SHORT_VERSION},
 };
 use clap::{value_parser, Args, Parser, Subcommand};
@@ -112,6 +112,7 @@ impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
         let runner = CliRunner::default();
         match self.command {
             Commands::Poa(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
+            Commands::Sweep(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
         }
     }
 
@@ -132,4 +133,7 @@ pub enum Commands<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// Start the POA node
     #[command(name = "poa")]
     Poa(PoaNodeCommand<Ext>),
+    /// Emergency wallet sweep operations
+    #[command(name = "sweep")]
+    Sweep(SweepCommand),
 }

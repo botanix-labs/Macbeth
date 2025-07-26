@@ -52,7 +52,7 @@ To address the challenges of divergent UTXO sets and offline members, this featu
 ### (Coordinator) Phase 1: Collect States and Initiate Sweep
 
 - The designated Coordinator operator runs the `initiate` command with federation configuration:  
-  `emergency-tool sweep initiate --destination <SECURE_ADDR> --fee-rate <RATE> --consensus-threshold 80 --federation-config <PATH> --coordinator-key <PATH>`
+  `reth sweep initiate --destination <SECURE_ADDR> --fee-rate <RATE> --consensus-threshold 80 --federation-config <PATH> --coordinator-key <PATH> --db-path <PATH>`
 - This command performs several critical actions:
     1. **Validate Coordinator Authority**: Verifies that the operator holds the coordinator private key for the active key generation by requiring a cryptographic signature using the coordinator's federation private key.
     2. **Query Reachable Members**: Directly queries each federation member's `btc-server` via the `GetMemberUtxoState` gRPC endpoint to collect current UTXO state:
@@ -73,7 +73,7 @@ To address the challenges of divergent UTXO sets and offline members, this featu
 
 - Peer operators receive the `SweepRequest` JSON file from the coordinator via external communication channels
 - **Automated Verification**: Each operator validates the request using:
-  `emergency-tool sweep accept-request ./sweep-request.json`
+  `reth sweep accept-request ./sweep-request.json --db-path <PATH>`
 - The tool performs comprehensive validation:
     1. **Coordinator Authority**: Verifies the coordinator signature against the known federation key
     2. **Consensus Verification**: Validates that consensus threshold was applied correctly to all UTXOs using the complete member reports and excluded UTXO data
@@ -86,7 +86,7 @@ To address the challenges of divergent UTXO sets and offline members, this featu
 ### (All) Phase 3: Unified Threshold Signing
 
 - **Signing-Time Security**: All members who accepted the sweep request participate in FROST signing by providing the same request file:
-  `emergency-tool sweep sign --request-file ./sweep-request.json`
+  `reth sweep sign --request-file ./sweep-request.json --db-path <PATH>`
 - **Re-verification**: Before contributing signatures, each member's tool re-validates that the PSBT being signed exactly matches the PSBT in their accepted request file, preventing substitution attacks.
 - **Natural Coordination**: The FROST protocol handles threshold coordination automatically. As soon as `t` signatures are collected, the transaction is finalized and broadcast.
 - **Robust Completion**: If insufficient members participate, the signing naturally times out, allowing the process to be retried with adjusted parameters or member participation.
@@ -147,18 +147,17 @@ const TREE_KEY_METADATA: &[u8; 6] = b"keymta";      // {key_gen_id: u32} -> KeyM
 
 ### Implementation Roadmap & File Structure
 
-**New Components to Create:**
+**Emergency Tool Integration into reth Binary:**
 ```
-bin/emergency-tool/               # New emergency coordination CLI
-├── Cargo.toml                   # Dependencies: tonic, tokio, bitcoin, btcserverlib, serde_json
-├── src/
-│   ├── main.rs                  # CLI argument parsing and command dispatch
-│   ├── federation.rs            # Federation member discovery and coordinator validation
-│   ├── utxo_consensus.rs        # UTXO consensus logic and audit reporting
-│   ├── grpc_client.rs           # gRPC client management with retry logic
-│   ├── message_io.rs            # Message file I/O for manual Discord/messaging sharing
-│   ├── psbt_builder.rs          # Deterministic emergency PSBT construction
-│   └── session.rs               # Emergency session management and validation
+bin/reth/src/commands/sweep.rs   # Emergency coordination CLI integrated into reth
+├── SweepCommand                 # Main command parser for emergency operations
+├── SweepSubcommands            # Subcommands: initiate, accept-request, sign
+├── federation.rs               # Federation member discovery and coordinator validation (planned)
+├── utxo_consensus.rs           # UTXO consensus logic and audit reporting (planned)
+├── grpc_client.rs              # gRPC client management with retry logic (planned)
+├── message_io.rs               # Message file I/O for manual Discord/messaging sharing (planned)
+├── psbt_builder.rs             # Deterministic emergency PSBT construction (planned)
+└── session.rs                  # Emergency session management and validation (planned)
 ```
 
 **Components to Modify:**
@@ -167,7 +166,7 @@ bin/btc-server/proto/btc_server.proto          # Add GetMemberUtxoState endpoint
 bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implementations
 ```
 
-### Epic 1: `emergency-tool` — The Secure Coordination CLI
+### Epic 1: `reth sweep` — Emergency Coordination Integrated into reth CLI
 
 - **[ET-SESSION-01] Implement Emergency Session Management**
     - **Task**: Create session lifecycle management for emergency operations with isolation from normal operations.
@@ -377,7 +376,7 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
             excluded_utxos: Vec<ExcludedUtxoInfo>,
             consensus_stats: ConsensusStatistics,
             data_integrity_hash: [u8; 32],
-            created_at: u64, // Unix timestamp
+            created_at: u64, // Unix timestamp in seconds since epoch
         }
         
         #[derive(Serialize, Deserialize)]
@@ -392,7 +391,7 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
         struct MemberUtxoReport {
             member_id: u16,
             utxos: Vec<EmergencyUtxoInfo>,
-            timestamp: u64,
+            timestamp: u64, // Unix timestamp in seconds since epoch
             member_signature: Vec<u8>,
         }
         
@@ -431,21 +430,21 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
     - **Complete Transparency**: Include full UTXO data and member reports for comprehensive peer validation
     - **Message Integrity**: Data integrity hash covers PSBT, consensus UTXOs, and excluded UTXOs for tamper detection
 
-- **[ET-CLI-01] Implement the `sweep` Subcommands**
-    - `emergency-tool sweep initiate --destination <ADDR> --fee-rate <RATE> --consensus-threshold <PCT> --federation-config <PATH> --coordinator-key <PATH> [--jwt-secret <PATH>] [--timeout <SECS>]`: 
+- **[ET-CLI-01] Implement the `sweep` Subcommands (Integrated into reth)**
+    - `reth sweep initiate --destination <ADDR> --fee-rate <RATE> --consensus-threshold <PCT> --federation-config <PATH> --coordinator-key <PATH> [--jwt-secret <PATH>] [--timeout <SECS>] [--chunk-size <SIZE>] [--db-path <PATH>]`: 
         - **Coordinator Authority**: Validates coordinator private key and generates authorization signature
         - **Member Querying**: Implements retry logic and graceful offline member handling
         - **Consensus & PSBT**: Runs deterministic consensus algorithm and PSBT generation
         - **Immediate Signing**: Begins FROST signing process immediately after creating sweep request
         - **Output**: Generates audit files and shareable JSON for manual distribution
-    - `emergency-tool sweep accept-request ./sweep-request.json [--btc-server-addr <ADDR>] [--jwt-secret <PATH>]`: 
+    - `reth sweep accept-request ./sweep-request.json [--btc-server-addr <ADDR>] [--jwt-secret <PATH>] [--db-path <PATH>]`: 
         - **Authority Validation**: Verifies coordinator signature and authorization
         - **Consensus Validation**: Independently verifies coordinator's consensus decisions using complete member reports and excluded UTXO data
         - **PSBT Reconstruction**: Uses identical deterministic construction logic
         - **Exact Validation**: Compares PSBTs using byte-for-byte comparison for perfect consistency
         - **Data Integrity Check**: Validates data integrity hash to ensure no tampering
         - **Automatic Participation**: Immediately joins ongoing FROST signing session upon validation
-    - `emergency-tool sweep sign --request-file ./sweep-request.json [--btc-server-addr <ADDR>] [--jwt-secret <PATH>]`: 
+    - `reth sweep sign --request-file ./sweep-request.json [--btc-server-addr <ADDR>] [--jwt-secret <PATH>] [--db-path <PATH>]`: 
         - **File Re-verification**: Confirms PSBT being signed matches the accepted request file
         - **FROST Integration**: Participates in standard threshold signing with signing-time validation
 
@@ -453,8 +452,8 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
 
 ### Epic 2: `btc-server` — Emergency Support Infrastructure
 
-- **[BS-UTXO-01] Implement `GetMemberUtxoState` Endpoint**
-    - **Task**: Create emergency-specific gRPC endpoint for authenticated UTXO state collection.
+- **[BS-UTXO-01] Implement `GetMemberUtxoState` Endpoint with Pagination**
+    - **Task**: Create emergency-specific gRPC endpoint for authenticated UTXO state collection with pagination support for large UTXO sets.
     - **Endpoint Addition**: Add to `bin/btc-server/proto/btc_server.proto`:
         ```protobuf
         rpc GetMemberUtxoState(GetUtxoStateRequest) returns (GetUtxoStateResponse);
@@ -462,14 +461,21 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
         message GetUtxoStateRequest {
             string session_id = 1;                    // Emergency session identifier
             bytes coordinator_signature = 2;         // Coordinator authority proof
-            uint64 timestamp = 3;                     // Request timestamp for basic replay protection
+            uint64 timestamp = 3;                     // Request timestamp in seconds since Unix epoch for replay protection
+            uint32 chunk_size = 4;                    // Maximum UTXOs per response (default: 1000, max: 10000)
+            uint32 chunk_index = 5;                   // Zero-based chunk index for pagination
         }
         
         message GetUtxoStateResponse {
             uint32 member_id = 1;                    // This member's federation ID
-            repeated EmergencyUtxoInfo utxos = 2;    // Complete UTXO set
-            uint64 timestamp = 3;                    // State capture timestamp
+            repeated EmergencyUtxoInfo utxos = 2;    // UTXO subset for this chunk
+            uint64 timestamp = 3;                    // State capture timestamp in seconds since Unix epoch
             bytes member_signature = 4;              // Response integrity signature
+            uint32 chunk_index = 5;                  // Current chunk index
+            uint32 total_chunks = 6;                 // Total number of chunks
+            bool is_final = 7;                       // True if this is the last chunk
+            uint32 total_utxo_count = 8;             // Total UTXOs across all chunks
+            uint64 total_value_sat = 9;              // Total value across all chunks for validation
         }
         
         message EmergencyUtxoInfo {
@@ -483,7 +489,7 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
             uint32 key_generation_id = 8; // Key generation ID (for Phase 2 multi-key support)
         }
         ```
-    - **Implementation Pattern**:
+    - **Implementation Pattern with Pagination**:
         ```rust
         async fn get_member_utxo_state(
             &self, 
@@ -495,11 +501,32 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
             // Validate coordinator authority and timestamp
             validate_emergency_session_auth(&req.get_ref())?;
             
-            // Get UTXOs using existing database access
-            let db_utxos = self.db.get_all_utxos().to_status()?;
+            let request = req.into_inner();
+            
+            // Validate pagination parameters
+            let chunk_size = std::cmp::min(request.chunk_size.max(1), 10000) as usize;
+            let chunk_index = request.chunk_index as usize;
+            
+            // Get UTXOs using memory-efficient iterator instead of loading all
+            let all_utxos: Vec<_> = self.db.iter_utxos().collect::<Result<Vec<_>, _>>().to_status()?;
+            let total_utxo_count = all_utxos.len() as u32;
+            let total_value_sat = all_utxos.iter().map(|u| u.output.value.to_sat()).sum();
+            
+            // Calculate pagination
+            let total_chunks = ((total_utxo_count as usize + chunk_size - 1) / chunk_size) as u32;
+            let start_idx = chunk_index * chunk_size;
+            let end_idx = std::cmp::min(start_idx + chunk_size, all_utxos.len());
+            let is_final = chunk_index >= (total_chunks.saturating_sub(1)) as usize;
+            
+            // Get chunk subset
+            let chunk_utxos = if start_idx < all_utxos.len() {
+                &all_utxos[start_idx..end_idx]
+            } else {
+                &[]
+            };
             
             // Transform to emergency format with key generation metadata
-            let emergency_utxos = db_utxos.into_iter().map(|utxo| {
+            let emergency_utxos = chunk_utxos.iter().map(|utxo| {
                 EmergencyUtxoInfo {
                     txid: utxo.outpoint.txid.to_byte_array().to_vec(),
                     vout: utxo.outpoint.vout,
@@ -517,7 +544,12 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
                 member_id: self.config.identifier as u32,
                 utxos: emergency_utxos,
                 timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
-                member_signature: self.sign_response(&emergency_utxos)?,
+                member_signature: self.sign_response_chunk(&emergency_utxos, chunk_index as u32)?,
+                chunk_index: chunk_index as u32,
+                total_chunks,
+                is_final,
+                total_utxo_count,
+                total_value_sat,
             }))
         }
         ```
@@ -701,6 +733,97 @@ bin/btc-server/src/bin/main.rs                 # Add emergency endpoint implemen
             (all_consensus_utxos, all_excluded_inputs)
         }
         ```
+
+---
+
+## 6.5. UTXO Response Size Validation & Pagination
+
+### **Response Size Constraints**
+The `GetMemberUtxoState` endpoint must handle potentially large UTXO sets safely:
+
+- **Expected Sizes**: Hundreds to tens of thousands of UTXOs per federation member
+- **Per-UTXO Overhead**: ~150-200 bytes serialized (txid, script, metadata)
+- **Maximum Response Size**: 10MB per response to prevent memory issues
+
+### **Pagination Implementation**
+Following the existing `GetFinalizedPegoutIds` pattern:
+
+```protobuf
+message GetUtxoStateRequest {
+    string session_id = 1;
+    bytes coordinator_signature = 2;
+    uint64 timestamp = 3;
+    uint32 chunk_size = 4;               // Maximum UTXOs per response (default: 1000)
+    uint32 chunk_index = 5;              // Zero-based chunk index for pagination
+}
+
+message GetUtxoStateResponse {
+    uint32 member_id = 1;
+    repeated EmergencyUtxoInfo utxos = 2;
+    uint64 timestamp = 3;
+    bytes member_signature = 4;
+    uint32 chunk_index = 5;              // Current chunk index
+    uint32 total_chunks = 6;             // Total number of chunks  
+    bool is_final = 7;                   // True if this is the last chunk
+    uint32 total_utxo_count = 8;         // Total UTXOs across all chunks
+    uint64 total_value_sat = 9;          // Total value across all chunks
+}
+```
+
+### **Emergency Tool Adaptation**
+The emergency tool must handle paginated responses:
+
+```rust
+async fn collect_member_utxo_state(
+    member_id: u16,
+    client: &mut BtcServerClient<Channel>,
+    session_request: GetUtxoStateRequest,
+) -> Result<Vec<EmergencyUtxoInfo>, Error> {
+    let mut all_utxos = Vec::new();
+    let mut chunk_index = 0;
+    let chunk_size = 1000; // Configurable via CLI
+    
+    loop {
+        let request = GetUtxoStateRequest {
+            chunk_size,
+            chunk_index,
+            ..session_request.clone()
+        };
+        
+        let response = client.get_member_utxo_state(request).await?;
+        let response = response.into_inner();
+        
+        all_utxos.extend(response.utxos);
+        
+        if response.is_final {
+            break;
+        }
+        chunk_index += 1;
+        
+        // Timeout protection for unresponsive members
+        if chunk_index > 1000 {
+            return Err(Error::TooManyChunks(member_id));
+        }
+    }
+    
+    Ok(all_utxos)
+}
+```
+
+### **Validation Mechanisms**
+Implement comprehensive validation for large responses:
+
+- **Size Limits**: Maximum 10MB per response, 100MB total per member
+- **Chunk Validation**: Verify chunk_index sequence and total_chunks consistency
+- **Integrity Checking**: Validate total_utxo_count and total_value_sat across chunks
+- **Timeout Protection**: Member query timeout includes all chunks (max 5 minutes per member)
+- **Memory Management**: Stream processing to avoid loading entire UTXO set into memory
+
+### **Performance Optimizations**
+- **Concurrent Queries**: Fetch chunks from multiple members in parallel
+- **Compression**: Enable gRPC compression for large responses
+- **Early Termination**: Stop querying if sufficient consensus already achieved
+- **Database Streaming**: Use `iter_utxos()` instead of `get_all_utxos()` for memory efficiency
 
 ---
 
