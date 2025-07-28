@@ -206,6 +206,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 PoaNodeArgs {
                     network_config_path,
                     is_testnet,
+                    is_devnet,
                     ntp_server,
                     federation_config_path: _,
                     federation_mode,
@@ -232,14 +233,22 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Load reth config which is a bit different than cli config
         let mut reth_config = self.load_config()?;
 
-        // get the botanix chain spec
+        // Get the botanix chain spec
+
+        // Check if both testnet and devnet are enabled
+        if *is_testnet && *is_devnet {
+            return Err(eyre::eyre!("Both testnet and devnet cannot be enabled at the same time"));
+        }
+
+        // Testnet and Devnet should result in the same chain spec
+        let is_not_mainnet = *is_testnet || *is_devnet;
         let chain = get_chain_from_federation_config(
             self.botanix_args
                 .federation_config_path
                 .clone()
                 .to_str()
                 .expect("federation config path to exist"),
-            *is_testnet,
+            is_not_mainnet,
         )?;
         let chain_arc = Arc::new(chain.clone());
 
@@ -767,15 +776,22 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
+        // ActivationManager: setup parameters and conditions.
         let quorum;
         let min_validator_count;
         let target_height;
         let our_vote;
 
-        // ActivationManager: setup parameters and conditions.
+        // Setting all the values on a per network basis in case they are different in the future.
+        #[allow(clippy::branches_sharing_code)]
         if *is_testnet {
             quorum = 100; // 100% ~= 3/3 members must approve
             min_validator_count = 3;
+            target_height = 1; // Activate as soon as possible
+            our_vote = Vote::Aye;
+        } else if *is_devnet {
+            quorum = 100; // 100% ~= 6/6 members must approve
+            min_validator_count = 6;
             target_height = 1; // Activate as soon as possible
             our_vote = Vote::Aye;
         } else {
@@ -1346,6 +1362,42 @@ mod tests {
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
             cmd.botanix_args.is_testnet,
+        )
+        .expect("chain is to exist");
+        assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);
+        assert_ne!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
+        let data_dir =
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let db_path = data_dir.db();
+        assert_eq!(db_path, Path::new("my/custom/path/db"));
+    }
+
+    #[test]
+    fn parse_db_path_devnet() {
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let authority = FedMemberPubKey {
+            key: secret_key.public_key(SECP256K1).to_string(),
+            socket_addr: "127.0.0.1:30303".to_string(),
+        };
+        let authorities = vec![authority];
+        let federation_config = FederationTomlConfig::new(
+            authorities,
+            "0x".to_string(),
+            "0x".to_string(),
+            "0x".to_string(),
+        );
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--datadir",
+            "my/custom/path",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+            "--is-devnet",
+        ])
+        .unwrap();
+        let chain = get_botanix_chain(
+            &federation_config.to_string().expect("should parse to string"),
+            cmd.botanix_args.is_devnet,
         )
         .expect("chain is to exist");
         assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);

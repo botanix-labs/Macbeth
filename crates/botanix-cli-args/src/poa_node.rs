@@ -20,6 +20,10 @@ pub struct PoaNodeArgs {
     #[arg(long, value_name = "IS_TESTNET", env = "RETH_TESTNET")]
     pub is_testnet: bool,
 
+    /// Indicates whether we are running in devnet or not.
+    #[arg(long, value_name = "IS_DEVNET", env = "RETH_DEVNET")]
+    pub is_devnet: bool,
+
     /// The NTP server url
     #[arg(
         long,
