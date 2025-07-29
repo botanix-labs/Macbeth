@@ -5,7 +5,6 @@ use crate::{
     database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
     pegout_scheduler::Tx,
-    telemetry::Telemetry,
     util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     wallet::{
         coin_selection,
@@ -16,7 +15,6 @@ use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
     time::Instant,
 };
 
@@ -83,9 +81,6 @@ pub fn make_tx(
     db: &Db,
     min_signers: u16,
     tracked_txs: Vec<Tx>,
-    telemetry: Option<Arc<Telemetry>>,
-    btc_network: bitcoin::network::Network,
-    identifier: u16,
 ) -> Result<Psbt, CoordinatorError> {
     // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate
@@ -105,9 +100,6 @@ pub fn make_tx(
         })?;
     debug!("utxos len = {:?}", utxos.len());
     debug!("utxos = {:?}", utxos);
-    if let Some(telemetry) = telemetry {
-        telemetry.update_utxos(btc_network, identifier, utxos.len() as i64);
-    }
 
     let tracked_inputs = tracked_txs
         .iter()
