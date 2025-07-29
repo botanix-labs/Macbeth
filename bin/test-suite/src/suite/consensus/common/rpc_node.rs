@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use anyhow::Context;
-use botanix_cli_args::federation_args::{FedMemberPubKey, FederationTomlConfig};
+use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
 use reth_network_peers::pk2id;
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};

@@ -13,7 +13,7 @@ use bitcoin::hashes::Hash;
 use botanix_authority_edh::extra_data_header::{
     ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
 };
-use botanix_cli_args::federation_args::{FedMemberPubKey, FederationTomlConfig};
+use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
 use botanix_storage::BotanixProviderFactory;
 use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient};
 use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
