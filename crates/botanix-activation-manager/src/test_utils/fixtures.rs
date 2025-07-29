@@ -1,28 +1,27 @@
-use super::Db;
-use crate::activation_manager::{
-    ActivationManager, ActivationManagerBuilder, ConditionList, OnFinalizeBlockDecision,
-    OnPrepareProposalDecision, OnProcessProposalDecision, VOTE_RETENTION_PERIOD,
+use crate::{
+    test_utils::db::Db, ActivationManager, ActivationManagerBuilder, ConditionList,
+    OnFinalizeBlockDecision, OnPrepareProposalDecision, OnProcessProposalDecision, Polling,
+    VOTE_RETENTION_PERIOD,
 };
 use botanix_storage::{
     models::{RuntimeVersion, Vote},
     ActivationManagerReaderWriter,
 };
-use secp256k1::{generate_keypair, rand::thread_rng};
 
 /// Index for the ALICE validator in the test fixture
-pub(super) const ALICE: usize = 0;
+pub const ALICE: usize = 0;
 /// Index for the BOB validator in the test fixture
-pub(super) const BOB: usize = 1;
+pub const BOB: usize = 1;
 /// Index for the EVE validator in the test fixture
-pub(super) const EVE: usize = 2;
+pub const EVE: usize = 2;
 
 // Runtime version constants for tests
 /// The default active runtime version used in tests (1.0)
-pub(super) const ACTIVE_VERSION: RuntimeVersion = RuntimeVersion::new(1, 0);
+pub const ACTIVE_VERSION: RuntimeVersion = RuntimeVersion::new(1, 0);
 /// The default upgrade runtime version used in tests (2.0)
-pub(super) const UPGRADE_VERSION: RuntimeVersion = RuntimeVersion::new(2, 0);
+pub const UPGRADE_VERSION: RuntimeVersion = RuntimeVersion::new(2, 0);
 /// An alternative version used for testing mismatched version scenarios (3.0)
-pub(super) const INVALID_VERSION: RuntimeVersion = RuntimeVersion::new(3, 0);
+pub const INVALID_VERSION: RuntimeVersion = RuntimeVersion::new(3, 0);
 
 /// Stores vote details for a validator in the test environment.
 ///
@@ -38,31 +37,32 @@ struct VoteDetails {
     is_compliant: bool,
 }
 
+/// Internal address to distinguish between members.
+pub type Address = Vec<u8>;
+
 /// Main test fixture for network upgrade scenarios.
 ///
 /// This fixture manages the state for multiple validators in upgrade testing
 /// scenarios, including their identities, databases, activation managers,
 /// and voting status. It provides methods to configure validators with
 /// different upgrade behaviors and to advance the simulation through blocks.
-pub(super) struct UpgradeTestFixture {
+pub struct UpgradeTestFixture {
     /// The block height at which the upgrade should activate (if conditions are met)
     upgrade_height: u64,
     /// The percentage approval rate (0-100) required for upgrade activation
     required_approval_rate: usize,
     /// The minimum number of distinct validators required to participate in voting
     min_validator_count: usize,
-
     /// The current block height in the simulation
     block_height: u64,
     /// How long votes are retained before expiring (in blocks)
     vote_retention_period: u64,
-
     /// The public keys representing each validator's identity
-    addrs: [secp256k1::PublicKey; 3],
+    addrs: [Address; 3],
     /// In-memory databases for each validator
     dbs: [Db; 3],
     /// The activation manager instances for each validator
-    managers: [Option<ActivationManager<Db>>; 3],
+    managers: [Option<ActivationManager<Db, Address>>; 3],
     /// Expected votes to be included in block proposals for each validator
     expected_votes: [Option<VoteDetails>; 3],
 }
@@ -80,11 +80,10 @@ impl UpgradeTestFixture {
     ///
     /// # Returns
     /// * A new `UpgradeTestFixture` with default values and generated validator keys
-    pub(super) fn new(upgrade_height: u64, approval_rate: usize) -> Self {
-        // Generate keypairs
-        let (_, alice_addr) = generate_keypair(&mut thread_rng());
-        let (_, bob_addr) = generate_keypair(&mut thread_rng());
-        let (_, eve_addr) = generate_keypair(&mut thread_rng());
+    pub fn new(upgrade_height: u64, approval_rate: usize) -> Self {
+        let alice_addr = b"alice".to_vec();
+        let bob_addr = b"bob".to_vec();
+        let eve_addr = b"eve".to_vec();
 
         Self {
             upgrade_height,
@@ -109,7 +108,7 @@ impl UpgradeTestFixture {
     ///
     /// # Returns
     /// * The fixture with the updated vote retention period
-    pub(super) fn vote_retention_period(mut self, vote_retention_period: u64) -> Self {
+    pub fn vote_retention_period(mut self, vote_retention_period: u64) -> Self {
         self.vote_retention_period = vote_retention_period;
         self
     }
@@ -124,7 +123,7 @@ impl UpgradeTestFixture {
     ///
     /// # Returns
     /// * The fixture with the configured validator
-    pub(super) fn setup_ignoring_validator(mut self, validator: usize) -> Self {
+    pub fn setup_ignoring_validator(mut self, validator: usize) -> Self {
         let db = self.dbs[validator].clone();
 
         let manager = ActivationManagerBuilder::new(db, ACTIVE_VERSION)
@@ -148,7 +147,7 @@ impl UpgradeTestFixture {
     ///
     /// # Returns
     /// * The fixture with the configured validator
-    pub(super) fn setup_signaling_validator(mut self, validator: usize, vote: Vote) -> Self {
+    pub fn setup_signaling_validator(mut self, validator: usize, vote: Vote) -> Self {
         let db = self.dbs[validator].clone();
 
         let manager = ActivationManagerBuilder::new(db, ACTIVE_VERSION)
@@ -173,7 +172,7 @@ impl UpgradeTestFixture {
     ///
     /// # Returns
     /// * The fixture with the configured validator
-    pub(super) fn setup_compliant_validator(self, validator: usize, vote: Vote) -> Self {
+    pub fn setup_compliant_validator(self, validator: usize, vote: Vote) -> Self {
         self._do_setup_compliant_validator(validator, vote, UPGRADE_VERSION)
     }
 
@@ -190,7 +189,7 @@ impl UpgradeTestFixture {
     /// # Returns
     /// * The fixture with the configured validator
     #[allow(non_snake_case)]
-    pub(super) fn setup_INVALID_compliant_validator(self, validator: usize, vote: Vote) -> Self {
+    pub fn setup_INVALID_compliant_validator(self, validator: usize, vote: Vote) -> Self {
         self._do_setup_compliant_validator(validator, vote, INVALID_VERSION)
     }
 
@@ -235,7 +234,7 @@ impl UpgradeTestFixture {
     ///
     /// # Returns
     /// * The current block height
-    pub(super) fn next_height(&self) -> u64 {
+    pub fn next_height(&self) -> u64 {
         self.block_height
     }
 
@@ -250,7 +249,7 @@ impl UpgradeTestFixture {
     ///
     /// # Returns
     /// * A ProposingTestFixture for building and testing the block
-    pub(super) fn start_proposal(
+    pub fn start_proposal(
         &mut self,
         validator: usize,
         version: RuntimeVersion,
@@ -271,15 +270,26 @@ impl UpgradeTestFixture {
 /// a block proposal, including whether they should accept or reject it,
 /// and the expected voting statistics after processing.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct Expectations {
+pub struct Expectations {
     /// Whether the validator should accept the block during `process_proposal`
-    pub(super) process_pass: bool,
+    pub process_pass: bool,
     /// Whether the validator should accept the block during `finalize_block`
-    pub(super) finalize_pass: bool,
+    pub finalize_pass: bool,
     /// The expected percentage (0-100) of Aye votes
-    pub(super) aye_approval_rate: usize,
+    pub aye_approval_rate: usize,
     /// The expected percentage (0-100) of compliant validators
-    pub(super) comp_approval_rate: usize,
+    pub comp_approval_rate: usize,
+    /// The expected number of validators who voted "Aye"
+    pub aye_votes: usize,
+    /// The expected number of validators who voted "Nay"
+    pub nay_votes: usize,
+    /// The expected number of validators who abstained from voting
+    pub abstained_votes: usize,
+    /// The expected number of validators who are compliant with the upgrade
+    pub compliant_count: usize,
+    /// The expected total number of distinct validators who have voted,
+    /// including abstained votes.
+    pub total_votes: usize,
 }
 
 /// Fixture for testing the block proposal and validation flow.
@@ -288,14 +298,12 @@ pub(super) struct Expectations {
 /// block proposal scenarios. It allows setting expectations for each validator's
 /// behavior and conducts the simulation of proposing, processing, and
 /// finalizing blocks.
-pub(super) struct ProposingTestFixture<'a> {
+pub struct ProposingTestFixture<'a> {
     i: &'a mut UpgradeTestFixture,
-
     /// The index of the validator proposing the current block
     proposer_index: usize,
     /// The runtime version expected in the proposal
     expected_proposal_version: RuntimeVersion,
-
     /// Expectations for each validator's behavior when processing the block
     expectations: [Option<Expectations>; 3],
     /// Expected upgrade conditions for each validator
@@ -314,7 +322,7 @@ impl ProposingTestFixture<'_> {
     ///
     /// # Returns
     /// * The fixture with updated expectations
-    pub(super) fn upgrade_conditions(mut self, vals: &[usize], conditions: ConditionList) -> Self {
+    pub fn upgrade_conditions(mut self, vals: &[usize], conditions: ConditionList) -> Self {
         for v in vals {
             self.expected_conditions[*v] = Some(conditions);
         }
@@ -331,7 +339,7 @@ impl ProposingTestFixture<'_> {
     ///
     /// # Returns
     /// * The fixture with updated expectations
-    pub(super) fn upgrade_conditions_empty(mut self, vals: &[usize]) -> Self {
+    pub fn upgrade_conditions_empty(mut self, vals: &[usize]) -> Self {
         for v in vals {
             self.expected_conditions[*v] = None;
         }
@@ -349,7 +357,7 @@ impl ProposingTestFixture<'_> {
     ///
     /// # Returns
     /// * The fixture with updated expectations
-    pub(super) fn expectations(mut self, vals: &[usize], expectations: Expectations) -> Self {
+    pub fn expectations(mut self, vals: &[usize], expectations: Expectations) -> Self {
         for v in vals {
             self.expectations[*v] = Some(expectations);
         }
@@ -366,7 +374,7 @@ impl ProposingTestFixture<'_> {
     ///
     /// # Returns
     /// * The fixture with updated expectations
-    pub(super) fn expectations_empty(mut self, vals: &[usize]) -> Self {
+    pub fn expectations_empty(mut self, vals: &[usize]) -> Self {
         for v in vals {
             self.expectations[*v] = None;
         }
@@ -377,7 +385,7 @@ impl ProposingTestFixture<'_> {
     ///
     /// Simulates the full process of proposing, processing, and finalizing a block
     /// and verifies that all validators behave according to expectations.
-    pub(super) fn build_block(mut self) {
+    pub fn build_block(mut self) {
         self.do_build_block();
     }
 
@@ -388,7 +396,7 @@ impl ProposingTestFixture<'_> {
     ///
     /// # Parameters
     /// * `target_height` - The block height to build up to
-    pub(super) fn build_blocks_until(mut self, target_height: u64) {
+    pub fn build_blocks_until(mut self, target_height: u64) {
         while self.i.block_height < target_height {
             self.do_build_block();
         }
@@ -403,10 +411,8 @@ impl ProposingTestFixture<'_> {
     /// 4. Verifies that all validators behave according to expectations
     /// 5. Advances the block height
     fn do_build_block(&mut self) {
-        dbg!(self.i.block_height);
-
         let proposer = self.i.managers[self.proposer_index].as_mut().unwrap();
-        let proposer_addr = &self.i.addrs[self.proposer_index];
+        let proposer_addr = self.i.addrs[self.proposer_index].clone();
 
         // Proposer builds the block
         let OnPrepareProposalDecision {
@@ -436,17 +442,14 @@ impl ProposingTestFixture<'_> {
 
         // Each party processes and finalizes the block
         for (i, (manager, db)) in self.i.managers.iter_mut().zip(self.i.dbs.iter()).enumerate() {
-            let auth_idx = i;
-            dbg!(auth_idx);
-
             let Some(manager) = manager.as_mut() else {
                 assert!(
                     self.expectations[i].is_none(),
-                    "expected expectations for non-existent manager"
+                    "expectations set for non-existent manager"
                 );
                 assert!(
                     self.expected_conditions[i].is_none(),
-                    "expected conditions for non-existent manager"
+                    "conditions set for non-existent manager"
                 );
 
                 continue;
@@ -485,7 +488,7 @@ impl ProposingTestFixture<'_> {
                 .on_finalize_block(
                     proposer_version,
                     self.i.block_height,
-                    *proposer_addr,
+                    proposer_addr.clone(),
                     proposer_vote.clone(),
                 )
                 .unwrap();
@@ -513,6 +516,18 @@ impl ProposingTestFixture<'_> {
 
             assert_eq!(ayes, expect.aye_approval_rate, "ayes approval_rate mismatch");
             assert_eq!(compliance, expect.comp_approval_rate, "compliant approval_rate mismatch");
+
+            // Verify polling
+            let (_, polling) = manager.get_upgrade_polling().unwrap().unwrap_or((
+                RuntimeVersion::from((0, 0)), // throwaway
+                Polling { ayes: 0, nays: 0, abstained: 0, compliant: 0, total: 0 },
+            ));
+
+            assert_eq!(polling.ayes, expect.aye_votes, "aye votes mismatch");
+            assert_eq!(polling.nays, expect.nay_votes, "nay votes mismatch");
+            assert_eq!(polling.abstained, expect.abstained_votes, "abstain votes mismatch");
+            assert_eq!(polling.compliant, expect.compliant_count, "compliant count mismatch");
+            assert_eq!(polling.total, expect.total_votes, "total votes mismatch");
         }
 
         self.i.block_height += 1;

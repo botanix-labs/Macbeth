@@ -32,6 +32,7 @@ use reth_consensus_common::{
 };
 use reth_ethereum_consensus::validate_block_post_execution;
 use reth_network_peers as _;
+use reth_node_core as _;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
     constants::MINIMUM_GAS_LIMIT, Address, BlockWithSenders, Header, SealedBlock, SealedHeader,
@@ -41,8 +42,6 @@ use serde_json as _;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
-
-pub mod activation_manager;
 mod builder;
 /// Comet BFT abci and consensus driver
 pub mod comet_bft;

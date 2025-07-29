@@ -1286,6 +1286,8 @@ where
             })?;
         // This should be a ready to broadcast tx
         let tx = psbt.clone().extract_tx().to_status()?;
+        let tx_bytes = bitcoin::consensus::encode::serialize(&tx);
+        info!("Signed pegout tx to be broadcast: {}", hex::encode(&tx_bytes));
 
         let tx_id = match measure_rpc_latency!(
             &self.telemetry,
@@ -2269,7 +2271,7 @@ mod tests {
         let bitcoind_client = MockBitcoind::new();
 
         let config = Config {
-            db: temp_db.into_path(),
+            db: temp_db.keep(),
             btc_network: bitcoin::Network::Regtest,
             identifier: 0,
             coordinator: Some(0),

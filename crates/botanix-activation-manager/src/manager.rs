@@ -64,17 +64,12 @@
 //! voting. Once a new node version with upgrade support is released, validators can
 //! switch to "Accept Upgrades" mode to fully participate in the upgrade process.
 
-use reth_provider::ProviderResult;
-use std::sync::{Arc, RwLock};
-
-// Reexports
-pub use botanix_storage::{
+use botanix_storage::{
     models::{RuntimeVersion, Vote},
     ActivationManagerReaderWriter,
 };
-
-#[cfg(test)]
-mod tests;
+use reth_storage_errors::provider::ProviderResult;
+use std::sync::{Arc, RwLock};
 
 /// The minimum required quorum percentage for network upgrades.
 ///
@@ -121,6 +116,11 @@ pub const MIN_VALIDATOR_COUNT: usize = 3;
 /// 3. Switch their configuration to accept the upgrade
 ///
 /// While ensuring votes eventually expire if an upgrade does not proceed.
+//
+// TODO (lamafab): This should probably be based on validator set count, not
+// some specific time period. Measuring sentiment over time and actually
+// validating upgrade conditions are two separate things. Having to validate
+// that many DB entries on each block is too expensive...
 pub const VOTE_RETENTION_PERIOD: u64 = 518_400;
 
 /// The decision returned by the activation manager during the prepare proposal
@@ -206,26 +206,26 @@ pub enum OnFinalizeBlockDecision {
 ///
 /// This struct holds all the parameters and state related to a pending network
 /// upgrade that a validator is tracking.
-struct NetworkUpgrade {
+pub struct NetworkUpgrade {
     /// The runtime version of the proposed upgrade
-    version: RuntimeVersion,
+    pub version: RuntimeVersion,
 
     /// The percentage approval rate (0-100) that must be reached for both
     /// Aye votes and compliant validators to activate the upgrade
-    quorum: usize,
+    pub quorum: usize,
 
     /// The minimum number of distinct validators that must participate
     /// in voting for the upgrade to be considered valid
-    min_validator_count: usize,
+    pub min_validator_count: usize,
 
     /// The minimum block height at which the upgrade can activate
-    target_height: u64,
+    pub target_height: u64,
 
     /// This validator's vote on the upgrade proposal (Aye/Nay)
-    our_vote: Vote,
+    pub our_vote: Vote,
 
     /// Whether this validator is compliant with the upgrade
-    is_compliant: bool,
+    pub is_compliant: bool,
 }
 
 /// A list of boolean flags indicating the status of each upgrade condition.
@@ -235,16 +235,37 @@ struct NetworkUpgrade {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConditionList {
     /// Whether the validator is compliant with the upgrade
-    comp_req: bool,
+    pub comp_req: bool,
 
     /// Whether the quorum approval rate for Aye votes has been reached
-    aye_approval_req: bool,
+    pub aye_approval_req: bool,
 
     /// Whether the quorum approval rate for compliant validators has been reached
-    comp_approval_req: bool,
+    pub comp_approval_req: bool,
 
     /// Whether the current block height is at or above the target height
-    block_height_req: bool,
+    pub block_height_req: bool,
+}
+
+/// Current voting statistics for a network upgrade.
+///
+/// This struct provides a snapshot of validator voting activity for a pending
+/// network upgrade, including the breakdown of different vote types and
+/// compliance status.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Polling {
+    /// Number of validators who have voted "Aye" for the upgrade.
+    pub ayes: usize,
+    /// Number of validators who have voted "Nay" against the upgrade.
+    pub nays: usize,
+    /// Number of validators who have abstained from voting (or explicitly voted
+    /// "Abstain").
+    pub abstained: usize,
+    /// Number of validators who are compliant with the upgrade (ready to
+    /// accept it).
+    pub compliant: usize,
+    /// Total number of distinct validators who have cast any vote.
+    pub total: usize,
 }
 
 impl ConditionList {
@@ -254,198 +275,6 @@ impl ConditionList {
     /// that the network is ready to activate the upgrade.
     pub fn all_passing(&self) -> bool {
         self.comp_req && self.aye_approval_req && self.comp_approval_req && self.block_height_req
-    }
-}
-
-/// Builder for constructing an `ActivationManager` with specific configuration.
-///
-/// This builder provides methods to configure how a validator will handle
-/// network upgrades - whether it will ignore them, signal votes without
-/// being compliant, or fully accept upgrades when conditions are met.
-pub struct ActivationManagerBuilder<DB> {
-    /// The database client implementing ActivationManagerReaderWriter
-    client: DB,
-
-    /// The currently active runtime version
-    active_version: RuntimeVersion,
-
-    /// How long votes are retained in blocks before expiring
-    vote_retention_period: u64,
-
-    /// Configuration for a pending network upgrade, if any
-    upgrade: Option<NetworkUpgrade>,
-}
-
-impl<DB> ActivationManagerBuilder<DB>
-where
-    DB: ActivationManagerReaderWriter,
-{
-    /// Creates a new ActivationManagerBuilder with specified database client and active version.
-    ///
-    /// This is the primary constructor for initializing the builder with a storage backend
-    /// and the current active runtime version.
-    ///
-    /// # Parameters
-    /// * `client` - The database client implementing ActivationManagerReaderWriter
-    /// * `active_version` - The currently active runtime version
-    ///
-    /// # Returns
-    /// * A new ActivationManagerBuilder configured with default settings
-    pub fn new(client: DB, active_version: RuntimeVersion) -> Self {
-        ActivationManagerBuilder {
-            client,
-            active_version,
-            vote_retention_period: VOTE_RETENTION_PERIOD,
-            upgrade: None,
-        }
-    }
-
-    /// Sets a custom vote retention period.
-    ///
-    /// This method allows customizing how long votes are retained before
-    /// being pruned. The default is `VOTE_RETENTION_PERIOD` (518,400 blocks).
-    ///
-    /// # Parameters
-    /// * `period` - The number of blocks to retain votes
-    ///
-    /// # Returns
-    /// The builder instance with updated vote retention period.
-    pub fn vote_retention_period(mut self, period: u64) -> Self {
-        self.vote_retention_period = period;
-        self
-    }
-
-    /// Finalizes the builder to create an ActivationManager that ignores
-    /// network upgrades.
-    ///
-    /// This creates a manager that will:
-    /// * Not participate in upgrade voting
-    /// * Not include any NetworkUpgradePayload in proposals
-    /// * Reject any blocks with versions other than the current active version
-    ///
-    /// This is the default operating mode for nodes that are not participating
-    /// in the upgrade process and will result in the node rejecting blocks if
-    /// an upgrade is activated on the network.
-    ///
-    /// # Returns
-    /// * An ActivationManager configured to ignore network upgrades
-    pub fn build_ignore_nework_upgrade(self) -> ActivationManager<DB> {
-        debug_assert!(self.upgrade.is_none());
-        self._finalize()
-    }
-
-    /// Finalizes the builder to create an ActivationManager that signals a vote
-    /// on an upgrade.
-    ///
-    /// This creates a manager that will:
-    /// * Include the specified vote in the NetworkUpgradePayload of proposals
-    /// * Still reject any blocks with the upgrade version (is_compliant = false)
-    /// * Track votes from other validators
-    ///
-    /// This mode allows validators to signal their support or opposition to an
-    /// upgrade before they are ready to accept upgraded blocks.
-    ///
-    /// # Parameters
-    /// * `upgrade_version` - The runtime version of the proposed upgrade
-    /// * `our_vote` - This validator's vote (Aye/Nay) on the upgrade
-    ///
-    /// # Returns
-    /// * An ActivationManager configured to signal a vote on the upgrade
-    ///
-    /// # Panics
-    /// * If the upgrade version is not greater than the active version
-    pub fn build_signal_network_upgrade(
-        mut self,
-        upgrade_version: RuntimeVersion,
-        our_vote: Vote,
-    ) -> ActivationManager<DB> {
-        assert!(self.active_version < upgrade_version);
-
-        #[rustfmt::skip]
-        let upgrade = NetworkUpgrade {
-            version: upgrade_version,
-            quorum: usize::MAX,
-            min_validator_count: usize::MAX,
-            target_height: u64::MAX,
-            our_vote,
-            is_compliant: false, // Reject
-        };
-
-        self.upgrade = Some(upgrade);
-        self._finalize()
-    }
-
-    /// Finalizes the builder to create an ActivationManager that accepts an upgrade when conditions
-    /// are met.
-    ///
-    /// This creates a manager that will:
-    /// * Include the specified vote in the NetworkUpgradePayload of proposals
-    /// * Accept and process blocks with the upgrade version once all conditions are met
-    /// * Track votes from other validators and calculate approval rates
-    /// * Transition to the upgrade version automatically when an upgraded block is finalized
-    ///
-    /// This mode should be used when validators are prepared for an upgrade and have
-    /// the necessary code and migrations in place to handle the new version.
-    ///
-    /// # Parameters
-    /// * `upgrade_version` - The runtime version of the proposed upgrade
-    /// * `quorum` - The percentage approval rate (0-100) that must be reached for activation
-    /// * `min_validator_count` - The minimum validator count used for calculating approval rates
-    /// * `target_height` - The minimum block height at which the upgrade can activate
-    /// * `our_vote` - This validator's vote (Aye/Nay), defaults to Aye if None
-    ///
-    /// # Returns
-    /// * An ActivationManager configured to accept the upgrade when conditions are met
-    ///
-    /// # Panics
-    /// * If the `upgrade_version` is not greater than the active version
-    /// * If the `quorum` is less than `MIN_QUORUM`
-    /// * If the `min_validator_count` is less than `MIN_VALIDATOR_COUNT`
-    #[allow(non_snake_case)]
-    #[rustfmt::skip]
-    pub fn build_COMPLIANT_network_upgrade(
-        mut self,
-        upgrade_version: RuntimeVersion,
-        quorum: usize,
-        min_validator_count: usize,
-        target_height: u64,
-        our_vote: Option<Vote>,
-    ) -> ActivationManager<DB> {
-        assert!(
-            self.active_version < upgrade_version,
-            "upgrade version is older than the active version"
-        );
-
-        assert!(
-            quorum >= MIN_QUORUM,
-            "minimum validator count is less than the minimum required"
-        );
-
-        assert!(
-            min_validator_count >= MIN_VALIDATOR_COUNT,
-            "minimum validator count is less than the minimum required"
-        );
-
-        let upgrade = NetworkUpgrade {
-            version: upgrade_version,
-            quorum,
-            min_validator_count,
-            target_height,
-            our_vote: our_vote.unwrap_or(Vote::Aye),
-            is_compliant: true,
-        };
-
-        self.upgrade = Some(upgrade);
-        self._finalize()
-    }
-
-    fn _finalize(self) -> ActivationManager<DB> {
-        ActivationManager {
-            client: self.client,
-            vote_retention_period: self.vote_retention_period,
-            active_version: Arc::new(RwLock::new(self.active_version)),
-            upgrade: Arc::new(RwLock::new(self.upgrade)),
-        }
     }
 }
 
@@ -469,7 +298,7 @@ where
 /// state through atomic reference counting and read-write locks, allowing it to
 /// be shared between concurrent contexts.
 #[derive(Clone)]
-pub struct ActivationManager<DB> {
+pub struct ActivationManager<DB, Auth> {
     /// Database client for persisting and retrieving votes
     client: DB,
 
@@ -483,12 +312,30 @@ pub struct ActivationManager<DB> {
     /// Configuration for a pending network upgrade, if any
     /// Protected by a read-write lock for thread-safe updates
     upgrade: Arc<RwLock<Option<NetworkUpgrade>>>,
+
+    _p: std::marker::PhantomData<Auth>,
 }
 
-impl<DB> ActivationManager<DB>
+impl<DB, Auth> ActivationManager<DB, Auth>
 where
-    DB: ActivationManagerReaderWriter,
+    DB: ActivationManagerReaderWriter<Auth>,
 {
+    /// Creates a new `ActivationManager` instance with the specified configuration.
+    pub fn new(
+        client: DB,
+        vote_retention_period: u64,
+        active_version: RuntimeVersion,
+        upgrade: Option<NetworkUpgrade>,
+    ) -> Self {
+        ActivationManager {
+            client,
+            vote_retention_period,
+            active_version: Arc::new(RwLock::new(active_version)),
+            upgrade: Arc::new(RwLock::new(upgrade)),
+            _p: std::marker::PhantomData,
+        }
+    }
+
     /// Prepares a proposal decision based on the current upgrade state.
     ///
     /// This method is called during CometBFT's `prepare_proposal` phase to determine:
@@ -625,8 +472,9 @@ where
     /// # Parameters
     /// * `block_version` - The runtime version of the block being finalized
     /// * `block_height` - The height of the block being finalized
-    /// * `proposer_address` - The public key of the block proposer
-    /// * `proposer_vote` - The proposer's vote on a network upgrade, if any
+    /// * `proposer_address` - The address of the block proposer
+    /// * `proposer_vote` - The proposer's vote on a network upgrade, if any. If `None` or if the
+    ///   vote's version doesn't match the tracked upgrade, it's counted as abstained.
     ///
     /// # Returns
     /// * `OnFinalizeBlockDecision::Finalize` if the block should be finalized
@@ -635,7 +483,7 @@ where
         &self,
         block_version: RuntimeVersion,
         block_height: u64,
-        proposer_address: secp256k1::PublicKey,
+        proposer_address: Auth,
         proposer_vote: Option<NetworkUpgradePayload>,
     ) -> ProviderResult<OnFinalizeBlockDecision> {
         // Track the proposer's vote for upgrade intention, if provided
@@ -661,15 +509,15 @@ where
 
         let mut maybe_upgrade = self.upgrade.write().expect("poisoned lock");
         if let Some(upgrade) = maybe_upgrade.as_ref() {
+            // Prune **all** votes since the decision is now finalized.
+            self.client.remove_upgrading_votes(block_height.saturating_add(1))?;
+
             // Future version detected, reject the block; this node is running an
             // outdated version of this software that cannot handle those finalized
             // blocks.
             if block_version != upgrade.version {
                 return Ok(OnFinalizeBlockDecision::RejectBlockDeadEnd { version: block_version });
             }
-
-            // Prune **all** votes since the decision is now finalized.
-            self.client.remove_upgrading_votes(block_height.saturating_add(1))?;
 
             // For nodes that are explicitly not accepting this upgrade version,
             // reject the block and halt further processing.
@@ -696,6 +544,99 @@ where
         // outdated version of this software that cannot handle those finalized
         // blocks.
         Ok(OnFinalizeBlockDecision::RejectBlockDeadEnd { version: block_version })
+    }
+
+    /// Returns current voting statistics for the tracked network upgrade.
+    ///
+    /// This method provides a snapshot of validator voting activity for the
+    /// currently tracked upgrade, including vote counts and compliance status.
+    /// The returned data can be used for monitoring upgrade progress and
+    /// displaying voting statistics to users.
+    ///
+    /// # Returns
+    /// * `Ok(Some((version, polling)))` if an upgrade is being tracked, where:
+    ///   - `version` is the runtime version of the tracked upgrade
+    ///   - `polling` contains current vote counts and compliance statistics
+    /// * `Ok(None)` if no upgrade is currently being tracked
+    /// * `Err` if there was an error retrieving voting data from the database
+    pub fn get_upgrade_polling(&self) -> ProviderResult<Option<(RuntimeVersion, Polling)>> {
+        let maybe_upgrade = self.upgrade.read().expect("poisoned lock");
+        let Some(upgrade) = maybe_upgrade.as_ref() else {
+            return Ok(None);
+        };
+
+        let (ayes, total) = self.client.get_aye_votes()?;
+        let (nays, t2) = self.client.get_nay_votes()?;
+        let (abstained, t3) = self.client.get_abstained_votes()?;
+        let (compliant, t4) = self.client.get_compliance_count()?;
+
+        debug_assert_eq!(total, t2);
+        debug_assert_eq!(total, t3);
+        debug_assert_eq!(total, t4);
+        debug_assert_eq!(ayes + nays + abstained, total);
+
+        let polling = Polling { ayes, nays, abstained, compliant, total };
+
+        Ok(Some((upgrade.version, polling)))
+    }
+
+    /// Forces an upgrade to the specified version if it matches the currently
+    /// tracked upgrade and the node is compliant.
+    ///
+    /// This method bypasses all normal upgrade conditions and immediately
+    /// activates the specified upgrade version. It should only be called when
+    /// the caller is certain that the upgrade has already been activated on the
+    /// network, but the activation manager is unaware of this state (for
+    /// example, due to a node restart after the upgrade was finalized).
+    ///
+    /// This method serves as a fast-track mechanism to synchronize the
+    /// activation manager's internal state with the actual network state
+    /// without waiting for upgraded blocks to be processed through the normal
+    /// consensus flow.
+    ///
+    /// ## Safety
+    ///
+    /// This method should only be used when you are absolutely certain that:
+    /// - The specified upgrade version has already been activated on the network
+    /// - The node is capable of processing blocks with this version
+    /// - The upgrade conditions were previously met through normal consensus
+    ///
+    /// Using this method incorrectly could cause the node to accept or propose blocks
+    /// that the rest of the network rejects.
+    ///
+    /// # Parameters
+    /// * `version` - The runtime version to force activate. Must match the currently tracked
+    ///   upgrade version.
+    ///
+    /// # Returns
+    /// * `true` if the upgrade was successfully forced (version matched, node is compliant)
+    /// * `false` if no upgrade is being tracked, the version doesn't match, or the node is not
+    ///   compliant with the upgrade
+    pub fn force_upgrade_checked(&self, version: RuntimeVersion) -> bool {
+        let maybe_upgrade = self.upgrade.read().expect("poisoned lock");
+        let Some(upgrade) = maybe_upgrade.as_ref() else {
+            return false;
+        };
+
+        if upgrade.version != version {
+            return false;
+        }
+
+        if !upgrade.is_compliant {
+            return false;
+        }
+
+        std::mem::drop(maybe_upgrade);
+
+        // Upgrade is immediately active and mandatory for all future block
+        // production. Update our active version and clear the pending upgrade.
+        let mut upgrade = self.upgrade.write().expect("poisoned lock");
+        *upgrade = None;
+        //
+        let mut active_version = self.active_version.write().expect("poisoned lock");
+        *active_version = version;
+
+        true
     }
 
     /// Validates all conditions required for an upgrade to proceed.
@@ -759,24 +700,35 @@ where
     fn _track_vote(
         &self,
         block_height: u64,
-        addr: secp256k1::PublicKey,
+        addr: Auth,
         vote: Option<NetworkUpgradePayload>,
     ) -> ProviderResult<()> {
-        // If the proposer made a vote...
-        let Some(vote) = vote else {
-            return Ok(());
-        };
-
-        // And we're tracking an upgrade...
+        // Check if we're tracking an upgrade.
         let maybe_upgrade = self.upgrade.read().expect("poisoned lock");
         let Some(upgrade) = maybe_upgrade.as_ref() else {
             return Ok(());
         };
 
-        // And the proposers' version matches our upgrade version...
-        if vote.version != upgrade.version {
-            return Ok(());
-        }
+        let abstained_vote = || NetworkUpgradePayload {
+            version: upgrade.version,
+            vote: Vote::Abstain,
+            is_compliant: false,
+        };
+
+        // If the proposer provided an explicit vote, we check whether the
+        // version matches our upgrade version. If the version is mismatched or
+        // if no vote is provided at all, then we implicilty mark the vote as
+        // abstained.
+        let vote = if let Some(vote) = vote {
+            if vote.version == upgrade.version {
+                vote
+            } else {
+                abstained_vote()
+            }
+        } else {
+            // Abstained vote
+            abstained_vote()
+        };
 
         // Then track the vote.
         self.client.update_upgrading_vote(addr, vote.vote, vote.is_compliant, block_height)?;
@@ -805,7 +757,7 @@ where
 ///   the upgrade version. When `true`, the validator has the necessary software version and
 ///   configuration to handle the upgrade. This can be independent of the vote - a validator may
 ///   vote `Nay` but still be prepared to follow the network if the upgrade is adopted.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub struct NetworkUpgradePayload {
     /// The runtime version that this vote applies to.
     pub version: RuntimeVersion,

@@ -32,7 +32,7 @@ pub fn create_test_provider_factory_with_chain_spec(
     ProviderFactory::new(
         db,
         chain_spec,
-        StaticFileProvider::read_write(static_dir.into_path()).expect("static file provider"),
+        StaticFileProvider::read_write(static_dir.keep()).expect("static file provider"),
     )
 }
 

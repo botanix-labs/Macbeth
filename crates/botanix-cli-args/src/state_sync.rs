@@ -1,17 +1,17 @@
 use clap::Args;
 
 /// The default number of recent snapshots to keep.
-pub(crate) const DEFAULT_NUM_SNAPSHOTS_TO_KEEP: u64 = 3;
+pub const DEFAULT_NUM_SNAPSHOTS_TO_KEEP: u64 = 3;
 
 /// Snapshot message format for state sync prod
-pub(crate) const SNAPSHOT_MESSAGE_FORMAT: u32 = 1;
+pub const SNAPSHOT_MESSAGE_FORMAT: u32 = 1;
 
 #[allow(dead_code)]
 /// Snapshot message format for state sync test
-pub(crate) const SNAPSHOT_MESSAGE_FORMAT_TEST: u32 = 2;
+pub const SNAPSHOT_MESSAGE_FORMAT_TEST: u32 = 2;
 
 /// Wallet state sync chunk size
-pub(crate) const WALLET_STATE_SYNC_CHUNK_SIZE: u64 = 10;
+pub const WALLET_STATE_SYNC_CHUNK_SIZE: u64 = 10;
 /// Parameters to configure state sync.
 #[derive(Debug, Clone, Args, PartialEq, Eq)]
 #[clap(next_help_heading = "sync")]

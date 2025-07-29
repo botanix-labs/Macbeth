@@ -87,7 +87,6 @@ services:
       - --authrpc.port=8551
       - --metrics=0.0.0.0:9001
       - --ipcdisable
-      - --abci-host=0.0.0.0
       - --txpool.minimum-priority-fee=2500000
       - --txpool.minimal-protocol-fee=5000000
     ports:

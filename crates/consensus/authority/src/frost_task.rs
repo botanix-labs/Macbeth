@@ -552,7 +552,7 @@ where
                             get_utxos_from_pegin_meta(pegins.as_slice())
                         });
 
-                        // convert pegouts into correct format
+                        // Convert pegouts into correct format
                         let pending_pegouts = pegouts.as_ref().map_or_else(Vec::new, |pegouts| {
                             get_pending_pegouts_from_pegout_data(
                                 pegouts,
