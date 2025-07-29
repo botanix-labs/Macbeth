@@ -264,5 +264,12 @@ pub async fn frost_e2e_stable(
     it_info_print!("Expected fee: ", expected_fee);
     assert_eq!(actual_fee, Amount::from_sat(expected_fee));
 
+    // Verify witness signatures are 64 bytes (Taproot signature size when using SIGHASH_DEFAULT)
+    for input in pegout_tx.input.iter() {
+        let witness_item = &input.witness[0];
+        it_info_print!("Input witness (signature) length:", witness_item.len());
+        assert_eq!(witness_item.len(), 64);
+    }
+
     Ok(())
 }
