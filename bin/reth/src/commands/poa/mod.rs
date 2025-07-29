@@ -236,11 +236,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Get the botanix chain spec
 
-        // Check that both testnet and devnet are not enabled
-        let botanix_network = BotanixNetwork::from_args(*is_testnet, *is_devnet)?;
-        BotanixNetwork::validate(*is_testnet, *is_devnet)?;
-
         // Testnet and Devnet should result in the same chain spec
+        let botanix_network = BotanixNetwork::from_args(*is_testnet, *is_devnet)?;
         let chain = get_chain_from_federation_config(
             self.botanix_args
                 .federation_config_path

@@ -33,7 +33,12 @@ pub enum BotanixNetwork {
 
 impl BotanixNetwork {
     /// Creates a `BotanixNetwork` from command line arguments.
-    pub const fn from_args(is_testnet: bool, is_devnet: bool) -> eyre::Result<Self> {
+    pub fn from_args(is_testnet: bool, is_devnet: bool) -> eyre::Result<Self> {
+        // Validate that only one network argument is passed
+        if is_testnet && is_devnet {
+            return Err(eyre::eyre!("Both testnet and devnet cannot be enabled at the same time"));
+        }
+
         if is_testnet {
             Ok(Self::Testnet)
         } else if is_devnet {
@@ -54,13 +59,6 @@ impl BotanixNetwork {
     /// Returns `true` if this network is Botanix Devnet.
     pub const fn is_devnet(&self) -> bool {
         matches!(self, Self::Devnet)
-    }
-    /// Returns `true` if only one network argument is passed.
-    pub fn validate(is_testnet: bool, is_devnet: bool) -> Result<(), eyre::Error> {
-        if is_testnet && is_devnet {
-            return Err(eyre::eyre!("Both testnet and devnet cannot be enabled at the same time"));
-        }
-        Ok(())
     }
 }
 
@@ -146,15 +144,8 @@ mod tests {
         assert_eq!(BotanixNetwork::from_args(false, false).unwrap(), BotanixNetwork::Mainnet);
         assert_eq!(BotanixNetwork::from_args(true, false).unwrap(), BotanixNetwork::Testnet);
         assert_eq!(BotanixNetwork::from_args(false, true).unwrap(), BotanixNetwork::Devnet);
-    }
-
-    #[test]
-    fn test_validate() {
-        assert!(BotanixNetwork::validate(false, false).is_ok());
-        assert!(BotanixNetwork::validate(true, false).is_ok());
-        assert!(BotanixNetwork::validate(false, true).is_ok());
         assert!(
-            BotanixNetwork::validate(true, true).is_err(),
+            BotanixNetwork::from_args(true, true).is_err(),
             "Both testnet and devnet cannot be enabled at the same time"
         );
     }
