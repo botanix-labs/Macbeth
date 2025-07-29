@@ -4,7 +4,7 @@ use frost_secp256k1_tr as frost;
 use thiserror::Error;
 
 use crate::wallet::{
-    SEGWIT_FLAG_WEIGHT, SEGWIT_MARKER_WEIGHT, TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+    SEGWIT_FLAG_WEIGHT, SEGWIT_MARKER_WEIGHT, TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT,
 };
 
 #[derive(Debug, Error)]
@@ -65,7 +65,7 @@ pub fn calculate_signed_tx_weight(psbt: &Psbt) -> Result<Weight, WalletCalculati
     // calculate the weight of the signatures (assuming all inputs are p2tr)
     let num_inputs = psbt.inputs.len();
     let per_input_witness_item_count = Weight::from_wu(1);
-    let total_signature_weight = (TAPROOT_KEYSPEND_SATISFACTION_WEIGHT +
+    let total_signature_weight = (TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT +
         per_input_witness_item_count)
         .checked_mul(num_inputs as u64)
         .ok_or(WalletCalculationError::WeightOverflow)?; // or changeoverflow
@@ -114,7 +114,7 @@ mod tests {
 
         for (name, psbt) in test_cases {
             let mut psbt_with_signatures = psbt;
-            add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::All);
+            add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::Default);
             let tx = psbt_with_signatures.clone().extract_tx().expect("Failed to extract tx");
 
             let expected_fee_rate = psbt_with_signatures.fee_rate().unwrap();
