@@ -4,7 +4,9 @@ use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
 use botanix_cli_args::{
-    bitcoind::BitcoindArgs, chain::get_chain_from_federation_config, poa_node::PoaNodeArgs,
+    bitcoind::BitcoindArgs,
+    chain::{get_chain_from_federation_config, BotanixNetwork},
+    poa_node::PoaNodeArgs,
 };
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use botanix_configs::federation::load_federation_config_toml;
@@ -234,20 +236,18 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Get the botanix chain spec
 
-        // Check if both testnet and devnet are enabled
-        if *is_testnet && *is_devnet {
-            return Err(eyre::eyre!("Both testnet and devnet cannot be enabled at the same time"));
-        }
+        // Check that both testnet and devnet are not enabled
+        let botanix_network = BotanixNetwork::from_args(*is_testnet, *is_devnet)?;
+        BotanixNetwork::validate(*is_testnet, *is_devnet)?;
 
         // Testnet and Devnet should result in the same chain spec
-        let is_not_mainnet = *is_testnet || *is_devnet;
         let chain = get_chain_from_federation_config(
             self.botanix_args
                 .federation_config_path
                 .clone()
                 .to_str()
                 .expect("federation config path to exist"),
-            is_not_mainnet,
+            !botanix_network.is_mainnet(),
         )?;
         let chain_arc = Arc::new(chain.clone());
 
@@ -783,12 +783,12 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Setting all the values on a per network basis in case they are different in the future.
         #[allow(clippy::branches_sharing_code)]
-        if *is_testnet {
+        if botanix_network.is_testnet() {
             quorum = 100; // 100% ~= 3/3 members must approve
             min_validator_count = 3;
             target_height = 1; // Activate as soon as possible
             our_vote = Vote::Aye;
-        } else if *is_devnet {
+        } else if botanix_network.is_devnet() {
             quorum = 100; // 100% ~= 6/6 members must approve
             min_validator_count = 6;
             target_height = 1; // Activate as soon as possible
