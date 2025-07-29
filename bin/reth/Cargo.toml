@@ -25,6 +25,7 @@ backon = { workspace = true }
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
 bitcoincore-zmq = { workspace = true }
+botanix-activation-manager = { workspace = true }
 botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 botanix-authority-rsp = { workspace = true }
 botanix-bitcoin-checkpoint = { workspace = true }
@@ -34,10 +35,10 @@ botanix-btc-wallet = { workspace = true }
 botanix-cli-args = { workspace = true }
 botanix-cli-parsers = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
+botanix-configs = { workspace = true }
 botanix-rpc-config = { workspace = true }
 botanix-storage = { workspace = true }
 botanix-storage-migrate = { workspace = true }
-botanix-activation-manager = { workspace = true }
 botanix-utils = { workspace = true }
 btc-server = { path = "../btc-server" }
 clap = { workspace = true, features = ["derive", "env"] }

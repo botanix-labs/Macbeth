@@ -3,8 +3,11 @@
 use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
-use botanix_cli_args::{bitcoind::BitcoindArgs, poa_node::PoaNodeArgs};
+use botanix_cli_args::{
+    bitcoind::BitcoindArgs, chain::get_chain_from_federation_config, poa_node::PoaNodeArgs,
+};
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_configs::federation::load_federation_config_toml;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use botanix_storage_migrate::is_migration_needed;
 use botanix_utils::panic_hook::set_panic_hook;
@@ -81,11 +84,7 @@ use reth_network::{
 use reth_node_builder::{
     setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig,
 };
-use reth_node_core::{
-    args::utils::{get_chain_from_federation_config, load_federation_config_toml},
-    node_config::NodeConfig,
-    version,
-};
+use reth_node_core::{node_config::NodeConfig, version};
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
 use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
 use reth_provider::{
@@ -1170,9 +1169,9 @@ async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use botanix_cli_args::federation_args::{FedMemberPubKey, FederationTomlConfig};
+    use botanix_cli_args::chain::get_botanix_chain;
+    use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
-    use reth_node_core::args::utils::get_botanix_chain;
     use std::{
         net::{IpAddr, Ipv4Addr},
         path::Path,
