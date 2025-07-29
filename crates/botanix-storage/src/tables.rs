@@ -55,6 +55,10 @@ tables! {
     /// ensures no pegin or pegout data is lost during block processing.
     table StagedHeader<Key = B256, Value = HeaderWithPegs>;
 
+    /// Stores runtime version transitions across blocks encountered during
+    /// finalization.
+    table RuntimeTransitions<Key = BlockNumber, Value = RuntimeVersion>;
+
     /// Store chunk id to chunk data.
     ///
     /// Chunks represent segments of snapshot data, allowing for efficient

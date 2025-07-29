@@ -1,5 +1,5 @@
 [workspace.package]
-version = "1.1.11"
+version = "1.1.13"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -19,6 +19,7 @@ members = [
     "bin/reth/",
     "bin/test-suite",
     "crates/blockchain-tree-api/",
+    "crates/botanix-activation-manager",
     "crates/botanix-authority-edh",
     "crates/botanix-authority-peg",
     "crates/botanix-bitcoin-checkpoint",
@@ -389,6 +390,7 @@ botanix-authority-edh = { path = "crates/botanix-authority-edh" }
 botanix-authority-peg = { path = "crates/botanix-authority-peg" }
 botanix-bitcoin-checkpoint = { path = "crates/botanix-bitcoin-checkpoint" }
 botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
+botanix-activation-manager = { path = "crates/botanix-activation-manager" }
 botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
 botanix-data-parser = { path = "crates/botanix-data-parser" }
 botanix-cli-parsers = { path = "crates/botanix-cli-parsers" }
