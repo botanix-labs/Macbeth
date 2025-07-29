@@ -2309,14 +2309,23 @@ dependencies = [
 name = "botanix-cli-args"
 version = "1.1.11"
 dependencies = [
+ "askama",
+ "bitcoin 0.32.5",
+ "botanix-authority-edh",
  "botanix-btc-wallet",
  "botanix-cli-parsers",
+ "botanix-configs",
  "clap",
  "displaydoc",
+ "eyre",
+ "hex",
+ "reth-chainspec",
  "reth-cli-util",
  "reth-primitives",
  "secp256k1 0.29.1",
  "serde",
+ "serde_json",
+ "shellexpand",
  "thiserror 2.0.12",
  "toml",
  "url",
@@ -2327,10 +2336,20 @@ name = "botanix-cli-parsers"
 version = "1.1.11"
 dependencies = [
  "alloy-primitives 0.7.7",
+ "askama",
+ "bitcoin 0.32.5",
+ "botanix-authority-edh",
+ "botanix-configs",
  "eyre",
+ "reth-chainspec",
  "reth-cli-util",
+ "reth-primitives",
+ "secp256k1 0.29.1",
  "serde",
+ "serde_json",
+ "shellexpand",
  "thiserror 2.0.12",
+ "toml",
  "tonic",
  "url",
 ]
@@ -2349,6 +2368,28 @@ dependencies = [
  "tendermint-rpc",
  "thiserror 2.0.12",
  "tracing",
+]
+
+[[package]]
+name = "botanix-configs"
+version = "1.1.11"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "askama",
+ "bitcoin 0.32.5",
+ "displaydoc",
+ "eyre",
+ "reth-chainspec",
+ "reth-cli-util",
+ "reth-primitives",
+ "secp256k1 0.29.1",
+ "serde",
+ "serde_json",
+ "shellexpand",
+ "thiserror 2.0.12",
+ "toml",
+ "tonic",
+ "url",
 ]
 
 [[package]]
@@ -2517,6 +2558,7 @@ version = "1.1.11"
 dependencies = [
  "anyhow",
  "botanix-cli-args",
+ "botanix-configs",
  "clap",
  "hex",
  "rand 0.8.5",
@@ -8914,6 +8956,7 @@ dependencies = [
  "botanix-cli-args",
  "botanix-cli-parsers",
  "botanix-comet-bft-rpc",
+ "botanix-configs",
  "botanix-rpc-config",
  "botanix-storage",
  "botanix-storage-migrate",
@@ -13385,6 +13428,7 @@ dependencies = [
  "botanix-btc-wallet",
  "botanix-cli-args",
  "botanix-comet-bft-rpc",
+ "botanix-configs",
  "botanix-data-parser",
  "botanix-storage",
  "btc-server",

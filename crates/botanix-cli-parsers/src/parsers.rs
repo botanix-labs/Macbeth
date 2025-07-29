@@ -1,7 +1,23 @@
 use crate::errors::{EthereumAddressParseError, UrlParsingError};
 use alloy_primitives::{hex, Address};
+use askama::Template;
+use bitcoin::hashes::Hash;
+use botanix_authority_edh::extra_data_header::{
+    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+};
+use botanix_configs::federation::FederationTomlConfig;
+use reth_chainspec::{
+    create_botanix_config_with_genesis, BotanixTestnetGenesisConfig, ChainSpec, BOTANIX_MAINNET,
+    BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID, DEV, HOLESKY, MAINNET, SEPOLIA,
+};
 use reth_cli_util::parsers::SocketAddressParsingError;
+use reth_primitives::{constants::nums_secp256k1_pk, Genesis};
+use std::{fs, path::PathBuf, str::FromStr, sync::Arc};
 use url::Url;
+
+/// Chains supported by reth. First value should be used as the default.
+pub const SUPPORTED_CHAINS: &[&str] =
+    &["mainnet", "sepolia", "holesky", "goerli", "dev", "botanix_testnet", "botanix_mainnet"];
 
 /// Parse a [`SocketAddr`] from a `str` prefixing with http.
 ///
@@ -54,9 +70,109 @@ pub fn parse_ethereum_address(s: &str) -> eyre::Result<Address, EthereumAddressP
     Ok(Address::from(addr_array))
 }
 
+/// Clap value parser for [`ChainSpec`]s.
+///
+/// The value parser matches either a known chain, the path
+/// to a json file, or a json formatted string in-memory. The json can be either
+/// a serialized [`ChainSpec`] or Genesis struct.
+pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
+    Ok(match s {
+        "mainnet" => MAINNET.clone(),
+        "sepolia" => SEPOLIA.clone(),
+        "holesky" => HOLESKY.clone(),
+        "dev" => DEV.clone(),
+        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
+        _ => {
+            // try to read json from path first
+            let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
+                Ok(raw) => raw,
+                Err(io_err) => {
+                    // valid json may start with "\n", but must contain "{"
+                    if s.contains('{') {
+                        s.to_string()
+                    } else {
+                        return Err(io_err.into()); // assume invalid path
+                    }
+                }
+            };
+
+            // both serialized Genesis and ChainSpec structs supported
+            // our own toml format
+            let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
+            let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient;
+            let lst_fee_receiver = genesis_toml_config.lst_fee_receiver;
+
+            let extra_data_header = ExtraDataHeader::new(
+                EXTRA_HEADER_VERSION,
+                CHAIN_VERSION,
+                bitcoin::hash_types::BlockHash::all_zeros(),
+                // Agg key in genesis should always be NUMS point
+                nums_secp256k1_pk(),
+                Address::ZERO,
+            );
+            let edh = hex::encode(extra_data_header.serialize());
+            let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+            let rendered_json = botanix_testnet_config_genesis.render()?;
+            let genesis = serde_json::from_str(&rendered_json)?;
+            let botanix_testnet = create_botanix_config_with_genesis(
+                genesis,
+                BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth,
+                botanix_fee_recipient,
+                BOTANIX_TESTNET_CHAIN_ID,
+                BOTANIX_TESTNET.genesis_hash,
+                lst_fee_receiver,
+            );
+            Arc::new(botanix_testnet)
+        }
+    })
+}
+
+/// Clap value parser for [`ChainSpec`]s.
+///
+/// The value parser matches either a known chain, the path
+/// to a json file, or a json formatted string in-memory. The json needs to be a Genesis struct.
+pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
+    Ok(match s {
+        "mainnet" => MAINNET.clone(),
+        "sepolia" => SEPOLIA.clone(),
+        "holesky" => HOLESKY.clone(),
+        "dev" => DEV.clone(),
+        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
+        "botanix_mainnet" | "botanix-mainnet" => BOTANIX_MAINNET.clone(),
+        _ => {
+            // try to read json from path first
+            let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
+                Ok(raw) => raw,
+                Err(io_err) => {
+                    // valid json may start with "\n", but must contain "{"
+                    if s.contains('{') {
+                        s.to_string()
+                    } else {
+                        return Err(io_err.into()); // assume invalid path
+                    }
+                }
+            };
+
+            // both serialized Genesis and ChainSpec structs supported
+            let genesis: Genesis = serde_json::from_str(&raw)?;
+
+            Arc::new(genesis.into())
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use reth_chainspec::ChainSpecBuilder;
+    use reth_primitives::{hex, Address, ChainConfig, Genesis, GenesisAccount, B256, U256};
+    use std::collections::HashMap;
+
+    use crate::{
+        errors::EthereumAddressParseError,
+        parsers::{
+            chain_value_parser, genesis_value_parser, parse_ethereum_address, SUPPORTED_CHAINS,
+        },
+    };
 
     #[test]
     fn test_parse_ethereum_address_no_prefix() {
@@ -113,5 +229,93 @@ mod tests {
         let address_str = "0x8ba1f109551bd432803012645ac136ddd64dba72";
         let response = parse_ethereum_address(address_str);
         assert_eq!(response, Err(EthereumAddressParseError::ChecksumFailed));
+    }
+
+    #[test]
+    fn parse_known_chain_spec() {
+        for chain in SUPPORTED_CHAINS {
+            chain_value_parser(chain).unwrap();
+            // chain_spec_value_parser(chain).unwrap();
+            genesis_value_parser(chain).unwrap();
+        }
+    }
+
+    #[test]
+    fn parse_chain_spec_from_memory() {
+        let custom_genesis_from_json = r#"
+{
+    "nonce": "0x0",
+    "timestamp": "0x653FEE9E",
+    "gasLimit": "0x1388",
+    "difficulty": "0x0",
+    "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "coinbase": "0x0000000000000000000000000000000000000000",
+    "alloc": {
+        "0x6Be02d1d3665660d22FF9624b7BE0551ee1Ac91b": {
+            "balance": "0x21"
+        }
+    },
+    "number": "0x0",
+    "gasUsed": "0x0",
+    "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "config": {
+        "chainId": 2600,
+        "homesteadBlock": 0,
+        "eip150Block": 0,
+        "eip155Block": 0,
+        "eip158Block": 0,
+        "byzantiumBlock": 0,
+        "constantinopleBlock": 0,
+        "petersburgBlock": 0,
+        "istanbulBlock": 0,
+        "berlinBlock": 0,
+        "londonBlock": 0,
+        "terminalTotalDifficulty": 0,
+        "terminalTotalDifficultyPassed": true,
+        "shanghaiTime": 0
+    }
+}
+"#;
+
+        let chain_from_json = genesis_value_parser(custom_genesis_from_json).unwrap();
+
+        // using structs
+        let config = ChainConfig {
+            chain_id: 2600,
+            homestead_block: Some(0),
+            eip150_block: Some(0),
+            eip155_block: Some(0),
+            eip158_block: Some(0),
+            byzantium_block: Some(0),
+            constantinople_block: Some(0),
+            petersburg_block: Some(0),
+            istanbul_block: Some(0),
+            berlin_block: Some(0),
+            london_block: Some(0),
+            shanghai_time: Some(0),
+            terminal_total_difficulty: Some(U256::ZERO),
+            terminal_total_difficulty_passed: true,
+            ..Default::default()
+        };
+        let genesis = Genesis {
+            config,
+            nonce: 0,
+            timestamp: 1698688670,
+            gas_limit: 5000,
+            difficulty: U256::ZERO,
+            mix_hash: B256::ZERO,
+            coinbase: Address::ZERO,
+            number: Some(0),
+            ..Default::default()
+        };
+
+        // seed accounts after genesis struct created
+        let address = hex!("6Be02d1d3665660d22FF9624b7BE0551ee1Ac91b").into();
+        let account = GenesisAccount::default().with_balance(U256::from(33));
+        let genesis = genesis.extend_accounts(HashMap::from([(address, account)]));
+
+        let custom_genesis_from_struct = serde_json::to_string(&genesis).unwrap();
+        let chain_from_struct = genesis_value_parser(&custom_genesis_from_struct).unwrap();
+        assert_eq!(chain_from_json.genesis(), chain_from_struct.genesis());
     }
 }

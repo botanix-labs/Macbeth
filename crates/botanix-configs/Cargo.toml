@@ -1,5 +1,5 @@
 [package]
-name = "botanix-cli-parsers"
+name = "botanix-configs"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -9,8 +9,7 @@ license = { workspace = true }
 alloy-primitives = { workspace = true }
 askama = "0.12.1"
 bitcoin = { workspace = true }
-botanix-authority-edh = { workspace = true }
-botanix-configs = { workspace = true }
+displaydoc = { version = "0.2" }
 eyre = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-cli-util = { workspace = true }
