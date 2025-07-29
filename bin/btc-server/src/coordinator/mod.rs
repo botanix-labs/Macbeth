@@ -249,7 +249,7 @@ pub async fn finalize_signing(
 
         // Note: we don't need to add the internal key here for a key spend path
         // as the output key is derived from the scriptpubkey
-        let hash_ty = bitcoin::sighash::TapSighashType::All;
+        let hash_ty = bitcoin::sighash::TapSighashType::Default;
         let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
         psbt_input.sighash_type = Some(sighash_type);
         psbt_input.tap_key_sig =
