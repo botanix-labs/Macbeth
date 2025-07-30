@@ -21,12 +21,45 @@ pub fn chain_help() -> String {
 
 /// The Botanix network enum
 /// This is used to determine which network to use when creating the chain spec.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum BotanixNetwork {
     /// Mainnet Botanix network
     Mainnet,
     /// Testnet Botanix network
     Testnet,
+    /// Devnet Botanix network
+    Devnet,
+}
+
+impl BotanixNetwork {
+    /// Creates a `BotanixNetwork` from command line arguments.
+    pub fn from_args(is_testnet: bool, is_devnet: bool) -> eyre::Result<Self> {
+        // Validate that only one network argument is passed
+        if is_testnet && is_devnet {
+            return Err(eyre::eyre!("Both testnet and devnet cannot be enabled at the same time"));
+        }
+
+        if is_testnet {
+            Ok(Self::Testnet)
+        } else if is_devnet {
+            Ok(Self::Devnet)
+        } else {
+            Ok(Self::Mainnet)
+        }
+    }
+    /// Returns `true` if this network is Botanix Mainnet.
+    pub const fn is_mainnet(&self) -> bool {
+        matches!(self, Self::Mainnet)
+    }
+
+    /// Returns `true` if this network is Botanix Testnet.
+    pub const fn is_testnet(&self) -> bool {
+        matches!(self, Self::Testnet)
+    }
+    /// Returns `true` if this network is Botanix Devnet.
+    pub const fn is_devnet(&self) -> bool {
+        matches!(self, Self::Devnet)
+    }
 }
 
 /// Returns the Botanix network chain spec based on a flag
@@ -58,7 +91,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
                 BOTANIX_MAINNET.genesis_hash,
             )
         }
-        BotanixNetwork::Testnet => {
+        BotanixNetwork::Testnet | BotanixNetwork::Devnet => {
             let genesis_config = BotanixTestnetGenesisConfig { edh: &edh };
             let rendered_json = genesis_config.render()?;
             let genesis = serde_json::from_str(&rendered_json)?;
@@ -100,4 +133,20 @@ pub fn get_chain_from_federation_config(
     };
 
     get_botanix_chain(&raw, is_testnet)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_args() {
+        assert_eq!(BotanixNetwork::from_args(false, false).unwrap(), BotanixNetwork::Mainnet);
+        assert_eq!(BotanixNetwork::from_args(true, false).unwrap(), BotanixNetwork::Testnet);
+        assert_eq!(BotanixNetwork::from_args(false, true).unwrap(), BotanixNetwork::Devnet);
+        assert!(
+            BotanixNetwork::from_args(true, true).is_err(),
+            "Both testnet and devnet cannot be enabled at the same time"
+        );
+    }
 }
