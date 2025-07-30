@@ -5,6 +5,7 @@ use alloy_chains::{Chain, ChainKind, NamedChain};
 use alloy_genesis::Genesis;
 use alloy_primitives::{address, b256, Address, BlockNumber, B256, U256};
 use alloy_trie::EMPTY_ROOT_HASH;
+use askama::Template;
 use derive_more::From;
 use once_cell::sync::Lazy;
 use reth_ethereum_forks::{

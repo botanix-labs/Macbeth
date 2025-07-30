@@ -2345,14 +2345,23 @@ dependencies = [
 name = "botanix-cli-args"
 version = "1.1.13"
 dependencies = [
+ "askama",
+ "bitcoin 0.32.6",
+ "botanix-authority-edh",
  "botanix-btc-wallet",
  "botanix-cli-parsers",
+ "botanix-configs",
  "clap",
  "displaydoc",
+ "eyre",
+ "hex",
+ "reth-chainspec",
  "reth-cli-util",
  "reth-primitives",
  "secp256k1 0.29.1",
  "serde",
+ "serde_json",
+ "shellexpand",
  "thiserror 2.0.12",
  "toml 0.8.23",
  "url",
@@ -2363,10 +2372,20 @@ name = "botanix-cli-parsers"
 version = "1.1.13"
 dependencies = [
  "alloy-primitives 0.7.7",
+ "askama",
+ "bitcoin 0.32.6",
+ "botanix-authority-edh",
+ "botanix-configs",
  "eyre",
+ "reth-chainspec",
  "reth-cli-util",
+ "reth-primitives",
+ "secp256k1 0.29.1",
  "serde",
+ "serde_json",
+ "shellexpand",
  "thiserror 2.0.12",
+ "toml 0.8.23",
  "tonic",
  "url",
 ]
@@ -2385,6 +2404,28 @@ dependencies = [
  "tendermint-rpc",
  "thiserror 2.0.12",
  "tracing",
+]
+
+[[package]]
+name = "botanix-configs"
+version = "1.1.13"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "askama",
+ "bitcoin 0.32.6",
+ "displaydoc",
+ "eyre",
+ "reth-chainspec",
+ "reth-cli-util",
+ "reth-primitives",
+ "secp256k1 0.29.1",
+ "serde",
+ "serde_json",
+ "shellexpand",
+ "thiserror 2.0.12",
+ "toml 0.8.23",
+ "tonic",
+ "url",
 ]
 
 [[package]]
@@ -2576,6 +2617,7 @@ version = "1.1.13"
 dependencies = [
  "anyhow",
  "botanix-cli-args",
+ "botanix-configs",
  "clap",
  "hex",
  "rand 0.8.5",
@@ -9161,6 +9203,7 @@ dependencies = [
  "botanix-cli-args",
  "botanix-cli-parsers",
  "botanix-comet-bft-rpc",
+ "botanix-configs",
  "botanix-rpc-config",
  "botanix-storage",
  "botanix-storage-migrate",
@@ -10742,11 +10785,8 @@ dependencies = [
 name = "reth-node-core"
 version = "1.1.13"
 dependencies = [
- "alloy-genesis",
- "askama",
  "assert_matches",
  "bitcoin 0.32.6",
- "botanix-authority-edh",
  "botanix-cli-args",
  "botanix-cli-parsers",
  "btc-server",
@@ -10756,7 +10796,6 @@ dependencies = [
  "dirs-next",
  "eyre",
  "futures",
- "hex",
  "humantime",
  "proptest",
  "rand 0.8.5",
@@ -10768,7 +10807,6 @@ dependencies = [
  "reth-db-api",
  "reth-discv4",
  "reth-discv5",
- "reth-fs-util",
  "reth-net-nat",
  "reth-network",
  "reth-network-p2p",
@@ -10788,7 +10826,6 @@ dependencies = [
  "reth-transaction-pool",
  "secp256k1 0.29.1",
  "serde",
- "serde_json",
  "shellexpand",
  "tempfile",
  "tokio",
@@ -13675,6 +13712,7 @@ dependencies = [
  "botanix-btc-wallet",
  "botanix-cli-args",
  "botanix-comet-bft-rpc",
+ "botanix-configs",
  "botanix-data-parser",
  "botanix-storage",
  "btc-server",

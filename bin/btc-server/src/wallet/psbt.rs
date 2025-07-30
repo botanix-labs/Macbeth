@@ -381,7 +381,7 @@ pub(crate) fn calculate_sighash(
     let sighash = sighashcache.taproot_key_spend_signature_hash(
         input_index,
         &bitcoin::sighash::Prevouts::All(&prevouts),
-        TapSighashType::All,
+        TapSighashType::Default,
     )?;
 
     Ok(sighash)
