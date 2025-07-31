@@ -484,6 +484,9 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
             .cloned();
 
         if finalized_pegouts_id.is_some() {
+            // Remove the finalized pegout id from the list of pending pegouts so it does not get
+            // processed again.
+            db.remove_pending_pegout(&[*id]).ok();
             return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
         }
     }
@@ -1671,6 +1674,18 @@ mod tests {
         let finalized_pegout =
             FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
         db.store_finalized_pegout_ids_atomically(vec![&finalized_pegout].as_slice()).unwrap();
+        // Store the finalized pegout in the pending pegouts list
+        let tx = create_tx(1, 1, None);
+        let pegout_request = PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: pegout_id,
+            botanix_height: 0,
+            timestamp: None,
+        };
+        db.store_pending_pegout(&pegout_request).unwrap();
+        let pending_pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pending_pegouts.len(), 1, "Pending pegouts should have 1 item");
 
         // create a psbt with the finalized pegout id
         let mut psbt = create_psbt(1, 1, None);
@@ -1688,5 +1703,9 @@ mod tests {
                 panic!("Expected AlreadyFinalizedPegouts error, got {:?}", other_error);
             }
         }
+
+        // Assert the finalized pegout has been removed from the pending pegouts list
+        let pending_pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pending_pegouts.len(), 0, "Pending pegouts should be empty");
     }
 }

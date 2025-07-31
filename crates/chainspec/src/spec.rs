@@ -5,6 +5,7 @@ use alloy_chains::{Chain, ChainKind, NamedChain};
 use alloy_genesis::Genesis;
 use alloy_primitives::{address, b256, Address, BlockNumber, B256, U256};
 use alloy_trie::EMPTY_ROOT_HASH;
+use askama::Template;
 use derive_more::From;
 use once_cell::sync::Lazy;
 use reth_ethereum_forks::{
@@ -23,8 +24,6 @@ use reth_primitives_traits::{
 use reth_trie_common::root::state_root_ref_unhashed;
 #[cfg(feature = "std")]
 use std::sync::Arc;
-
-use askama::Template;
 
 use reth_network_peers::{
     base_nodes, base_testnet_nodes, holesky_nodes, mainnet_nodes, op_nodes, op_testnet_nodes,

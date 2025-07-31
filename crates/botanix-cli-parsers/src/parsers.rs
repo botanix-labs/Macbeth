@@ -1,7 +1,23 @@
 use crate::errors::{EthereumAddressParseError, UrlParsingError};
 use alloy_primitives::{hex, Address};
+use askama::Template;
+use bitcoin::hashes::Hash;
+use botanix_authority_edh::extra_data_header::{
+    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+};
+use botanix_configs::federation::FederationTomlConfig;
+use reth_chainspec::{
+    create_botanix_config_with_genesis, BotanixTestnetGenesisConfig, ChainSpec, BOTANIX_MAINNET,
+    BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID, DEV, HOLESKY, MAINNET, SEPOLIA,
+};
 use reth_cli_util::parsers::SocketAddressParsingError;
+use reth_primitives::{constants::nums_secp256k1_pk, Genesis};
+use std::{fs, path::PathBuf, str::FromStr, sync::Arc};
 use url::Url;
+
+/// Chains supported by reth. First value should be used as the default.
+pub const SUPPORTED_CHAINS: &[&str] =
+    &["mainnet", "sepolia", "holesky", "dev", "botanix_testnet", "botanix_mainnet"];
 
 /// Parse a [`SocketAddr`] from a `str` prefixing with http.
 ///
@@ -54,9 +70,116 @@ pub fn parse_ethereum_address(s: &str) -> eyre::Result<Address, EthereumAddressP
     Ok(Address::from(addr_array))
 }
 
+/// Clap value parser for [`ChainSpec`]s.
+///
+/// The value parser matches either a known chain, the path
+/// to a json file, or a json formatted string in-memory. The json can be either
+/// a serialized [`ChainSpec`] or Genesis struct.
+pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
+    Ok(match s {
+        "mainnet" => MAINNET.clone(),
+        "sepolia" => SEPOLIA.clone(),
+        "holesky" => HOLESKY.clone(),
+        "dev" => DEV.clone(),
+        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
+        "botanix_mainnet" | "botanix-mainnet" => BOTANIX_MAINNET.clone(),
+        _ => {
+            // try to read json from path first
+            let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
+                Ok(raw) => raw,
+                Err(io_err) => {
+                    // valid json may start with "\n", but must contain "{"
+                    if s.contains('{') {
+                        s.to_string()
+                    } else {
+                        return Err(io_err.into()); // assume invalid path
+                    }
+                }
+            };
+            // both serialized Genesis and ChainSpec supported
+            let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
+            let botanix_fee_recipient = genesis_toml_config.botanix_fee_recipient.clone();
+            let lst_fee_receiver = genesis_toml_config.lst_fee_receiver;
+
+            let _public_keys = genesis_toml_config
+                .federation_member_public_key
+                .iter()
+                .map(|key| {
+                    secp256k1::PublicKey::from_str(&key.key)
+                        .expect("Invalid hex string for PublicKey")
+                })
+                .collect::<Vec<secp256k1::PublicKey>>();
+
+            let extra_data_header = ExtraDataHeader::new(
+                EXTRA_HEADER_VERSION,
+                CHAIN_VERSION,
+                bitcoin::hash_types::BlockHash::all_zeros(),
+                // Agg key in genesis should always be NUMS point for genesis block
+                nums_secp256k1_pk(),
+                Address::ZERO,
+            );
+            let edh = hex::encode(extra_data_header.serialize());
+            let botanix_testnet_config_genesis = BotanixTestnetGenesisConfig { edh: &edh };
+            let rendered_json = botanix_testnet_config_genesis.render()?;
+            let genesis = serde_json::from_str(&rendered_json)?;
+            let botanix_testnet = create_botanix_config_with_genesis(
+                genesis,
+                BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth,
+                botanix_fee_recipient,
+                BOTANIX_TESTNET_CHAIN_ID,
+                BOTANIX_TESTNET.genesis_hash,
+                lst_fee_receiver,
+            );
+            Arc::new(botanix_testnet)
+        }
+    })
+}
+
+/// Clap value parser for [`ChainSpec`]s.
+///
+/// The value parser matches either a known chain, the path
+/// to a json file, or a json formatted string in-memory. The json needs to be a Genesis struct.
+pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
+    Ok(match s {
+        "mainnet" => MAINNET.clone(),
+        "sepolia" => SEPOLIA.clone(),
+        "holesky" => HOLESKY.clone(),
+        "dev" => DEV.clone(),
+        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
+        "botanix_mainnet" | "botanix-mainnet" => BOTANIX_MAINNET.clone(),
+        _ => {
+            // try to read json from path first
+            let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
+                Ok(raw) => raw,
+                Err(io_err) => {
+                    // valid json may start with "\n", but must contain "{"
+                    if s.contains('{') {
+                        s.to_string()
+                    } else {
+                        return Err(io_err.into()); // assume invalid path
+                    }
+                }
+            };
+
+            // both serialized Genesis and ChainSpec structs supported
+            let genesis: Genesis = serde_json::from_str(&raw)?;
+
+            Arc::new(genesis.into())
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use reth_primitives::{hex, Address, ChainConfig, Genesis, GenesisAccount, B256, U256};
+    use std::collections::HashMap;
+
+    use crate::{
+        errors::EthereumAddressParseError,
+        parsers::{
+            chain_value_parser, genesis_value_parser, parse_ethereum_address, SUPPORTED_CHAINS,
+        },
+    };
 
     #[test]
     fn test_parse_ethereum_address_no_prefix() {
@@ -113,5 +236,13 @@ mod tests {
         let address_str = "0x8ba1f109551bd432803012645ac136ddd64dba72";
         let response = parse_ethereum_address(address_str);
         assert_eq!(response, Err(EthereumAddressParseError::ChecksumFailed));
+    }
+
+    #[test]
+    fn parse_known_chain_spec() {
+        for chain in SUPPORTED_CHAINS {
+            chain_value_parser(chain).unwrap();
+            genesis_value_parser(chain).unwrap();
+        }
     }
 }

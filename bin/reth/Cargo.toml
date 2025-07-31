@@ -35,6 +35,7 @@ botanix-btc-wallet = { workspace = true }
 botanix-cli-args = { workspace = true }
 botanix-cli-parsers = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
+botanix-configs = { workspace = true }
 botanix-rpc-config = { workspace = true }
 botanix-storage = { workspace = true }
 botanix-storage-migrate = { workspace = true }
