@@ -12,7 +12,7 @@ use reth_network_peers::PeerId;
 use reth_primitives::{
     BlockBody, BlockHash, BlockHashOrNumber, BlockNumber, Header, SealedHeader, B256,
 };
-use std::{collections::HashMap, io, path::Path};
+use std::{collections::HashMap, io, ops::RangeInclusive, path::Path};
 use thiserror::Error;
 use tokio::{fs::File, io::AsyncReadExt};
 use tokio_stream::StreamExt;
@@ -305,10 +305,11 @@ impl HeadersClient for FileClient {
 impl BodiesClient for FileClient {
     type Output = BodiesFut;
 
-    fn get_block_bodies_with_priority(
+    fn get_block_bodies_with_priority_and_range_hint(
         &self,
         hashes: Vec<B256>,
         _priority: Priority,
+        _range_hint: Option<RangeInclusive<u64>>,
     ) -> Self::Output {
         // this just searches the buffer, and fails if it can't find the block
         let mut bodies = Vec::new();
