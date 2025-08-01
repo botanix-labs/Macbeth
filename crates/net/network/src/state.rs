@@ -27,6 +27,7 @@ use crate::{
     fetch::{BlockResponseOutcome, FetchAction, StateFetcher},
     message::{BlockRequest, NewBlockMessage, PeerResponse, PeerResponseResult},
     peers::{PeerAction, PeersManager},
+    session::BlockRangeInfo,
     FetchClient,
 };
 
@@ -145,13 +146,20 @@ impl NetworkState {
         status: Arc<Status>,
         request_tx: PeerRequestSender,
         timeout: Arc<AtomicU64>,
+        range_info: Option<BlockRangeInfo>,
     ) {
         debug_assert!(!self.active_peers.contains_key(&peer), "Already connected; not possible");
 
         // find the corresponding block number
         let block_number =
             self.client.block_number(status.blockhash).ok().flatten().unwrap_or_default();
-        self.state_fetcher.new_active_peer(peer, status.blockhash, block_number, timeout);
+        self.state_fetcher.new_active_peer(
+            peer,
+            status.blockhash,
+            block_number,
+            timeout,
+            range_info,
+        );
 
         self.active_peers.insert(
             peer,
@@ -597,6 +605,7 @@ mod tests {
             Arc::default(),
             peer_tx,
             Arc::new(AtomicU64::new(1)),
+            None,
         );
 
         assert!(state.active_peers.contains_key(&peer_id));
