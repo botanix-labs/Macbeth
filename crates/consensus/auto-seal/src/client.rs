@@ -9,7 +9,7 @@ use reth_network_p2p::{
 };
 use reth_network_peers::{PeerId, WithPeerId};
 use reth_primitives::{BlockBody, BlockHashOrNumber, Header, B256};
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::RangeInclusive};
 use tracing::{trace, warn};
 
 /// A download client that polls the miner for transactions and assembles blocks to be returned in
@@ -104,10 +104,11 @@ impl HeadersClient for AutoSealClient {
 impl BodiesClient for AutoSealClient {
     type Output = BodiesFut;
 
-    fn get_block_bodies_with_priority(
+    fn get_block_bodies_with_priority_and_range_hint(
         &self,
         hashes: Vec<B256>,
         _priority: Priority,
+        _range_hint: Option<RangeInclusive<u64>>,
     ) -> Self::Output {
         let this = self.clone();
         Box::pin(async move {

@@ -6,7 +6,10 @@ use reth_chainspec::{ChainSpec, MAINNET};
 use reth_discv4::{Discv4Config, Discv4ConfigBuilder, NatResolver, DEFAULT_DISCOVERY_ADDRESS};
 use reth_discv5::NetworkStackId;
 use reth_dns_discovery::DnsDiscoveryConfig;
-use reth_eth_wire::{HelloMessage, HelloMessageWithProtocols, Status};
+use reth_eth_wire::{
+    handshake::{EthHandshake, EthRlpxHandshake},
+    HelloMessage, HelloMessageWithProtocols, Status,
+};
 use reth_network_peers::{mainnet_nodes, pk2id, sepolia_nodes, PeerId, TrustedPeer};
 use reth_network_types::{PeersConfig, SessionsConfig};
 use reth_primitives::{ForkFilter, Head};
@@ -87,6 +90,11 @@ pub struct NetworkConfig<C> {
     pub frost_config: Option<FrostConfig>,
     /// Receiver for frost protocol events
     pub frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
+    /// The Ethereum P2P handshake, see also:
+    /// <https://github.com/ethereum/devp2p/blob/master/rlpx.md#initial-handshake>.
+    /// This can be overridden to support custom handshake logic via the
+    /// [`NetworkConfigBuilder`].
+    pub handshake: Arc<dyn EthRlpxHandshake>,
 }
 
 // === impl NetworkConfig ===
@@ -198,6 +206,9 @@ pub struct NetworkConfigBuilder {
     frost_config: Option<FrostConfig>,
     /// Receiver for frost protocol events
     frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
+    /// The Ethereum P2P handshake, see also:
+    /// <https://github.com/ethereum/devp2p/blob/master/rlpx.md#initial-handshake>.
+    handshake: Arc<dyn EthRlpxHandshake>,
 }
 
 // === impl NetworkConfigBuilder ===
@@ -232,6 +243,7 @@ impl NetworkConfigBuilder {
             frost_config: None,
             frost_protocol_events_rx: None,
             transactions_manager_config: Default::default(),
+            handshake: Arc::new(EthHandshake::default()),
         }
     }
 
@@ -499,6 +511,12 @@ impl NetworkConfigBuilder {
         self.build(Default::default())
     }
 
+    /// Overrides the default Eth `RLPx` handshake.
+    pub fn eth_rlpx_handshake(mut self, handshake: Arc<dyn EthRlpxHandshake>) -> Self {
+        self.handshake = handshake;
+        self
+    }
+
     /// Consumes the type and creates the actual [`NetworkConfig`]
     /// for the given client type that can interact with the chain.
     ///
@@ -528,6 +546,7 @@ impl NetworkConfigBuilder {
             frost_config,
             transactions_manager_config,
             frost_protocol_events_rx,
+            handshake,
         } = self;
 
         discovery_v5_builder = discovery_v5_builder.map(|mut builder| {
@@ -593,6 +612,7 @@ impl NetworkConfigBuilder {
             frost_config,
             transactions_manager_config,
             frost_protocol_events_rx,
+            handshake,
         }
     }
 }

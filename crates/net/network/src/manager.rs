@@ -205,6 +205,7 @@ impl NetworkManager {
             extra_protocols,
             tx_gossip_disabled,
             frost_protocol_events_rx,
+            handshake,
             ..
         } = config;
 
@@ -256,6 +257,7 @@ impl NetworkManager {
             hello_message,
             fork_filter,
             extra_protocols,
+            handshake,
         );
 
         let state = NetworkState::new(
@@ -569,6 +571,7 @@ impl NetworkManager {
             PeerMessage::SendTransactions(_) => {
                 unreachable!("Not emitted by session")
             }
+            PeerMessage::BlockRangeUpdated(_) => {}
             PeerMessage::Other(other) => {
                 debug!(target: "net", message_id=%other.id, "Ignoring unsupported message");
             }
@@ -706,10 +709,6 @@ impl NetworkManager {
         // handle event
         match event {
             SwarmEvent::ValidMessage { peer_id, message } => self.on_peer_message(peer_id, message),
-            SwarmEvent::InvalidCapabilityMessage { peer_id, capabilities, message } => {
-                self.on_invalid_message(peer_id, capabilities, message);
-                self.metrics.invalid_messages_received.increment(1);
-            }
             SwarmEvent::TcpListenerClosed { remote_addr } => {
                 trace!(target: "net", ?remote_addr, "TCP listener closed.");
             }

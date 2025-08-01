@@ -1,9 +1,11 @@
 use crate::{
+    capability::RawCapabilityMessage,
     errors::{EthHandshakeError, EthStreamError},
     message::{EthBroadcastMessage, ProtocolBroadcastMessage},
     p2pstream::HANDSHAKE_TIMEOUT,
     CanDisconnect, DisconnectReason, EthMessage, EthVersion, ProtocolMessage, Status,
 };
+use alloy_rlp::Encodable;
 use futures::{ready, Sink, SinkExt, StreamExt};
 use pin_project::pin_project;
 use reth_primitives::{
@@ -22,6 +24,9 @@ use tracing::{debug, trace};
 /// [`MAX_MESSAGE_SIZE`] is the maximum cap on the size of a protocol message.
 // https://github.com/ethereum/go-ethereum/blob/30602163d5d8321fbc68afdcbbaf2362b2641bde/eth/protocols/eth/protocol.go#L50
 pub const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
+
+/// [`MAX_STATUS_SIZE`] is the maximum cap on the size of the initial status message
+pub(crate) const MAX_STATUS_SIZE: usize = 500 * 1024;
 
 /// An un-authenticated [`EthStream`]. This is consumed and returns a [`EthStream`] after the
 /// `Status` handshake is completed.
@@ -242,6 +247,16 @@ where
 
         Ok(())
     }
+
+    /// Sends a raw capability message directly over the stream
+    pub fn start_send_raw(&mut self, msg: RawCapabilityMessage) -> Result<(), EthStreamError> {
+        let mut bytes = Vec::with_capacity(msg.payload.len() + 1);
+        msg.id.encode(&mut bytes);
+        bytes.extend_from_slice(&msg.payload);
+
+        self.inner.start_send_unpin(bytes.into())?;
+        Ok(())
+    }
 }
 
 impl<S, E> Stream for EthStream<S>
@@ -337,8 +352,12 @@ where
     S: CanDisconnect<Bytes> + Send,
     EthStreamError: From<<S as Sink<Bytes>>::Error>,
 {
-    async fn disconnect(&mut self, reason: DisconnectReason) -> Result<(), EthStreamError> {
-        self.inner.disconnect(reason).await.map_err(Into::into)
+    fn disconnect(
+        &mut self,
+        reason: DisconnectReason,
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<(), EthStreamError>> + Send + '_>>
+    {
+        Box::pin(async move { self.inner.disconnect(reason).await.map_err(Into::into) })
     }
 }
 
