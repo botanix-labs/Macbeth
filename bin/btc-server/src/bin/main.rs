@@ -2140,17 +2140,15 @@ where
             info!("Processing UTXO: {:?}", req_utxo.outpoint);
 
             // convert the request outpoint to the database outpoint
-            let outpoint = req_utxo
-                .outpoint
-                .as_ref()
-                .map(|outpoint| bitcoin::OutPoint {
-                    txid: bitcoin::Txid::from_slice(&outpoint.txid).unwrap(),
-                    vout: outpoint.vout,
-                })
-                .ok_or_else(|| {
-                    error!("BtcServer::recover_missing_utxos: UTXO has no outpoint");
-                    tonic::Status::invalid_argument("UTXO missing outpoint")
-                })?;
+            let req_outpoint = req_utxo.outpoint.as_ref().ok_or_else(|| {
+                error!("BtcServer::recover_missing_utxos: UTXO has no outpoint");
+                tonic::Status::invalid_argument("UTXO missing outpoint")
+            })?;
+            let txid = bitcoin::Txid::from_slice(&req_outpoint.txid).map_err(|e| {
+                error!("BtcServer::recover_missing_utxos: Invalid txid format: {}", e);
+                tonic::Status::invalid_argument(format!("Invalid txid format: {}", e))
+            })?;
+            let outpoint = bitcoin::OutPoint { txid, vout: req_outpoint.vout };
 
             // check if the utxo is already in the database
             if db_outpoints.contains(&outpoint) {
