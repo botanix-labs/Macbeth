@@ -107,7 +107,7 @@ pub enum ApplySnapshotResult {
     /// Reject this snapshot, try others
     RejectSnapshot = 5,
 }
-use super::non_deterministic_data::{NonDeterministicData, GENESIS_RUNTIME_VERSION};
+use super::non_deterministic_data::{NonDeterministicData, RUNTIME_VERSION_GENESIS};
 use crate::{
     comet_bft::proto_debug::{
         RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
