@@ -1681,16 +1681,15 @@ where
             };
 
             // parse the eth address if it is not empty
-            let eth_address: Option<[u8; 20]>;
-            if req_utxo.eth_address.is_empty() {
-                eth_address = None;
+            let eth_address: Option<[u8; 20]> = if req_utxo.eth_address.is_empty() {
+                None
             } else {
                 let parsed_eth_address = parse_eth_address(req_utxo.eth_address).map_err(|e| {
                     error!("Invalid ETH address format: {}", e);
                     tonic::Status::internal(format!("Invalid ETH address format: {}", e))
                 })?;
-                eth_address = Some(parsed_eth_address);
-            }
+                Some(parsed_eth_address)
+            };
 
             // convert on chain utxo to database utxo
             let utxo = crate::database::Utxo {
