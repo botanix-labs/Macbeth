@@ -412,6 +412,7 @@ impl NetworkManager {
     }
 
     /// Event hook for an unexpected message from the peer.
+    #[allow(dead_code)]
     fn on_invalid_message(
         &mut self,
         peer_id: PeerId,

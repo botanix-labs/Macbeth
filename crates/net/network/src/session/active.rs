@@ -16,7 +16,7 @@ use crate::{
     session::{
         conn::EthRlpxConnection,
         handle::{ActiveSessionMessage, SessionCommand},
-        BlockRangeInfo, EthVersion, SessionId,
+        BlockRangeInfo, SessionId,
     },
 };
 use futures::{stream::Fuse, SinkExt, StreamExt};

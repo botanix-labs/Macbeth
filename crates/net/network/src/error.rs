@@ -206,6 +206,7 @@ impl SessionError for EthStreamError {
 }
 
 impl SessionError for PendingSessionHandshakeError {
+    #[allow(clippy::match_same_arms)]
     fn merits_discovery_ban(&self) -> bool {
         match self {
             Self::Eth(eth) => eth.merits_discovery_ban(),
@@ -215,6 +216,7 @@ impl SessionError for PendingSessionHandshakeError {
         }
     }
 
+    #[allow(clippy::match_same_arms)]
     fn is_fatal_protocol_error(&self) -> bool {
         match self {
             Self::Eth(eth) => eth.is_fatal_protocol_error(),
