@@ -1,28 +1,14 @@
-use alloy_chains::{Chain, ChainKind, NamedChain};
+use alloy_chains::Chain;
 use alloy_eips::eip1559::ETHEREUM_BLOCK_GAS_LIMIT;
 use alloy_genesis::Genesis;
-use alloy_primitives::{address, b256, Address, BlockNumber, B256, U256};
+use alloy_primitives::{b256, B256, U256};
 use askama::Template;
 use botanix_hardforks::BotanixHardfork;
-use derive_more::From;
 use once_cell::sync::Lazy;
-use reth_chainspec::{
-    BaseFeeParams, BaseFeeParamsKind, ChainSpec, DepositContract, EthereumHardfork,
-};
-use reth_ethereum_forks::{
-    ChainHardforks, DisplayHardforks, ForkCondition, ForkFilter, ForkFilterKey, ForkHash, ForkId,
-    Hardfork, Head, DEV_HARDFORKS,
-};
+use reth_chainspec::{BaseFeeParams, BaseFeeParamsKind, ChainSpec, EthereumHardfork};
 use std::sync::Arc;
 
 use crate::BotanixChainSpec;
-
-/// Deposit contract address: `0x00000000219ab540356cbb839cbe05303d7705fa`
-pub(crate) const MAINNET_DEPOSIT_CONTRACT: DepositContract = DepositContract::new(
-    address!("00000000219ab540356cbb839cbe05303d7705fa"),
-    11052984,
-    b256!("649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5"),
-);
 
 /// Botanix Mainnet genesis hash:
 /// `0x0210ae550e730d0e18f96896b80caad6f59dcc0b83b67421975716d155d027c6`
