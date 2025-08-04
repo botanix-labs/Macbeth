@@ -299,8 +299,10 @@ where
             })?;
 
             // calculate the total transaction fee
-            let transaction_fee =
-                transaction.clone().effective_tip_per_gas(base_fee).expect("base fee is valid");
+            let mut transaction_fee =
+                transaction.clone().effective_tip_per_gas(base_fee).expect("base fee exists");
+            // Include the base fee so it's not burned
+            transaction_fee += base_fee.expect("base fee exists") as u128;
             total_block_fees += transaction_fee * u128::from(result.gas_used());
 
             // append gas used
