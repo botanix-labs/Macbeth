@@ -1737,6 +1737,8 @@ where
         let utxo_refs: Vec<&crate::database::Utxo> = utxos_to_add.iter().collect();
         info!("Storing {} missing UTXOs.", utxo_refs.len());
         self.db.store_utxos(&utxo_refs).to_status()?;
+        self.db.update_utxo_merkle_root().to_status()?;
+        self.db.flush().to_status()?;
 
         Ok(tonic::Response::new(RecoverMissingUtxosResponse {
             total_requested,
