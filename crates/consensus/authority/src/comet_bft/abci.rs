@@ -2587,7 +2587,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{comet_bft::non_deterministic_data::GENESIS_RUNTIME_VERSION, Storage};
+    use crate::Storage;
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,
@@ -2689,7 +2689,7 @@ mod tests {
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
 
         let activation_manager =
-            ActivationManagerBuilder::new(VoteWatcher::default(), GENESIS_RUNTIME_VERSION)
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_V1)
                 .build_ignore_nework_upgrade();
 
         let bitcoin_checkpoints_chain =
@@ -2737,7 +2737,7 @@ mod tests {
         client: &ABCIClientType,
     ) -> Result<prost::bytes::Bytes, ConsensusError> {
         client
-            .non_deterministic_data(GENESIS_RUNTIME_VERSION, None)
+            .non_deterministic_data(RUNTIME_VERSION_V1, None)
             .and_then(|ndd| client.serialize_non_deterministic_data_to_bytes(ndd))
     }
 
@@ -2805,10 +2805,12 @@ mod tests {
 
         let response = abci_client.prepare_proposal(request);
 
-        let expected_ndd = NonDeterministicData::new_v1(
+        let expected_ndd = NonDeterministicData::new_v2(
             abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
+            RUNTIME_VERSION_GENESIS,
+            None,
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
@@ -2954,7 +2956,7 @@ mod tests {
 
         // first tx should be non-deterministic data
         let ndd =
-            abci_client.non_deterministic_data(GENESIS_RUNTIME_VERSION, None).expect("to have ndd");
+            abci_client.non_deterministic_data(RUNTIME_VERSION_V1, None).expect("to have ndd");
         let ndd_bytes =
             abci_client.serialize_non_deterministic_data_to_bytes(ndd).expect("to serialize ndd");
 
