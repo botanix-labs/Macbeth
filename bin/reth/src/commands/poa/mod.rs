@@ -23,7 +23,7 @@ use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
-    comet_bft::abci::{ABCIDriver, RUNTIME_VERSION_ACTIVE, RUNTIME_VERSION_UPGRADE},
+    comet_bft::abci::{ABCIDriver, RUNTIME_VERSION_V2, RUNTIME_VERSION_V3},
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     wallet_state_sync::WalletStateSync,
@@ -799,9 +799,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // ActivationManager: setup compliance and vote inclusion.
         let activation_manager =
-            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_ACTIVE)
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_V2)
                 .build_COMPLIANT_network_upgrade(
-                    RUNTIME_VERSION_UPGRADE,
+                    RUNTIME_VERSION_V3,
                     quorum,
                     min_validator_count,
                     target_height,
