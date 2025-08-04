@@ -192,7 +192,7 @@ where
                     return Err(err.into());
                 }
 
-                Ok(Status::from(their_status_message))
+                Ok(their_status_message)
             }
             _ => {
                 unauth

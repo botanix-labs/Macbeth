@@ -16,11 +16,10 @@ use reth_network_p2p::{
     error::{PeerRequestResult, RequestError},
     headers::client::{HeadersClient, HeadersRequest},
     priority::Priority,
-    BlockClient,
 };
 use reth_network_peers::PeerId;
 use reth_network_types::ReputationChangeKind;
-use reth_primitives::{Block, Header, B256};
+use reth_primitives::{Header, B256};
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{fetch::DownloadRequest, flattened_response::FlattenedResponse};

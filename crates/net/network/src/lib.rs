@@ -54,7 +54,7 @@
     issue_tracker_base_url = "https://github.com/paradigmxyz/reth/issues/"
 )]
 #![allow(unreachable_pub)]
-#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+#![cfg_attr(not(test), allow(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 #[cfg(any(test, feature = "test-utils"))]
