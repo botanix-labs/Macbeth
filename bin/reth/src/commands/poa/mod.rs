@@ -15,7 +15,7 @@ use futures::TryFutureExt;
 use reth_authority_consensus::{
     activation_manager::ActivationManagerBuilder,
     comet_bft::{
-        abci::{ABCIDriver, RUNTIME_VERSION_ACTIVE, RUNTIME_VERSION_UPGRADE},
+        abci::{ABCIDriver, RUNTIME_VERSION_V2, RUNTIME_VERSION_V3},
         vote_tracker::VoteWatcher,
     },
     random_source_provider::RandomSourceProvider,
@@ -795,9 +795,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // ActivationManager: setup compliance and vote inclusion.
         let activation_manager =
-            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_ACTIVE)
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_V2)
                 .build_COMPLIANT_network_upgrade(
-                    RUNTIME_VERSION_UPGRADE,
+                    RUNTIME_VERSION_V3,
                     quorum,
                     min_validator_count,
                     target_height,

@@ -60,12 +60,17 @@ use tendermint_proto::{
     },
 };
 
-/// The currently active Botanix runtime version.
-pub const RUNTIME_VERSION_ACTIVE: RuntimeVersion = GENESIS_RUNTIME_VERSION;
-/// The Botanix runtime version to eventually upgrade to.
-pub const RUNTIME_VERSION_UPGRADE: RuntimeVersion = RuntimeVersion::new(0, 2);
-/// The floor base fee per gas to be used for the upgraded Botanix runtime version.
-const FLOOR_BASE_FEE_PER_GAS: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
+/// Runtime version 0.1 that Botanix launched with.
+pub const RUNTIME_VERSION_V1: RuntimeVersion = GENESIS_RUNTIME_VERSION;
+/// Runtime version 0.2 that introduced a minimum base fee per gas of 0.005 Gwei.
+pub const RUNTIME_VERSION_V2: RuntimeVersion = RuntimeVersion::new(0, 2);
+/// Runtime version 0.3 that reduced the minimum base fee per gas to 0.00033 Gwei.
+pub const RUNTIME_VERSION_V3: RuntimeVersion = RuntimeVersion::new(0, 3);
+
+/// The floor base fee for runtime version 0.2
+const FLOOR_BASE_FEE_PER_GAS_V2: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
+/// The floor base fee for runtime version 0.3
+const FLOOR_BASE_FEE_PER_GAS_V3: u64 = 330_000; // 330_000 Wei = 0.00033 Gwei
 
 impl From<&Snapshot> for SnapshotSyncStateLock {
     fn from(snapshot: &Snapshot) -> Self {
@@ -1336,19 +1341,12 @@ where
         };
 
         let floor_base_fee_per_gas = match use_version {
-            RUNTIME_VERSION_ACTIVE => {
-                // Continue with active version.
-                debug!("prepare_proposal: Building with active version: {use_version}");
-
-                // Do not set a floor base fee per gas.
-                None
-            }
-            RUNTIME_VERSION_UPGRADE => {
-                debug!("prepare_proposal: Building with UPGRADED version: {use_version}");
-
-                // Set floor base fee per gas.
-                Some(FLOOR_BASE_FEE_PER_GAS)
-            }
+            // Historic and unused; primarily required for unit tests.
+            RUNTIME_VERSION_V1 => None,
+            // Active
+            RUNTIME_VERSION_V2 => Some(FLOOR_BASE_FEE_PER_GAS_V2),
+            // Upgrade
+            RUNTIME_VERSION_V3 => Some(FLOOR_BASE_FEE_PER_GAS_V3),
             _ => unreachable!(),
         };
 
@@ -1798,19 +1796,25 @@ where
             .on_process_proposal(comet_height, runtime_version)
             .expect("db cannot fail")
         {
-            OnProcessProposalDecision::Process { version, conditions: _ } => match version {
-                RUNTIME_VERSION_ACTIVE => {
-                    // Continue; do not set a floor base fee per gas.
-                    debug!("process_proposal: Processing with active version: {version}");
-                    floor_base_fee_per_gas = None;
+            OnProcessProposalDecision::Process { version, conditions: _ } => {
+                debug!("process_proposal: Processing with version: {version}");
+
+                match version {
+                    // Historic and unused; primarily required for unit tests.
+                    RUNTIME_VERSION_V1 => {
+                        floor_base_fee_per_gas = None;
+                    }
+                    // Active
+                    RUNTIME_VERSION_V2 => {
+                        floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS_V2);
+                    }
+                    // Upgrade
+                    RUNTIME_VERSION_V3 => {
+                        floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS_V3);
+                    }
+                    _ => unreachable!(),
                 }
-                RUNTIME_VERSION_UPGRADE => {
-                    // Set floor base fee per gas.
-                    debug!("process_proposal: Processing with UPGRADED version: {version}");
-                    floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS);
-                }
-                _ => unreachable!(),
-            },
+            }
             OnProcessProposalDecision::RejectBlock { version, conditions: _ } => {
                 warn!("process_proposal: Rejecting block using Botanix runtime version: {version}");
                 return ResponseProcessProposal { status: VERIFY_REJECT };
@@ -2076,22 +2080,18 @@ where
                     non_deterministic_data.network_upgrade_payload().copied();
 
                 let floor_base_fee_per_gas = match runtime_version {
-                    RUNTIME_VERSION_ACTIVE => {
-                        // Continue; do not set a floor base fee per gas.
-                        debug!("finalize_block: Finalizing block with active runtime version: {runtime_version}");
-                        None
-                    }
-                    RUNTIME_VERSION_UPGRADE => {
-                        // Set floor base fee per gas.
-                        debug!("finalize_block: Finalizing block with UPGRADED version: {runtime_version}");
-                        Some(FLOOR_BASE_FEE_PER_GAS)
-                    }
+                    // Historic
+                    RUNTIME_VERSION_V1 => None,
+                    // Active
+                    RUNTIME_VERSION_V2 => Some(FLOOR_BASE_FEE_PER_GAS_V2),
+                    // Upgrade
+                    RUNTIME_VERSION_V3 => Some(FLOOR_BASE_FEE_PER_GAS_V3),
                     // This software is outdated and just encountered an
                     // upgraded runtime version; this will be rejected in the
                     // upcoming `ActivationManager::on_finalize_block(..)` call.
                     _ => {
                         warn!("finalize_block: Unrecognized runtime version: {runtime_version}");
-                        Some(FLOOR_BASE_FEE_PER_GAS) // just apply the latest change.
+                        Some(FLOOR_BASE_FEE_PER_GAS_V3) // just apply the latest change.
                     }
                 };
 
