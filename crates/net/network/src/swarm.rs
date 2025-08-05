@@ -7,10 +7,7 @@ use std::{
 };
 
 use futures::Stream;
-use reth_eth_wire::{
-    errors::EthStreamError, Capabilities, DisconnectReason,
-    EthVersion, Status,
-};
+use reth_eth_wire::{errors::EthStreamError, Capabilities, DisconnectReason, EthVersion, Status};
 use reth_network_api::PeerRequestSender;
 use reth_network_peers::PeerId;
 use tracing::{debug, trace};
