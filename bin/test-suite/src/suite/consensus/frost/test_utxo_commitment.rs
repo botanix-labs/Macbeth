@@ -47,7 +47,7 @@ pub async fn test_utxo_commitment(
     for input in 0..NUM_UTXOS {
         let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
         let pk = clients[0]
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -84,8 +84,11 @@ pub async fn test_utxo_commitment(
     }
     let mut hashset = HashSet::new();
     for c in clients.iter_mut() {
-        let wallet_state =
-            c.get_wallet_state(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+        let wallet_state = c
+            .get_wallet_state(tonic::Request::new(btc_server_client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
         hashset.insert(wallet_state.wallet_state_commitment);
     }
     // all the btc_servers should have the same merkel commitment to the utxo set
@@ -95,7 +98,7 @@ pub async fn test_utxo_commitment(
     let mut all_utxos = vec![];
     for c in clients.iter_mut() {
         let utxos = c
-            .get_all_utxos(tonic::Request::new(client::Empty {}))
+            .get_all_utxos(tonic::Request::new(btc_server_client::Empty {}))
             .await
             .unwrap()
             .into_inner()
@@ -106,7 +109,7 @@ pub async fn test_utxo_commitment(
     assert_eq!(all_utxos.len(), 1);
     // all the btc_servers should have the same utxos
     let utxos = clients[0]
-        .get_all_utxos(tonic::Request::new(client::Empty {}))
+        .get_all_utxos(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .unwrap()
         .into_inner()
@@ -143,7 +146,7 @@ pub async fn test_utxo_commitment(
     for input in 0..NUM_UTXOS {
         let eth_address = pegins.eth_addresses.get(input).cloned().unwrap();
         let pk = clients[0]
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -171,7 +174,7 @@ pub async fn test_utxo_commitment(
     }
 
     let first_wallet_state = clients[0]
-        .get_wallet_state(tonic::Request::new(client::Empty {}))
+        .get_wallet_state(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .unwrap()
         .into_inner()
@@ -179,8 +182,11 @@ pub async fn test_utxo_commitment(
 
     let mut hashset = HashSet::new();
     for c in clients[1..].iter_mut() {
-        let wallet_state =
-            c.get_wallet_state(tonic::Request::new(client::Empty {})).await.unwrap().into_inner();
+        let wallet_state = c
+            .get_wallet_state(tonic::Request::new(btc_server_client::Empty {}))
+            .await
+            .unwrap()
+            .into_inner();
         hashset.insert(wallet_state.wallet_state_commitment);
     }
     // all the btc_servers should have the same merkel commitment to the utxo set
@@ -195,7 +201,7 @@ pub async fn test_utxo_commitment(
         pegins.eth_addresses.push(eth_address);
         pegins.txids.push(rand::random::<[u8; 32]>());
         let pk = clients[0]
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -219,7 +225,7 @@ pub async fn test_utxo_commitment(
     }
     // get all utxos
     let mut all_utxos = clients[0]
-        .get_all_utxos(tonic::Request::new(client::Empty {}))
+        .get_all_utxos(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .unwrap()
         .into_inner()

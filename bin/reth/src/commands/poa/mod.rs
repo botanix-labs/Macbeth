@@ -13,10 +13,7 @@ use botanix_configs::federation::load_federation_config_toml;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use botanix_storage_migrate::is_migration_needed;
 use botanix_utils::panic_hook::set_panic_hook;
-use btc_server_client::Empty;
-use btcserverlib::extended_client::{
-    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
-};
+use btc_server_client::{BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory};
 use clap::{value_parser, Parser};
 use core::panic;
 use eyre::Context;
@@ -379,7 +376,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.map(|s| btcserverlib::jwt::JwtSecret(s.0)),
+                btc_signing_server_jwt_secret.map(|s| btc_server_client::jwt::JwtSecret(s.0)),
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };

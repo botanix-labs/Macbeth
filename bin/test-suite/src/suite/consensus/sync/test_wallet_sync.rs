@@ -275,8 +275,10 @@ pub async fn test_wallet_sync(
         .clone();
     it_info_print!("Waiting for tracked tx");
     loop {
-        let response =
-            signer.get_tracked_txs(tonic::Request::new(client::Empty {})).await?.into_inner();
+        let response = signer
+            .get_tracked_txs(tonic::Request::new(btc_server_client::Empty {}))
+            .await?
+            .into_inner();
         if !response.tracked_txs.is_empty() {
             it_info_print!("Tracked tx found");
             break;

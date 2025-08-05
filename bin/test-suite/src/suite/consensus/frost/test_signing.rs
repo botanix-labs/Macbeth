@@ -53,7 +53,7 @@ pub async fn do_signing(
     };
 
     let original_psbt = coordinator
-        .get_psbt(tonic::Request::new(client::MakeTxRequest {
+        .get_psbt(tonic::Request::new(btc_server_client::MakeTxRequest {
             signing_session_id: signing_session_id.to_vec(),
             checkpoint_block_hash: checkpoint[..].to_vec(),
         }))
@@ -67,10 +67,12 @@ pub async fn do_signing(
     let mut round1_signing_commitments: Vec<SigningPackage> = vec![];
     for (_index, client) in clients.iter_mut().enumerate() {
         let c_signing = client
-            .get_round1_signing_package(tonic::Request::new(client::SigningPackageRequest {
-                psbt: original_psbt.clone(),
-                signing_session_id: signing_session_id.to_vec(),
-            }))
+            .get_round1_signing_package(tonic::Request::new(
+                btc_server_client::SigningPackageRequest {
+                    psbt: original_psbt.clone(),
+                    signing_session_id: signing_session_id.to_vec(),
+                },
+            ))
             .await
             .map_err(Error::Request)?
             .into_inner();
@@ -88,7 +90,7 @@ pub async fn do_signing(
     // Signing Round 2
     // Get signing package
     let to_sign_package = coordinator
-        .get_to_sign_package(tonic::Request::new(client::ToSignRequest {
+        .get_to_sign_package(tonic::Request::new(btc_server_client::ToSignRequest {
             signing_session_id: signing_session_id.to_vec(),
         }))
         .await
@@ -118,7 +120,7 @@ pub async fn do_signing(
     }
 
     let finalized = coordinator
-        .finalize_signing(tonic::Request::new(client::FinalizeSigningRequest {
+        .finalize_signing(tonic::Request::new(btc_server_client::FinalizeSigningRequest {
             signing_session_id: signing_session_id.to_vec(),
         }))
         .await?
@@ -170,7 +172,7 @@ pub async fn test_many_inputs_signing(
 
     // Getting public key should fail for all clients
     for client in &mut clients {
-        let pk = client.get_public_key(tonic::Request::new(client::Empty {})).await;
+        let pk = client.get_public_key(tonic::Request::new(btc_server_client::Empty {})).await;
         assert!(pk.is_err());
         let err = pk.err().ok_or_else(|| anyhow::anyhow!("missing key package"))?;
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
@@ -187,7 +189,7 @@ pub async fn test_many_inputs_signing(
         let mut client =
             clients.get(0).cloned().ok_or_else(|| anyhow::anyhow!("client not found"))?;
         let res = client
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -351,7 +353,7 @@ pub async fn test_many_inputs_signing(
     assert_eq!(change_address.address_type().unwrap(), bitcoin::AddressType::P2tr);
 
     let utxos = clients[coordinator_index]
-        .get_all_utxos(tonic::Request::new(client::Empty {}))
+        .get_all_utxos(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .unwrap()
         .into_inner()
@@ -367,7 +369,7 @@ pub async fn test_many_inputs_signing(
     // sync tx index to checkpoint block hash
     for c in clients.iter_mut() {
         match c
-            .new_consensus_checkpoint(client::ConsensusCheckpointRequest {
+            .new_consensus_checkpoint(btc_server_client::ConsensusCheckpointRequest {
                 checkpoint_block_hash: checkpoint_block_hash.clone(),
                 pegins: vec![],
                 pending_pegouts: vec![],
@@ -383,7 +385,7 @@ pub async fn test_many_inputs_signing(
     }
 
     let utxos = clients[coordinator_index]
-        .get_all_utxos(tonic::Request::new(client::Empty {}))
+        .get_all_utxos(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .unwrap()
         .into_inner()

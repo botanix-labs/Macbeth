@@ -6,9 +6,9 @@ use crate::{
         GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
         GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
         GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
-        GetSigningStatusResponse, GetTrackedTxsResponse, GetUtxoStateRequest, GetUtxoStateResponse,
-        MakeTxRequest, ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage,
-        SigningPackageRequest, ToSignRequest, WalletStateResponse,
+        GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest,
+        ResetWalletStateRequest, SigningPackage, SigningPackageRequest, ToSignRequest,
+        WalletStateResponse,
     },
     jwt::{Claims, JwtSecret},
     BtcServerClient,
@@ -154,10 +154,6 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
             GrpcClientError,
         >,
     >;
-    fn get_member_utxo_state(
-        &mut self,
-        request: GetUtxoStateRequest,
-    ) -> BoxFuture<'_, Result<GetUtxoStateResponse, GrpcClientError>>;
 }
 
 /// Macros for generating grpc methods implementation
@@ -261,7 +257,6 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     generate_method!(get_public_key, Empty, GetPublicKeyResponse);
     generate_method!(get_dkg_payloads, Empty, DkgPayloads);
     generate_method!(new_dkg_payload, DkgPayload, DkgPayloads);
-    generate_method!(get_member_utxo_state, GetUtxoStateRequest, GetUtxoStateResponse);
     generate_method!(get_round1_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(get_round2_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(new_round1_signing_package, SigningPackage, Empty);

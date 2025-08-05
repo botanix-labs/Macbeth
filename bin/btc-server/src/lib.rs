@@ -1,7 +1,6 @@
 pub mod coordinator;
 pub mod database;
 pub mod dkg;
-pub mod extended_client;
 pub mod http;
 pub mod merkle;
 pub mod pegout_id;
@@ -19,7 +18,6 @@ pub mod rpc {
 }
 pub mod config;
 pub mod federation_args;
-pub mod jwt;
 pub mod macros;
 pub mod shutdown;
 pub mod test_utils;
