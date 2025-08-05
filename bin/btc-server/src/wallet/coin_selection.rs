@@ -3,7 +3,7 @@ use crate::{
     wallet::{
         psbt::PegoutId as PegoutIdBytes,
         util::{calculate_signed_tx_weight, WalletCalculationError},
-        TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+        TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT,
     },
 };
 use bdk_wallet::coin_selection::{
@@ -442,7 +442,7 @@ fn sanity_check_psbt(
 /// Convert a UTXO to BDK's WeightedUtxo format
 fn utxo_to_bdk(utxo: &Utxo) -> bdk_wallet::WeightedUtxo {
     bdk_wallet::WeightedUtxo {
-        satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+        satisfaction_weight: TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT,
         utxo: bdk_wallet::Utxo::Local(bdk_wallet::LocalOutput {
             outpoint: utxo.outpoint.to_bdk(),
             txout: bdk_wallet::bitcoin::TxOut {
@@ -838,7 +838,7 @@ mod tests {
         );
 
         let mut psbt_with_signatures = psbt.clone();
-        add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::All);
+        add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::Default);
         let fee_rate = psbt_with_signatures.fee_rate().expect("should not fail");
         assert_eq!(fee_rate, scenario.fee_rate);
     }

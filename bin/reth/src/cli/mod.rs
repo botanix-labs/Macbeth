@@ -1,13 +1,12 @@
 //! CLI definition and entrypoint to executable
 
 use crate::{
-    args::{
-        utils::{chain_help, chain_value_parser, SUPPORTED_CHAINS},
-        LogArgs,
-    },
+    args::LogArgs,
     commands::{poa::PoaNodeCommand, sweep::SweepCommand},
     version::{LONG_VERSION, SHORT_VERSION},
 };
+use botanix_cli_args::chain::chain_help;
+use botanix_cli_parsers::parsers::{chain_value_parser, SUPPORTED_CHAINS};
 use clap::{value_parser, Args, Parser, Subcommand};
 use reth_chainspec::ChainSpec;
 

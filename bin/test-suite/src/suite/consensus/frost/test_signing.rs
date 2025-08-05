@@ -128,6 +128,13 @@ pub async fn do_signing(
     // TODO add some assertions for psbt here
     let final_tx = coord_psbt.clone().extract_tx()?;
 
+    // Verify witness signatures are 64 bytes (Taproot signature size when using SIGHASH_DEFAULT)
+    for input in final_tx.input.iter() {
+        let witness_item = &input.witness[0];
+        it_info_print!("Input witness (signature) length:", witness_item.len());
+        assert_eq!(witness_item.len(), 64);
+    }
+
     Ok(final_tx)
 }
 
