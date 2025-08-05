@@ -31,7 +31,7 @@ pub(crate) enum NonDeterministicDataDeserializeError {
 
 /// The implied Botanix runtime version at mainnet launch, created
 /// retroactively.
-pub(crate) const GENESIS_RUNTIME_VERSION: RuntimeVersion = RuntimeVersion::new(0, 1);
+pub(crate) const RUNTIME_VERSION_GENESIS: RuntimeVersion = RuntimeVersion::new(0, 1);
 
 // Does not require `block_fee_recipient_address` to be present in NDD
 // Only supported on testnet for historical syncing purposes
@@ -99,7 +99,7 @@ impl NonDeterministicData {
             bitcoin_block_hash,
             aggregated_public_key,
             block_fee_recipient_address: None,
-            runtime_version: GENESIS_RUNTIME_VERSION,
+            runtime_version: RUNTIME_VERSION_GENESIS,
             network_upgrade_payload: None,
         }
     }
@@ -116,7 +116,7 @@ impl NonDeterministicData {
             bitcoin_block_hash,
             aggregated_public_key,
             block_fee_recipient_address: Some(block_fee_recipient_address),
-            runtime_version: GENESIS_RUNTIME_VERSION,
+            runtime_version: RUNTIME_VERSION_GENESIS,
             network_upgrade_payload: None,
         }
     }
@@ -219,7 +219,7 @@ impl NonDeterministicData {
                     bitcoin_block_hash,
                     aggregated_public_key,
                     block_fee_recipient_address: None,
-                    runtime_version: GENESIS_RUNTIME_VERSION,
+                    runtime_version: RUNTIME_VERSION_GENESIS,
                     network_upgrade_payload: None,
                 })
             }
@@ -235,7 +235,7 @@ impl NonDeterministicData {
                     bitcoin_block_hash,
                     aggregated_public_key,
                     block_fee_recipient_address: Some(block_fee_recipient_address),
-                    runtime_version: GENESIS_RUNTIME_VERSION,
+                    runtime_version: RUNTIME_VERSION_GENESIS,
                     network_upgrade_payload: None,
                 };
 
@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
         assert_eq!(ndd.aggregated_public_key, pk);
         assert_eq!(ndd.block_fee_recipient_address, None);
-        assert_eq!(ndd.runtime_version, GENESIS_RUNTIME_VERSION);
+        assert_eq!(ndd.runtime_version, RUNTIME_VERSION_GENESIS);
         assert_eq!(ndd.network_upgrade_payload, None);
     }
 
@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
         assert_eq!(ndd.aggregated_public_key, pk);
         assert_eq!(ndd.block_fee_recipient_address, Some(block_fee_recipient_address));
-        assert_eq!(ndd.runtime_version, GENESIS_RUNTIME_VERSION);
+        assert_eq!(ndd.runtime_version, RUNTIME_VERSION_GENESIS);
         assert_eq!(ndd.network_upgrade_payload, None);
     }
 

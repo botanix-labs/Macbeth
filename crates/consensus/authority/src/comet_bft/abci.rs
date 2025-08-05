@@ -61,7 +61,7 @@ use tendermint_proto::{
 };
 
 /// Runtime version 0.1 that Botanix launched with.
-pub const RUNTIME_VERSION_V1: RuntimeVersion = GENESIS_RUNTIME_VERSION;
+pub const RUNTIME_VERSION_V1: RuntimeVersion = RUNTIME_VERSION_GENESIS;
 /// Runtime version 0.2 that introduced a minimum base fee per gas of 0.005 Gwei.
 pub const RUNTIME_VERSION_V2: RuntimeVersion = RuntimeVersion::new(0, 2);
 /// Runtime version 0.3 that reduced the minimum base fee per gas to 0.00033 Gwei.
@@ -123,7 +123,7 @@ use crate::{
     builder::BitcoinCheckpoint,
     comet_bft::{
         non_deterministic_data::{
-            NetworkUpgradePayload, NonDeterministicData, GENESIS_RUNTIME_VERSION,
+            NetworkUpgradePayload, NonDeterministicData, RUNTIME_VERSION_GENESIS,
         },
         utils::transactions_signed_from_bytes,
         vote_tracker::VoteWatcher,
