@@ -241,16 +241,13 @@ update_release_index() {
 
     local INDEX_FILE="releases/index.json"
 
-    # Create directory if it doesn't exist
     mkdir -p "releases"
 
-    # Always recreate the index file to ensure correct structure
     echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
 
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
 
-    # Use jq if available, otherwise create manually
-    if command -v jq > /dev/null 2>&1; then
+    if command -v jq >/dev/null 2>&1; then
         jq --arg version "$VERSION" \
             --arg channel "$CHANNEL" \
             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -260,7 +257,6 @@ update_release_index() {
 
         mv "$INDEX_FILE.tmp" "$INDEX_FILE"
     else
-        # Fallback without jq
         cat > "$INDEX_FILE" << EOF
 {
   "releases": [
@@ -299,11 +295,9 @@ This repository contains public release artifacts, documentation, and changelogs
 |---------|---------|--------------|-----------|
 EOF
 
-    # Add release information from index (only stable releases on landing page)
     if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
         jq -r '.channels | to_entries[] | select(.key == "stable") | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
     else
-        # Only add to landing page if it's a stable release
         if [ "$CHANNEL" = "stable" ]; then
             echo "| $CHANNEL | $VERSION | $(date -u +%Y-%m-%d) | [Download](releases/$VERSION) |" >> README.md
         fi
@@ -340,7 +334,7 @@ EOF
 
 ### Binary Installation
 ```bash
-# Download stable binaries with explicit version
+# Download stable binaries 
 EOF
 
     if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
