@@ -8,7 +8,7 @@ use std::{
 
 use futures::Stream;
 use reth_eth_wire::{
-    capability::CapabilityMessage, errors::EthStreamError, Capabilities, DisconnectReason,
+    errors::EthStreamError, Capabilities, DisconnectReason,
     EthVersion, Status,
 };
 use reth_network_api::PeerRequestSender;

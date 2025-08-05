@@ -27,13 +27,12 @@ use counter::SessionCounter;
 use futures::{future::Either, io, FutureExt, StreamExt};
 use reth_ecies::{stream::ECIESStream, ECIESError};
 use reth_eth_wire::{
-    capability::CapabilityMessage, errors::EthStreamError, handshake::EthRlpxHandshake,
-    multiplex::RlpxProtocolMultiplexer, BlockRangeUpdate, Capabilities, DisconnectReason,
-    EthStream, EthVersion, HelloMessageWithProtocols, Status, UnauthedEthStream, UnauthedP2PStream,
-    HANDSHAKE_TIMEOUT,
+    errors::EthStreamError, handshake::EthRlpxHandshake, multiplex::RlpxProtocolMultiplexer,
+    BlockRangeUpdate, Capabilities, DisconnectReason, EthStream, EthVersion,
+    HelloMessageWithProtocols, Status, UnauthedP2PStream, HANDSHAKE_TIMEOUT,
 };
 use reth_metrics::common::mpsc::MeteredPollSender;
-use reth_network_api::{PeerRequest, PeerRequestSender};
+use reth_network_api::PeerRequestSender;
 use reth_network_peers::PeerId;
 use reth_network_types::SessionsConfig;
 use reth_primitives::{ForkFilter, ForkId, ForkTransition, Head};
@@ -693,6 +692,7 @@ impl SessionManager {
     /// and the shared local range information that gets propagated to active sessions (Eth69).
     /// The range information is used in ETH69 protocol where peers announce the range of blocks
     /// they can serve to optimize data synchronization.
+    #[allow(dead_code)]
     pub(crate) fn update_advertised_block_range(&mut self, block_range_update: BlockRangeUpdate) {
         // self.status.earliest_block = Some(block_range_update.earliest);
         // self.status.latest_block = Some(block_range_update.latest);
