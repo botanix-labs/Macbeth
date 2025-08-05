@@ -60,12 +60,17 @@ use tendermint_proto::{
     },
 };
 
-/// The currently active Botanix runtime version.
-pub const RUNTIME_VERSION_ACTIVE: RuntimeVersion = GENESIS_RUNTIME_VERSION;
-/// The Botanix runtime version to eventually upgrade to.
-pub const RUNTIME_VERSION_UPGRADE: RuntimeVersion = RuntimeVersion::new(0, 2);
-/// The floor base fee per gas to be used for the upgraded Botanix runtime version.
-const FLOOR_BASE_FEE_PER_GAS: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
+/// Runtime version 0.1 that Botanix launched with.
+pub const RUNTIME_VERSION_V1: RuntimeVersion = RUNTIME_VERSION_GENESIS;
+/// Runtime version 0.2 that introduced a minimum base fee per gas of 0.005 Gwei.
+pub const RUNTIME_VERSION_V2: RuntimeVersion = RuntimeVersion::new(0, 2);
+/// Runtime version 0.3 that reduced the minimum base fee per gas to 0.0005 Gwei.
+pub const RUNTIME_VERSION_V3: RuntimeVersion = RuntimeVersion::new(0, 3);
+
+/// The floor base fee for runtime version 0.2
+const FLOOR_BASE_FEE_PER_GAS_V2: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
+/// The floor base fee for runtime version 0.3
+const FLOOR_BASE_FEE_PER_GAS_V3: u64 = 500_000; // 500_000 Wei = 0.0005 Gwei
 
 impl From<&Snapshot> for SnapshotSyncStateLock {
     fn from(snapshot: &Snapshot) -> Self {
@@ -118,7 +123,7 @@ use crate::{
     builder::BitcoinCheckpoint,
     comet_bft::{
         non_deterministic_data::{
-            NetworkUpgradePayload, NonDeterministicData, GENESIS_RUNTIME_VERSION,
+            NetworkUpgradePayload, NonDeterministicData, RUNTIME_VERSION_GENESIS,
         },
         utils::transactions_signed_from_bytes,
         vote_tracker::VoteWatcher,
@@ -1336,19 +1341,12 @@ where
         };
 
         let floor_base_fee_per_gas = match use_version {
-            RUNTIME_VERSION_ACTIVE => {
-                // Continue with active version.
-                debug!("prepare_proposal: Building with active version: {use_version}");
-
-                // Do not set a floor base fee per gas.
-                None
-            }
-            RUNTIME_VERSION_UPGRADE => {
-                debug!("prepare_proposal: Building with UPGRADED version: {use_version}");
-
-                // Set floor base fee per gas.
-                Some(FLOOR_BASE_FEE_PER_GAS)
-            }
+            // Historic and unused; primarily required for unit tests.
+            RUNTIME_VERSION_V1 => None,
+            // Active
+            RUNTIME_VERSION_V2 => Some(FLOOR_BASE_FEE_PER_GAS_V2),
+            // Upgrade
+            RUNTIME_VERSION_V3 => Some(FLOOR_BASE_FEE_PER_GAS_V3),
             _ => unreachable!(),
         };
 
@@ -1798,19 +1796,25 @@ where
             .on_process_proposal(comet_height, runtime_version)
             .expect("db cannot fail")
         {
-            OnProcessProposalDecision::Process { version, conditions: _ } => match version {
-                RUNTIME_VERSION_ACTIVE => {
-                    // Continue; do not set a floor base fee per gas.
-                    debug!("process_proposal: Processing with active version: {version}");
-                    floor_base_fee_per_gas = None;
+            OnProcessProposalDecision::Process { version, conditions: _ } => {
+                debug!("process_proposal: Processing with version: {version}");
+
+                match version {
+                    // Historic and unused; primarily required for unit tests.
+                    RUNTIME_VERSION_V1 => {
+                        floor_base_fee_per_gas = None;
+                    }
+                    // Active
+                    RUNTIME_VERSION_V2 => {
+                        floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS_V2);
+                    }
+                    // Upgrade
+                    RUNTIME_VERSION_V3 => {
+                        floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS_V3);
+                    }
+                    _ => unreachable!(),
                 }
-                RUNTIME_VERSION_UPGRADE => {
-                    // Set floor base fee per gas.
-                    debug!("process_proposal: Processing with UPGRADED version: {version}");
-                    floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS);
-                }
-                _ => unreachable!(),
-            },
+            }
             OnProcessProposalDecision::RejectBlock { version, conditions: _ } => {
                 warn!("process_proposal: Rejecting block using Botanix runtime version: {version}");
                 return ResponseProcessProposal { status: VERIFY_REJECT };
@@ -2076,22 +2080,18 @@ where
                     non_deterministic_data.network_upgrade_payload().copied();
 
                 let floor_base_fee_per_gas = match runtime_version {
-                    RUNTIME_VERSION_ACTIVE => {
-                        // Continue; do not set a floor base fee per gas.
-                        debug!("finalize_block: Finalizing block with active runtime version: {runtime_version}");
-                        None
-                    }
-                    RUNTIME_VERSION_UPGRADE => {
-                        // Set floor base fee per gas.
-                        debug!("finalize_block: Finalizing block with UPGRADED version: {runtime_version}");
-                        Some(FLOOR_BASE_FEE_PER_GAS)
-                    }
+                    // Historic
+                    RUNTIME_VERSION_V1 => None,
+                    // Active
+                    RUNTIME_VERSION_V2 => Some(FLOOR_BASE_FEE_PER_GAS_V2),
+                    // Upgrade
+                    RUNTIME_VERSION_V3 => Some(FLOOR_BASE_FEE_PER_GAS_V3),
                     // This software is outdated and just encountered an
                     // upgraded runtime version; this will be rejected in the
                     // upcoming `ActivationManager::on_finalize_block(..)` call.
                     _ => {
                         warn!("finalize_block: Unrecognized runtime version: {runtime_version}");
-                        Some(FLOOR_BASE_FEE_PER_GAS) // just apply the latest change.
+                        Some(FLOOR_BASE_FEE_PER_GAS_V3) // just apply the latest change.
                     }
                 };
 
@@ -2504,8 +2504,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        activation_manager::ActivationManagerBuilder, builder::BitcoinCheckpoint,
-        comet_bft::non_deterministic_data::GENESIS_RUNTIME_VERSION, Storage,
+        activation_manager::ActivationManagerBuilder, builder::BitcoinCheckpoint, Storage,
     };
     use bitcoin::{
         block::{BlockHash, Header, Version},
@@ -2606,7 +2605,7 @@ mod tests {
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
 
         let activation_manager =
-            ActivationManagerBuilder::new(VoteWatcher::default(), GENESIS_RUNTIME_VERSION)
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_V1)
                 .build_ignore_nework_upgrade();
 
         let bitcoin_header = Header {
@@ -2649,7 +2648,7 @@ mod tests {
         client: &ABCIClientType,
     ) -> Result<prost::bytes::Bytes, ConsensusError> {
         client
-            .non_deterministic_data(GENESIS_RUNTIME_VERSION, None)
+            .non_deterministic_data(RUNTIME_VERSION_V1, None)
             .and_then(|ndd| client.serialize_non_deterministic_data_to_bytes(ndd))
     }
 
@@ -2717,10 +2716,12 @@ mod tests {
 
         let response = abci_client.prepare_proposal(request);
 
-        let expected_ndd = NonDeterministicData::new_v1(
+        let expected_ndd = NonDeterministicData::new_v2(
             abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
+            RUNTIME_VERSION_V1,
+            None,
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
@@ -2866,7 +2867,7 @@ mod tests {
 
         // first tx should be non-deterministic data
         let ndd =
-            abci_client.non_deterministic_data(GENESIS_RUNTIME_VERSION, None).expect("to have ndd");
+            abci_client.non_deterministic_data(RUNTIME_VERSION_V1, None).expect("to have ndd");
         let ndd_bytes =
             abci_client.serialize_non_deterministic_data_to_bytes(ndd).expect("to serialize ndd");
 
