@@ -1614,6 +1614,8 @@ where
         &self,
         request: tonic::Request<RecoverMissingUtxosRequest>,
     ) -> Result<tonic::Response<RecoverMissingUtxosResponse>, tonic::Status> {
+        self.validate_jwt(&request)?;
+
         let total_requested = request.get_ref().utxos.len() as u64;
         info!("BtcServer::recover_missing_utxos: Total UTXOs requested: {}", total_requested);
 
