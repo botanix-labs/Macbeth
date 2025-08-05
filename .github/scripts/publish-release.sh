@@ -309,26 +309,58 @@ EOF
         fi
     fi
 
-    cat >> "README.md" << 'EOF'
+    cat >> "README.md" << EOF
 
 ## Quick Start
 
 ### Docker (Recommended)
-```bash
-# Latest stable release
-docker pull ghcr.io/botanix-labs/botanix-reth-node:latest
-docker pull ghcr.io/botanix-labs/botanix-btc-server:latest
+\`\`\`bash
+# Use explicit version tags for reproducible builds
+EOF
+ 
+    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+        local stable_version=$(jq -r '.channels.stable // empty' releases/index.json)
+        if [ -n "$stable_version" ]; then
+            cat >> "README.md" << EOF
+docker pull ghcr.io/botanix-labs/botanix-reth-node:$stable_version
+docker pull ghcr.io/botanix-labs/botanix-btc-server:$stable_version
+EOF
+        fi
+    else
+        if [ "$CHANNEL" = "stable" ]; then
+            cat >> "README.md" << EOF
+docker pull ghcr.io/botanix-labs/botanix-reth-node:$VERSION
+docker pull ghcr.io/botanix-labs/botanix-btc-server:$VERSION
+EOF
+        fi
+    fi
 
-# Development builds
-docker pull ghcr.io/botanix-labs/botanix-reth-node:alpha
-docker pull ghcr.io/botanix-labs/botanix-btc-server:alpha
+    cat >> "README.md" << 'EOF'
 ```
 
 ### Binary Installation
 ```bash
-# Download latest stable binaries
-curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/reth/stable/latest/reth-x86_64-unknown-linux-gnu.tar.gz | tar -xz
-curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/stable/latest/btc-server-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+# Download stable binaries with explicit version
+EOF
+
+    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+        local stable_version=$(jq -r '.channels.stable // empty' releases/index.json)
+        if [ -n "$stable_version" ]; then
+            cat >> "README.md" << EOF
+curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/reth/stable/$stable_version/reth-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/stable/$stable_version/btc-server-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+EOF
+        fi
+    else
+        if [ "$CHANNEL" = "stable" ]; then
+            cat >> "README.md" << EOF
+curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/reth/stable/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/stable/$VERSION/btc-server-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+EOF
+        fi
+    fi
+
+    cat >> "README.md" << 'EOF'
 ```
 
 ## Documentation
