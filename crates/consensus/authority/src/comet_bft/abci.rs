@@ -59,13 +59,13 @@ use tendermint_proto::{
 pub const RUNTIME_VERSION_V1: RuntimeVersion = RUNTIME_VERSION_GENESIS;
 /// Runtime version 0.2 that introduced a minimum base fee per gas of 0.005 Gwei.
 pub const RUNTIME_VERSION_V2: RuntimeVersion = RuntimeVersion::new(0, 2);
-/// Runtime version 0.3 that reduced the minimum base fee per gas to 0.00033 Gwei.
+/// Runtime version 0.3 that reduced the minimum base fee per gas to 0.0005 Gwei.
 pub const RUNTIME_VERSION_V3: RuntimeVersion = RuntimeVersion::new(0, 3);
 
 /// The floor base fee for runtime version 0.2
 const FLOOR_BASE_FEE_PER_GAS_V2: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
 /// The floor base fee for runtime version 0.3
-const FLOOR_BASE_FEE_PER_GAS_V3: u64 = 330_000; // 330_000 Wei = 0.00033 Gwei
+const FLOOR_BASE_FEE_PER_GAS_V3: u64 = 500_000; // 500_000 Wei = 0.0005 Gwei
 
 impl From<&Snapshot> for SnapshotSyncStateLock {
     fn from(snapshot: &Snapshot) -> Self {
