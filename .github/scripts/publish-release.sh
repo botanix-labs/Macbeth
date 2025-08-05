@@ -241,23 +241,72 @@ update_release_index() {
 
     local INDEX_FILE="releases/index.json"
 
+    # Create directory if it doesn't exist
     mkdir -p "releases"
 
-    echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
+    # Initialize index file if it doesn't exist
+    if [ ! -f "$INDEX_FILE" ]; then
+        echo '{"releases":[],"channels":{},"latest":{}}' > "$INDEX_FILE"
+    fi
 
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
 
+    # Use jq if available, otherwise create manually
     if command -v jq >/dev/null 2>&1; then
-        jq --arg version "$VERSION" \
-           --arg channel "$CHANNEL" \
-           --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-           --arg prerelease "$prerelease_flag" \
-           '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
-           "$INDEX_FILE" > "$INDEX_FILE.tmp"
+        # For stable releases, only update the channel mapping after successful full publish
+        if [ "$CHANNEL" = "stable" ] && [ "$COMMAND" != "full-publish" ]; then
+            # Add release entry but preserve existing stable channel mapping
+            jq --arg version "$VERSION" \
+               --arg channel "$CHANNEL" \
+               --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+               --arg prerelease "$prerelease_flag" \
+               '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .releases |= unique_by(.version)' \
+               "$INDEX_FILE" > "$INDEX_FILE.tmp"
+        else
+            # For non-stable releases or during full-publish, update channel mapping immediately
+            jq --arg version "$VERSION" \
+               --arg channel "$CHANNEL" \
+               --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+               --arg prerelease "$prerelease_flag" \
+               '.releases += [{"version": $version, "channel": $channel, "date": $date, "prerelease": ($prerelease == "true"), "path": ("releases/" + $version)}] | .releases |= unique_by(.version) | .channels[$channel] = $version | if $channel == "stable" then .latest.stable = $version else .latest[$channel] = $version end' \
+               "$INDEX_FILE" > "$INDEX_FILE.tmp"
+        fi
 
         mv "$INDEX_FILE.tmp" "$INDEX_FILE"
     else
-        cat > "$INDEX_FILE" << EOF
+        # Fallback without jq - read existing file first
+        local existing_content=""
+        if [ -f "$INDEX_FILE" ]; then
+            existing_content=$(cat "$INDEX_FILE")
+        fi
+
+        # For stable releases, preserve existing channel mapping unless it's full-publish
+        if [ "$CHANNEL" = "stable" ] && [ "$COMMAND" != "full-publish" ] && [ -n "$existing_content" ]; then
+            # Extract existing stable version if present
+            local existing_stable=$(echo "$existing_content" | grep -o '"stable"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || echo "")
+            
+            cat > "$INDEX_FILE" << EOF
+{
+  "releases": [
+    {
+      "version": "$VERSION",
+      "channel": "$CHANNEL",
+      "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+      "prerelease": $prerelease_flag,
+      "path": "releases/$VERSION"
+    }
+  ],
+  "channels": {
+    "stable": "${existing_stable:-$VERSION}"
+  },
+  "latest": {
+    "stable": "${existing_stable:-$VERSION}"
+  }
+}
+EOF
+        else
+            # Update channel mapping immediately for non-stable or full-publish
+            cat > "$INDEX_FILE" << EOF
 {
   "releases": [
     {
@@ -276,6 +325,7 @@ update_release_index() {
   }
 }
 EOF
+        fi
     fi
 
     echo "✅ Updated release index"
@@ -283,6 +333,23 @@ EOF
 
 update_public_readme() {
     echo "Updating public repository README..."
+
+    # Determine the stable version to display
+    local display_stable_version=""
+    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+        display_stable_version=$(jq -r '.channels.stable // empty' releases/index.json)
+    fi
+
+    # For stable releases during individual operations (not full-publish), preserve existing README if no current stable version
+    if [ "$CHANNEL" = "stable" ] && [ "$COMMAND" != "full-publish" ] && [ -z "$display_stable_version" ] && [ -f "README.md" ]; then
+        echo "Preserving existing README during stable release preparation"
+        return 0
+    fi
+
+    # If we don't have a stable version from index, use current version only if it's stable and full-publish
+    if [ -z "$display_stable_version" ] && [ "$CHANNEL" = "stable" ] && [ "$COMMAND" = "full-publish" ]; then
+        display_stable_version="$VERSION"
+    fi
 
     cat > "README.md" << 'EOF'
 # Botanix Public Releases
@@ -295,11 +362,13 @@ This repository contains public release artifacts, documentation, and changelogs
 |---------|---------|--------------|-----------|
 EOF
 
+    # Add release information from index (only stable releases on landing page)
     if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
         jq -r '.channels | to_entries[] | select(.key == "stable") | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
     else
-        if [ "$CHANNEL" = "stable" ]; then
-            echo "| $CHANNEL | $VERSION | $(date -u +%Y-%m-%d) | [Download](releases/$VERSION) |" >> README.md
+        # Only add to landing page if we have a stable version to display
+        if [ -n "$display_stable_version" ]; then
+            echo "| stable | $display_stable_version | $(date -u +%Y-%m-%d) | [Download](releases/$display_stable_version) |" >> README.md
         fi
     fi
 
@@ -321,10 +390,10 @@ docker pull ghcr.io/botanix-labs/botanix-btc-server:$stable_version
 EOF
         fi
     else
-        if [ "$CHANNEL" = "stable" ]; then
+        if [ -n "$display_stable_version" ]; then
             cat >> "README.md" << EOF
-docker pull ghcr.io/botanix-labs/botanix-reth-node:$VERSION
-docker pull ghcr.io/botanix-labs/botanix-btc-server:$VERSION
+docker pull ghcr.io/botanix-labs/botanix-reth-node:$display_stable_version
+docker pull ghcr.io/botanix-labs/botanix-btc-server:$display_stable_version
 EOF
         fi
     fi
@@ -334,7 +403,7 @@ EOF
 
 ### Binary Installation
 ```bash
-# Download stable binaries 
+# Download stable binaries with explicit version
 EOF
 
     if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
@@ -346,10 +415,10 @@ curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/btc-se
 EOF
         fi
     else
-        if [ "$CHANNEL" = "stable" ]; then
+        if [ -n "$display_stable_version" ]; then
             cat >> "README.md" << EOF
-curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/reth/stable/$VERSION/reth-x86_64-unknown-linux-gnu.tar.gz | tar -xz
-curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/stable/$VERSION/btc-server-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/reth/stable/$display_stable_version/reth-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+curl -L https://storage.googleapis.com/botanix-artifact-registry/releases/btc-server/stable/$display_stable_version/btc-server-x86_64-unknown-linux-gnu.tar.gz | tar -xz
 EOF
         fi
     fi
