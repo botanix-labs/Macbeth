@@ -714,12 +714,24 @@ where
         let utxos: Result<Vec<crate::database::Utxo>, _> =
             req.pegins.into_iter().map(TryFrom::try_from).collect();
         let utxos = utxos.map_err(|e| badarg!("Failed to parse utxos: {}", e))?;
+        info!("processed pegins.len(): {:?}", utxos.len());
         let utxo_refs: Vec<&crate::database::Utxo> = utxos.iter().collect();
 
         self.db.store_utxos(&utxo_refs).to_status()?;
         self.db.update_utxo_merkle_root().to_status()?;
         self.db.flush().to_status()?;
-        info!("processed pegins.len(): {:?}", utxos.len());
+        // update metrics
+        let total_utxos = self.db.get_all_utxos().to_status()?;
+        let total_utxos_amount =
+            total_utxos.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_pegin_utxos(
+                self.btc_network,
+                self.config.identifier,
+                total_utxos.len() as i64,
+                total_utxos_amount.to_sat() as i64,
+            );
+        }
 
         // process and store pending pegout requests
         let (available_utxos, tracked_inputs) = get_available_utxos(&self.db).await.to_status()?;
@@ -1631,9 +1643,6 @@ where
             &self.db,
             self.min_signers,
             tracked_txs,
-            self.telemetry.clone(),
-            self.btc_network,
-            self.config.identifier,
         )
         .to_status()
         {

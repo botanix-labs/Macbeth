@@ -1,10 +1,10 @@
 use displaydoc::Display as DisplayDoc;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{Read, Write},
     net::SocketAddr,
-    path::Path,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 use thiserror::Error;
@@ -133,4 +133,12 @@ fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> {
 pub(crate) fn write_data_to_file(path: impl AsRef<Path> + Send, data: &[u8]) -> Result<(), Error> {
     let mut file = File::create(path).map_err(Error::OpenConfig)?;
     file.write_all(data).map_err(Error::ReadConfig)
+}
+
+/// Load the federation setup toml
+pub fn load_federation_config_toml(path: &PathBuf) -> eyre::Result<FederationTomlConfig> {
+    let _ = fs::metadata(path)?;
+    let raw = fs::read_to_string(path)?;
+    let genesis_toml_config = FederationTomlConfig::from_str(&raw)?;
+    Ok(genesis_toml_config)
 }

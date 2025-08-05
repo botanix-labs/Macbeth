@@ -9,14 +9,23 @@ homepage = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
+askama = "0.12.1"
+bitcoin = { workspace = true }
+botanix-authority-edh = { workspace = true }
 botanix-btc-wallet = { workspace = true }
 botanix-cli-parsers = { workspace = true }
+botanix-configs = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 displaydoc = "0.2"
+eyre = { workspace = true }
+hex = "0.4.3"
+reth-chainspec = { workspace = true }
 reth-cli-util = { workspace = true }
 reth-primitives = { workspace = true }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+shellexpand = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 url = { workspace = true }
