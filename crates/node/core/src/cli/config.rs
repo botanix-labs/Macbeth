@@ -1,6 +1,6 @@
 //! Config traits for various node components.
 
-use btcserverlib::jwt::{JwtError, JwtSecret};
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use reth_network::protocol::IntoRlpxSubProtocol;
 use reth_primitives::Bytes;
 use reth_transaction_pool::PoolConfig;

@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use botanix_comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_storage::BotanixProviderFactory;
-use client::BtcServerClient;
+use btc_server_client::BtcServerClient;
 use common::{
     bitcoind_node::{
         create_bitcoind_node, BitcoindNodeConfig, Notifications as BitcoindNotifications,

@@ -31,7 +31,7 @@ bitcoincore-rpc = "0.19.0"
 chacha20poly1305 = "0.10.1"
 ciborium = "0.2.1"
 clap = { version = "4.3.22", features = ["derive"] }
-client = { path = "./client" }
+btc-server-client = { path = "./client" }
 confy = "0.6"
 derive_more = { version = "1.0", features = ["full"] }
 displaydoc = "0.2"

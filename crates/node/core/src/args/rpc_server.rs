@@ -24,7 +24,7 @@ use crate::{
     },
     cli::config::BtcServerConfig,
 };
-use btcserverlib::jwt::{JwtError, JwtSecret};
+use btc_server_client::jwt::{JwtError, JwtSecret};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;

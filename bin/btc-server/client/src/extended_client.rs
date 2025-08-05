@@ -1,13 +1,17 @@
 //! Extended bitcoin server client with authentication
-use crate::jwt::{Claims, JwtSecret};
-use client::{
-    BtcServerClient, ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty,
-    FinalizeSignerRequest, FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
-    GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
-    GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
-    GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest, GetSigningStatusResponse,
-    GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest, ResetWalletStateRequest,
-    SigningPackage, SigningPackageRequest, ToSignRequest, WalletStateResponse,
+use crate::{
+    btc_server::{
+        ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty, FinalizeSignerRequest,
+        FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
+        GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
+        GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
+        GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
+        GetSigningStatusResponse, GetTrackedTxsResponse, GetUtxoStateRequest, GetUtxoStateResponse,
+        MakeTxRequest, ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage,
+        SigningPackageRequest, ToSignRequest, WalletStateResponse,
+    },
+    jwt::{Claims, JwtSecret},
+    BtcServerClient,
 };
 use displaydoc::Display as DisplayDoc;
 use futures_util::future::BoxFuture;
@@ -150,6 +154,10 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
             GrpcClientError,
         >,
     >;
+    fn get_member_utxo_state(
+        &mut self,
+        request: GetUtxoStateRequest,
+    ) -> BoxFuture<'_, Result<GetUtxoStateResponse, GrpcClientError>>;
 }
 
 /// Macros for generating grpc methods implementation
@@ -253,6 +261,7 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     generate_method!(get_public_key, Empty, GetPublicKeyResponse);
     generate_method!(get_dkg_payloads, Empty, DkgPayloads);
     generate_method!(new_dkg_payload, DkgPayload, DkgPayloads);
+    generate_method!(get_member_utxo_state, GetUtxoStateRequest, GetUtxoStateResponse);
     generate_method!(get_round1_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(get_round2_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(new_round1_signing_package, SigningPackage, Empty);
@@ -299,14 +308,16 @@ impl GrpcClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use crate::jwt::{Claims, JwtSecret};
+    use crate::{
+        jwt::{Claims, JwtSecret},
+        Empty,
+    };
 
     #[test]
     fn test_metadata_jwt_decode_encode() {
         use super::JWT_HEADER_KEY;
         use crate::extended_client::to_u64;
         use bitcoin::base64::{engine::general_purpose, Engine as _};
-        use client::Empty;
         use std::time::SystemTime;
         use tonic::metadata::{BinaryMetadataKey, MetadataValue};
         // create a random jwt secret

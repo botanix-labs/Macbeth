@@ -10,11 +10,11 @@ use botanix_data_parser::{
     prost_parser::ProstMessageSerdelizer, DataParser, Error as CompressorError, SerializationType,
 };
 use botanix_storage::{models::uuid_to_b256, WalletStateSyncReader, WalletStateSyncWriter};
-use btcserverlib::{
-    extended_client::{BtcServerExtendedApi, GrpcClientError},
-    pegout_id::PegoutId,
+use btc_server_client::{
+    BtcServerExtendedApi, FinalizedPegout, GetFinalizedPegoutIdsResponse, GrpcClientError,
+    ResetWalletStateRequest,
 };
-use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
+use btcserverlib::pegout_id::PegoutId;
 use once_cell::sync::Lazy;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{

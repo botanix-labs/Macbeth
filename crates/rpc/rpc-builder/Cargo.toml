@@ -13,7 +13,7 @@ workspace = true
 
 [dependencies]
 botanix-rpc-config = { workspace = true }
-btc-server = { path = "../../../bin/btc-server" }
+btc-server-client = { path = "../../../bin/btc-server/client" }
 http = { workspace = true }
 
 # rpc/net

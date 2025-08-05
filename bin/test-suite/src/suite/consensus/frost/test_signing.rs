@@ -2,8 +2,8 @@ use std::str::FromStr;
 
 use bitcoin::{consensus::Encodable, hashes::Hash, Address};
 use bitcoincore_rpc::RpcApi;
+use btc_server_client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use btcserverlib::pegout_id::PegoutId;
-use client::{BtcServerClient, SigningPackage, SigningPackageRequest};
 use hex::{self, encode as hex_encode};
 use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
 use reth_chainspec::BOTANIX_TESTNET;
