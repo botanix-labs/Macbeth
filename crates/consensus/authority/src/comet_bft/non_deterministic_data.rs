@@ -145,16 +145,14 @@ impl NonDeterministicData {
         let mut writer = Vec::new();
         self.bitcoin_block_hash.consensus_encode(&mut writer)?;
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
+        self.version().consensus_encode(&mut writer)?;
 
         // Version 1 has a block fee recipient address.
         match self.version {
             VERSION_0 => {
-                self.version().consensus_encode(&mut writer)?;
                 // Nothing left to do...
             }
             VERSION_1 => {
-                self.version().consensus_encode(&mut writer)?;
-
                 // Encode fee recipient address.
                 let address = self
                     .block_fee_recipient_address
@@ -163,12 +161,6 @@ impl NonDeterministicData {
                 writer.write_all(address.as_slice())?;
             }
             VERSION_2 => {
-                // TODO (lamafab): This is a hack; we can append extra data to
-                // version 1 without breaking backwards-compatibility. This
-                // should be removed once the migration to version 2 has been
-                // successfully completed.
-                VERSION_1.consensus_encode(&mut writer)?;
-
                 // Encode fee recipient address.
                 let address = self
                     .block_fee_recipient_address
@@ -247,10 +239,7 @@ impl NonDeterministicData {
                     network_upgrade_payload: None,
                 };
 
-                // TODO (lamafab): This is technically a hack; we can append
-                // extra data to version 1 without breaking
-                // backwards-compatibility. This should be removed once the
-                // migration to version 2 has been successfully completed.
+                // For version 1 this is optional.
                 if let Ok((runtime_version, network_upgrade_payload)) =
                     Self::_deserialize_version_2(reader)
                 {
@@ -517,8 +506,7 @@ mod tests {
             let mut reader = io::Cursor::new(res);
             let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
 
-            // TODO (lamafab): This must be updated to `VERSION_2` post-fork.
-            assert_eq!(deserialized.version, VERSION_1);
+            assert_eq!(deserialized.version, VERSION_2);
             assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
             assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
             assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
