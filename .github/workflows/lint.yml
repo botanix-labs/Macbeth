@@ -62,7 +62,7 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-      - uses: clechasseur/rs-clippy-check@9ef202cdf5c9672a6d795dbb5309f6b62c4ab908
+      - uses: clechasseur/rs-clippy-check@ff884e6d84447e8bb55fa0a6510e058e0c40be19
         with:
           args: -p reth-authority-consensus -p reth-network --lib --tests --benches --all-features --locked -- --no-deps
 
