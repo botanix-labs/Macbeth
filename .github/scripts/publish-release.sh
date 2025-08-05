@@ -299,11 +299,14 @@ This repository contains public release artifacts, documentation, and changelogs
 |---------|---------|--------------|-----------|
 EOF
 
-    # Add release information from index
-    if [[ -f "releases/index.json" ]] && command -v jq > /dev/null 2>&1; then
-        jq -r '.channels | to_entries[] | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
+    # Add release information from index (only stable releases on landing page)
+    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+        jq -r '.channels | to_entries[] | select(.key == "stable") | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
     else
-        echo "| $CHANNEL | $VERSION | $(date -u +%Y-%m-%d) | [Download](releases/$VERSION) |" >> README.md
+        # Only add to landing page if it's a stable release
+        if [ "$CHANNEL" = "stable" ]; then
+            echo "| $CHANNEL | $VERSION | $(date -u +%Y-%m-%d) | [Download](releases/$VERSION) |" >> README.md
+        fi
     fi
 
     cat >> "README.md" << 'EOF'
