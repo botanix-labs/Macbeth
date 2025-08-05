@@ -349,6 +349,21 @@ pub struct EmergencyUtxoInfo {
     #[prost(uint32, tag = "8")]
     pub key_generation_id: u32,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitWalletSweepSessionRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub request: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcceptWalletSweepSessionRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub request: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetWalletSweepSessionResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub session: ::prost::alloc::vec::Vec<u8>,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SigningStatus {
@@ -1047,6 +1062,80 @@ pub mod btc_server_client {
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new("btc_server.BtcServer", "NewConsensusCheckpoint"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// This method must be called only by the coordinator to start wallet sweep signing session.
+        pub async fn init_wallet_sweep_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::InitWalletSweepSessionRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/InitWalletSweepSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "InitWalletSweepSession"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// This method must be called by all signers to accept the wallet sweep session.
+        pub async fn accept_wallet_sweep_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AcceptWalletSweepSessionRequest>,
+        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/AcceptWalletSweepSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "AcceptWalletSweepSession"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_wallet_sweep_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::Empty>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetWalletSweepSessionResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/GetWalletSweepSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "GetWalletSweepSession"),
                 );
             self.inner.unary(req, path, codec).await
         }

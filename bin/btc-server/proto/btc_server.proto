@@ -22,7 +22,7 @@ service BtcServer {
     rpc NewDkgPayload(DkgPayload) returns(DkgPayloads) {}
 
     // Emergency Coordination Endpoints
-    
+
     rpc GetMemberUtxoState(GetUtxoStateRequest) returns (GetUtxoStateResponse) {}
 
     // Signing Endpoints
@@ -66,6 +66,14 @@ service BtcServer {
     rpc ResetWalletState(ResetWalletStateRequest) returns (Empty) {}
 
     rpc NewConsensusCheckpoint(ConsensusCheckpointRequest) returns (Empty) {}
+
+    // This method must be called only by the coordinator to start wallet sweep signing session.
+    rpc InitWalletSweepSession(InitWalletSweepSessionRequest) returns (Empty) {}
+
+    // This method must be called by all signers to accept the wallet sweep session.
+    rpc AcceptWalletSweepSession(AcceptWalletSweepSessionRequest) returns (Empty) {}
+
+    rpc GetWalletSweepSession(Empty) returns (GetWalletSweepSessionResponse) {}
 }
 
 message PendingPegout {
@@ -290,13 +298,25 @@ message GetUtxoStateResponse {
 
 message EmergencyUtxoInfo {
     bytes txid = 1;              // Transaction ID
-    uint32 vout = 2;             // Output index  
+    uint32 vout = 2;             // Output index
     uint64 value = 3;            // Satoshi amount
     bytes script_pubkey = 4;     // Script public key
     string eth_address = 5;      // Associated Ethereum address (hex, empty if none)
     uint32 version = 6;          // UTXO version for compatibility
     bytes witness_utxo = 7;      // Serialized TxOut for PSBT witness_utxo field
     uint32 key_generation_id = 8; // Key generation ID (for Phase 2 multi-key support)
+}
+
+message InitWalletSweepSessionRequest {
+    bytes request = 1;
+}
+
+message AcceptWalletSweepSessionRequest {
+    bytes request = 1;
+}
+
+message GetWalletSweepSessionResponse {
+    bytes session = 1;
 }
 
 enum SigningStatus {

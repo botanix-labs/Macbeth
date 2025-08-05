@@ -29,10 +29,11 @@ botanix-data-parser = { workspace = true }
 botanix-storage = { workspace = true }
 botanix-activation-manager = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
+btc-server-client = { path = "../../../bin/btc-server/client" }
+
 
 # others
 bytes = "1.6.0"
-client = { path = "../../../bin/btc-server/client" }
 displaydoc = "0.2"
 ethabi = "18.0.0"
 

@@ -8,6 +8,7 @@ use bitcoin::{
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use btcserverlib::{
     badarg,
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
@@ -16,7 +17,6 @@ use btcserverlib::{
     federation_args::FederationTomlConfig,
     frost_id, handle_signing_error,
     http::{create_web_server, state::ServerState},
-    jwt::{JwtError, JwtSecret},
     measure_rpc_latency,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
@@ -56,7 +56,10 @@ use std::{
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
+use tonic::{
+    codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server, Request,
+    Response, Status,
+};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -962,33 +965,34 @@ where
     }
 
     /// Emergency coordination gRPC endpoint for remote UTXO state collection
-    /// 
+    ///
     /// This endpoint enables OTHER federation members (coordinators) to query THIS member's
-    /// current UTXO state during emergency sweep coordination. It implements the "functionality 
+    /// current UTXO state during emergency sweep coordination. It implements the "functionality
     /// to retrieve db utxos" mentioned in the commit by exposing UTXO data via authenticated gRPC.
-    /// 
+    ///
     /// # Purpose
     /// - **Pull-based Coordination**: Allows coordinators to query member UTXO states remotely
-    /// - **Emergency Initiation**: Used by `emergency-tool sweep initiate` to collect federation state
+    /// - **Emergency Initiation**: Used by `emergency-tool sweep initiate` to collect federation
+    ///   state
     /// - **Consensus Building**: Provides data for coordinator to compute safe UTXO subsets
-    /// 
+    ///
     /// # Security Features
     /// - **JWT Authentication**: Validates caller using standard btc-server auth
     /// - **Session Tracking**: Logs emergency session IDs for audit trails
     /// - **Response Signing**: Placeholder for future integrity signatures (TODO)
     /// - **Authority Validation**: Placeholder for coordinator authority checks (TODO)
-    /// 
+    ///
     /// # Relationship to emergency-tool
     /// This gRPC endpoint serves a different purpose than emergency-tool's `get_local_utxo_state`:
     /// - **This endpoint**: Remote access - OTHER members query THIS member's state
     /// - **emergency-tool function**: Local access - THIS member reads its own database
-    /// 
+    ///
     /// # Request/Response Flow
     /// 1. Coordinator calls this endpoint on each federation member
     /// 2. Each member returns their complete UTXO state
     /// 3. Coordinator aggregates responses to build consensus
     /// 4. Coordinator creates deterministic PSBT from consensus UTXOs
-    /// 
+    ///
     /// # Future Enhancements (TODO)
     /// - Validate coordinator authority using federation config
     /// - Implement response signing for integrity verification
@@ -999,13 +1003,13 @@ where
         req: tonic::Request<rpc::GetUtxoStateRequest>,
     ) -> Result<tonic::Response<rpc::GetUtxoStateResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        
+
         let request = req.into_inner();
         info!("Emergency UTXO state request from session: {}", request.session_id);
-        
+
         // TODO: Validate coordinator authority and timestamp
         // validate_emergency_session_auth(&request)?;
-        
+
         // Validate pagination parameters
         let chunk_size = if request.chunk_size == 0 {
             1000 // Default chunk size
@@ -1013,12 +1017,12 @@ where
             std::cmp::min(request.chunk_size, 10000) // Max 10k UTXOs per chunk
         } as usize;
         let chunk_index = request.chunk_index as usize;
-        
+
         // Get all UTXOs for total counting and pagination
         let all_utxos = self.db.get_all_utxos().to_status()?;
         let total_utxo_count = all_utxos.len() as u32;
         let total_value_sat = all_utxos.iter().map(|u| u.output.value.to_sat()).sum();
-        
+
         // Calculate pagination
         let total_chunks = if total_utxo_count == 0 {
             1
@@ -1028,36 +1032,37 @@ where
         let start_idx = chunk_index * chunk_size;
         let end_idx = std::cmp::min(start_idx + chunk_size, all_utxos.len());
         let is_final = chunk_index >= (total_chunks.saturating_sub(1)) as usize;
-        
+
         // Get chunk subset
         let chunk_utxos = if start_idx < all_utxos.len() {
             &all_utxos[start_idx..end_idx]
         } else {
             &[] // Empty slice if chunk_index is out of bounds
         };
-        
+
         // Transform to emergency format with key generation metadata
-        let emergency_utxos = chunk_utxos.iter().map(|utxo| {
-            rpc::EmergencyUtxoInfo {
-                txid: utxo.outpoint.txid.to_byte_array().to_vec(),
-                vout: utxo.outpoint.vout,
-                value: utxo.output.value.to_sat(),
-                script_pubkey: utxo.output.script_pubkey.to_bytes(),
-                eth_address: utxo.eth_address.map(hex::encode).unwrap_or_default(),
-                version: utxo.version,
-                witness_utxo: bitcoin::consensus::encode::serialize(&utxo.output),
-                key_generation_id: 0, // TODO: Implement multi-key support in Phase 2
-            }
-        }).collect();
-        
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        
+        let emergency_utxos = chunk_utxos
+            .iter()
+            .map(|utxo| {
+                rpc::EmergencyUtxoInfo {
+                    txid: utxo.outpoint.txid.to_byte_array().to_vec(),
+                    vout: utxo.outpoint.vout,
+                    value: utxo.output.value.to_sat(),
+                    script_pubkey: utxo.output.script_pubkey.to_bytes(),
+                    eth_address: utxo.eth_address.map(hex::encode).unwrap_or_default(),
+                    version: utxo.version,
+                    witness_utxo: bitcoin::consensus::encode::serialize(&utxo.output),
+                    key_generation_id: 0, // TODO: Implement multi-key support in Phase 2
+                }
+            })
+            .collect();
+
+        let timestamp =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
         // TODO: Sign response for integrity
         let member_signature = vec![]; // Placeholder
-        
+
         let response = rpc::GetUtxoStateResponse {
             member_id: self.config.identifier as u32,
             utxos: emergency_utxos,
@@ -1069,11 +1074,11 @@ where
             total_utxo_count,
             total_value_sat,
         };
-        
+
         info!(
-            "Emergency UTXO state response: chunk {}/{} with {} UTXOs (total: {} UTXOs, {} sats)", 
-            chunk_index + 1, 
-            total_chunks, 
+            "Emergency UTXO state response: chunk {}/{} with {} UTXOs (total: {} UTXOs, {} sats)",
+            chunk_index + 1,
+            total_chunks,
             response.utxos.len(),
             total_utxo_count,
             total_value_sat
@@ -2217,6 +2222,30 @@ where
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         panic!("Not used");
     }
+
+    async fn init_wallet_sweep_session(
+        &self,
+        request: Request<InitWalletSweepSessionRequest>,
+    ) -> Result<Response<Empty>, Status> {
+        //self.validate_jwt(&request)?;
+
+        // Validate that the request was made by the coordinator
+        todo!()
+    }
+
+    async fn accept_wallet_sweep_session(
+        &self,
+        request: Request<AcceptWalletSweepSessionRequest>,
+    ) -> Result<Response<Empty>, Status> {
+        todo!()
+    }
+
+    async fn get_wallet_sweep_session(
+        &self,
+        request: Request<Empty>,
+    ) -> Result<Response<GetWalletSweepSessionResponse>, Status> {
+        todo!()
+    }
 }
 
 impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
@@ -3028,7 +3057,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_member_utxo_state_pagination() {
         let app = setup().await;
-        
+
         // Create test UTXOs
         let num_utxos = 25;
         let mut test_utxos = vec![];
@@ -3046,16 +3075,16 @@ mod tests {
             );
             test_utxos.push(utxo);
         }
-        
+
         // Store UTXOs in database
         let utxo_refs: Vec<&btcserverlib::database::Utxo> = test_utxos.iter().collect();
         app.db.store_utxos(&utxo_refs).expect("Failed to store UTXOs");
-        
+
         // Test pagination with chunk size of 10
         let chunk_size = 10;
         let mut all_collected_utxos = vec![];
         let mut chunk_index = 0;
-        
+
         loop {
             let req = tonic::Request::new(rpc::GetUtxoStateRequest {
                 session_id: "test-session".to_string(),
@@ -3064,28 +3093,28 @@ mod tests {
                 chunk_size,
                 chunk_index,
             });
-            
+
             let response = app.get_member_utxo_state(req).await.unwrap();
             let response = response.into_inner();
-            
+
             // Verify pagination metadata
             assert_eq!(response.total_utxo_count, num_utxos);
             assert_eq!(response.chunk_index, chunk_index);
             assert!(response.total_chunks > 0);
-            
+
             // Collect UTXOs from this chunk
             all_collected_utxos.extend(response.utxos);
-            
+
             if response.is_final {
                 break;
             }
-            
+
             chunk_index += 1;
         }
-        
+
         // Verify we collected all UTXOs
         assert_eq!(all_collected_utxos.len(), num_utxos as usize);
-        
+
         // Verify total value calculation
         let expected_total_value: u64 = (0..num_utxos).map(|i| 100000 + i as u64).sum();
         assert_eq!(all_collected_utxos.iter().map(|u| u.value).sum::<u64>(), expected_total_value);
@@ -3094,7 +3123,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_member_utxo_state_empty_database() {
         let app = setup().await;
-        
+
         let req = tonic::Request::new(rpc::GetUtxoStateRequest {
             session_id: "test-session".to_string(),
             coordinator_signature: vec![],
@@ -3102,10 +3131,10 @@ mod tests {
             chunk_size: 10,
             chunk_index: 0,
         });
-        
+
         let response = app.get_member_utxo_state(req).await.unwrap();
         let response = response.into_inner();
-        
+
         assert_eq!(response.total_utxo_count, 0);
         assert_eq!(response.total_chunks, 1);
         assert!(response.is_final);
@@ -3116,7 +3145,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_member_utxo_state_chunk_size_limits() {
         let app = setup().await;
-        
+
         // Test default chunk size (0 should default to 1000)
         let req = tonic::Request::new(rpc::GetUtxoStateRequest {
             session_id: "test-session".to_string(),
@@ -3125,13 +3154,13 @@ mod tests {
             chunk_size: 0, // Should default to 1000
             chunk_index: 0,
         });
-        
+
         let response = app.get_member_utxo_state(req).await.unwrap();
         let response = response.into_inner();
-        
+
         // Should work without error even with empty database
         assert!(response.is_final);
-        
+
         // Test maximum chunk size limit (should be capped at 10000)
         let req = tonic::Request::new(rpc::GetUtxoStateRequest {
             session_id: "test-session".to_string(),
@@ -3140,10 +3169,10 @@ mod tests {
             chunk_size: 50000, // Should be capped to 10000
             chunk_index: 0,
         });
-        
+
         let response = app.get_member_utxo_state(req).await.unwrap();
         let response = response.into_inner();
-        
+
         // Should work without error
         assert!(response.is_final);
     }

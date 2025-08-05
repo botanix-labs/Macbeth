@@ -8,11 +8,11 @@ use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use botanix_storage_migrate::is_migration_needed;
 use botanix_utils::panic_hook::set_panic_hook;
+use btc_server_client::Empty;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use clap::{value_parser, Parser};
-use client::Empty;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;

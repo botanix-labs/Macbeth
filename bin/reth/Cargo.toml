@@ -30,6 +30,7 @@ botanix-authority-rsp = { workspace = true }
 botanix-bitcoin-checkpoint = { workspace = true }
 
 # Botanix
+botanix-data-parser = { workspace = true }
 botanix-btc-wallet = { workspace = true }
 botanix-cli-args = { workspace = true }
 botanix-cli-parsers = { workspace = true }
@@ -40,10 +41,9 @@ botanix-storage-migrate = { workspace = true }
 botanix-activation-manager = { workspace = true }
 botanix-utils = { workspace = true }
 btc-server = { path = "../btc-server" }
-clap = { workspace = true, features = ["derive", "env"] }
+btc-server-client = { path = "../btc-server/client" }
 
-# Botanix
-client = { path = "../btc-server/client" }
+clap = { workspace = true, features = ["derive", "env"] }
 
 # confy
 confy = "0.6"

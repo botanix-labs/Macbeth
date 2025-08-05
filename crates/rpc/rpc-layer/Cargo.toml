@@ -11,7 +11,7 @@ repository = { workspace = true }
 workspace = true
 
 [dependencies]
-btc-server = { path = "../../../bin/btc-server" }
+btc-server-client = { path = "../../../bin/btc-server/client" }
 http = { workspace = true }
 jsonrpsee-http-client = { workspace = true }
 pin-project = { workspace = true }

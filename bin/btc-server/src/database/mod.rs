@@ -17,7 +17,7 @@ use bitcoin::{
     psbt::Psbt,
     Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
 };
-use client::SigningStatus;
+use btc_server_client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use futures::Stream;
 use log::info;
@@ -25,7 +25,9 @@ use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
 pub mod error;
+mod sweep;
 pub mod version;
+
 pub use error::Error;
 use version::UtxoVersion;
 
@@ -60,6 +62,8 @@ const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
 
 /// Sliding window duration in seconds (90 days)
 const RETENTION_WINDOW_SECONDS: u64 = 90 * 24 * 60 * 60;
+
+const TREE_WALLET_SWEEP_SESSION: &[u8; 20] = b"wallet_sweep_session";
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
@@ -144,6 +148,9 @@ pub struct Db {
     ///
     /// Indexed by the [PegoutRequest::id] inspector.
     pending_pegouts: sled::Tree,
+
+    /// A tree that hold current wallet sweep session. Only one session is allowed at a time.
+    wallet_sweep_session: sled::Tree,
 }
 
 impl Db {
@@ -157,6 +164,7 @@ impl Db {
             tracked_txs: db.open_tree(TREE_TRACKED_TXS)?,
             pending_pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
             finalized_pegout_ids: db.open_tree(TREE_FINALIZED_PEGOUT_IDS)?,
+            wallet_sweep_session: db.open_tree(TREE_WALLET_SWEEP_SESSION)?,
             db,
         })
     }
@@ -1117,70 +1125,79 @@ pub struct UtxoInfo {
 }
 
 /// Retrieves local UTXO state directly from btc-server database
-/// 
+///
 /// This function provides direct, read-only access to the local btc-server's UTXO database
 /// for emergency coordination purposes. It's designed to be called locally when this member
 /// needs to analyze its own UTXO state during emergency scenarios.
-/// 
+///
 /// # Purpose
 /// - **Local Analysis**: Read this member's UTXO state for emergency planning
 /// - **Validation**: Verify local state against coordinator's consensus decisions
 /// - **Emergency Coordination**: Support emergency sweep operations integrated into reth CLI
-/// 
+///
 /// # Relationship to btc-server gRPC endpoint
-/// While btc-server also has a `get_member_utxo_state` gRPC endpoint, they serve different purposes:
+/// While btc-server also has a `get_member_utxo_state` gRPC endpoint, they serve different
+/// purposes:
 /// - **This function**: Local database access for this btc-server instance
 /// - **btc-server gRPC**: Remote access for OTHER members to query THIS member's state
-/// 
+///
 /// # Arguments
 /// * `db_path` - Path to the btc-server database directory
-/// 
+///
 /// # Returns
 /// * `WalletStateReport` - Comprehensive UTXO state including totals and individual UTXO details
-/// 
+///
 /// # Example
 /// ```rust,no_run
 /// use btcserverlib::database::get_local_utxo_state;
 /// use std::path::Path;
-/// 
+///
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let db_path = Path::new("/path/to/database");
 ///     let report = get_local_utxo_state(db_path)?;
-///     println!("Local UTXOs: {}, Total value: {} sats", report.total_utxos, report.total_value_sats);
+///     println!(
+///         "Local UTXOs: {}, Total value: {} sats",
+///         report.total_utxos, report.total_value_sats
+///     );
 ///     Ok(())
 /// }
 /// ```
 pub fn get_local_utxo_state(db_path: impl AsRef<Path>) -> Result<WalletStateReport, Error> {
     // Check if the database file exists before trying to open it
     if !db_path.as_ref().exists() {
-        return Err(Error::Database(format!("Database file does not exist: {}", db_path.as_ref().display())));
+        return Err(Error::Database(format!(
+            "Database file does not exist: {}",
+            db_path.as_ref().display()
+        )));
     }
-    
+
     // Use btc-server's Db directly
-    let db = Db::open(db_path.as_ref()).map_err(|e| {
-        Error::Database(format!("Failed to open database: {}", e))
-    })?;
-    
+    let db = Db::open(db_path.as_ref())
+        .map_err(|e| Error::Database(format!("Failed to open database: {}", e)))?;
+
     get_local_utxo_state_from_db(&db, db_path.as_ref().display().to_string())
 }
 
 /// Retrieves local UTXO state from an existing database instance
-/// 
+///
 /// This function provides the same functionality as `get_local_utxo_state` but works with
 /// an existing database instance instead of opening the database from a path. This is
 /// useful for tests and situations where the database is already open.
-/// 
+///
 /// # Arguments
 /// * `db` - An existing database instance
 /// * `database_path` - Path string to include in the report for identification
-/// 
+///
 /// # Returns
 /// * `WalletStateReport` - Comprehensive UTXO state including totals and individual UTXO details
-pub fn get_local_utxo_state_from_db(db: &Db, database_path: String) -> Result<WalletStateReport, Error> {
+pub fn get_local_utxo_state_from_db(
+    db: &Db,
+    database_path: String,
+) -> Result<WalletStateReport, Error> {
     let utxos = db.get_all_utxos()?;
-    
+
     let total_value = calculate_total_value(&utxos);
-    
+
     let utxo_infos: Vec<UtxoInfo> = utxos
         .into_iter()
         .map(|utxo| UtxoInfo {
@@ -1192,7 +1209,7 @@ pub fn get_local_utxo_state_from_db(db: &Db, database_path: String) -> Result<Wa
             eth_address: utxo.eth_address.map(|addr| hex::encode(addr)),
         })
         .collect();
-    
+
     Ok(WalletStateReport {
         database_path,
         total_utxos: utxo_infos.len(),
@@ -2252,13 +2269,13 @@ mod tests {
         let (db, temp_dir) = setup_db();
         // Close the database to avoid lock conflicts
         drop(db);
-        
+
         let result = get_local_utxo_state(temp_dir.path());
         match &result {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => panic!("Expected success but got error: {:?}", e),
         }
-        
+
         let report = result.unwrap();
         assert_eq!(report.total_utxos, 0);
         assert_eq!(report.total_value_sats, 0);
@@ -2269,37 +2286,28 @@ mod tests {
     #[test]
     fn test_get_local_utxo_state_with_stored_utxos() {
         let (db, temp_dir) = setup_db();
-        
+
         // Create and store test UTXOs
         let tx1 = create_tx(2, 1, None);
         let utxo1 = Utxo::new(
             OutPoint::new(tx1.compute_txid(), 0),
-            TxOut {
-                value: Amount::from_sat(100000),
-                script_pubkey: ScriptBuf::new(),
-            },
+            TxOut { value: Amount::from_sat(100000), script_pubkey: ScriptBuf::new() },
             None, // Regular UTXO
             Some(UtxoVersion::V1),
         );
-        
+
         let tx2 = create_tx(3, 1, None);
         let utxo2 = Utxo::new(
             OutPoint::new(tx2.compute_txid(), 0),
-            TxOut {
-                value: Amount::from_sat(250000),
-                script_pubkey: ScriptBuf::new(),
-            },
+            TxOut { value: Amount::from_sat(250000), script_pubkey: ScriptBuf::new() },
             Some([0x12; 20]), // Pegin UTXO
             Some(UtxoVersion::V1),
         );
-        
+
         let tx3 = create_tx(1, 1, None);
         let utxo3 = Utxo::new(
             OutPoint::new(tx3.compute_txid(), 0),
-            TxOut {
-                value: Amount::from_sat(75000),
-                script_pubkey: ScriptBuf::new(),
-            },
+            TxOut { value: Amount::from_sat(75000), script_pubkey: ScriptBuf::new() },
             None, // Regular UTXO
             Some(UtxoVersion::V1),
         );
@@ -2311,32 +2319,33 @@ mod tests {
         // Test local UTXO retrieval functionality using existing database instance
         let result = get_local_utxo_state_from_db(&db, temp_dir.path().display().to_string());
         match &result {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => panic!("Expected success but got error: {:?}", e),
         }
-        
+
         let report = result.unwrap();
         assert_eq!(report.total_utxos, 3);
         assert_eq!(report.total_value_sats, 425000); // 100k + 250k + 75k
-        
+
         // Verify UTXO details
         assert_eq!(report.utxos.len(), 3);
-        
+
         // Find each UTXO in the report (order might vary)
         let reported_values: Vec<u64> = report.utxos.iter().map(|u| u.value_sats).collect();
         assert!(reported_values.contains(&100000));
         assert!(reported_values.contains(&250000));
         assert!(reported_values.contains(&75000));
-        
+
         // Check pegin UTXO identification
         let pegin_utxos: Vec<&UtxoInfo> = report.utxos.iter().filter(|u| u.is_pegin).collect();
         assert_eq!(pegin_utxos.len(), 1);
         assert_eq!(pegin_utxos[0].value_sats, 250000);
         assert!(pegin_utxos[0].eth_address.is_some());
         assert_eq!(pegin_utxos[0].eth_address.as_ref().unwrap(), &hex::encode([0x12; 20]));
-        
+
         // Check that all UTXOs have version 0 (V1 = 0)
-        let version_0_utxos: Vec<&UtxoInfo> = report.utxos.iter().filter(|u| u.version == 0).collect();
+        let version_0_utxos: Vec<&UtxoInfo> =
+            report.utxos.iter().filter(|u| u.version == 0).collect();
         assert_eq!(version_0_utxos.len(), 3);
     }
 
@@ -2344,10 +2353,10 @@ mod tests {
     fn test_get_local_utxo_state_with_nonexistent_database() {
         let result = get_local_utxo_state(std::path::Path::new("/nonexistent/path/database.db"));
         assert!(result.is_err());
-        
+
         // Verify it's a database error
         match result.unwrap_err() {
-            Error::Database(_) => {}, // Expected error type
+            Error::Database(_) => {} // Expected error type
             other => panic!("Expected Error::Database, got: {:?}", other),
         }
     }
@@ -2356,28 +2365,22 @@ mod tests {
     fn test_calculate_total_value() {
         let tx1 = create_tx(2, 1, None);
         let tx2 = create_tx(3, 1, None);
-        
+
         let utxos = vec![
             Utxo::new(
                 OutPoint::new(tx1.compute_txid(), 0),
-                TxOut {
-                    value: Amount::from_sat(100000),
-                    script_pubkey: ScriptBuf::new(),
-                },
+                TxOut { value: Amount::from_sat(100000), script_pubkey: ScriptBuf::new() },
                 None,
                 Some(UtxoVersion::V1),
             ),
             Utxo::new(
                 OutPoint::new(tx2.compute_txid(), 0),
-                TxOut {
-                    value: Amount::from_sat(250000),
-                    script_pubkey: ScriptBuf::new(),
-                },
+                TxOut { value: Amount::from_sat(250000), script_pubkey: ScriptBuf::new() },
                 Some([0x12; 20]),
                 Some(UtxoVersion::V1),
             ),
         ];
-        
+
         let total = calculate_total_value(&utxos);
         assert_eq!(total, 350000);
     }
@@ -2386,28 +2389,22 @@ mod tests {
     fn test_calculate_total_value_overflow_protection() {
         let tx1 = create_tx(2, 1, None);
         let tx2 = create_tx(3, 1, None);
-        
+
         let utxos = vec![
             Utxo::new(
                 OutPoint::new(tx1.compute_txid(), 0),
-                TxOut {
-                    value: Amount::from_sat(u64::MAX - 100),
-                    script_pubkey: ScriptBuf::new(),
-                },
+                TxOut { value: Amount::from_sat(u64::MAX - 100), script_pubkey: ScriptBuf::new() },
                 None,
                 Some(UtxoVersion::V1),
             ),
             Utxo::new(
                 OutPoint::new(tx2.compute_txid(), 0),
-                TxOut {
-                    value: Amount::from_sat(200),
-                    script_pubkey: ScriptBuf::new(),
-                },
+                TxOut { value: Amount::from_sat(200), script_pubkey: ScriptBuf::new() },
                 None,
                 Some(UtxoVersion::V1),
             ),
         ];
-        
+
         let total = calculate_total_value(&utxos);
         assert_eq!(total, u64::MAX); // Should saturate, not overflow
     }
@@ -2418,18 +2415,16 @@ mod tests {
             database_path: "/test/path".to_string(),
             total_utxos: 1,
             total_value_sats: 100000,
-            utxos: vec![
-                UtxoInfo {
-                    txid: "abc123".to_string(),
-                    vout: 0,
-                    value_sats: 100000,
-                    version: 1,
-                    is_pegin: false,
-                    eth_address: None,
-                },
-            ],
+            utxos: vec![UtxoInfo {
+                txid: "abc123".to_string(),
+                vout: 0,
+                value_sats: 100000,
+                version: 1,
+                is_pegin: false,
+                eth_address: None,
+            }],
         };
-        
+
         // Test JSON serialization/deserialization
         let json = serde_json::to_string(&report).unwrap();
         let deserialized: WalletStateReport = serde_json::from_str(&json).unwrap();

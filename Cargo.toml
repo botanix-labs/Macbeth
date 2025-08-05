@@ -35,6 +35,7 @@ members = [
     "crates/botanix-storage",
     "crates/botanix-storage-migrate",
     "crates/botanix-utils",
+    "crates/botanix-wallet-sweep",
     "crates/chain-state/",
     "crates/chainspec/",
     "crates/cli/cli/",
@@ -378,6 +379,7 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 
 # Botanix deps
 botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
+botanix-wallet-sweep = { path = "crates/botanix-wallet-sweep" }
 botanix-rpc-config = { path = "crates/botanix-rpc-config" }
 botanix-cli-args = { path = "crates/botanix-cli-args" }
 botanix-rpc-types = { path = "crates/botanix-rpc-types" }

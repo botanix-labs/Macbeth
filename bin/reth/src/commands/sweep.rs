@@ -1,16 +1,33 @@
 //! Emergency wallet sweep command implementation
 
+use bitcoin::FeeRate;
+use botanix_btc_wallet::{
+    dump::UtxoDumpsReader, dump_utxos_to_file, init::DestinationConfig, init_wallet_sweep,
+};
+use botanix_data_parser::{DataParser, SerializationType, DEFAULT_COMPRESSION_STRATEGY};
+use btc_server_client::Empty;
+use btcserverlib::{
+    database::Db,
+    dkg,
+    extended_client::{BtcServerExtendedApi, GrpcClientFactory},
+    federation_args::FederationTomlConfig,
+    jwt::JwtSecret,
+};
 use clap::{Parser, Subcommand};
+use eyre::{OptionExt, WrapErr};
 use reth_cli_runner::CliContext;
-use std::path::PathBuf;
-use tracing::{info, warn};
+use std::{net::SocketAddr, path::PathBuf, str::FromStr};
+use tracing::{error, info, warn};
 
 /// Emergency wallet sweep operations for the Botanix federation
 #[derive(Debug, Parser)]
 pub struct SweepCommand {
-    /// Path to the btc-server database directory
-    #[arg(long, env = "RETH_SWEEP_DB_PATH")]
-    pub db_path: Option<PathBuf>,
+    /// Local BTC server address
+    #[arg(long, default_value = "127.0.0.1:8080", value_parser = clap::value_parser!(SocketAddr))]
+    btc_server_address: SocketAddr,
+
+    #[arg(long, value_parser = clap::value_parser!(PathBuf).exists().is_file())]
+    btc_server_jwt_secret_path: PathBuf,
 
     /// Emergency sweep subcommand to execute
     #[command(subcommand)]
@@ -20,155 +37,158 @@ pub struct SweepCommand {
 /// Available emergency sweep subcommands
 #[derive(Debug, Subcommand)]
 pub enum SweepSubcommands {
+    #[command(about = "Dump wallet UTXOs to file")]
+    DumpUtxos {
+        /// Path to output file for UTXOs
+        #[arg(long)]
+        output_file_path: PathBuf,
+    },
     /// Initiate emergency sweep coordination (coordinator only)
     #[command(about = "Initiate emergency sweep as designated coordinator")]
     Initiate {
-        /// Destination address for swept funds
+        #[command(flatten)]
+        destination: DestinationOptions,
+        #[command(flatten)]
+        utxo: UtxoOptions,
+        /// Path to federation config path
         #[arg(long)]
-        destination: String,
-        /// Fee rate in sat/vB
-        #[arg(long)]
-        fee_rate: u64,
-        /// Consensus threshold percentage (75-95)
-        #[arg(long, default_value = "80")]
-        consensus_threshold: u8,
-        /// Path to federation config
-        #[arg(long)]
-        federation_config: PathBuf,
+        federation_config_path: PathBuf,
         /// Path to coordinator private key
         #[arg(long)]
         coordinator_key: PathBuf,
-        /// JWT secret file path for btc-server authentication
-        #[arg(long)]
-        jwt_secret: Option<PathBuf>,
-        /// Timeout in seconds for member queries
-        #[arg(long, default_value = "30")]
-        timeout: u64,
-        /// Chunk size for UTXO pagination
-        #[arg(long, default_value = "1000")]
-        chunk_size: u32,
+        // /// JWT secret file path for btc-server authentication
+        // #[arg(long)]
+        // jwt_secret: Option<PathBuf>,
+        // /// Timeout in seconds for member queries
+        // #[arg(long, default_value = "30")]
+        // timeout: u64,
+        // /// Chunk size for UTXO pagination
+        // #[arg(long, default_value = "1000")]
+        // chunk_size: u32,
     },
     /// Accept and validate emergency sweep request
     #[command(about = "Accept emergency sweep request from coordinator")]
     AcceptRequest {
         /// Path to sweep request JSON file
         request_file: PathBuf,
-        /// btc-server address for local database access
-        #[arg(long)]
-        btc_server_addr: Option<String>,
-        /// JWT secret file path for btc-server authentication
-        #[arg(long)]
-        jwt_secret: Option<PathBuf>,
     },
-    /// Participate in emergency sweep signing
-    #[command(about = "Participate in emergency sweep threshold signing")]
-    Sign {
-        /// Path to accepted sweep request file
-        #[arg(long)]
-        request_file: PathBuf,
-        /// btc-server address for local database access
-        #[arg(long)]
-        btc_server_addr: Option<String>,
-        /// JWT secret file path for btc-server authentication
-        #[arg(long)]
-        jwt_secret: Option<PathBuf>,
-    },
+}
+
+#[derive(Debug, Parser)]
+struct DestinationOptions {
+    /// Bitcoin network to use (mainnet, testnet, regtest)
+    #[arg(long)]
+    network: bitcoin::Network,
+    /// Destination address for swept funds
+    #[arg(long)]
+    address: String,
+    /// Fee rate in sat/vB
+    #[arg(long, value_parser = FeeRate::from_sat_per_vb(clap::value_parser!(u64)))]
+    fee_rate: FeeRate,
+}
+
+impl DestinationConfig for DestinationOptions {
+    fn network(&self) -> eyre::Result<bitcoin::Network> {
+        Ok(self.network)
+    }
+
+    fn address(&self) -> eyre::Result<bitcoin::Address> {
+        let address = self
+            .address
+            .parse::<bitcoin::Address<_>>()
+            .and_then(|a| a.require_network(self.network))
+            .wrap_err_with(|| format!("invalid destination address: {}", self.address))?;
+
+        Ok(address)
+    }
+
+    fn fee_rate(&self) -> eyre::Result<FeeRate> {
+        Ok(self.fee_rate)
+    }
+}
+
+#[derive(Debug, Parser)]
+struct UtxoOptions {
+    /// Consensus threshold percentage (75-95)
+    #[arg(long, default_value = "80", value_parser = clap::value_parser!(u8).range(75..=95))]
+    consensus_threshold: u8,
+    /// Path to directory with UTXO data files
+    #[arg(long, value_parser = clap::value_parser!(PathBuf).exists().is_dir())]
+    utxo_data_dir_path: PathBuf,
 }
 
 impl SweepCommand {
     /// Execute the sweep command
     pub async fn execute(&self, _ctx: CliContext) -> eyre::Result<()> {
-        info!(target: "reth::cli", "Starting emergency sweep command");
+        info!("Starting emergency sweep command");
 
-        // Validate database path is provided
-        let db_path = match &self.db_path {
-            Some(path) => path.clone(),
-            None => {
-                return Err(eyre::eyre!(
-                    "Database path is required. Please specify --db-path pointing to btc-server database directory."
-                ));
-            }
-        };
+        let btc_server_jwt_secret = JwtSecret::from_file(&self.btc_server_jwt_secret_path)
+            .wrap_err_with(|| {
+                format!(
+                    "Failed to read btc server jwt toke from {}",
+                    self.btc_server_jwt_secret_path.to_str()
+                )
+            })?;
 
-        if !db_path.exists() {
-            return Err(eyre::eyre!(
-                "Database path does not exist: {}. Please ensure btc-server database directory exists.",
-                db_path.display()
-            ));
-        }
+        let btc_server_factory = GrpcClientFactory::new(
+            self.btc_server_address.to_string(),
+            Some(btc_server_jwt_secret),
+        );
 
-        info!(target: "reth::cli", "Using database path: {}", db_path.display());
+        let mut btc_server_client =
+            btc_server_factory.build_and_connect().await.wrap_err_with(|| {
+                format!(
+                    "Failed to connect to btc server at {} with JWT secret {}",
+                    self.btc_server_address,
+                    self.btc_server_jwt_secret_path.display()
+                )
+            })?;
+
+        info!("Btc server connected");
+
+        // Check our connection to the btc server is authenticated properly
+        btc_server_client
+            .health_check(Empty {})
+            .await
+            .map_err(|err| eyre::eyre!("Failed to authenticate to btc server: {}", err))?;
+
+        info!("Btc server authenticated");
+
+        // Initialize data parser for utxo dump
+        let parser = DataParser::default()
+            .with_compression_strategy(&DEFAULT_COMPRESSION_STRATEGY)
+            .with_serialization_type(SerializationType::Postcard);
 
         match &self.command {
-            SweepSubcommands::Initiate { 
-                destination, 
-                fee_rate, 
-                consensus_threshold, 
-                federation_config, 
+            SweepSubcommands::DumpUtxos { output_file_path: output_file_file } => {
+                dump_utxos_to_file(&mut btc_server_client, &parser, output_file_file)
+                    .await
+                    .wrap_err(eyre::eyre!("Failed to dump UTXOs"))?;
+            }
+            SweepSubcommands::Initiate {
+                destination,
+                utxo,
+                federation_config_path,
                 coordinator_key,
-                jwt_secret,
-                timeout,
-                chunk_size,
             } => {
-                self.execute_initiate(
-                    &db_path,
-                    destination,
-                    *fee_rate,
-                    *consensus_threshold,
-                    federation_config,
-                    coordinator_key,
-                    jwt_secret,
-                    *timeout,
-                    *chunk_size,
-                ).await
-            }
-            SweepSubcommands::AcceptRequest { 
-                request_file, 
-                btc_server_addr, 
-                jwt_secret 
-            } => {
-                self.execute_accept_request(&db_path, request_file, btc_server_addr, jwt_secret).await
-            }
-            SweepSubcommands::Sign { 
-                request_file, 
-                btc_server_addr, 
-                jwt_secret 
-            } => {
-                self.execute_sign(&db_path, request_file, btc_server_addr, jwt_secret).await
-            }
-        }
-    }
+                let federation_config_string = std::fs::read_to_string(&federation_config_path)?;
+                let federation_config = FederationTomlConfig::from_str(&federation_config_string)
+                    .map_err(|_| {
+                    dkg::Error::BadConfig("invalid federation Toml config".to_string())
+                })?;
 
-    /// Execute initiate command (placeholder)
-    async fn execute_initiate(
-        &self,
-        _db_path: &PathBuf,
-        destination: &str,
-        fee_rate: u64,
-        consensus_threshold: u8,
-        federation_config: &PathBuf,
-        coordinator_key: &PathBuf,
-        jwt_secret: &Option<PathBuf>,
-        timeout: u64,
-        chunk_size: u32,
-    ) -> eyre::Result<()> {
-        info!(target: "reth::cli", "Starting emergency sweep initiation");
-        info!(target: "reth::cli", "Destination: {}, Fee rate: {} sat/vB, Consensus threshold: {}%", 
-              destination, fee_rate, consensus_threshold);
-        info!(target: "reth::cli", "Federation config: {}, Coordinator key: {}", 
-              federation_config.display(), coordinator_key.display());
-        info!(target: "reth::cli", "Timeout: {}s, Chunk size: {}", timeout, chunk_size);
-        
-        if let Some(jwt_path) = jwt_secret {
-            info!(target: "reth::cli", "JWT secret: {}", jwt_path.display());
+                let sweep_request =
+                    init_wallet_sweep(&mut btc_server_client, parser.clone(), destination).await?;
+            }
+            SweepSubcommands::AcceptRequest { request_file, btc_server_addr, jwt_secret } => {
+                self.execute_accept_request(&db_path, request_file, btc_server_addr, jwt_secret)
+                    .await?;
+            }
+            SweepSubcommands::Sign { request_file, btc_server_addr, jwt_secret } => {
+                self.execute_sign(&db_path, request_file, btc_server_addr, jwt_secret).await?;
+            }
         }
-        
-        warn!(target: "reth::cli", "Emergency sweep initiate command not yet implemented");
-        println!("⚠️  Emergency sweep initiation is not yet implemented.");
-        println!("📋 This command will coordinate emergency sweeps as designated coordinator.");
-        println!("🎯 Will collect UTXO state from federation members via gRPC calls.");
-        println!("📊 Will apply consensus threshold and generate deterministic PSBT.");
-        println!("🔐 Will immediately begin FROST threshold signing process.");
+
         Ok(())
     }
 
@@ -181,14 +201,14 @@ impl SweepCommand {
         jwt_secret: &Option<PathBuf>,
     ) -> eyre::Result<()> {
         info!(target: "reth::cli", "Accepting emergency sweep request from: {}", request_file.display());
-        
+
         if let Some(addr) = btc_server_addr {
             info!(target: "reth::cli", "btc-server address: {}", addr);
         }
         if let Some(jwt_path) = jwt_secret {
             info!(target: "reth::cli", "JWT secret: {}", jwt_path.display());
         }
-        
+
         warn!(target: "reth::cli", "Emergency sweep accept-request command not yet implemented");
         println!("⚠️  Emergency sweep accept-request is not yet implemented.");
         println!("📋 This command will validate and accept coordinator sweep requests.");
@@ -207,14 +227,14 @@ impl SweepCommand {
         jwt_secret: &Option<PathBuf>,
     ) -> eyre::Result<()> {
         info!(target: "reth::cli", "Participating in emergency sweep signing for: {}", request_file.display());
-        
+
         if let Some(addr) = btc_server_addr {
             info!(target: "reth::cli", "btc-server address: {}", addr);
         }
         if let Some(jwt_path) = jwt_secret {
             info!(target: "reth::cli", "JWT secret: {}", jwt_path.display());
         }
-        
+
         warn!(target: "reth::cli", "Emergency sweep sign command not yet implemented");
         println!("⚠️  Emergency sweep signing is not yet implemented.");
         println!("📋 This command will participate in threshold signing for emergency sweeps.");
@@ -222,4 +242,4 @@ impl SweepCommand {
         println!("🤝 Will contribute to FROST threshold signature.");
         Ok(())
     }
-} 
+}

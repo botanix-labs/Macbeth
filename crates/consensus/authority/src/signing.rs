@@ -1,8 +1,10 @@
 use crate::utils::{parse_signing_session_id, retry_exec, retry_future, FrostParseError};
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
-use btcserverlib::extended_client::{BtcServerExtendedApi, GrpcClientError};
-use client::{Empty, FinalizeSigningResponse, SigningPackage, SigningPackageRequest};
+use btc_server_client::{
+    BtcServerExtendedApi, Empty, FinalizeSigningResponse, GrpcClientError, SigningPackage,
+    SigningPackageRequest,
+};
 use frost_secp256k1_tr as frost;
 
 use reth_chainspec::ChainSpec;
@@ -330,7 +332,7 @@ where
     ) -> Result<SigningPackage, Error> {
         let package = match self
             .btc_client
-            .get_to_sign_package(client::ToSignRequest {
+            .get_to_sign_package(btc_server_client::ToSignRequest {
                 signing_session_id: signing_session_id.to_vec(),
             })
             .await
@@ -347,7 +349,7 @@ where
     ) -> Result<FinalizeSigningResponse, Error> {
         let finalized_signing = match self
             .btc_client
-            .finalize_signing(client::FinalizeSigningRequest {
+            .finalize_signing(btc_server_client::FinalizeSigningRequest {
                 signing_session_id: signing_session_id.to_vec(),
             })
             .await

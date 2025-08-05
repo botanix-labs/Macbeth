@@ -26,7 +26,7 @@ botanix-cli-args = { workspace = true }
 botanix-cli-parsers = { workspace = true }
 
 # Botanix
-btc-server = { path = "../../../bin/btc-server" }
+btc-server-client = { path = "../../../bin/btc-server/client" }
 clap = { workspace = true, features = ["derive", "env"] }
 const_format = { workspace = true }
 derive_more = { workspace = true }

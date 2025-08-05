@@ -37,7 +37,7 @@ btc-server = { path = "../btc-server" }
 # other dependencies
 bytes = "1.4.0"
 clap = "4.3.3"
-client = { path = "../btc-server/client" }
+btc-server-client = { path = "../btc-server/client" }
 displaydoc = "0.2.4"
 dotenv = { version = "0.15.0" }
 

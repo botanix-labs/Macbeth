@@ -1,4 +1,4 @@
-use btcserverlib::jwt::{JwtError, JwtSecret};
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use jsonrpsee::server::ServerBuilder;
 use reth_node_core::{args::RpcServerArgs, utils::get_or_create_jwt_secret_from_path};
 use reth_rpc_eth_types::{EthConfig, EthStateCacheConfig, GasPriceOracleConfig};

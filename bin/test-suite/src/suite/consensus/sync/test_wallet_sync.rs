@@ -11,7 +11,7 @@ use botanix_authority_peg::{
     peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
     utils::AmountExt,
 };
-use client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
+use btc_server_client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
