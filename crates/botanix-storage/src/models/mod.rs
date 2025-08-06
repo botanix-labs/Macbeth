@@ -10,6 +10,7 @@
 //! - **snapshot**: Blockchain snapshot and chunk data structures
 //! - **staged_header**: Headers with associated pegin/pegout transaction data
 //! - **wallet_sync**: Wallet state synchronization coordination models
+//! - **wallet_sweep**: Wallet sweep session models for emergency fund recovery
 //!
 //! All models implement the necessary traits for:
 //! - Serialization/deserialization with `serde`
@@ -25,11 +26,13 @@
 mod activation_manager;
 mod snapshot;
 mod staged_header;
+mod wallet_sweep;
 mod wallet_sync;
 
 pub use activation_manager::*;
 pub use snapshot::*;
 pub use staged_header::*;
+pub use wallet_sweep::*;
 pub use wallet_sync::*;
 
 use reth_codecs::Compact;
@@ -43,5 +46,6 @@ impl_compression_for_compact!(
     SnapshotChunk,
     SnapshotSync,
     HeaderWithPegs,
-    WalletStateSyncRecord
+    WalletStateSyncRecord,
+    WalletSweepSession,
 );

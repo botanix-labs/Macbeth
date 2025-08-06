@@ -1,5 +1,5 @@
 [package]
-name = "botanix-btc-wallet-sweep"
+name = "botanix-wallet-sweep"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -25,6 +25,7 @@ tracing = "0.1.40"
 btc-server-client = { path = "../../bin/btc-server/client" }
 eyre = { workspace = true }
 botanix-data-parser = { workspace = true }
+botanix-storage = { workspace = true }
 #reth-network = { workspace = true }
 #reth-tasks = { workspace = true }
 

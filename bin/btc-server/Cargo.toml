@@ -32,6 +32,8 @@ chacha20poly1305 = "0.10.1"
 ciborium = "0.2.1"
 clap = { version = "4.3.22", features = ["derive"] }
 btc-server-client = { path = "./client" }
+botanix-storage = { workspace = true }
+botanix-wallet-sweep = { workspace = true }
 confy = "0.6"
 derive_more = { version = "1.0", features = ["full"] }
 displaydoc = "0.2"
