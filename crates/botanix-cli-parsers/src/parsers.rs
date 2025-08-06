@@ -129,6 +129,7 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                 BOTANIX_TESTNET_CHAIN_ID,
                 BOTANIX_TESTNET.genesis_hash,
                 lst_fee_receiver,
+                BOTANIX_TESTNET.epoch_length,
             );
             Arc::new(botanix_testnet)
         }
