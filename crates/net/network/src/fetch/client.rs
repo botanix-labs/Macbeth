@@ -1,8 +1,11 @@
 //! A client implementation that can interact with the network and download data.
 
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    ops::RangeInclusive,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use futures::{future, future::Either};
@@ -78,15 +81,16 @@ impl BodiesClient for FetchClient {
     type Output = BodiesFut;
 
     /// Sends a `GetBlockBodies` request to an available peer.
-    fn get_block_bodies_with_priority(
+    fn get_block_bodies_with_priority_and_range_hint(
         &self,
         request: Vec<B256>,
         priority: Priority,
+        range_hint: Option<RangeInclusive<u64>>,
     ) -> Self::Output {
         let (response, rx) = oneshot::channel();
         if self
             .request_tx
-            .send(DownloadRequest::GetBlockBodies { request, response, priority })
+            .send(DownloadRequest::GetBlockBodies { request, response, priority, range_hint })
             .is_ok()
         {
             Box::pin(FlattenedResponse::from(rx))
@@ -95,3 +99,7 @@ impl BodiesClient for FetchClient {
         }
     }
 }
+
+// impl BlockClient for FetchClient {
+//     type Block = BodiesFut;
+// }

@@ -206,19 +206,23 @@ impl SessionError for EthStreamError {
 }
 
 impl SessionError for PendingSessionHandshakeError {
+    #[allow(clippy::match_same_arms)]
     fn merits_discovery_ban(&self) -> bool {
         match self {
             Self::Eth(eth) => eth.merits_discovery_ban(),
             Self::Ecies(_) => true,
             Self::Timeout => false,
+            Self::UnsupportedExtraCapability => false,
         }
     }
 
+    #[allow(clippy::match_same_arms)]
     fn is_fatal_protocol_error(&self) -> bool {
         match self {
             Self::Eth(eth) => eth.is_fatal_protocol_error(),
             Self::Ecies(_) => true,
             Self::Timeout => false,
+            Self::UnsupportedExtraCapability => true,
         }
     }
 
@@ -227,6 +231,7 @@ impl SessionError for PendingSessionHandshakeError {
             Self::Eth(eth) => eth.should_backoff(),
             Self::Ecies(_) => Some(BackoffKind::Low),
             Self::Timeout => Some(BackoffKind::Medium),
+            Self::UnsupportedExtraCapability => Some(BackoffKind::High),
         }
     }
 }
