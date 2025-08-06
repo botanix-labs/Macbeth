@@ -129,7 +129,10 @@ volumes:
   btc_server_db:
     driver: local
 
-  poa_db:
+  poa_reth_db:
+    driver: local
+
+  poa_botanix_db:
     driver: local
 
   poa_logs:
