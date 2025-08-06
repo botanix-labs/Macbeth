@@ -28,7 +28,7 @@ use tracing::{debug, info, warn};
 pub struct EnvironmentArgs {
     /// Parameters for datadir configuration
     #[command(flatten)]
-    pub datadir: DatadirArgs,
+    pub datadir: DatadirArgs, // YES
 
     /// The path to the configuration file to use.
     #[arg(long, value_name = "FILE")]
@@ -48,7 +48,7 @@ pub struct EnvironmentArgs {
 
     /// All database related arguments
     #[command(flatten)]
-    pub db: DatabaseArgs,
+    pub db: DatabaseArgs, // Yes
 }
 
 impl EnvironmentArgs {
