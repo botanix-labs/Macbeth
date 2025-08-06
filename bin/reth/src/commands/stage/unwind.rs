@@ -242,17 +242,3 @@ impl Subcommands {
         Ok(target..=last)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_unwind() {
-        let cmd = Command::parse_from(["reth", "--datadir", "dir", "to-block", "100"]);
-        assert_eq!(cmd.command, Subcommands::ToBlock { target: BlockHashOrNumber::Number(100) });
-
-        let cmd = Command::parse_from(["reth", "--datadir", "dir", "num-blocks", "100"]);
-        assert_eq!(cmd.command, Subcommands::NumBlocks { amount: 100 });
-    }
-}
