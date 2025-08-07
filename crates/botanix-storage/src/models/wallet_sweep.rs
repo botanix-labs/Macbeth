@@ -9,10 +9,10 @@ pub type WalletSweepSessionId = B256;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletSweepSession {
-    psbt_bytes: Bytes,
-    bitcoin_network: Network,
-    bitcoin_destination_address: Address<NetworkUnchecked>,
-    created_at: u64,
+    pub psbt_bytes: Bytes,
+    pub bitcoin_network: Network,
+    pub bitcoin_destination_address: Address<NetworkUnchecked>,
+    pub created_at: u64,
 }
 
 impl Compress for WalletSweepSession {

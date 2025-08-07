@@ -30,6 +30,7 @@
 
 use super::models::*;
 use reth_db::{tables, TableType, TableViewer};
+pub use reth_db_api::table::Compress;
 use reth_primitives::{BlockNumber, B256};
 use std::fmt;
 

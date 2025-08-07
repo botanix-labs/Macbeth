@@ -1,9 +1,13 @@
 // use crate::dump::UtxoDumpsReader;
 use crate::dump::UtxoDumpsReader;
+use bitcoin::{Address, Network};
 use bitcoincore_rpc::Client;
 use botanix_data_parser::DataParser;
-use btc_server_client::{BtcServerClient, BtcServerExtendedClient};
-use std::fmt::Debug;
+use botanix_storage::{models::WalletSweepSession, tables::Compress};
+use btc_server_client::{
+    AcceptWalletSweepSessionRequest, BtcServerClient, BtcServerExtendedApi, BtcServerExtendedClient,
+};
+use std::{fmt::Debug, str::FromStr, time::SystemTime};
 use tracing::{info, warn};
 
 pub trait DestinationConfig: Debug {
@@ -38,7 +42,22 @@ pub async fn init_wallet_sweep(
     // TODO: Validate that we can ensure threshold
     // TODO: Intersect UTXOs
     // TODO: Create PSBT
-    // TODO: Start signing
+
+    // TODO: We need to create request, then create session from request
+    let created_at = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_secs();
+
+    let session = WalletSweepSession {
+        psbt_bytes: Default::default(),
+        bitcoin_network: Network::Bitcoin,
+        bitcoin_destination_address: Address::from_str("bc1qexampleaddress1234567890abcdefg")?,
+        created_at,
+    };
+
+    let request = AcceptWalletSweepSessionRequest { request: session.compress() };
+
+    btc_server_client.accept_wallet_sweep_session(request).await?;
+
+    // TODO: Write request to file and print some information
 
     Ok(())
 }

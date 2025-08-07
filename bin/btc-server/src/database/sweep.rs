@@ -1,6 +1,5 @@
 use crate::database::{Db, Error};
-use botanix_storage::models::WalletSweepSession;
-use reth_db_api::table::Compress;
+use botanix_storage::{models::WalletSweepSession, tables::Compress};
 use sled::{IVec, Subscriber};
 
 impl Db {

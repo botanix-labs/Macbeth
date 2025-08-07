@@ -80,7 +80,6 @@ tonic-reflection = { version = "0.12.3" }
 tracing-actix-web = "0.7.14"
 url = "2.5.0"
 zeroize = "1.8.1"
-reth-db-api = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.13.3"
