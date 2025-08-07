@@ -69,7 +69,7 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
 
     // Getting public key should fail for all clients
     for client in &mut clients {
-        let pk = client.get_public_key(tonic::Request::new(client::Empty {})).await;
+        let pk = client.get_public_key(tonic::Request::new(btc_server_client::Empty {})).await;
         assert!(pk.is_err());
         let err = pk.err().unwrap();
         assert_eq!(err.code(), tonic::Code::Internal);
@@ -88,7 +88,7 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
     for input in 0..INPUTS_TO_SPEND {
         let eth_address = pegins.eth_addresses.get(input).copied().unwrap();
         let pk = coordinator
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -152,7 +152,7 @@ pub async fn test_pending_pegouts(suite: &ConsensusIntegrationTestSuite) -> Resu
     }
 
     let pending_pegouts = clients[0]
-        .get_pending_pegouts(tonic::Request::new(client::Empty {}))
+        .get_pending_pegouts(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .expect("get pending pegouts")
         .into_inner();

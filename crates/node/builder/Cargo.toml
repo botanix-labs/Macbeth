@@ -21,7 +21,7 @@ botanix-btc-wallet = { workspace = true }
 botanix-rpc-config = { workspace = true }
 
 ## Botanix
-btc-server = { path = "../../../bin/btc-server" }
+btc-server-client = { path = "../../../bin/btc-server/client" }
 eyre = { workspace = true }
 fdlimit = { workspace = true }
 

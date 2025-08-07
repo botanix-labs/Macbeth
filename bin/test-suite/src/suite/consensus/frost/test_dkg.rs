@@ -1,8 +1,8 @@
 use super::error::Error;
 use crate::suite::consensus::ConsensusIntegrationTestSuite;
 
+use btc_server_client::{self, BtcServerClient};
 use btcserverlib::frost_id;
-use client::{self, BtcServerClient};
 use frost_secp256k1_tr as frost;
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -23,7 +23,7 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error
                 process.iter().nth(instance as usize).map(|val| val.btc_server_port)
             })
             .ok_or_else(|| Error::InvalidBtcServerPort)?;
-        let c = client::BtcServerClient::connect(format!("http://localhost:{}", port))
+        let c = btc_server_client::BtcServerClient::connect(format!("http://localhost:{}", port))
             .await
             .map_err(Error::ServerConnect)?;
         clients.push(c);
@@ -31,7 +31,7 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error
 
     // Getting public key should fail for all clients
     for client in clients.iter_mut() {
-        let pk = client.get_public_key(tonic::Request::new(client::Empty {})).await;
+        let pk = client.get_public_key(tonic::Request::new(btc_server_client::Empty {})).await;
         assert!(pk.is_err());
         let err = pk.err().unwrap();
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
@@ -45,7 +45,7 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error
     let mut pkeys: Vec<String> = vec![];
     for client in &mut clients {
         let pk = client
-            .get_public_key(tonic::Request::new(client::Empty {}))
+            .get_public_key(tonic::Request::new(btc_server_client::Empty {}))
             .await
             .map_err(Error::Request)?
             .into_inner();
@@ -64,7 +64,9 @@ pub async fn dkg_flow(suite: &ConsensusIntegrationTestSuite) -> Result<(), Error
     Ok(())
 }
 
-pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<(), Error> {
+pub async fn do_dkg(
+    clients: &mut [btc_server_client::BtcServerClient<Channel>],
+) -> Result<(), Error> {
     // creating a mapping of client index to fronst identifier
     let mut frost_id_map = BTreeMap::new();
     for (i, _) in clients.iter().enumerate() {
@@ -72,13 +74,13 @@ pub async fn do_dkg(clients: &mut [client::BtcServerClient<Channel>]) -> Result<
         frost_id_map.insert(frost_id, i);
     }
 
-    let mut queue: VecDeque<client::DkgPayload> = VecDeque::new();
+    let mut queue: VecDeque<btc_server_client::DkgPayload> = VecDeque::new();
 
     // Kick-off the initial DKG payloads; only the coordinator will have a
     // payloads to send.
     for client in clients.iter_mut() {
         let p = client
-            .get_dkg_payloads(tonic::Request::new(client::Empty {}))
+            .get_dkg_payloads(tonic::Request::new(btc_server_client::Empty {}))
             .await
             .map_err(Error::Request)?
             .into_inner();

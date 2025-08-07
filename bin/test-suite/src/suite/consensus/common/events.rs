@@ -2,7 +2,7 @@ use crate::{
     it_info_print,
     suite::consensus::common::poa_node::{is_dkg_ready, FederationMemberTestConfig, Notifications},
 };
-use client::SigningStatus;
+use btc_server_client::SigningStatus;
 use reth_primitives::{constants::EPOCH_LENGTH, B256};
 use std::collections::BTreeMap;
 

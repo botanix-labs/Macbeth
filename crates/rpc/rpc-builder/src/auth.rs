@@ -1,5 +1,5 @@
 use crate::error::{RpcError, ServerKind};
-use btcserverlib::jwt::JwtSecret;
+use btc_server_client::jwt::JwtSecret;
 use http::header::AUTHORIZATION;
 pub use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::{

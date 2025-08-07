@@ -1,7 +1,7 @@
 //! Auth server tests
 
 use crate::utils::launch_auth;
-use btcserverlib::jwt::JwtSecret;
+use btc_server_client::jwt::JwtSecret;
 use jsonrpsee::core::client::{ClientT, SubscriptionClientT};
 use reth_ethereum_engine_primitives::EthEngineTypes;
 use reth_primitives::{Block, U64};

@@ -46,6 +46,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "time", "rt-multi-thread"] }
 tower = { workspace = true }
 tracing = { workspace = true }
+btc-server-client = { path = "../../bin/btc-server/client" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

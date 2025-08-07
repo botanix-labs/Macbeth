@@ -18,10 +18,7 @@ use botanix_storage::{
     RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter, StagedHeaderReader,
     StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
 };
-use btcserverlib::extended_client::{
-    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
-};
-use client::Empty;
+use btc_server_client::{BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory};
 use reth_chainspec::ChainSpec;
 use reth_db::DatabaseEnv;
 use reth_evm::execute::BlockExecutorProvider;

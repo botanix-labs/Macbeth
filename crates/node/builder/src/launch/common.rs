@@ -2,7 +2,7 @@
 
 use std::{marker::PhantomData, sync::Arc, thread::available_parallelism};
 
-use btcserverlib::jwt::JwtSecret;
+use btc_server_client::jwt::JwtSecret;
 use eyre::Context;
 use rayon::ThreadPoolBuilder;
 use reth_auto_seal_consensus::MiningMode;

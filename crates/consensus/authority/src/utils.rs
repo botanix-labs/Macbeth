@@ -11,12 +11,14 @@ use botanix_authority_peg::{
     peg_contract::{PeginMeta, PegoutData, PegoutWithId},
 };
 use botanix_storage::models;
+use btc_server_client::{
+    BtcServerExtendedApi, GrpcClientError, MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage,
+    TxOut, Utxo,
+};
 use btcserverlib::{
-    extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
     wallet::psbt::{PsbtExt, PsbtOutputExt},
 };
-use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput, TransactionSigned};
@@ -148,7 +150,7 @@ fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
     let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
 
     Utxo {
-        outpoint: Some(client::OutPoint {
+        outpoint: Some(btc_server_client::OutPoint {
             txid: bitcoin::consensus::serialize(&pegin_meta.outpoint().txid),
             vout: pegin_meta.outpoint().vout,
         }),
@@ -181,7 +183,10 @@ pub(crate) fn get_utxos_from_staged_pegins(pegins: Vec<models::PeginData>) -> Ve
     pegins
         .into_iter()
         .map(|pegin| Utxo {
-            outpoint: Some(client::OutPoint { txid: pegin.txid, vout: pegin.vout as u32 }),
+            outpoint: Some(btc_server_client::OutPoint {
+                txid: pegin.txid,
+                vout: pegin.vout as u32,
+            }),
             output: Some(TxOut {
                 value: pegin.value,
                 script_pubkey: Some(ScriptBuf { script: pegin.script_pubkey }),
@@ -955,9 +960,9 @@ mod tests {
             let script_pubkey = rng.gen::<[u8; 32]>().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
             let utxo = Utxo {
-                outpoint: Some(client::OutPoint { txid: txid.clone(), vout }),
+                outpoint: Some(btc_server_client::OutPoint { txid: txid.clone(), vout }),
                 output: Some(TxOut {
-                    script_pubkey: Some(client::ScriptBuf { script: script_pubkey }),
+                    script_pubkey: Some(btc_server_client::ScriptBuf { script: script_pubkey }),
                     value: rng.gen::<u64>(),
                 }),
                 eth_address: "0x0".to_string(),

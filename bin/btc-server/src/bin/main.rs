@@ -9,6 +9,7 @@ use bitcoin::{
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use btcserverlib::{
     badarg,
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
@@ -18,7 +19,6 @@ use btcserverlib::{
     federation_args::FederationTomlConfig,
     frost_id, handle_signing_error,
     http::{create_web_server, state::ServerState},
-    jwt::{JwtError, JwtSecret},
     measure_rpc_latency,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,

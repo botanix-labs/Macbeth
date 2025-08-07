@@ -45,14 +45,14 @@ pub async fn generate_blocks(bitcoind: &impl RpcApi, num_blocks: u32) -> Vec<Blo
 
 // Uses random spk and pegout id
 pub async fn send_pegout_notification(
-    client: &mut client::BtcServerClient<Channel>,
+    client: &mut btc_server_client::BtcServerClient<Channel>,
     checkpoint_block_hash: Vec<u8>,
     amount: u64,
     bitcoin_height: u64,
     pegout_id: PegoutId,
     spk: bitcoin::ScriptBuf,
 ) -> Result<(), Error> {
-    let pending_pegouts = vec![client::PendingPegout {
+    let pending_pegouts = vec![btc_server_client::PendingPegout {
         pegout_id: pegout_id.clone().as_bytes().to_vec(),
         spk: spk.to_bytes().to_vec(),
         amount,
@@ -61,7 +61,7 @@ pub async fn send_pegout_notification(
     }];
 
     client
-        .new_consensus_checkpoint(client::ConsensusCheckpointRequest {
+        .new_consensus_checkpoint(btc_server_client::ConsensusCheckpointRequest {
             checkpoint_block_hash,
             pegins: vec![],
             pending_pegouts,
@@ -76,7 +76,7 @@ pub async fn send_pegout_notification(
 }
 
 pub async fn send_pegin_notification(
-    client: &mut client::BtcServerClient<Channel>,
+    client: &mut btc_server_client::BtcServerClient<Channel>,
     checkpoint_block_hash: Vec<u8>,
     address: Address,
     eth_address: String,
@@ -86,18 +86,18 @@ pub async fn send_pegin_notification(
 ) -> Result<(), Error> {
     let mut prev_out_bytes = Vec::new();
     address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
-    let utxos = [client::Utxo {
-        output: Some(client::TxOut {
+    let utxos = [btc_server_client::Utxo {
+        output: Some(btc_server_client::TxOut {
             value: Amount::from_sat(amount).to_sat(),
-            script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
+            script_pubkey: Some(btc_server_client::ScriptBuf { script: prev_out_bytes }),
         }),
-        outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout }),
+        outpoint: Some(btc_server_client::OutPoint { txid: txid.to_vec(), vout }),
         eth_address,
     }]
     .to_vec();
 
     client
-        .new_consensus_checkpoint(client::ConsensusCheckpointRequest {
+        .new_consensus_checkpoint(btc_server_client::ConsensusCheckpointRequest {
             checkpoint_block_hash,
             pegins: utxos,
             pending_pegouts: vec![],
@@ -112,7 +112,7 @@ pub async fn send_pegin_notification(
 }
 
 pub async fn send_pegins_notifications(
-    client: &mut client::BtcServerClient<Channel>,
+    client: &mut btc_server_client::BtcServerClient<Channel>,
     checkpoint_block_hash: Vec<u8>,
     txids: Vec<Vec<u8>>,
     eth_addresses: Vec<String>,
@@ -131,18 +131,18 @@ pub async fn send_pegins_notifications(
 
         let mut prev_out_bytes = Vec::new();
         btc_address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
-        utxos.push(client::Utxo {
-            output: Some(client::TxOut {
+        utxos.push(btc_server_client::Utxo {
+            output: Some(btc_server_client::TxOut {
                 value: Amount::from_sat(amount).to_sat(),
-                script_pubkey: Some(client::ScriptBuf { script: prev_out_bytes }),
+                script_pubkey: Some(btc_server_client::ScriptBuf { script: prev_out_bytes }),
             }),
-            outpoint: Some(client::OutPoint { txid: txid.to_vec(), vout: 1 }),
+            outpoint: Some(btc_server_client::OutPoint { txid: txid.to_vec(), vout: 1 }),
             eth_address,
         });
     }
 
     client
-        .new_consensus_checkpoint(client::ConsensusCheckpointRequest {
+        .new_consensus_checkpoint(btc_server_client::ConsensusCheckpointRequest {
             checkpoint_block_hash,
             pegins: utxos,
             pending_pegouts: vec![],
