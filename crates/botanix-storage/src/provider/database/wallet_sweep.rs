@@ -4,9 +4,12 @@ use crate::{
     BotanixDatabaseProvider, BotanixDatabaseProviderRW, WalletSweepSessionReader,
     WalletSweepSessionWriter,
 };
-use reth_db_api::{cursor::DbCursorRO, transaction::DbTx, Database};
+use reth_db_api::{
+    cursor::DbCursorRO,
+    transaction::{DbTx, DbTxMut},
+    Database,
+};
 use reth_storage_errors::provider::ProviderResult;
-use sha2::digest::generic_array::functional::FunctionalSequence;
 
 impl<TX: DbTx> WalletSweepSessionReader for BotanixDatabaseProvider<TX> {
     fn get_wallet_sweep_session(
@@ -53,7 +56,7 @@ impl<DB: Database> WalletSweepSessionWriter for BotanixDatabaseProviderRW<DB> {
     ) -> ProviderResult<WalletSweepSessionId> {
         let session_id = session.calculate_id();
 
-        self.tx.insert::<WalletSweepSessions>(session.calculate_id(), session)?;
+        self.tx.put::<WalletSweepSessions>(session.calculate_id(), session)?;
 
         Ok(session_id)
     }

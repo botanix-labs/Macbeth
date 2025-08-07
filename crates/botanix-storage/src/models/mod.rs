@@ -46,6 +46,5 @@ impl_compression_for_compact!(
     SnapshotChunk,
     SnapshotSync,
     HeaderWithPegs,
-    WalletStateSyncRecord,
-    WalletSweepSession,
+    WalletStateSyncRecord
 );

@@ -275,94 +275,20 @@ pub struct GetSessionIdsResponse {
     pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetUtxoStateRequest {
-    /// Emergency session identifier
-    #[prost(string, tag = "1")]
-    pub session_id: ::prost::alloc::string::String,
-    /// Coordinator authority proof
-    #[prost(bytes = "vec", tag = "2")]
-    pub coordinator_signature: ::prost::alloc::vec::Vec<u8>,
-    /// Request timestamp in seconds since Unix epoch for replay protection
-    #[prost(uint64, tag = "3")]
-    pub timestamp: u64,
-    /// Maximum UTXOs per response (default: 1000, max: 10000)
-    #[prost(uint32, tag = "4")]
-    pub chunk_size: u32,
-    /// Zero-based chunk index for pagination
-    #[prost(uint32, tag = "5")]
-    pub chunk_index: u32,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetUtxoStateResponse {
-    /// This member's federation ID
-    #[prost(uint32, tag = "1")]
-    pub member_id: u32,
-    /// UTXO subset for this chunk
-    #[prost(message, repeated, tag = "2")]
-    pub utxos: ::prost::alloc::vec::Vec<EmergencyUtxoInfo>,
-    /// State capture timestamp in seconds since Unix epoch
-    #[prost(uint64, tag = "3")]
-    pub timestamp: u64,
-    /// Response integrity signature
-    #[prost(bytes = "vec", tag = "4")]
-    pub member_signature: ::prost::alloc::vec::Vec<u8>,
-    /// Current chunk index
-    #[prost(uint32, tag = "5")]
-    pub chunk_index: u32,
-    /// Total number of chunks
-    #[prost(uint32, tag = "6")]
-    pub total_chunks: u32,
-    /// True if this is the last chunk
-    #[prost(bool, tag = "7")]
-    pub is_final: bool,
-    /// Total UTXOs across all chunks
-    #[prost(uint32, tag = "8")]
-    pub total_utxo_count: u32,
-    /// Total value across all chunks for validation
-    #[prost(uint64, tag = "9")]
-    pub total_value_sat: u64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct EmergencyUtxoInfo {
-    /// Transaction ID
-    #[prost(bytes = "vec", tag = "1")]
-    pub txid: ::prost::alloc::vec::Vec<u8>,
-    /// Output index
-    #[prost(uint32, tag = "2")]
-    pub vout: u32,
-    /// Satoshi amount
-    #[prost(uint64, tag = "3")]
-    pub value: u64,
-    /// Script public key
-    #[prost(bytes = "vec", tag = "4")]
-    pub script_pubkey: ::prost::alloc::vec::Vec<u8>,
-    /// Associated Ethereum address (hex, empty if none)
-    #[prost(string, tag = "5")]
-    pub eth_address: ::prost::alloc::string::String,
-    /// UTXO version for compatibility
-    #[prost(uint32, tag = "6")]
-    pub version: u32,
-    /// Serialized TxOut for PSBT witness_utxo field
-    #[prost(bytes = "vec", tag = "7")]
-    pub witness_utxo: ::prost::alloc::vec::Vec<u8>,
-    /// Key generation ID (for Phase 2 multi-key support)
-    #[prost(uint32, tag = "8")]
-    pub key_generation_id: u32,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct InitWalletSweepSessionRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub request: ::prost::alloc::vec::Vec<u8>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcceptWalletSweepSessionRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub request: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct AcceptWalletSweepSessionResponse {}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct WalletSweepSessionUpdatesRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetWalletSweepSessionResponse {
+pub struct WalletSweepSessionUpdateResponse {
     #[prost(bytes = "vec", tag = "1")]
-    pub session: ::prost::alloc::vec::Vec<u8>,
+    pub session_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub session_bytes: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -455,13 +381,6 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::DkgPayload>,
         ) -> std::result::Result<tonic::Response<super::DkgPayloads>, tonic::Status>;
-        async fn get_member_utxo_state(
-            &self,
-            request: tonic::Request<super::GetUtxoStateRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetUtxoStateResponse>,
-            tonic::Status,
-        >;
         async fn get_round1_signing_package(
             &self,
             request: tonic::Request<super::SigningPackageRequest>,
@@ -557,21 +476,29 @@ pub mod btc_server_server {
             &self,
             request: tonic::Request<super::ConsensusCheckpointRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        /// This method must be called only by the coordinator to start wallet sweep signing session.
-        async fn init_wallet_sweep_session(
-            &self,
-            request: tonic::Request<super::InitWalletSweepSessionRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        /// This method must be called by all signers to accept the wallet sweep session.
+        /// This method must be called by all signers, including coordinator to accept the wallet sweep session.
         async fn accept_wallet_sweep_session(
             &self,
             request: tonic::Request<super::AcceptWalletSweepSessionRequest>,
-        ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn get_wallet_sweep_session(
-            &self,
-            request: tonic::Request<super::Empty>,
         ) -> std::result::Result<
-            tonic::Response<super::GetWalletSweepSessionResponse>,
+            tonic::Response<super::AcceptWalletSweepSessionResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the SubscribeToWalletSweepSessionUpdates method.
+        type SubscribeToWalletSweepSessionUpdatesStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<
+                    super::WalletSweepSessionUpdateResponse,
+                    tonic::Status,
+                >,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Streaming endpoint to sync the wallet sweep session with poa node.
+        async fn subscribe_to_wallet_sweep_session_updates(
+            &self,
+            request: tonic::Request<super::WalletSweepSessionUpdatesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::SubscribeToWalletSweepSessionUpdatesStream>,
             tonic::Status,
         >;
     }
@@ -944,52 +871,6 @@ pub mod btc_server_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = NewDkgPayloadSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/btc_server.BtcServer/GetMemberUtxoState" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetMemberUtxoStateSvc<T: BtcServer>(pub Arc<T>);
-                    impl<
-                        T: BtcServer,
-                    > tonic::server::UnaryService<super::GetUtxoStateRequest>
-                    for GetMemberUtxoStateSvc<T> {
-                        type Response = super::GetUtxoStateResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetUtxoStateRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as BtcServer>::get_member_utxo_state(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetMemberUtxoStateSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1771,52 +1652,6 @@ pub mod btc_server_server {
                     };
                     Box::pin(fut)
                 }
-                "/btc_server.BtcServer/InitWalletSweepSession" => {
-                    #[allow(non_camel_case_types)]
-                    struct InitWalletSweepSessionSvc<T: BtcServer>(pub Arc<T>);
-                    impl<
-                        T: BtcServer,
-                    > tonic::server::UnaryService<super::InitWalletSweepSessionRequest>
-                    for InitWalletSweepSessionSvc<T> {
-                        type Response = super::Empty;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::InitWalletSweepSessionRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as BtcServer>::init_wallet_sweep_session(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = InitWalletSweepSessionSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/btc_server.BtcServer/AcceptWalletSweepSession" => {
                     #[allow(non_camel_case_types)]
                     struct AcceptWalletSweepSessionSvc<T: BtcServer>(pub Arc<T>);
@@ -1824,7 +1659,7 @@ pub mod btc_server_server {
                         T: BtcServer,
                     > tonic::server::UnaryService<super::AcceptWalletSweepSessionRequest>
                     for AcceptWalletSweepSessionSvc<T> {
-                        type Response = super::Empty;
+                        type Response = super::AcceptWalletSweepSessionResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1868,23 +1703,34 @@ pub mod btc_server_server {
                     };
                     Box::pin(fut)
                 }
-                "/btc_server.BtcServer/GetWalletSweepSession" => {
+                "/btc_server.BtcServer/SubscribeToWalletSweepSessionUpdates" => {
                     #[allow(non_camel_case_types)]
-                    struct GetWalletSweepSessionSvc<T: BtcServer>(pub Arc<T>);
-                    impl<T: BtcServer> tonic::server::UnaryService<super::Empty>
-                    for GetWalletSweepSessionSvc<T> {
-                        type Response = super::GetWalletSweepSessionResponse;
+                    struct SubscribeToWalletSweepSessionUpdatesSvc<T: BtcServer>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::ServerStreamingService<
+                        super::WalletSweepSessionUpdatesRequest,
+                    > for SubscribeToWalletSweepSessionUpdatesSvc<T> {
+                        type Response = super::WalletSweepSessionUpdateResponse;
+                        type ResponseStream = T::SubscribeToWalletSweepSessionUpdatesStream;
                         type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
+                            tonic::Response<Self::ResponseStream>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Empty>,
+                            request: tonic::Request<
+                                super::WalletSweepSessionUpdatesRequest,
+                            >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as BtcServer>::get_wallet_sweep_session(&inner, request)
+                                <T as BtcServer>::subscribe_to_wallet_sweep_session_updates(
+                                        &inner,
+                                        request,
+                                    )
                                     .await
                             };
                             Box::pin(fut)
@@ -1896,7 +1742,7 @@ pub mod btc_server_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetWalletSweepSessionSvc(inner);
+                        let method = SubscribeToWalletSweepSessionUpdatesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1907,7 +1753,7 @@ pub mod btc_server_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.unary(method, req).await;
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
