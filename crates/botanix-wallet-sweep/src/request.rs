@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct WalletSweepRequest {
-    session_id: [u8; 32],
     coordinator_id: u16,
     coordinator_signature: Vec<u8>,
     psbt_bytes: Vec<u8>,
