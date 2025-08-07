@@ -1,6 +1,8 @@
 pub mod dump;
-pub mod init;
+mod encoding;
+mod psbt;
 pub mod request;
 
-pub use dump::dump_utxos_to_file;
-pub use init::init_wallet_sweep;
+pub use dump::dump_utxos;
+pub use psbt::create_psbt;
+pub use request::WalletSweepRequest;

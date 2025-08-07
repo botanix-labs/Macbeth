@@ -646,8 +646,12 @@ where
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, signing_session_id, psbt } =
-                            signing_response;
+                        let SigningResponse {
+                            response_type,
+                            signing_session_id,
+                            psbt,
+                            psbt_type: _psbt_type,
+                        } = signing_response;
                         let signing_session_id = match FixedBytes::try_from(
                             signing_session_id.as_slice(),
                         ) {

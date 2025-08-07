@@ -43,6 +43,7 @@ botanix-storage-migrate = { workspace = true }
 botanix-utils = { workspace = true }
 btc-server = { path = "../btc-server" }
 btc-server-client = { path = "../btc-server/client" }
+botanix-wallet-sweep = { workspace = true }
 
 clap = { workspace = true, features = ["derive", "env"] }
 

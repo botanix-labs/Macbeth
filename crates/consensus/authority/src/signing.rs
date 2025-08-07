@@ -13,7 +13,8 @@ use reth_network::frost::{
     manager::{
         authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager,
     },
-    FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
+    FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningPsbtType,
+    SigningResponse,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::PeerId;
@@ -468,6 +469,8 @@ where
                         response_type,
                         signing_session_id: signing_session_id.clone(),
                         psbt: psbt.clone(),
+                        // TODO: We should pass correct one
+                        psbt_type: SigningPsbtType::Pegout,
                     });
                     connected_peer
                         .peer_commands_tx
@@ -628,6 +631,8 @@ where
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                 signing_session_id: signing_package_round1.signing_session_id.clone(),
                 psbt: signing_package_round1.psbt.clone(),
+                // TODO: We should pass a correct one
+                psbt_type: SigningPsbtType::Pegout,
             });
 
             retry_future(
@@ -779,6 +784,8 @@ where
             response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
             signing_session_id: signing_package_round2.signing_session_id.clone(),
             psbt: signing_package_round2.psbt.clone(),
+            // TODO: Pass a correct one
+            psbt_type: SigningPsbtType::Pegout,
         });
 
         retry_future(
