@@ -1,12 +1,14 @@
 #[macro_use]
 extern crate log;
 
+use anyhow::Context;
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::Decodable, secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
 };
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
+use botanix_storage::models::WalletSweepSession;
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btc_server_client::jwt::{JwtError, JwtSecret};
 use btcserverlib::{
@@ -44,6 +46,8 @@ use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
+use reth_db_api::table::Decompress;
+use sled::{Event, IVec};
 use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,
@@ -54,7 +58,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use thiserror::Error;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{mpsc::error::SendError, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{
     codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server, Request,
@@ -182,6 +186,15 @@ impl<T> ToStatus<T> for Result<T, hex::FromHexError> {
         match self {
             Ok(v) => Ok(v),
             Err(e) => Err(badarg!("Failed to hex decode: {}", e)),
+        }
+    }
+}
+
+impl<T> ToStatus<T> for Result<T, anyhow::Error> {
+    fn to_status(self) -> Result<T, tonic::Status> {
+        match self {
+            Ok(v) => Ok(v),
+            Err(e) => Err(tonic::Status::internal(e.to_string())),
         }
     }
 }
@@ -667,6 +680,9 @@ where
     // Define the associated type for the stream
     type GetFinalizedPegoutIdsStream =
         ReceiverStream<Result<rpc::GetFinalizedPegoutIdsResponse, tonic::Status>>;
+
+    type SubscribeToWalletSweepSessionUpdatesStream =
+        ReceiverStream<Result<rpc::WalletSweepSessionUpdateResponse, tonic::Status>>;
 
     /* General Endpoints */
     async fn health_check(
@@ -2110,21 +2126,105 @@ where
         panic!("Not used");
     }
 
-    type SubscribeToWalletSweepSessionUpdatesStream =
-        ReceiverStream<Result<rpc::WalletSweepSessionUpdateResponse, tonic::Status>>;
-
     async fn subscribe_to_wallet_sweep_session_updates(
         &self,
         request: Request<WalletSweepSessionUpdatesRequest>,
     ) -> Result<Response<Self::SubscribeToWalletSweepSessionUpdatesStream>, Status> {
-        todo!()
+        self.validate_jwt(&request)?;
+
+        let db = self.db.clone();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+
+        let mut receiver_stream = ReceiverStream::new(rx);
+
+        debug!("subscribe_to_wallet_sweep_session_updates: new client connected");
+
+        // Send an update message if we have an existing wallet sweep session
+        match db.get_wallet_sweep_session_bytes() {
+            Ok(Some((session_id_bytes, session_bytes))) => {
+                match tx.blocking_send(Ok(WalletSweepSessionUpdateResponse {
+                    session_id: session_id_bytes.to_vec(),
+                    session_bytes: session_bytes.to_vec(),
+                })) {
+                    Ok(_) => {
+                        trace!("subscribe_to_wallet_sweep_session_updates: sent existing wallet sweep session update")
+                    }
+                    Err(_) => {
+                        debug!("subscribe_to_wallet_sweep_session_updates: client disconnected before sending existing wallet sweep session update");
+
+                        receiver_stream.close();
+
+                        return Ok(Response::new(receiver_stream));
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(_) => {
+                error!("subscribe_to_wallet_sweep_session_updates: failed to get existing wallet sweep session bytes");
+
+                receiver_stream.close();
+
+                return Ok(Response::new(receiver_stream));
+            }
+        }
+
+        tokio::spawn(async move {
+            let mut subscriber = db.subscribe_to_wallet_sweep_session_updates();
+
+            while let Some(event) = (&mut subscriber).await {
+                match event {
+                    Event::Insert { key, value } => {
+                        match tx
+                            .send(Ok(WalletSweepSessionUpdateResponse {
+                                session_id: key.to_vec(),
+                                session_bytes: value.to_vec(),
+                            }))
+                            .await
+                        {
+                            Ok(_) => {
+                                trace!("subscribe_to_wallet_sweep_session_updates: sent wallet sweep session update")
+                            }
+                            Err(_) => {
+                                debug!(
+                                    "subscribe_to_wallet_sweep_session_updates: client disconnected"
+                                );
+                                break;
+                            }
+                        }
+                    }
+                    Event::Remove { key: _key } => {
+                        todo!("handle remove wallet sweep session event if even need this");
+                    }
+                };
+            }
+
+            debug!("subscribe_to_wallet_sweep_session_updates: client disconnected");
+        });
+
+        Ok(Response::new(receiver_stream))
     }
 
     async fn accept_wallet_sweep_session(
         &self,
         request: Request<AcceptWalletSweepSessionRequest>,
     ) -> Result<Response<AcceptWalletSweepSessionResponse>, Status> {
-        todo!()
+        self.validate_jwt(&request)?;
+
+        // TODO: validate that request was made from sweep command
+
+        // TODO: We need to receive request, validate it and then create session
+        //  from request
+        let session = WalletSweepSession::decompress(request.into_inner().request)
+            .with_context(|| "can't deserialize request")
+            .to_status()?;
+
+        self.db
+            .update_wallet_sweep_session(session)
+            .with_context(|| "failed to update wallet sweep session")
+            .to_status()?;
+
+        Ok(Response::new(AcceptWalletSweepSessionResponse {}))
     }
 }
 

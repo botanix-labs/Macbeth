@@ -2719,6 +2719,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rand 0.8.5",
+ "reth-db-api",
  "rust_decimal",
  "serde",
  "serde_json",
