@@ -21,6 +21,7 @@ actix-web = "4.9.0"
 # Bitcoin related dependencies
 alloy-primitives = "1.2.0"
 anyhow = "1.0.75"
+eyre = { workspace = true }
 async-stream = "0.3.6"
 async-trait = "0.1.68"
 base64 = "0.22.0"

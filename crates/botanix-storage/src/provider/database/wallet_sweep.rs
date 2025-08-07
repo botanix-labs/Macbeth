@@ -54,9 +54,11 @@ impl<DB: Database> WalletSweepSessionWriter for BotanixDatabaseProviderRW<DB> {
         &self,
         session: WalletSweepSession,
     ) -> ProviderResult<WalletSweepSessionId> {
+        self.tx.clear::<WalletSweepSessions>()?;
+
         let session_id = session.calculate_id();
 
-        self.tx.put::<WalletSweepSessions>(session.calculate_id(), session)?;
+        self.tx.put::<WalletSweepSessions>(session_id, session)?;
 
         Ok(session_id)
     }

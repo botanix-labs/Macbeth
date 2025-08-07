@@ -9,6 +9,7 @@ use bitcoin::{
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use botanix_storage::models::WalletSweepSession;
+use botanix_wallet_sweep::WalletSweepRequest;
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btc_server_client::jwt::{JwtError, JwtSecret};
 use btcserverlib::{
@@ -42,11 +43,11 @@ use btcserverlib::{
         util::VerifyingKeyExt,
     },
 };
+use eyre::WrapErr;
 use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
-use reth_db_api::table::Decompress;
 use sled::{Event, IVec};
 use std::{
     collections::{BTreeMap, HashSet},
@@ -57,7 +58,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
-use thiserror::Error;
+use thiserror::{Error, __private::AsDynError};
 use tokio::sync::{mpsc::error::SendError, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{
@@ -191,11 +192,14 @@ impl<T> ToStatus<T> for Result<T, hex::FromHexError> {
 }
 
 impl<T> ToStatus<T> for Result<T, anyhow::Error> {
-    fn to_status(self) -> Result<T, tonic::Status> {
-        match self {
-            Ok(v) => Ok(v),
-            Err(e) => Err(tonic::Status::internal(e.to_string())),
-        }
+    fn to_status(self) -> Result<T, Status> {
+        self.map_err(|error| Status::internal(error.to_string()))
+    }
+}
+
+impl<T> ToStatus<T> for Result<T, eyre::Report> {
+    fn to_status(self) -> Result<T, Status> {
+        self.map_err(|report| Status::internal(report.to_string()))
     }
 }
 
@@ -2173,28 +2177,23 @@ where
             let mut subscriber = db.subscribe_to_wallet_sweep_session_updates();
 
             while let Some(event) = (&mut subscriber).await {
-                match event {
-                    Event::Insert { key, value } => {
-                        match tx
-                            .send(Ok(WalletSweepSessionUpdateResponse {
-                                session_id: key.to_vec(),
-                                session_bytes: value.to_vec(),
-                            }))
-                            .await
-                        {
-                            Ok(_) => {
-                                trace!("subscribe_to_wallet_sweep_session_updates: sent wallet sweep session update")
-                            }
-                            Err(_) => {
-                                debug!(
-                                    "subscribe_to_wallet_sweep_session_updates: client disconnected"
-                                );
-                                break;
-                            }
+                if let Event::Insert { key, value } = event {
+                    match tx
+                        .send(Ok(WalletSweepSessionUpdateResponse {
+                            session_id: key.to_vec(),
+                            session_bytes: value.to_vec(),
+                        }))
+                        .await
+                    {
+                        Ok(_) => {
+                            trace!("subscribe_to_wallet_sweep_session_updates: sent wallet sweep session update")
                         }
-                    }
-                    Event::Remove { key: _key } => {
-                        todo!("handle remove wallet sweep session event if even need this");
+                        Err(_) => {
+                            debug!(
+                                "subscribe_to_wallet_sweep_session_updates: client disconnected"
+                            );
+                            break;
+                        }
                     }
                 };
             }
@@ -2207,21 +2206,25 @@ where
 
     async fn accept_wallet_sweep_session(
         &self,
-        request: Request<AcceptWalletSweepSessionRequest>,
+        rpc_request: Request<AcceptWalletSweepSessionRequest>,
     ) -> Result<Response<AcceptWalletSweepSessionResponse>, Status> {
-        self.validate_jwt(&request)?;
+        self.validate_jwt(&rpc_request)?;
 
         // TODO: validate that request was made from sweep command
 
-        // TODO: We need to receive request, validate it and then create session
-        //  from request
-        let session = WalletSweepSession::decompress(request.into_inner().request)
-            .with_context(|| "can't deserialize request")
+        let sweep_request = WalletSweepRequest::from_bytes(&rpc_request.into_inner().request)
+            .await
+            .wrap_err("can't deserialize request")
+            .to_status()?;
+
+        let sweep_session = sweep_request
+            .try_into()
+            .wrap_err("can't deserialize wallet sweep request")
             .to_status()?;
 
         self.db
-            .update_wallet_sweep_session(session)
-            .with_context(|| "failed to update wallet sweep session")
+            .update_wallet_sweep_session(sweep_session)
+            .wrap_err("failed to update wallet sweep session")
             .to_status()?;
 
         Ok(Response::new(AcceptWalletSweepSessionResponse {}))
