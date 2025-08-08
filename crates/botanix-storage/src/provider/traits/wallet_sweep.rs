@@ -14,7 +14,7 @@ pub trait WalletSweepSessionReader: Send + Sync {
 }
 
 #[auto_impl::auto_impl(&, Arc, Box)]
-pub trait WalletSweepSessionWriter: Send + Sync {
+pub trait WalletSweepSessionWriter: WalletSweepSessionReader + Send + Sync {
     fn update_wallet_sweep_session(
         &self,
         session: WalletSweepSession,
