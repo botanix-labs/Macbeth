@@ -538,7 +538,7 @@ dependencies = [
  "derive_arbitrary",
  "derive_more 2.0.1",
  "foldhash",
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
  "indexmap 2.10.0",
  "itoa",
  "k256",
@@ -2192,7 +2192,7 @@ dependencies = [
 
 [[package]]
 name = "botanix-db-cleaner"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2209,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "botanix-up"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "btc-server"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "actix-cors",
  "actix-server",
@@ -2374,18 +2374,18 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.23.1"
+version = "1.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c76a5792e44e4abe34d3abf15636779261d45a7450612059293d1d2cfc63422"
+checksum = "3995eaeebcdf32f91f980d360f78732ddc061097ab4e39991ae7a6ace9194677"
 dependencies = [
  "bytemuck_derive",
 ]
 
 [[package]]
 name = "bytemuck_derive"
-version = "1.10.0"
+version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "441473f2b4b0459a68628c744bc61d23e730fb00128b841d30fa4bb3972257e4"
+checksum = "4f154e572231cb6ba2bd1176980827e3d5dc04cc183a75dea38109fbdd672d29"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2462,9 +2462,9 @@ dependencies = [
 
 [[package]]
 name = "camino"
-version = "1.1.10"
+version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0da45bc31171d8d6960122e222a67740df867c1dd53b4d51caa297084c185cab"
+checksum = "5d07aa9a93b00c76f71bc35d598bed923f6d4f3a9ca5c24b7737ae1a292841c0"
 dependencies = [
  "serde",
 ]
@@ -2649,9 +2649,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.42"
+version = "4.5.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed87a9d530bb41a67537289bafcac159cb3ee28460e0a4571123d2a778a6a882"
+checksum = "50fd97c9dc2399518aa331917ac6f274280ec5eb34e555dd291899745c48ec6f"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -2659,9 +2659,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.42"
+version = "4.5.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64f4f3f3c77c94aff3c7e9aac9a2ca1974a5adf392a8bb751e827d6d127ab966"
+checksum = "c35b5830294e1fa0462034af85cc95225a4cb07092c088c55bda3147cfcd8f65"
 dependencies = [
  "anstream",
  "anstyle",
@@ -2836,7 +2836,7 @@ dependencies = [
 
 [[package]]
 name = "comet-bft-rpc"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "tendermint-rpc",
 ]
@@ -3774,7 +3774,7 @@ dependencies = [
 
 [[package]]
 name = "ef-tests"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "rayon",
@@ -4364,7 +4364,7 @@ dependencies = [
 
 [[package]]
 name = "federation-utils-cli"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4826,9 +4826,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.11"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17da50a276f1e01e0ba6c029e47b7100754904ee8a278f886546e98575380785"
+checksum = "f3c0b69cfcb4e1b9f1bf2f53f95f766e4661169728ec61cd3fe5a0166f2d1386"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -4911,9 +4911,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.15.4"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5971ac85611da7067dbfcabef3c70ebb5606018acd9e2a3903a0da507521e0d5"
+checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2",
  "equivalent",
@@ -5195,7 +5195,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "h2 0.4.11",
+ "h2 0.4.12",
  "http 1.3.1",
  "http-body 1.0.1",
  "httparse",
@@ -5655,9 +5655,9 @@ dependencies = [
 
 [[package]]
 name = "indenter"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
+checksum = "964de6e86d545b246d84badc0fef527924ace5134f30641c203ef52ba83f58d5"
 
 [[package]]
 name = "indexmap"
@@ -5678,7 +5678,7 @@ checksum = "fe4cd85333e22411419a0bcae1297d25e58c9443848b11dc6a86fefe8c78a661"
 dependencies = [
  "arbitrary",
  "equivalent",
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
  "serde",
 ]
 
@@ -6514,7 +6514,7 @@ version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 dependencies = [
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -6676,7 +6676,7 @@ dependencies = [
  "aho-corasick",
  "crossbeam-epoch",
  "crossbeam-utils",
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
  "indexmap 2.10.0",
  "metrics",
  "ordered-float",
@@ -6695,7 +6695,7 @@ checksum = "fe8db7a05415d0f919ffb905afa37784f71901c9a773188876984b4f769ab986"
 dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
  "metrics",
  "quanta",
  "rand 0.9.2",
@@ -8579,7 +8579,7 @@ version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "145bb27393fe455dd64d6cbc8d059adfa392590a45eadf079c01b11857e7b010"
 dependencies = [
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
  "memchr",
 ]
 
@@ -8766,7 +8766,7 @@ dependencies = [
 
 [[package]]
 name = "reth-authority-consensus"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rpc-types-engine",
  "bitcoin 0.32.7",
@@ -8831,7 +8831,7 @@ dependencies = [
 
 [[package]]
 name = "reth-auto-seal-consensus"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "clap",
  "eyre",
@@ -8864,7 +8864,7 @@ dependencies = [
 
 [[package]]
 name = "reth-basic-payload-builder"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "futures-core",
@@ -8886,7 +8886,7 @@ dependencies = [
 
 [[package]]
 name = "reth-beacon-consensus"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-genesis",
  "assert_matches",
@@ -8935,7 +8935,7 @@ dependencies = [
 
 [[package]]
 name = "reth-bench"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "alloy-json-rpc",
@@ -8972,7 +8972,7 @@ dependencies = [
 
 [[package]]
 name = "reth-blockchain-tree"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-genesis",
  "aquamarine",
@@ -9007,7 +9007,7 @@ dependencies = [
 
 [[package]]
 name = "reth-blockchain-tree-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-consensus",
  "reth-execution-errors",
@@ -9040,7 +9040,7 @@ dependencies = [
 
 [[package]]
 name = "reth-chain-state"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-signer",
  "alloy-signer-local",
@@ -9065,7 +9065,7 @@ dependencies = [
 
 [[package]]
 name = "reth-chainspec"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-chains",
  "alloy-eips",
@@ -9087,7 +9087,7 @@ dependencies = [
 
 [[package]]
 name = "reth-cli"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "clap",
  "eyre",
@@ -9097,7 +9097,7 @@ dependencies = [
 
 [[package]]
 name = "reth-cli-commands"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "arbitrary",
  "clap",
@@ -9132,7 +9132,7 @@ dependencies = [
 
 [[package]]
 name = "reth-cli-runner"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-tasks",
  "tokio",
@@ -9141,7 +9141,7 @@ dependencies = [
 
 [[package]]
 name = "reth-cli-util"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "alloy-primitives 0.7.7",
@@ -9157,7 +9157,7 @@ dependencies = [
 
 [[package]]
 name = "reth-codecs"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -9177,7 +9177,7 @@ dependencies = [
 
 [[package]]
 name = "reth-codecs-derive"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "convert_case 0.6.0",
  "proc-macro2",
@@ -9188,7 +9188,7 @@ dependencies = [
 
 [[package]]
 name = "reth-config"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "eyre",
  "humantime-serde",
@@ -9203,7 +9203,7 @@ dependencies = [
 
 [[package]]
 name = "reth-consensus"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "auto_impl",
  "derive_more 2.0.1",
@@ -9214,7 +9214,7 @@ dependencies = [
 
 [[package]]
 name = "reth-consensus-common"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "mockall 0.12.1",
  "rand 0.8.5",
@@ -9226,7 +9226,7 @@ dependencies = [
 
 [[package]]
 name = "reth-consensus-debug-client"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -9248,7 +9248,7 @@ dependencies = [
 
 [[package]]
 name = "reth-data-parser"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "async-compression",
  "async-trait",
@@ -9267,7 +9267,7 @@ dependencies = [
 
 [[package]]
 name = "reth-db"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "arbitrary",
  "assert_matches",
@@ -9306,7 +9306,7 @@ dependencies = [
 
 [[package]]
 name = "reth-db-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "arbitrary",
  "assert_matches",
@@ -9337,7 +9337,7 @@ dependencies = [
 
 [[package]]
 name = "reth-db-common"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-genesis",
  "boyer-moore-magiclen",
@@ -9363,7 +9363,7 @@ dependencies = [
 
 [[package]]
 name = "reth-db-models"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "arbitrary",
  "bytes",
@@ -9378,7 +9378,7 @@ dependencies = [
 
 [[package]]
 name = "reth-discv4"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rlp",
@@ -9404,7 +9404,7 @@ dependencies = [
 
 [[package]]
 name = "reth-discv5"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rlp",
@@ -9430,7 +9430,7 @@ dependencies = [
 
 [[package]]
 name = "reth-dns-discovery"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-chains",
  "alloy-primitives 0.7.7",
@@ -9458,7 +9458,7 @@ dependencies = [
 
 [[package]]
 name = "reth-downloaders"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "assert_matches",
@@ -9493,7 +9493,7 @@ dependencies = [
 
 [[package]]
 name = "reth-e2e-test-utils"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -9523,7 +9523,7 @@ dependencies = [
 
 [[package]]
 name = "reth-ecies"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "aes 0.8.4",
  "alloy-primitives 0.7.7",
@@ -9553,7 +9553,7 @@ dependencies = [
 
 [[package]]
 name = "reth-engine-primitives"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-chainspec",
  "reth-payload-primitives",
@@ -9562,7 +9562,7 @@ dependencies = [
 
 [[package]]
 name = "reth-engine-service"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "futures",
  "pin-project",
@@ -9593,7 +9593,7 @@ dependencies = [
 
 [[package]]
 name = "reth-engine-tree"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "assert_matches",
@@ -9638,7 +9638,7 @@ dependencies = [
 
 [[package]]
 name = "reth-engine-util"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "eyre",
  "futures",
@@ -9666,7 +9666,7 @@ dependencies = [
 
 [[package]]
 name = "reth-errors"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-blockchain-tree-api",
  "reth-consensus",
@@ -9678,7 +9678,7 @@ dependencies = [
 
 [[package]]
 name = "reth-eth-wire"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "arbitrary",
@@ -9711,7 +9711,7 @@ dependencies = [
 
 [[package]]
 name = "reth-eth-wire-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-chains",
  "alloy-genesis",
@@ -9731,7 +9731,7 @@ dependencies = [
 
 [[package]]
 name = "reth-ethereum-cli"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-genesis",
  "clap",
@@ -9744,7 +9744,7 @@ dependencies = [
 
 [[package]]
 name = "reth-ethereum-consensus"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-chainspec",
  "reth-consensus",
@@ -9756,7 +9756,7 @@ dependencies = [
 
 [[package]]
 name = "reth-ethereum-engine-primitives"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "reth-chainspec",
@@ -9774,7 +9774,7 @@ dependencies = [
 
 [[package]]
 name = "reth-ethereum-forks"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-chains",
  "alloy-primitives 0.7.7",
@@ -9793,7 +9793,7 @@ dependencies = [
 
 [[package]]
 name = "reth-ethereum-payload-builder"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-basic-payload-builder",
  "reth-errors",
@@ -9811,7 +9811,7 @@ dependencies = [
 
 [[package]]
 name = "reth-etl"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "rayon",
@@ -9821,7 +9821,7 @@ dependencies = [
 
 [[package]]
 name = "reth-evm"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "auto_impl",
@@ -9839,7 +9839,7 @@ dependencies = [
 
 [[package]]
 name = "reth-evm-ethereum"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "alloy-sol-types",
@@ -9865,7 +9865,7 @@ dependencies = [
 
 [[package]]
 name = "reth-execution-errors"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "alloy-primitives 0.7.7",
@@ -9881,7 +9881,7 @@ dependencies = [
 
 [[package]]
 name = "reth-execution-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "alloy-primitives 0.7.7",
@@ -9895,7 +9895,7 @@ dependencies = [
 
 [[package]]
 name = "reth-exex"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "eyre",
  "futures",
@@ -9928,7 +9928,7 @@ dependencies = [
 
 [[package]]
 name = "reth-exex-test-utils"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "eyre",
  "futures-util",
@@ -9958,7 +9958,7 @@ dependencies = [
 
 [[package]]
 name = "reth-exex-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "reth-provider",
@@ -9967,7 +9967,7 @@ dependencies = [
 
 [[package]]
 name = "reth-fs-util"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -9976,7 +9976,7 @@ dependencies = [
 
 [[package]]
 name = "reth-ipc"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9998,7 +9998,7 @@ dependencies = [
 
 [[package]]
 name = "reth-libmdbx"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "bitflags 2.9.1",
  "byteorder",
@@ -10018,7 +10018,7 @@ dependencies = [
 
 [[package]]
 name = "reth-mdbx-sys"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "bindgen 0.69.5",
  "cc",
@@ -10026,7 +10026,7 @@ dependencies = [
 
 [[package]]
 name = "reth-metrics"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "futures",
  "metrics",
@@ -10037,7 +10037,7 @@ dependencies = [
 
 [[package]]
 name = "reth-metrics-derive"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "metrics",
  "proc-macro2",
@@ -10050,14 +10050,14 @@ dependencies = [
 
 [[package]]
 name = "reth-net-banlist"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
 ]
 
 [[package]]
 name = "reth-net-nat"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "futures-util",
  "reqwest 0.12.22",
@@ -10069,7 +10069,7 @@ dependencies = [
 
 [[package]]
 name = "reth-network"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-node-bindings",
  "alloy-provider",
@@ -10130,7 +10130,7 @@ dependencies = [
 
 [[package]]
 name = "reth-network-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rpc-types-admin",
@@ -10152,7 +10152,7 @@ dependencies = [
 
 [[package]]
 name = "reth-network-p2p"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "auto_impl",
  "derive_more 2.0.1",
@@ -10170,7 +10170,7 @@ dependencies = [
 
 [[package]]
 name = "reth-network-peers"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rlp",
@@ -10186,7 +10186,7 @@ dependencies = [
 
 [[package]]
 name = "reth-network-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "humantime-serde",
  "reth-ethereum-forks",
@@ -10199,7 +10199,7 @@ dependencies = [
 
 [[package]]
 name = "reth-nippy-jar"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
@@ -10220,7 +10220,7 @@ dependencies = [
 
 [[package]]
 name = "reth-node-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-chainspec",
  "reth-db-api",
@@ -10236,7 +10236,7 @@ dependencies = [
 
 [[package]]
 name = "reth-node-builder"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "aquamarine",
  "bitcoin 0.32.7",
@@ -10295,7 +10295,7 @@ dependencies = [
 
 [[package]]
 name = "reth-node-core"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-genesis",
  "alloy-rpc-types-engine",
@@ -10354,7 +10354,7 @@ dependencies = [
 
 [[package]]
 name = "reth-node-ethereum"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-genesis",
  "alloy-primitives 0.7.7",
@@ -10392,7 +10392,7 @@ dependencies = [
 
 [[package]]
 name = "reth-node-events"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rpc-types-engine",
  "futures",
@@ -10413,7 +10413,7 @@ dependencies = [
 
 [[package]]
 name = "reth-node-metrics"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "eyre",
  "http 1.3.1",
@@ -10440,7 +10440,7 @@ dependencies = [
 
 [[package]]
 name = "reth-payload-builder"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "futures-util",
  "metrics",
@@ -10462,7 +10462,7 @@ dependencies = [
 
 [[package]]
 name = "reth-payload-primitives"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-chain-state",
  "reth-chainspec",
@@ -10477,7 +10477,7 @@ dependencies = [
 
 [[package]]
 name = "reth-payload-validator"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "reth-chainspec",
  "reth-primitives",
@@ -10487,7 +10487,7 @@ dependencies = [
 
 [[package]]
 name = "reth-primitives"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "alloy-genesis",
@@ -10536,7 +10536,7 @@ dependencies = [
 
 [[package]]
 name = "reth-primitives-traits"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -10564,7 +10564,7 @@ dependencies = [
 
 [[package]]
 name = "reth-provider"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rpc-types-engine",
  "assert_matches",
@@ -10607,7 +10607,7 @@ dependencies = [
 
 [[package]]
 name = "reth-prune"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "assert_matches",
@@ -10636,7 +10636,7 @@ dependencies = [
 
 [[package]]
 name = "reth-prune-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "arbitrary",
@@ -10656,7 +10656,7 @@ dependencies = [
 
 [[package]]
 name = "reth-revm"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "reth-chainspec",
@@ -10673,7 +10673,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-genesis",
@@ -10730,7 +10730,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "jsonrpsee",
  "reth-engine-primitives",
@@ -10743,7 +10743,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-api-testing-util"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "futures",
  "jsonrpsee",
@@ -10758,7 +10758,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-builder"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "clap",
  "http 1.3.1",
@@ -10804,7 +10804,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-engine-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "assert_matches",
@@ -10838,7 +10838,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-eth-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-dyn-abi",
  "async-trait",
@@ -10874,7 +10874,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-eth-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-sol-types",
  "bitcoin 0.32.7",
@@ -10919,7 +10919,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-layer"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rpc-types-engine",
  "http 1.3.1",
@@ -10934,7 +10934,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-server-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "jsonrpsee-core",
@@ -10949,7 +10949,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rpc-types",
@@ -10969,7 +10969,7 @@ dependencies = [
 
 [[package]]
 name = "reth-rpc-types-compat"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "alloy-rpc-types",
@@ -10981,7 +10981,7 @@ dependencies = [
 
 [[package]]
 name = "reth-stages"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "assert_matches",
@@ -11030,7 +11030,7 @@ dependencies = [
 
 [[package]]
 name = "reth-stages-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "aquamarine",
@@ -11059,7 +11059,7 @@ dependencies = [
 
 [[package]]
 name = "reth-stages-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "arbitrary",
@@ -11076,7 +11076,7 @@ dependencies = [
 
 [[package]]
 name = "reth-static-file"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "assert_matches",
@@ -11098,7 +11098,7 @@ dependencies = [
 
 [[package]]
 name = "reth-static-file-types"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-primitives 0.7.7",
  "clap",
@@ -11109,7 +11109,7 @@ dependencies = [
 
 [[package]]
 name = "reth-storage-api"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "auto_impl",
  "reth-chainspec",
@@ -11125,7 +11125,7 @@ dependencies = [
 
 [[package]]
 name = "reth-storage-errors"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "derive_more 2.0.1",
@@ -11135,7 +11135,7 @@ dependencies = [
 
 [[package]]
 name = "reth-tasks"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "auto_impl",
  "dyn-clone",
@@ -11152,7 +11152,7 @@ dependencies = [
 
 [[package]]
 name = "reth-testing-utils"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-eips",
  "alloy-genesis",
@@ -11163,7 +11163,7 @@ dependencies = [
 
 [[package]]
 name = "reth-tokio-util"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "tokio",
  "tokio-stream",
@@ -11172,7 +11172,7 @@ dependencies = [
 
 [[package]]
 name = "reth-tracing"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "clap",
  "eyre",
@@ -11186,7 +11186,7 @@ dependencies = [
 
 [[package]]
 name = "reth-transaction-pool"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "aquamarine",
@@ -11228,7 +11228,7 @@ dependencies = [
 
 [[package]]
 name = "reth-trie"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "auto_impl",
@@ -11258,7 +11258,7 @@ dependencies = [
 
 [[package]]
 name = "reth-trie-common"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-consensus",
  "alloy-genesis",
@@ -11284,7 +11284,7 @@ dependencies = [
 
 [[package]]
 name = "reth-trie-db"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "criterion",
@@ -11314,7 +11314,7 @@ dependencies = [
 
 [[package]]
 name = "reth-trie-parallel"
-version = "1.3.0-hotfix.1"
+version = "1.3.0-hotfix.2"
 dependencies = [
  "alloy-rlp",
  "criterion",
@@ -13718,7 +13718,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "flate2",
- "h2 0.4.11",
+ "h2 0.4.12",
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
