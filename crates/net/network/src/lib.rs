@@ -139,6 +139,7 @@ mod network;
 mod session;
 mod state;
 mod swarm;
+mod trusted_peers_resolver;
 
 pub use reth_eth_wire::{DisconnectReason, HelloMessageWithProtocols};
 pub use reth_network_api::{
