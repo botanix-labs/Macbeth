@@ -1,5 +1,21 @@
 //! POA node command
-
+use bitcoincore_zmq::subscribe_async_wait_handshake;
+use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
+use botanix_authority_rsp::RandomSourceProvider;
+use botanix_cli_args::{
+    bitcoind::BitcoindArgs,
+    chain::{get_chain_from_federation_config, BotanixNetwork},
+    poa_node::PoaNodeArgs,
+};
+use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_configs::federation::load_federation_config_toml;
+use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
+use botanix_storage_migrate::is_migration_needed;
+use botanix_utils::panic_hook::set_panic_hook;
+use btc_server_client::{
+    BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory, OutPoint,
+    RecoverMissingUtxosRequest, UtxoToRecover,
+};
 use bitcoin::hashes::Hash;
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::{
@@ -80,7 +96,7 @@ use reth_node_core::{
     version,
 };
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
-use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
+use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, hex, Bytes, Head};
 use reth_provider::{
     providers::{BlockchainProvider2, StaticFileProvider},
     BlockHashReader, CanonStateSubscriptions, DatabaseProviderFactory, HeaderProvider,
@@ -116,6 +132,54 @@ pub fn set_panic_hook() {
     }));
 }
 
+use reth_fs_util;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+#[derive(Debug, Deserialize, Serialize)]
+struct UtxosRecoveryConfig {
+    utxos: Vec<UtxoRecoveryData>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct UtxoRecoveryData {
+    /// Transaction ID as hex string
+    txid: String,
+    /// Output index
+    vout: u32,
+    /// Ethereum address (empty string for change UTXOs)
+    eth_address: String,
+}
+
+impl From<UtxoRecoveryData> for UtxoToRecover {
+    fn from(data: UtxoRecoveryData) -> Self {
+        UtxoToRecover {
+            outpoint: Some(OutPoint {
+                txid: hex::decode(&data.txid).unwrap_or_else(|_| {
+                    error!(target: "reth::cli", "Invalid txid hex: {}", data.txid);
+                    vec![0u8; 32] // Fallback to zeros
+                }),
+                vout: data.vout,
+            }),
+            eth_address: data.eth_address,
+        }
+    }
+}
+
+/// Read UTXOs from a JSON file for recovery
+fn read_utxos_from_file(file_path: &Path) -> Vec<UtxoToRecover> {
+    match reth_fs_util::read_json_file::<Vec<UtxoRecoveryData>>(file_path) {
+        Ok(utxos_data) => {
+            info!(target: "reth::cli", "Successfully loaded {} UTXOs from {:?}", 
+                utxos_data.len(), file_path);
+            utxos_data.into_iter().map(Into::into).collect()
+        }
+        Err(err) => {
+            error!(target: "reth::cli", "Failed to read UTXO recovery file {:?}: {}", 
+                file_path, err);
+            vec![]
+        }
+    }
 /// Start the node
 #[derive(Debug, Parser)]
 pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
@@ -426,6 +490,30 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 eyre::eyre!("Failed to authenticate to btc server: {}", err)
             })?;
             info!(target: "reth::cli", "Btc server authenticated");
+
+            info!(target: "reth::cli", "Recovering missing UTXOs...");
+
+            // for now use hard coded file path for testing
+            let utxos = read_utxos_from_file(Path::new("test_utxo_recovery.json"));
+
+            let recover_request = RecoverMissingUtxosRequest { utxos };
+
+            // Only proceed if we have UTXOs to recover
+            if !recover_request.utxos.is_empty() {
+                match btc_server_client.recover_missing_utxos(recover_request).await {
+                    Ok(response) => {
+                        info!(target: "reth::cli",
+                            "UTXO recovery completed successfully. Requested: {}, Recovered: {}",
+                            response.total_requested, response.total_recovered
+                        );
+                    }
+                    Err(err) => {
+                        error!(target: "reth::cli", "UTXO recovery failed: {}", err);
+                    }
+                }
+            } else {
+                info!(target: "reth::cli", "No UTXOs to recover, skipping recovery");
+            }
 
             Some(btc_server_factory)
         } else {

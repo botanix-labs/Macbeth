@@ -100,6 +100,7 @@ reth-trie-db = { workspace = true, features = ["metrics"] }
 rsntp = "3.0.2"
 secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery", "serde"] }
 serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] } 
 similar-asserts = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "time", "rt-multi-thread"] }
