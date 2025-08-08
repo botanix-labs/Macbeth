@@ -6,7 +6,6 @@ pub use client::FetchClient;
 
 use std::{
     collections::{HashMap, VecDeque},
-    ops::RangeInclusive,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
@@ -28,7 +27,7 @@ use reth_primitives::{BlockBody, Header, B256};
 use tokio::sync::{mpsc, mpsc::UnboundedSender, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::{message::BlockRequest, session::BlockRangeInfo};
+use crate::message::BlockRequest;
 
 /// Manages data fetching operations.
 ///
@@ -82,7 +81,6 @@ impl StateFetcher {
         best_hash: B256,
         best_number: u64,
         timeout: Arc<AtomicU64>,
-        range_info: Option<BlockRangeInfo>,
     ) {
         self.peers.insert(
             peer_id,
@@ -92,7 +90,6 @@ impl StateFetcher {
                 best_number,
                 timeout,
                 last_response_likely_bad: false,
-                range_info,
             },
         );
     }
@@ -353,9 +350,6 @@ struct Peer {
     /// downloaded), but we still want to avoid requesting from the same peer again if it has the
     /// lowest timeout.
     last_response_likely_bad: bool,
-    /// Tracks the range info for the peer.
-    #[allow(dead_code)]
-    range_info: Option<BlockRangeInfo>,
 }
 
 impl Peer {
@@ -424,8 +418,6 @@ pub(crate) enum DownloadRequest {
         request: Vec<B256>,
         response: oneshot::Sender<PeerRequestResult<Vec<BlockBody>>>,
         priority: Priority,
-        #[allow(dead_code)]
-        range_hint: Option<RangeInclusive<u64>>,
     },
 }
 
@@ -496,7 +488,6 @@ mod tests {
                 request: vec![],
                 response: tx,
                 priority: Priority::default(),
-                range_hint: None,
             });
             assert!(fetcher.poll(cx).is_pending());
 
@@ -512,8 +503,8 @@ mod tests {
         // Add a few random peers
         let peer1 = B512::random();
         let peer2 = B512::random();
-        fetcher.new_active_peer(peer1, B256::random(), 1, Arc::new(AtomicU64::new(1)), None);
-        fetcher.new_active_peer(peer2, B256::random(), 2, Arc::new(AtomicU64::new(1)), None);
+        fetcher.new_active_peer(peer1, B256::random(), 1, Arc::new(AtomicU64::new(1)));
+        fetcher.new_active_peer(peer2, B256::random(), 2, Arc::new(AtomicU64::new(1)));
 
         let first_peer = fetcher.next_best_peer().unwrap();
         assert!(first_peer == peer1 || first_peer == peer2);
@@ -539,9 +530,9 @@ mod tests {
 
         let peer2_timeout = Arc::new(AtomicU64::new(300));
 
-        fetcher.new_active_peer(peer1, B256::random(), 1, Arc::new(AtomicU64::new(30)), None);
-        fetcher.new_active_peer(peer2, B256::random(), 2, Arc::clone(&peer2_timeout), None);
-        fetcher.new_active_peer(peer3, B256::random(), 3, Arc::new(AtomicU64::new(50)), None);
+        fetcher.new_active_peer(peer1, B256::random(), 1, Arc::new(AtomicU64::new(30)));
+        fetcher.new_active_peer(peer2, B256::random(), 2, Arc::clone(&peer2_timeout));
+        fetcher.new_active_peer(peer3, B256::random(), 3, Arc::new(AtomicU64::new(50)));
 
         // Must always get peer1 (lowest timeout)
         assert_eq!(fetcher.next_best_peer(), Some(peer1));
@@ -609,7 +600,6 @@ mod tests {
             Default::default(),
             Default::default(),
             Default::default(),
-            None,
         );
 
         let (req, header) = request_pair();

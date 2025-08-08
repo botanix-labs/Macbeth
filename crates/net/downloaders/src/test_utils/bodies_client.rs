@@ -8,7 +8,6 @@ use reth_primitives::{BlockBody, B256};
 use std::{
     collections::HashMap,
     fmt::Debug,
-    ops::RangeInclusive,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -80,11 +79,10 @@ impl DownloadClient for TestBodiesClient {
 impl BodiesClient for TestBodiesClient {
     type Output = BodiesFut;
 
-    fn get_block_bodies_with_priority_and_range_hint(
+    fn get_block_bodies_with_priority(
         &self,
         hashes: Vec<B256>,
         _priority: Priority,
-        _range_hint: Option<RangeInclusive<u64>>,
     ) -> Self::Output {
         let should_delay = self.should_delay;
         let bodies = self.bodies.clone();
