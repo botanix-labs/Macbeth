@@ -2,6 +2,7 @@
 
 use std::{io, net::SocketAddr, sync::Arc, time::Instant};
 
+use crate::session::CapabilityMessage;
 use reth_ecies::ECIESError;
 use reth_eth_wire::{errors::EthStreamError, Capabilities, DisconnectReason, EthVersion, Status};
 use reth_network_api::PeerInfo;
