@@ -85,6 +85,7 @@ async fn create_cometbft_nodes(num_nodes: u16, output_path: PathBuf) -> AnyResul
             test_signal_tx,
             node_path,
             false,
+            false,
         )
         .await?;
         cometbft_nodes.push(cometbft_node);

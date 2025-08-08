@@ -145,7 +145,8 @@ jobs:
           "block_builder",
           "test_conflicting_input",
           "test_round1_then_new_signing_session",
-          "test_track_mempool"]
+          "test_track_mempool",
+          "rpc_node"]
     env:
       RUST_BACKTRACE: 1
       TEST_TO_RUN: ${{ matrix.test }}

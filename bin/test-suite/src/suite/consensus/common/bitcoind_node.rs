@@ -116,6 +116,7 @@ impl BitcoindNodeConfig {
             "-txindex=1",
             "-fallbackfee=0.00005",
             "-persistmempool=0",
+            "-zmqpubhashblock=tcp://127.0.0.1:38332",
         ];
 
         Ok(SpawnedBitcoindProcess {

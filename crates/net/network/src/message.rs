@@ -11,10 +11,9 @@ use std::{
 
 use futures::FutureExt;
 use reth_eth_wire::{
-    capability::RawCapabilityMessage, message::RequestPair, BlockBodies, BlockHeaders,
-    BlockRangeUpdate, EthMessage, GetBlockBodies, GetBlockHeaders, NewBlock, NewBlockHashes,
-    NewPooledTransactionHashes, NodeData, PooledTransactions, Receipts, SharedTransactions,
-    Transactions,
+    capability::RawCapabilityMessage, message::RequestPair, BlockBodies, BlockHeaders, EthMessage,
+    GetBlockBodies, GetBlockHeaders, NewBlock, NewBlockHashes, NewPooledTransactionHashes,
+    NodeData, PooledTransactions, Receipts, SharedTransactions, Transactions,
 };
 use reth_network_api::PeerRequest;
 use reth_network_p2p::error::{RequestError, RequestResult};
@@ -70,8 +69,6 @@ pub enum PeerMessage {
     PooledTransactions(NewPooledTransactionHashes),
     /// All `eth` request variants.
     EthRequest(PeerRequest),
-    /// Announces when `BlockRange` is updated.
-    BlockRangeUpdated(BlockRangeUpdate),
     /// Other than eth namespace message
     Other(RawCapabilityMessage),
 }
