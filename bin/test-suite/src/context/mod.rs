@@ -13,6 +13,8 @@ pub const BITCOIND_URL: &str = "http://127.0.0.1:18443";
 pub const BITCOIND_USER: &str = "foo";
 pub const BITCOIND_PASS: &str = "bar";
 
+pub const BITCOIND_ZMQ_HASH_BLOCK_ADDRESS: &str = "tcp://127.0.0.1:38332";
+
 pub struct GlobalContext {
     pub test_suite_id: uuid::Uuid,
     pub dry_run: bool,
@@ -28,6 +30,7 @@ pub struct GlobalContext {
     pub bitcoind_url: Url,
     pub bitcoind_user: String,
     pub bitcoind_pass: String,
+    pub bitcoind_zmq_hash_block_address: Url,
     pub botanix_fee_recipient: String,
     pub lst_fee_receiver: String,
     pub features: String, // space delimited String
@@ -61,6 +64,9 @@ impl GlobalContext {
             bitcoind_url: BITCOIND_URL.parse().context("Failed to parse BITCOIND_URL to an Url")?,
             bitcoind_user: BITCOIND_USER.to_string(),
             bitcoind_pass: BITCOIND_PASS.to_string(),
+            bitcoind_zmq_hash_block_address: BITCOIND_ZMQ_HASH_BLOCK_ADDRESS
+                .parse()
+                .context("Failed to parse BITCOIND_ZMQ_HASH_BLOCK_ADDRESS to an Url")?,
             botanix_fee_recipient: BOTANIX_FEE_RECEIPIENT.to_string(),
             lst_fee_receiver: LST_FEE_RECEIVER.to_string(),
             features: args.features,
