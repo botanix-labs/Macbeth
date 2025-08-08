@@ -11,7 +11,7 @@ use super::{
     GetNodeData, GetPooledTransactions, GetReceipts, NewBlock, NewPooledTransactionHashes66,
     NewPooledTransactionHashes68, NodeData, PooledTransactions, Receipts, Status, Transactions,
 };
-use crate::{BlockRangeUpdate, EthVersion, SharedTransactions};
+use crate::{EthVersion, SharedTransactions};
 
 use alloy_rlp::{length_of_length, Decodable, Encodable, Header};
 use reth_primitives::bytes::{Buf, BufMut};
@@ -30,9 +30,6 @@ pub enum MessageError {
     /// Thrown when rlp decoding a message message failed.
     #[error("RLP error: {0}")]
     RlpError(#[from] alloy_rlp::Error),
-    /// Other message error with custom message
-    #[error("{0}")]
-    Other(String),
 }
 
 /// An `eth` protocol message, containing a message ID and payload.
@@ -113,9 +110,6 @@ impl ProtocolMessage {
             EthMessageID::Receipts => {
                 let request_pair = RequestPair::<Receipts>::decode(buf)?;
                 EthMessage::Receipts(request_pair)
-            }
-            EthMessageID::BlockRangeUpdate => {
-                EthMessage::BlockRangeUpdate(BlockRangeUpdate::decode(buf)?)
             }
         };
         Ok(Self { message_type, message })
@@ -221,8 +215,6 @@ pub enum EthMessage {
     GetReceipts(RequestPair<GetReceipts>),
     /// Represents a Receipts request-response pair.
     Receipts(RequestPair<Receipts>),
-    /// Represents a `BlockRangeUpdate` message broadcast to the network.
-    BlockRangeUpdate(BlockRangeUpdate),
 }
 
 impl EthMessage {
@@ -246,32 +238,7 @@ impl EthMessage {
             Self::NodeData(_) => EthMessageID::NodeData,
             Self::GetReceipts(_) => EthMessageID::GetReceipts,
             Self::Receipts(_) => EthMessageID::Receipts,
-            Self::BlockRangeUpdate(_) => EthMessageID::BlockRangeUpdate,
         }
-    }
-
-    /// Returns true if the message variant is a request.
-    pub const fn is_request(&self) -> bool {
-        matches!(
-            self,
-            Self::GetBlockBodies(_) |
-                Self::GetBlockHeaders(_) |
-                Self::GetReceipts(_) |
-                Self::GetPooledTransactions(_) |
-                Self::GetNodeData(_)
-        )
-    }
-
-    /// Returns true if the message variant is a response to a request.
-    pub const fn is_response(&self) -> bool {
-        matches!(
-            self,
-            Self::PooledTransactions(_) |
-                Self::Receipts(_) |
-                Self::BlockHeaders(_) |
-                Self::BlockBodies(_) |
-                Self::NodeData(_)
-        )
     }
 }
 
@@ -294,7 +261,6 @@ impl Encodable for EthMessage {
             Self::NodeData(data) => data.encode(out),
             Self::GetReceipts(request) => request.encode(out),
             Self::Receipts(receipts) => receipts.encode(out),
-            Self::BlockRangeUpdate(block_range_update) => block_range_update.encode(out),
         }
     }
     fn length(&self) -> usize {
@@ -315,7 +281,6 @@ impl Encodable for EthMessage {
             Self::NodeData(data) => data.length(),
             Self::GetReceipts(request) => request.length(),
             Self::Receipts(receipts) => receipts.length(),
-            Self::BlockRangeUpdate(block_range_update) => block_range_update.length(),
         }
     }
 }
@@ -398,10 +363,6 @@ pub enum EthMessageID {
     GetReceipts = 0x0f,
     /// Represents receipts.
     Receipts = 0x10,
-    /// Block range update.
-    ///
-    /// Introduced in Eth69
-    BlockRangeUpdate = 0x11,
 }
 
 impl EthMessageID {

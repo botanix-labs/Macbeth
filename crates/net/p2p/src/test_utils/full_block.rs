@@ -11,7 +11,7 @@ use reth_network_peers::{PeerId, WithPeerId};
 use reth_primitives::{
     BlockBody, BlockHashOrNumber, BlockNumHash, Header, SealedBlock, SealedHeader, B256,
 };
-use std::{collections::HashMap, ops::RangeInclusive, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 /// A headers+bodies client implementation that does nothing.
 #[derive(Debug, Default, Clone)]
@@ -53,11 +53,10 @@ impl BodiesClient for NoopFullBlockClient {
     /// # Returns
     ///
     /// A future containing an empty vector of block bodies and a randomly generated `PeerId`.
-    fn get_block_bodies_with_priority_and_range_hint(
+    fn get_block_bodies_with_priority(
         &self,
         _hashes: Vec<B256>,
         _priority: Priority,
-        _range_hint: Option<RangeInclusive<u64>>,
     ) -> Self::Output {
         // Create a future that immediately returns an empty vector of block bodies and a random
         // PeerId.
@@ -220,11 +219,10 @@ impl BodiesClient for TestFullBlockClient {
     /// # Returns
     ///
     /// A future containing the result of the block body retrieval operation.
-    fn get_block_bodies_with_priority_and_range_hint(
+    fn get_block_bodies_with_priority(
         &self,
         hashes: Vec<B256>,
         _priority: Priority,
-        _range_hint: Option<RangeInclusive<u64>>,
     ) -> Self::Output {
         // Acquire a lock on the bodies.
         let bodies = self.bodies.lock();

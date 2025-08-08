@@ -23,9 +23,6 @@ mod p2pstream;
 mod pinger;
 pub mod protocol;
 
-/// Handshake logic
-pub mod handshake;
-
 #[cfg(test)]
 pub mod test_utils;
 
@@ -39,7 +36,7 @@ pub use crate::{
     ethstream::{EthStream, UnauthedEthStream, MAX_MESSAGE_SIZE},
     hello::{HelloMessage, HelloMessageBuilder, HelloMessageWithProtocols},
     p2pstream::{
-        DisconnectP2P, P2PMessage, P2PMessageID, P2PStream, UnauthedP2PStream, HANDSHAKE_TIMEOUT,
+        DisconnectP2P, P2PMessage, P2PMessageID, P2PStream, UnauthedP2PStream,
         MAX_RESERVED_MESSAGE_ID,
     },
     Capability, ProtocolVersion,
