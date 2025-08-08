@@ -7,10 +7,12 @@ use std::{
 };
 
 use futures::Stream;
-use reth_eth_wire::{errors::EthStreamError, Capabilities, DisconnectReason, EthVersion, Status};
+use reth_eth_wire::{
+    capability::CapabilityMessage, errors::EthStreamError, Capabilities, EthVersion, Status,
+};
 use reth_network_api::PeerRequestSender;
 use reth_network_peers::PeerId;
-use tracing::{debug, trace};
+use tracing::trace;
 
 use crate::{
     listener::{ConnectionListener, ListenerEvent},
@@ -30,7 +32,7 @@ use crate::{
 /// [`SessionManager`]. Outgoing connections are either initiated on demand or triggered by the
 /// [`NetworkState`] and also delegated to the [`NetworkState`].
 ///
-/// Following diagram displays the dataflow contained in the [`Swarm`]
+/// Following diagram gives displays the dataflow contained in the [`Swarm`]
 ///
 /// The [`ConnectionListener`] yields incoming [`TcpStream`]s from peers that are spawned as session
 /// tasks. After a successful `RLPx` authentication, the task is ready to accept ETH requests or
@@ -68,7 +70,7 @@ impl Swarm {
         Self { incoming, sessions, state }
     }
 
-    /// Adds a protocol handler to the `RLPx` sub-protocol list.
+    /// Adds an additional protocol handler to the `RLPx` sub-protocol list.
     pub(crate) fn add_rlpx_sub_protocol(&mut self, protocol: impl IntoRlpxSubProtocol) {
         self.sessions_mut().add_rlpx_sub_protocol(protocol);
     }
@@ -121,7 +123,6 @@ impl Swarm {
                 messages,
                 direction,
                 timeout,
-                range_info,
             } => {
                 self.state.on_session_activated(
                     peer_id,
@@ -129,7 +130,6 @@ impl Swarm {
                     status.clone(),
                     messages.clone(),
                     timeout,
-                    range_info,
                 );
                 Some(SwarmEvent::SessionEstablished {
                     peer_id,
@@ -149,6 +149,9 @@ impl Swarm {
             }
             SessionEvent::ValidMessage { peer_id, message } => {
                 Some(SwarmEvent::ValidMessage { peer_id, message })
+            }
+            SessionEvent::InvalidMessage { peer_id, capabilities, message } => {
+                Some(SwarmEvent::InvalidCapabilityMessage { peer_id, capabilities, message })
             }
             SessionEvent::IncomingPendingSessionClosed { remote_addr, error } => {
                 Some(SwarmEvent::IncomingPendingSessionClosed { remote_addr, error })
@@ -186,7 +189,7 @@ impl Swarm {
             ListenerEvent::Incoming { stream, remote_addr } => {
                 // Reject incoming connection if node is shutting down.
                 if self.is_shutting_down() {
-                    return None
+                    return None;
                 }
                 // ensure we can handle an incoming connection from this address
                 if let Err(err) =
@@ -198,19 +201,15 @@ impl Swarm {
                         }
                         InboundConnectionError::ExceedsCapacity => {
                             trace!(target: "net", ?remote_addr, "No capacity for incoming connection");
-                            self.sessions.try_disconnect_incoming_connection(
-                                stream,
-                                DisconnectReason::TooManyPeers,
-                            );
                         }
                     }
-                    return None
+                    return None;
                 }
 
                 match self.sessions.on_incoming(stream, remote_addr) {
                     Ok(session_id) => {
                         trace!(target: "net", ?remote_addr, "Incoming connection");
-                        return Some(SwarmEvent::IncomingTcpConnection { session_id, remote_addr })
+                        return Some(SwarmEvent::IncomingTcpConnection { session_id, remote_addr });
                     }
                     Err(err) => {
                         trace!(target: "net", %err, "Incoming connection rejected, capacity already reached.");
@@ -229,7 +228,7 @@ impl Swarm {
         match event {
             StateAction::Connect { remote_addr, peer_id } => {
                 self.dial_outbound(remote_addr, peer_id);
-                return Some(SwarmEvent::OutgoingTcpConnection { remote_addr, peer_id })
+                return Some(SwarmEvent::OutgoingTcpConnection { remote_addr, peer_id });
             }
             StateAction::Disconnect { peer_id, reason } => {
                 self.sessions.disconnect(peer_id, reason);
@@ -247,7 +246,7 @@ impl Swarm {
             StateAction::DiscoveredNode { peer_id, addr, fork_id } => {
                 // Don't try to connect to peer if node is shutting down
                 if self.is_shutting_down() {
-                    return None
+                    return None;
                 }
                 // Insert peer only if no fork id or a valid fork id
                 if fork_id.map_or_else(|| true, |f| self.sessions.is_valid_fork_id(f)) {
@@ -258,7 +257,6 @@ impl Swarm {
                 if self.sessions.is_valid_fork_id(fork_id) {
                     self.state_mut().peers_mut().set_discovered_fork_id(peer_id, fork_id);
                 } else {
-                    debug!(target: "net", ?peer_id, remote_fork_id=?fork_id, our_fork_id=?self.sessions.fork_id(), "fork id mismatch, removing peer");
                     self.state_mut().peers_mut().remove_peer(peer_id);
                 }
             }
@@ -302,7 +300,7 @@ impl Stream for Swarm {
         loop {
             while let Poll::Ready(action) = this.state.poll(cx) {
                 if let Some(event) = this.on_state_action(action) {
-                    return Poll::Ready(Some(event))
+                    return Poll::Ready(Some(event));
                 }
             }
 
@@ -311,9 +309,9 @@ impl Stream for Swarm {
                 Poll::Pending => {}
                 Poll::Ready(event) => {
                     if let Some(event) = this.on_session_event(event) {
-                        return Poll::Ready(Some(event))
+                        return Poll::Ready(Some(event));
                     }
-                    continue
+                    continue;
                 }
             }
 
@@ -322,13 +320,13 @@ impl Stream for Swarm {
                 Poll::Pending => {}
                 Poll::Ready(event) => {
                     if let Some(event) = this.on_connection(event) {
-                        return Poll::Ready(Some(event))
+                        return Poll::Ready(Some(event));
                     }
-                    continue
+                    continue;
                 }
             }
 
-            return Poll::Pending
+            return Poll::Pending;
         }
     }
 }
@@ -342,6 +340,14 @@ pub(crate) enum SwarmEvent {
         peer_id: PeerId,
         /// Message received from the peer
         message: PeerMessage,
+    },
+    /// Received a message that does not match the announced capabilities of the peer.
+    InvalidCapabilityMessage {
+        peer_id: PeerId,
+        /// Announced capabilities of the remote peer.
+        capabilities: Arc<Capabilities>,
+        /// Message received from the peer.
+        message: CapabilityMessage,
     },
     /// Received a bad message from the peer.
     BadMessage {
