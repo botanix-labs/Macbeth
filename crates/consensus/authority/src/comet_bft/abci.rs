@@ -699,7 +699,7 @@ where
         ResponseInfo {
             data: String::default(),
             version: VERSION.to_string(),
-            app_version: 1,
+            app_version: 0,
             last_block_height: latest_header.number as i64,
             last_block_app_hash,
         }
@@ -2695,7 +2695,7 @@ mod tests {
 
         assert_eq!(response.data, String::default());
         assert_eq!(response.version, VERSION.to_string());
-        assert_eq!(response.app_version, 1);
+        assert_eq!(response.app_version, 0);
         assert_eq!(response.last_block_height, 0);
         let _response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
         assert_eq!(
