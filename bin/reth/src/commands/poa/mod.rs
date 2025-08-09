@@ -1576,29 +1576,52 @@ mod tests {
     }
 
     #[test]
+    // first two taken from utxo_recovery.json file, last one is an example with no eth address
     fn test_read_utxos_from_file_success() {
         let mut temp_file = NamedTempFile::new().unwrap();
         let json_content = r#"[
-            {
-                "txid": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-                "vout": 0,
-                "ethAddress": "0x742d35cc6554c8532b5fd1b61cdb58d5c5c5e0c2"
-            },
-            {
-                "txid": "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
-                "vout": 1,
-                "ethAddress": ""
-            }
-        ]"#;
+    {
+        "txid": "7fffc6ffc9db1400ba859447ea1f82946fa3f736f2ad1725cbd4cd1267472a1f",
+        "vout": 0,
+        "ethAddress": "1284fEdeda331BbD0b1a868abFeD9A3Cfb91a677"
+    },
+    {
+        "txid": "d0204b10e98329ceec73bc50df687416d9c5f28d2e37fa6f1054f170ee0b4442",
+        "vout": 0,
+        "ethAddress": "4837f53DCD09Dca12a4761BEfAd7a2398B96617a"
+    },
+    {
+        "txid": "f58feb51fbc4d7484975ced7b8649e51ba8f96d7bb00c3e49b396a080e105abf",
+        "vout": 5,
+        "ethAddress": ""
+    }
+    ]"#;
         temp_file.write_all(json_content.as_bytes()).unwrap();
 
         let utxos = read_utxos_from_file(temp_file.path());
 
-        assert_eq!(utxos.len(), 2);
-        assert_eq!(utxos[0].eth_address, "0x742d35cc6554c8532b5fd1b61cdb58d5c5c5e0c2");
+        assert_eq!(utxos.len(), 3);
+        assert_eq!(
+            utxos[0].outpoint.as_ref().unwrap().txid,
+            hex::decode("7fffc6ffc9db1400ba859447ea1f82946fa3f736f2ad1725cbd4cd1267472a1f")
+                .unwrap()
+        );
         assert_eq!(utxos[0].outpoint.as_ref().unwrap().vout, 0);
-        assert_eq!(utxos[1].eth_address, "");
-        assert_eq!(utxos[1].outpoint.as_ref().unwrap().vout, 1);
+        assert_eq!(utxos[0].eth_address, "1284fEdeda331BbD0b1a868abFeD9A3Cfb91a677");
+        assert_eq!(
+            utxos[1].outpoint.as_ref().unwrap().txid,
+            hex::decode("d0204b10e98329ceec73bc50df687416d9c5f28d2e37fa6f1054f170ee0b4442")
+                .unwrap()
+        );
+        assert_eq!(utxos[1].outpoint.as_ref().unwrap().vout, 0);
+        assert_eq!(utxos[1].eth_address, "4837f53DCD09Dca12a4761BEfAd7a2398B96617a");
+        assert_eq!(
+            utxos[2].outpoint.as_ref().unwrap().txid,
+            hex::decode("f58feb51fbc4d7484975ced7b8649e51ba8f96d7bb00c3e49b396a080e105abf")
+                .unwrap()
+        );
+        assert_eq!(utxos[2].outpoint.as_ref().unwrap().vout, 5);
+        assert_eq!(utxos[2].eth_address, "");
     }
 
     #[test]
@@ -1608,13 +1631,13 @@ mod tests {
         temp_file.write_all(invalid_json.as_bytes()).unwrap();
 
         let utxos = read_utxos_from_file(temp_file.path());
-        assert_eq!(utxos.len(), 0); // Should return empty vec on error
+        assert_eq!(utxos.len(), 0);
     }
 
     #[test]
     fn test_read_utxos_from_file_missing_file() {
         let utxos = read_utxos_from_file(Path::new("nonexistent_file.json"));
-        assert_eq!(utxos.len(), 0); // Should return empty vec on error
+        assert_eq!(utxos.len(), 0);
     }
 
     #[test]
