@@ -16,11 +16,9 @@ workspace = true
 
 # crypto
 alloy-rlp = { workspace = true }
-
 # misc
 aquamarine = { workspace = true }
 backon = { workspace = true }
-
 # Bitcoin
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
@@ -29,7 +27,6 @@ botanix-activation-manager = { workspace = true }
 botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 botanix-authority-rsp = { workspace = true }
 botanix-bitcoin-checkpoint = { workspace = true }
-
 # Botanix
 botanix-data-parser = { workspace = true }
 botanix-btc-wallet = { workspace = true }
@@ -44,16 +41,12 @@ botanix-utils = { workspace = true }
 btc-server = { path = "../btc-server" }
 btc-server-client = { path = "../btc-server/client" }
 botanix-wallet-sweep = { workspace = true }
-
 clap = { workspace = true, features = ["derive", "env"] }
-
 # confy
 confy = "0.6"
 eyre = { workspace = true }
-
 # io
 fdlimit = { workspace = true }
-
 # async
 futures = { workspace = true }
 # reth
@@ -119,7 +112,15 @@ similar-asserts = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "time", "rt-multi-thread"] }
 tokio-stream = { workspace = true }
-
+# tracing
+# crypto
+# misc
+# Bitcoin
+# Botanix
+# confy
+# io
+# async
+# reth
 # tracing
 tracing = { workspace = true }
 

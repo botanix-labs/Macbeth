@@ -41,6 +41,61 @@
 //!
 //! ### Configure and launch a standalone network
 //!
+//! The [`NetworkConfig`] is used to configure the network.
+//! It requires an instance of [`BlockReader`](reth_provider::BlockReader).
+//!
+//! ```
+//! # async fn launch() {
+//! use reth_network::{config::rng_secret_key, NetworkConfig, NetworkManager};
+//! use reth_network_peers::mainnet_nodes;
+//! use reth_provider::test_utils::NoopProvider;
+//!
+//! // This block provider implementation is used for testing purposes.
+//! let client = NoopProvider::default();
+//!
+//! // The key that's used for encrypting sessions and to identify our node.
+//! let local_key = rng_secret_key();
+//!
+//! let config = NetworkConfig::builder(local_key).boot_nodes(mainnet_nodes()).build(client);
+//!
+//! // create the network instance
+//! let network = NetworkManager::new(config).await.unwrap();
+//!
+//! // keep a handle to the network and spawn it
+//! let handle = network.handle().clone();
+//! tokio::task::spawn(network);
+//!
+//! # }
+//! ```
+//!
+//! ### Configure all components of the Network with the [`NetworkBuilder`]
+//!
+//! ```
+//! use reth_network::{config::rng_secret_key, NetworkConfig, NetworkManager};
+//! use reth_network_peers::mainnet_nodes;
+//! use reth_provider::test_utils::NoopProvider;
+//! use reth_transaction_pool::TransactionPool;
+//! async fn launch<Pool: TransactionPool>(pool: Pool) {
+//!     // This block provider implementation is used for testing purposes.
+//!     let client = NoopProvider::default();
+//!
+//!     // The key that's used for encrypting sessions and to identify our node.
+//!     let local_key = rng_secret_key();
+//!
+//!     let config =
+//!         NetworkConfig::builder(local_key).boot_nodes(mainnet_nodes()).build(client.clone());
+//!     let transactions_manager_config = config.transactions_manager_config.clone();
+//!
+//!     // create the network instance
+//!     let (handle, network, transactions, request_handler, frost) =
+//!         NetworkManager::builder(config)
+//!             .await
+//!             .unwrap()
+//!             .transactions(pool, transactions_manager_config)
+//!             .request_handler(client)
+//!             .split_with_handle();
+//! }
+//! ```
 //!
 //! # Feature Flags
 //!
@@ -84,6 +139,7 @@ mod network;
 mod session;
 mod state;
 mod swarm;
+mod trusted_peers_resolver;
 
 pub use reth_eth_wire::{DisconnectReason, HelloMessageWithProtocols};
 pub use reth_network_api::{

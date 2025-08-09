@@ -15,6 +15,20 @@ use crate::{
     AcceptWalletSweepSessionRequest, AcceptWalletSweepSessionResponse, BtcServerClient,
     WalletSweepSessionUpdateResponse, WalletSweepSessionUpdatesRequest,
 };
+use crate::{
+    btc_server::{
+        ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty, FinalizeSignerRequest,
+        FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
+        GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
+        GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
+        GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
+        GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, RecoverMissingUtxosRequest,
+        RecoverMissingUtxosResponse, ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage,
+        SigningPackageRequest, ToSignRequest, WalletStateResponse,
+    },
+    jwt::{Claims, JwtSecret},
+    BtcServerClient, GetUtxoStateRequest, GetUtxoStateResponse,
+};
 use displaydoc::Display as DisplayDoc;
 use futures_util::future::BoxFuture;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -156,7 +170,10 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
             GrpcClientError,
         >,
     >;
-
+    fn recover_missing_utxos(
+        &mut self,
+        request: RecoverMissingUtxosRequest,
+    ) -> BoxFuture<'_, Result<RecoverMissingUtxosResponse, GrpcClientError>>;
     fn accept_wallet_sweep_session(
         &mut self,
         request: AcceptWalletSweepSessionRequest,
@@ -297,6 +314,11 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     generate_method!(get_pending_pegouts, Empty, GetPendingPegoutsResponse);
     generate_method!(reset_wallet_state, ResetWalletStateRequest, Empty);
     generate_method!(new_consensus_checkpoint, ConsensusCheckpointRequest, Empty);
+    generate_method!(
+        recover_missing_utxos,
+        RecoverMissingUtxosRequest,
+        RecoverMissingUtxosResponse
+    );
     generate_stream_method!(
         get_finalized_pegout_ids,
         GetFinalizedPegoutIdsRequest,

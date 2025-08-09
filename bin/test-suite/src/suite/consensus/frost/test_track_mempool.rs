@@ -51,7 +51,7 @@ pub async fn test_track_mempool(
         let mut client =
             clients.get(0).cloned().ok_or_else(|| anyhow::anyhow!("client not found"))?;
         let res = client
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -143,7 +143,7 @@ pub async fn test_track_mempool(
 
     // assert the pegout is not in the pending pegout list
     let pending_pegouts = clients[0]
-        .get_pending_pegouts(tonic::Request::new(client::Empty {}))
+        .get_pending_pegouts(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .expect("get pending pegouts")
         .into_inner();
@@ -193,7 +193,7 @@ pub async fn test_track_mempool(
 
     // assert there is still a tracked tx
     let tracked_txs = clients[0]
-        .get_tracked_txs(tonic::Request::new(client::Empty {}))
+        .get_tracked_txs(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .expect("get tracked txs")
         .into_inner()
@@ -210,7 +210,7 @@ pub async fn test_track_mempool(
     let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
     for c in clients.iter_mut() {
         match c
-            .new_consensus_checkpoint(client::ConsensusCheckpointRequest {
+            .new_consensus_checkpoint(btc_server_client::ConsensusCheckpointRequest {
                 checkpoint_block_hash: checkpoint_block_hash.clone(),
                 pegins: vec![],
                 pending_pegouts: vec![],
@@ -227,7 +227,7 @@ pub async fn test_track_mempool(
 
     // assert there are no tracked txs
     let tracked_txs = clients[0]
-        .get_tracked_txs(tonic::Request::new(client::Empty {}))
+        .get_tracked_txs(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .expect("get tracked txs")
         .into_inner()
@@ -236,7 +236,7 @@ pub async fn test_track_mempool(
 
     // assert the pegout is in the pending pegout list
     let pending_pegouts = clients[0]
-        .get_pending_pegouts(tonic::Request::new(client::Empty {}))
+        .get_pending_pegouts(tonic::Request::new(btc_server_client::Empty {}))
         .await
         .expect("get pending pegouts")
         .into_inner();
