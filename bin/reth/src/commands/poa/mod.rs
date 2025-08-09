@@ -115,6 +115,7 @@ struct UtxosRecoveryConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct UtxoRecoveryData {
     /// Transaction ID as hex string
     txid: String,
@@ -1257,7 +1258,9 @@ mod tests {
     use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use std::{
-        io::Write, net::{IpAddr, Ipv4Addr}, path::Path
+        io::Write,
+        net::{IpAddr, Ipv4Addr},
+        path::Path,
     };
     use tempfile::NamedTempFile;
 
@@ -1610,12 +1613,12 @@ mod tests {
             {
                 "txid": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
                 "vout": 0,
-                "eth_address": "0x742d35cc6554c8532b5fd1b61cdb58d5c5c5e0c2"
+                "ethAddress": "0x742d35cc6554c8532b5fd1b61cdb58d5c5c5e0c2"
             },
             {
                 "txid": "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
                 "vout": 1,
-                "eth_address": ""
+                "ethAddress": ""
             }
         ]"#;
         temp_file.write_all(json_content.as_bytes()).unwrap();
