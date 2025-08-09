@@ -24,7 +24,7 @@ use btc_server_client::{
     WalletSweepSessionUpdateResponse,
 };
 use btcserverlib::wallet::psbt::frost_id_from_bytes;
-use futures::{pin_mut, Stream, StreamExt};
+use futures::{pin_mut, StreamExt};
 use reth_chainspec::ChainSpec;
 use reth_db::table::Decompress;
 use reth_network::{
@@ -46,7 +46,6 @@ use reth_revm::primitives::FixedBytes;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tendermint_rpc::client::HttpClient;
 use tokio::sync::mpsc::{self, error::SendError};
-use tonic::Status;
 use tracing::{debug, error, info, trace, warn};
 
 // TODO: @rwlock Combine with FrostTaskError?
@@ -1097,7 +1096,7 @@ where
 
                     stream
                 }
-                Err(e) => {
+                Err(_e) => {
                     error!(target: "consensus::authority::frost_task::WalletSweepTask", "Failed to subscribe to wallet sweep session updates");
 
                     continue;

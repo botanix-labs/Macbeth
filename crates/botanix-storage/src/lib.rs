@@ -13,6 +13,7 @@
 //! - **Staged Headers**: Persistence of headers with associated pegin/pegout data
 //! - **Wallet State Sync**: Coordination of wallet state synchronization across peers
 //! - **Activation Manager**: Network upgrade voting and activation tracking
+//! - **Wallet Sweep Session**: Emergency wallet sweep session management
 //! - **Database Abstractions**: Clean provider pattern for read/write operations
 //!
 //! ## Architecture
@@ -55,6 +56,7 @@
 //! - `WalletStateSyncs`: Wallet synchronization records
 //! - `BlockSnapshots`: Block number to snapshot ID mappings
 //! - `SnapshotSyncs`: Snapshot synchronization progress tracking
+//! - `WalletSweepSessions`: Snapshot synchronization progress tracking
 
 pub mod models;
 mod provider;

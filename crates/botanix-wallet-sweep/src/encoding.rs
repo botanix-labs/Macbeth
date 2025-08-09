@@ -1,8 +1,5 @@
 use botanix_data_parser::{DataParser, SerializationType, DEFAULT_COMPRESSION_STRATEGY};
-use std::{
-    cell::LazyCell,
-    sync::{Arc, LazyLock},
-};
+use std::sync::LazyLock;
 
 pub static PARSER: LazyLock<DataParser> = LazyLock::new(|| {
     DataParser::default()

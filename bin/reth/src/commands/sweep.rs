@@ -37,8 +37,6 @@ pub enum SweepSubcommands {
     Initiate {
         #[command(flatten)]
         destination: DestinationOptions,
-        #[command(flatten)]
-        utxo: UtxoOptions,
         /// Path to federation config path
         #[arg(long, value_parser = parse_file_exists)]
         federation_config_path: PathBuf,
@@ -107,13 +105,6 @@ impl DestinationConfig for DestinationOptions {
     }
 }
 
-#[derive(Debug, Parser)]
-struct UtxoOptions {
-    /// Consensus threshold percentage (75-95)
-    #[arg(long, default_value = "80", value_parser = clap::value_parser!(u8).range(75..=95))]
-    consensus_threshold: u8,
-}
-
 impl SweepCommand {
     /// Execute the sweep command
     pub async fn execute(&self, _ctx: CliContext) -> eyre::Result<()> {
@@ -154,7 +145,6 @@ impl SweepCommand {
         match &self.command {
             SweepSubcommands::Initiate {
                 destination,
-                utxo,
                 federation_config_path,
                 coordinator_key,
                 output_request_file_path,
@@ -204,15 +194,6 @@ impl SweepCommand {
         }
 
         Ok(())
-    }
-}
-
-fn parse_dir_exists(path: &str) -> Result<PathBuf, String> {
-    let path_buf = PathBuf::from(path);
-    if path_buf.exists() && path_buf.is_dir() {
-        Ok(path_buf)
-    } else {
-        Err(format!("Path '{}' does not exist or is not a directory", path))
     }
 }
 

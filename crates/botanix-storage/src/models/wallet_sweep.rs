@@ -1,7 +1,7 @@
 use bitcoin::{address::NetworkUnchecked, Address, Network};
 use bytes::Buf;
 use reth_db_api::table::{Compress, Decompress};
-use reth_primitives::{Bytes, B256};
+use reth_primitives::B256;
 use serde::{Deserialize, Serialize};
 // TODO: TBD
 
@@ -9,7 +9,6 @@ pub type WalletSweepSessionId = B256;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletSweepSession {
-    pub psbt_bytes: Bytes,
     pub bitcoin_network: Network,
     pub bitcoin_destination_address: Address<NetworkUnchecked>,
     pub created_at: u64,
@@ -19,10 +18,6 @@ impl Compress for WalletSweepSession {
     type Compressed = Vec<u8>;
 
     fn compress_to_buf<B: bytes::BufMut + AsMut<[u8]>>(self, buf: &mut B) {
-        // Write PSBT bytes with length prefix
-        buf.put_u32_le(self.psbt_bytes.len() as u32);
-        buf.put(self.psbt_bytes.as_ref());
-
         // Write network magic (4 bytes)
         let serialized_network_magic = bitcoin::consensus::serialize(&self.bitcoin_network.magic());
         buf.put(serialized_network_magic.as_slice());
@@ -46,17 +41,6 @@ impl Decompress for WalletSweepSession {
         use std::str::FromStr;
 
         let mut buf = value.as_ref();
-
-        // Read PSBT bytes
-        if buf.remaining() < 4 {
-            return Err(reth_storage_errors::db::DatabaseError::Decode);
-        }
-        let psbt_len = buf.get_u32_le() as usize;
-        if buf.remaining() < psbt_len {
-            return Err(reth_storage_errors::db::DatabaseError::Decode);
-        }
-        let psbt_bytes = buf.copy_to_bytes(psbt_len);
-        let psbt_bytes = Bytes::from(psbt_bytes);
 
         // Read network magic (4 bytes)
         if buf.remaining() < 4 {
@@ -89,7 +73,7 @@ impl Decompress for WalletSweepSession {
         }
         let created_at = buf.get_u64_le();
 
-        Ok(Self { psbt_bytes, bitcoin_network, bitcoin_destination_address, created_at })
+        Ok(Self { bitcoin_network, bitcoin_destination_address, created_at })
     }
 }
 
@@ -112,33 +96,20 @@ pub struct ConsensusParameters {
     reachable_members: Vec<u16>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Utxo {}
-
-impl TryFrom<btc_server_client::Utxo> for Utxo {
-    type Error = eyre::Error;
-
-    fn try_from(_value: btc_server_client::Utxo) -> Result<Self, Self::Error> {
-        todo!()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::{address::NetworkUnchecked, Address, Network};
+    use bitcoin::{Address, Network};
     use reth_db_api::table::{Compress, Decompress};
-    use reth_primitives::Bytes;
     use std::str::FromStr;
 
     fn create_test_session() -> WalletSweepSession {
-        let psbt_bytes = Bytes::from(vec![0x01, 0x02, 0x03, 0x04]);
         let bitcoin_network = Network::Bitcoin;
         let bitcoin_destination_address =
             Address::from_str("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2").unwrap().as_unchecked().clone();
         let created_at = 1234567890;
 
-        WalletSweepSession { psbt_bytes, bitcoin_network, bitcoin_destination_address, created_at }
+        WalletSweepSession { bitcoin_network, bitcoin_destination_address, created_at }
     }
 
     #[test]
@@ -156,7 +127,6 @@ mod tests {
         let decompressed = WalletSweepSession::decompress(&buffer).unwrap();
 
         // Verify all fields match
-        assert_eq!(original.psbt_bytes, decompressed.psbt_bytes);
         assert_eq!(original.bitcoin_network, decompressed.bitcoin_network);
         assert_eq!(original.bitcoin_destination_address, decompressed.bitcoin_destination_address);
         assert_eq!(original.created_at, decompressed.created_at);
@@ -164,7 +134,6 @@ mod tests {
 
     #[test]
     fn test_compress_decompress_empty_psbt() {
-        let psbt_bytes = Bytes::new();
         let bitcoin_network = Network::Testnet;
         let bitcoin_destination_address =
             Address::from_str("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
@@ -173,18 +142,13 @@ mod tests {
                 .clone();
         let created_at = 0;
 
-        let session = WalletSweepSession {
-            psbt_bytes,
-            bitcoin_network,
-            bitcoin_destination_address,
-            created_at,
-        };
+        let session =
+            WalletSweepSession { bitcoin_network, bitcoin_destination_address, created_at };
 
         let mut buffer = Vec::new();
         session.clone().compress_to_buf(&mut buffer);
         let decompressed = WalletSweepSession::decompress(&buffer).unwrap();
 
-        assert_eq!(session.psbt_bytes, decompressed.psbt_bytes);
         assert_eq!(session.bitcoin_network, decompressed.bitcoin_network);
         assert_eq!(session.bitcoin_destination_address, decompressed.bitcoin_destination_address);
         assert_eq!(session.created_at, decompressed.created_at);
@@ -192,7 +156,6 @@ mod tests {
 
     #[test]
     fn test_compress_decompress_large_psbt() {
-        let psbt_bytes = Bytes::from(vec![0xFF; 1000]);
         let bitcoin_network = Network::Regtest;
         let bitcoin_destination_address =
             Address::from_str("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
@@ -201,18 +164,13 @@ mod tests {
                 .clone();
         let created_at = u64::MAX;
 
-        let session = WalletSweepSession {
-            psbt_bytes,
-            bitcoin_network,
-            bitcoin_destination_address,
-            created_at,
-        };
+        let session =
+            WalletSweepSession { bitcoin_network, bitcoin_destination_address, created_at };
 
         let mut buffer = Vec::new();
         session.clone().compress_to_buf(&mut buffer);
         let decompressed = WalletSweepSession::decompress(&buffer).unwrap();
 
-        assert_eq!(session.psbt_bytes, decompressed.psbt_bytes);
         assert_eq!(session.bitcoin_network, decompressed.bitcoin_network);
         assert_eq!(session.bitcoin_destination_address, decompressed.bitcoin_destination_address);
         assert_eq!(session.created_at, decompressed.created_at);
@@ -229,13 +187,11 @@ mod tests {
         ];
 
         for (network, address_str) in networks.iter().zip(addresses.iter()) {
-            let psbt_bytes = Bytes::from(vec![0x42]);
             let bitcoin_destination_address =
                 Address::from_str(address_str).unwrap().as_unchecked().clone();
             let created_at = 1234567890;
 
             let session = WalletSweepSession {
-                psbt_bytes,
                 bitcoin_network: *network,
                 bitcoin_destination_address,
                 created_at,
@@ -268,15 +224,10 @@ mod tests {
 
     #[test]
     fn test_decompress_invalid_address() {
-        let psbt_bytes = Bytes::from(vec![0x01, 0x02]);
         let bitcoin_network = Network::Bitcoin;
         let created_at: u64 = 1234567890;
 
         let mut buffer = Vec::new();
-
-        // Write PSBT
-        buffer.extend_from_slice(&(psbt_bytes.len() as u32).to_le_bytes());
-        buffer.extend_from_slice(&psbt_bytes);
 
         // Write network
         let network_magic = bitcoin::consensus::serialize(&bitcoin_network.magic());

@@ -9,4 +9,4 @@ mod table_transporter;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 
-pub use migrate::{is_migration_needed, migrate_botanix_tables};
+pub use migrate::{is_migration_needed, migrate_botanix_tables, TABLES_TO_MIGRATE};
