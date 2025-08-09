@@ -12,7 +12,7 @@ use alloy_transport::{
 use alloy_transport_http::{reqwest::Url, Http, ReqwestTransport};
 use alloy_transport_ipc::IpcConnect;
 use alloy_transport_ws::WsConnect;
-use btcserverlib::jwt::{Claims, JwtSecret};
+use btc_server_client::jwt::{Claims, JwtSecret};
 use futures::FutureExt;
 use reqwest::header::HeaderValue;
 use std::task::{Context, Poll};

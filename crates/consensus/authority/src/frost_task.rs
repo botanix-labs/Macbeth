@@ -16,11 +16,10 @@ use botanix_data_parser::{
     DataParser, Error as DataParserError,
 };
 use botanix_storage::{StagedHeaderReader, StagedHeaderWriter};
-use btcserverlib::{
-    extended_client::{BtcServerExtendedApi, GrpcClientError},
-    wallet::psbt::frost_id_from_bytes,
+use btc_server_client::{
+    BtcServerExtendedApi, ConsensusCheckpointRequest, GrpcClientError, PendingPegout, Utxo,
 };
-use client::{ConsensusCheckpointRequest, PendingPegout, Utxo};
+use btcserverlib::wallet::psbt::frost_id_from_bytes;
 use futures::{pin_mut, StreamExt};
 use reth_chainspec::ChainSpec;
 use reth_network::{
@@ -171,7 +170,7 @@ where
         wallet_state_response: &WalletStateResponse,
     ) -> Result<(), FinalizedPegoutIdsSyncSerializationError> {
         // create the request
-        let request = client::GetFinalizedPegoutIdsRequest { chunk_size };
+        let request = btc_server_client::GetFinalizedPegoutIdsRequest { chunk_size };
 
         // call the streaming RPC method
         let response = self.btc_server.get_finalized_pegout_ids(request).await?;
@@ -441,7 +440,7 @@ where
 
         // Calling get pk
         // Attempt to get the aggregate public key and store in storage
-        if let Ok(public_key) = self.btc_server.get_public_key(client::Empty {}).await {
+        if let Ok(public_key) = self.btc_server.get_public_key(btc_server_client::Empty {}).await {
             info!(target: "consensus::authority::frost_task::start_task", " received aggregate public key from dkg state machine {:?}", public_key);
             if let Ok(secp_pk) = secp256k1::PublicKey::from_slice(
                 hex::decode(public_key.publickey)
@@ -879,7 +878,7 @@ where
             match tokio::time::timeout(timeout, self.rx.recv()).await {
                 // Received a DKG payload from the frost task, forwarding to btc-server.
                 Ok(Some(dkg)) => {
-                    let req = client::DkgPayload {
+                    let req = btc_server_client::DkgPayload {
                         sender: dkg.sender,
                         recipient: dkg.recipient,
                         payload: dkg.data,
@@ -894,7 +893,9 @@ where
                         }
                     };
 
-                    if let Ok(resp) = self.btc_server.get_public_key(client::Empty {}).await {
+                    if let Ok(resp) =
+                        self.btc_server.get_public_key(btc_server_client::Empty {}).await
+                    {
                         self.metrics.created_agg_pub_keys.increment(1);
 
                         // decode the public key and assign it to the self variable
@@ -923,7 +924,11 @@ where
                 Err(_) => {
                     warn!(target: "consensus::authority::frost_task::DkgRunnerTask", "DKG timeout triggered");
 
-                    let resp = match self.btc_server.get_dkg_payloads(client::Empty {}).await {
+                    let resp = match self
+                        .btc_server
+                        .get_dkg_payloads(btc_server_client::Empty {})
+                        .await
+                    {
                         Ok(r) => r,
                         Err(err) => {
                             timeout = DEFAULT_TIMEOUT;
@@ -945,7 +950,7 @@ where
     }
     async fn gossip_payloads(
         &self,
-        payloads: Vec<client::DkgPayload>,
+        payloads: Vec<btc_server_client::DkgPayload>,
     ) -> Result<(), FrostTaskError> {
         if payloads.is_empty() {
             return Ok(());

@@ -57,6 +57,8 @@ service BtcServer {
 
     rpc ResetAllUtxos(ResetAllUtxosRequest) returns (Empty) {}
 
+    rpc RecoverMissingUtxos(RecoverMissingUtxosRequest) returns (RecoverMissingUtxosResponse) {}
+
     rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
 
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
@@ -113,6 +115,15 @@ message ResetAllUtxosRequest {
     repeated Utxo utxos = 1;
 }
 
+message RecoverMissingUtxosRequest {
+    repeated UtxoToRecover utxos = 1;
+}
+
+message RecoverMissingUtxosResponse {
+    uint64 total_requested = 1;
+    uint64 total_recovered = 2;
+}
+
 message ResetWalletStateRequest {
     repeated FinalizedPegout finalized_pegout_ids = 1;
 }
@@ -146,6 +157,12 @@ message Utxo {
     OutPoint outpoint = 1;
     TxOut output = 2;
     string eth_address = 3;
+}
+
+message UtxoToRecover {
+    OutPoint outpoint = 1;
+    // empty eth_address for change utxo
+    string eth_address = 2;
 }
 
 message GetAllUtxosResponse {

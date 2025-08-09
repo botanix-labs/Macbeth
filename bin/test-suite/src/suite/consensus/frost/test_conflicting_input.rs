@@ -63,7 +63,7 @@ pub async fn test_conflicting_input(
         let mut client =
             clients.get(0).cloned().ok_or_else(|| anyhow::anyhow!("client not found"))?;
         let res = client
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await

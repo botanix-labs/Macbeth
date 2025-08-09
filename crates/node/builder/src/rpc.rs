@@ -1,6 +1,6 @@
 //! Builder support for rpc components.
 
-use btcserverlib::jwt::JwtSecret;
+use btc_server_client::jwt::JwtSecret;
 use futures::TryFutureExt;
 use reth_chainspec::ChainSpec;
 use reth_node_api::{BuilderProvider, FullNodeComponents};

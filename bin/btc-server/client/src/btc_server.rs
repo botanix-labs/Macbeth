@@ -65,6 +65,18 @@ pub struct ResetAllUtxosRequest {
     pub utxos: ::prost::alloc::vec::Vec<Utxo>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecoverMissingUtxosRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub utxos: ::prost::alloc::vec::Vec<UtxoToRecover>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct RecoverMissingUtxosResponse {
+    #[prost(uint64, tag = "1")]
+    pub total_requested: u64,
+    #[prost(uint64, tag = "2")]
+    pub total_recovered: u64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetWalletStateRequest {
     #[prost(message, repeated, tag = "1")]
     pub finalized_pegout_ids: ::prost::alloc::vec::Vec<FinalizedPegout>,
@@ -110,6 +122,14 @@ pub struct Utxo {
     #[prost(message, optional, tag = "2")]
     pub output: ::core::option::Option<TxOut>,
     #[prost(string, tag = "3")]
+    pub eth_address: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UtxoToRecover {
+    #[prost(message, optional, tag = "1")]
+    pub outpoint: ::core::option::Option<OutPoint>,
+    /// empty eth_address for change utxo
+    #[prost(string, tag = "2")]
     pub eth_address: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -932,6 +952,30 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "ResetAllUtxos"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn recover_missing_utxos(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RecoverMissingUtxosRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RecoverMissingUtxosResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/RecoverMissingUtxos",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "RecoverMissingUtxos"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_signing_status(

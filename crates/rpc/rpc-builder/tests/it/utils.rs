@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use botanix_rpc_config::botanix_config::Botanix;
-use btcserverlib::jwt::JwtSecret;
+use btc_server_client::jwt::JwtSecret;
 use reth_beacon_consensus::BeaconConsensusEngineHandle;
 use reth_chainspec::MAINNET;
 use reth_ethereum_engine_primitives::EthEngineTypes;
