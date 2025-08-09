@@ -1148,7 +1148,7 @@ where
                     .expect("failed to update wallet sweep session");
             }
 
-            warn!(target: "consensus::authority::frost_task::WalletSweepTask", "Wallet sweep session stream diconnected. Reconnect in 1 second");
+            warn!(target: "consensus::authority::frost_task::WalletSweepTask", "Wallet sweep session stream disconnected. Reconnect in 1 second");
 
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
