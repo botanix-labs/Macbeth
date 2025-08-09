@@ -113,7 +113,7 @@ impl SweepCommand {
         let btc_server_jwt_secret = JwtSecret::from_file(&self.btc_server_jwt_secret_path)
             .wrap_err_with(|| {
                 format!(
-                    "Failed to read btc server jwt toke from {:?}",
+                    "Failed to read btc server jwt token from {:?}",
                     self.btc_server_jwt_secret_path
                 )
             })?;
