@@ -493,9 +493,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
             info!(target: "reth::cli", "Recovering missing UTXOs...");
 
-            // for now use hard coded file path for testing
-            let utxos = read_utxos_from_file(Path::new("test_utxo_recovery.json"));
-
+            let utxos = read_utxos_from_file(Path::new("utxo_recovery.json"));
             let recover_request = RecoverMissingUtxosRequest { utxos };
 
             // Only proceed if we have UTXOs to recover
@@ -1264,9 +1262,9 @@ mod tests {
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use reth_node_core::args::{utils::get_botanix_chain, FedMemberPubKey, FederationTomlConfig};
     use std::{
-        net::{IpAddr, Ipv4Addr},
-        path::Path,
+        io::Write, net::{IpAddr, Ipv4Addr}, path::Path
     };
+    use tempfile::NamedTempFile;
 
     use secp256k1::rand;
 
@@ -1572,5 +1570,60 @@ mod tests {
 
         // make sure the ipc path is not the default
         assert_ne!(cmd.rpc.ipcpath, String::from("/tmp/reth.ipc"));
+    }
+
+    #[test]
+    fn test_read_utxos_from_file_success() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let json_content = r#"[
+            {
+                "txid": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                "vout": 0,
+                "eth_address": "0x742d35cc6554c8532b5fd1b61cdb58d5c5c5e0c2"
+            },
+            {
+                "txid": "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
+                "vout": 1,
+                "eth_address": ""
+            }
+        ]"#;
+        temp_file.write_all(json_content.as_bytes()).unwrap();
+
+        let utxos = read_utxos_from_file(temp_file.path());
+
+        assert_eq!(utxos.len(), 2);
+        assert_eq!(utxos[0].eth_address, "0x742d35cc6554c8532b5fd1b61cdb58d5c5c5e0c2");
+        assert_eq!(utxos[0].outpoint.as_ref().unwrap().vout, 0);
+        assert_eq!(utxos[1].eth_address, "");
+        assert_eq!(utxos[1].outpoint.as_ref().unwrap().vout, 1);
+    }
+
+    #[test]
+    fn test_read_utxos_from_file_invalid_json() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let invalid_json = r#"[{"txid": "invalid"}"#; // Missing closing bracket
+        temp_file.write_all(invalid_json.as_bytes()).unwrap();
+
+        let utxos = read_utxos_from_file(temp_file.path());
+        assert_eq!(utxos.len(), 0); // Should return empty vec on error
+    }
+
+    #[test]
+    fn test_read_utxos_from_file_missing_file() {
+        let utxos = read_utxos_from_file(Path::new("nonexistent_file.json"));
+        assert_eq!(utxos.len(), 0); // Should return empty vec on error
+    }
+
+    #[test]
+    fn test_utxo_recovery_data_conversion() {
+        let data = UtxoRecoveryData {
+            txid: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            vout: 5,
+            eth_address: "0xabcdef".to_string(),
+        };
+
+        let utxo: UtxoToRecover = data.into();
+        assert_eq!(utxo.eth_address, "0xabcdef");
+        assert_eq!(utxo.outpoint.unwrap().vout, 5);
     }
 }
