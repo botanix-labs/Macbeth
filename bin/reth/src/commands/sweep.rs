@@ -2,9 +2,7 @@
 
 use bitcoin::{address::NetworkUnchecked, FeeRate};
 use botanix_data_parser::{DataParser, SerializationType, DEFAULT_COMPRESSION_STRATEGY};
-use botanix_wallet_sweep::{
-    dump::read_dumps_from_dir, dump_utxos, request::DestinationConfig, WalletSweepRequest,
-};
+use botanix_wallet_sweep::{request::DestinationConfig, WalletSweepRequest};
 use btc_server_client::{jwt::JwtSecret, BtcServerExtendedApi, Empty, GrpcClientFactory};
 use btcserverlib::{database::Db, dkg, federation_args::FederationTomlConfig};
 use clap::{Parser, Subcommand};
@@ -20,7 +18,7 @@ pub struct SweepCommand {
     #[arg(long, default_value = "127.0.0.1:8080", value_parser = clap::value_parser!(SocketAddr))]
     btc_server_address: SocketAddr,
 
-    #[arg(long, value_parser = clap::value_parser!(PathBuf).exists().is_file())]
+    #[arg(long, value_parser = parse_file_exists)]
     btc_server_jwt_secret_path: PathBuf,
 
     /// Emergency sweep subcommand to execute
@@ -31,16 +29,6 @@ pub struct SweepCommand {
 /// Available emergency sweep subcommands
 #[derive(Debug, Subcommand)]
 pub enum SweepSubcommands {
-    /// Dump UTXOs from the BTC server into a file
-    ///
-    /// This command retrieves all UTXOs from the BTC server and saves them
-    /// into a file for later sharing with the coordinator.
-    #[command()]
-    DumpUtxos {
-        /// Path to output file for UTXOs
-        #[arg(long, value_parser = !clap::value_parser!(PathBuf).exists())]
-        output_file_path: PathBuf,
-    },
     /// Initiate an emergency sweep session (coordinator only)
     ///
     /// This command initiates a wallet sweep session by creating a request
@@ -52,10 +40,10 @@ pub enum SweepSubcommands {
         #[command(flatten)]
         utxo: UtxoOptions,
         /// Path to federation config path
-        #[arg(long, value_parser = clap::value_parser!(PathBuf).exists().is_file())]
+        #[arg(long, value_parser = parse_file_exists)]
         federation_config_path: PathBuf,
         /// Path to coordinator private key
-        #[arg(long, value_parser = clap::value_parser!(PathBuf).exists().is_file())]
+        #[arg(long, value_parser = parse_file_exists)]
         coordinator_key: PathBuf,
         // /// JWT secret file path for btc-server authentication
         // #[arg(long)]
@@ -66,21 +54,21 @@ pub enum SweepSubcommands {
         // /// Chunk size for UTXO pagination
         // #[arg(long, default_value = "1000")]
         // chunk_size: u32,
-        #[arg(long, value_parser = !clap::value_parser!(PathBuf).exists())]
+        #[arg(long, value_parser = parse_file_not_exists)]
         output_request_file_path: PathBuf,
     },
     /// Accept an emergency sweep request to participate in signing session
     #[command()]
     AcceptRequest {
         /// Path to wallet sweep request JSON file
-        #[arg(long, value_parser = clap::value_parser!(PathBuf).exists().is_file())]
+        #[arg(long, value_parser = parse_file_exists)]
         request_file_path: PathBuf,
     },
     /// Construct PSBT from an emergency sweep request for ingesting or manual signing
     #[command()]
     Psbt {
         /// Path to wallet sweep request JSON file
-        #[arg(long, value_parser = clap::value_parser!(PathBuf).exists().is_file())]
+        #[arg(long, value_parser = parse_file_exists)]
         request_file_path: PathBuf,
     },
 }
@@ -94,7 +82,7 @@ struct DestinationOptions {
     #[arg(long)]
     address: bitcoin::Address<NetworkUnchecked>,
     /// Fee rate in sat/vB
-    #[arg(long, value_parser = FeeRate::from_sat_per_vb(clap::value_parser!(u64)))]
+    #[arg(long, value_parser = parse_fee_rate)]
     fee_rate: FeeRate,
 }
 
@@ -124,9 +112,6 @@ struct UtxoOptions {
     /// Consensus threshold percentage (75-95)
     #[arg(long, default_value = "80", value_parser = clap::value_parser!(u8).range(75..=95))]
     consensus_threshold: u8,
-    /// Path to directory with UTXO data files
-    #[arg(long, value_parser = clap::value_parser!(PathBuf).exists().is_dir())]
-    utxo_data_dir_path: PathBuf,
 }
 
 impl SweepCommand {
@@ -137,8 +122,8 @@ impl SweepCommand {
         let btc_server_jwt_secret = JwtSecret::from_file(&self.btc_server_jwt_secret_path)
             .wrap_err_with(|| {
                 format!(
-                    "Failed to read btc server jwt toke from {}",
-                    self.btc_server_jwt_secret_path.to_str()
+                    "Failed to read btc server jwt toke from {:?}",
+                    self.btc_server_jwt_secret_path
                 )
             })?;
 
@@ -167,21 +152,6 @@ impl SweepCommand {
         info!("Btc server authenticated");
 
         match &self.command {
-            SweepSubcommands::DumpUtxos { output_file_path } => {
-                let dump =
-                    dump_utxos(&mut btc_server_client).await.wrap_err("Failed to dump UTXOs")?;
-
-                // Create parent directories if they do not exist
-                fs::create_dir_all(output_file_path.parent().unwrap()).wrap_err_with(|| {
-                    format!("Failed to create directory for output file: {:?}", output_file_path)
-                })?;
-
-                let dump_bytes = dump.to_bytes().await.wrap_err("Failed to serialize UTXO dump")?;
-
-                fs::write(output_file_path, dump_bytes).wrap_err_with(|| {
-                    format!("Failed to write dump into file: {:?}", output_file_path)
-                })?;
-            }
             SweepSubcommands::Initiate {
                 destination,
                 utxo,
@@ -208,9 +178,7 @@ impl SweepCommand {
                 //     info!(target: "reth::cli", "JWT secret: {}", jwt_path.display());
                 // }
 
-                let utxo_dumps = read_dumps_from_dir(&utxo.utxo_data_dir_path)?;
-
-                let session_request = WalletSweepRequest::build();
+                let session_request = WalletSweepRequest::build()?;
 
                 session_request.accept(&mut btc_server_client).await?;
 
@@ -220,15 +188,15 @@ impl SweepCommand {
                 fs::write(output_request_file_path, &request_string)?;
             }
             SweepSubcommands::AcceptRequest { request_file_path } => {
-                let request = WalletSweepRequest::from_json_file(request_file_path)?;
+                let request = WalletSweepRequest::from_json_file(request_file_path).await?;
 
                 request.accept(&mut btc_server_client).await?;
             }
             SweepSubcommands::Psbt { request_file_path } => {
-                let request = WalletSweepRequest::from_json_file(request_file_path)?;
+                let request = WalletSweepRequest::from_json_file(request_file_path).await?;
 
                 let psbt = botanix_wallet_sweep::create_psbt(request).wrap_err_with(|| {
-                    format!("Failed to create PSBT from request file {}", request_file_path)
+                    format!("Failed to create PSBT from request file {:?}", request_file_path)
                 })?;
 
                 // TODO: Save PSBT to file or write to std out if pipe is provided
@@ -237,4 +205,40 @@ impl SweepCommand {
 
         Ok(())
     }
+}
+
+fn parse_dir_exists(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+    if path_buf.exists() && path_buf.is_dir() {
+        Ok(path_buf)
+    } else {
+        Err(format!("Path '{}' does not exist or is not a directory", path))
+    }
+}
+
+fn parse_file_exists(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+    if path_buf.exists() && path_buf.is_file() {
+        Ok(path_buf)
+    } else {
+        Err(format!("File '{}' does not exist", path))
+    }
+}
+
+fn parse_file_not_exists(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+    if !path_buf.exists() {
+        Ok(path_buf)
+    } else {
+        Err(format!("File '{}' already exists", path))
+    }
+}
+
+fn parse_fee_rate(rate: &str) -> Result<FeeRate, String> {
+    let sat_vb = rate.parse::<u64>().map_err(|_| format!("Invalid fee rate: {}", rate))?;
+    if sat_vb == 0 {
+        return Err("Fee rate cannot be zero".to_string());
+    }
+
+    FeeRate::from_sat_per_vb(sat_vb).ok_or(format!("Too big fee rate {}", rate))
 }

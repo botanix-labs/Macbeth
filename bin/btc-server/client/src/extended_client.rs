@@ -13,21 +13,8 @@ use crate::{
     },
     jwt::{Claims, JwtSecret},
     AcceptWalletSweepSessionRequest, AcceptWalletSweepSessionResponse, BtcServerClient,
-    WalletSweepSessionUpdateResponse, WalletSweepSessionUpdatesRequest,
-};
-use crate::{
-    btc_server::{
-        ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty, FinalizeSignerRequest,
-        FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
-        GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
-        GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
-        GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
-        GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, RecoverMissingUtxosRequest,
-        RecoverMissingUtxosResponse, ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage,
-        SigningPackageRequest, ToSignRequest, WalletStateResponse,
-    },
-    jwt::{Claims, JwtSecret},
-    BtcServerClient, GetUtxoStateRequest, GetUtxoStateResponse,
+    RecoverMissingUtxosRequest, RecoverMissingUtxosResponse, WalletSweepSessionUpdateResponse,
+    WalletSweepSessionUpdatesRequest,
 };
 use displaydoc::Display as DisplayDoc;
 use futures_util::future::BoxFuture;

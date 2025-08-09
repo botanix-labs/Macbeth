@@ -15,11 +15,18 @@ use botanix_data_parser::{
     prost_parser::{ProstError, ProstMessageSerdelizer},
     DataParser, Error as DataParserError,
 };
-use botanix_storage::{StagedHeaderReader, StagedHeaderWriter, WalletSweepSessionWriter};
-use btc_server_client::{BtcServerExtendedApi, ConsensusCheckpointRequest, GrpcClientError, PendingPegout, Utxo, WalletSweepSessionUpdateResponse};
+use botanix_storage::{
+    models::{WalletSweepSession, WalletSweepSessionId},
+    StagedHeaderReader, StagedHeaderWriter, WalletSweepSessionReader, WalletSweepSessionWriter,
+};
+use btc_server_client::{
+    BtcServerExtendedApi, ConsensusCheckpointRequest, GrpcClientError, PendingPegout, Utxo,
+    WalletSweepSessionUpdateResponse,
+};
 use btcserverlib::wallet::psbt::frost_id_from_bytes;
 use futures::{pin_mut, Stream, StreamExt};
 use reth_chainspec::ChainSpec;
+use reth_db::table::Decompress;
 use reth_network::{
     frost::{
         manager::{
@@ -41,8 +48,6 @@ use tendermint_rpc::client::HttpClient;
 use tokio::sync::mpsc::{self, error::SendError};
 use tonic::Status;
 use tracing::{debug, error, info, trace, warn};
-use botanix_storage::models::{WalletSweepSession, WalletSweepSessionId};
-use reth_db::table::Decompress;
 
 // TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]
@@ -83,6 +88,7 @@ pub struct FrostTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient> {
     /// aggregate public key is available, and the `start_task` method has hence
     /// started the DKG process.
     dkg_task: Option<mpsc::Sender<DkgResponse>>,
+    wallet_sweep_task: Option<mpsc::Sender<WalletSweepSessionId>>,
     /// Pre-configured data-parser
     compressor: DataParser,
     /// btc server client
@@ -111,7 +117,12 @@ where
     ToFrostMan: 'static + Send + Sync + ToFrostManager + Clone,
     BF: Clone + 'static + Send + Sync,
     RDB: BlockReaderIdExt + StateProviderFactory + CanonStateSubscriptions + Clone + 'static,
-    BDB: StagedHeaderReader + StagedHeaderWriter + Clone + 'static,
+    BDB: StagedHeaderReader
+        + StagedHeaderWriter
+        + WalletSweepSessionReader
+        + WalletSweepSessionWriter
+        + Clone
+        + 'static,
     EF: Clone + 'static + Send + Sync,
     Source: RandomSource,
     BtcServerClient: BtcServerExtendedApi + Clone,
@@ -153,6 +164,7 @@ where
             btc_server,
             check_staged_headers: true,
             dkg_task: None,
+            wallet_sweep_task: None,
             compressor,
             metrics,
             cbft_rpc_provider,
@@ -473,7 +485,15 @@ where
             info!(target: "consensus::authority::frost_task::start_task", "DKG runner task started...");
         }
 
-        WalletSweepTask::new()
+        {
+            let tx = WalletSweepTask::new(
+                self.frost_handle.clone(),
+                self.storage.clone(),
+                self.btc_server.clone(),
+                Arc::clone(&self.metrics),
+            );
+            self.wallet_sweep_task = Some(tx);
+        }
 
         let mut canon_state_notifs = self.storage.reth_database.subscribe_to_canonical_state();
 
@@ -1024,8 +1044,6 @@ struct WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient> {
     rx: mpsc::Receiver<WalletSweepSessionId>,
     // Frost network Handler
     frost_handle: ToFrostMan,
-    // Frost Id lookup table
-    frost_ids: HashMap<frost_secp256k1_tr::Identifier, secp256k1::PublicKey>,
     // Shared storage to insert aggregate public key
     storage: Storage<EF, BF, RDB, BDB>,
     // btc-server client
@@ -1035,18 +1053,18 @@ struct WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient> {
 }
 
 impl<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
-WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
+    WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
 where
     EF: 'static + Send + Sync,
     BF: 'static + Send + Sync,
     RDB: BlockReaderIdExt
-    + StateProviderFactory
-    + CanonStateSubscriptions
-    + Clone
-    + 'static
-    + Send
-    + Sync,
-    BDB: WalletSweepSessionWriter + Clone + 'static + Send + Sync,
+        + StateProviderFactory
+        + CanonStateSubscriptions
+        + Clone
+        + 'static
+        + Send
+        + Sync,
+    BDB: WalletSweepSessionReader + WalletSweepSessionWriter + Clone + 'static + Send + Sync,
     ToFrostMan: 'static + Send + Sync + ToFrostManager,
     BtcServerClient: BtcServerExtendedApi,
 {
@@ -1059,7 +1077,7 @@ where
     ) -> mpsc::Sender<WalletSweepSessionId> {
         let (tx, rx) = mpsc::channel(100);
 
-        let task = Self { rx, frost_handle, frost_ids, storage, btc_server, metrics };
+        let task = Self { rx, frost_handle, storage, btc_server, metrics };
 
         // Spawn-off the task, which will keep interacting with the btc-server.
         tokio::spawn(task.run());
@@ -1069,7 +1087,11 @@ where
     async fn run(mut self) {
         loop {
             let request = btc_server_client::WalletSweepSessionUpdatesRequest {};
-            let mut stream = match self.btc_server.subscribe_to_wallet_sweep_session_updates(request).await {
+            let mut stream = match self
+                .btc_server
+                .subscribe_to_wallet_sweep_session_updates(request)
+                .await
+            {
                 Ok(stream) => {
                     debug!(target: "consensus::authority::frost_task::WalletSweepTask", "Connected to wallet sweep session updates");
 
@@ -1082,13 +1104,15 @@ where
                 }
             };
 
+            pin_mut!(stream);
+
             while let Some(received) = stream.next().await {
                 let session_update = match received {
                     Ok(message) => {
                         trace!(target: "consensus::authority::frost_task::WalletSweepTask", "Received message from wallet sweep session stream");
 
                         message
-                    },
+                    }
                     Err(e) => {
                         warn!(target: "consensus::authority::frost_task::WalletSweepTask", "Received error from wallet sweep session stream: {e}");
 
@@ -1096,13 +1120,21 @@ where
                     }
                 };
 
-                if self.storage.botanix_database_factory.is_wallet_sweep_session_exists(session_update.session_id.into()) {
+                let session_id =
+                    session_update.session_id.as_slice().try_into().expect("todo: handle error");
+
+                if self
+                    .storage
+                    .botanix_database_factory
+                    .is_wallet_sweep_session_exists(session_id)
+                    .expect("todo: handle error")
+                {
                     trace!(target: "consensus::authority::frost_task::WalletSweepTask", "Skip wallet sweep session update - session already exists");
 
                     continue;
                 }
 
-                let session = match WalletSweepSession::decompress(session_update.session_bytes).await {
+                let session = match WalletSweepSession::decompress(session_update.session_bytes) {
                     Ok(session) => session,
                     Err(e) => {
                         error!(target: "consensus::authority::frost_task::WalletSweepTask", "Failed to deserialize wallet sweep session: {e}");
@@ -1111,7 +1143,10 @@ where
                     }
                 };
 
-                self.storage.botanix_database_factory.update_wallet_sweep_session(session).expect("failed to update wallet sweep session");
+                self.storage
+                    .botanix_database_factory
+                    .update_wallet_sweep_session(session)
+                    .expect("failed to update wallet sweep session");
             }
 
             warn!(target: "consensus::authority::frost_task::WalletSweepTask", "Wallet sweep session stream diconnected. Reconnect in 1 second");

@@ -131,7 +131,7 @@ pub struct Utxo {}
 impl TryFrom<btc_server_client::Utxo> for Utxo {
     type Error = eyre::Error;
 
-    fn try_from(value: btc_server_client::Utxo) -> Result<Self, Self::Error> {
+    fn try_from(_value: btc_server_client::Utxo) -> Result<Self, Self::Error> {
         // TODO: Implement conversion logic here
         Ok(Utxo {})
     }

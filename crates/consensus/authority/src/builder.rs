@@ -16,7 +16,8 @@ use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFac
 use botanix_data_parser::{DataParser, SerializationType};
 use botanix_storage::{
     RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter, StagedHeaderReader,
-    StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
+    StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter, WalletSweepSessionReader,
+    WalletSweepSessionWriter,
 };
 use btc_server_client::{BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory};
 use reth_chainspec::ChainSpec;
@@ -86,6 +87,8 @@ where
         + SnapshotWriter
         + WalletStateSyncWriter
         + WalletStateSyncReader
+        + WalletSweepSessionReader
+        + WalletSweepSessionWriter
         + StagedHeaderReader
         + StagedHeaderWriter
         + RuntimeTransitionsReadWrite
