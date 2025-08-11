@@ -6,10 +6,7 @@ use crate::{
 };
 use futures::FutureExt;
 use reth_primitives::{BlockBody, B256};
-use std::{
-    fmt::{Debug, Formatter},
-    ops::RangeInclusive,
-};
+use std::fmt::{Debug, Formatter};
 use tokio::sync::oneshot;
 
 /// A test client for fetching bodies
@@ -40,11 +37,10 @@ where
 {
     type Output = BodiesFut;
 
-    fn get_block_bodies_with_priority_and_range_hint(
+    fn get_block_bodies_with_priority(
         &self,
         hashes: Vec<B256>,
         _priority: Priority,
-        _range_hint: Option<RangeInclusive<u64>>,
     ) -> Self::Output {
         let (tx, rx) = oneshot::channel();
         let _ = tx.send((self.responder)(hashes));

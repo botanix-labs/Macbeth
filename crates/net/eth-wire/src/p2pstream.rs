@@ -40,7 +40,7 @@ const MAX_P2P_MESSAGE_ID: u8 = P2PMessageID::Pong as u8;
 
 /// [`HANDSHAKE_TIMEOUT`] determines the amount of time to wait before determining that a `p2p`
 /// handshake has timed out.
-pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// [`PING_TIMEOUT`] determines the amount of time to wait before determining that a `p2p` ping has
 /// timed out.
@@ -193,11 +193,8 @@ impl<S> CanDisconnect<Bytes> for P2PStream<S>
 where
     S: Sink<Bytes, Error = io::Error> + Unpin + Send + Sync,
 {
-    fn disconnect(
-        &mut self,
-        reason: DisconnectReason,
-    ) -> Pin<Box<dyn futures::Future<Output = Result<(), P2PStreamError>> + Send + '_>> {
-        Box::pin(self.disconnect(reason))
+    async fn disconnect(&mut self, reason: DisconnectReason) -> Result<(), P2PStreamError> {
+        self.disconnect(reason).await
     }
 }
 
