@@ -21,7 +21,7 @@ use btcserverlib::{
 };
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo};
-use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput, TransactionSigned};
+use reth_primitives::{Bloom, BloomInput, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
@@ -301,8 +301,9 @@ pub(crate) async fn epoch_pegouts(
     best_block: u64,
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
+    epoch_length: u64,
 ) -> Result<Vec<PegoutData>, EpochPegoutsError> {
-    let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
+    let start_block = find_epoch_start(epoch_length, best_block);
     let mut pegouts = Vec::new();
     for block in start_block..=best_block {
         match client.block_by_number(block) {
@@ -1089,16 +1090,17 @@ mod tests {
     #[test]
     fn test_find_epoch_start() {
         let mut rng = rand::thread_rng();
+        const TEST_EPOCH_LENGTH: u64 = 100;
 
         let current_block_1 = 0;
-        let current_block_2 = current_block_1 + rng.gen_range(1..EPOCH_LENGTH);
-        let current_block_3 = current_block_1 + EPOCH_LENGTH;
-        let current_block_4 = current_block_3 + rng.gen_range(1..EPOCH_LENGTH);
+        let current_block_2 = current_block_1 + rng.gen_range(1..TEST_EPOCH_LENGTH);
+        let current_block_3 = current_block_1 + TEST_EPOCH_LENGTH;
+        let current_block_4 = current_block_3 + rng.gen_range(1..TEST_EPOCH_LENGTH);
 
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_1), current_block_1);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_2), current_block_1);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_3), current_block_3);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_4), current_block_3);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_1), current_block_1);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_2), current_block_1);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_3), current_block_3);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_4), current_block_3);
     }
 
     #[test]

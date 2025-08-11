@@ -79,7 +79,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         Address::ZERO,
     );
     let edh = hex::encode(extra_data_header.serialize());
-    let (genesis, pegin_conf_depth, chain_id, genesis_hash) = match network {
+    let (genesis, pegin_conf_depth, chain_id, genesis_hash, epoch_length) = match network {
         BotanixNetwork::Mainnet => {
             let genesis_config = BotanixMainnetGenesisConfig { edh: &edh };
             let rendered_json = genesis_config.render()?;
@@ -89,6 +89,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
                 BOTANIX_MAINNET.bitcoin_checkpoint_confirmation_depth,
                 BOTANIX_MAINNET_CHAIN_ID,
                 BOTANIX_MAINNET.genesis_hash,
+                BOTANIX_MAINNET.epoch_length,
             )
         }
         BotanixNetwork::Testnet | BotanixNetwork::Devnet => {
@@ -100,6 +101,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
                 BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth,
                 BOTANIX_TESTNET_CHAIN_ID,
                 BOTANIX_TESTNET.genesis_hash,
+                BOTANIX_TESTNET.epoch_length,
             )
         }
     };
@@ -110,6 +112,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         chain_id,
         genesis_hash,
         lst_fee_receiver,
+        epoch_length,
     );
     Ok(botanix_chain)
 }
