@@ -258,6 +258,15 @@ pub struct PoaNodeCommand<Ext: clap::Args + fmt::Debug = NoArgs> {
         value_parser = parse_ethereum_address,
     )]
     pub block_fee_recipient_address: Option<Address>,
+
+    /// Path to JSON file containing UTXOs to recover
+    #[arg(
+        long,
+        value_name = "UTXO_RECOVERY_FILE",
+        env = "RETH_UTXO_RECOVERY_FILE",
+        verbatim_doc_comment
+    )]
+    pub utxo_recovery_file: Option<PathBuf>,
 }
 
 impl PoaNodeCommand {
@@ -305,6 +314,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             cometbft_rpc_host,
             state_sync,
             block_fee_recipient_address,
+            utxo_recovery_file,
         } = self;
 
         // Load reth config which is a bit different than cli config
@@ -447,27 +457,31 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             })?;
             info!(target: "reth::cli", "Btc server authenticated");
 
-            info!(target: "reth::cli", "Recovering missing UTXOs...");
-
-            let utxos = read_utxos_from_file(std::path::Path::new("utxo_recovery.json"));
-            let recover_request = RecoverMissingUtxosRequest { utxos };
-
-            // Only proceed if we have UTXOs to recover
-            if !recover_request.utxos.is_empty() {
-                match btc_server_client.recover_missing_utxos(recover_request).await {
-                    Ok(response) => {
-                        info!(target: "reth::cli",
-                            "UTXO recovery completed successfully. Requested: {}, Recovered: {}",
-                            response.total_requested, response.total_recovered
-                        );
+            // if utxo_recovery_file is provided, use it to recover UTXOs
+            if let Some(utxo_recovery_file) = utxo_recovery_file {
+                info!(target: "reth::cli", "Recovering missing UTXOs from file: {}", utxo_recovery_file.display());
+                let utxos = read_utxos_from_file(std::path::Path::new(utxo_recovery_file));
+                info!(target: "reth::cli", "UTXOs to recover: {:?}", utxos);
+                let recover_request = RecoverMissingUtxosRequest { utxos };
+                // Only proceed if we have UTXOs to recover
+                if !recover_request.utxos.is_empty() {
+                    match btc_server_client.recover_missing_utxos(recover_request).await {
+                        Ok(response) => {
+                            info!(target: "reth::cli",
+                                "UTXO recovery completed successfully. Requested: {}, Recovered: {}",
+                                response.total_requested, response.total_recovered
+                            );
+                        }
+                        Err(err) => {
+                            error!(target: "reth::cli", "UTXO recovery failed: {}", err);
+                        }
                     }
-                    Err(err) => {
-                        error!(target: "reth::cli", "UTXO recovery failed: {}", err);
-                    }
+                } else {
+                    error!(target: "reth::cli", "UTXO_RECOVERY_FILE is provided but no UTXOs to recover");
                 }
             } else {
-                info!(target: "reth::cli", "No UTXOs to recover, skipping recovery");
-            }
+                info!(target: "reth::cli", "No UTXOs recovery file provided");
+            };
 
             Some(btc_server_factory)
         } else {
