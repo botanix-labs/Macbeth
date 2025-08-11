@@ -2,8 +2,15 @@ use log::{error, info};
 use reth_fs_util::read_json_file;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use thiserror::Error;
 
 use btc_server_client::{OutPoint, UtxoToRecover};
+
+#[derive(Debug, Error)]
+pub enum UtxoRecoveryError {
+    #[error("Invalid txid hex: {txid}")]
+    InvalidTxid { txid: String },
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 struct UtxosRecoveryConfig {
@@ -21,18 +28,17 @@ struct UtxoRecoveryData {
     eth_address: String,
 }
 
-impl From<UtxoRecoveryData> for UtxoToRecover {
-    fn from(data: UtxoRecoveryData) -> Self {
-        UtxoToRecover {
-            outpoint: Some(OutPoint {
-                txid: hex::decode(&data.txid).unwrap_or_else(|_| {
-                    error!(target: "reth::cli", "Invalid txid hex: {}", data.txid);
-                    vec![0u8; 32] // Fallback to zeros
-                }),
-                vout: data.vout,
-            }),
+impl TryFrom<UtxoRecoveryData> for UtxoToRecover {
+    type Error = UtxoRecoveryError;
+
+    fn try_from(data: UtxoRecoveryData) -> Result<Self, Self::Error> {
+        let txid = hex::decode(&data.txid)
+            .map_err(|_| UtxoRecoveryError::InvalidTxid { txid: data.txid })?;
+
+        Ok(UtxoToRecover {
+            outpoint: Some(OutPoint { txid, vout: data.vout }),
             eth_address: data.eth_address,
-        }
+        })
     }
 }
 
@@ -40,9 +46,20 @@ impl From<UtxoRecoveryData> for UtxoToRecover {
 pub fn read_utxos_from_file(file_path: &Path) -> Vec<UtxoToRecover> {
     match read_json_file::<Vec<UtxoRecoveryData>>(file_path) {
         Ok(utxos_data) => {
-            info!(target: "reth::cli", "Successfully loaded {} UTXOs from {:?}", 
-                utxos_data.len(), file_path);
-            utxos_data.into_iter().map(Into::into).collect()
+            let valid_utxos: Vec<UtxoToRecover> = utxos_data
+                .into_iter()
+                .filter_map(|data| match UtxoToRecover::try_from(data) {
+                    Ok(utxo) => Some(utxo),
+                    Err(err) => {
+                        error!(target: "reth::cli", "Skipping invalid UTXO: {}", err);
+                        None
+                    }
+                })
+                .collect();
+
+            info!(target: "reth::cli", "Successfully loaded {} valid UTXOs from {:?}", 
+                valid_utxos.len(), file_path);
+            valid_utxos
         }
         Err(err) => {
             error!(target: "reth::cli", "Failed to read UTXO recovery file {:?}: {}", 
@@ -131,7 +148,7 @@ mod tests {
             eth_address: "0xabcdef".to_string(),
         };
 
-        let utxo: UtxoToRecover = data.into();
+        let utxo: UtxoToRecover = data.try_into().unwrap();
         assert_eq!(utxo.eth_address, "0xabcdef");
         assert_eq!(utxo.outpoint.unwrap().vout, 5);
     }
