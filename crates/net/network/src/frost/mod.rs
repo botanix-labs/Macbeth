@@ -15,7 +15,7 @@ pub mod messages;
 pub mod protocol;
 
 /// Enum for peer message responses for dkg, signing and pbft
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub enum PeerMessageResponse {
     /// Dkg response
     Dkg(DkgResponse),
@@ -108,7 +108,7 @@ impl fmt::Display for WalletStateResponse {
 }
 
 /// Response structure for internal communication
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct SigningResponse {
     /// The Response Type
     pub response_type: SigningEventResponseType,
@@ -116,6 +116,21 @@ pub struct SigningResponse {
     pub signing_session_id: Vec<u8>,
     /// Frost data
     pub psbt: Vec<u8>,
+    /// The type of the PSBT
+    /// New field added to distinguish between different PSBT types when we introduced
+    /// wallet sweep functionality. This field defaults to `Pegout` for backward compatibility.
+    pub psbt_type: SigningPsbtType,
+}
+
+/// Enum defining the PSBT type in a sign request
+/// for further validation
+#[repr(u8)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+pub enum SigningPsbtType {
+    /// PSBT for a pegout transaction
+    Pegout = 0x00,
+    /// PSBT for a wallet sweep transaction
+    Sweep = 0x01,
 }
 
 impl fmt::Display for SigningResponse {

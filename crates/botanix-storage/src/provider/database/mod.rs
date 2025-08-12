@@ -38,6 +38,7 @@ mod runtime_transitions;
 mod snapshot;
 mod staged_header;
 mod wallet_state_sync;
+mod wallet_sweep;
 
 pub use factory::*;
 pub use provider::*;

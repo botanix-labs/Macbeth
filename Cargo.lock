@@ -2528,7 +2528,9 @@ version = "1.2.0"
 dependencies = [
  "arbitrary",
  "auto_impl",
+ "bitcoin 0.32.6",
  "botanix-storage",
+ "btc-server-client",
  "bytes",
  "eyre",
  "itertools 0.14.0",
@@ -2591,6 +2593,36 @@ name = "botanix-utils"
 version = "1.2.0"
 dependencies = [
  "tracing",
+]
+
+[[package]]
+name = "botanix-wallet-sweep"
+version = "1.2.0"
+dependencies = [
+ "async-trait",
+ "bitcoin 0.32.6",
+ "bitcoincore-rpc",
+ "botanix-data-parser",
+ "botanix-storage",
+ "btc-server-client",
+ "ethers",
+ "eyre",
+ "frost-secp256k1-tr",
+ "futures",
+ "hex",
+ "lazy_static",
+ "miniscript 11.2.3",
+ "mockall",
+ "once_cell",
+ "rand 0.6.5",
+ "reth-primitives",
+ "secp256k1 0.28.2",
+ "serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid 1.17.0",
 ]
 
 [[package]]
@@ -2661,6 +2693,8 @@ dependencies = [
  "bitcoin 0.32.6",
  "bitcoin_hashes 0.14.0",
  "bitcoincore-rpc",
+ "botanix-storage",
+ "botanix-wallet-sweep",
  "btc-server-client",
  "chacha20poly1305",
  "ciborium",
@@ -2670,6 +2704,7 @@ dependencies = [
  "displaydoc",
  "dotenvy",
  "env_logger",
+ "eyre",
  "frost-secp256k1-tr",
  "futures",
  "futures-util",
@@ -9168,10 +9203,12 @@ dependencies = [
  "botanix-cli-parsers",
  "botanix-comet-bft-rpc",
  "botanix-configs",
+ "botanix-data-parser",
  "botanix-rpc-config",
  "botanix-storage",
  "botanix-storage-migrate",
  "botanix-utils",
+ "botanix-wallet-sweep",
  "btc-server",
  "btc-server-client",
  "clap",

@@ -14,6 +14,7 @@
 //! - [`BlockSnapshots`]: Maps block numbers to snapshot IDs
 //! - [`ChunkBlocks`]: Maps chunk IDs to their block numbers
 //! - [`SnapshotSyncs`]: Tracks snapshot synchronization progress
+//! - [`WalletSweepSessions`]: Maps wallet sweep session IDs to session data
 //!
 //! ### Header Tables
 //! - [`StagedHeader`]: Maps block hashes to headers with pegin/pegout data
@@ -29,6 +30,7 @@
 
 use super::models::*;
 use reth_db::{tables, TableType, TableViewer};
+pub use reth_db_api::table::Compress;
 use reth_primitives::{BlockNumber, B256};
 use std::fmt;
 
@@ -83,4 +85,10 @@ tables! {
     /// Tracks the progress of snapshot synchronization operations,
     /// including total chunks, applied chunks, and synchronization state.
     table SnapshotSyncs<Key = SnapshotSyncId, Value = SnapshotSync>;
+
+    /// Stores wallet sweep session data.
+    ///
+    /// This table is used to manage wallet sweep sessions, which
+    /// involve emergency sweeping funds from one wallet to another.
+    table WalletSweepSessions<Key = WalletSweepSessionId, Value = WalletSweepSession>;
 }

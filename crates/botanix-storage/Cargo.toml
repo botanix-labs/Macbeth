@@ -19,6 +19,8 @@ eyre = { workspace = true }
 itertools = { workspace = true }
 modular-bitfield = { workspace = true }
 reth-codecs = { workspace = true }
+btc-server-client = { path = "../../bin/btc-server/client" }
+bitcoin = { workspace = true, features = ["serde"] }
 
 # reth
 reth-db = { workspace = true, features = ["mdbx"] }

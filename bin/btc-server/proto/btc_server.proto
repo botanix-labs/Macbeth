@@ -21,10 +21,6 @@ service BtcServer {
 
     rpc NewDkgPayload(DkgPayload) returns(DkgPayloads) {}
 
-    // Emergency Coordination Endpoints
-    
-    rpc GetMemberUtxoState(GetUtxoStateRequest) returns (GetUtxoStateResponse) {}
-
     // Signing Endpoints
 
     rpc GetRound1SigningPackage(SigningPackageRequest) returns (SigningPackage) {}
@@ -68,6 +64,12 @@ service BtcServer {
     rpc ResetWalletState(ResetWalletStateRequest) returns (Empty) {}
 
     rpc NewConsensusCheckpoint(ConsensusCheckpointRequest) returns (Empty) {}
+
+    // This method must be called by all signers, including coordinator to accept the wallet sweep session.
+    rpc AcceptWalletSweepSession(AcceptWalletSweepSessionRequest) returns (AcceptWalletSweepSessionResponse) {}
+
+    // Streaming endpoint to sync the wallet sweep session with poa node.
+    rpc SubscribeToWalletSweepSessionUpdates(WalletSweepSessionUpdatesRequest) returns (stream WalletSweepSessionUpdateResponse) {}
 }
 
 message PendingPegout {
@@ -283,37 +285,19 @@ message GetSessionIdsResponse {
     repeated bytes data = 1;
 }
 
-// Emergency Coordination Messages
-
-message GetUtxoStateRequest {
-    string session_id = 1;                    // Emergency session identifier
-    bytes coordinator_signature = 2;         // Coordinator authority proof
-    uint64 timestamp = 3;                     // Request timestamp in seconds since Unix epoch for replay protection
-    uint32 chunk_size = 4;                    // Maximum UTXOs per response (default: 1000, max: 10000)
-    uint32 chunk_index = 5;                   // Zero-based chunk index for pagination
+message AcceptWalletSweepSessionRequest {
+    bytes request = 1;
 }
 
-message GetUtxoStateResponse {
-    uint32 member_id = 1;                    // This member's federation ID
-    repeated EmergencyUtxoInfo utxos = 2;    // UTXO subset for this chunk
-    uint64 timestamp = 3;                    // State capture timestamp in seconds since Unix epoch
-    bytes member_signature = 4;              // Response integrity signature
-    uint32 chunk_index = 5;                  // Current chunk index
-    uint32 total_chunks = 6;                 // Total number of chunks
-    bool is_final = 7;                       // True if this is the last chunk
-    uint32 total_utxo_count = 8;             // Total UTXOs across all chunks
-    uint64 total_value_sat = 9;              // Total value across all chunks for validation
+message AcceptWalletSweepSessionResponse {
 }
 
-message EmergencyUtxoInfo {
-    bytes txid = 1;              // Transaction ID
-    uint32 vout = 2;             // Output index  
-    uint64 value = 3;            // Satoshi amount
-    bytes script_pubkey = 4;     // Script public key
-    string eth_address = 5;      // Associated Ethereum address (hex, empty if none)
-    uint32 version = 6;          // UTXO version for compatibility
-    bytes witness_utxo = 7;      // Serialized TxOut for PSBT witness_utxo field
-    uint32 key_generation_id = 8; // Key generation ID (for Phase 2 multi-key support)
+message WalletSweepSessionUpdatesRequest {
+}
+
+message WalletSweepSessionUpdateResponse {
+    bytes session_id = 1;
+    bytes session_bytes = 2;
 }
 
 enum SigningStatus {

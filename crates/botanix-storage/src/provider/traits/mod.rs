@@ -22,6 +22,7 @@ mod runtime_transitions;
 mod snapshot;
 mod staged_header;
 mod wallet_state_sync;
+mod wallet_sweep;
 
 pub use activation_manager::*;
 pub use factory::*;
@@ -29,3 +30,4 @@ pub use runtime_transitions::*;
 pub use snapshot::*;
 pub use staged_header::*;
 pub use wallet_state_sync::*;
+pub use wallet_sweep::*;

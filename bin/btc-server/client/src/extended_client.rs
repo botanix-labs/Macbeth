@@ -1,4 +1,5 @@
 //! Extended bitcoin server client with authentication
+
 use crate::{
     btc_server::{
         ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty, FinalizeSignerRequest,
@@ -6,12 +7,14 @@ use crate::{
         GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
         GetGatewayAddressResponse, GetPendingPegoutsResponse, GetPublicKeyResponse,
         GetSessionIdsRequest, GetSessionIdsResponse, GetSigningStatusRequest,
-        GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, RecoverMissingUtxosRequest,
-        RecoverMissingUtxosResponse, ResetAllUtxosRequest, ResetWalletStateRequest, SigningPackage,
-        SigningPackageRequest, ToSignRequest, WalletStateResponse,
+        GetSigningStatusResponse, GetTrackedTxsResponse, MakeTxRequest, ResetAllUtxosRequest,
+        ResetWalletStateRequest, SigningPackage, SigningPackageRequest, ToSignRequest,
+        WalletStateResponse,
     },
     jwt::{Claims, JwtSecret},
-    BtcServerClient, GetUtxoStateRequest, GetUtxoStateResponse,
+    AcceptWalletSweepSessionRequest, AcceptWalletSweepSessionResponse, BtcServerClient,
+    RecoverMissingUtxosRequest, RecoverMissingUtxosResponse, WalletSweepSessionUpdateResponse,
+    WalletSweepSessionUpdatesRequest,
 };
 use displaydoc::Display as DisplayDoc;
 use futures_util::future::BoxFuture;
@@ -158,10 +161,24 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         &mut self,
         request: RecoverMissingUtxosRequest,
     ) -> BoxFuture<'_, Result<RecoverMissingUtxosResponse, GrpcClientError>>;
-    fn get_member_utxo_state(
+    fn accept_wallet_sweep_session(
         &mut self,
-        request: GetUtxoStateRequest,
-    ) -> BoxFuture<'_, Result<GetUtxoStateResponse, GrpcClientError>>;
+        request: AcceptWalletSweepSessionRequest,
+    ) -> BoxFuture<'_, Result<AcceptWalletSweepSessionResponse, GrpcClientError>>;
+
+    fn subscribe_to_wallet_sweep_session_updates(
+        &mut self,
+        request: WalletSweepSessionUpdatesRequest,
+    ) -> BoxFuture<
+        '_,
+        Result<
+            impl tonic::codegen::tokio_stream::Stream<
+                    Item = Result<WalletSweepSessionUpdateResponse, tonic::Status>,
+                > + Send
+                + 'static,
+            GrpcClientError,
+        >,
+    >;
 }
 
 /// Macros for generating grpc methods implementation
@@ -265,7 +282,6 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
     generate_method!(get_public_key, Empty, GetPublicKeyResponse);
     generate_method!(get_dkg_payloads, Empty, DkgPayloads);
     generate_method!(new_dkg_payload, DkgPayload, DkgPayloads);
-    generate_method!(get_member_utxo_state, GetUtxoStateRequest, GetUtxoStateResponse);
     generate_method!(get_round1_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(get_round2_signing_package, SigningPackageRequest, SigningPackage);
     generate_method!(new_round1_signing_package, SigningPackage, Empty);
@@ -294,6 +310,16 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
         get_finalized_pegout_ids,
         GetFinalizedPegoutIdsRequest,
         GetFinalizedPegoutIdsResponse
+    );
+    generate_method!(
+        accept_wallet_sweep_session,
+        AcceptWalletSweepSessionRequest,
+        AcceptWalletSweepSessionResponse
+    );
+    generate_stream_method!(
+        subscribe_to_wallet_sweep_session_updates,
+        WalletSweepSessionUpdatesRequest,
+        WalletSweepSessionUpdateResponse
     );
 }
 

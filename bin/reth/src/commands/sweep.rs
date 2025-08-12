@@ -1,16 +1,25 @@
 //! Emergency wallet sweep command implementation
 
+use bitcoin::{address::NetworkUnchecked, FeeRate};
+use botanix_data_parser::{DataParser, SerializationType, DEFAULT_COMPRESSION_STRATEGY};
+use botanix_wallet_sweep::{request::DestinationConfig, WalletSweepRequest};
+use btc_server_client::{jwt::JwtSecret, BtcServerExtendedApi, Empty, GrpcClientFactory};
+use btcserverlib::{database::Db, dkg, federation_args::FederationTomlConfig};
 use clap::{Parser, Subcommand};
+use eyre::{OptionExt, WrapErr};
 use reth_cli_runner::CliContext;
-use std::path::PathBuf;
-use tracing::{info, warn};
+use std::{fs, net::SocketAddr, path::PathBuf, str::FromStr};
+use tracing::{error, info, warn};
 
 /// Emergency wallet sweep operations for the Botanix federation
 #[derive(Debug, Parser)]
 pub struct SweepCommand {
-    /// Path to the btc-server database directory
-    #[arg(long, env = "RETH_SWEEP_DB_PATH")]
-    pub db_path: Option<PathBuf>,
+    /// Local BTC server address
+    #[arg(long, default_value = "127.0.0.1:8080", value_parser = clap::value_parser!(SocketAddr))]
+    btc_server_address: SocketAddr,
+
+    #[arg(long, value_parser = parse_file_exists)]
+    btc_server_jwt_secret_path: PathBuf,
 
     /// Emergency sweep subcommand to execute
     #[command(subcommand)]
@@ -20,206 +29,197 @@ pub struct SweepCommand {
 /// Available emergency sweep subcommands
 #[derive(Debug, Subcommand)]
 pub enum SweepSubcommands {
-    /// Initiate emergency sweep coordination (coordinator only)
-    #[command(about = "Initiate emergency sweep as designated coordinator")]
+    /// Initiate an emergency sweep session (coordinator only)
+    ///
+    /// This command initiates a wallet sweep session by creating a request
+    /// that should be share with other federation members to accept siging session.
+    #[command()]
     Initiate {
-        /// Destination address for swept funds
-        #[arg(long)]
-        destination: String,
-        /// Fee rate in sat/vB
-        #[arg(long)]
-        fee_rate: u64,
-        /// Consensus threshold percentage (75-95)
-        #[arg(long, default_value = "80")]
-        consensus_threshold: u8,
-        /// Path to federation config
-        #[arg(long)]
-        federation_config: PathBuf,
+        #[command(flatten)]
+        destination: DestinationOptions,
+        /// Path to federation config path
+        #[arg(long, value_parser = parse_file_exists)]
+        federation_config_path: PathBuf,
         /// Path to coordinator private key
-        #[arg(long)]
+        #[arg(long, value_parser = parse_file_exists)]
         coordinator_key: PathBuf,
-        /// JWT secret file path for btc-server authentication
-        #[arg(long)]
-        jwt_secret: Option<PathBuf>,
-        /// Timeout in seconds for member queries
-        #[arg(long, default_value = "30")]
-        timeout: u64,
-        /// Chunk size for UTXO pagination
-        #[arg(long, default_value = "1000")]
-        chunk_size: u32,
+        // /// JWT secret file path for btc-server authentication
+        // #[arg(long)]
+        // jwt_secret: Option<PathBuf>,
+        // /// Timeout in seconds for member queries
+        // #[arg(long, default_value = "30")]
+        // timeout: u64,
+        // /// Chunk size for UTXO pagination
+        // #[arg(long, default_value = "1000")]
+        // chunk_size: u32,
+        #[arg(long, value_parser = parse_file_not_exists)]
+        output_request_file_path: PathBuf,
     },
-    /// Accept and validate emergency sweep request
-    #[command(about = "Accept emergency sweep request from coordinator")]
+    /// Accept an emergency sweep request to participate in signing session
+    #[command()]
     AcceptRequest {
-        /// Path to sweep request JSON file
-        request_file: PathBuf,
-        /// btc-server address for local database access
-        #[arg(long)]
-        btc_server_addr: Option<String>,
-        /// JWT secret file path for btc-server authentication
-        #[arg(long)]
-        jwt_secret: Option<PathBuf>,
+        /// Path to wallet sweep request JSON file
+        #[arg(long, value_parser = parse_file_exists)]
+        request_file_path: PathBuf,
     },
-    /// Participate in emergency sweep signing
-    #[command(about = "Participate in emergency sweep threshold signing")]
-    Sign {
-        /// Path to accepted sweep request file
-        #[arg(long)]
-        request_file: PathBuf,
-        /// btc-server address for local database access
-        #[arg(long)]
-        btc_server_addr: Option<String>,
-        /// JWT secret file path for btc-server authentication
-        #[arg(long)]
-        jwt_secret: Option<PathBuf>,
+    /// Construct PSBT from an emergency sweep request for ingesting or manual signing
+    #[command()]
+    Psbt {
+        /// Path to wallet sweep request JSON file
+        #[arg(long, value_parser = parse_file_exists)]
+        request_file_path: PathBuf,
     },
+}
+
+#[derive(Debug, Parser)]
+struct DestinationOptions {
+    /// Bitcoin network to use (mainnet, testnet, regtest)
+    #[arg(long)]
+    network: bitcoin::Network,
+    /// Destination address for swept funds
+    #[arg(long)]
+    address: bitcoin::Address<NetworkUnchecked>,
+    /// Fee rate in sat/vB
+    #[arg(long, value_parser = parse_fee_rate)]
+    fee_rate: FeeRate,
+}
+
+impl DestinationConfig for DestinationOptions {
+    fn network(&self) -> eyre::Result<bitcoin::Network> {
+        Ok(self.network)
+    }
+
+    fn address(&self) -> eyre::Result<bitcoin::Address> {
+        let address = self.address.clone().require_network(self.network).wrap_err_with(|| {
+            format!(
+                "invalid destination address: {}",
+                self.address.clone().assume_checked().to_string()
+            )
+        })?;
+
+        Ok(address)
+    }
+
+    fn fee_rate(&self) -> eyre::Result<FeeRate> {
+        Ok(self.fee_rate)
+    }
 }
 
 impl SweepCommand {
     /// Execute the sweep command
     pub async fn execute(&self, _ctx: CliContext) -> eyre::Result<()> {
-        info!(target: "reth::cli", "Starting emergency sweep command");
+        info!("Starting emergency sweep command");
 
-        // Validate database path is provided
-        let db_path = match &self.db_path {
-            Some(path) => path.clone(),
-            None => {
-                return Err(eyre::eyre!(
-                    "Database path is required. Please specify --db-path pointing to btc-server database directory."
-                ));
-            }
-        };
+        let btc_server_jwt_secret = JwtSecret::from_file(&self.btc_server_jwt_secret_path)
+            .wrap_err_with(|| {
+                format!(
+                    "Failed to read btc server jwt token from {:?}",
+                    self.btc_server_jwt_secret_path
+                )
+            })?;
 
-        if !db_path.exists() {
-            return Err(eyre::eyre!(
-                "Database path does not exist: {}. Please ensure btc-server database directory exists.",
-                db_path.display()
-            ));
-        }
+        let btc_server_factory = GrpcClientFactory::new(
+            self.btc_server_address.to_string(),
+            Some(btc_server_jwt_secret),
+        );
 
-        info!(target: "reth::cli", "Using database path: {}", db_path.display());
+        let mut btc_server_client =
+            btc_server_factory.build_and_connect().await.wrap_err_with(|| {
+                format!(
+                    "Failed to connect to btc server at {} with JWT secret {}",
+                    self.btc_server_address,
+                    self.btc_server_jwt_secret_path.display()
+                )
+            })?;
+
+        info!("Btc server connected");
+
+        // Check our connection to the btc server is authenticated properly
+        btc_server_client
+            .health_check(Empty {})
+            .await
+            .map_err(|err| eyre::eyre!("Failed to authenticate to btc server: {}", err))?;
+
+        info!("Btc server authenticated");
 
         match &self.command {
-            SweepSubcommands::Initiate { 
-                destination, 
-                fee_rate, 
-                consensus_threshold, 
-                federation_config, 
+            SweepSubcommands::Initiate {
+                destination,
+                federation_config_path,
                 coordinator_key,
-                jwt_secret,
-                timeout,
-                chunk_size,
+                output_request_file_path,
             } => {
-                self.execute_initiate(
-                    &db_path,
-                    destination,
-                    *fee_rate,
-                    *consensus_threshold,
-                    federation_config,
-                    coordinator_key,
-                    jwt_secret,
-                    *timeout,
-                    *chunk_size,
-                ).await
-            }
-            SweepSubcommands::AcceptRequest { 
-                request_file, 
-                btc_server_addr, 
-                jwt_secret 
-            } => {
-                self.execute_accept_request(&db_path, request_file, btc_server_addr, jwt_secret).await
-            }
-            SweepSubcommands::Sign { 
-                request_file, 
-                btc_server_addr, 
-                jwt_secret 
-            } => {
-                self.execute_sign(&db_path, request_file, btc_server_addr, jwt_secret).await
-            }
-        }
-    }
+                let federation_config_string = std::fs::read_to_string(&federation_config_path)?;
+                let federation_config = FederationTomlConfig::from_str(&federation_config_string)
+                    .map_err(|_| {
+                    dkg::Error::BadConfig("invalid federation Toml config".to_string())
+                })?;
 
-    /// Execute initiate command (placeholder)
-    async fn execute_initiate(
-        &self,
-        _db_path: &PathBuf,
-        destination: &str,
-        fee_rate: u64,
-        consensus_threshold: u8,
-        federation_config: &PathBuf,
-        coordinator_key: &PathBuf,
-        jwt_secret: &Option<PathBuf>,
-        timeout: u64,
-        chunk_size: u32,
-    ) -> eyre::Result<()> {
-        info!(target: "reth::cli", "Starting emergency sweep initiation");
-        info!(target: "reth::cli", "Destination: {}, Fee rate: {} sat/vB, Consensus threshold: {}%", 
-              destination, fee_rate, consensus_threshold);
-        info!(target: "reth::cli", "Federation config: {}, Coordinator key: {}", 
-              federation_config.display(), coordinator_key.display());
-        info!(target: "reth::cli", "Timeout: {}s, Chunk size: {}", timeout, chunk_size);
-        
-        if let Some(jwt_path) = jwt_secret {
-            info!(target: "reth::cli", "JWT secret: {}", jwt_path.display());
+                info!("Starting emergency sweep initiation");
+                // info!(
+                //     "Destination: {}, Fee rate: {} sat/vB, Consensus threshold: {}%",
+                //     destination, fee_rate, consensus_threshold
+                // );
+                // info!(target: "reth::cli", "Federation config: {}, Coordinator key: {}",
+                //           federation_config.display(), coordinator_key.display());
+                // info!(target: "reth::cli", "Timeout: {}s, Chunk size: {}", timeout, chunk_size);
+                //
+                // if let Some(jwt_path) = jwt_secret {
+                //     info!(target: "reth::cli", "JWT secret: {}", jwt_path.display());
+                // }
+
+                let session_request = WalletSweepRequest::build()?;
+
+                session_request.accept(&mut btc_server_client).await?;
+
+                let request_string = serde_json::to_string(&session_request)
+                    .wrap_err_with(|| "Failed to serialize wallet sweep request")?;
+
+                fs::write(output_request_file_path, &request_string)?;
+            }
+            SweepSubcommands::AcceptRequest { request_file_path } => {
+                let request = WalletSweepRequest::from_json_file(request_file_path).await?;
+
+                request.accept(&mut btc_server_client).await?;
+            }
+            SweepSubcommands::Psbt { request_file_path } => {
+                let request = WalletSweepRequest::from_json_file(request_file_path).await?;
+
+                let psbt = botanix_wallet_sweep::create_psbt(request).wrap_err_with(|| {
+                    format!("Failed to create PSBT from request file {:?}", request_file_path)
+                })?;
+
+                // TODO: Save PSBT to file or write to std out if pipe is provided
+            }
         }
-        
-        warn!(target: "reth::cli", "Emergency sweep initiate command not yet implemented");
-        println!("⚠️  Emergency sweep initiation is not yet implemented.");
-        println!("📋 This command will coordinate emergency sweeps as designated coordinator.");
-        println!("🎯 Will collect UTXO state from federation members via gRPC calls.");
-        println!("📊 Will apply consensus threshold and generate deterministic PSBT.");
-        println!("🔐 Will immediately begin FROST threshold signing process.");
+
         Ok(())
     }
+}
 
-    /// Execute accept request command (placeholder)
-    async fn execute_accept_request(
-        &self,
-        _db_path: &PathBuf,
-        request_file: &PathBuf,
-        btc_server_addr: &Option<String>,
-        jwt_secret: &Option<PathBuf>,
-    ) -> eyre::Result<()> {
-        info!(target: "reth::cli", "Accepting emergency sweep request from: {}", request_file.display());
-        
-        if let Some(addr) = btc_server_addr {
-            info!(target: "reth::cli", "btc-server address: {}", addr);
-        }
-        if let Some(jwt_path) = jwt_secret {
-            info!(target: "reth::cli", "JWT secret: {}", jwt_path.display());
-        }
-        
-        warn!(target: "reth::cli", "Emergency sweep accept-request command not yet implemented");
-        println!("⚠️  Emergency sweep accept-request is not yet implemented.");
-        println!("📋 This command will validate and accept coordinator sweep requests.");
-        println!("🔍 Will verify coordinator authority and consensus decisions.");
-        println!("⚖️  Will reconstruct PSBT and perform byte-for-byte validation.");
-        println!("🤝 Will automatically join FROST signing upon validation.");
-        Ok(())
+fn parse_file_exists(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+    if path_buf.exists() && path_buf.is_file() {
+        Ok(path_buf)
+    } else {
+        Err(format!("File '{}' does not exist", path))
+    }
+}
+
+fn parse_file_not_exists(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+    if !path_buf.exists() {
+        Ok(path_buf)
+    } else {
+        Err(format!("File '{}' already exists", path))
+    }
+}
+
+fn parse_fee_rate(rate: &str) -> Result<FeeRate, String> {
+    let sat_vb = rate.parse::<u64>().map_err(|_| format!("Invalid fee rate: {}", rate))?;
+    if sat_vb == 0 {
+        return Err("Fee rate cannot be zero".to_string());
     }
 
-    /// Execute sign command (placeholder)
-    async fn execute_sign(
-        &self,
-        _db_path: &PathBuf,
-        request_file: &PathBuf,
-        btc_server_addr: &Option<String>,
-        jwt_secret: &Option<PathBuf>,
-    ) -> eyre::Result<()> {
-        info!(target: "reth::cli", "Participating in emergency sweep signing for: {}", request_file.display());
-        
-        if let Some(addr) = btc_server_addr {
-            info!(target: "reth::cli", "btc-server address: {}", addr);
-        }
-        if let Some(jwt_path) = jwt_secret {
-            info!(target: "reth::cli", "JWT secret: {}", jwt_path.display());
-        }
-        
-        warn!(target: "reth::cli", "Emergency sweep sign command not yet implemented");
-        println!("⚠️  Emergency sweep signing is not yet implemented.");
-        println!("📋 This command will participate in threshold signing for emergency sweeps.");
-        println!("🔐 Will re-verify PSBT matches accepted request file.");
-        println!("🤝 Will contribute to FROST threshold signature.");
-        Ok(())
-    }
-} 
+    FeeRate::from_sat_per_vb(sat_vb).ok_or(format!("Too big fee rate {}", rate))
+}

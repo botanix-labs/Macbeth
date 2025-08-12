@@ -295,79 +295,20 @@ pub struct GetSessionIdsResponse {
     pub data: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetUtxoStateRequest {
-    /// Emergency session identifier
-    #[prost(string, tag = "1")]
-    pub session_id: ::prost::alloc::string::String,
-    /// Coordinator authority proof
-    #[prost(bytes = "vec", tag = "2")]
-    pub coordinator_signature: ::prost::alloc::vec::Vec<u8>,
-    /// Request timestamp in seconds since Unix epoch for replay protection
-    #[prost(uint64, tag = "3")]
-    pub timestamp: u64,
-    /// Maximum UTXOs per response (default: 1000, max: 10000)
-    #[prost(uint32, tag = "4")]
-    pub chunk_size: u32,
-    /// Zero-based chunk index for pagination
-    #[prost(uint32, tag = "5")]
-    pub chunk_index: u32,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetUtxoStateResponse {
-    /// This member's federation ID
-    #[prost(uint32, tag = "1")]
-    pub member_id: u32,
-    /// UTXO subset for this chunk
-    #[prost(message, repeated, tag = "2")]
-    pub utxos: ::prost::alloc::vec::Vec<EmergencyUtxoInfo>,
-    /// State capture timestamp in seconds since Unix epoch
-    #[prost(uint64, tag = "3")]
-    pub timestamp: u64,
-    /// Response integrity signature
-    #[prost(bytes = "vec", tag = "4")]
-    pub member_signature: ::prost::alloc::vec::Vec<u8>,
-    /// Current chunk index
-    #[prost(uint32, tag = "5")]
-    pub chunk_index: u32,
-    /// Total number of chunks
-    #[prost(uint32, tag = "6")]
-    pub total_chunks: u32,
-    /// True if this is the last chunk
-    #[prost(bool, tag = "7")]
-    pub is_final: bool,
-    /// Total UTXOs across all chunks
-    #[prost(uint32, tag = "8")]
-    pub total_utxo_count: u32,
-    /// Total value across all chunks for validation
-    #[prost(uint64, tag = "9")]
-    pub total_value_sat: u64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct EmergencyUtxoInfo {
-    /// Transaction ID
+pub struct AcceptWalletSweepSessionRequest {
     #[prost(bytes = "vec", tag = "1")]
-    pub txid: ::prost::alloc::vec::Vec<u8>,
-    /// Output index
-    #[prost(uint32, tag = "2")]
-    pub vout: u32,
-    /// Satoshi amount
-    #[prost(uint64, tag = "3")]
-    pub value: u64,
-    /// Script public key
-    #[prost(bytes = "vec", tag = "4")]
-    pub script_pubkey: ::prost::alloc::vec::Vec<u8>,
-    /// Associated Ethereum address (hex, empty if none)
-    #[prost(string, tag = "5")]
-    pub eth_address: ::prost::alloc::string::String,
-    /// UTXO version for compatibility
-    #[prost(uint32, tag = "6")]
-    pub version: u32,
-    /// Serialized TxOut for PSBT witness_utxo field
-    #[prost(bytes = "vec", tag = "7")]
-    pub witness_utxo: ::prost::alloc::vec::Vec<u8>,
-    /// Key generation ID (for Phase 2 multi-key support)
-    #[prost(uint32, tag = "8")]
-    pub key_generation_id: u32,
+    pub request: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct AcceptWalletSweepSessionResponse {}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct WalletSweepSessionUpdatesRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WalletSweepSessionUpdateResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub session_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub session_bytes: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -650,30 +591,6 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "NewDkgPayload"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn get_member_utxo_state(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetUtxoStateRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetUtxoStateResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/GetMemberUtxoState",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "GetMemberUtxoState"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_round1_signing_package(
@@ -1093,6 +1010,65 @@ pub mod btc_server_client {
                     GrpcMethod::new("btc_server.BtcServer", "NewConsensusCheckpoint"),
                 );
             self.inner.unary(req, path, codec).await
+        }
+        /// This method must be called by all signers, including coordinator to accept the wallet sweep session.
+        pub async fn accept_wallet_sweep_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AcceptWalletSweepSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AcceptWalletSweepSessionResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/AcceptWalletSweepSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "AcceptWalletSweepSession"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Streaming endpoint to sync the wallet sweep session with poa node.
+        pub async fn subscribe_to_wallet_sweep_session_updates(
+            &mut self,
+            request: impl tonic::IntoRequest<super::WalletSweepSessionUpdatesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<
+                tonic::codec::Streaming<super::WalletSweepSessionUpdateResponse>,
+            >,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/SubscribeToWalletSweepSessionUpdates",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "btc_server.BtcServer",
+                        "SubscribeToWalletSweepSessionUpdates",
+                    ),
+                );
+            self.inner.server_streaming(req, path, codec).await
         }
     }
 }

@@ -1,0 +1,40 @@
+[package]
+name = "botanix-wallet-sweep"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+async-trait = { workspace = true }
+bitcoin = { workspace = true }
+bitcoincore-rpc = { workspace = true }
+ethers = "2.0.10"
+frost-secp256k1-tr = { workspace = true }
+hex = "0.4.3"
+lazy_static = "1.4.0"
+miniscript = "11.0.0"
+rand = { version = "0.6", features = ["std"] }
+secp256k1 = { version = "0.28", features = ["global-context", "rand", "rand-std", "recovery"] }
+serde = "1.0.171"
+thiserror = "1.0.43"
+tokio = { version = "1.45.0", features = ["full"] }
+tracing = "0.1.40"
+#btc-server = { path = "../../bin/btc-server" }
+btc-server-client = { path = "../../bin/btc-server/client" }
+eyre = { workspace = true }
+botanix-data-parser = { workspace = true }
+botanix-storage = { workspace = true }
+#reth-network = { workspace = true }
+#reth-tasks = { workspace = true }
+reth-primitives = { workspace = true }
+
+## url
+url = { version = "2.2.2", features = ["serde"] }
+once_cell = "1.21.3"
+uuid = { version = "1.17.0", features = ["v4"] }
+futures = "0.3.31"
+
+[dev-dependencies]
+mockall = { workspace = true }

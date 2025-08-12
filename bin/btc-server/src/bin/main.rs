@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate log;
 
+use anyhow::Context;
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::{self, Decodable},
@@ -8,6 +9,8 @@ use bitcoin::{
 };
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
+use botanix_storage::models::WalletSweepSession;
+use botanix_wallet_sweep::WalletSweepRequest;
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btc_server_client::jwt::{JwtError, JwtSecret};
 use btcserverlib::{
@@ -44,10 +47,12 @@ use btcserverlib::{
         util::VerifyingKeyExt,
     },
 };
+use eyre::WrapErr;
 use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
+use sled::{Event, IVec};
 use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,
@@ -58,9 +63,12 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use thiserror::Error;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{mpsc::error::SendError, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
+use tonic::{
+    codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server, Request,
+    Response, Status,
+};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
 
@@ -184,6 +192,18 @@ impl<T> ToStatus<T> for Result<T, hex::FromHexError> {
             Ok(v) => Ok(v),
             Err(e) => Err(badarg!("Failed to hex decode: {}", e)),
         }
+    }
+}
+
+impl<T> ToStatus<T> for Result<T, anyhow::Error> {
+    fn to_status(self) -> Result<T, Status> {
+        self.map_err(|error| Status::internal(error.to_string()))
+    }
+}
+
+impl<T> ToStatus<T> for Result<T, eyre::Report> {
+    fn to_status(self) -> Result<T, Status> {
+        self.map_err(|report| Status::internal(report.to_string()))
     }
 }
 
@@ -669,6 +689,9 @@ where
     type GetFinalizedPegoutIdsStream =
         ReceiverStream<Result<rpc::GetFinalizedPegoutIdsResponse, tonic::Status>>;
 
+    type SubscribeToWalletSweepSessionUpdatesStream =
+        ReceiverStream<Result<rpc::WalletSweepSessionUpdateResponse, tonic::Status>>;
+
     /* General Endpoints */
     async fn health_check(
         &self,
@@ -975,126 +998,6 @@ where
         let res = rpc::GetAllUtxosResponse { utxos };
 
         Ok(tonic::Response::new(res))
-    }
-
-    /// Emergency coordination gRPC endpoint for remote UTXO state collection
-    ///
-    /// This endpoint enables OTHER federation members (coordinators) to query THIS member's
-    /// current UTXO state during emergency sweep coordination. It implements the "functionality
-    /// to retrieve db utxos" mentioned in the commit by exposing UTXO data via authenticated gRPC.
-    ///
-    /// # Purpose
-    /// - **Pull-based Coordination**: Allows coordinators to query member UTXO states remotely
-    /// - **Emergency Initiation**: Used by `emergency-tool sweep initiate` to collect federation state
-    /// - **Consensus Building**: Provides data for coordinator to compute safe UTXO subsets
-    ///
-    /// # Security Features
-    /// - **JWT Authentication**: Validates caller using standard btc-server auth
-    /// - **Session Tracking**: Logs emergency session IDs for audit trails
-    /// - **Response Signing**: Placeholder for future integrity signatures (TODO)
-    /// - **Authority Validation**: Placeholder for coordinator authority checks (TODO)
-    ///
-    /// # Relationship to emergency-tool
-    /// This gRPC endpoint serves a different purpose than emergency-tool's `get_local_utxo_state`:
-    /// - **This endpoint**: Remote access - OTHER members query THIS member's state
-    /// - **emergency-tool function**: Local access - THIS member reads its own database
-    ///
-    /// # Request/Response Flow
-    /// 1. Coordinator calls this endpoint on each federation member
-    /// 2. Each member returns their complete UTXO state
-    /// 3. Coordinator aggregates responses to build consensus
-    /// 4. Coordinator creates deterministic PSBT from consensus UTXOs
-    ///
-    /// # Future Enhancements (TODO)
-    /// - Validate coordinator authority using federation config
-    /// - Implement response signing for integrity verification
-    /// - Add timestamp validation for replay protection
-    /// - Support multi-key generation mapping (Phase 2)
-    async fn get_member_utxo_state(
-        &self,
-        req: tonic::Request<rpc::GetUtxoStateRequest>,
-    ) -> Result<tonic::Response<rpc::GetUtxoStateResponse>, tonic::Status> {
-        self.validate_jwt(&req)?;
-
-        let request = req.into_inner();
-        info!("Emergency UTXO state request from session: {}", request.session_id);
-
-        // TODO: Validate coordinator authority and timestamp
-        // validate_emergency_session_auth(&request)?;
-
-        // Validate pagination parameters
-        let chunk_size = if request.chunk_size == 0 {
-            1000 // Default chunk size
-        } else {
-            std::cmp::min(request.chunk_size, 10000) // Max 10k UTXOs per chunk
-        } as usize;
-        let chunk_index = request.chunk_index as usize;
-
-        // Get all UTXOs for total counting and pagination
-        let all_utxos = self.db.get_all_utxos().to_status()?;
-        let total_utxo_count = all_utxos.len() as u32;
-        let total_value_sat = all_utxos.iter().map(|u| u.output.value.to_sat()).sum();
-
-        // Calculate pagination
-        let total_chunks = if total_utxo_count == 0 {
-            1
-        } else {
-            ((total_utxo_count as usize + chunk_size - 1) / chunk_size) as u32
-        };
-        let start_idx = chunk_index * chunk_size;
-        let end_idx = std::cmp::min(start_idx + chunk_size, all_utxos.len());
-        let is_final = chunk_index >= (total_chunks.saturating_sub(1)) as usize;
-
-        // Get chunk subset
-        let chunk_utxos = if start_idx < all_utxos.len() {
-            &all_utxos[start_idx..end_idx]
-        } else {
-            &[] // Empty slice if chunk_index is out of bounds
-        };
-
-        // Transform to emergency format with key generation metadata
-        let emergency_utxos = chunk_utxos.iter().map(|utxo| {
-            rpc::EmergencyUtxoInfo {
-                txid: utxo.outpoint.txid.to_byte_array().to_vec(),
-                vout: utxo.outpoint.vout,
-                value: utxo.output.value.to_sat(),
-                script_pubkey: utxo.output.script_pubkey.to_bytes(),
-                eth_address: utxo.eth_address.map(hex::encode).unwrap_or_default(),
-                version: utxo.version,
-                witness_utxo: bitcoin::consensus::encode::serialize(&utxo.output),
-                key_generation_id: 0, // TODO: Implement multi-key support in Phase 2
-            }
-        }).collect();
-
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        // TODO: Sign response for integrity
-        let member_signature = vec![]; // Placeholder
-
-        let response = rpc::GetUtxoStateResponse {
-            member_id: self.config.identifier as u32,
-            utxos: emergency_utxos,
-            timestamp,
-            member_signature,
-            chunk_index: chunk_index as u32,
-            total_chunks,
-            is_final,
-            total_utxo_count,
-            total_value_sat,
-        };
-
-        info!(
-            "Emergency UTXO state response: chunk {}/{} with {} UTXOs (total: {} UTXOs, {} sats)",
-            chunk_index + 1,
-            total_chunks,
-            response.utxos.len(),
-            total_utxo_count,
-            total_value_sat
-        );
-        Ok(tonic::Response::new(response))
     }
 
     // Gets the merkle root of the utxo set
@@ -2231,6 +2134,106 @@ where
         panic!("Not used");
     }
 
+    async fn subscribe_to_wallet_sweep_session_updates(
+        &self,
+        request: Request<WalletSweepSessionUpdatesRequest>,
+    ) -> Result<Response<Self::SubscribeToWalletSweepSessionUpdatesStream>, Status> {
+        self.validate_jwt(&request)?;
+
+        let db = self.db.clone();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+
+        let mut receiver_stream = ReceiverStream::new(rx);
+
+        debug!("subscribe_to_wallet_sweep_session_updates: new client connected");
+
+        // Send an update message if we have an existing wallet sweep session
+        match db.get_wallet_sweep_session_bytes() {
+            Ok(Some((session_id_bytes, session_bytes))) => {
+                match tx.blocking_send(Ok(WalletSweepSessionUpdateResponse {
+                    session_id: session_id_bytes.to_vec(),
+                    session_bytes: session_bytes.to_vec(),
+                })) {
+                    Ok(_) => {
+                        trace!("subscribe_to_wallet_sweep_session_updates: sent existing wallet sweep session update")
+                    }
+                    Err(_) => {
+                        debug!("subscribe_to_wallet_sweep_session_updates: client disconnected before sending existing wallet sweep session update");
+
+                        receiver_stream.close();
+
+                        return Ok(Response::new(receiver_stream));
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(_) => {
+                error!("subscribe_to_wallet_sweep_session_updates: failed to get existing wallet sweep session bytes");
+
+                receiver_stream.close();
+
+                return Ok(Response::new(receiver_stream));
+            }
+        }
+
+        tokio::spawn(async move {
+            let mut subscriber = db.subscribe_to_wallet_sweep_session_updates();
+
+            while let Some(event) = (&mut subscriber).await {
+                if let Event::Insert { key, value } = event {
+                    match tx
+                        .send(Ok(WalletSweepSessionUpdateResponse {
+                            session_id: key.to_vec(),
+                            session_bytes: value.to_vec(),
+                        }))
+                        .await
+                    {
+                        Ok(_) => {
+                            trace!("subscribe_to_wallet_sweep_session_updates: sent wallet sweep session update")
+                        }
+                        Err(_) => {
+                            debug!(
+                                "subscribe_to_wallet_sweep_session_updates: client disconnected"
+                            );
+                            break;
+                        }
+                    }
+                };
+            }
+
+            debug!("subscribe_to_wallet_sweep_session_updates: client disconnected");
+        });
+
+        Ok(Response::new(receiver_stream))
+    }
+
+    async fn accept_wallet_sweep_session(
+        &self,
+        rpc_request: Request<AcceptWalletSweepSessionRequest>,
+    ) -> Result<Response<AcceptWalletSweepSessionResponse>, Status> {
+        self.validate_jwt(&rpc_request)?;
+
+        // TODO: validate that request was made from sweep command
+
+        let sweep_request = WalletSweepRequest::from_bytes(&rpc_request.into_inner().request)
+            .await
+            .wrap_err("can't deserialize request")
+            .to_status()?;
+
+        let sweep_session = sweep_request
+            .try_into()
+            .wrap_err("can't deserialize wallet sweep request")
+            .to_status()?;
+
+        self.db
+            .update_wallet_sweep_session(sweep_session)
+            .wrap_err("failed to update wallet sweep session")
+            .to_status()?;
+
+        Ok(Response::new(AcceptWalletSweepSessionResponse {}))
+    }
+
     async fn recover_missing_utxos(
         &self,
         request: tonic::Request<RecoverMissingUtxosRequest>,
@@ -3174,129 +3177,6 @@ mod tests {
         // Verify that both UTXOs remain in database since they're unspent
         assert!(app.db.get_utxo(input_1).unwrap().is_some(), "Unspent UTXO input_1 should remain");
         assert!(app.db.get_utxo(input_2).unwrap().is_some(), "Unspent UTXO input_2 should remain");
-    }
-
-    #[tokio::test]
-    async fn test_get_member_utxo_state_pagination() {
-        let app = setup().await;
-
-        // Create test UTXOs
-        let num_utxos = 25;
-        let mut test_utxos = vec![];
-        for i in 0..num_utxos {
-            let txid = Txid::from_byte_array([i as u8; 32]);
-            let outpoint = OutPoint::new(txid, 0);
-            let utxo = btcserverlib::database::Utxo::new(
-                outpoint,
-                TxOut {
-                    value: Amount::from_sat(100000 + i as u64),
-                    script_pubkey: ScriptBuf::new(),
-                },
-                None, // No pegin address
-                Some(btcserverlib::database::version::UtxoVersion::V1),
-            );
-            test_utxos.push(utxo);
-        }
-
-        // Store UTXOs in database
-        let utxo_refs: Vec<&btcserverlib::database::Utxo> = test_utxos.iter().collect();
-        app.db.store_utxos(&utxo_refs).expect("Failed to store UTXOs");
-
-        // Test pagination with chunk size of 10
-        let chunk_size = 10;
-        let mut all_collected_utxos = vec![];
-        let mut chunk_index = 0;
-
-        loop {
-            let req = tonic::Request::new(rpc::GetUtxoStateRequest {
-                session_id: "test-session".to_string(),
-                coordinator_signature: vec![],
-                timestamp: 1234567890,
-                chunk_size,
-                chunk_index,
-            });
-
-            let response = app.get_member_utxo_state(req).await.unwrap();
-            let response = response.into_inner();
-
-            // Verify pagination metadata
-            assert_eq!(response.total_utxo_count, num_utxos);
-            assert_eq!(response.chunk_index, chunk_index);
-            assert!(response.total_chunks > 0);
-
-            // Collect UTXOs from this chunk
-            all_collected_utxos.extend(response.utxos);
-
-            if response.is_final {
-                break;
-            }
-
-            chunk_index += 1;
-        }
-
-        // Verify we collected all UTXOs
-        assert_eq!(all_collected_utxos.len(), num_utxos as usize);
-
-        // Verify total value calculation
-        let expected_total_value: u64 = (0..num_utxos).map(|i| 100000 + i as u64).sum();
-        assert_eq!(all_collected_utxos.iter().map(|u| u.value).sum::<u64>(), expected_total_value);
-    }
-
-    #[tokio::test]
-    async fn test_get_member_utxo_state_empty_database() {
-        let app = setup().await;
-
-        let req = tonic::Request::new(rpc::GetUtxoStateRequest {
-            session_id: "test-session".to_string(),
-            coordinator_signature: vec![],
-            timestamp: 1234567890,
-            chunk_size: 10,
-            chunk_index: 0,
-        });
-
-        let response = app.get_member_utxo_state(req).await.unwrap();
-        let response = response.into_inner();
-
-        assert_eq!(response.total_utxo_count, 0);
-        assert_eq!(response.total_chunks, 1);
-        assert!(response.is_final);
-        assert!(response.utxos.is_empty());
-        assert_eq!(response.total_value_sat, 0);
-    }
-
-    #[tokio::test]
-    async fn test_get_member_utxo_state_chunk_size_limits() {
-        let app = setup().await;
-
-        // Test default chunk size (0 should default to 1000)
-        let req = tonic::Request::new(rpc::GetUtxoStateRequest {
-            session_id: "test-session".to_string(),
-            coordinator_signature: vec![],
-            timestamp: 1234567890,
-            chunk_size: 0, // Should default to 1000
-            chunk_index: 0,
-        });
-
-        let response = app.get_member_utxo_state(req).await.unwrap();
-        let response = response.into_inner();
-
-        // Should work without error even with empty database
-        assert!(response.is_final);
-
-        // Test maximum chunk size limit (should be capped at 10000)
-        let req = tonic::Request::new(rpc::GetUtxoStateRequest {
-            session_id: "test-session".to_string(),
-            coordinator_signature: vec![],
-            timestamp: 1234567890,
-            chunk_size: 50000, // Should be capped to 10000
-            chunk_index: 0,
-        });
-
-        let response = app.get_member_utxo_state(req).await.unwrap();
-        let response = response.into_inner();
-
-        // Should work without error
-        assert!(response.is_final);
     }
 
     // Helper function to set up app with key package

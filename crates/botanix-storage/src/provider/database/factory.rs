@@ -1,14 +1,15 @@
 use crate::{
     models::{
         ChunkId, HeaderWithPegs, PeerID, RuntimeVersion, Snapshot, SnapshotChunk, SnapshotId,
-        SnapshotSync, SnapshotSyncId, UuidID, WalletStateSyncRecord,
+        SnapshotSync, SnapshotSyncId, UuidID, WalletStateSyncRecord, WalletSweepSession,
+        WalletSweepSessionId,
     },
     provider::database::provider::{
         BotanixDatabaseProvider, BotanixDatabaseProviderRO, BotanixDatabaseProviderRW,
     },
     DatabaseProviderFactoryRO, DatabaseProviderFactoryRW, RuntimeTransitionsReadWrite,
     SnapshotReader, SnapshotWriter, StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader,
-    WalletStateSyncWriter,
+    WalletStateSyncWriter, WalletSweepSessionReader, WalletSweepSessionWriter,
 };
 use reth_db::{init_db, mdbx::DatabaseArguments, DatabaseEnv};
 use reth_db_api::database::Database;
@@ -547,6 +548,36 @@ impl<DB: Database> RuntimeTransitionsReadWrite for BotanixProviderFactory<DB> {
 
     fn get_last_runtime_version(&self) -> ProviderResult<Option<RuntimeVersion>> {
         self.provider_rw()?.get_last_runtime_version()
+    }
+}
+
+impl<DB: Database> WalletSweepSessionReader for BotanixProviderFactory<DB> {
+    fn get_wallet_sweep_session(
+        &self,
+    ) -> ProviderResult<Option<(WalletSweepSessionId, WalletSweepSession)>> {
+        self.provider()?.get_wallet_sweep_session()
+    }
+
+    fn is_wallet_sweep_session_exists(
+        &self,
+        session_id: WalletSweepSessionId,
+    ) -> ProviderResult<bool> {
+        self.provider()?.is_wallet_sweep_session_exists(session_id)
+    }
+}
+
+impl<DB: Database> WalletSweepSessionWriter for BotanixProviderFactory<DB> {
+    fn update_wallet_sweep_session(
+        &self,
+        session: WalletSweepSession,
+    ) -> ProviderResult<WalletSweepSessionId> {
+        let provider = self.provider_rw()?;
+
+        let session_id = provider.update_wallet_sweep_session(session)?;
+
+        provider.commit()?;
+
+        Ok(session_id)
     }
 }
 

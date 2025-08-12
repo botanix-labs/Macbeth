@@ -5,6 +5,18 @@ use reth_db::{Database, DatabaseEnv};
 use reth_db_api::transaction::DbTx;
 use std::path::Path;
 
+/// List of botanix-storage tables to migrate from reth database
+pub const TABLES_TO_MIGRATE: [Tables; 8] = [
+    Tables::Snapshots,
+    Tables::WalletStateSyncs,
+    Tables::StagedHeader,
+    Tables::RuntimeTransitions,
+    Tables::BlockSnapshots,
+    Tables::Chunks,
+    Tables::ChunkBlocks,
+    Tables::SnapshotSyncs,
+];
+
 /// Checks if a migration from a reth database to a botanix database is needed.
 ///
 /// This function verifies reth and botanix database paths and files inside.
@@ -96,7 +108,7 @@ pub fn migrate_botanix_tables(reth_db: &DatabaseEnv, botanix_db: &DatabaseEnv) -
     let mut migrated_tables_count = 0;
     let mut elapsed_time = std::time::Duration::ZERO;
 
-    for table in Tables::ALL {
+    for table in TABLES_TO_MIGRATE {
         tracing::info!("Migrating table {}...", table.name());
 
         // Migrate the table and receive a report

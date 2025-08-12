@@ -320,6 +320,9 @@ tables! {
     /// finalizing a block.
     table StagedHeader<Key = B256, Value = HeaderWithPegs>;
 
+    /// Dummy table to support storage migration logic in the botanix-storage-migrate crate.
+    table WalletSweepSessions<Key = B256, Value = B256>;
+
     /// Stores runtime version transitions across blocks encountered during
     /// finalization.
     table RuntimeTransitions<Key = BlockNumber, Value = RuntimeVersion>;

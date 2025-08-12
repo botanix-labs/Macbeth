@@ -7,6 +7,7 @@ use botanix_storage_migrate::{
         create_test_runtime_transitions, create_test_snapshot_syncs, create_test_snapshots,
         create_test_staged_headers, create_test_wallet_state_syncs,
     },
+    TABLES_TO_MIGRATE,
 };
 use eyre::Context;
 use reth_db::{test_utils::create_test_rw_db, DatabaseEnv};
@@ -98,7 +99,7 @@ pub fn count_table_entries<T: Table>(db: &DatabaseEnv) -> eyre::Result<usize> {
 fn count_botanix_db_tables(db: &DatabaseEnv, expected_count: usize) -> eyre::Result<()> {
     use botanix_storage::tables::Tables;
 
-    for table in Tables::ALL {
+    for table in TABLES_TO_MIGRATE {
         botanix_storage::tables_to_generic!(table, |Table| {
             assert_eq!(count_table_entries::<Table>(db)?, expected_count);
         });
@@ -110,7 +111,7 @@ fn count_botanix_db_tables(db: &DatabaseEnv, expected_count: usize) -> eyre::Res
 fn count_reth_db_botanix_tables(db: &DatabaseEnv, expected_count: usize) -> eyre::Result<()> {
     use botanix_storage::tables::Tables;
 
-    for table in Tables::ALL {
+    for table in TABLES_TO_MIGRATE {
         botanix_storage::tables_to_generic!(table, |Table| {
             // Count entries in the botanix table
             assert_eq!(count_table_entries::<Table>(db)?, expected_count);
