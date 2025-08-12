@@ -24,18 +24,18 @@ pub struct ServerState {
 
 impl ServerState {
     pub async fn new(telemetry: Arc<Telemetry>) -> Self {
-        Self { 
-            start_time: Instant::now(), 
-            connection_count: Arc::new(RwLock::new(0)), 
+        Self {
+            start_time: Instant::now(),
+            connection_count: Arc::new(RwLock::new(0)),
             telemetry,
-            last_main_process_heartbeat: Arc::new(RwLock::new(Instant::now()))
+            last_main_process_heartbeat: Arc::new(RwLock::new(Instant::now())),
         }
     }
-    
+
     pub fn update_main_process_heartbeat(&self) {
         *self.last_main_process_heartbeat.write() = Instant::now();
     }
-    
+
     pub fn get_main_process_health(&self) -> bool {
         // Consider main process healthy if we received a heartbeat within last 30 seconds
         self.last_main_process_heartbeat.read().elapsed() < Duration::from_secs(30)
@@ -50,10 +50,10 @@ impl ServerState {
 
     pub async fn get_health(&self) -> HealthResponse {
         let last_heartbeat_elapsed = self.last_main_process_heartbeat.read().elapsed();
-        HealthResponse { 
+        HealthResponse {
             uptime: self.uptime().as_secs(),
             main_process_healthy: self.get_main_process_health(),
-            last_heartbeat_seconds_ago: last_heartbeat_elapsed.as_secs()
+            last_heartbeat_seconds_ago: last_heartbeat_elapsed.as_secs(),
         }
     }
 
