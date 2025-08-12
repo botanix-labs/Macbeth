@@ -58,7 +58,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use thiserror::Error;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
 
@@ -2299,6 +2299,20 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
 
     let config = btcserverlib::config::load_config()?;
 
+    // Create a shared shutdown signal that all components will monitor
+    let (shutdown_tx, _shutdown_rx) = broadcast::channel::<()>(1);
+
+    // Set up panic hook to ensure shutdown signal is sent even on panic
+    let shutdown_tx_for_panic = shutdown_tx.clone();
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        error!("BTC server panicked: {}", info);
+        // Send shutdown signal to stop metrics server: metrics server subscribes to `shutdown_tx`
+        let _ = shutdown_tx_for_panic.send(());
+        // Call the original panic hook
+        original_hook(info);
+    }));
+
     let telemetry = if config.metrics_port.is_some() {
         let telemetry = Telemetry::new().await?;
         telemetry.start().await?;
@@ -2329,43 +2343,91 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // spawn terminate handlers routine
-    let grpc_join_handle = tokio::spawn(stop_signal(grpc_stop_tx));
+    // spawn terminate handlers routine with enhanced shutdown coordination
+    let shutdown_tx_for_signal = shutdown_tx.clone();
+    let grpc_join_handle = tokio::spawn(async move {
+        stop_signal(grpc_stop_tx).await;
+        // When signal handler completes, broadcast shutdown to all components
+        let _ = shutdown_tx_for_signal.send(());
+    });
 
-    let server_handle = if let Some(telemetry) = telemetry {
-        // create and spin up the http server
+    let (metrics_server_handle, metrics_join_handle) = if let Some(telemetry) = telemetry {
+        // create and spin up the metrics HTTP server
         let state = ServerState::new(telemetry.clone()).await;
-        // create the actix webserver
+        // create the actix web server for metrics
         let port = config.metrics_port.unwrap_or(7000);
-        let grpc_server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
-        let grpc_server = create_web_server(state, grpc_server_addr)?;
-        // get server handle
-        let server_handle = grpc_server.handle();
-        // spawn the server in the background
-        tokio::spawn(async move {
-            if let Err(err) = grpc_server.await {
-                error!("Actix Web server error: {:?}", err);
+        let metrics_server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
+
+        // Clone state before moving it into create_web_server
+        let state_for_heartbeat = state.clone();
+        let metrics_http_server = create_web_server(state, metrics_server_addr)?;
+        // get handle to control the metrics server
+        let metrics_server_handle = metrics_http_server.handle();
+
+        // Create a shutdown receiver for the metrics server
+        let mut shutdown_rx = shutdown_tx.subscribe();
+        let metrics_handle_for_shutdown = metrics_server_handle.clone();
+        // Set up heartbeat to track main process health
+        let heartbeat_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                interval.tick().await;
+                state_for_heartbeat.update_main_process_heartbeat();
             }
         });
-        info!("Grpc server started.");
-        Some(server_handle)
+
+        // spawn the metrics server with shutdown monitoring
+        let metrics_join_handle = tokio::spawn(async move {
+            tokio::select! {
+                result = metrics_http_server => {
+                    if let Err(err) = result {
+                        error!("Metrics HTTP server error: {:?}", err);
+                    }
+                }
+                _ = shutdown_rx.recv() => {
+                    info!("Metrics server received shutdown signal");
+                    heartbeat_handle.abort(); // Stop heartbeat
+                    metrics_handle_for_shutdown.stop(true).await;
+                }
+            }
+        });
+
+        info!("Metrics HTTP server started on port {}", port);
+        (Some(metrics_server_handle), Some(metrics_join_handle))
     } else {
         info!("Telemetry is disabled. Not starting the http server.");
-        None
+        (None, None)
     };
 
-    // // block and wait for a shutdown signal to terminate
-    let _ = tokio::join!(grpc_join_handle);
-
-    info!("Grpc server stopped");
-
-    if let Some(server_handle) = server_handle {
-        // Await the Actix server shutdown
-        info!("Stopping actix server ...");
-        server_handle.stop(true).await;
-        info!("Actix server stopped. Goodbye!");
+    // Wait for either the gRPC server to finish or metrics server to finish
+    match metrics_join_handle {
+        Some(metrics_handle) => {
+            tokio::select! {
+                _ = grpc_join_handle => {
+                    info!("gRPC server stopped");
+                }
+                _ = metrics_handle => {
+                    info!("Metrics server stopped");
+                }
+            }
+        }
+        None => {
+            let _ = grpc_join_handle.await;
+            info!("gRPC server stopped");
+        }
     }
 
+    // Ensure metrics server is stopped
+    if let Some(metrics_handle) = metrics_server_handle {
+        info!("Ensuring metrics server is stopped...");
+        metrics_handle.stop(true).await;
+        info!("Metrics server stopped.");
+    }
+
+    // Send final shutdown signal to any remaining components
+    let _ = shutdown_tx.send(());
+
+    info!("BTC server shutdown complete.");
     Ok(())
 }
 
