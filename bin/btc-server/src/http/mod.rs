@@ -89,4 +89,44 @@ mod tests {
         let result: HealthResponse = test::read_body_json(resp).await;
         assert!(result.uptime >= uptime.as_secs());
     }
+
+    #[actix_web::test]
+    async fn test_health_check_with_heartbeat() {
+        use crate::telemetry::Telemetry;
+        let telemetry = Telemetry::new().await.unwrap();
+        let state = ServerState::new(telemetry.clone()).await;
+
+        // Initially healthy (recent heartbeat)
+        let health = state.get_health().await;
+        assert!(health.main_process_healthy);
+
+        // Simulate time passing without heartbeat
+        *state.last_main_process_heartbeat.write() =
+            std::time::Instant::now() - Duration::from_secs(35);
+
+        let health = state.get_health().await;
+        assert!(!health.main_process_healthy);
+        assert!(health.last_heartbeat_seconds_ago >= 35);
+    }
+
+    #[actix_web::test]
+    async fn test_heartbeat_update() {
+        use crate::telemetry::Telemetry;
+        let telemetry = Telemetry::new().await.unwrap();
+        let state = ServerState::new(telemetry.clone()).await;
+
+        // Set old heartbeat
+        *state.last_main_process_heartbeat.write() =
+            std::time::Instant::now() - Duration::from_secs(20);
+
+        // Verify it's old
+        assert!(state.last_main_process_heartbeat.read().elapsed() >= Duration::from_secs(20));
+
+        // Update heartbeat
+        state.update_main_process_heartbeat();
+
+        // Verify it's recent now
+        assert!(state.last_main_process_heartbeat.read().elapsed() < Duration::from_secs(1));
+        assert!(state.get_main_process_health());
+    }
 }
