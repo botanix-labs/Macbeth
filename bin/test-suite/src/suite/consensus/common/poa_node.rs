@@ -5,7 +5,9 @@ use super::{
 use crate::{
     context::GlobalContext,
     it_error_print, it_info_print, it_warn_print,
-    suite::consensus::common::{is_port_free, spawn_child_process, Scope, MINTING_CONTRACT_BYTECODE},
+    suite::consensus::common::{
+        is_port_free, spawn_child_process, Scope, MINTING_CONTRACT_BYTECODE,
+    },
 };
 use anyhow::Context;
 use askama::Template;
