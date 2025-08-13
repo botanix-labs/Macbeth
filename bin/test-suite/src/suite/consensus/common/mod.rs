@@ -70,6 +70,10 @@ pub fn kill_process_at_port(port: u16) {
     }
 }
 
+pub fn is_port_free(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
 pub fn spawn_child_process(
     scope: Scope,
     command: &str,
