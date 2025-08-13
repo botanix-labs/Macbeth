@@ -5,7 +5,7 @@ use super::{
 use crate::{
     context::GlobalContext,
     it_error_print, it_info_print, it_warn_print,
-    suite::consensus::common::{spawn_child_process, Scope, MINTING_CONTRACT_BYTECODE},
+    suite::consensus::common::{is_port_free, spawn_child_process, Scope, MINTING_CONTRACT_BYTECODE},
 };
 use anyhow::Context;
 use askama::Template;
@@ -750,6 +750,20 @@ pub async fn create_poa_nodes(
             .cloned()
             .expect("To have keypair information");
 
+        let rpc_port = RPC_PORT_BASE + member_index;
+        let ws_port = WS_PORT_BASE + member_index;
+        let discovery_port = DISCOVERY_PORT_BASE + member_index;
+        let abci_port = ABCI_PORT_BASE + 1000 * member_index;
+        for port in [rpc_port, ws_port, discovery_port, abci_port] {
+            if !is_port_free(port) {
+                return Err(anyhow::anyhow!(
+                    "❌ POA node {} needs port {} but it's already in use by another process",
+                    member_index,
+                    port
+                ));
+            }
+        }
+
         let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
         let fed_member_config = FederationMemberTestConfig::new(
             member_index,
@@ -765,10 +779,10 @@ pub async fn create_poa_nodes(
             global_context.max_signers,
             global_context.num_snapshots_to_keep,
             member_peerid,
-            RPC_PORT_BASE + member_index,
-            WS_PORT_BASE + member_index,
-            DISCOVERY_PORT_BASE + member_index,
-            ABCI_PORT_BASE + 1000 * member_index,
+            rpc_port,
+            ws_port,
+            discovery_port,
+            abci_port,
             test_signal_tx,
             global_context.botanix_fee_recipient.clone(),
             member_index > poa_instances - 1,
