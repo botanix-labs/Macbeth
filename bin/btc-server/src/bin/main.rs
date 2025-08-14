@@ -2270,7 +2270,12 @@ impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
                     })?;
 
                 if result.is_none() {
-                    // The input is already spent, remove it from the database
+                    warn!(
+                        "Input {} was spent without being tracked by the PegoutScheduler",
+                        input.previous_output
+                    );
+                    // TODO: Technically we should only remove the input if it is deeply confirmed
+                    // https://github.com/botanix-labs/botanix/issues/1099
                     match self.db.remove_utxo(&input.previous_output) {
                         Ok(_) => {
                             info!("Removed spent input: {} from DB", input.previous_output);
