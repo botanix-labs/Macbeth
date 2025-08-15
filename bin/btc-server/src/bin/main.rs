@@ -2358,8 +2358,6 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         let port = config.metrics_port.unwrap_or(7000);
         let metrics_server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
 
-        // Clone state before moving it into create_web_server
-        let state_for_heartbeat = state.clone();
         let metrics_http_server = create_web_server(state, metrics_server_addr)?;
         // get handle to control the metrics server
         let metrics_server_handle = metrics_http_server.handle();
@@ -2367,14 +2365,6 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         // Create a shutdown receiver for the metrics server
         let mut shutdown_rx = shutdown_tx.subscribe();
         let metrics_handle_for_shutdown = metrics_server_handle.clone();
-        // Set up heartbeat to track main process health
-        let heartbeat_handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(10));
-            loop {
-                interval.tick().await;
-                state_for_heartbeat.update_main_process_heartbeat();
-            }
-        });
 
         // spawn the metrics server with shutdown monitoring
         let metrics_join_handle = tokio::spawn(async move {
@@ -2386,7 +2376,6 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
                 }
                 _ = shutdown_rx.recv() => {
                     info!("Metrics server received shutdown signal");
-                    heartbeat_handle.abort(); // Stop heartbeat
                     metrics_handle_for_shutdown.stop(true).await;
                 }
             }
