@@ -1,4 +1,4 @@
-use crate::context::GlobalContext;
+use crate::{context::GlobalContext, suite::consensus::common::is_port_free};
 use anyhow::Context;
 use btcserverlib::federation_args::{FedMemberPubKey, FederationTomlConfig};
 use reth::consensus_common::utils::unix_timestamp;
@@ -178,6 +178,15 @@ pub fn spawn_n_btc_server_processes(
         let db_path = Path::new(&temp_db_path).join(format!("db{}", i));
         std::fs::create_dir_all(&db_path).context("failed to create tempdir with db subdir")?;
         let btc_server_port = BTC_SERVER_START_PORT + i;
+
+        if !is_port_free(btc_server_port) {
+            return Err(anyhow::anyhow!(
+                "❌ BTC Server {} needs port {} but it's already in use by another process",
+                i,
+                btc_server_port
+            ));
+        }
+
         let child_process = spawn_btc_server_process(
             global_context.clone(),
             members_keypairs,
