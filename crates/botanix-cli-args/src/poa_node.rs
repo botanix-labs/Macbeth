@@ -20,6 +20,10 @@ pub struct PoaNodeArgs {
     #[arg(long, value_name = "IS_TESTNET", env = "RETH_TESTNET")]
     pub is_testnet: bool,
 
+    /// Indicates whether we are running in devnet or not.
+    #[arg(long, value_name = "IS_DEVNET", env = "RETH_DEVNET")]
+    pub is_devnet: bool,
+
     /// The NTP server url
     #[arg(
         long,
@@ -94,4 +98,13 @@ pub struct PoaNodeArgs {
         value_parser = parse_ethereum_address,
     )]
     pub block_fee_recipient_address: Option<Address>,
+
+    /// Path to JSON file containing UTXOs to recover
+    #[arg(
+        long,
+        value_name = "UTXO_RECOVERY_FILE",
+        env = "RETH_UTXO_RECOVERY_FILE",
+        verbatim_doc_comment
+    )]
+    pub utxo_recovery_file: Option<PathBuf>,
 }

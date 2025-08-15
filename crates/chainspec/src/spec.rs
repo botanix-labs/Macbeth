@@ -5,6 +5,7 @@ use alloy_chains::{Chain, ChainKind, NamedChain};
 use alloy_genesis::Genesis;
 use alloy_primitives::{address, b256, Address, BlockNumber, B256, U256};
 use alloy_trie::EMPTY_ROOT_HASH;
+use askama::Template;
 use derive_more::From;
 use once_cell::sync::Lazy;
 use reth_ethereum_forks::{
@@ -23,8 +24,6 @@ use reth_primitives_traits::{
 use reth_trie_common::root::state_root_ref_unhashed;
 #[cfg(feature = "std")]
 use std::sync::Arc;
-
-use askama::Template;
 
 use reth_network_peers::{
     base_nodes, base_testnet_nodes, holesky_nodes, mainnet_nodes, op_nodes, op_testnet_nodes,
@@ -61,6 +60,7 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         leader_selection_window: None,
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
+        epoch_length: 0,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -91,6 +91,7 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         leader_selection_window: None,
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
+        epoch_length: 0,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -119,6 +120,7 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         leader_selection_window: None,
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
+        epoch_length: 0,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -186,6 +188,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         prune_delete_limit: 20000,
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
+        epoch_length: 10,
     };
     spec.genesis.config.dao_fork_support = false;
     spec.into()
@@ -210,6 +213,7 @@ pub static BOTANIX_MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         prune_delete_limit: 20000,
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
+        epoch_length: 100,
     };
     spec.genesis.config.dao_fork_support = false;
     spec.into()
@@ -223,6 +227,7 @@ pub fn create_botanix_config_with_genesis(
     chain_id: u64,
     genesis_hash: Option<B256>,
     lst_fee_receiver: String,
+    epoch_length: u64,
 ) -> ChainSpec {
     ChainSpec {
         chain: Chain::from_id(chain_id),
@@ -237,6 +242,7 @@ pub fn create_botanix_config_with_genesis(
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 1700,
         lst_fee_receiver: Some(lst_fee_receiver),
+        epoch_length,
         ..Default::default()
     }
 }
@@ -342,6 +348,10 @@ pub struct ChainSpec {
     /// LST fee receiver
     /// This is the contract address that receives block fees as part of native staking
     pub lst_fee_receiver: Option<String>,
+
+    /// EIP-225: Clique Proof-of-Authority consensus protocol.
+    /// The number of blocks in an epoch for PoA consensus
+    pub epoch_length: u64,
 }
 
 impl Default for ChainSpec {
@@ -362,6 +372,7 @@ impl Default for ChainSpec {
             leader_selection_window: None,
             botanix_fee_recipient: None,
             lst_fee_receiver: None,
+            epoch_length: 0,
         }
     }
 }

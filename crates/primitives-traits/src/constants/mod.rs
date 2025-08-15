@@ -99,8 +99,8 @@ pub const BASE_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u128 = 10;
 /// Multiplier for converting gwei to wei.
 pub const GWEI_TO_WEI: u64 = 1_000_000_000;
 
-/// Default suggested tip of 0.025 GWEI for the Gas Oracle.
-pub const DEFAULT_SUGGESTED_TIP: u128 = 25_000_000;
+/// Default suggested tip of 0.0001 GWEI for the Gas Oracle.
+pub const DEFAULT_SUGGESTED_TIP: u128 = 100_000;
 
 /// Multiplier for converting finney (milliether) to wei.
 pub const FINNEY_TO_WEI: u128 = (GWEI_TO_WEI as u128) * 1_000_000;
@@ -176,11 +176,6 @@ pub const BEACON_CONSENSUS_REORG_UNWIND_DEPTH: u64 = 3;
 /// See:
 /// <https://github.com/ethereum/go-ethereum/blob/a196f3e8a22b6ad22ced5c2e3baf32bc3ebd4ec9/consensus/ethash/consensus.go#L227-L229>
 pub const ALLOWED_FUTURE_BLOCK_TIME_SECONDS: u64 = 15;
-
-/// EIP-225: Clique Proof-of-Authority consensus protocol.
-///
-/// The number of blocks to reset pending votes.
-pub const EPOCH_LENGTH: u64 = 10;
 
 /// Minimum difference between two consecutive block’s timestamps.
 pub const BLOCK_PERIOD: u64 = 1000;

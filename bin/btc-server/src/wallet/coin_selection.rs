@@ -3,13 +3,14 @@ use crate::{
     wallet::{
         psbt::PegoutId as PegoutIdBytes,
         util::{calculate_signed_tx_weight, WalletCalculationError},
-        TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+        TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT,
     },
 };
 use bdk_wallet::coin_selection::{
     CoinSelectionAlgorithm, InsufficientFunds, OldestFirstCoinSelection,
 };
 use bitcoin::{
+    amount::CheckedSum,
     psbt::{Error as PsbtError, ExtractTxError, Psbt},
     Amount, FeeRate, OutPoint, ScriptBuf, TxOut,
 };
@@ -29,12 +30,12 @@ pub enum CoinSelectionError {
     ExtractTxError(#[from] ExtractTxError),
     #[error("Outputs cannot be empty")]
     OutputsCannotBeEmpty,
-    #[error("Available utxos cannot be empty")]
-    AvailableUtxosCannotBeEmpty,
     #[error("Pegout value is smaller than pegout fee")]
     PegoutFeeOverflow,
     #[error("Fee rate overflow")]
     FeeRateOverflow,
+    #[error("Total utxos value overflow")]
+    TotalUtxosValueOverflow,
     #[error("Sanity check error - SHOULD NOT HAPPEN: {0}")]
     SanityCheckError(#[from] SanityCheckError),
     #[error("No viable outputs after applying fees and filtering dust")]
@@ -81,7 +82,7 @@ const MIN_CHANGE_SATS: u64 = 10_000; // minimum pegout value (0.0001 BTC)
 
 /// Coin selection
 pub(crate) fn coin_selection(
-    available_utxos: HashMap<OutPoint, Utxo>,
+    optional_utxos: HashMap<OutPoint, Utxo>,
     required_utxos: HashMap<OutPoint, Utxo>,
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
@@ -91,17 +92,30 @@ pub(crate) fn coin_selection(
     if outputs.is_empty() {
         return Err(CoinSelectionError::OutputsCannotBeEmpty);
     }
-    if available_utxos.is_empty() {
-        return Err(CoinSelectionError::AvailableUtxosCannotBeEmpty);
-    }
 
     // Basic calculations
     let pegouts = outputs
         .into_iter()
         .map(|(txout, pegout_id)| (txout, pegout_id.as_bytes()))
         .collect::<Vec<_>>();
-    let total_utxos_value = available_utxos.values().map(|u| u.output.value).sum::<Amount>();
-    let total_pegout_target = pegouts.iter().map(|(txout, _)| txout.value).sum::<Amount>();
+    let required_utxos_value = required_utxos
+        .values()
+        .map(|u| u.output.value)
+        .checked_sum()
+        .ok_or(CoinSelectionError::TotalUtxosValueOverflow)?;
+    let optional_utxos_value = optional_utxos
+        .values()
+        .map(|u| u.output.value)
+        .checked_sum()
+        .ok_or(CoinSelectionError::TotalUtxosValueOverflow)?;
+    let total_utxos_value = required_utxos_value
+        .checked_add(optional_utxos_value)
+        .ok_or(CoinSelectionError::TotalUtxosValueOverflow)?;
+    let total_pegout_target = pegouts
+        .iter()
+        .map(|(txout, _)| txout.value)
+        .checked_sum()
+        .ok_or(CoinSelectionError::TotalUtxosValueOverflow)?;
 
     // return InsufficientFunds error
     let remaining_utxos_value = total_utxos_value
@@ -117,7 +131,7 @@ pub(crate) fn coin_selection(
         bdk_wallet::coin_selection::BranchAndBoundCoinSelection::new(0, OldestFirstCoinSelection);
     let selected_inputs = perform_coin_selection(
         coin_selection_algorithm,
-        available_utxos,
+        optional_utxos,
         required_utxos,
         fee_rate,
         coin_selection_target,
@@ -151,7 +165,7 @@ pub(crate) fn coin_selection(
 
 fn perform_coin_selection<T: CoinSelectionAlgorithm>(
     coin_selection_algorithm: T,
-    available_utxos: HashMap<OutPoint, Utxo>,
+    optional_utxos: HashMap<OutPoint, Utxo>,
     required_utxos: HashMap<OutPoint, Utxo>,
     fee_rate: FeeRate,
     coin_selection_target: Amount,
@@ -162,7 +176,7 @@ fn perform_coin_selection<T: CoinSelectionAlgorithm>(
     let selection = coin_selection_algorithm
         .coin_select(
             required_utxos.values().map(utxo_to_bdk).collect::<Vec<_>>(),
-            available_utxos.values().map(utxo_to_bdk).collect::<Vec<_>>(),
+            optional_utxos.values().map(utxo_to_bdk).collect::<Vec<_>>(),
             fee_rate,
             coin_selection_target,
             &change_script, // drain_script
@@ -174,8 +188,12 @@ fn perform_coin_selection<T: CoinSelectionAlgorithm>(
     let selected = selection
         .selected
         .iter()
-        .map(|s| available_utxos.get(&OutPoint::from_bdk(s.outpoint())))
-        .filter_map(|s| if s.is_some() { s } else { None })
+        .map(|s| {
+            let outpoint = OutPoint::from_bdk(s.outpoint());
+            // Check both optional and required UTXOs
+            optional_utxos.get(&outpoint).or_else(|| required_utxos.get(&outpoint))
+        })
+        .filter_map(|s| s)
         .collect::<Vec<_>>();
 
     let selected_inputs: Vec<crate::wallet::psbt::InputDTO> = selected
@@ -424,7 +442,7 @@ fn sanity_check_psbt(
 /// Convert a UTXO to BDK's WeightedUtxo format
 fn utxo_to_bdk(utxo: &Utxo) -> bdk_wallet::WeightedUtxo {
     bdk_wallet::WeightedUtxo {
-        satisfaction_weight: TAPROOT_KEYSPEND_SATISFACTION_WEIGHT,
+        satisfaction_weight: TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT,
         utxo: bdk_wallet::Utxo::Local(bdk_wallet::LocalOutput {
             outpoint: utxo.outpoint.to_bdk(),
             txout: bdk_wallet::bitcoin::TxOut {
@@ -523,7 +541,13 @@ mod tests {
             FeeRate::from_sat_per_vb(3).unwrap(),
             change_script.clone(),
         );
-        assert_eq!(res.err(), Some(CoinSelectionError::AvailableUtxosCannotBeEmpty));
+        assert_eq!(
+            res.err(),
+            Some(CoinSelectionError::CoinSelectionBdk(InsufficientFunds {
+                needed: Amount::from_sat(1000),
+                available: Amount::from_sat(0),
+            }))
+        );
     }
 
     #[test]
@@ -531,7 +555,7 @@ mod tests {
         let change_script = random_p2tr_keyspend_script();
         let output_script = random_p2wpkh_script();
 
-        let mut available_utxos = HashMap::new();
+        let mut optional_utxos = HashMap::new();
         let utxo = Utxo::new(
             OutPoint::new(random_compute_txid(), 0),
             TxOut {
@@ -541,7 +565,7 @@ mod tests {
             None,
             None,
         );
-        available_utxos.insert(utxo.outpoint, utxo);
+        optional_utxos.insert(utxo.outpoint, utxo);
 
         // Create very small outputs that will become dust after high fees
         let outputs = vec![
@@ -561,7 +585,7 @@ mod tests {
 
         // Use a very high fee rate that makes all outputs dust
         let result = coin_selection(
-            available_utxos,
+            optional_utxos,
             HashMap::new(),
             outputs,
             FeeRate::from_sat_per_vb(1000).unwrap(), // Very high fee rate
@@ -577,7 +601,7 @@ mod tests {
         let output_script = random_p2wpkh_script();
 
         // Create UTXOs with insufficient total value
-        let mut available_utxos = HashMap::new();
+        let mut optional_utxos = HashMap::new();
         let utxo = Utxo::new(
             OutPoint::new(random_compute_txid(), 0),
             TxOut {
@@ -587,7 +611,7 @@ mod tests {
             None,
             None,
         );
-        available_utxos.insert(utxo.outpoint, utxo);
+        optional_utxos.insert(utxo.outpoint, utxo);
 
         // Try to create a pegout for more than available
         let outputs = vec![(
@@ -596,7 +620,7 @@ mod tests {
         )];
 
         let result = coin_selection(
-            available_utxos,
+            optional_utxos,
             HashMap::new(),
             outputs,
             FeeRate::from_sat_per_vb(1).unwrap(),
@@ -625,8 +649,9 @@ mod tests {
     #[derive(Debug)]
     struct TestScenario {
         name: String,
-        utxo_values_sats: Vec<u64>,   // in sats
-        pegout_values_sats: Vec<u64>, // in sats
+        optional_utxo_values_sats: Vec<u64>, // in sats
+        required_utxo_values_sats: Vec<u64>, // in sats
+        pegout_values_sats: Vec<u64>,        // in sats
         fee_rate: FeeRate,
         expected_dust_pegout_removed: Vec<u64>,
         expected_change_output_value: u64, // in sats
@@ -636,7 +661,8 @@ mod tests {
         vec![
             TestScenario {
                 name: "change_targets_50%_of_pegout_value".to_string(),
-                utxo_values_sats: vec![10_000; 1_000],
+                optional_utxo_values_sats: vec![10_000; 1_000],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![100_000, 100_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
@@ -647,7 +673,8 @@ mod tests {
             // anticipates needing extra to pay fees
             TestScenario {
                 name: "change_targets_doesnt_exceed_5%_of_remaining_utxos".to_string(),
-                utxo_values_sats: vec![10_000; 60],
+                optional_utxo_values_sats: vec![10_000; 60],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![100_000, 100_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
@@ -658,7 +685,8 @@ mod tests {
             },
             TestScenario {
                 name: "change_minimum_is_10k".to_string(),
-                utxo_values_sats: vec![2_000; 100],
+                optional_utxo_values_sats: vec![2_000; 100],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![10_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
@@ -668,7 +696,8 @@ mod tests {
             },
             TestScenario {
                 name: "multiple_small_outputs".to_string(),
-                utxo_values_sats: vec![200_000],
+                optional_utxo_values_sats: vec![200_000],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![5_000, 8_000, 12_000, 15_000],
                 fee_rate: FeeRate::from_sat_per_kwu(750),
                 expected_dust_pegout_removed: vec![],
@@ -676,7 +705,8 @@ mod tests {
             },
             TestScenario {
                 name: "high_fee_rate".to_string(),
-                utxo_values_sats: vec![20_000; 5],
+                optional_utxo_values_sats: vec![20_000; 5],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![10_000, 30_000],
                 fee_rate: FeeRate::from_sat_per_kwu(10_000),
                 expected_dust_pegout_removed: vec![],
@@ -684,7 +714,8 @@ mod tests {
             },
             TestScenario {
                 name: "1_dust_pegout_to_be_removed".to_string(),
-                utxo_values_sats: vec![100_000],
+                optional_utxo_values_sats: vec![100_000],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![293, 294, 10_000], // 294 is dust threshold for p2wpkh
                 fee_rate: FeeRate::from_sat_per_kwu(0),
                 expected_dust_pegout_removed: vec![293],
@@ -692,32 +723,43 @@ mod tests {
             },
             TestScenario {
                 name: "2_dust_pegouts_to_be_removed".to_string(),
-                utxo_values_sats: vec![100_000],
+                optional_utxo_values_sats: vec![100_000],
+                required_utxo_values_sats: vec![],
                 pegout_values_sats: vec![293, 294, 10_000], // 294 is dust threshold for p2wpkh
                 fee_rate: FeeRate::from_sat_per_kwu(1000),
                 expected_dust_pegout_removed: vec![293, 294],
                 expected_change_output_value: 90_000,
             },
+            TestScenario {
+                name: "required_utxos_are_used_first_1".to_string(),
+                optional_utxo_values_sats: vec![50_000, 100_000, 150_000, 1_000_000],
+                required_utxo_values_sats: vec![150_123],
+                pegout_values_sats: vec![50_000, 50_000],
+                fee_rate: FeeRate::from_sat_per_kwu(0),
+                expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 50_123, /* change value indicates that required
+                                                       * utxos were used */
+            },
+            TestScenario {
+                name: "required_utxos_are_used_first_2".to_string(),
+                optional_utxo_values_sats: vec![100_000; 100],
+                required_utxo_values_sats: vec![110_000, 101_000, 100_100, 100_010, 100_001],
+                pegout_values_sats: vec![200_000, 200_000],
+                fee_rate: FeeRate::from_sat_per_kwu(0),
+                expected_dust_pegout_removed: vec![],
+                expected_change_output_value: 211_111, /* change value indicates that required
+                                                        * utxos were used */
+            },
         ]
     }
 
     fn run_scenario(scenario: &TestScenario) -> Result<Psbt, CoinSelectionError> {
+        println!("Running scenario: {}", scenario.name);
         let change_script = random_p2tr_keyspend_script();
 
         // Create UTXOs
-        let mut available_utxos = HashMap::new();
-        for (i, &value_sats) in scenario.utxo_values_sats.iter().enumerate() {
-            let utxo = Utxo::new(
-                OutPoint::new(random_compute_txid(), i as u32),
-                TxOut {
-                    value: Amount::from_sat(value_sats),
-                    script_pubkey: random_p2tr_keyspend_script(),
-                },
-                None,
-                None,
-            );
-            available_utxos.insert(utxo.outpoint, utxo);
-        }
+        let optional_utxos = create_utxos_from_values(&scenario.optional_utxo_values_sats);
+        let required_utxos = create_utxos_from_values(&scenario.required_utxo_values_sats);
 
         // Create pegouts. Using p2wpkh scriptpubkey to help identify pegouts in the tx.
         let pegouts: Vec<_> = scenario
@@ -734,9 +776,7 @@ mod tests {
             })
             .collect();
 
-        let required_utxos = HashMap::new();
-
-        coin_selection(available_utxos, required_utxos, pegouts, scenario.fee_rate, change_script)
+        coin_selection(optional_utxos, required_utxos, pegouts, scenario.fee_rate, change_script)
     }
 
     fn validate_change_calculation(psbt: &Psbt, scenario: &TestScenario) {
@@ -798,8 +838,27 @@ mod tests {
         );
 
         let mut psbt_with_signatures = psbt.clone();
-        add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::All);
+        add_dummy_signatures_to_psbt(&mut psbt_with_signatures, TapSighashType::Default);
         let fee_rate = psbt_with_signatures.fee_rate().expect("should not fail");
         assert_eq!(fee_rate, scenario.fee_rate);
+    }
+
+    fn create_utxos_from_values(values: &[u64]) -> HashMap<OutPoint, Utxo> {
+        values
+            .iter()
+            .enumerate()
+            .map(|(i, &value_sats)| {
+                let utxo = Utxo::new(
+                    OutPoint::new(random_compute_txid(), i as u32),
+                    TxOut {
+                        value: Amount::from_sat(value_sats),
+                        script_pubkey: random_p2tr_keyspend_script(),
+                    },
+                    None,
+                    None,
+                );
+                (utxo.outpoint, utxo)
+            })
+            .collect()
     }
 }

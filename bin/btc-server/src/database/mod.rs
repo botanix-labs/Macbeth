@@ -17,7 +17,7 @@ use bitcoin::{
     psbt::Psbt,
     Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
 };
-use client::SigningStatus;
+use btc_server_client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use futures::Stream;
 use log::info;

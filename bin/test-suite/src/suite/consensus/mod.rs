@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use botanix_comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_storage::BotanixProviderFactory;
-use client::BtcServerClient;
+use btc_server_client::BtcServerClient;
 use common::{
     bitcoind_node::{
         create_bitcoind_node, BitcoindNodeConfig, Notifications as BitcoindNotifications,
@@ -865,8 +865,11 @@ impl Suite for ConsensusIntegrationTestSuite {
                         .local_context
                         .get_btc_server_process_port(instance as usize)
                         .context("could not find btc server at instance index")?;
-                    match client::BtcServerClient::connect(format!("http://localhost:{}", port))
-                        .await
+                    match btc_server_client::BtcServerClient::connect(format!(
+                        "http://localhost:{}",
+                        port
+                    ))
+                    .await
                     {
                         Ok(_) => {
                             it_info_print!("Connected to btc server at port", port.to_string());
@@ -892,9 +895,12 @@ impl Suite for ConsensusIntegrationTestSuite {
                     .local_context
                     .get_btc_server_process_port(instance as usize)
                     .context("could not find btc server at instance index")?;
-                let client = client::BtcServerClient::connect(format!("http://localhost:{}", port))
-                    .await
-                    .context("Unable to create and connect to a btc server client")?;
+                let client = btc_server_client::BtcServerClient::connect(format!(
+                    "http://localhost:{}",
+                    port
+                ))
+                .await
+                .context("Unable to create and connect to a btc server client")?;
                 btc_server_clients.push(client.clone());
             }
             self.local_context.btc_server_clients = Some(btc_server_clients.clone());
@@ -1022,7 +1028,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             let mut keys = HashSet::new();
             for client in btc_server_clients.to_vec().iter_mut() {
                 let key = client
-                    .get_public_key(client::Empty {})
+                    .get_public_key(btc_server_client::Empty {})
                     .await
                     .context("Error getting a pub key from btc-server")?
                     .into_inner()

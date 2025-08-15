@@ -1,5 +1,5 @@
 [workspace.package]
-version = "1.2.0-rc.1"
+version = "1.2.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -28,6 +28,7 @@ members = [
     "crates/botanix-cli-args",
     "crates/botanix-cli-parsers",
     "crates/botanix-comet-bft-rpc",
+    "crates/botanix-configs",
     "crates/botanix-data-parser",
     "crates/botanix-rpc-client",
     "crates/botanix-rpc-config",
@@ -380,6 +381,7 @@ reth-trie-parallel = { path = "crates/trie/parallel" }
 botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
 botanix-rpc-config = { path = "crates/botanix-rpc-config" }
 botanix-cli-args = { path = "crates/botanix-cli-args" }
+botanix-configs = { path = "crates/botanix-configs" }
 botanix-rpc-types = { path = "crates/botanix-rpc-types" }
 botanix-rpc-client = { path = "crates/botanix-rpc-client" }
 botanix-utils = { path = "crates/botanix-utils" }

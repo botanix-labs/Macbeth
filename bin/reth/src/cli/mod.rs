@@ -1,29 +1,28 @@
 //! CLI definition and entrypoint to executable
 
 use crate::{
-    args::{
-        utils::{chain_help, chain_value_parser, SUPPORTED_CHAINS},
-        LogArgs,
-    },
+    args::LogArgs,
     commands::poa::PoaNodeCommand,
     version::{LONG_VERSION, SHORT_VERSION},
 };
+use botanix_cli_args::chain::chain_help;
+use botanix_cli_parsers::parsers::{chain_value_parser, SUPPORTED_CHAINS};
 use clap::{value_parser, Args, Parser, Subcommand};
 use reth_chainspec::ChainSpec;
 
-use reth_cli_runner::CliRunner;
-use reth_db::DatabaseEnv;
-use reth_node_builder::{NodeBuilder, WithLaunchContext};
-use reth_tracing::FileWorkerGuard;
-use std::{ffi::OsString, fmt, future::Future, sync::Arc};
-use tracing::info;
-
+use crate::commands::stage;
 /// Re-export of the `reth_node_core` types specifically in the `cli` module.
 ///
 /// This is re-exported because the types in `reth_node_core::cli` originally existed in
 /// `reth::cli` but were moved to the `reth_node_core` crate. This re-export avoids a breaking
 /// change.
 pub use crate::core::cli::*;
+use reth_cli_runner::CliRunner;
+use reth_db::DatabaseEnv;
+use reth_node_builder::{NodeBuilder, WithLaunchContext};
+use reth_tracing::FileWorkerGuard;
+use std::{ffi::OsString, fmt, future::Future, sync::Arc};
+use tracing::info;
 
 /// No Additional arguments
 #[derive(Debug, Clone, Copy, Default, Args)]
@@ -41,6 +40,7 @@ pub struct NoArgs;
 #[derive(Debug, Parser)]
 #[command(author, version = SHORT_VERSION, long_version = LONG_VERSION, about = "Reth", long_about = None)]
 pub struct Cli<Ext: clap::Args + fmt::Debug = NoArgs> {
+    // TODO: Combine poa and stage commonn args (EnvironmentArgs)
     /// The command to run
     #[command(subcommand)]
     command: Commands<Ext>,
@@ -112,6 +112,7 @@ impl<Ext: clap::Args + fmt::Debug> Cli<Ext> {
         let runner = CliRunner::default();
         match self.command {
             Commands::Poa(command) => runner.run_command_until_exit(|ctx| command.execute(ctx)),
+            Commands::Stage(command) => runner.run_command_until_exit(|_| command.execute()),
         }
     }
 
@@ -132,4 +133,7 @@ pub enum Commands<Ext: clap::Args + fmt::Debug = NoArgs> {
     /// Start the POA node
     #[command(name = "poa")]
     Poa(PoaNodeCommand<Ext>),
+    /// Manipulate individual stages.
+    #[command(name = "stage")]
+    Stage(stage::Command),
 }

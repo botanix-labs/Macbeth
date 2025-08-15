@@ -5,7 +5,6 @@ use crate::{
     database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
     pegout_scheduler::Tx,
-    telemetry::Telemetry,
     util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     wallet::{
         coin_selection,
@@ -16,7 +15,6 @@ use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
     time::Instant,
 };
 
@@ -83,9 +81,6 @@ pub fn make_tx(
     db: &Db,
     min_signers: u16,
     tracked_txs: Vec<Tx>,
-    telemetry: Option<Arc<Telemetry>>,
-    btc_network: bitcoin::network::Network,
-    identifier: u16,
 ) -> Result<Psbt, CoordinatorError> {
     // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate
@@ -105,9 +100,6 @@ pub fn make_tx(
         })?;
     debug!("utxos len = {:?}", utxos.len());
     debug!("utxos = {:?}", utxos);
-    if let Some(telemetry) = telemetry {
-        telemetry.update_utxos(btc_network, identifier, utxos.len() as i64);
-    }
 
     let tracked_inputs = tracked_txs
         .iter()
@@ -117,13 +109,14 @@ pub fn make_tx(
     debug!("tracked_inputs = {:?}", tracked_inputs);
 
     // Filter utxos that are still pending and conflict with pending txs.
-    let mut available_utxos = utxos
+    // These utxos are 'optional' in that they are not required to be included in the coin selection
+    let optional_utxos = utxos
         .clone()
         .into_iter()
         .filter(|(p, _u)| !tracked_inputs.contains(p))
         .collect::<HashMap<_, _>>();
-    debug!("available_utxos len = {:?}", available_utxos.len());
-    debug!("available_utxos = {:?}", available_utxos);
+    debug!("optional_utxos len = {:?}", optional_utxos.len());
+    debug!("optional_utxos = {:?}", optional_utxos);
 
     // if we are retrying pegouts, we need to add a conflicting input for each tracked tx
     // that honors each pegout
@@ -157,8 +150,6 @@ pub fn make_tx(
         .map(|op| {
             utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
                 |u: &Utxo| {
-                    // Conflicting utxos will be added to available utxos before finishing
-                    // coin selection
                     conflicting_utxos.insert(*op, u.clone());
                     u.clone()
                 },
@@ -169,13 +160,8 @@ pub fn make_tx(
     let _ = conflicting_inputs?;
     debug!("conflicting_utxos = {:?}", conflicting_utxos);
 
-    // include conflicting utxos when selecting from available utxos
-    conflicting_utxos.iter().for_each(|(op, u)| {
-        available_utxos.insert(*op, u.clone());
-    });
-
     let psbt = coin_selection::coin_selection(
-        available_utxos,
+        optional_utxos,
         conflicting_utxos,
         outputs,
         fee_rate,
@@ -255,7 +241,7 @@ pub async fn finalize_signing(
 
         // Note: we don't need to add the internal key here for a key spend path
         // as the output key is derived from the scriptpubkey
-        let hash_ty = bitcoin::sighash::TapSighashType::All;
+        let hash_ty = bitcoin::sighash::TapSighashType::Default;
         let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
         psbt_input.sighash_type = Some(sighash_type);
         psbt_input.tap_key_sig =

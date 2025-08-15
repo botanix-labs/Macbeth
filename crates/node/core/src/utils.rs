@@ -1,7 +1,7 @@
 //! Utility functions for node startup and shutdown, for example path parsing and retrieving single
 //! blocks from the network.
 
-use btcserverlib::jwt::{JwtError, JwtSecret};
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use eyre::Result;
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_block_pre_execution;
