@@ -56,7 +56,7 @@ contract MintingTest is Test {
 
     function testRevertWhenTxCostExceedsAmount() public payable {
         // set gas price so txCost exceeds amount
-        vm.fee(10000000000000000000000);
+        vm.fee(2**64 - 1);
 
         bytes memory metadata = bytes("0x00000000");
         
