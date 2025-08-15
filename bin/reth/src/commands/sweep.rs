@@ -1,15 +1,14 @@
 //! Emergency wallet sweep command implementation
 
 use bitcoin::{address::NetworkUnchecked, FeeRate};
-use botanix_data_parser::{DataParser, SerializationType, DEFAULT_COMPRESSION_STRATEGY};
-use botanix_wallet_sweep::{request::DestinationConfig, WalletSweepRequest};
+use botanix_wallet_sweep::{create_psbt_async, request::DestinationConfig, WalletSweepRequest};
 use btc_server_client::{jwt::JwtSecret, BtcServerExtendedApi, Empty, GrpcClientFactory};
-use btcserverlib::{database::Db, dkg, federation_args::FederationTomlConfig};
+use btcserverlib::{dkg, federation_args::FederationTomlConfig};
 use clap::{Parser, Subcommand};
-use eyre::{OptionExt, WrapErr};
+use eyre::WrapErr;
 use reth_cli_runner::CliContext;
 use std::{fs, net::SocketAddr, path::PathBuf, str::FromStr};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// Emergency wallet sweep operations for the Botanix federation
 #[derive(Debug, Parser)]
@@ -72,7 +71,7 @@ pub enum SweepSubcommands {
 }
 
 #[derive(Debug, Parser)]
-struct DestinationOptions {
+pub struct DestinationOptions {
     /// Bitcoin network to use (mainnet, testnet, regtest)
     #[arg(long)]
     network: bitcoin::Network,
@@ -185,11 +184,26 @@ impl SweepCommand {
             SweepSubcommands::Psbt { request_file_path } => {
                 let request = WalletSweepRequest::from_json_file(request_file_path).await?;
 
-                let psbt = botanix_wallet_sweep::create_psbt(request).wrap_err_with(|| {
-                    format!("Failed to create PSBT from request file {:?}", request_file_path)
-                })?;
+                let psbt = create_psbt_async(request, &mut btc_server_client).await.wrap_err_with(
+                    || format!("Failed to create PSBT from request file {:?}", request_file_path),
+                )?;
 
-                // TODO: Save PSBT to file or write to std out if pipe is provided
+                // Print PSBT in base64 format for use with other tools
+                use bitcoin::base64::{engine::general_purpose, Engine as _};
+                let psbt_base64 = general_purpose::STANDARD.encode(&psbt.serialize());
+                println!("Emergency sweep PSBT:");
+                println!("{}", psbt_base64);
+
+                // Save to file with overwrite protection
+                let psbt_filename = request_file_path.with_extension("psbt");
+                if psbt_filename.exists() {
+                    warn!("PSBT file {:?} already exists, overwriting...", psbt_filename);
+                }
+
+                fs::write(&psbt_filename, psbt_base64.as_bytes()).wrap_err_with(|| {
+                    format!("Failed to write PSBT to file {:?}", psbt_filename)
+                })?;
+                info!("PSBT saved to: {:?}", psbt_filename);
             }
         }
 

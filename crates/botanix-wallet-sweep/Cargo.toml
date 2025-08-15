@@ -21,7 +21,7 @@ serde = "1.0.171"
 thiserror = "1.0.43"
 tokio = { version = "1.45.0", features = ["full"] }
 tracing = "0.1.40"
-#btc-server = { path = "../../bin/btc-server" }
+# btc-server = { path = "../../bin/btc-server" } # Circular dependency - btc-server depends on us
 btc-server-client = { path = "../../bin/btc-server/client" }
 eyre = { workspace = true }
 botanix-data-parser = { workspace = true }
@@ -38,3 +38,4 @@ futures = "0.3.31"
 
 [dev-dependencies]
 mockall = { workspace = true }
+# rand is already available from regular dependencies (version 0.6)
