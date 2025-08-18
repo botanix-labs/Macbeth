@@ -98,8 +98,7 @@ services:
       - cometbft
     volumes:
       - ${BOTANIX_HOME:?err}/poa:/app/config:ro
-      - poa_reth_db:/app/db:rw
-      - poa_botanix_db:/app/botanix_db:rw
+      - poa_data:/app:rw
       - poa_logs:/root/.cache/reth/logs:rw
     restart: on-failure
     networks:
@@ -129,7 +128,7 @@ volumes:
   btc_server_db:
     driver: local
 
-  poa_db:
+  poa_data:
     driver: local
 
   poa_logs:

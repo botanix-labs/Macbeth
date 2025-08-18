@@ -42,7 +42,7 @@ pub async fn utxo_sync(
         pegins.eth_addresses.push(eth_address);
         pegins.txids.push(rand::random::<[u8; 32]>());
         let pk = btc_server_clients[0]
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -132,7 +132,10 @@ pub async fn utxo_sync(
     let mut target_client = btc_server_clients.get(0).cloned().unwrap();
 
     // Reset all UTXOs for selected member
-    target_client.reset_all_utxos(client::ResetAllUtxosRequest { utxos: vec![] }).await.unwrap();
+    target_client
+        .reset_all_utxos(btc_server_client::ResetAllUtxosRequest { utxos: vec![] })
+        .await
+        .unwrap();
 
     // Create a another eoa which should kick off utxo sync
     let botanix_eth_client =
@@ -160,7 +163,8 @@ pub async fn utxo_sync(
     // let header = eth_clients[0].get_latest_block_by_hash(hash);
     let mut hash_set = HashSet::new();
     for client in btc_server_clients.iter_mut() {
-        let wallet_state = client.get_wallet_state(client::Empty {}).await.unwrap().into_inner();
+        let wallet_state =
+            client.get_wallet_state(btc_server_client::Empty {}).await.unwrap().into_inner();
         hash_set.insert(wallet_state.wallet_state_commitment);
     }
     // This asserts that the node that was reset is now in sync with the other nodes

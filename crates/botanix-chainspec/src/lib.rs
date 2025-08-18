@@ -31,6 +31,10 @@ pub struct BotanixChainSpec {
     /// LST fee receiver
     /// This is the contract address that receives block fees as part of native staking
     pub lst_fee_receiver: Option<String>,
+
+    /// EIP-225: Clique Proof-of-Authority consensus protocol.
+    /// The number of blocks in an epoch for PoA consensus
+    pub epoch_length: u64,
 }
 
 impl Default for BotanixChainSpec {
@@ -43,6 +47,7 @@ impl Default for BotanixChainSpec {
             bitcoin_checkpoint_confirmation_depth: 0,
             weak_bitcoin_checkpoints_count: 0,
             historical_bitcoin_checkpoints_count: 0,
+            epoch_length: 0,
         }
     }
 }

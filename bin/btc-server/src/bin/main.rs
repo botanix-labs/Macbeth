@@ -3,20 +3,22 @@ extern crate log;
 
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
-    consensus::Decodable, secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
+    consensus::{self, Decodable},
+    secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
 };
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use btcserverlib::{
     badarg,
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self, error::CoordinatorError},
-    database, dkg,
+    database::{self},
+    dkg,
     federation_args::FederationTomlConfig,
     frost_id, handle_signing_error,
     http::{create_web_server, state::ServerState},
-    jwt::{JwtError, JwtSecret},
     measure_rpc_latency,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
@@ -35,7 +37,9 @@ use btcserverlib::{
     },
     wallet::{
         self,
-        address::{generate_taproot_address, generate_tweaked_public_key},
+        address::{
+            generate_taproot_address, generate_taproot_scriptpubkey, generate_tweaked_public_key,
+        },
         psbt::{PsbtExt, PsbtOutputExt},
         util::VerifyingKeyExt,
     },
@@ -54,7 +58,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use thiserror::Error;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
 
@@ -2106,6 +2110,144 @@ where
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         panic!("Not used");
     }
+
+    async fn recover_missing_utxos(
+        &self,
+        request: tonic::Request<RecoverMissingUtxosRequest>,
+    ) -> Result<tonic::Response<RecoverMissingUtxosResponse>, tonic::Status> {
+        self.validate_jwt(&request)?;
+
+        let total_requested = request.get_ref().utxos.len() as u64;
+        info!("BtcServer::recover_missing_utxos: Total UTXOs requested: {}", total_requested);
+
+        // Get the UTXO set from the db
+        let db_utxos = self.db.get_all_utxos().to_status()?;
+        if db_utxos.is_empty() {
+            error!("BtcServer::recover_missing_utxos: No UTXOs found in the database.");
+            return Err(tonic::Status::internal("No UTXOs found in the database."));
+        }
+        info!("BtcServer::recover_missing_utxos: Found {} UTXOs in the database.", db_utxos.len());
+
+        let db_outpoints = db_utxos.iter().map(|u| u.outpoint).collect::<HashSet<_>>();
+
+        // Ensure we have a key package
+        let key_package = self
+            .db
+            .get_key_package()
+            .to_status()?
+            .ok_or(tonic::Status::internal("Missing key package"))?;
+
+        let mut utxos_to_add = Vec::new();
+        for req_utxo in request.into_inner().utxos {
+            info!("Processing UTXO: {:?}", req_utxo.outpoint);
+
+            // convert the request outpoint to the database outpoint
+            let req_outpoint = req_utxo.outpoint.as_ref().ok_or_else(|| {
+                error!("BtcServer::recover_missing_utxos: UTXO has no outpoint");
+                tonic::Status::invalid_argument("UTXO missing outpoint")
+            })?;
+            let txid = bitcoin::Txid::from_slice(&req_outpoint.txid).map_err(|e| {
+                error!("BtcServer::recover_missing_utxos: Invalid txid format: {}", e);
+                tonic::Status::invalid_argument(format!("Invalid txid format: {}", e))
+            })?;
+            let outpoint = bitcoin::OutPoint { txid, vout: req_outpoint.vout };
+
+            // check if the utxo is already in the database
+            if db_outpoints.contains(&outpoint) {
+                warn!(
+                    "BtcServer::recover_missing_utxos: UTXO {} is already in the database.",
+                    outpoint
+                );
+                continue;
+            }
+
+            // verify that the utxo exists on chain
+            let on_chain_utxo = self
+                .bitcoind_client
+                .get_tx_out(&outpoint.txid, outpoint.vout, None)
+                .map_err(|e| {
+                    error!("Failed to get tx out for input: {}: {}", outpoint, e);
+                    tonic::Status::internal(format!(
+                        "Failed to get tx out for input: {}: {}",
+                        outpoint, e
+                    ))
+                })?;
+
+            let Some(on_chain_utxo) = on_chain_utxo else {
+                warn!(
+                    "BtcServer::recover_missing_utxos: UTXO {} does not exist on chain, skipping.",
+                    outpoint
+                );
+                continue;
+            };
+
+            // parse the eth address if it is not empty
+            let eth_address: Option<[u8; 20]> = if req_utxo.eth_address.is_empty() {
+                None
+            } else {
+                let parsed_eth_address = parse_eth_address(req_utxo.eth_address).map_err(|e| {
+                    error!("Invalid ETH address format: {}", e);
+                    tonic::Status::internal(format!("Invalid ETH address format: {}", e))
+                })?;
+                Some(parsed_eth_address)
+            };
+
+            // convert on chain utxo to database utxo
+            let utxo = crate::database::Utxo {
+                outpoint,
+                output: TxOut {
+                    value: on_chain_utxo.value,
+                    script_pubkey: consensus::deserialize::<bitcoin::ScriptBuf>(
+                        &on_chain_utxo.script_pub_key.hex,
+                    )
+                    .map_err(|e| {
+                        tonic::Status::internal(format!("Failed to decode script: {}", e))
+                    })?,
+                },
+                eth_address,
+                version: 0,
+            };
+
+            // Generate the expected scriptPubKey for the eth address (if present) or the change
+            // scriptPubKey otherwise
+            let expected_script_pubkey: ScriptBuf;
+            if let Some(eth_address) = eth_address {
+                let agg_key = key_package.verifying_key();
+                let tweaked_key = generate_tweaked_public_key(agg_key, &eth_address)
+                    .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
+                expected_script_pubkey = generate_taproot_scriptpubkey(&tweaked_key);
+            } else {
+                let secp_pk = key_package
+                    .verifying_key()
+                    .to_secp_pk()
+                    .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
+                expected_script_pubkey =
+                    wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+            }
+
+            // verify that the scriptPubKey matches the p2tr_script
+            if expected_script_pubkey.to_bytes() != utxo.output.script_pubkey.to_bytes() {
+                error!("BtcServer::recover_missing_utxos: UTXO {} does not match the tweaked scriptPubKey.", utxo.outpoint);
+                continue;
+            }
+
+            // add the utxo to the list of utxos to be added
+            info!("UTXO {} passed all validations, adding to recovery list", outpoint);
+            utxos_to_add.push(utxo);
+        }
+
+        // add the utxos to the database
+        let utxo_refs: Vec<&crate::database::Utxo> = utxos_to_add.iter().collect();
+        info!("Storing {} missing UTXOs.", utxo_refs.len());
+        self.db.store_utxos(&utxo_refs).to_status()?;
+        self.db.update_utxo_merkle_root().to_status()?;
+        self.db.flush().to_status()?;
+
+        Ok(tonic::Response::new(RecoverMissingUtxosResponse {
+            total_requested,
+            total_recovered: utxos_to_add.len() as u64,
+        }))
+    }
 }
 
 impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
@@ -2128,7 +2270,12 @@ impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
                     })?;
 
                 if result.is_none() {
-                    // The input is already spent, remove it from the database
+                    warn!(
+                        "Input {} was spent without being tracked by the PegoutScheduler",
+                        input.previous_output
+                    );
+                    // TODO: Technically we should only remove the input if it is deeply confirmed
+                    // https://github.com/botanix-labs/botanix/issues/1099
                     match self.db.remove_utxo(&input.previous_output) {
                         Ok(_) => {
                             info!("Removed spent input: {} from DB", input.previous_output);
@@ -2156,6 +2303,20 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let config = btcserverlib::config::load_config()?;
+
+    // Create a shared shutdown signal that all components will monitor
+    let (shutdown_tx, _shutdown_rx) = broadcast::channel::<()>(1);
+
+    // Set up panic hook to ensure shutdown signal is sent even on panic
+    let shutdown_tx_for_panic = shutdown_tx.clone();
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        error!("BTC server panicked: {}", info);
+        // Send shutdown signal to stop metrics server: metrics server subscribes to `shutdown_tx`
+        let _ = shutdown_tx_for_panic.send(());
+        // Call the original panic hook
+        original_hook(info);
+    }));
 
     let telemetry = if config.metrics_port.is_some() {
         let telemetry = Telemetry::new().await?;
@@ -2187,50 +2348,87 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // spawn terminate handlers routine
-    let grpc_join_handle = tokio::spawn(stop_signal(grpc_stop_tx));
+    // spawn terminate handlers routine with enhanced shutdown coordination
+    let shutdown_tx_for_signal = shutdown_tx.clone();
+    let grpc_join_handle = tokio::spawn(async move {
+        stop_signal(grpc_stop_tx).await;
+        // When signal handler completes, broadcast shutdown to all components
+        let _ = shutdown_tx_for_signal.send(());
+    });
 
-    let server_handle = if let Some(telemetry) = telemetry {
-        // create and spin up the http server
+    let (metrics_server_handle, metrics_join_handle) = if let Some(telemetry) = telemetry {
+        // create and spin up the metrics HTTP server
         let state = ServerState::new(telemetry.clone()).await;
-        // create the actix webserver
+        // create the actix web server for metrics
         let port = config.metrics_port.unwrap_or(7000);
-        let grpc_server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
-        let grpc_server = create_web_server(state, grpc_server_addr)?;
-        // get server handle
-        let server_handle = grpc_server.handle();
-        // spawn the server in the background
-        tokio::spawn(async move {
-            if let Err(err) = grpc_server.await {
-                error!("Actix Web server error: {:?}", err);
+        let metrics_server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
+
+        let metrics_http_server = create_web_server(state, metrics_server_addr)?;
+        // get handle to control the metrics server
+        let metrics_server_handle = metrics_http_server.handle();
+
+        // Create a shutdown receiver for the metrics server
+        let mut shutdown_rx = shutdown_tx.subscribe();
+        let metrics_handle_for_shutdown = metrics_server_handle.clone();
+
+        // spawn the metrics server with shutdown monitoring
+        let metrics_join_handle = tokio::spawn(async move {
+            tokio::select! {
+                result = metrics_http_server => {
+                    if let Err(err) = result {
+                        error!("Metrics HTTP server error: {:?}", err);
+                    }
+                }
+                _ = shutdown_rx.recv() => {
+                    info!("Metrics server received shutdown signal");
+                    metrics_handle_for_shutdown.stop(true).await;
+                }
             }
         });
-        info!("Grpc server started.");
-        Some(server_handle)
+
+        info!("Metrics HTTP server started on port {}", port);
+        (Some(metrics_server_handle), Some(metrics_join_handle))
     } else {
         info!("Telemetry is disabled. Not starting the http server.");
-        None
+        (None, None)
     };
 
-    // // block and wait for a shutdown signal to terminate
-    let _ = tokio::join!(grpc_join_handle);
-
-    info!("Grpc server stopped");
-
-    if let Some(server_handle) = server_handle {
-        // Await the Actix server shutdown
-        info!("Stopping actix server ...");
-        server_handle.stop(true).await;
-        info!("Actix server stopped. Goodbye!");
+    // Wait for either the gRPC server to finish or metrics server to finish
+    match metrics_join_handle {
+        Some(metrics_handle) => {
+            tokio::select! {
+                _ = grpc_join_handle => {
+                    info!("gRPC server stopped");
+                }
+                _ = metrics_handle => {
+                    info!("Metrics server stopped");
+                }
+            }
+        }
+        None => {
+            let _ = grpc_join_handle.await;
+            info!("gRPC server stopped");
+        }
     }
 
+    // Ensure metrics server is stopped
+    if let Some(metrics_handle) = metrics_server_handle {
+        info!("Ensuring metrics server is stopped...");
+        metrics_handle.stop(true).await;
+        info!("Metrics server stopped.");
+    }
+
+    // Send final shutdown signal to any remaining components
+    let _ = shutdown_tx.send(());
+
+    info!("BTC server shutdown complete.");
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use bitcoin::{secp256k1, OutPoint, Script, Txid};
-    use btcserverlib::dkg::DkgMessage;
+    use btcserverlib::{dkg::DkgMessage, wallet::address::generate_taproot_change_scriptpubkey};
     use frost_secp256k1_tr::keys::dkg::round1;
     use rand::{thread_rng, Rng};
     use std::{str::FromStr, vec};
@@ -2912,5 +3110,203 @@ mod tests {
         // Verify that both UTXOs remain in database since they're unspent
         assert!(app.db.get_utxo(input_1).unwrap().is_some(), "Unspent UTXO input_1 should remain");
         assert!(app.db.get_utxo(input_2).unwrap().is_some(), "Unspent UTXO input_2 should remain");
+    }
+
+    // Helper function to set up app with key package
+    async fn setup_app_with_keys() -> (App<MockBitcoind>, frost::keys::KeyPackage) {
+        let app = setup().await;
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+        app.db.set_pubkey_package(pk_package).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+        (app, key_package)
+    }
+
+    fn create_random_outpoint(rng: &mut impl Rng) -> OutPoint {
+        OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 0)
+    }
+
+    fn create_utxo(
+        rng: &mut impl Rng,
+        amount: u64,
+        agg_key: &frost::VerifyingKey,
+        eth_address: Option<[u8; 20]>,
+    ) -> (OutPoint, Amount, ScriptBuf) {
+        let amount = Amount::from_sat(amount);
+        let script_pubkey = if let Some(eth_address) = eth_address {
+            let tweaked_key =
+                generate_tweaked_public_key(agg_key, &eth_address).expect("valid tweaked key");
+            generate_taproot_scriptpubkey(&tweaked_key)
+        } else {
+            let secp_pk = agg_key.to_secp_pk().expect("valid secp key");
+            generate_taproot_change_scriptpubkey(&secp_pk)
+        };
+        let outpoint = create_random_outpoint(rng);
+
+        (outpoint, amount, script_pubkey)
+    }
+
+    fn add_utxo_to_db(
+        app: &App<MockBitcoind>,
+        outpoint: OutPoint,
+        amount: Amount,
+        script_pubkey: ScriptBuf,
+        eth_address: Option<[u8; 20]>,
+    ) {
+        let utxo = database::Utxo::new(
+            outpoint,
+            bitcoin::TxOut { value: amount, script_pubkey: script_pubkey.clone() },
+            eth_address,
+            None,
+        );
+
+        let utxo_refs: Vec<&database::Utxo> = vec![&utxo];
+        app.db.store_utxos(&utxo_refs).expect("Failed to store UTXO");
+    }
+
+    #[tokio::test]
+    async fn test_recover_missing_utxos_success() {
+        let (app, key_package) = setup_app_with_keys().await;
+        let agg_key = key_package.verifying_key();
+        let mut rng = thread_rng();
+
+        // add dummy utxo to db to prevent 'no utxo in db' error
+        let (outpoint1, utxo1_amount, pegin_script_pubkey) =
+            create_utxo(&mut rng, 1000, agg_key, None);
+        add_utxo_to_db(&app, outpoint1, utxo1_amount, pegin_script_pubkey, None);
+
+        // Onchain UTXO 1: With eth_address (pegin UTXO)
+        let eth_address = [1u8; 20];
+        let (outpoint1, utxo1_amount, pegin_script_pubkey) =
+            create_utxo(&mut rng, 100000, agg_key, Some(eth_address));
+        app.bitcoind_client.add_utxo(outpoint1, utxo1_amount, pegin_script_pubkey.clone());
+
+        // Onchain UTXO 2: change UTXO
+        let (outpoint2, utxo2_amount, change_script_pubkey) =
+            create_utxo(&mut rng, 50000, agg_key, None);
+        app.bitcoind_client.add_utxo(outpoint2, utxo2_amount, change_script_pubkey.clone());
+
+        // Create request utxos
+        let utxo_with_eth = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint {
+                txid: bitcoin::consensus::serialize(&outpoint1.txid),
+                vout: outpoint1.vout,
+            }),
+            eth_address: hex::encode(eth_address),
+        };
+
+        let utxo_without_eth = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint {
+                txid: bitcoin::consensus::serialize(&outpoint2.txid),
+                vout: outpoint2.vout,
+            }),
+            eth_address: String::new(), // Empty for change UTXO
+        };
+
+        let request = tonic::Request::new(RecoverMissingUtxosRequest {
+            utxos: vec![utxo_with_eth, utxo_without_eth],
+        });
+
+        let response = app.recover_missing_utxos(request).await.expect("successful recovery");
+        let inner = response.into_inner();
+
+        // Verify results
+        assert_eq!(inner.total_requested, 2);
+        assert_eq!(inner.total_recovered, 2);
+
+        // Verify UTXOs were stored in database
+        let stored_utxo1 = app.db.get_utxo(outpoint1).unwrap().unwrap();
+        assert_eq!(stored_utxo1.output.value, utxo1_amount);
+        assert_eq!(stored_utxo1.output.script_pubkey, pegin_script_pubkey,);
+
+        let stored_utxo2 = app.db.get_utxo(outpoint2).unwrap().unwrap();
+        assert_eq!(stored_utxo2.output.value, utxo2_amount,);
+        assert_eq!(stored_utxo2.output.script_pubkey, change_script_pubkey,);
+    }
+
+    #[tokio::test]
+    async fn test_recover_missing_utxos_bad_requests() {
+        let (app, key_package) = setup_app_with_keys().await;
+        let agg_key = key_package.verifying_key();
+        let mut rng = thread_rng();
+
+        // add existing utxo to db
+        let (existing_outpoint, existing_amount, existing_script_pubkey) =
+            create_utxo(&mut rng, 1000, agg_key, None);
+        add_utxo_to_db(&app, existing_outpoint, existing_amount, existing_script_pubkey, None);
+
+        // add these utxos to bitcoind
+        // Onchain UTXO 1: With eth_address (pegin UTXO)
+        let eth_address = [1u8; 20];
+        let (outpoint1, utxo1_amount, pegin_script_pubkey) =
+            create_utxo(&mut rng, 100000, agg_key, Some(eth_address));
+        app.bitcoind_client.add_utxo(outpoint1, utxo1_amount, pegin_script_pubkey.clone());
+
+        // Onchain UTXO 2: change UTXO
+        let not_change_script_pubkey = ScriptBuf::new();
+        let (outpoint2, utxo2_amount, _) = create_utxo(&mut rng, 50000, agg_key, None);
+        app.bitcoind_client.add_utxo(outpoint2, utxo2_amount, not_change_script_pubkey);
+
+        // (not onchain) UTXO 3: not found by bitcoind
+        let (outpoint3, _, _) = create_utxo(&mut rng, 50000, agg_key, None);
+
+        // Case 1 - utxo exists in db
+        let existing_utxo = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint {
+                txid: bitcoin::consensus::serialize(&existing_outpoint.txid),
+                vout: existing_outpoint.vout,
+            }),
+            eth_address: String::new(),
+        };
+
+        // Case 2 - wrong eth address
+        let wrong_eth_address = [2u8; 20];
+        let utxo_wrong_eth_address = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint {
+                txid: bitcoin::consensus::serialize(&outpoint1.txid),
+                vout: outpoint1.vout,
+            }),
+            eth_address: hex::encode(wrong_eth_address),
+        };
+
+        // Case 3 - utxo does not match change script pubkey
+        let utxo_not_change_script = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint {
+                txid: bitcoin::consensus::serialize(&outpoint2.txid),
+                vout: outpoint2.vout,
+            }),
+            eth_address: String::new(),
+        };
+
+        // Case 4 - utxo is not found by bitcoind
+        let utxo_not_found = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint {
+                txid: bitcoin::consensus::serialize(&outpoint3.txid),
+                vout: outpoint3.vout,
+            }),
+            eth_address: String::new(),
+        };
+
+        let request = tonic::Request::new(RecoverMissingUtxosRequest {
+            utxos: vec![
+                existing_utxo,
+                utxo_wrong_eth_address,
+                utxo_not_change_script,
+                utxo_not_found,
+            ],
+        });
+
+        let response = app.recover_missing_utxos(request).await.expect("successful recovery");
+        let inner = response.into_inner();
+
+        // Verify results
+        assert_eq!(inner.total_requested, 4);
+        assert_eq!(inner.total_recovered, 0);
+
+        // Verify no bad utxos were added to db
+        let utxos = app.db.get_all_utxos().unwrap();
+        assert_eq!(utxos.len(), 1);
+        assert_eq!(utxos[0].outpoint, existing_outpoint);
     }
 }

@@ -1,5 +1,4 @@
 //! POA node command
-
 use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
@@ -13,17 +12,17 @@ use botanix_configs::federation::load_federation_config_toml;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use botanix_storage_migrate::is_migration_needed;
 use botanix_utils::panic_hook::set_panic_hook;
-use btcserverlib::extended_client::{
-    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
+use btc_server_client::{
+    BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory,
+    RecoverMissingUtxosRequest,
 };
 use clap::{value_parser, Parser};
-use client::Empty;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
-    comet_bft::abci::{ABCIDriver, RUNTIME_VERSION_ACTIVE, RUNTIME_VERSION_UPGRADE},
+    comet_bft::abci::{ABCIDriver, RUNTIME_VERSION_V2, RUNTIME_VERSION_V3},
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     wallet_state_sync::WalletStateSync,
@@ -71,6 +70,7 @@ use botanix_btc_wallet::bitcoind::{
 };
 use botanix_storage::{models::Vote, BotanixProviderFactory};
 use botanix_storage_migrate::migrate_botanix_tables;
+use btcserverlib::utxo_recovery::read_utxos_from_file;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
@@ -218,6 +218,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     cometbft_rpc_port,
                     cometbft_rpc_host,
                     block_fee_recipient_address,
+                    utxo_recovery_file,
                 },
             datadir,
             metrics,
@@ -379,7 +380,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.map(|s| btcserverlib::jwt::JwtSecret(s.0)),
+                btc_signing_server_jwt_secret.map(|s| btc_server_client::jwt::JwtSecret(s.0)),
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };
@@ -400,6 +401,32 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 eyre::eyre!("Failed to authenticate to btc server: {}", err)
             })?;
             info!(target: "reth::cli", "Btc server authenticated");
+
+            // if utxo_recovery_file is provided, use it to recover UTXOs
+            if let Some(utxo_recovery_file) = utxo_recovery_file {
+                info!(target: "reth::cli", "Recovering missing UTXOs from file: {}", utxo_recovery_file.display());
+                let utxos = read_utxos_from_file(std::path::Path::new(utxo_recovery_file));
+                info!(target: "reth::cli", "UTXOs to recover: {:?}", utxos);
+                let recover_request = RecoverMissingUtxosRequest { utxos };
+                // Only proceed if we have UTXOs to recover
+                if !recover_request.utxos.is_empty() {
+                    match btc_server_client.recover_missing_utxos(recover_request).await {
+                        Ok(response) => {
+                            info!(target: "reth::cli",
+                                "UTXO recovery completed successfully. Requested: {}, Recovered: {}",
+                                response.total_requested, response.total_recovered
+                            );
+                        }
+                        Err(err) => {
+                            error!(target: "reth::cli", "UTXO recovery failed: {}", err);
+                        }
+                    }
+                } else {
+                    error!(target: "reth::cli", "UTXO_RECOVERY_FILE is provided but no UTXOs to recover");
+                }
+            } else {
+                info!(target: "reth::cli", "No UTXOs recovery file provided");
+            };
 
             Some(btc_server_factory)
         } else {
@@ -799,9 +826,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // ActivationManager: setup compliance and vote inclusion.
         let activation_manager =
-            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_ACTIVE)
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_V2)
                 .build_COMPLIANT_network_upgrade(
-                    RUNTIME_VERSION_UPGRADE,
+                    RUNTIME_VERSION_V3,
                     quorum,
                     min_validator_count,
                     target_height,
@@ -1186,9 +1213,11 @@ mod tests {
     use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use std::{
+        io::Write,
         net::{IpAddr, Ipv4Addr},
         path::Path,
     };
+    use tempfile::NamedTempFile;
 
     use secp256k1::rand;
 

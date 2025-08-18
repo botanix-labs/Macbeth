@@ -28,10 +28,10 @@ bdk_wallet = "1.0.0" # just using this for the coin selection
 bitcoin = { version = "0.32.5", features = ["base64", "rand", "serde"] }
 bitcoin_hashes = "0.14.0"
 bitcoincore-rpc = "0.19.0"
+btc-server-client = { path = "./client" }
 chacha20poly1305 = "0.10.1"
 ciborium = "0.2.1"
 clap = { version = "4.3.22", features = ["derive"] }
-client = { path = "./client" }
 confy = "0.6"
 derive_more = { version = "1.0", features = ["full"] }
 displaydoc = "0.2"
@@ -56,6 +56,7 @@ prost = "0.13.3"
 prost-types = "0.13.5"
 rand = "0.8.5"
 
+reth-fs-util = { workspace = true }
 rust_decimal = { version = "1.13" }
 serde = "1.0.171"
 serde_json = "1.0"

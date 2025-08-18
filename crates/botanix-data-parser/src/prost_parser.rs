@@ -40,7 +40,7 @@ mod test {
         DEFAULT_COMPRESSION_STRATEGY,
     };
     use bitcoin::{hashes::Hash, Txid};
-    use client::{GetAllUtxosResponse, TxOut, Utxo};
+    use btc_server_client::{GetAllUtxosResponse, TxOut, Utxo};
     use rand::{thread_rng, Rng};
 
     #[tokio::test]
@@ -88,9 +88,9 @@ mod test {
             let script_pubkey = rng.gen::<[u8; 32]>().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
             let utxo = Utxo {
-                outpoint: Some(client::OutPoint { txid: txid.clone(), vout }),
+                outpoint: Some(btc_server_client::OutPoint { txid: txid.clone(), vout }),
                 output: Some(TxOut {
-                    script_pubkey: Some(client::ScriptBuf { script: script_pubkey }),
+                    script_pubkey: Some(btc_server_client::ScriptBuf { script: script_pubkey }),
                     value: rng.gen::<u64>(),
                 }),
                 eth_address: "0x0".to_string(),
@@ -124,9 +124,9 @@ mod test {
             let script_pubkey = rng.gen::<[u8; 32]>().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
             let utxo = Utxo {
-                outpoint: Some(client::OutPoint { txid: txid.clone(), vout }),
+                outpoint: Some(btc_server_client::OutPoint { txid: txid.clone(), vout }),
                 output: Some(TxOut {
-                    script_pubkey: Some(client::ScriptBuf { script: script_pubkey }),
+                    script_pubkey: Some(btc_server_client::ScriptBuf { script: script_pubkey }),
                     value: rng.gen::<u64>(),
                 }),
                 eth_address: "0x0".to_string(),

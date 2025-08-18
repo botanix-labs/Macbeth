@@ -70,6 +70,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<BotanixChainSpec>> = Lazy::new(|| {
         leader_selection_window: Some(20),
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
+        epoch_length: 10,
     };
     botanix_spec.into()
 });
@@ -99,6 +100,7 @@ pub static BOTANIX_MAINNET: Lazy<Arc<BotanixChainSpec>> = Lazy::new(|| {
         leader_selection_window: Some(20),
         botanix_fee_recipient: None,
         lst_fee_receiver: None,
+        epoch_length: 100,
     };
     botanix_spec.into()
 });
@@ -111,6 +113,7 @@ pub fn create_botanix_config_with_genesis(
     chain_id: u64,
     genesis_hash: Option<B256>,
     lst_fee_receiver: String,
+    epoch_length: u64,
 ) -> BotanixChainSpec {
     let chainspec = ChainSpec {
         chain: Chain::from_id(chain_id),
@@ -133,6 +136,7 @@ pub fn create_botanix_config_with_genesis(
         leader_selection_window: Some(20),
         botanix_fee_recipient: Some(botanix_fee_recipient),
         lst_fee_receiver: Some(lst_fee_receiver),
+        epoch_length,
     };
     botanix_spec
 }
