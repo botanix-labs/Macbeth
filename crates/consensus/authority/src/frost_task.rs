@@ -10,6 +10,7 @@ use bitcoin::consensus::Encodable;
 use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
+use botanix_chainspec::BotanixChainSpec;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{
     prost_parser::{ProstError, ProstMessageSerdelizer},
@@ -21,7 +22,6 @@ use btc_server_client::{
 };
 use btcserverlib::wallet::psbt::frost_id_from_bytes;
 use futures::{pin_mut, StreamExt};
-use reth_chainspec::ChainSpec;
 use reth_network::{
     frost::{
         manager::{
@@ -118,7 +118,7 @@ where
     /// Creates a new instance of the task
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: Arc<BotanixChainSpec>,
         btc_server: BtcServerClient,
         network_handle: NetworkHandle,
         frost_handle: ToFrostMan,

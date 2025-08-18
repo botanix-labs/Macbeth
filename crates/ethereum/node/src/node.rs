@@ -6,6 +6,7 @@ use botanix_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
 };
+use botanix_chainspec::BotanixChainSpec;
 use reth_auto_seal_consensus::AutoSealConsensus;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_beacon_consensus::EthBeaconConsensus;
@@ -147,6 +148,7 @@ where
             ProviderFactory::new(db, ctx.chain_spec(), StaticFileProvider::default());
         let executor = EthExecutorProvider::new(
             chain_spec,
+            Arc::new(BotanixChainSpec::default()),
             evm_config,
             mock_bitcoind_factory,
             regtest,

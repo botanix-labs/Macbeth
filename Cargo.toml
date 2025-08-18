@@ -570,6 +570,9 @@ c-kzg = "1.0.0"
 # config
 toml = "0.8"
 
+# askama
+askama = "0.12.1"
+
 # misc-testing
 arbitrary = "1.4"
 assert_matches = "1.5"

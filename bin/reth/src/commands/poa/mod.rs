@@ -2,6 +2,7 @@
 use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
+use botanix_chainspec::constants::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use botanix_cli_args::{
     bitcoind::BitcoindArgs,
     chain::{get_chain_from_federation_config, BotanixNetwork},
@@ -72,7 +73,6 @@ use botanix_storage::{models::Vote, BotanixProviderFactory};
 use botanix_storage_migrate::migrate_botanix_tables;
 use btcserverlib::utxo_recovery::read_utxos_from_file;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
 use reth_consensus_common::utils;
@@ -250,7 +250,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let chain_arc = Arc::new(chain.clone());
 
         // check chains match
-        match (chain.chain.id(), rpc.btc_network) {
+        match (chain.inner().chain.id(), rpc.btc_network) {
             (BOTANIX_MAINNET_CHAIN_ID, bitcoin::Network::Bitcoin) => {}
             (BOTANIX_TESTNET_CHAIN_ID, _) => {
                 // Testnet can be any non-mainnet network for btc
@@ -271,7 +271,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let mut node_config = NodeConfig {
             datadir: datadir.clone(),
             config: network_config_path.clone(),
-            chain: chain_arc.clone(),
+            chain: chain.inner_arc(),
             federation_mode: *federation_mode,
             metrics: *metrics,
             instance: *instance,
@@ -598,7 +598,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Config executor factory
         let evm_config = EthEvmConfig::default();
         let executor_factory = EthExecutorProvider::new(
-            Arc::new(chain.clone()),
+            chain.inner_arc(),
+            chain.clone().into(),
             evm_config,
             bitcoind_factory.clone(),
             node_config.rpc.btc_network,
@@ -645,12 +646,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         drop(state_provider);
 
         let blob_store = InMemoryBlobStore::default();
-        let validator =
-            TransactionValidationTaskExecutor::eth_builder(Arc::clone(&chain_arc.clone()))
-                .with_head_timestamp(head.timestamp)
-                .with_minimum_priority_fee(self.txpool.minimum_priority_fee)
-                .with_additional_tasks(1)
-                .build_with_tasks(blockchain_db.clone(), executor.clone(), blob_store.clone());
+        let validator = TransactionValidationTaskExecutor::eth_builder(chain_arc.inner_arc())
+            .with_head_timestamp(head.timestamp)
+            .with_minimum_priority_fee(self.txpool.minimum_priority_fee)
+            .with_additional_tasks(1)
+            .build_with_tasks(blockchain_db.clone(), executor.clone(), blob_store.clone());
 
         // Set up Transaction pool (mempool)
         let transaction_pool = reth_transaction_pool::Pool::eth_pool(
@@ -717,7 +717,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let mut network_cfg_builder = self
             .network
-            .network_config(&reth_config, chain_arc.clone(), secret_key, default_peers_path)
+            .network_config(&reth_config, chain_arc.inner_arc(), secret_key, default_peers_path)
             .with_task_executor(Box::new(executor.clone()))
             .set_head(head)
             .disable_discovery()
@@ -1213,11 +1213,9 @@ mod tests {
     use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
     use std::{
-        io::Write,
         net::{IpAddr, Ipv4Addr},
         path::Path,
     };
-    use tempfile::NamedTempFile;
 
     use secp256k1::rand;
 
@@ -1348,7 +1346,7 @@ mod tests {
         .expect("chain is to exist");
         // always store reth.toml in the data dir, not the chain specific data dir
         let data_dir =
-            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.inner().chain, cmd.datadir);
         let config_path = cmd.botanix_args.network_config_path.unwrap_or_else(|| data_dir.config());
         assert_eq!(config_path, Path::new("my/path/to/reth.toml"));
 
@@ -1389,10 +1387,10 @@ mod tests {
             cmd.botanix_args.is_testnet,
         )
         .expect("chain is to exist");
-        assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);
+        assert_eq!(chain.inner().chain.id(), BOTANIX_TESTNET_CHAIN_ID);
         assert_ne!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
         let data_dir =
-            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.inner().chain, cmd.datadir);
         let db_path = data_dir.db();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
     }
@@ -1425,10 +1423,10 @@ mod tests {
             cmd.botanix_args.is_devnet,
         )
         .expect("chain is to exist");
-        assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);
+        assert_eq!(chain.inner().chain.id(), BOTANIX_TESTNET_CHAIN_ID);
         assert_ne!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
         let data_dir =
-            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.inner().chain, cmd.datadir);
         let db_path = data_dir.db();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
     }
@@ -1462,10 +1460,10 @@ mod tests {
             cmd.botanix_args.is_testnet,
         )
         .expect("chain is to exist");
-        assert_eq!(chain.chain.id(), BOTANIX_MAINNET_CHAIN_ID);
+        assert_eq!(chain.inner().chain.id(), BOTANIX_MAINNET_CHAIN_ID);
         assert_eq!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
         let data_dir =
-            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.inner().chain, cmd.datadir);
         let db_path = data_dir.db();
         assert_eq!(db_path, Path::new("my/custom/path/db"));
     }

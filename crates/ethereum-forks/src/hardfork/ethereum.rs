@@ -66,6 +66,9 @@ impl EthereumHardfork {
         if chain == Chain::holesky() {
             return self.holesky_activation_block()
         }
+        if chain == Chain::arbitrum_sepolia() {
+            return self.arbitrum_sepolia_activation_block()
+        }
 
         None
     }
@@ -158,9 +161,7 @@ impl EthereumHardfork {
             Self::GrayGlacier |
             Self::Paris => Some(0),
             Self::Shanghai => Some(10653737),
-            // Hardfork::ArbOS11 => Some(10653737),
             Self::Cancun => Some(18683405),
-            // Hardfork::ArbOS20Atlas => Some(18683405),
             _ => None,
         }
     }

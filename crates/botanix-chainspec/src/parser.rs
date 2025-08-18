@@ -24,8 +24,8 @@ impl ChainSpecParser for BotanixChainSpecParser {
 /// to a json file, or a json formatted string in-memory. The json needs to be a Genesis struct.
 fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> {
     match s {
-        "mainnet" => Ok(Arc::new(BOTANIX_MAINNET.chainspec().clone())),
-        "testnet" => Ok(Arc::new(BOTANIX_TESTNET.chainspec().clone())),
+        "mainnet" => Ok(BOTANIX_MAINNET.inner_arc()),
+        "testnet" => Ok(BOTANIX_TESTNET.inner_arc()),
         _ => {
             // try to read json from path first
             let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {

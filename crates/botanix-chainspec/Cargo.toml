@@ -14,7 +14,7 @@ alloy-primitives = { workspace = true, features = ["rand", "rlp", "serde"] }
 alloy-serde = { workspace = true }
 
 # askama
-askama = "0.12.1"
+askama = { workspace = true }
 botanix-hardforks = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 derive_more = { workspace = true }

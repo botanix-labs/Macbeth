@@ -13,7 +13,7 @@ anyhow = "1.0.71"
 argh = "0.1.10"
 
 # crates.io dependencies
-askama = "0.12.1"
+askama = { workspace = true }
 
 assert_matches = { workspace = true }
 async-trait = "0.1.68"
@@ -28,6 +28,7 @@ botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 
 # Botanix
 botanix-btc-wallet = { path = "../../crates/botanix-btc-wallet" }
+botanix-chainspec = { workspace = true }
 botanix-cli-args = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
 botanix-configs = { workspace = true }

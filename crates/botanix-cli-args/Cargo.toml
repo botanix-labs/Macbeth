@@ -9,7 +9,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-askama = "0.12.1"
+askama = { workspace = true }
 bitcoin = { workspace = true }
 botanix-authority-edh = { workspace = true }
 botanix-btc-wallet = { workspace = true }

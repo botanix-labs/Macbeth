@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use botanix_hardforks::BotanixHardfork;
 use reth_chainspec::{ChainSpec, EthChainSpec, EthereumHardfork, Hardforks};
 use reth_primitives_traits::constants::EIP1559_INITIAL_BASE_FEE;
@@ -53,8 +55,12 @@ impl Default for BotanixChainSpec {
 }
 
 impl BotanixChainSpec {
-    pub fn chainspec(&self) -> &ChainSpec {
+    pub fn inner(&self) -> &ChainSpec {
         &self.inner
+    }
+
+    pub fn inner_arc(&self) -> Arc<ChainSpec> {
+        self.inner().clone().into()
     }
 
     /// Returns the initial base fee based on chain id

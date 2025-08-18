@@ -14,6 +14,7 @@ use botanix_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
 };
+use botanix_chainspec::BotanixChainSpec;
 use btcserverlib::pegout_id::PegoutId;
 use core::fmt::Display;
 use reth_chainspec::{ChainSpec, EthereumHardforks};
@@ -67,6 +68,7 @@ where
     RethDB: reth_db::Database,
 {
     chain_spec: Arc<ChainSpec>,
+    botanix_chain_spec: Arc<BotanixChainSpec>,
     evm_config: EvmConfig,
     bitcoind_factory: BF,
     bitcoin_network: bitcoin::Network,
@@ -79,6 +81,7 @@ pub fn create_noop_executor_provider(
 ) -> EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>, EthEvmConfig> {
     EthExecutorProvider::new(
         chain_spec,
+        BotanixChainSpec::default().into(),
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
         bitcoin::Network::Regtest,
@@ -93,11 +96,19 @@ where
     /// Creates a new default ethereum executor provider.
     pub fn ethereum(
         chain_spec: Arc<ChainSpec>,
+        botanix_chain_spec: Arc<BotanixChainSpec>,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
         provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
-        Self::new(chain_spec, Default::default(), bitcoind_factory, bitcoin_network, provider)
+        Self::new(
+            chain_spec,
+            botanix_chain_spec,
+            Default::default(),
+            bitcoind_factory,
+            bitcoin_network,
+            provider,
+        )
     }
 }
 
@@ -108,12 +119,20 @@ where
     /// Creates a new executor provider.
     pub const fn new(
         chain_spec: Arc<ChainSpec>,
+        botanix_chain_spec: Arc<BotanixChainSpec>,
         evm_config: EvmConfig,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
         provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
-        Self { chain_spec, evm_config, bitcoind_factory, bitcoin_network, provider }
+        Self {
+            chain_spec,
+            botanix_chain_spec,
+            evm_config,
+            bitcoind_factory,
+            bitcoin_network,
+            provider,
+        }
     }
 }
 
@@ -129,6 +148,7 @@ where
     {
         EthBlockExecutor::new(
             self.chain_spec.clone(),
+            self.botanix_chain_spec.clone(),
             self.evm_config.clone(),
             State::builder().with_database(db).with_bundle_update().without_state_clear().build(),
             self.bitcoind_factory.clone(),
@@ -185,6 +205,8 @@ where
 {
     /// The chainspec
     chain_spec: Arc<ChainSpec>,
+    /// Botanix chainspec
+    botanix_chain_spec: Arc<BotanixChainSpec>,
     /// How to create an EVM.
     evm_config: EvmConfig,
     /// The bitcoind factory used to connect to the L1 bitcoind RPC
@@ -643,6 +665,7 @@ where
     /// Creates a new Ethereum block executor.
     pub const fn new(
         chain_spec: Arc<ChainSpec>,
+        botanix_chain_spec: Arc<BotanixChainSpec>,
         evm_config: EvmConfig,
         state: State<DB>,
         bitcoind_factory: BF,
@@ -652,6 +675,7 @@ where
         Self {
             executor: EthEvmExecutor {
                 chain_spec,
+                botanix_chain_spec,
                 evm_config,
                 bitcoind_factory,
                 bitcoin_network,
@@ -664,6 +688,11 @@ where
     #[inline]
     fn chain_spec(&self) -> &ChainSpec {
         self.executor.chain_spec.as_ref()
+    }
+
+    #[inline]
+    fn botanix_chain_spec(&self) -> &BotanixChainSpec {
+        self.executor.botanix_chain_spec.as_ref()
     }
 
     /// Returns mutable reference to the state that wraps the underlying database.
@@ -770,7 +799,7 @@ where
         block_fee_recipient_address: Address,
     ) -> Result<(), BlockExecutionError> {
         let mut balance_increments = post_block_balance_increments(
-            self.chain_spec(),
+            self.botanix_chain_spec(),
             block,
             total_difficulty,
             total_block_fees,

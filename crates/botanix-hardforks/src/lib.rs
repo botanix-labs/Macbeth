@@ -1,4 +1,3 @@
-#![allow(unused)]
 use alloy_chains::Chain;
 use alloy_primitives::{uint, U256};
 use core::{
@@ -68,6 +67,9 @@ impl BotanixHardfork {
         if chain == Chain::holesky() {
             return self.holesky_activation_block()
         }
+        if chain == Chain::arbitrum_sepolia() {
+            return self.arbitrum_sepolia_activation_block()
+        }
 
         None
     }
@@ -120,7 +122,7 @@ impl BotanixHardfork {
     }
 
     /// Retrieves the activation block for the specified hardfork on the holesky testnet.
-    const fn holesky_activation_block(&self) -> Option<u64> {
+    pub const fn holesky_activation_block(&self) -> Option<u64> {
         match self {
             Self::Dao |
             Self::Tangerine |
@@ -160,9 +162,7 @@ impl BotanixHardfork {
             Self::GrayGlacier |
             Self::Paris => Some(0),
             Self::Shanghai => Some(10653737),
-            // Hardfork::ArbOS11 => Some(10653737),
             Self::Cancun => Some(18683405),
-            // Hardfork::ArbOS20Atlas => Some(18683405),
             _ => None,
         }
     }
@@ -203,6 +203,9 @@ impl BotanixHardfork {
         }
         if chain == Chain::holesky() {
             return self.holesky_activation_timestamp()
+        }
+        if chain == Chain::arbitrum_sepolia() {
+            return self.arbitrum_sepolia_activation_timestamp()
         }
 
         None

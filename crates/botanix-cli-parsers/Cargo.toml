@@ -7,7 +7,7 @@ license = { workspace = true }
 
 [dependencies]
 alloy-primitives = { workspace = true }
-askama = "0.12.1"
+askama = { workspace = true }
 bitcoin = { workspace = true }
 botanix-authority-edh = { workspace = true }
 botanix-chainspec = { workspace = true }

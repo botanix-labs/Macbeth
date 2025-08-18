@@ -4,13 +4,16 @@ use botanix_authority_edh::{
     extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
     nums_secp256k1_pk,
 };
-use botanix_chainspec::constants::{
-    create_botanix_config_with_genesis, BotanixMainnetGenesisConfig, BotanixTestnetGenesisConfig,
-    BOTANIX_MAINNET, BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID,
+use botanix_chainspec::{
+    constants::{
+        create_botanix_config_with_genesis, BotanixMainnetGenesisConfig,
+        BotanixTestnetGenesisConfig, BOTANIX_MAINNET, BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET,
+        BOTANIX_TESTNET_CHAIN_ID,
+    },
+    BotanixChainSpec,
 };
 use botanix_cli_parsers::parsers::SUPPORTED_CHAINS;
 use botanix_configs::federation::FederationTomlConfig;
-use reth_chainspec::ChainSpec;
 use reth_primitives::Address;
 use std::{fs, path::PathBuf, str::FromStr};
 
@@ -63,7 +66,7 @@ impl BotanixNetwork {
 }
 
 /// Returns the Botanix network chain spec based on a flag
-pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec> {
+pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<BotanixChainSpec> {
     let network = if is_testnet { BotanixNetwork::Testnet } else { BotanixNetwork::Mainnet };
 
     // our own toml format
@@ -88,7 +91,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
                 genesis,
                 BOTANIX_MAINNET.bitcoin_checkpoint_confirmation_depth,
                 BOTANIX_MAINNET_CHAIN_ID,
-                BOTANIX_MAINNET.chainspec().genesis_hash,
+                BOTANIX_MAINNET.inner().genesis_hash,
                 BOTANIX_MAINNET.epoch_length,
             )
         }
@@ -100,7 +103,7 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
                 genesis,
                 BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth,
                 BOTANIX_TESTNET_CHAIN_ID,
-                BOTANIX_TESTNET.chainspec().genesis_hash,
+                BOTANIX_TESTNET.inner().genesis_hash,
                 BOTANIX_TESTNET.epoch_length,
             )
         }
@@ -114,14 +117,14 @@ pub fn get_botanix_chain(raw: &str, is_testnet: bool) -> eyre::Result<ChainSpec>
         lst_fee_receiver,
         epoch_length,
     );
-    Ok(botanix_chain.chainspec().clone())
+    Ok(botanix_chain)
 }
 
 /// Returns the botanix network chain spec using the config at the passed path
 pub fn get_chain_from_federation_config(
     s: &str,
     is_testnet: bool,
-) -> eyre::Result<ChainSpec, eyre::Error> {
+) -> eyre::Result<BotanixChainSpec, eyre::Error> {
     // try to read json from path first
     let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
         Ok(raw) => raw,

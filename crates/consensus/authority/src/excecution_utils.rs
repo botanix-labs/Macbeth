@@ -1,5 +1,6 @@
 pub(crate) mod authority_execution_utils {
     use botanix_btc_wallet::bitcoind::BitcoindFactory;
+    use botanix_chainspec::BotanixChainSpec;
     use botanix_storage::models::RuntimeVersion;
     use reth_chainspec::{ChainSpec, EthereumHardforks};
 
@@ -42,7 +43,7 @@ pub(crate) mod authority_execution_utils {
     #[tracing::instrument(skip_all, level = "trace")]
     pub(crate) fn build_and_execute<BF, DB>(
         transactions: Vec<TransactionSigned>,
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: Arc<BotanixChainSpec>,
         runtime_version: RuntimeVersion,
         network_upgrade_payload: Option<NetworkUpgradePayload>,
         floor_base_fee: Option<u64>,
@@ -76,7 +77,7 @@ pub(crate) mod authority_execution_utils {
             &transactions,
             database_provider,
             bitcoin_checkpoint_block_hash,
-            chain_spec.clone(),
+            chain_spec.inner_arc(),
             agg_pk,
             timestamp,
             block_fee_recipient_address,
@@ -408,7 +409,7 @@ pub(crate) mod authority_execution_utils {
         _block_fee_recipient_address: Option<Address>,
         bitcoind_factory: &BF,
         bitcoin_network: bitcoin::Network,
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: Arc<BotanixChainSpec>,
         evm_config: EthEvmConfig,
     ) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError>
     where
@@ -429,9 +430,9 @@ pub(crate) mod authority_execution_utils {
             .with_database_boxed(Box::new(StateProviderDatabase::new(provider)))
             .with_bundle_update()
             .build();
-
         let executor = EthBlockExecutor::<EthEvmConfig, _, BF, DB>::new(
-            chain_spec,
+            chain_spec.inner_arc(),
+            chain_spec.clone(),
             evm_config,
             db,
             bitcoind_factory.clone(),
