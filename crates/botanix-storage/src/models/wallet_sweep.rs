@@ -5,12 +5,23 @@ use reth_primitives::B256;
 use serde::{Deserialize, Serialize};
 // TODO: TBD
 
+/// Unique identifier for a wallet sweep session.
+///
+/// This is a 256-bit identifier used to uniquely identify wallet sweep sessions
+/// in the storage system.
 pub type WalletSweepSessionId = B256;
 
+/// Represents a wallet sweep session that tracks the state of a Bitcoin wallet sweep operation.
+///
+/// A wallet sweep session contains information about the Bitcoin network being used,
+/// the destination address for the swept funds, and when the session was created.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletSweepSession {
+    /// The Bitcoin network (mainnet, testnet, regtest, or signet) for this sweep operation.
     pub bitcoin_network: Network,
+    /// The destination Bitcoin address where swept funds will be sent.
     pub bitcoin_destination_address: Address<NetworkUnchecked>,
+    /// Unix timestamp when this session was created.
     pub created_at: u64,
 }
 
@@ -78,21 +89,42 @@ impl Decompress for WalletSweepSession {
 }
 
 impl WalletSweepSession {
+    /// Calculates a unique identifier for this wallet sweep session.
+    ///
+    /// This method generates a deterministic ID based on the session's properties,
+    /// which can be used to uniquely identify this session in storage.
+    ///
+    /// # Returns
+    ///
+    /// A unique identifier for this wallet sweep session.
     pub fn calculate_id(&self) -> WalletSweepSessionId {
         todo!()
     }
 }
 
+/// Defines the ordering strategy for UTXOs during wallet sweep operations.
+///
+/// This enum specifies how UTXOs should be ordered when processing them
+/// during a wallet sweep operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum UtxoOrdering {
+    /// Orders UTXOs lexicographically by their identifiers.
     Lexicographic,
 }
 
+/// Configuration parameters that must be agreed upon by consensus for wallet sweep operations.
+///
+/// These parameters define the fee rate, UTXO ordering strategy, threshold requirements,
+/// and which federation members are reachable for the sweep operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusParameters {
+    /// Fee rate in satoshis per virtual byte for the sweep transaction.
     fee_rate_sat_vb: u64,
+    /// The ordering strategy to use for UTXOs during the sweep.
     utxo_ordering: UtxoOrdering,
+    /// Percentage threshold required for consensus (0-100).
     threshold_percent: u8,
+    /// List of federation member IDs that are reachable for this operation.
     reachable_members: Vec<u16>,
 }
 
