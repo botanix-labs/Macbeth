@@ -63,6 +63,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
+const DEFAULT_COORDINATOR_ID: u16 = 0;
 
 macro_rules! already_exists {
     ($($arg:tt)*) => {{
@@ -368,8 +369,8 @@ where
             info!("Specified Frost coordinator: {:?} - {:?}", id, i);
             i
         } else {
-            let i = frost_id!(0);
-            info!("Default Frost coordinator: {:?} - {:?}", 0, i);
+            let i = frost_id!(DEFAULT_COORDINATOR_ID);
+            info!("Default Frost coordinator: {:?} - {:?}", DEFAULT_COORDINATOR_ID, i);
             i
         };
 
@@ -657,6 +658,11 @@ where
         self.db.store_tracked_tx(tx)?;
         self.db.flush()?;
         Ok(())
+    }
+
+    pub fn is_coordinator(&self) -> bool {
+        let coordinator_id = self.config.coordinator.unwrap_or(DEFAULT_COORDINATOR_ID);
+        self.config.identifier == coordinator_id
     }
 }
 
@@ -1260,10 +1266,15 @@ where
         self.add_tracked_tx(signed_tx.clone(), &psbt_pending_pegouts, SystemTime::now())
             .await
             .to_status()?;
-        self.db.reset_pending_pegouts(&[]).to_status()?;
+
+        if !self.is_coordinator() {
+            // the coordinator will remove the pegout during finalize_signing
+            self.db.reset_pending_pegouts(&[]).to_status()?;
+            info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
+        }
+
         self.db.flush().to_status()?;
-        info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
-        // set the telemetry for pending pegouts back to 0
+
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.set_pending_pegouts(self.btc_network, self.config.identifier, 0_i64);
         }
