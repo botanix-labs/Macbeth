@@ -27,7 +27,7 @@ use std::{
 };
 
 use botanix_rpc_config::botanix_config::Botanix;
-use btcserverlib::jwt::{Claims, JwtSecret};
+use btc_server_client::jwt::{Claims, JwtSecret};
 use error::{ConflictingModules, RpcError, ServerKind};
 use eth::DynEthApiBuilder;
 use http::{header::AUTHORIZATION, HeaderMap};

@@ -1,24 +1,28 @@
 //! POA node command
-
 use bitcoincore_zmq::subscribe_async_wait_handshake;
 use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
 use botanix_authority_rsp::RandomSourceProvider;
-use botanix_cli_args::{bitcoind::BitcoindArgs, poa_node::PoaNodeArgs};
+use botanix_cli_args::{
+    bitcoind::BitcoindArgs,
+    chain::{get_chain_from_federation_config, BotanixNetwork},
+    poa_node::PoaNodeArgs,
+};
 use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_configs::federation::load_federation_config_toml;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 use botanix_storage_migrate::is_migration_needed;
 use botanix_utils::panic_hook::set_panic_hook;
-use btcserverlib::extended_client::{
-    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
+use btc_server_client::{
+    BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory,
+    RecoverMissingUtxosRequest,
 };
 use clap::{value_parser, Parser};
-use client::Empty;
 use core::panic;
 use eyre::Context;
 use fdlimit::raise_fd_limit;
 use futures::TryFutureExt;
 use reth_authority_consensus::{
-    comet_bft::abci::{ABCIDriver, RUNTIME_VERSION_ACTIVE, RUNTIME_VERSION_UPGRADE},
+    comet_bft::abci::{ABCIDriver, RUNTIME_VERSION_V2, RUNTIME_VERSION_V3},
     snapshot_manager::SnapshotRunnable,
     utils::{is_known_minting_contract, retry_exec},
     wallet_state_sync::WalletStateSync,
@@ -66,6 +70,7 @@ use botanix_btc_wallet::bitcoind::{
 };
 use botanix_storage::{models::Vote, BotanixProviderFactory};
 use botanix_storage_migrate::migrate_botanix_tables;
+use btcserverlib::utxo_recovery::read_utxos_from_file;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
@@ -81,11 +86,7 @@ use reth_network::{
 use reth_node_builder::{
     setup::build_networked_pipeline, PayloadBuilderConfig, RethTransactionPoolConfig,
 };
-use reth_node_core::{
-    args::utils::{get_chain_from_federation_config, load_federation_config_toml},
-    node_config::NodeConfig,
-    version,
-};
+use reth_node_core::{node_config::NodeConfig, version};
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
 use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
 use reth_provider::{
@@ -206,6 +207,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 PoaNodeArgs {
                     network_config_path,
                     is_testnet,
+                    is_devnet,
                     ntp_server,
                     federation_config_path: _,
                     federation_mode,
@@ -216,6 +218,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     cometbft_rpc_port,
                     cometbft_rpc_host,
                     block_fee_recipient_address,
+                    utxo_recovery_file,
                 },
             datadir,
             metrics,
@@ -232,14 +235,17 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Load reth config which is a bit different than cli config
         let mut reth_config = self.load_config()?;
 
-        // get the botanix chain spec
+        // Get the botanix chain spec
+
+        // Testnet and Devnet should result in the same chain spec
+        let botanix_network = BotanixNetwork::from_args(*is_testnet, *is_devnet)?;
         let chain = get_chain_from_federation_config(
             self.botanix_args
                 .federation_config_path
                 .clone()
                 .to_str()
                 .expect("federation config path to exist"),
-            *is_testnet,
+            !botanix_network.is_mainnet(),
         )?;
         let chain_arc = Arc::new(chain.clone());
 
@@ -374,7 +380,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let btc_server_factory = if is_fed_node {
             let btc_server_factory = GrpcClientFactory::new(
                 node_config.rpc.btc_server.clone().expect("btc_server exists"),
-                btc_signing_server_jwt_secret.map(|s| btcserverlib::jwt::JwtSecret(s.0)),
+                btc_signing_server_jwt_secret.map(|s| btc_server_client::jwt::JwtSecret(s.0)),
             );
 
             let fut = || async { btc_server_factory.build_and_connect().await };
@@ -395,6 +401,32 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 eyre::eyre!("Failed to authenticate to btc server: {}", err)
             })?;
             info!(target: "reth::cli", "Btc server authenticated");
+
+            // if utxo_recovery_file is provided, use it to recover UTXOs
+            if let Some(utxo_recovery_file) = utxo_recovery_file {
+                info!(target: "reth::cli", "Recovering missing UTXOs from file: {}", utxo_recovery_file.display());
+                let utxos = read_utxos_from_file(std::path::Path::new(utxo_recovery_file));
+                info!(target: "reth::cli", "UTXOs to recover: {:?}", utxos);
+                let recover_request = RecoverMissingUtxosRequest { utxos };
+                // Only proceed if we have UTXOs to recover
+                if !recover_request.utxos.is_empty() {
+                    match btc_server_client.recover_missing_utxos(recover_request).await {
+                        Ok(response) => {
+                            info!(target: "reth::cli",
+                                "UTXO recovery completed successfully. Requested: {}, Recovered: {}",
+                                response.total_requested, response.total_recovered
+                            );
+                        }
+                        Err(err) => {
+                            error!(target: "reth::cli", "UTXO recovery failed: {}", err);
+                        }
+                    }
+                } else {
+                    error!(target: "reth::cli", "UTXO_RECOVERY_FILE is provided but no UTXOs to recover");
+                }
+            } else {
+                info!(target: "reth::cli", "No UTXOs recovery file provided");
+            };
 
             Some(btc_server_factory)
         } else {
@@ -767,15 +799,22 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             .with_port(*cometbft_rpc_port)
             .with_host(cometbft_rpc_host);
 
+        // ActivationManager: setup parameters and conditions.
         let quorum;
         let min_validator_count;
         let target_height;
         let our_vote;
 
-        // ActivationManager: setup parameters and conditions.
-        if *is_testnet {
+        // Setting all the values on a per network basis in case they are different in the future.
+        #[allow(clippy::branches_sharing_code)]
+        if botanix_network.is_testnet() {
             quorum = 100; // 100% ~= 3/3 members must approve
             min_validator_count = 3;
+            target_height = 1; // Activate as soon as possible
+            our_vote = Vote::Aye;
+        } else if botanix_network.is_devnet() {
+            quorum = 100; // 100% ~= 6/6 members must approve
+            min_validator_count = 6;
             target_height = 1; // Activate as soon as possible
             our_vote = Vote::Aye;
         } else {
@@ -787,9 +826,9 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // ActivationManager: setup compliance and vote inclusion.
         let activation_manager =
-            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_ACTIVE)
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_V2)
                 .build_COMPLIANT_network_upgrade(
-                    RUNTIME_VERSION_UPGRADE,
+                    RUNTIME_VERSION_V3,
                     quorum,
                     min_validator_count,
                     target_height,
@@ -1170,13 +1209,15 @@ async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use botanix_cli_args::federation_args::{FedMemberPubKey, FederationTomlConfig};
+    use botanix_cli_args::chain::get_botanix_chain;
+    use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
     use reth_discv4::DEFAULT_DISCOVERY_PORT;
-    use reth_node_core::args::utils::get_botanix_chain;
     use std::{
+        io::Write,
         net::{IpAddr, Ipv4Addr},
         path::Path,
     };
+    use tempfile::NamedTempFile;
 
     use secp256k1::rand;
 
@@ -1346,6 +1387,42 @@ mod tests {
         let chain = get_botanix_chain(
             &federation_config.to_string().expect("should parse to string"),
             cmd.botanix_args.is_testnet,
+        )
+        .expect("chain is to exist");
+        assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);
+        assert_ne!(cmd.rpc.btc_network, bitcoin::Network::Bitcoin);
+        let data_dir =
+            cmd.datadir.datadir.clone().unwrap_or_chain_default(chain.chain, cmd.datadir);
+        let db_path = data_dir.db();
+        assert_eq!(db_path, Path::new("my/custom/path/db"));
+    }
+
+    #[test]
+    fn parse_db_path_devnet() {
+        let secret_key = secp256k1::SecretKey::new(&mut rand::thread_rng());
+        let authority = FedMemberPubKey {
+            key: secret_key.public_key(SECP256K1).to_string(),
+            socket_addr: "127.0.0.1:30303".to_string(),
+        };
+        let authorities = vec![authority];
+        let federation_config = FederationTomlConfig::new(
+            authorities,
+            "0x".to_string(),
+            "0x".to_string(),
+            "0x".to_string(),
+        );
+        let cmd = PoaNodeCommand::try_parse_args_from([
+            "reth",
+            "--datadir",
+            "my/custom/path",
+            "--federation-config-path",
+            "my/path/to/federation.toml",
+            "--is-devnet",
+        ])
+        .unwrap();
+        let chain = get_botanix_chain(
+            &federation_config.to_string().expect("should parse to string"),
+            cmd.botanix_args.is_devnet,
         )
         .expect("chain is to exist");
         assert_eq!(chain.chain.id(), BOTANIX_TESTNET_CHAIN_ID);

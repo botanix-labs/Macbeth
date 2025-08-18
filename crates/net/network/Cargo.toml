@@ -19,7 +19,7 @@ aquamarine = { workspace = true }
 auto_impl = { workspace = true }
 
 # Botanix
-client = { path = "../../../bin/btc-server/client" }
+btc-server-client = { path = "../../../bin/btc-server/client" }
 derive_more = { workspace = true }
 discv5 = { workspace = true }
 

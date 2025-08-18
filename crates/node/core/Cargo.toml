@@ -12,21 +12,13 @@ workspace = true
 
 [dependencies]
 
-# ethereum
-alloy-genesis = { workspace = true }
-
-# askama
-askama = "0.12.1"
-
 # bitcoin
 bitcoin = { workspace = true }
-botanix-authority-edh = { workspace = true }
 botanix-cli-args = { workspace = true }
-# botanix-btc-wallet = { workspace = true }
 botanix-cli-parsers = { workspace = true }
 
 # Botanix
-btc-server = { path = "../../../bin/btc-server" }
+btc-server-client = { path = "../../../bin/btc-server/client" }
 clap = { workspace = true, features = ["derive", "env"] }
 const_format = { workspace = true }
 derive_more = { workspace = true }
@@ -41,7 +33,6 @@ eyre = { workspace = true }
 futures = { workspace = true }
 
 # hex
-hex = "0.4.3"
 humantime = { workspace = true }
 
 rand = { workspace = true }
@@ -55,7 +46,6 @@ reth-db = { workspace = true, features = ["mdbx"] }
 reth-db-api = { workspace = true }
 reth-discv4 = { workspace = true }
 reth-discv5 = { workspace = true }
-reth-fs-util = { workspace = true }
 reth-net-nat = { workspace = true }
 reth-network = { workspace = true, features = ["serde"] }
 reth-network-p2p = { workspace = true }
@@ -77,7 +67,6 @@ reth-transaction-pool = { workspace = true }
 # crypto
 secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 serde = { workspace = true }
-serde_json = { workspace = true }
 shellexpand = { workspace = true }
 toml = { workspace = true }
 

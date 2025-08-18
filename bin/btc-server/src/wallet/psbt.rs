@@ -329,7 +329,7 @@ pub(crate) fn create_psbt(
             .iter()
             .map(|u| bitcoin::TxIn {
                 previous_output: u.outpoint,
-                sequence: bitcoin::Sequence::MAX,
+                sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
                 script_sig: bitcoin::ScriptBuf::new(),
                 witness: Default::default(),
             })
@@ -381,7 +381,7 @@ pub(crate) fn calculate_sighash(
     let sighash = sighashcache.taproot_key_spend_signature_hash(
         input_index,
         &bitcoin::sighash::Prevouts::All(&prevouts),
-        TapSighashType::All,
+        TapSighashType::Default,
     )?;
 
     Ok(sighash)

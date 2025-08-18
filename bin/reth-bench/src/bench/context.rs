@@ -10,7 +10,7 @@ use alloy_provider::{
 use alloy_rpc_client::ClientBuilder;
 use alloy_transport::BoxTransport;
 use alloy_transport_http::Http;
-use btcserverlib::jwt::JwtSecret;
+use btc_server_client::jwt::JwtSecret;
 use reqwest::{Client, Url};
 use reth_node_core::args::BenchmarkArgs;
 use tracing::info;

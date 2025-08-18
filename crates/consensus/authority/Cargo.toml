@@ -15,6 +15,7 @@ async-trait = { workspace = true }
 
 ## Bitcoin
 bitcoin = { workspace = true }
+botanix-activation-manager = { workspace = true }
 botanix-authority-edh = { workspace = true }
 
 ## Botanix
@@ -27,12 +28,12 @@ botanix-cli-args = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
 botanix-data-parser = { workspace = true }
 botanix-storage = { workspace = true }
-botanix-activation-manager = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
+btc-server-client = { path = "../../../bin/btc-server/client" }
+
 
 # others
 bytes = "1.6.0"
-client = { path = "../../../bin/btc-server/client" }
 displaydoc = "0.2"
 ethabi = "18.0.0"
 

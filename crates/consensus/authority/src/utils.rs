@@ -11,15 +11,17 @@ use botanix_authority_peg::{
     peg_contract::{PeginMeta, PegoutData, PegoutWithId},
 };
 use botanix_storage::models;
+use btc_server_client::{
+    BtcServerExtendedApi, GrpcClientError, MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage,
+    TxOut, Utxo,
+};
 use btcserverlib::{
-    extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
     wallet::psbt::{PsbtExt, PsbtOutputExt},
 };
-use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo};
-use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput, TransactionSigned};
+use reth_primitives::{Bloom, BloomInput, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
@@ -148,7 +150,7 @@ fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
     let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
 
     Utxo {
-        outpoint: Some(client::OutPoint {
+        outpoint: Some(btc_server_client::OutPoint {
             txid: bitcoin::consensus::serialize(&pegin_meta.outpoint().txid),
             vout: pegin_meta.outpoint().vout,
         }),
@@ -181,7 +183,10 @@ pub(crate) fn get_utxos_from_staged_pegins(pegins: Vec<models::PeginData>) -> Ve
     pegins
         .into_iter()
         .map(|pegin| Utxo {
-            outpoint: Some(client::OutPoint { txid: pegin.txid, vout: pegin.vout as u32 }),
+            outpoint: Some(btc_server_client::OutPoint {
+                txid: pegin.txid,
+                vout: pegin.vout as u32,
+            }),
             output: Some(TxOut {
                 value: pegin.value,
                 script_pubkey: Some(ScriptBuf { script: pegin.script_pubkey }),
@@ -296,8 +301,9 @@ pub(crate) async fn epoch_pegouts(
     best_block: u64,
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
+    epoch_length: u64,
 ) -> Result<Vec<PegoutData>, EpochPegoutsError> {
-    let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
+    let start_block = find_epoch_start(epoch_length, best_block);
     let mut pegouts = Vec::new();
     for block in start_block..=best_block {
         match client.block_by_number(block) {
@@ -955,9 +961,9 @@ mod tests {
             let script_pubkey = rng.gen::<[u8; 32]>().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
             let utxo = Utxo {
-                outpoint: Some(client::OutPoint { txid: txid.clone(), vout }),
+                outpoint: Some(btc_server_client::OutPoint { txid: txid.clone(), vout }),
                 output: Some(TxOut {
-                    script_pubkey: Some(client::ScriptBuf { script: script_pubkey }),
+                    script_pubkey: Some(btc_server_client::ScriptBuf { script: script_pubkey }),
                     value: rng.gen::<u64>(),
                 }),
                 eth_address: "0x0".to_string(),
@@ -1084,16 +1090,17 @@ mod tests {
     #[test]
     fn test_find_epoch_start() {
         let mut rng = rand::thread_rng();
+        const TEST_EPOCH_LENGTH: u64 = 100;
 
         let current_block_1 = 0;
-        let current_block_2 = current_block_1 + rng.gen_range(1..EPOCH_LENGTH);
-        let current_block_3 = current_block_1 + EPOCH_LENGTH;
-        let current_block_4 = current_block_3 + rng.gen_range(1..EPOCH_LENGTH);
+        let current_block_2 = current_block_1 + rng.gen_range(1..TEST_EPOCH_LENGTH);
+        let current_block_3 = current_block_1 + TEST_EPOCH_LENGTH;
+        let current_block_4 = current_block_3 + rng.gen_range(1..TEST_EPOCH_LENGTH);
 
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_1), current_block_1);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_2), current_block_1);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_3), current_block_3);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_4), current_block_3);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_1), current_block_1);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_2), current_block_1);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_3), current_block_3);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_4), current_block_3);
     }
 
     #[test]

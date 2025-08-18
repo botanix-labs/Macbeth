@@ -18,10 +18,7 @@ use botanix_storage::{
     RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter, StagedHeaderReader,
     StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
 };
-use btcserverlib::extended_client::{
-    BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
-};
-use client::Empty;
+use btc_server_client::{BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory};
 use reth_chainspec::ChainSpec;
 use reth_db::DatabaseEnv;
 use reth_evm::execute::BlockExecutorProvider;
@@ -148,7 +145,7 @@ where
             .unwrap_or_else(|| chain_spec.sealed_genesis_header());
         let mut headers = vec![latest_header.clone()];
 
-        while !latest_header.header().is_poa_epoch() {
+        while !latest_header.header().is_poa_epoch(chain_spec.epoch_length) {
             let parent_hash = latest_header.parent_hash;
 
             if let Some(new_header) = reth_provider.header(&parent_hash).ok().flatten() {

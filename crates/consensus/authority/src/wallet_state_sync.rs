@@ -10,11 +10,11 @@ use botanix_data_parser::{
     prost_parser::ProstMessageSerdelizer, DataParser, Error as CompressorError, SerializationType,
 };
 use botanix_storage::{models::uuid_to_b256, WalletStateSyncReader, WalletStateSyncWriter};
-use btcserverlib::{
-    extended_client::{BtcServerExtendedApi, GrpcClientError},
-    pegout_id::PegoutId,
+use btc_server_client::{
+    BtcServerExtendedApi, FinalizedPegout, GetFinalizedPegoutIdsResponse, GrpcClientError,
+    ResetWalletStateRequest,
 };
-use client::{FinalizedPegout, GetFinalizedPegoutIdsResponse, ResetWalletStateRequest};
+use btcserverlib::pegout_id::PegoutId;
 use once_cell::sync::Lazy;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::frost::{
@@ -405,7 +405,9 @@ where
             match canon_event {
                 CanonStateNotification::Commit { new, .. } => {
                     let tip = new.tip();
-                    if !tip.is_poa_epoch() || tip.header().number == 0 {
+                    if !tip.is_poa_epoch(storage.chain_spec.epoch_length) ||
+                        tip.header().number == 0
+                    {
                         continue;
                     }
                     // Request the wallet state from all peers for poa epoch blocks only
