@@ -712,11 +712,7 @@ where
             error!("Failed to parse checkpoint hash: {}", e);
             badarg!("Failed to parse checkpoint hash: {}", e)
         })?;
-        let block_result = self.bitcoind_client.get_block_info(&checkpoint).map_err(|e| {
-            error!("Failed to get block for checkpoint: {}", e);
-            badarg!("Failed to get block for checkpoint: {}", e)
-        })?;
-        self.sync_pegout_scheduler(checkpoint).await.to_status()?;
+        self.sync_pegout_scheduler(checkpoint.clone()).await.to_status()?;
 
         // process and store pegin utxos
         let utxos: Result<Vec<crate::database::Utxo>, _> =
@@ -733,14 +729,17 @@ where
         let total_utxos_amount =
             total_utxos.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
         if let Some(telemetry) = self.telemetry.as_ref() {
-            // TODO: attempted pegin height
+            // seet attempted pegin height
             telemetry.update_pegin_utxos(
                 self.btc_network,
                 self.config.identifier,
                 total_utxos.len() as i64,
                 total_utxos_amount.to_sat() as i64,
             );
-
+            let block_result = self.bitcoind_client.get_block_info(&checkpoint).map_err(|e| {
+                error!("Failed to get block for checkpoint: {}", e);
+                badarg!("Failed to get block for checkpoint: {}", e)
+            })?;
             telemetry.set_last_pegin_height(
                 self.btc_network,
                 self.config.identifier,
@@ -1270,9 +1269,9 @@ where
         self.db.flush().to_status()?;
         info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
 
-        let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
-        // set the telemetry for pending pegouts back to 0
+        // set the telemetry for pending pegout
         if let Some(telemetry) = self.telemetry.as_ref() {
+            let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
             telemetry.set_pending_pegouts(
                 self.btc_network,
                 self.config.identifier,
@@ -1348,16 +1347,15 @@ where
         .to_status()?;
 
         // set last attempted pegout height
-        let tip_height = measure_rpc_latency!(
-            &self.telemetry,
-            self.btc_network,
-            self.config.identifier,
-            "get_block_count",
-            self.bitcoind_client.get_block_count()
-        )
-        .map_err(|e| internal!("Failed to get btc tip height: {}", e))?;
-
         if let Some(telemetry) = self.telemetry.as_ref() {
+            let tip_height = measure_rpc_latency!(
+                &self.telemetry,
+                self.btc_network,
+                self.config.identifier,
+                "get_block_count",
+                self.bitcoind_client.get_block_count()
+            )
+            .map_err(|e| internal!("Failed to get btc tip height: {}", e))?;
             telemetry.set_last_attempted_pegout_height(
                 self.btc_network,
                 self.config.identifier,
@@ -2277,7 +2275,12 @@ impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
                     })?;
 
                 if result.is_none() {
-                    // The input is already spent, remove it from the database
+                    warn!(
+                        "Input {} was spent without being tracked by the PegoutScheduler",
+                        input.previous_output
+                    );
+                    // TODO: Technically we should only remove the input if it is deeply confirmed
+                    // https://github.com/botanix-labs/botanix/issues/1099
                     match self.db.remove_utxo(&input.previous_output) {
                         Ok(_) => {
                             info!("Removed spent input: {} from DB", input.previous_output);

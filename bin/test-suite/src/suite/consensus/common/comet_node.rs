@@ -2,7 +2,7 @@ use super::{kill_process_at_port, poa_node::ABCI_PORT_BASE, Scope};
 use crate::{
     context::GlobalContext,
     suite::consensus::common::{
-        create_temp_working_directory, spawn_await_child_process, spawn_child_process,
+        create_temp_working_directory, is_port_free, spawn_await_child_process, spawn_child_process,
     },
 };
 use anyhow::Context;
@@ -452,6 +452,16 @@ pub async fn create_cometbft_nodes(
         let rpc_listen_address = format!("127.0.0.1:{rpc_listen_port}").parse()?;
         let p2p_listen_port = rpc_listen_port - 1;
         let p2p_listen_address = format!("127.0.0.1:{p2p_listen_port}").parse()?;
+
+        for port in [proxy_app_port, rpc_listen_port, p2p_listen_port] {
+            if !is_port_free(port) {
+                return Err(anyhow::anyhow!(
+                    "❌ CometBFT node {} needs port {} but it's already in use by another process",
+                    member_index,
+                    port
+                ));
+            }
+        }
 
         let node_external_address = format!("127.0.0.1:{p2p_listen_port}")
             .parse()
