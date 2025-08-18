@@ -712,6 +712,10 @@ where
             error!("Failed to parse checkpoint hash: {}", e);
             badarg!("Failed to parse checkpoint hash: {}", e)
         })?;
+        let block_result = self.bitcoind_client.get_block_info(&checkpoint).map_err(|e| {
+            error!("Failed to get block for checkpoint: {}", e);
+            badarg!("Failed to get block for checkpoint: {}", e)
+        })?;
         self.sync_pegout_scheduler(checkpoint).await.to_status()?;
 
         // process and store pegin utxos
@@ -729,11 +733,18 @@ where
         let total_utxos_amount =
             total_utxos.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
         if let Some(telemetry) = self.telemetry.as_ref() {
+            // TODO: attempted pegin height
             telemetry.update_pegin_utxos(
                 self.btc_network,
                 self.config.identifier,
                 total_utxos.len() as i64,
                 total_utxos_amount.to_sat() as i64,
+            );
+
+            telemetry.set_last_pegin_height(
+                self.btc_network,
+                self.config.identifier,
+                block_result.height as i64,
             );
         }
 
@@ -792,12 +803,12 @@ where
         self.db.store_pending_pegouts(&pegouts_refs).to_status()?;
         self.db.flush().to_status()?;
         info!("stored pegouts.len(): {:?}", pegouts.len());
-
         if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(
+            let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
+            telemetry.set_pending_pegouts(
                 self.btc_network,
                 self.config.identifier,
-                pegouts.len() as i64,
+                current_peding_pegouts.len() as i64,
             );
         }
 
@@ -811,7 +822,7 @@ where
         self.validate_jwt(&req)?;
         let req = req.into_inner();
         let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
         let signing_status = self.db.get_signing_status(&signing_session_id).to_status()?;
 
         let res =
@@ -908,7 +919,7 @@ where
                         };
 
                         // send the batch with retries
-                        info!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
+                        debug!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
                         let fut = || async {
                             let tx = tx.clone();
                             let batch = batch.clone();
@@ -1077,7 +1088,7 @@ where
             hex::encode(req.signing_session_id.clone())
         );
         let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
         // Check if we have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
@@ -1086,7 +1097,6 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    signing_session_id,
                     &SigningRound1Error::AlreadyInSigningSession.to_string(),
                 );
             }
@@ -1100,7 +1110,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1153,7 +1162,7 @@ where
         let req = req.into_inner();
         info!("Received round2 signing package request");
         let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
         let mut psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
             Ok(psbt) => psbt,
@@ -1162,7 +1171,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1182,7 +1190,6 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    signing_session_id,
                     &e.to_string(),
                 );
             }
@@ -1236,7 +1243,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1263,9 +1269,15 @@ where
         self.db.reset_pending_pegouts(&[]).to_status()?;
         self.db.flush().to_status()?;
         info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
+
+        let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
         // set the telemetry for pending pegouts back to 0
         if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.set_pending_pegouts(self.btc_network, self.config.identifier, 0_i64);
+            telemetry.set_pending_pegouts(
+                self.btc_network,
+                self.config.identifier,
+                current_peding_pegouts.len() as i64,
+            );
         }
 
         let res = rpc::SigningPackage {
@@ -1289,7 +1301,7 @@ where
             hex::encode(req.signing_session_id.clone())
         );
         let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
         let _tx_lock = self.tx_lock.lock().await;
         let psbt =
@@ -1335,6 +1347,24 @@ where
         }
         .to_status()?;
 
+        // set last attempted pegout height
+        let tip_height = measure_rpc_latency!(
+            &self.telemetry,
+            self.btc_network,
+            self.config.identifier,
+            "get_block_count",
+            self.bitcoind_client.get_block_count()
+        )
+        .map_err(|e| internal!("Failed to get btc tip height: {}", e))?;
+
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.set_last_attempted_pegout_height(
+                self.btc_network,
+                self.config.identifier,
+                tip_height as i64,
+            );
+        }
+
         let pegout_ids = psbt
             .pegout_ids()
             .iter()
@@ -1348,10 +1378,11 @@ where
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
         // remove the pegouts from the telemetry gauge
         if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(
+            let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
+            telemetry.set_pending_pegouts(
                 self.btc_network,
                 self.config.identifier,
-                -(pegout_ids.len() as i64),
+                current_peding_pegouts.len() as i64,
             );
         }
         self.db.flush().to_status()?;
@@ -1394,7 +1425,6 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    req.signing_session_id.try_into().expect("signing session id is valid"),
                     &e.to_string(),
                 );
             }
@@ -1409,7 +1439,7 @@ where
             hex::encode(req.signing_session_id.clone())
         );
         let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
         let checkpoint = match BlockHash::from_slice(&req.checkpoint_block_hash) {
             Ok(checkpoint) => checkpoint,
@@ -1418,7 +1448,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1464,12 +1493,7 @@ where
 
         // First sync the pegout scheduler as this may add tracked pegouts back to the pending
         // pegouts list
-        handle_signing_error!(
-            self,
-            signing_session_id,
-            self.sync_pegout_scheduler(checkpoint).await,
-            check_only
-        );
+        handle_signing_error!(self, self.sync_pegout_scheduler(checkpoint).await, check_only);
 
         let tracked_txs = match self.db.get_tracked_txs().to_status() {
             Ok(tracked_txs) => tracked_txs,
@@ -1478,7 +1502,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1495,7 +1518,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1536,7 +1558,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1557,12 +1578,7 @@ where
         // We rely on our logic correctly identifying it later.
 
         // Save psbt to db
-        handle_signing_error!(
-            self,
-            req.signing_session_id.try_into().expect("valid signing session id"),
-            self.db.update_psbt(&signing_session_id, &psbt),
-            check_only
-        );
+        handle_signing_error!(self, self.db.update_psbt(&signing_session_id, &psbt), check_only);
 
         self.db.flush().to_status()?;
 
@@ -1573,7 +1589,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1608,7 +1623,7 @@ where
             hex::encode(req.signing_session_id.clone())
         );
         let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
         let psbt = match coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
             .to_status()
@@ -1619,7 +1634,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1634,7 +1648,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("valid signing session id"),
                         &e.to_string(),
                     );
                 }
@@ -1666,7 +1679,6 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    req.signing_session_id.try_into().expect("signing session id is valid"),
                     &e.to_string(),
                 );
             }
@@ -1678,9 +1690,9 @@ where
             hex::encode(req.signing_session_id.clone())
         );
         let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
-        let frost_id = handle_signing_error!(self, req, deserialize_frost_peer_id(req.identifier));
+        let frost_id = handle_signing_error!(self, deserialize_frost_peer_id(req.identifier));
 
         let psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
             Ok(psbt) => psbt,
@@ -1689,7 +1701,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("signing session id is valid"),
                         &e.to_string(),
                     );
                 }
@@ -1710,7 +1721,6 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    req.signing_session_id.try_into().expect("signing session id is valid"),
                     &e.to_string(),
                 );
             }
@@ -1744,7 +1754,6 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    req.signing_session_id.try_into().expect("signing session id is valid"),
                     &e.to_string(),
                 );
             }
@@ -1753,9 +1762,9 @@ where
 
         info!("Received round2 signing package");
         let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
-        let frost_id = handle_signing_error!(self, req, deserialize_frost_peer_id(req.identifier));
+        let frost_id = handle_signing_error!(self, deserialize_frost_peer_id(req.identifier));
 
         let psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
             Ok(psbt) => psbt,
@@ -1764,7 +1773,6 @@ where
                     telemetry.update_signing_error_metrics(
                         self.btc_network,
                         self.config.identifier,
-                        req.signing_session_id.try_into().expect("signing session id is valid"),
                         &e.to_string(),
                     );
                 }
@@ -1785,7 +1793,6 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    req.signing_session_id.try_into().expect("signing session id is valid"),
                     &e.to_string(),
                 );
             }
@@ -2314,12 +2321,21 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
     }));
 
     let telemetry = if config.metrics_port.is_some() {
-        let telemetry = Telemetry::new().await?;
+        let telemetry = Telemetry::new(Some("btc_server".to_string())).await?;
         telemetry.start().await?;
         Some(telemetry)
     } else {
         None
     };
+
+    if let Some(metrics) = telemetry.as_ref() {
+        metrics.set_config_metrics(
+            config.btc_network,
+            config.identifier,
+            config.min_signers,
+            config.max_signers,
+        );
+    }
 
     // setup the grpc server
     let bitcoind_client = bitcoincore_rpc::Client::new(
