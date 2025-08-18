@@ -65,7 +65,7 @@ pub static BOTANIX_TESTNET: Lazy<Arc<BotanixChainSpec>> = Lazy::new(|| {
     let botanix_spec = BotanixChainSpec {
         inner: spec,
         bitcoin_checkpoint_confirmation_depth: 1,
-        weak_bitcoin_checkpoints_count: 1,
+        weak_bitcoin_checkpoints_count: 0,
         historical_bitcoin_checkpoints_count: 1,
         leader_selection_window: Some(20),
         botanix_fee_recipient: None,
@@ -131,7 +131,7 @@ pub fn create_botanix_config_with_genesis(
     let botanix_spec = BotanixChainSpec {
         inner: chainspec,
         bitcoin_checkpoint_confirmation_depth: pegin_conf_depth,
-        weak_bitcoin_checkpoints_count: 1,
+        weak_bitcoin_checkpoints_count: 0,
         historical_bitcoin_checkpoints_count: 1,
         leader_selection_window: Some(20),
         botanix_fee_recipient: Some(botanix_fee_recipient),

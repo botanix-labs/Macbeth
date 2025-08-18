@@ -79,9 +79,10 @@ where
 pub fn create_noop_executor_provider(
     chain_spec: Arc<ChainSpec>,
 ) -> EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>, EthEvmConfig> {
+    let botanix_chain_spec = Arc::new(BotanixChainSpec::from_chain_spec((*chain_spec).clone()));
     EthExecutorProvider::new(
         chain_spec,
-        BotanixChainSpec::default().into(),
+        botanix_chain_spec,
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
         bitcoin::Network::Regtest,

@@ -146,9 +146,10 @@ where
 
         let provider_factory =
             ProviderFactory::new(db, ctx.chain_spec(), StaticFileProvider::default());
+        let botanix_chain_spec = Arc::new(BotanixChainSpec::from_chain_spec((*chain_spec).clone()));
         let executor = EthExecutorProvider::new(
             chain_spec,
-            Arc::new(BotanixChainSpec::default()),
+            botanix_chain_spec,
             evm_config,
             mock_bitcoind_factory,
             regtest,

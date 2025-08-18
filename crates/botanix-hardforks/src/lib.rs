@@ -1,12 +1,12 @@
 use alloy_chains::Chain;
 use alloy_primitives::{uint, U256};
 use core::{
-    any::Any,
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
 use reth_chainspec::ForkCondition;
-use reth_ethereum_forks::{hardfork, ChainHardforks, EthereumHardfork, Hardfork};
+use reth_ethereum_forks::{hardfork, EthereumHardfork, Hardfork};
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +14,6 @@ hardfork!(
     /// The name of a Botanix hardfork.
     ///
     /// When building a list of hardforks for a chain, it's still expected to mix with [`EthereumHardfork`].
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     BotanixHardfork {
         /// Frontier: <https://blog.ethereum.org/2015/03/03/ethereum-launch-process>.
         Frontier,

@@ -39,6 +39,21 @@ pub struct BotanixChainSpec {
     pub epoch_length: u64,
 }
 
+impl BotanixChainSpec {
+    pub fn from_chain_spec(chain_spec: ChainSpec) -> Self {
+        Self {
+            inner: chain_spec,
+            bitcoin_checkpoint_confirmation_depth: Default::default(),
+            historical_bitcoin_checkpoints_count: Default::default(),
+            weak_bitcoin_checkpoints_count: Default::default(),
+            leader_selection_window: None,
+            botanix_fee_recipient: None,
+            lst_fee_receiver: None,
+            epoch_length: Default::default(),
+        }
+    }
+}
+
 impl Default for BotanixChainSpec {
     fn default() -> Self {
         Self {

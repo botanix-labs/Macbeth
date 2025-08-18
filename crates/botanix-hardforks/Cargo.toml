@@ -23,6 +23,10 @@ reth-chainspec = { workspace = true }
 reth-cli = { workspace = true }
 reth-ethereum-forks = { workspace = true }
 reth-primitives-traits = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true }
 shellexpand = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]

@@ -19,7 +19,6 @@ use ethers::{
     types::NameOrAddress,
 };
 use futures::StreamExt;
-// use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;
 use tonic::transport::Channel;
 
