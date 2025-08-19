@@ -28,6 +28,7 @@ alloy-transport-ipc = { workspace = true }
 alloy-transport-ws = { workspace = true }
 async-trait = { workspace = true }
 btc-server = { path = "../../bin/btc-server" }
+btc-server-client = { path = "../../bin/btc-server/client" }
 clap = { workspace = true, features = ["derive", "env"] }
 csv = "1.3.0"
 eyre = { workspace = true }
@@ -46,7 +47,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "time", "rt-multi-thread"] }
 tower = { workspace = true }
 tracing = { workspace = true }
-btc-server-client = { path = "../../bin/btc-server/client" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
