@@ -31,7 +31,6 @@ botanix-storage = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 btc-server-client = { path = "../../../bin/btc-server/client" }
 
-
 # others
 bytes = "1.6.0"
 displaydoc = "0.2"
