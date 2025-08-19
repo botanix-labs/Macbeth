@@ -2,6 +2,10 @@
 name = "btc-server"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 
 [lib]
 name = "btcserverlib"
@@ -33,6 +37,7 @@ chacha20poly1305 = "0.10.1"
 ciborium = "0.2.1"
 clap = { version = "4.3.22", features = ["derive"] }
 confy = "0.6"
+const_format = { version = "0.2.32", features = ["rust_1_64"] }
 derive_more = { version = "1.0", features = ["full"] }
 displaydoc = "0.2"
 dotenvy = { version = "0.15.7" }
@@ -51,7 +56,7 @@ log = "0.4.18"
 merlin = "3.0.0"
 miniscript = "12.3.0"
 parking_lot = { version = "0.12.3", features = ["serde"] }
-prometheus = { version = "0.13", features = ["process"] }
+prometheus = { version = "0.14", features = ["process"] }
 prost = "0.13.3"
 prost-types = "0.13.5"
 rand = "0.8.5"
@@ -83,6 +88,7 @@ zeroize = "1.8.1"
 [build-dependencies]
 prost-build = "0.13.3"
 tonic-build = "0.12.3"
+vergen = { version = "8.0.0", features = ["build", "cargo", "git", "gitcl", "rustc"] }
 
 [dev-dependencies]
 assert_matches = "1.5.0"

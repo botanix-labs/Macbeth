@@ -423,8 +423,14 @@ impl PegoutScheduler {
     fn add_tx_back_to_pending(&mut self, tx: &Tx) -> Result<(), database::Error> {
         let pegout_refs: Vec<&PegoutRequest> = tx.pegout_requests.iter().collect();
         self.db.store_pending_pegouts(&pegout_refs)?;
+        self.db.flush()?;
         if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(self.bitcoin_network, self.identifier, 1);
+            let current_peding_pegouts = self.db.get_pending_pegouts()?;
+            telemetry.set_pending_pegouts(
+                self.bitcoin_network,
+                self.identifier,
+                current_peding_pegouts.len() as i64,
+            );
         }
         Ok(())
     }
@@ -610,6 +616,14 @@ impl PegoutScheduler {
                 debug!("Indexed tx {} confirmed in block {}:{}", txid, height, hash);
                 relevant_txs.push(txid);
                 self.confirmed_txs.insert(txid);
+                // set last confirmed pegout (id, height) = (txid, height)
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.set_last_successful_pegout_height(
+                        self.bitcoin_network,
+                        self.identifier,
+                        height as i64,
+                    );
+                }
             } else {
                 for input in &tx.input {
                     if let Some(conflicts) = self.txs_by_input.get(&input.previous_output) {

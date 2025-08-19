@@ -14,10 +14,12 @@ pub struct Telemetry {
 }
 
 impl Telemetry {
-    pub async fn new() -> anyhow::Result<Arc<Self>> {
+    pub async fn new(prefix: Option<String>) -> anyhow::Result<Arc<Self>> {
         let system = Arc::new(RwLock::new(System::new().await));
 
-        let btc_server_metrics = Some(Arc::new(BtcServerMetrics::default()));
+        let btc_server_metrics = Some(Arc::new(
+            BtcServerMetrics::new(prefix).expect("msg: failed to create BtcServerMetrics"),
+        ));
 
         Ok(Arc::new(Self { system, btc_server_metrics }))
     }
@@ -41,7 +43,11 @@ impl Telemetry {
             // update latency histogram (in milliseconds)
             metrics
                 .bitcoind_rpc_latency
-                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), rpc_method])
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &rpc_method.to_string(),
+                ])
                 .observe(latency_millis as f64);
         });
     }
@@ -223,7 +229,11 @@ impl Telemetry {
         self.maybe_use_metrics(|metrics| {
             metrics
                 .dkg_error_rates
-                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), error])
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &error.to_string(),
+                ])
                 .inc();
         });
     }
@@ -250,7 +260,6 @@ impl Telemetry {
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
-        session_id: [u8; 32],
         error: &str,
     ) {
         self.maybe_use_metrics(|metrics| {
@@ -259,8 +268,7 @@ impl Telemetry {
                 .with_label_values(&[
                     &btc_chain.to_string(),
                     &self_id.to_string(),
-                    &hex::encode(session_id),
-                    error,
+                    &error.to_string(),
                 ])
                 .inc();
         });
@@ -275,7 +283,11 @@ impl Telemetry {
         self.maybe_use_metrics(|metrics| {
             metrics
                 .pegout_scheduler_error_rates
-                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), error])
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &error.to_string(),
+                ])
                 .inc();
         });
     }
@@ -307,12 +319,45 @@ impl Telemetry {
         });
     }
 
-    pub fn update_pending_pegouts(&self, btc_chain: bitcoin::Network, self_id: u16, pegouts: i64) {
+    pub fn set_last_attempted_pegout_height(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegout_height: i64,
+    ) {
         self.maybe_use_metrics(|metrics| {
             metrics
-                .pending_pegouts
+                .last_attempted_pegout_height
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .add(pegouts);
+                .set(pegout_height);
+        });
+    }
+
+    pub fn set_last_successful_pegout_height(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegout_height: i64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .last_successful_pegout_height
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(pegout_height);
+        });
+    }
+
+    pub fn set_last_pegin_height(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegin_height: i64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .last_pegin_height
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(pegin_height);
         });
     }
 
@@ -372,7 +417,11 @@ impl Telemetry {
             service_status.iter().for_each(|(service, status)| {
                 metrics
                     .bitcoind_sync_status
-                    .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), service])
+                    .with_label_values(&[
+                        &btc_chain.to_string(),
+                        &self_id.to_string(),
+                        &service.to_string(),
+                    ])
                     .set(if *status == "up" { 1_i64 } else { 0_i64 });
             });
         });
@@ -438,6 +487,26 @@ impl Telemetry {
                 .fee_rate_abnormalities
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
                 .inc();
+        });
+    }
+
+    pub fn set_config_metrics(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        min_signers: u16,
+        max_signers: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .config
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &min_signers.to_string(),
+                    &max_signers.to_string(),
+                ])
+                .set(1.0f64);
         });
     }
 

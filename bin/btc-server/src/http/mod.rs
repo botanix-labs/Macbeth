@@ -63,7 +63,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_health_check() {
-        let telemetry = Telemetry::new().await.unwrap();
+        let telemetry = Telemetry::new(None).await.unwrap();
         telemetry.start().await.unwrap();
         let state = ServerState::new(telemetry.clone()).await;
 
