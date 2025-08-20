@@ -10,6 +10,7 @@ repository = { workspace = true }
 async-trait = { workspace = true }
 bitcoin = { workspace = true }
 bitcoincore-rpc = { workspace = true }
+botanix-configs = { workspace = true }
 ethers = "2.0.10"
 frost-secp256k1-tr = { workspace = true }
 hex = "0.4.3"

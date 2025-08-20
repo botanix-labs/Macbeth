@@ -301,6 +301,18 @@ pub struct AcceptWalletSweepSessionRequest {
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct AcceptWalletSweepSessionResponse {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StoreSweepPsbtRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub psbt: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StoreSweepPsbtResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
+}
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct WalletSweepSessionUpdatesRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -509,6 +521,14 @@ pub mod btc_server_server {
             request: tonic::Request<super::AcceptWalletSweepSessionRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AcceptWalletSweepSessionResponse>,
+            tonic::Status,
+        >;
+        /// Store a sweep PSBT and initiate FROST signing (coordinator only)
+        async fn store_sweep_psbt(
+            &self,
+            request: tonic::Request<super::StoreSweepPsbtRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::StoreSweepPsbtResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the SubscribeToWalletSweepSessionUpdates method.
@@ -1761,6 +1781,51 @@ pub mod btc_server_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = AcceptWalletSweepSessionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/StoreSweepPsbt" => {
+                    #[allow(non_camel_case_types)]
+                    struct StoreSweepPsbtSvc<T: BtcServer>(pub Arc<T>);
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::StoreSweepPsbtRequest>
+                    for StoreSweepPsbtSvc<T> {
+                        type Response = super::StoreSweepPsbtResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::StoreSweepPsbtRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as BtcServer>::store_sweep_psbt(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = StoreSweepPsbtSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -109,6 +109,8 @@ pub(crate) struct SigningSession {
     #[allow(dead_code)]
     /// The original session payload
     original_psbt: Option<Vec<u8>>,
+    /// The type of PSBT being signed (Pegout or Sweep)
+    psbt_type: SigningPsbtType,
 }
 
 /// A state machine for transitioning between different signing states
@@ -182,19 +184,25 @@ where
         coordinator_index: u64,
         original_psbt: Option<Vec<u8>>,
         signing_state: SigningState,
+        psbt_type: SigningPsbtType,
     ) {
         if self.signing_states.read().await.contains_key(&session_id) {
             return;
         }
         self.signing_states.write().await.insert(
             session_id,
-            SigningSession { session_id, state: signing_state, coordinator_index, original_psbt },
+            SigningSession { session_id, state: signing_state, coordinator_index, original_psbt, psbt_type },
         );
     }
 
     /// Returns the original psbt into the state machine
     pub(crate) async fn get_signing_session(&self, session_id: [u8; 32]) -> Option<SigningSession> {
         self.signing_states.read().await.get(&session_id).cloned()
+    }
+
+    /// Gets the PSBT type for a signing session
+    pub(crate) async fn get_psbt_type(&self, session_id: [u8; 32]) -> Option<SigningPsbtType> {
+        self.signing_states.read().await.get(&session_id).map(|session| session.psbt_type)
     }
 
     /// Removes a signing session
@@ -449,6 +457,7 @@ where
         &mut self,
         signing_package: SigningPackage,
         response_type: SigningEventResponseType,
+        psbt_type: SigningPsbtType,
     ) -> Result<(), Error> {
         let SigningPackage { identifier: _, signing_session_id, psbt } = signing_package;
 
@@ -469,8 +478,7 @@ where
                         response_type,
                         signing_session_id: signing_session_id.clone(),
                         psbt: psbt.clone(),
-                        // TODO: We should pass correct one
-                        psbt_type: SigningPsbtType::Pegout,
+                        psbt_type,
                     });
                     connected_peer
                         .peer_commands_tx
@@ -493,6 +501,7 @@ where
         &mut self,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
+        psbt_type: SigningPsbtType,
     ) -> Result<(), Error> {
         let session_id = parse_signing_session_id(&signing_session_id)?;
 
@@ -527,6 +536,7 @@ where
                     self.frost_config.authority_index as u64,
                     Some(psbt.clone()),
                     SigningState::Initial,
+                    psbt_type,
                 )
                 .await;
                 self.metrics.signing_sessions.increment(1);
@@ -554,6 +564,7 @@ where
             .gossip_to_peers(
                 signing_round1_package,
                 SigningEventResponseType::SignerRound1SigningPackage,
+                psbt_type,
             )
             .await
         {
@@ -593,7 +604,13 @@ where
         // no already existing signing session found
         if !self.signing_session_exists(session_id).await {
             // insert a new signing session
-            self.insert_new_signing_session(session_id, coordinator_id, None, SigningState::Round1)
+            // Determine PSBT type based on session ID pattern
+            let psbt_type = if signing_session_id.as_slice().ends_with(b"SWEEP_SIGNING") {
+                SigningPsbtType::Sweep
+            } else {
+                SigningPsbtType::Pegout
+            };
+            self.insert_new_signing_session(session_id, coordinator_id, None, SigningState::Round1, psbt_type)
                 .await;
             self.metrics.signing_sessions.increment(1);
             // abort any previous session
@@ -627,12 +644,12 @@ where
 
         // Broadcast signing round 1 to the coordinator
         if coordinator_frost_identifier != self.personal_frost_identifier {
+            let psbt_type = self.get_psbt_type(session_id).await.unwrap_or(SigningPsbtType::Pegout);
             let resp = PeerMessageResponse::Signing(SigningResponse {
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                 signing_session_id: signing_package_round1.signing_session_id.clone(),
                 psbt: signing_package_round1.psbt.clone(),
-                // TODO: We should pass a correct one
-                psbt_type: SigningPsbtType::Pegout,
+                psbt_type,
             });
 
             retry_future(
@@ -711,10 +728,12 @@ where
             self.update_signing_state(session_id, SigningState::Round2).await;
             // if ok, send to all peers
             // TODO we really just need to send to all signers that responded to the round 1
+            let psbt_type = self.get_psbt_type(session_id).await.unwrap_or(SigningPsbtType::Pegout);
             if let Err(e) = self
                 .gossip_to_peers(
                     to_sign_payload.clone(),
                     SigningEventResponseType::SignerRound2SigningPackage,
+                    psbt_type,
                 )
                 .await
             {
@@ -780,12 +799,12 @@ where
 
         // Broadcast signing round 2 to the coordinator
 
+        let psbt_type = self.get_psbt_type(session_id).await.unwrap_or(SigningPsbtType::Pegout);
         let resp = PeerMessageResponse::Signing(SigningResponse {
             response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
             signing_session_id: signing_package_round2.signing_session_id.clone(),
             psbt: signing_package_round2.psbt.clone(),
-            // TODO: Pass a correct one
-            psbt_type: SigningPsbtType::Pegout,
+            psbt_type,
         });
 
         retry_future(

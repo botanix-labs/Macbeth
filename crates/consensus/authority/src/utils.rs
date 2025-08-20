@@ -5,6 +5,7 @@ use bitcoin::{
     psbt::Psbt,
     witness::Witness,
     Address, Amount, BlockHash,
+    absolute::LockTime,
 };
 use botanix_authority_peg::{
     mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
@@ -20,7 +21,7 @@ use btcserverlib::{
     wallet::psbt::{PsbtExt, PsbtOutputExt},
 };
 use futures_util::Future;
-use reth_network::{NetworkHandle, NetworkInfo};
+use reth_network::{NetworkHandle, NetworkInfo, frost::SigningPsbtType};
 use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
@@ -785,6 +786,380 @@ pub fn validate_psbt_id_by_maximum_cutoff_age(
     Ok(())
 }
 
+/// Validates a sweep PSBT by verifying it against the local wallet state with threshold-based validation.
+///
+/// This function validates that a sweep PSBT is legitimate by:
+/// 1. Checking basic PSBT structure (inputs, outputs)
+/// 2. Verifying that a threshold percentage of inputs exist in the local UTXO set
+/// 3. Ensuring no inputs are currently being tracked/spent (for inputs we know about)
+/// 4. Validating fee calculation and output amounts
+/// 5. Optionally comparing against expected UTXO selection if enabled
+///
+/// The threshold-based approach allows for minor differences in UTXO sets between federation
+/// members while still preventing malicious sweep attempts.
+///
+/// # Arguments
+/// * `client` - BTC server client for accessing local UTXO data
+/// * `btc_network` - Bitcoin network to validate against
+/// * `psbt` - The sweep PSBT to validate
+///
+/// # Returns
+/// * `Ok(())` if the sweep PSBT meets the validation threshold
+/// * `Err(PsbtValidationError)` if validation fails
+pub async fn validate_sweep_psbt(
+    client: &mut impl BtcServerExtendedApi,
+    _btc_network: bitcoin::Network,
+    psbt: &Psbt,
+) -> Result<(), PsbtValidationError> {
+    use btc_server_client::Empty;
+    
+    // Configuration constants for threshold-based validation
+    const MIN_UTXO_MATCH_THRESHOLD: f64 = 0.80; // Require 80% of UTXOs to match local set
+    const MIN_VALUE_MATCH_THRESHOLD: f64 = 0.90; // Require 90% of total value to match local set
+    const ENABLE_SELECTION_LOGIC_VALIDATION: bool = true; // Compare against expected UTXO selection
+    
+    // Basic PSBT structure validation (strict)
+    if psbt.inputs.is_empty() {
+        error!(target: "consensus::authority::utils::validate_sweep_psbt", "Sweep PSBT has no inputs");
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "Sweep PSBT must have at least one input",
+        )));
+    }
+
+    if psbt.outputs.len() != 1 {
+        error!(target: "consensus::authority::utils::validate_sweep_psbt", "Sweep PSBT has {} outputs, expected exactly 1", psbt.outputs.len());
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "Sweep PSBT must have exactly one output",
+        )));
+    }
+
+    // Get local UTXO set and tracked transactions
+    let utxos_response = client
+        .get_all_utxos(Empty {})
+        .await
+        .map_err(|e| PsbtValidationError::FailedToValidatePsbtByIds(format!("Failed to get UTXOs: {}", e)))?;
+    
+    let tracked_txs_response = client
+        .get_tracked_txs(Empty {})
+        .await
+        .map_err(|e| PsbtValidationError::FailedToValidatePsbtByIds(format!("Failed to get tracked transactions: {}", e)))?;
+
+    // Build set of tracked outpoints
+    let tracked_inputs = extract_tracked_outpoints_from_response(&tracked_txs_response.tracked_txs);
+
+    // Build map of available UTXOs
+    let mut available_utxos = std::collections::HashMap::new();
+    for utxo in &utxos_response.utxos {
+        if let (Some(outpoint_proto), Some(_output_proto)) = (&utxo.outpoint, &utxo.output) {
+            if let Ok(txid) = bitcoin::Txid::from_slice(&outpoint_proto.txid) {
+                let outpoint = bitcoin::OutPoint { txid, vout: outpoint_proto.vout };
+                available_utxos.insert(outpoint, utxo);
+            }
+        }
+    }
+
+    // Threshold-based validation counters
+    let mut matched_inputs = 0;
+    let mut total_psbt_value = bitcoin::Amount::ZERO;
+    let mut matched_value = bitcoin::Amount::ZERO;
+    let mut validation_warnings = Vec::new();
+
+    // Validate each input in the sweep PSBT (threshold-based)
+    for (input_index, psbt_input) in psbt.inputs.iter().enumerate() {
+        let witness_utxo = psbt_input.witness_utxo.as_ref().ok_or_else(|| {
+            PsbtValidationError::FailedToValidatePsbtByIds(format!(
+                "Input {} missing witness UTXO", input_index
+            ))
+        })?;
+
+        // Extract outpoint from the transaction input
+        let tx_input = psbt.unsigned_tx.input.get(input_index).ok_or_else(|| {
+            PsbtValidationError::FailedToValidatePsbtByIds(format!(
+                "Missing transaction input at index {}", input_index
+            ))
+        })?;
+        let outpoint = tx_input.previous_output;
+        
+        // Accumulate total PSBT value
+        total_psbt_value += witness_utxo.value;
+
+        // Check if this input is currently being tracked/spent (strict for known inputs)
+        if tracked_inputs.contains(&outpoint) {
+            error!(target: "consensus::authority::utils::validate_sweep_psbt", "Input {} ({}) is currently being tracked/spent", input_index, outpoint);
+            return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
+                "Input {} ({}) is currently being tracked/spent and cannot be swept", input_index, outpoint
+            )));
+        }
+
+        // Check if this UTXO exists in our local database (threshold-based)
+        if let Some(local_utxo) = available_utxos.get(&outpoint) {
+            matched_inputs += 1;
+            matched_value += witness_utxo.value;
+
+            // Validate the witness UTXO matches our local data (strict for matched UTXOs)
+            if let Some(local_output_proto) = &local_utxo.output {
+                if witness_utxo.value.to_sat() != local_output_proto.value {
+                    error!(target: "consensus::authority::utils::validate_sweep_psbt", "Input {} value mismatch: PSBT has {}, local has {}", input_index, witness_utxo.value.to_sat(), local_output_proto.value);
+                    return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
+                        "Input {} value mismatch: PSBT has {}, local UTXO has {}", input_index, witness_utxo.value.to_sat(), local_output_proto.value
+                    )));
+                }
+
+                if let Some(script_proto) = &local_output_proto.script_pubkey {
+                    if witness_utxo.script_pubkey.as_bytes() != script_proto.script.as_slice() {
+                        error!(target: "consensus::authority::utils::validate_sweep_psbt", "Input {} script mismatch", input_index);
+                        return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
+                            "Input {} script pubkey mismatch", input_index
+                        )));
+                    }
+                }
+            }
+        } else {
+            // UTXO not found in local set - this is allowed under threshold validation
+            validation_warnings.push(format!("Input {} ({}) not found in local UTXO set", input_index, outpoint));
+        }
+
+        // Validate that input is taproot (strict)
+        if !witness_utxo.script_pubkey.is_p2tr() {
+            error!(target: "consensus::authority::utils::validate_sweep_psbt", "Input {} is not taproot", input_index);
+            return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
+                "Input {} is not taproot (emergency sweep only supports taproot)", input_index
+            )));
+        }
+    }
+
+    // Apply threshold validation
+    let total_inputs = psbt.inputs.len();
+    let utxo_match_ratio = matched_inputs as f64 / total_inputs as f64;
+    let value_match_ratio = if total_psbt_value > bitcoin::Amount::ZERO {
+        matched_value.to_sat() as f64 / total_psbt_value.to_sat() as f64
+    } else {
+        0.0
+    };
+
+    if utxo_match_ratio < MIN_UTXO_MATCH_THRESHOLD {
+        error!(target: "consensus::authority::utils::validate_sweep_psbt", 
+               "UTXO match ratio {:.2}% below threshold {:.2}% ({}/{} inputs matched)", 
+               utxo_match_ratio * 100.0, MIN_UTXO_MATCH_THRESHOLD * 100.0, matched_inputs, total_inputs);
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
+            "Insufficient UTXO overlap: {:.1}% matched (threshold: {:.1}%)", 
+            utxo_match_ratio * 100.0, MIN_UTXO_MATCH_THRESHOLD * 100.0
+        )));
+    }
+
+    if value_match_ratio < MIN_VALUE_MATCH_THRESHOLD {
+        error!(target: "consensus::authority::utils::validate_sweep_psbt", 
+               "Value match ratio {:.2}% below threshold {:.2}% ({} of {} sats matched)", 
+               value_match_ratio * 100.0, MIN_VALUE_MATCH_THRESHOLD * 100.0, 
+               matched_value.to_sat(), total_psbt_value.to_sat());
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
+            "Insufficient value overlap: {:.1}% matched (threshold: {:.1}%)", 
+            value_match_ratio * 100.0, MIN_VALUE_MATCH_THRESHOLD * 100.0
+        )));
+    }
+
+    // Optional: Validate against expected UTXO selection logic
+    if ENABLE_SELECTION_LOGIC_VALIDATION {
+        if let Err(selection_warning) = validate_utxo_selection_logic(psbt, &utxos_response.utxos, &tracked_inputs).await {
+            // Log as warning but don't fail validation - selection differences are acceptable
+            warn!(target: "consensus::authority::utils::validate_sweep_psbt", 
+                  "UTXO selection differs from expected: {}", selection_warning);
+        }
+    }
+
+    // Validate fee calculation (strict)
+    let fee = psbt.fee().map_err(|e| {
+        PsbtValidationError::FailedToValidatePsbtByIds(format!("Failed to calculate PSBT fee: {}", e))
+    })?;
+
+    if fee <= bitcoin::Amount::ZERO {
+        error!(target: "consensus::authority::utils::validate_sweep_psbt", "Sweep PSBT has non-positive fee: {}", fee);
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
+            "Sweep PSBT must have positive fee, got: {}", fee
+        )));
+    }
+
+    // Validate that the output amount is reasonable (total inputs - fee)
+    let expected_output_value = total_psbt_value - fee;
+    let actual_output_value = psbt.unsigned_tx.output[0].value;
+    
+    if actual_output_value != expected_output_value {
+        error!(target: "consensus::authority::utils::validate_sweep_psbt", "Output value mismatch: expected {}, got {}", expected_output_value, actual_output_value);
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
+            "Output value mismatch: expected {}, got {}", expected_output_value, actual_output_value
+        )));
+    }
+
+    // Log validation results
+    info!(target: "consensus::authority::utils::validate_sweep_psbt", 
+          "Sweep PSBT validation successful: {} inputs ({:.1}% matched), fee: {}, output: {}", 
+          psbt.inputs.len(), utxo_match_ratio * 100.0, fee, actual_output_value);
+    
+    if !validation_warnings.is_empty() {
+        warn!(target: "consensus::authority::utils::validate_sweep_psbt", 
+              "Validation warnings: {}", validation_warnings.join("; "));
+    }
+
+    Ok(())
+}
+
+/// Extracts outpoints from tracked transactions response (helper function)
+fn extract_tracked_outpoints_from_response(tracked_txs: &[btc_server_client::TrackedTx]) -> std::collections::HashSet<bitcoin::OutPoint> {
+    tracked_txs
+        .iter()
+        .filter_map(|tracked_tx| tracked_tx.tx.as_ref())
+        .flat_map(|tx| &tx.input)
+        .filter_map(|input| {
+            let outpoint = input.previous_outpoint.as_ref()?;
+            let txid = bitcoin::Txid::from_slice(&outpoint.txid).ok()?;
+            Some(bitcoin::OutPoint { txid, vout: outpoint.vout })
+        })
+        .collect()
+}
+
+/// Validates the UTXO selection logic against expected behavior (optional validation)
+///
+/// This function replicates the same UTXO selection logic used in PSBT creation
+/// to check if the coordinator made reasonable choices. Differences are logged
+/// as warnings but don't cause validation failure.
+///
+/// # Arguments
+/// * `psbt` - The sweep PSBT to validate
+/// * `available_utxos` - All UTXOs available locally
+/// * `tracked_inputs` - Set of currently tracked outpoints
+///
+/// # Returns
+/// * `Ok(())` if selection logic matches expectations
+/// * `Err(String)` with warning message if selection differs (non-fatal)
+async fn validate_utxo_selection_logic(
+    psbt: &bitcoin::psbt::Psbt,
+    available_utxos: &[btc_server_client::Utxo],
+    tracked_inputs: &std::collections::HashSet<bitcoin::OutPoint>,
+) -> Result<(), String> {
+    use std::collections::HashSet;
+    
+    // Extract outpoints from PSBT
+    let psbt_outpoints: HashSet<bitcoin::OutPoint> = psbt.unsigned_tx.input
+        .iter()
+        .map(|input| input.previous_output)
+        .collect();
+
+    // Apply the same filtering and sorting logic as in PSBT creation
+    let mut local_spendable_utxos = Vec::new();
+    
+    for utxo in available_utxos {
+        // Skip if missing required fields
+        let outpoint_proto = match utxo.outpoint.as_ref() {
+            Some(op) => op,
+            None => continue,
+        };
+        let output_proto = match utxo.output.as_ref() {
+            Some(output) => output,
+            None => continue,
+        };
+        
+        // Parse outpoint
+        let txid = match bitcoin::Txid::from_slice(&outpoint_proto.txid) {
+            Ok(txid) => txid,
+            Err(_) => continue,
+        };
+        let outpoint = bitcoin::OutPoint { txid, vout: outpoint_proto.vout };
+        
+        // Skip if tracked
+        if tracked_inputs.contains(&outpoint) {
+            continue;
+        }
+        
+        // Skip if zero value
+        if output_proto.value == 0 {
+            continue;
+        }
+        
+        // Skip if not taproot (basic validation)
+        if let Some(script_proto) = &output_proto.script_pubkey {
+            let script = bitcoin::ScriptBuf::from_bytes(script_proto.script.clone());
+            if !script.is_p2tr() || script.len() != 34 {
+                continue;
+            }
+        }
+        
+        local_spendable_utxos.push((outpoint, output_proto.value));
+    }
+    
+    // Sort by value descending (same as PSBT creation logic)
+    local_spendable_utxos.sort_by(|a, b| {
+        let value_cmp = b.1.cmp(&a.1);
+        if value_cmp != std::cmp::Ordering::Equal {
+            return value_cmp;
+        }
+        // Secondary sort by outpoint for determinism
+        a.0.cmp(&b.0)
+    });
+    
+    // Apply size limits (same constants as PSBT creation)
+    // Calculate max inputs: (400,000 - 320) / 230 * 0.95 ≈ 1739
+    const EMERGENCY_SWEEP_WEIGHT_LIMIT: u64 = 400_000;
+    const EMERGENCY_SWEEP_BASE_WEIGHT: u64 = 320;
+    const TAPROOT_KEYSPEND_INPUT_WEIGHT: u64 = 230;
+    const MAX_EMERGENCY_SWEEP_INPUTS: usize = {
+        let available_weight = EMERGENCY_SWEEP_WEIGHT_LIMIT - EMERGENCY_SWEEP_BASE_WEIGHT;
+        let theoretical_max = available_weight / TAPROOT_KEYSPEND_INPUT_WEIGHT;
+        let safety_margin = theoretical_max / 20; // 5% margin
+        (theoretical_max - safety_margin) as usize
+    };
+    
+    if local_spendable_utxos.len() > MAX_EMERGENCY_SWEEP_INPUTS {
+        local_spendable_utxos.truncate(MAX_EMERGENCY_SWEEP_INPUTS);
+    }
+    
+    // Check overlap with PSBT selection
+    let expected_outpoints: HashSet<bitcoin::OutPoint> = local_spendable_utxos
+        .into_iter()
+        .take(psbt_outpoints.len()) // Take same number as in PSBT
+        .map(|(outpoint, _)| outpoint)
+        .collect();
+    
+    let overlap_count = psbt_outpoints.intersection(&expected_outpoints).count();
+    let overlap_ratio = if psbt_outpoints.is_empty() { 
+        1.0 
+    } else { 
+        overlap_count as f64 / psbt_outpoints.len() as f64 
+    };
+    
+    // Allow for reasonable differences in UTXO selection (70% overlap is acceptable)
+    const MIN_SELECTION_OVERLAP: f64 = 0.70;
+    if overlap_ratio < MIN_SELECTION_OVERLAP {
+        return Err(format!(
+            "UTXO selection overlap {:.1}% below expected {:.1}% ({}/{} UTXOs match expected selection)",
+            overlap_ratio * 100.0, MIN_SELECTION_OVERLAP * 100.0, overlap_count, psbt_outpoints.len()
+        ));
+    }
+    
+    Ok(())
+}
+
+/// Validates a PSBT based on its type (sweep or pegout)
+pub async fn validate_psbt_by_type<T, U>(
+    reth_client: &T,
+    btc_client: &mut U,
+    btc_network: bitcoin::Network,
+    psbt: &Psbt,
+    psbt_type: SigningPsbtType,
+) -> Result<(), PsbtValidationError> 
+where
+    T: ReceiptProvider + TransactionsProvider + HeaderProvider + Clone,
+    U: BtcServerExtendedApi,
+{
+    match psbt_type {
+        SigningPsbtType::Pegout => {
+            validate_psbt_by_ids(reth_client, btc_network, psbt).await
+        }
+        SigningPsbtType::Sweep => {
+            validate_sweep_psbt(btc_client, btc_network, psbt).await
+        }
+    }
+}
+
 /// Convert bytes to [TransactionSigned] using an iterator
 /// Iterator is passed in case some bytes need to be skipped
 /// For example, if the first Bytes are non-deterministic data
@@ -808,7 +1183,8 @@ pub fn transactions_signed_from_bytes(
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        absolute::LockTime,
+        consensus::Encodable,
+        hashes::{sha256, Hash},
         psbt::{Input, Psbt},
         transaction::Version,
         FeeRate, OutPoint, Sequence, Transaction, TxIn, Txid,

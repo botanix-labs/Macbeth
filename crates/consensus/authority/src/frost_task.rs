@@ -3,6 +3,7 @@ use crate::{
     utils::{
         get_pending_pegouts_from_pegout_data, get_pending_pegouts_from_staged_pegouts,
         get_utxos_from_pegin_meta, get_utxos_from_staged_pegins, retry_exec, validate_psbt_by_ids,
+        validate_sweep_psbt,
     },
     Storage,
 };
@@ -20,7 +21,8 @@ use botanix_storage::{
     StagedHeaderReader, StagedHeaderWriter, WalletSweepSessionReader, WalletSweepSessionWriter,
 };
 use btc_server_client::{
-    BtcServerExtendedApi, ConsensusCheckpointRequest, GrpcClientError, PendingPegout, Utxo,
+    BtcServerExtendedApi, ConsensusCheckpointRequest, GetSessionIdsRequest, GetSigningStatusRequest,
+    GrpcClientError, MakeTxRequest, PendingPegout, SigningStatus, Utxo,
     WalletSweepSessionUpdateResponse,
 };
 use btcserverlib::wallet::psbt::frost_id_from_bytes;
@@ -34,7 +36,7 @@ use reth_network::{
             ToFrostManager,
         },
         DkgResponse, FrostPeerCommand, PeerMessageResponse, SigningEventResponseType,
-        SigningResponse, WalletStateResponse,
+        SigningPsbtType, SigningResponse, WalletStateResponse,
     },
     NetworkHandle,
 };
@@ -410,7 +412,7 @@ where
 
         // Initiate signing session.
         if let Err(e) =
-            self.signing_state_machine.initate_signing_session(header_hash, psbt_payload.psbt).await
+            self.signing_state_machine.initate_signing_session(header_hash, psbt_payload.psbt, SigningPsbtType::Pegout).await
         {
             error!(
                 target: "consensus::authority::frost_task::handle_canon_state_commit",
@@ -497,12 +499,23 @@ where
         let mut canon_state_notifs = self.storage.reth_database.subscribe_to_canonical_state();
 
         let mut abci_started = false;
+        let mut last_sweep_psbt_check = tokio::time::Instant::now();
+        const SWEEP_PSBT_CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 
         loop {
             // check if abci has started
             if abci_started_rx.try_recv().is_ok() {
                 abci_started = true;
             }
+
+            // Check for stored sweep PSBTs that need signing (only if coordinator)
+            if abci_started && 
+               self.signing_state_machine.is_coordinator() && 
+               last_sweep_psbt_check.elapsed() >= SWEEP_PSBT_CHECK_INTERVAL {
+                self.check_and_initiate_sweep_signing().await;
+                last_sweep_psbt_check = tokio::time::Instant::now();
+            }
+
             if abci_started {
                 // get sync status
                 match self.is_syncing().await {
@@ -673,7 +686,7 @@ where
                             response_type,
                             signing_session_id,
                             psbt,
-                            psbt_type: _psbt_type,
+                            psbt_type,
                         } = signing_response;
                         let signing_session_id = match FixedBytes::try_from(
                             signing_session_id.as_slice(),
@@ -694,12 +707,23 @@ where
                                     }
                                 };
 
-                                if let Err(e) = validate_psbt_by_ids(
-                                    &self.storage.reth_database,
-                                    self.storage.btc_network,
-                                    &psbt_res,
-                                )
-                                .await
+                                let validation_result = match psbt_type {
+                                    SigningPsbtType::Pegout => {
+                                        validate_psbt_by_ids(
+                                            &self.storage.reth_database,
+                                            self.storage.btc_network,
+                                            &psbt_res,
+                                        ).await
+                                    },
+                                    SigningPsbtType::Sweep => {
+                                        validate_sweep_psbt(
+                                            &mut self.btc_server,
+                                            self.storage.btc_network,
+                                            &psbt_res,
+                                        ).await
+                                    }
+                                };
+                                if let Err(e) = validation_result
                                 {
                                     error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Error validating psbt {:?}", e);
                                     continue;
@@ -726,12 +750,23 @@ where
                                     }
                                 };
 
-                                if let Err(e) = validate_psbt_by_ids(
-                                    &self.storage.reth_database,
-                                    self.storage.btc_network,
-                                    &psbt_res,
-                                )
-                                .await
+                                let validation_result = match psbt_type {
+                                    SigningPsbtType::Pegout => {
+                                        validate_psbt_by_ids(
+                                            &self.storage.reth_database,
+                                            self.storage.btc_network,
+                                            &psbt_res,
+                                        ).await
+                                    },
+                                    SigningPsbtType::Sweep => {
+                                        validate_sweep_psbt(
+                                            &mut self.btc_server,
+                                            self.storage.btc_network,
+                                            &psbt_res,
+                                        ).await
+                                    }
+                                };
+                                if let Err(e) = validation_result
                                 {
                                     error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error validating psbt {:?}", e);
                                     continue;
@@ -758,12 +793,23 @@ where
                                     }
                                 };
 
-                                if let Err(e) = validate_psbt_by_ids(
-                                    &self.storage.reth_database,
-                                    self.storage.btc_network,
-                                    &psbt_res,
-                                )
-                                .await
+                                let validation_result = match psbt_type {
+                                    SigningPsbtType::Pegout => {
+                                        validate_psbt_by_ids(
+                                            &self.storage.reth_database,
+                                            self.storage.btc_network,
+                                            &psbt_res,
+                                        ).await
+                                    },
+                                    SigningPsbtType::Sweep => {
+                                        validate_sweep_psbt(
+                                            &mut self.btc_server,
+                                            self.storage.btc_network,
+                                            &psbt_res,
+                                        ).await
+                                    }
+                                };
+                                if let Err(e) = validation_result
                                 {
                                     error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Error validating psbt {:?}", e);
                                     continue;
@@ -790,12 +836,23 @@ where
                                     }
                                 };
 
-                                if let Err(e) = validate_psbt_by_ids(
-                                    &self.storage.reth_database,
-                                    self.storage.btc_network,
-                                    &psbt_res,
-                                )
-                                .await
+                                let validation_result = match psbt_type {
+                                    SigningPsbtType::Pegout => {
+                                        validate_psbt_by_ids(
+                                            &self.storage.reth_database,
+                                            self.storage.btc_network,
+                                            &psbt_res,
+                                        ).await
+                                    },
+                                    SigningPsbtType::Sweep => {
+                                        validate_sweep_psbt(
+                                            &mut self.btc_server,
+                                            self.storage.btc_network,
+                                            &psbt_res,
+                                        ).await
+                                    }
+                                };
+                                if let Err(e) = validation_result
                                 {
                                     error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error validating psbt {:?}", e);
                                     continue;
@@ -820,6 +877,87 @@ where
 
             // short sleep
             tokio::time::sleep(std::time::Duration::from_millis(1250)).await;
+        }
+    }
+
+    /// Check for stored sweep PSBTs and initiate FROST signing if needed
+    async fn check_and_initiate_sweep_signing(&mut self) {
+        // Get all session IDs from btc-server
+        let session_ids = match self.btc_server
+            .get_session_ids(GetSessionIdsRequest { max_results: 100 })
+            .await
+        {
+            Ok(response) => response.data,
+            Err(e) => {
+                warn!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", "Failed to get session IDs: {}", e);
+                return;
+            }
+        };
+
+        for session_id_bytes in session_ids {
+            if session_id_bytes.len() != 32 {
+                continue;
+            }
+            
+            let session_id: [u8; 32] = session_id_bytes.as_slice().try_into().unwrap();
+            
+            // Check if this is a sweep PSBT (session ID ends with "SWEEP_SIGNING")
+            if !session_id_bytes.ends_with(b"SWEEP_SIGNING") {
+                continue;
+            }
+            
+            // Check signing status
+            let signing_status = match self.btc_server
+                .get_signing_status(GetSigningStatusRequest {
+                    signing_session_id: session_id_bytes.clone(),
+                })
+                .await
+            {
+                Ok(response) => response.status,
+                Err(e) => {
+                    warn!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", "Failed to get signing status for session {}: {}", hex::encode(&session_id), e);
+                    continue;
+                }
+            };
+            
+            // Skip if already finalized or failed
+            if signing_status != SigningStatus::Running as i32 {
+                continue;
+            }
+            
+            // Check if we already have a signing session for this
+            let session_id_fixed: FixedBytes<32> = session_id.into();
+            if self.signing_state_machine.signing_session_exists(session_id).await {
+                trace!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", "Signing session already exists for sweep PSBT: {}", hex::encode(&session_id));
+                continue;
+            }
+            
+            // Get the PSBT from btc-server by retrieving it directly from the database
+            let psbt_response = match self.btc_server
+                .get_psbt(MakeTxRequest {
+                    signing_session_id: session_id_bytes.clone(),
+                    checkpoint_block_hash: vec![], // Not used for sweep PSBTs
+                })
+                .await
+            {
+                Ok(response) => response,
+                Err(e) => {
+                    warn!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", "Failed to get PSBT for session {}: {}", hex::encode(&session_id), e);
+                    continue;
+                }
+            };
+            
+            info!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", "Initiating FROST signing for sweep PSBT: {}", hex::encode(&session_id));
+            
+            // Initiate FROST signing session
+            if let Err(e) = self.signing_state_machine
+                .initate_signing_session(session_id_fixed, psbt_response.psbt, SigningPsbtType::Sweep)
+                .await
+            {
+                error!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", "Failed to initiate FROST signing for sweep PSBT {}: {}", hex::encode(&session_id), e);
+            } else {
+                info!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", "Successfully initiated FROST signing for sweep PSBT: {}", hex::encode(&session_id));
+            }
         }
     }
 }
