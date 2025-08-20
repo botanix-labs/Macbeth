@@ -247,7 +247,7 @@ update_release_index() {
 
     local prerelease_flag=$([ "$CHANNEL" != "stable" ] && echo "true" || echo "false")
 
-    if command -v jq >/dev/null 2>&1; then
+    if command -v jq > /dev/null 2>&1; then
         jq --arg version "$VERSION" \
             --arg channel "$CHANNEL" \
             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -295,7 +295,7 @@ This repository contains public release artifacts, documentation, and changelogs
 |---------|---------|--------------|-----------|
 EOF
 
-    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+    if [[ -f "releases/index.json" ]] && command -v jq > /dev/null 2>&1; then
         jq -r '.channels | to_entries[] | select(.key == "stable") | "| " + .key + " | " + .value + " | | [Download](releases/" + .value + ") |"' releases/index.json >> README.md
     else
         if [ "$CHANNEL" = "stable" ]; then
@@ -311,8 +311,8 @@ EOF
 \`\`\`bash
 # Use explicit version tags for reproducible builds
 EOF
- 
-    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+
+    if [[ -f "releases/index.json" ]] && command -v jq > /dev/null 2>&1; then
         local stable_version=$(jq -r '.channels.stable // empty' releases/index.json)
         if [ -n "$stable_version" ]; then
             cat >> "README.md" << EOF
@@ -334,10 +334,10 @@ EOF
 
 ### Binary Installation
 ```bash
-# Download stable binaries 
+# Download stable binaries
 EOF
 
-    if [[ -f "releases/index.json" ]] && command -v jq >/dev/null 2>&1; then
+    if [[ -f "releases/index.json" ]] && command -v jq > /dev/null 2>&1; then
         local stable_version=$(jq -r '.channels.stable // empty' releases/index.json)
         if [ -n "$stable_version" ]; then
             cat >> "README.md" << EOF

@@ -1,6 +1,10 @@
 use prometheus::{
-    register_histogram_vec, register_int_counter_vec, register_int_gauge_vec, HistogramVec,
-    IntCounterVec, IntGaugeVec, Registry,
+    register_gauge_vec, register_histogram_vec, register_int_counter_vec, register_int_gauge_vec,
+    GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec, Registry,
+};
+
+use crate::version::{
+    CARGO_PKG_VERSION, VERGEN_BUILD_TIMESTAMP, VERGEN_GIT_SHA, VERGEN_RUSTC_SEMVER,
 };
 
 #[macro_export]
@@ -56,8 +60,8 @@ macro_rules! measure_rpc_latency {
 
 #[macro_export]
 macro_rules! handle_signing_error {
-    // Pattern 1: 3 args - return value on success (req has signing_session_id field)
-    ($self:expr, $req:expr, $operation:expr) => {
+    // Pattern 1: 3 args - return value on success
+    ($self:expr, $operation:expr) => {
         match $operation.to_status() {
             Ok(value) => value,
             Err(e) => {
@@ -65,7 +69,6 @@ macro_rules! handle_signing_error {
                     telemetry.update_signing_error_metrics(
                         $self.btc_network,
                         $self.config.identifier,
-                        $req.signing_session_id.try_into().expect("valid value"),
                         &e.to_string(),
                     );
                 }
@@ -75,13 +78,12 @@ macro_rules! handle_signing_error {
     };
 
     // Pattern 2: 3 args but with explicit signing_session_id - just check for errors
-    ($self:expr, $signing_session_id:expr, $operation:expr, check_only) => {
+    ($self:expr, $operation:expr, check_only) => {
         if let Err(e) = $operation.to_status() {
             if let Some(telemetry) = $self.telemetry.as_ref() {
                 telemetry.update_signing_error_metrics(
                     $self.btc_network,
                     $self.config.identifier,
-                    $signing_session_id,
                     &e.to_string(),
                 );
             }
@@ -146,6 +148,14 @@ pub struct BtcServerMetrics {
     pub pegin_confirmation_depth: IntGaugeVec,
     pub transaction_fee_rates: HistogramVec,
     pub fee_rate_abnormalities: IntCounterVec,
+
+    pub last_attempted_pegout_height: IntGaugeVec,
+    pub last_successful_pegout_height: IntGaugeVec,
+    pub last_pegin_height: IntGaugeVec,
+
+    // version and config-related metrics
+    pub info: GaugeVec,
+    pub config: GaugeVec,
 }
 
 impl Default for BtcServerMetrics {
@@ -281,7 +291,7 @@ impl BtcServerMetrics {
         let signing_error_rates = register_int_counter_vec!(
             format!("{}signing_error_rates", metric_prefix),
             "A metric counting errors or failures during signing message processing",
-            &["btc_chain", "self_id", "signing_session_id", "error_type"],
+            &["btc_chain", "self_id", "error_type"],
         )
         .expect("metric must be created");
 
@@ -460,6 +470,50 @@ impl BtcServerMetrics {
         )
         .expect("metric must be created");
 
+        let last_attempted_pegout_height = register_int_gauge_vec!(
+            format!("{}last_attempted_pegout_height", metric_prefix),
+            "A metric representing the last attempted pegout height",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let last_successful_pegout_height = register_int_gauge_vec!(
+            format!("{}last_successful_pegout_height", metric_prefix),
+            "A metric representing the last successful pegout height",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let last_pegin_height = register_int_gauge_vec!(
+            format!("{}last_pegin_height", metric_prefix),
+            "A metric representing the last pegin height",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        // ====================================================================
+        let info = register_gauge_vec!(
+            "info",
+            "Application status information",
+            &["version", "git_sha", "build_time", "rust_version"]
+        )
+        .expect("metric must be created");
+
+        let config = register_gauge_vec!(
+            "config",
+            "Application configuration",
+            &["btc_network", "identifier", "min_signers", "max_signers"]
+        )
+        .expect("metric must be created");
+
+        info.with_label_values(&[
+            CARGO_PKG_VERSION,
+            VERGEN_GIT_SHA,
+            VERGEN_BUILD_TIMESTAMP,
+            VERGEN_RUSTC_SEMVER,
+        ])
+        .set(1f64);
+
         // ====================================================================
         let registry = Registry::new_custom(prefix, None).expect("registry to be created");
         // Signing Operation Metrics
@@ -507,6 +561,14 @@ impl BtcServerMetrics {
         registry.register(Box::new(pegin_confirmation_depth.clone()))?;
         registry.register(Box::new(transaction_fee_rates.clone()))?;
 
+        registry.register(Box::new(last_attempted_pegout_height.clone()))?;
+        registry.register(Box::new(last_successful_pegout_height.clone()))?;
+        registry.register(Box::new(last_pegin_height.clone()))?;
+
+        // Config and version-related metrics
+        registry.register(Box::new(info.clone()))?;
+        registry.register(Box::new(config.clone()))?;
+
         Ok(Self {
             registry,
             // Signing Operation Metrics
@@ -551,6 +613,14 @@ impl BtcServerMetrics {
             finalized_pegout_ids,
             pegin_confirmation_depth,
             transaction_fee_rates,
+
+            // Config and version-related metrics
+            last_attempted_pegout_height,
+            last_successful_pegout_height,
+            last_pegin_height,
+
+            info,
+            config,
         })
     }
 }
@@ -674,10 +744,7 @@ mod tests {
     fn test_error_rates_metric() {
         let metrics = BtcServerMetrics::random();
 
-        metrics
-            .signing_error_rates
-            .with_label_values(&["regtest", "4", "xyz", "write_error"])
-            .inc_by(1);
+        metrics.signing_error_rates.with_label_values(&["regtest", "4", "write_error"]).inc_by(1);
 
         let metric_families = gather();
         let mut buffer = Vec::new();
@@ -689,7 +756,6 @@ mod tests {
         assert!(output.contains("signing_error_rates"));
         assert!(output.contains("regtest"));
         assert!(output.contains("4"));
-        assert!(output.contains("xyz"));
         assert!(output.contains("write_error"));
     }
 }

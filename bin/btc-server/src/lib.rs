@@ -22,3 +22,4 @@ pub mod federation_args;
 pub mod macros;
 pub mod shutdown;
 pub mod test_utils;
+pub mod version;
