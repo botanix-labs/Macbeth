@@ -67,7 +67,6 @@ pub struct EthExecutorProvider<BF, RethDB, EvmConfig = EthEvmConfig>
 where
     RethDB: reth_db::Database,
 {
-    chain_spec: Arc<ChainSpec>,
     botanix_chain_spec: Arc<BotanixChainSpec>,
     evm_config: EvmConfig,
     bitcoind_factory: BF,
@@ -81,7 +80,6 @@ pub fn create_noop_executor_provider(
 ) -> EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>, EthEvmConfig> {
     let botanix_chain_spec = Arc::new(BotanixChainSpec::from_chain_spec((*chain_spec).clone()));
     EthExecutorProvider::new(
-        chain_spec,
         botanix_chain_spec,
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
@@ -96,14 +94,12 @@ where
 {
     /// Creates a new default ethereum executor provider.
     pub fn ethereum(
-        chain_spec: Arc<ChainSpec>,
         botanix_chain_spec: Arc<BotanixChainSpec>,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
         provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
         Self::new(
-            chain_spec,
             botanix_chain_spec,
             Default::default(),
             bitcoind_factory,
@@ -119,21 +115,13 @@ where
 {
     /// Creates a new executor provider.
     pub const fn new(
-        chain_spec: Arc<ChainSpec>,
         botanix_chain_spec: Arc<BotanixChainSpec>,
         evm_config: EvmConfig,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
         provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
-        Self {
-            chain_spec,
-            botanix_chain_spec,
-            evm_config,
-            bitcoind_factory,
-            bitcoin_network,
-            provider,
-        }
+        Self { botanix_chain_spec, evm_config, bitcoind_factory, bitcoin_network, provider }
     }
 }
 
@@ -148,7 +136,6 @@ where
         DB: Database<Error: Into<ProviderError>>,
     {
         EthBlockExecutor::new(
-            self.chain_spec.clone(),
             self.botanix_chain_spec.clone(),
             self.evm_config.clone(),
             State::builder().with_database(db).with_bundle_update().without_state_clear().build(),
@@ -204,8 +191,6 @@ struct EthEvmExecutor<EvmConfig, BF, RethDB>
 where
     RethDB: reth_db::Database,
 {
-    /// The chainspec
-    chain_spec: Arc<ChainSpec>,
     /// Botanix chainspec
     botanix_chain_spec: Arc<BotanixChainSpec>,
     /// How to create an EVM.
@@ -249,7 +234,7 @@ where
         // apply pre execution changes
         apply_beacon_root_contract_call(
             &self.evm_config,
-            &self.chain_spec,
+            self.botanix_chain_spec.inner(),
             block.timestamp,
             block.number,
             block.parent_beacon_block_root,
@@ -257,7 +242,7 @@ where
         )?;
         apply_blockhashes_update(
             evm.db_mut(),
-            &self.chain_spec,
+            self.botanix_chain_spec.inner(),
             block.timestamp,
             block.number,
             block.parent_hash,
@@ -441,23 +426,26 @@ where
 
         // For eip-6110 we need to collect the deposit requests. This is irrelevant for poa
         // consensus
-        let requests = if self.chain_spec.is_prague_active_at_timestamp(block.timestamp) {
-            // Collect all EIP-6110 deposits
-            let deposit_requests =
-                crate::eip6110::parse_deposits_from_receipts(&self.chain_spec, &receipts)?;
+        let requests =
+            if self.botanix_chain_spec.inner().is_prague_active_at_timestamp(block.timestamp) {
+                // Collect all EIP-6110 deposits
+                let deposit_requests = crate::eip6110::parse_deposits_from_receipts(
+                    self.botanix_chain_spec.inner(),
+                    &receipts,
+                )?;
 
-            // Collect all EIP-7685 requests
-            let withdrawal_requests =
-                apply_withdrawal_requests_contract_call(&self.evm_config, &mut evm)?;
+                // Collect all EIP-7685 requests
+                let withdrawal_requests =
+                    apply_withdrawal_requests_contract_call(&self.evm_config, &mut evm)?;
 
-            // Collect all EIP-7251 requests
-            let consolidation_requests =
-                apply_consolidation_requests_contract_call(&self.evm_config, &mut evm)?;
+                // Collect all EIP-7251 requests
+                let consolidation_requests =
+                    apply_consolidation_requests_contract_call(&self.evm_config, &mut evm)?;
 
-            [deposit_requests, withdrawal_requests, consolidation_requests].concat()
-        } else {
-            vec![]
-        };
+                [deposit_requests, withdrawal_requests, consolidation_requests].concat()
+            } else {
+                vec![]
+            };
 
         Ok(EthExecuteOutput {
             receipts,
@@ -665,7 +653,6 @@ where
 {
     /// Creates a new Ethereum block executor.
     pub const fn new(
-        chain_spec: Arc<ChainSpec>,
         botanix_chain_spec: Arc<BotanixChainSpec>,
         evm_config: EvmConfig,
         state: State<DB>,
@@ -675,7 +662,6 @@ where
     ) -> Self {
         Self {
             executor: EthEvmExecutor {
-                chain_spec,
                 botanix_chain_spec,
                 evm_config,
                 bitcoind_factory,
@@ -688,7 +674,7 @@ where
 
     #[inline]
     fn chain_spec(&self) -> &ChainSpec {
-        self.executor.chain_spec.as_ref()
+        self.executor.botanix_chain_spec.inner()
     }
 
     #[inline]

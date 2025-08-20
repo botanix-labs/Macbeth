@@ -431,8 +431,7 @@ pub(crate) mod authority_execution_utils {
             .with_bundle_update()
             .build();
         let executor = EthBlockExecutor::<EthEvmConfig, _, BF, DB>::new(
-            chain_spec.inner_arc(),
-            chain_spec.clone(),
+            chain_spec,
             evm_config,
             db,
             bitcoind_factory.clone(),

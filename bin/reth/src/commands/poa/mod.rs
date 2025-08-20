@@ -598,7 +598,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Config executor factory
         let evm_config = EthEvmConfig::default();
         let executor_factory = EthExecutorProvider::new(
-            chain.inner_arc(),
             chain.clone().into(),
             evm_config,
             bitcoind_factory.clone(),
