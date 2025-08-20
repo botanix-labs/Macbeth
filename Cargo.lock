@@ -2602,6 +2602,7 @@ dependencies = [
  "async-trait",
  "bitcoin 0.32.6",
  "bitcoincore-rpc",
+ "botanix-configs",
  "botanix-data-parser",
  "botanix-storage",
  "btc-server-client",

@@ -678,6 +678,92 @@ where
         self.db.flush()?;
         Ok(())
     }
+
+    /// Helper function to determine if a PSBT is a sweep transaction
+    /// Sweep PSBTs have exactly one output and no pegout IDs
+    fn is_sweep_psbt(psbt: &Psbt, signing_session_id: &[u8; 32]) -> bool {
+        // Primary detection: check if signing session ID ends with "SWEEP_SIGNING"
+        if signing_session_id.ends_with(b"SWEEP_SIGNING") {
+            return true;
+        }
+        
+        // Secondary detection: sweep PSBTs have exactly one output and no pegout metadata
+        if psbt.outputs.len() != 1 {
+            return false;
+        }
+        
+        // Check if PSBT has pegout IDs (pegout PSBTs have this, sweep PSBTs don't)
+        let pegout_ids = psbt.pegout_ids();
+        pegout_ids.is_empty()
+    }
+
+    /// Handle sweep-specific cleanup after successful transaction broadcast
+    async fn handle_sweep_transaction_success(
+        &self,
+        signing_session_id: &[u8; 32],
+        tx_id: Option<bitcoin::Txid>,
+        psbt: &Psbt,
+    ) -> Result<(), tonic::Status> {
+        if let Some(tx_id) = tx_id {
+            info!("Successfully broadcasted sweep transaction: {:?}", tx_id);
+        } else {
+            info!("Sweep transaction already broadcasted and in pool");
+        }
+        
+        // Mark the sweep session as completed in the database
+        // Note: We don't remove pending pegouts for sweep transactions as they don't have any
+        let had_session = self.db.clear_wallet_sweep_session().map_err(|e| {
+            tonic::Status::internal(format!("Failed to clear wallet sweep session: {}", e))
+        })?;
+        
+        if had_session {
+            info!(
+                "[finalize_signing] Sweep session cleared for session: {}",
+                hex::encode(signing_session_id)
+            );
+        } else {
+            warn!(
+                "[finalize_signing] No active sweep session found to clear for session: {}",
+                hex::encode(signing_session_id)
+            );
+        }
+        
+        // Update telemetry for sweep transactions
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier);
+            telemetry.update_signing_success_rate_metrics(
+                self.btc_network,
+                self.config.identifier,
+                *signing_session_id,
+            );
+        }
+        
+        // Log sweep transaction details
+        let tx = psbt.clone().extract_tx().map_err(|e| {
+            tonic::Status::internal(format!("Failed to extract transaction from sweep PSBT: {}", e))
+        })?;
+        
+        let total_input_value: u64 = psbt.inputs.iter()
+            .filter_map(|input| input.witness_utxo.as_ref())
+            .map(|utxo| utxo.value.to_sat())
+            .sum();
+        
+        let output_value = tx.output[0].value.to_sat();
+        let fee = total_input_value.saturating_sub(output_value);
+        
+        info!(
+            "Sweep transaction summary: {} inputs, output value: {} sats, fee: {} sats",
+            psbt.inputs.len(),
+            output_value,
+            fee
+        );
+        
+        self.db.flush().map_err(|e| {
+            tonic::Status::internal(format!("Failed to flush database after sweep completion: {}", e))
+        })?;
+        
+        Ok(())
+    }
 }
 
 #[tonic::async_trait]
@@ -1323,10 +1409,19 @@ where
                     hex::encode(signing_session_id)
                 )
             })?;
+        
+        // Detect if this is a sweep transaction
+        let is_sweep = Self::is_sweep_psbt(&psbt, &signing_session_id);
+        
         // This should be a ready to broadcast tx
         let tx = psbt.clone().extract_tx().to_status()?;
         let tx_bytes = bitcoin::consensus::encode::serialize(&tx);
-        info!("Signed pegout tx to be broadcast: {}", hex::encode(&tx_bytes));
+        
+        if is_sweep {
+            info!("Signed sweep tx to be broadcast: {}", hex::encode(&tx_bytes));
+        } else {
+            info!("Signed pegout tx to be broadcast: {}", hex::encode(&tx_bytes));
+        }
 
         let tx_id = match measure_rpc_latency!(
             &self.telemetry,
@@ -1358,45 +1453,48 @@ where
         }
         .to_status()?;
 
-        let pegout_ids = psbt
-            .pegout_ids()
-            .iter()
-            .map(|p| PegoutId::from_bytes(p).expect("values are 36 bytes"))
-            .collect::<Vec<PegoutId>>();
-        info!(
-            "[finalize_signing] Removing {} pending pegouts from DB: {:?}",
-            pegout_ids.len(),
-            pegout_ids
-        );
-        self.db.remove_pending_pegout(&pegout_ids).to_status()?;
-        // remove the pegouts from the telemetry gauge
-        if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(
-                self.btc_network,
-                self.config.identifier,
-                -(pegout_ids.len() as i64),
-            );
-        }
-        self.db.flush().to_status()?;
-
-        if let Some(tx_id) = tx_id {
-            info!("Broadcasted tx: {:?}", tx_id);
+        // Handle post-broadcast cleanup based on transaction type
+        if is_sweep {
+            // Handle sweep transaction completion
+            self.handle_sweep_transaction_success(&signing_session_id, tx_id, &psbt).await?;
         } else {
-            info!("Transaction already broadcasted and in pool");
+            // Handle pegout transaction completion (existing logic)
+            let pegout_ids = psbt
+                .pegout_ids()
+                .iter()
+                .map(|p| PegoutId::from_bytes(p).expect("values are 36 bytes"))
+                .collect::<Vec<PegoutId>>();
+            info!(
+                "[finalize_signing] Removing {} pending pegouts from DB: {:?}",
+                pegout_ids.len(),
+                pegout_ids
+            );
+            self.db.remove_pending_pegout(&pegout_ids).to_status()?;
+            // remove the pegouts from the telemetry gauge
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_pending_pegouts(
+                    self.btc_network,
+                    self.config.identifier,
+                    -(pegout_ids.len() as i64),
+                );
+                telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier);
+                telemetry.update_signing_success_rate_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    signing_session_id,
+                );
+            }
+            self.db.flush().to_status()?;
+
+            if let Some(tx_id) = tx_id {
+                info!("Broadcasted tx: {:?}", tx_id);
+            } else {
+                info!("Transaction already broadcasted and in pool");
+            }
         }
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
-
-        // mark the signing session as finalized
-        if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier);
-            telemetry.update_signing_success_rate_metrics(
-                self.btc_network,
-                self.config.identifier,
-                signing_session_id,
-            )
-        }
 
         let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
         Ok(res)
@@ -2232,6 +2330,39 @@ where
             .to_status()?;
 
         Ok(Response::new(AcceptWalletSweepSessionResponse {}))
+    }
+
+    async fn store_sweep_psbt(
+        &self,
+        rpc_request: Request<StoreSweepPsbtRequest>,
+    ) -> Result<Response<StoreSweepPsbtResponse>, Status> {
+        self.validate_jwt(&rpc_request)?;
+
+        let request = rpc_request.into_inner();
+        
+        // Parse the signing session ID
+        let signing_session_id: [u8; 32] = request.signing_session_id.as_slice()
+            .try_into()
+            .map_err(|_| Status::invalid_argument("Invalid signing session ID length"))?;
+        
+        // Deserialize the PSBT
+        let psbt = Psbt::deserialize(&request.psbt)
+            .map_err(|e| Status::invalid_argument(format!("Invalid PSBT: {}", e)))?;
+        
+        info!("Storing sweep PSBT for session: {}", hex::encode(signing_session_id));
+        
+        // Store the PSBT in the database
+        self.db.update_psbt(&signing_session_id, &psbt)
+            .map_err(|e| Status::internal(format!("Failed to store PSBT: {}", e)))?;
+        
+        self.db.flush()
+            .map_err(|e| Status::internal(format!("Failed to flush database: {}", e)))?;
+        
+        info!("Successfully stored sweep PSBT, ready for FROST signing");
+        
+        Ok(Response::new(StoreSweepPsbtResponse {
+            signing_session_id: request.signing_session_id,
+        }))
     }
 
     async fn recover_missing_utxos(
