@@ -9,11 +9,11 @@ use crate::{
 };
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use btc_server_client::{BtcServerClient, SigningPackage};
 use btcserverlib::pegout_id::PegoutId;
 use hex::{self, encode as hex_encode};
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use reth_chainspec::BOTANIX_TESTNET;
 use tonic::transport::Channel;
 
 use crate::{

@@ -71,7 +71,7 @@ impl Command {
         )?;
 
         let data_dir =
-            self.datadir.datadir.unwrap_or_chain_default(chain.chain, self.datadir.clone());
+            self.datadir.datadir.unwrap_or_chain_default(chain.inner().chain, self.datadir.clone());
 
         let db_path = data_dir.db();
 
@@ -80,7 +80,7 @@ impl Command {
         let static_file_provider = StaticFileProvider::read_write(data_dir.static_files())?;
         let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
             database,
-            Arc::new(chain),
+            chain.inner_arc(),
             static_file_provider,
         );
 

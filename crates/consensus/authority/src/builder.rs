@@ -11,6 +11,7 @@ use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
 use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_chainspec::BotanixChainSpec;
 use botanix_cli_args::state_sync::StateSyncArgs;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{DataParser, SerializationType};
@@ -19,7 +20,6 @@ use botanix_storage::{
     StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use btc_server_client::{BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory};
-use reth_chainspec::ChainSpec;
 use reth_db::DatabaseEnv;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_network::{
@@ -99,7 +99,7 @@ where
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
     pub fn try_new(
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: Arc<BotanixChainSpec>,
         reth_provider: RDB,
         activation_manager: ActivationManager<VoteWatcher, Address>,
         btc_server_factory: Option<GrpcClientFactory>,
@@ -142,7 +142,7 @@ where
             .latest_header()
             .ok()
             .flatten()
-            .unwrap_or_else(|| chain_spec.sealed_genesis_header());
+            .unwrap_or_else(|| chain_spec.inner().sealed_genesis_header());
         let mut headers = vec![latest_header.clone()];
 
         while !latest_header.header().is_poa_epoch(chain_spec.epoch_length) {

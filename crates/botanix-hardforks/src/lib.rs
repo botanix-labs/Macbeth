@@ -1,20 +1,20 @@
-use crate::{hardfork, ChainHardforks, ForkCondition, Hardfork};
 use alloy_chains::Chain;
 use alloy_primitives::{uint, U256};
 use core::{
-    fmt,
-    fmt::{Display, Formatter},
+    fmt::{self, Display, Formatter},
     str::FromStr,
 };
+use reth_chainspec::ForkCondition;
+use reth_ethereum_forks::{hardfork, EthereumHardfork, Hardfork};
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, format, string::String};
-
 hardfork!(
-    /// The name of an Ethereum hardfork.
-    EthereumHardfork {
+    /// The name of a Botanix hardfork.
+    ///
+    /// When building a list of hardforks for a chain, it's still expected to mix with [`EthereumHardfork`].
+    BotanixHardfork {
         /// Frontier: <https://blog.ethereum.org/2015/03/03/ethereum-launch-process>.
         Frontier,
         /// Homestead: <https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/homestead.md>.
@@ -54,7 +54,7 @@ hardfork!(
     }
 );
 
-impl EthereumHardfork {
+impl BotanixHardfork {
     /// Retrieves the activation block for the specified hardfork on the given chain.
     pub fn activation_block(&self, chain: Chain) -> Option<u64> {
         if chain == Chain::mainnet() {
@@ -121,7 +121,7 @@ impl EthereumHardfork {
     }
 
     /// Retrieves the activation block for the specified hardfork on the holesky testnet.
-    const fn holesky_activation_block(&self) -> Option<u64> {
+    pub const fn holesky_activation_block(&self) -> Option<u64> {
         match self {
             Self::Dao |
             Self::Tangerine |
@@ -202,6 +202,9 @@ impl EthereumHardfork {
         }
         if chain == Chain::holesky() {
             return self.holesky_activation_timestamp()
+        }
+        if chain == Chain::arbitrum_sepolia() {
+            return self.arbitrum_sepolia_activation_timestamp()
         }
 
         None
@@ -389,6 +392,27 @@ impl EthereumHardfork {
         ]
     }
 
+    /// Ethereum Botanix list of hardforks.
+    pub const fn botanix() -> [(Self, ForkCondition); 15] {
+        [
+            (Self::Frontier, ForkCondition::Block(0)),
+            (Self::Homestead, ForkCondition::Block(0)),
+            (Self::Dao, ForkCondition::Block(0)),
+            (Self::Tangerine, ForkCondition::Block(0)),
+            (Self::SpuriousDragon, ForkCondition::Block(0)),
+            (Self::Byzantium, ForkCondition::Block(0)),
+            (Self::Constantinople, ForkCondition::Block(0)),
+            (Self::Petersburg, ForkCondition::Block(0)),
+            (Self::Istanbul, ForkCondition::Block(0)),
+            (Self::MuirGlacier, ForkCondition::Block(0)),
+            (Self::Berlin, ForkCondition::Block(0)),
+            (Self::London, ForkCondition::Block(0)),
+            (Self::Paris, ForkCondition::TTD { fork_block: Some(0), total_difficulty: U256::ZERO }),
+            (Self::Shanghai, ForkCondition::Timestamp(0)),
+            (Self::Cancun, ForkCondition::Timestamp(0)),
+        ]
+    }
+
     /// Ethereum holesky list of hardforks.
     pub const fn holesky() -> [(Self, ForkCondition); 15] {
         [
@@ -411,12 +435,52 @@ impl EthereumHardfork {
     }
 }
 
-impl<const N: usize> From<[(EthereumHardfork, ForkCondition); N]> for ChainHardforks {
-    fn from(list: [(EthereumHardfork, ForkCondition); N]) -> Self {
-        Self::new(
-            list.into_iter()
-                .map(|(fork, cond)| (Box::new(fork) as Box<dyn Hardfork>, cond))
-                .collect(),
-        )
+impl From<EthereumHardfork> for BotanixHardfork {
+    fn from(hf: EthereumHardfork) -> Self {
+        match hf {
+            EthereumHardfork::Frontier => Self::Frontier,
+            EthereumHardfork::Homestead => Self::Homestead,
+            EthereumHardfork::Dao => Self::Dao,
+            EthereumHardfork::Tangerine => Self::Tangerine,
+            EthereumHardfork::SpuriousDragon => Self::SpuriousDragon,
+            EthereumHardfork::Byzantium => Self::Byzantium,
+            EthereumHardfork::Constantinople => Self::Constantinople,
+            EthereumHardfork::Petersburg => Self::Petersburg,
+            EthereumHardfork::Istanbul => Self::Istanbul,
+            EthereumHardfork::MuirGlacier => Self::MuirGlacier,
+            EthereumHardfork::Berlin => Self::Berlin,
+            EthereumHardfork::London => Self::London,
+            EthereumHardfork::ArrowGlacier => Self::ArrowGlacier,
+            EthereumHardfork::GrayGlacier => Self::GrayGlacier,
+            EthereumHardfork::Paris => Self::Paris,
+            EthereumHardfork::Shanghai => Self::Shanghai,
+            EthereumHardfork::Cancun => Self::Cancun,
+            EthereumHardfork::Prague => Self::Prague,
+        }
+    }
+}
+
+impl From<BotanixHardfork> for EthereumHardfork {
+    fn from(hf: BotanixHardfork) -> Self {
+        match hf {
+            BotanixHardfork::Frontier => EthereumHardfork::Frontier,
+            BotanixHardfork::Homestead => EthereumHardfork::Homestead,
+            BotanixHardfork::Dao => EthereumHardfork::Dao,
+            BotanixHardfork::Tangerine => EthereumHardfork::Tangerine,
+            BotanixHardfork::SpuriousDragon => EthereumHardfork::SpuriousDragon,
+            BotanixHardfork::Byzantium => EthereumHardfork::Byzantium,
+            BotanixHardfork::Constantinople => EthereumHardfork::Constantinople,
+            BotanixHardfork::Petersburg => EthereumHardfork::Petersburg,
+            BotanixHardfork::Istanbul => EthereumHardfork::Istanbul,
+            BotanixHardfork::MuirGlacier => EthereumHardfork::MuirGlacier,
+            BotanixHardfork::Berlin => EthereumHardfork::Berlin,
+            BotanixHardfork::London => EthereumHardfork::London,
+            BotanixHardfork::ArrowGlacier => EthereumHardfork::ArrowGlacier,
+            BotanixHardfork::GrayGlacier => EthereumHardfork::GrayGlacier,
+            BotanixHardfork::Paris => EthereumHardfork::Paris,
+            BotanixHardfork::Shanghai => EthereumHardfork::Shanghai,
+            BotanixHardfork::Cancun => EthereumHardfork::Cancun,
+            BotanixHardfork::Prague => EthereumHardfork::Prague,
+        }
     }
 }

@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use anyhow::Context;
-use reth_chainspec::BOTANIX_TESTNET;
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -265,7 +265,7 @@ pub fn updated_genesis_file(
         .context("Error parsing genesis.json file")?;
 
     if let Some(chain_id) = genesis_object.get_mut("chain_id") {
-        *chain_id = serde_json::Value::String(BOTANIX_TESTNET.chain().id().to_string());
+        *chain_id = serde_json::Value::String(BOTANIX_TESTNET.inner().chain().id().to_string());
     }
 
     if let Some(max_gas) = genesis_object.pointer_mut("/consensus_params/block/max_gas") {

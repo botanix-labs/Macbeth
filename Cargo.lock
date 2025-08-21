@@ -2307,6 +2307,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-chainspec"
+version = "1.2.0"
+dependencies = [
+ "alloy-chains",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives 0.7.7",
+ "alloy-serde",
+ "askama",
+ "botanix-hardforks",
+ "clap",
+ "derive_more 2.0.1",
+ "eyre",
+ "once_cell",
+ "reth-chainspec",
+ "reth-cli",
+ "reth-ethereum-forks",
+ "reth-primitives-traits",
+ "serde",
+ "serde_json",
+ "shellexpand",
+]
+
+[[package]]
 name = "botanix-cli"
 version = "0.1.0"
 dependencies = [
@@ -2325,6 +2349,7 @@ dependencies = [
  "bitcoin 0.32.6",
  "botanix-authority-edh",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "botanix-cli-parsers",
  "botanix-configs",
  "clap",
@@ -2351,6 +2376,7 @@ dependencies = [
  "askama",
  "bitcoin 0.32.6",
  "botanix-authority-edh",
+ "botanix-chainspec",
  "botanix-configs",
  "eyre",
  "reth-chainspec",
@@ -2464,6 +2490,29 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "botanix-hardforks"
+version = "1.2.0"
+dependencies = [
+ "alloy-chains",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives 0.7.7",
+ "alloy-serde",
+ "askama",
+ "clap",
+ "derive_more 2.0.1",
+ "eyre",
+ "once_cell",
+ "reth-chainspec",
+ "reth-cli",
+ "reth-ethereum-forks",
+ "reth-primitives-traits",
+ "serde",
+ "serde_json",
+ "shellexpand",
 ]
 
 [[package]]
@@ -4155,9 +4204,9 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dyn-clone"
-version = "1.0.19"
+version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
+checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "dyn_size_of"
@@ -6719,7 +6768,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if 1.0.1",
- "windows-targets 0.53.2",
+ "windows-targets 0.53.3",
 ]
 
 [[package]]
@@ -6879,9 +6928,9 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.6"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4488594b9328dee448adb906d8b126d9b7deb7cf5c22161ee591610bb1be83c0"
+checksum = "360e552c93fa0e8152ab463bc4c4837fce76a225df11dfaeea66c313de5e61f7"
 dependencies = [
  "bitflags 2.9.1",
  "libc",
@@ -6928,9 +6977,9 @@ checksum = "241eaef5fd12c88705a01fc1066c48c4b36e0dd4377dcdc7ec3942cea7a69956"
 
 [[package]]
 name = "litrs"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4ce301924b7887e9d637144fdade93f9dfff9b60981d4ac161db09720d39aa5"
+checksum = "f5e54036fe321fd421e10d732f155734c4e4afd610dd556d9a82833ab3ee0bed"
 
 [[package]]
 name = "local-channel"
@@ -7805,7 +7854,7 @@ checksum = "bc838d2a56b5b1a6c25f55575dfc605fabb63bb2365f6c2353ef9159aa69e4a5"
 dependencies = [
  "cfg-if 1.0.1",
  "libc",
- "redox_syscall 0.5.15",
+ "redox_syscall 0.5.17",
  "smallvec",
  "windows-targets 0.52.6",
 ]
@@ -8141,9 +8190,9 @@ dependencies = [
 
 [[package]]
 name = "postcard"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c1de96e20f51df24ca73cafcc4690e044854d803259db27a00a461cb3b9d17a"
+checksum = "6764c3b5dd454e283a30e6dfe78e9b31096d9e32036b5d1eaac7a6119ccb9a24"
 dependencies = [
  "cobs",
  "embedded-io 0.4.0",
@@ -8952,9 +9001,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.15"
+version = "0.5.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e8af0dde094006011e6a740d4879319439489813bd0bcdc7d821beaeeff48ec"
+checksum = "5407465600fb0548f1442edf71dd20683c6ed326200ace4b1ef0763521bb3b77"
 dependencies = [
  "bitflags 2.9.1",
 ]
@@ -9181,6 +9230,7 @@ dependencies = [
  "botanix-authority-rsp",
  "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "botanix-cli-args",
  "botanix-cli-parsers",
  "botanix-comet-bft-rpc",
@@ -9278,6 +9328,7 @@ dependencies = [
  "botanix-authority-rsp",
  "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "botanix-cli-args",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
@@ -9560,7 +9611,6 @@ dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rlp",
  "alloy-trie",
- "askama",
  "auto_impl",
  "derive_more 2.0.1",
  "once_cell",
@@ -9702,6 +9752,7 @@ name = "reth-consensus-common"
 version = "1.2.0"
 dependencies = [
  "botanix-authority-edh",
+ "botanix-chainspec",
  "mockall",
  "rand 0.8.5",
  "reth-chainspec",
@@ -10314,6 +10365,7 @@ dependencies = [
  "botanix-authority-edh",
  "botanix-authority-peg",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "btc-server",
  "reth-chainspec",
  "reth-db",
@@ -10826,6 +10878,7 @@ dependencies = [
  "alloy-primitives 0.7.7",
  "bitcoin 0.32.6",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "eyre",
  "futures",
  "futures-util",
@@ -11013,7 +11066,6 @@ dependencies = [
  "reth-rpc-types",
  "revm-primitives",
  "roaring",
- "secp256k1 0.29.1",
  "serde",
  "serde_json",
  "test-fuzz",
@@ -11116,6 +11168,7 @@ name = "reth-revm"
 version = "1.2.0"
 dependencies = [
  "alloy-eips",
+ "botanix-chainspec",
  "reth-chainspec",
  "reth-consensus-common",
  "reth-ethereum-forks",
@@ -12108,9 +12161,9 @@ dependencies = [
 
 [[package]]
 name = "rustc-demangle"
-version = "0.1.25"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "989e6739f80c4ad5b13e0fd7fe89531180375b18520cc8c82080e4dc4035b84f"
+checksum = "56f7d92ca342cea22a06f2121d944b4fd82af56988c270852495420f961d4ace"
 
 [[package]]
 name = "rustc-hash"
@@ -13692,6 +13745,7 @@ dependencies = [
  "botanix-authority-edh",
  "botanix-authority-peg",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "botanix-cli-args",
  "botanix-comet-bft-rpc",
  "botanix-configs",
@@ -13966,9 +14020,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.46.1"
+version = "1.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc3a2344dafbe23a245241fe8b09735b521110d30fcefbbd5feb1797ca35d17"
+checksum = "43864ed400b6043a4757a25c7a64a8efde741aed79a056a2fb348a406701bb35"
 dependencies = [
  "backtrace",
  "bytes",
@@ -13979,9 +14033,9 @@ dependencies = [
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "tokio-macros",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -14087,9 +14141,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.9.2"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed0aee96c12fa71097902e0bb061a5e1ebd766a6636bb605ba401c45c1650eac"
+checksum = "e06723639aaded957e5a80be250c1f82f274b9d23ebb4d94163668470623461c"
 dependencies = [
  "indexmap 2.10.0",
  "serde",
@@ -14533,7 +14587,7 @@ dependencies = [
  "serde_json",
  "target-triple",
  "termcolor",
- "toml 0.9.2",
+ "toml 0.9.3",
 ]
 
 [[package]]
@@ -15231,7 +15285,7 @@ version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb"
 dependencies = [
- "windows-targets 0.53.2",
+ "windows-targets 0.53.3",
 ]
 
 [[package]]
@@ -15282,10 +15336,11 @@ dependencies = [
 
 [[package]]
 name = "windows-targets"
-version = "0.53.2"
+version = "0.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c66f69fcc9ce11da9966ddb31a40968cad001c5bedeb5c2b82ede4253ab48aef"
+checksum = "d5fe6031c4041849d7c496a8ded650796e7b6ecc19df1a431c1a363342e5dc91"
 dependencies = [
+ "windows-link",
  "windows_aarch64_gnullvm 0.53.0",
  "windows_aarch64_msvc 0.53.0",
  "windows_i686_gnu 0.53.0",

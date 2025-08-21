@@ -2,6 +2,7 @@ use core::str::FromStr;
 
 use crate::precompile::HashMap;
 use alloy_eips::eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE};
+use botanix_chainspec::BotanixChainSpec;
 use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_consensus_common::{calc, utils};
 use reth_execution_errors::{BlockExecutionError, BlockValidationError};
@@ -18,7 +19,7 @@ use revm::{
 /// state changes (DAO fork).
 #[inline]
 pub fn post_block_balance_increments(
-    chain_spec: &ChainSpec,
+    chain_spec: &BotanixChainSpec,
     block: &Block,
     total_difficulty: U256,
     total_block_fees: Option<u128>,
@@ -27,9 +28,12 @@ pub fn post_block_balance_increments(
     let mut balance_increments = HashMap::new();
 
     // Add block rewards if they are enabled.
-    if let Some(base_block_reward) =
-        calc::base_block_reward(chain_spec, block.number, block.difficulty, total_difficulty)
-    {
+    if let Some(base_block_reward) = calc::base_block_reward(
+        chain_spec.inner(),
+        block.number,
+        block.difficulty,
+        total_difficulty,
+    ) {
         // Ommer rewards
         for ommer in &block.ommers {
             *balance_increments.entry(ommer.beneficiary).or_default() +=
@@ -99,7 +103,7 @@ pub fn post_block_balance_increments(
 
     // process withdrawals
     insert_post_block_withdrawals_balance_increments(
-        chain_spec,
+        chain_spec.inner(),
         block.timestamp,
         block.withdrawals.as_ref().map(Withdrawals::as_ref),
         &mut balance_increments,

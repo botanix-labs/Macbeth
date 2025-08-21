@@ -2,16 +2,18 @@ use crate::errors::{EthereumAddressParseError, UrlParsingError};
 use alloy_primitives::{hex, Address};
 use askama::Template;
 use bitcoin::hashes::Hash;
-use botanix_authority_edh::extra_data_header::{
-    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+use botanix_authority_edh::{
+    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
+    nums_secp256k1_pk,
+};
+use botanix_chainspec::constants::{
+    create_botanix_config_with_genesis, BotanixTestnetGenesisConfig, BOTANIX_MAINNET,
+    BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID,
 };
 use botanix_configs::federation::FederationTomlConfig;
-use reth_chainspec::{
-    create_botanix_config_with_genesis, BotanixTestnetGenesisConfig, ChainSpec, BOTANIX_MAINNET,
-    BOTANIX_TESTNET, BOTANIX_TESTNET_CHAIN_ID, DEV, HOLESKY, MAINNET, SEPOLIA,
-};
+use reth_chainspec::{ChainSpec, DEV, HOLESKY, MAINNET, SEPOLIA};
 use reth_cli_util::parsers::SocketAddressParsingError;
-use reth_primitives::{constants::nums_secp256k1_pk, Genesis};
+use reth_primitives::Genesis;
 use std::{fs, path::PathBuf, str::FromStr, sync::Arc};
 use url::Url;
 
@@ -81,8 +83,8 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
         "sepolia" => SEPOLIA.clone(),
         "holesky" => HOLESKY.clone(),
         "dev" => DEV.clone(),
-        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
-        "botanix_mainnet" | "botanix-mainnet" => BOTANIX_MAINNET.clone(),
+        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.inner_arc(),
+        "botanix_mainnet" | "botanix-mainnet" => BOTANIX_MAINNET.inner_arc(),
         _ => {
             // try to read json from path first
             let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
@@ -127,11 +129,11 @@ pub fn genesis_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error
                 BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth,
                 botanix_fee_recipient,
                 BOTANIX_TESTNET_CHAIN_ID,
-                BOTANIX_TESTNET.genesis_hash,
+                BOTANIX_TESTNET.inner().genesis_hash,
                 lst_fee_receiver,
                 BOTANIX_TESTNET.epoch_length,
             );
-            Arc::new(botanix_testnet)
+            botanix_testnet.inner_arc()
         }
     })
 }
@@ -146,8 +148,8 @@ pub fn chain_value_parser(s: &str) -> eyre::Result<Arc<ChainSpec>, eyre::Error> 
         "sepolia" => SEPOLIA.clone(),
         "holesky" => HOLESKY.clone(),
         "dev" => DEV.clone(),
-        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.clone(),
-        "botanix_mainnet" | "botanix-mainnet" => BOTANIX_MAINNET.clone(),
+        "botanix_testnet" | "botanix-testnet" => BOTANIX_TESTNET.inner_arc(),
+        "botanix_mainnet" | "botanix-mainnet" => BOTANIX_MAINNET.inner_arc(),
         _ => {
             // try to read json from path first
             let raw = match fs::read_to_string(PathBuf::from(shellexpand::full(s)?.into_owned())) {
