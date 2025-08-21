@@ -2,12 +2,12 @@
 
 use bitcoin::{address::NetworkUnchecked, FeeRate, hashes::{sha256, Hash, hex::FromHex}};
 use botanix_wallet_sweep::{create_psbt_async, request::DestinationConfig, WalletSweepRequest};
-use btc_server_client::{jwt::JwtSecret, BtcServerExtendedApi, Empty, GrpcClientFactory, MakeTxRequest};
+use btc_server_client::{jwt::JwtSecret, BtcServerExtendedApi, Empty, GrpcClientFactory};
 use botanix_configs::federation::FederationTomlConfig;
 use clap::{Parser, Subcommand};
 use eyre::WrapErr;
 use reth_cli_runner::CliContext;
-use reth_primitives::keccak256;
+
 use std::{fs, net::SocketAddr, path::PathBuf, str::FromStr};
 use tracing::{info, warn};
 
@@ -270,51 +270,11 @@ impl SweepCommand {
                     .await?;
                 
                 if is_coordinator {
-                    info!("We are the coordinator - creating sweep PSBT and initiating FROST signing");
-                    
-                    // Create the sweep PSBT using local UTXOs
-                    let sweep_psbt = create_psbt_async(request.clone(), &mut btc_server_client).await
-                        .wrap_err("Failed to create sweep PSBT from local UTXOs")?;
-                    
-                    info!(
-                        "Created sweep PSBT with {} inputs and {} outputs, total value: {} sats",
-                        sweep_psbt.inputs.len(),
-                        sweep_psbt.outputs.len(),
-                        sweep_psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>()
-                    );
-                    
-                    // Generate a deterministic signing session ID for this sweep operation
-                    let mut session_id_data = Vec::new();
-                    session_id_data.extend_from_slice(&request.coordinator_id.to_le_bytes());
-                    session_id_data.extend_from_slice(request.destination_address.clone().assume_checked().to_string().as_bytes());
-                    session_id_data.extend_from_slice(&request.created_at.to_le_bytes());
-                    session_id_data.extend_from_slice(b"SWEEP_SIGNING");
-                    let signing_session_id = keccak256(session_id_data).0;
-                    
-                    let session_id_hex = signing_session_id.iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect::<String>();
-                    info!("Generated signing session ID: {}", session_id_hex);
-                    
-                    // Store the sweep PSBT in btc-server for FROST signing
-                    let store_request = btc_server_client::StoreSweepPsbtRequest {
-                        signing_session_id: signing_session_id.to_vec(),
-                        psbt: sweep_psbt.serialize(),
-                    };
-                    
-                    let store_response = btc_server_client.store_sweep_psbt(store_request).await
-                        .wrap_err("Failed to store sweep PSBT in btc-server")?;
-                    
-                    let stored_session_id_hex = store_response.signing_session_id.iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect::<String>();
-                    
-                    info!("Successfully stored sweep PSBT in btc-server");
-                    info!("Signing session ID: {}", stored_session_id_hex);
+                    info!("We are the coordinator - wallet sweep session accepted");
+                    info!("FROST task will automatically detect the session and create sweep PSBT");
                     info!("FROST signing process will coordinate with federation members using SigningPsbtType::Sweep");
                     info!("Federation members will validate the sweep PSBT against their local UTXO sets");
                     info!("The sweep transaction will be automatically broadcast when threshold signatures are collected");
-                    
                 } else {
                     info!("We are a federation member (not coordinator) - wallet sweep session accepted");
                     info!("Ready for signing validation when coordinator initiates FROST signing process");

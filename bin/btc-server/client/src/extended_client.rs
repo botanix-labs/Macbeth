@@ -13,8 +13,8 @@ use crate::{
     },
     jwt::{Claims, JwtSecret},
     AcceptWalletSweepSessionRequest, AcceptWalletSweepSessionResponse, BtcServerClient,
-    RecoverMissingUtxosRequest, RecoverMissingUtxosResponse, StoreSweepPsbtRequest,
-    StoreSweepPsbtResponse, WalletSweepSessionUpdateResponse, WalletSweepSessionUpdatesRequest,
+    RecoverMissingUtxosRequest, RecoverMissingUtxosResponse, WalletSweepSessionUpdateResponse,
+    WalletSweepSessionUpdatesRequest,
 };
 use displaydoc::Display as DisplayDoc;
 use futures_util::future::BoxFuture;
@@ -166,11 +166,6 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
         request: AcceptWalletSweepSessionRequest,
     ) -> BoxFuture<'_, Result<AcceptWalletSweepSessionResponse, GrpcClientError>>;
 
-    fn store_sweep_psbt(
-        &mut self,
-        request: StoreSweepPsbtRequest,
-    ) -> BoxFuture<'_, Result<StoreSweepPsbtResponse, GrpcClientError>>;
-
     fn subscribe_to_wallet_sweep_session_updates(
         &mut self,
         request: WalletSweepSessionUpdatesRequest,
@@ -320,11 +315,6 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
         accept_wallet_sweep_session,
         AcceptWalletSweepSessionRequest,
         AcceptWalletSweepSessionResponse
-    );
-    generate_method!(
-        store_sweep_psbt,
-        StoreSweepPsbtRequest,
-        StoreSweepPsbtResponse
     );
     generate_stream_method!(
         subscribe_to_wallet_sweep_session_updates,

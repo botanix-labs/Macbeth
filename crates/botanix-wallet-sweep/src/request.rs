@@ -196,6 +196,7 @@ impl TryInto<WalletSweepSession> for WalletSweepRequest {
         let session = WalletSweepSession {
             bitcoin_network,
             bitcoin_destination_address: self.destination_address,
+            fee_rate_sat_vb: self.fee_rate_sat_vb,
             created_at: self.created_at,
         };
 

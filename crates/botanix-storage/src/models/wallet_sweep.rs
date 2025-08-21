@@ -15,13 +15,15 @@ pub type WalletSweepSessionId = B256;
 /// Represents a wallet sweep session that tracks the state of a Bitcoin wallet sweep operation.
 ///
 /// A wallet sweep session contains information about the Bitcoin network being used,
-/// the destination address for the swept funds, and when the session was created.
+/// the destination address for the swept funds, the fee rate, and when the session was created.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletSweepSession {
     /// The Bitcoin network (mainnet, testnet, regtest, or signet) for this sweep operation.
     pub bitcoin_network: Network,
     /// The destination Bitcoin address where swept funds will be sent.
     pub bitcoin_destination_address: Address<NetworkUnchecked>,
+    /// Fee rate in satoshis per virtual byte for the sweep transaction.
+    pub fee_rate_sat_vb: u64,
     /// Unix timestamp when this session was created.
     pub created_at: u64,
 }
@@ -40,6 +42,9 @@ impl Compress for WalletSweepSession {
         let address_bytes = destination_address_string.into_bytes();
         buf.put_u32_le(address_bytes.len() as u32);
         buf.put(address_bytes.as_slice());
+
+        // Write fee rate (8 bytes)
+        buf.put_u64_le(self.fee_rate_sat_vb);
 
         // Write timestamp
         buf.put_u64_le(self.created_at);
@@ -79,13 +84,19 @@ impl Decompress for WalletSweepSession {
         let bitcoin_destination_address = Address::from_str(address_str)
             .map_err(|_| reth_storage_errors::db::DatabaseError::Decode)?;
 
+        // Read fee rate (8 bytes)
+        if buf.remaining() < 8 {
+            return Err(reth_storage_errors::db::DatabaseError::Decode);
+        }
+        let fee_rate_sat_vb = buf.get_u64_le();
+
         // Read timestamp
         if buf.remaining() < 8 {
             return Err(reth_storage_errors::db::DatabaseError::Decode);
         }
         let created_at = buf.get_u64_le();
 
-        Ok(Self { bitcoin_network, bitcoin_destination_address, created_at })
+        Ok(Self { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at })
     }
 }
 
@@ -109,6 +120,9 @@ impl WalletSweepSession {
         let address_str = self.bitcoin_destination_address.clone().assume_checked().to_string();
         data.extend_from_slice(address_str.as_bytes());
         
+        // Include fee rate
+        data.extend_from_slice(&self.fee_rate_sat_vb.to_le_bytes());
+
         // Include timestamp
         data.extend_from_slice(&self.created_at.to_le_bytes());
         
@@ -154,9 +168,10 @@ mod tests {
         let bitcoin_network = Network::Bitcoin;
         let bitcoin_destination_address =
             Address::from_str("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2").unwrap().as_unchecked().clone();
+        let fee_rate_sat_vb = 1000;
         let created_at = 1234567890;
 
-        WalletSweepSession { bitcoin_network, bitcoin_destination_address, created_at }
+        WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at }
     }
 
     #[test]
@@ -176,6 +191,7 @@ mod tests {
         // Verify all fields match
         assert_eq!(original.bitcoin_network, decompressed.bitcoin_network);
         assert_eq!(original.bitcoin_destination_address, decompressed.bitcoin_destination_address);
+        assert_eq!(original.fee_rate_sat_vb, decompressed.fee_rate_sat_vb);
         assert_eq!(original.created_at, decompressed.created_at);
     }
 
@@ -187,10 +203,11 @@ mod tests {
                 .unwrap()
                 .as_unchecked()
                 .clone();
+        let fee_rate_sat_vb = 0;
         let created_at = 0;
 
         let session =
-            WalletSweepSession { bitcoin_network, bitcoin_destination_address, created_at };
+            WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at };
 
         let mut buffer = Vec::new();
         session.clone().compress_to_buf(&mut buffer);
@@ -198,6 +215,7 @@ mod tests {
 
         assert_eq!(session.bitcoin_network, decompressed.bitcoin_network);
         assert_eq!(session.bitcoin_destination_address, decompressed.bitcoin_destination_address);
+        assert_eq!(session.fee_rate_sat_vb, decompressed.fee_rate_sat_vb);
         assert_eq!(session.created_at, decompressed.created_at);
     }
 
@@ -209,10 +227,11 @@ mod tests {
                 .unwrap()
                 .as_unchecked()
                 .clone();
+        let fee_rate_sat_vb = u64::MAX;
         let created_at = u64::MAX;
 
         let session =
-            WalletSweepSession { bitcoin_network, bitcoin_destination_address, created_at };
+            WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at };
 
         let mut buffer = Vec::new();
         session.clone().compress_to_buf(&mut buffer);
@@ -220,6 +239,7 @@ mod tests {
 
         assert_eq!(session.bitcoin_network, decompressed.bitcoin_network);
         assert_eq!(session.bitcoin_destination_address, decompressed.bitcoin_destination_address);
+        assert_eq!(session.fee_rate_sat_vb, decompressed.fee_rate_sat_vb);
         assert_eq!(session.created_at, decompressed.created_at);
     }
 
@@ -236,11 +256,13 @@ mod tests {
         for (network, address_str) in networks.iter().zip(addresses.iter()) {
             let bitcoin_destination_address =
                 Address::from_str(address_str).unwrap().as_unchecked().clone();
+            let fee_rate_sat_vb = 1000;
             let created_at = 1234567890;
 
             let session = WalletSweepSession {
                 bitcoin_network: *network,
                 bitcoin_destination_address,
+                fee_rate_sat_vb,
                 created_at,
             };
 
@@ -253,6 +275,7 @@ mod tests {
                 session.bitcoin_destination_address,
                 decompressed.bitcoin_destination_address
             );
+            assert_eq!(session.fee_rate_sat_vb, decompressed.fee_rate_sat_vb);
         }
     }
 
@@ -272,6 +295,7 @@ mod tests {
     #[test]
     fn test_decompress_invalid_address() {
         let bitcoin_network = Network::Bitcoin;
+        let fee_rate_sat_vb: u64 = 1000;
         let created_at: u64 = 1234567890;
 
         let mut buffer = Vec::new();
@@ -284,6 +308,9 @@ mod tests {
         let invalid_address = b"not-a-valid-address";
         buffer.extend_from_slice(&(invalid_address.len() as u32).to_le_bytes());
         buffer.extend_from_slice(invalid_address);
+
+        // Write fee rate
+        buffer.extend_from_slice(&fee_rate_sat_vb.to_le_bytes());
 
         // Write timestamp
         buffer.extend_from_slice(&created_at.to_le_bytes());

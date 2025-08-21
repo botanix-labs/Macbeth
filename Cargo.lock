@@ -9302,6 +9302,7 @@ dependencies = [
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
  "botanix-storage",
+ "botanix-wallet-sweep",
  "btc-server",
  "btc-server-client",
  "bytes",

@@ -301,18 +301,6 @@ pub struct AcceptWalletSweepSessionRequest {
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct AcceptWalletSweepSessionResponse {}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StoreSweepPsbtRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
-    pub psbt: ::prost::alloc::vec::Vec<u8>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StoreSweepPsbtResponse {
-    #[prost(bytes = "vec", tag = "1")]
-    pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
-}
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct WalletSweepSessionUpdatesRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1048,31 +1036,6 @@ pub mod btc_server_client {
                 .insert(
                     GrpcMethod::new("btc_server.BtcServer", "AcceptWalletSweepSession"),
                 );
-            self.inner.unary(req, path, codec).await
-        }
-        /// Store a sweep PSBT and initiate FROST signing (coordinator only)
-        pub async fn store_sweep_psbt(
-            &mut self,
-            request: impl tonic::IntoRequest<super::StoreSweepPsbtRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::StoreSweepPsbtResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/btc_server.BtcServer/StoreSweepPsbt",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("btc_server.BtcServer", "StoreSweepPsbt"));
             self.inner.unary(req, path, codec).await
         }
         /// Streaming endpoint to sync the wallet sweep session with poa node.
