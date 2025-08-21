@@ -20,7 +20,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::psbt::PsbtSighashType;
 use bitcoin::sighash::TapSighashType;
 use bitcoin::{Amount, FeeRate, OutPoint, Psbt, ScriptBuf, TxOut, Weight};
-use btc_server_client::{BtcServerExtendedApi, BtcServerExtendedClient, Empty};
+use btc_server_client::{BtcServerExtendedApi, Empty};
 use std::collections::HashSet;
 use thiserror::Error;
 
@@ -164,7 +164,7 @@ struct SweepInput {
 /// A PSBT that sweeps all available UTXOs to the specified destination address
 pub async fn create_psbt_async(
     request: WalletSweepRequest,
-    client: &mut BtcServerExtendedClient,
+    client: &mut impl BtcServerExtendedApi,
 ) -> Result<Psbt, SweepError> {
     tracing::warn!("EMERGENCY: Starting wallet sweep PSBT creation");
 

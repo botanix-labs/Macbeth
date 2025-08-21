@@ -68,9 +68,6 @@ service BtcServer {
     // This method must be called by all signers, including coordinator to accept the wallet sweep session.
     rpc AcceptWalletSweepSession(AcceptWalletSweepSessionRequest) returns (AcceptWalletSweepSessionResponse) {}
 
-    // Store a sweep PSBT and initiate FROST signing (coordinator only)
-    rpc StoreSweepPsbt(StoreSweepPsbtRequest) returns (StoreSweepPsbtResponse) {}
-
     // Streaming endpoint to sync the wallet sweep session with poa node.
     rpc SubscribeToWalletSweepSessionUpdates(WalletSweepSessionUpdatesRequest) returns (stream WalletSweepSessionUpdateResponse) {}
 }
@@ -293,15 +290,6 @@ message AcceptWalletSweepSessionRequest {
 }
 
 message AcceptWalletSweepSessionResponse {
-}
-
-message StoreSweepPsbtRequest {
-    bytes signing_session_id = 1;
-    bytes psbt = 2;
-}
-
-message StoreSweepPsbtResponse {
-    bytes signing_session_id = 1;
 }
 
 message WalletSweepSessionUpdatesRequest {

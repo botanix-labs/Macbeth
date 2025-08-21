@@ -5,7 +5,7 @@ use bitcoin::{
     psbt::Psbt,
     witness::Witness,
     Address, Amount, BlockHash,
-    absolute::LockTime,
+
 };
 use botanix_authority_peg::{
     mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
@@ -22,7 +22,8 @@ use btcserverlib::{
 };
 use futures_util::Future;
 use reth_network::{NetworkHandle, NetworkInfo, frost::SigningPsbtType};
-use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput, TransactionSigned};
+use reth_primitives::{Bloom, BloomInput, TransactionSigned};
+use reth_primitives::constants::EPOCH_LENGTH;
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;

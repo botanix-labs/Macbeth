@@ -28,6 +28,7 @@ botanix-cli-args = { workspace = true }
 botanix-comet-bft-rpc = { workspace = true }
 botanix-data-parser = { workspace = true }
 botanix-storage = { workspace = true }
+botanix-wallet-sweep = { workspace = true }
 btc-server = { path = "../../../bin/btc-server" }
 btc-server-client = { path = "../../../bin/btc-server/client" }
 

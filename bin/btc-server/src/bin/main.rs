@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate log;
 
-use anyhow::Context;
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::{self, Decodable},
@@ -9,7 +8,7 @@ use bitcoin::{
 };
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
-use botanix_storage::models::WalletSweepSession;
+
 use botanix_wallet_sweep::WalletSweepRequest;
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
 use btc_server_client::jwt::{JwtError, JwtSecret};
@@ -52,7 +51,7 @@ use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
-use sled::{Event, IVec};
+use sled::Event;
 use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,
@@ -63,7 +62,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use thiserror::Error;
-use tokio::sync::{mpsc::error::SendError, oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{
     codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server, Request,
@@ -2332,38 +2331,7 @@ where
         Ok(Response::new(AcceptWalletSweepSessionResponse {}))
     }
 
-    async fn store_sweep_psbt(
-        &self,
-        rpc_request: Request<StoreSweepPsbtRequest>,
-    ) -> Result<Response<StoreSweepPsbtResponse>, Status> {
-        self.validate_jwt(&rpc_request)?;
 
-        let request = rpc_request.into_inner();
-        
-        // Parse the signing session ID
-        let signing_session_id: [u8; 32] = request.signing_session_id.as_slice()
-            .try_into()
-            .map_err(|_| Status::invalid_argument("Invalid signing session ID length"))?;
-        
-        // Deserialize the PSBT
-        let psbt = Psbt::deserialize(&request.psbt)
-            .map_err(|e| Status::invalid_argument(format!("Invalid PSBT: {}", e)))?;
-        
-        info!("Storing sweep PSBT for session: {}", hex::encode(signing_session_id));
-        
-        // Store the PSBT in the database
-        self.db.update_psbt(&signing_session_id, &psbt)
-            .map_err(|e| Status::internal(format!("Failed to store PSBT: {}", e)))?;
-        
-        self.db.flush()
-            .map_err(|e| Status::internal(format!("Failed to flush database: {}", e)))?;
-        
-        info!("Successfully stored sweep PSBT, ready for FROST signing");
-        
-        Ok(Response::new(StoreSweepPsbtResponse {
-            signing_session_id: request.signing_session_id,
-        }))
-    }
 
     async fn recover_missing_utxos(
         &self,
