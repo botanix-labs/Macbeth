@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use botanix_hardforks::BotanixHardfork;
 use reth_chainspec::{ChainSpec, EthChainSpec, EthereumHardfork, Hardforks};
@@ -69,9 +69,17 @@ impl Default for BotanixChainSpec {
     }
 }
 
+impl Deref for BotanixChainSpec {
+    type Target = ChainSpec;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
 impl BotanixChainSpec {
     pub fn inner(&self) -> &ChainSpec {
-        &self.inner
+        &**self
     }
 
     pub fn inner_arc(&self) -> Arc<ChainSpec> {
