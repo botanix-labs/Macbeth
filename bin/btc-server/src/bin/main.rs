@@ -1579,8 +1579,11 @@ where
         // Iterate through the outputs of the unsigned transaction embedded in the PSBT
         for (i, tx_output) in psbt.unsigned_tx.output.iter().enumerate() {
             info!(
-                "- Output {}: value={}, script_pubkey={:?}",
-                i, tx_output.value, tx_output.script_pubkey
+                "- Output {}: value={}, script_pubkey={:?}, address={:?}",
+                i,
+                tx_output.value,
+                tx_output.script_pubkey,
+                bitcoin::Address::from_script(&tx_output.script_pubkey, self.btc_network)
             );
         }
         // Note: Standard PSBT doesn't explicitly track change_index in rust-bitcoin library easily.
