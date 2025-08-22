@@ -898,7 +898,7 @@ where
             info!("get_finalized_pegout_ids stream task: Created DB stream.");
 
             while let Some(chunk_result) = stream.next().await {
-                info!(
+                trace!(
                     "get_finalized_pegout_ids stream task: Received chunk from DB stream: {:?}",
                     chunk_result
                 );
@@ -924,7 +924,7 @@ where
                         };
 
                         // send the batch with retries
-                        debug!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
+                        trace!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
                         let fut = || async {
                             let tx = tx.clone();
                             let batch = batch.clone();
