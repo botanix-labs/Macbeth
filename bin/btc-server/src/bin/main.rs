@@ -2,7 +2,7 @@
 extern crate log;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fmt::Debug,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
@@ -675,7 +675,28 @@ where
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
         let pegouts = pegouts?;
-        let pegouts_refs: Vec<&PegoutRequest> = pegouts.iter().collect();
+        // Check pegouts are not in the finalized pegout ids list or are tracked by the Pegout Scheduler
+        let mut broadcasted_pegout_ids: HashSet<_> =
+            self.db.get_finalized_pegout_ids().to_status()?.iter().map(|p| p.id).collect();
+        // Get Pegout Scheduler txs and add to hashset
+        let scheduler_txs = self.pegout_scheduler.lock().await.tracked_pegout_request_ids();
+        broadcasted_pegout_ids.extend(scheduler_txs);
+        let pegouts_refs: Vec<&PegoutRequest> = pegouts
+            .iter()
+            .filter(|pegout| {
+                if broadcasted_pegout_ids.contains(&pegout.id) {
+                    error!(
+                        "Received a pegout request for finalized or broadcasted id: L2 txid - {:?}, tx receipt log index - {:?}, bitcoin address - {:?}",
+                        hex::encode(pegout.id.txid),
+                        pegout.id.idx,
+                        bitcoin::Address::from_script(&pegout.spk, self.btc_network)
+                    );
+                    return false;
+                }
+                true
+            })
+            .collect();
+
         self.db.store_pending_pegouts(&pegouts_refs).to_status()?;
         self.db.flush().to_status()?;
         info!("stored pegouts.len(): {:?}", pegouts.len());
@@ -758,7 +779,7 @@ where
             info!("get_finalized_pegout_ids stream task: Created DB stream.");
 
             while let Some(chunk_result) = stream.next().await {
-                info!(
+                trace!(
                     "get_finalized_pegout_ids stream task: Received chunk from DB stream: {:?}",
                     chunk_result
                 );
@@ -782,7 +803,7 @@ where
                         };
 
                         // send the batch with retries
-                        info!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
+                        trace!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
                         let fut = || async {
                             let tx = tx.clone();
                             let batch = batch.clone();
