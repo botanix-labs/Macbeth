@@ -675,14 +675,22 @@ where
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
         let pegouts = pegouts?;
-        // Check pegouts are not in the finalized pegout ids list
-        let finalized_pegout_ids: HashSet<_> =
+        // Check pegouts are not in the finalized pegout ids list or are tracked by the Pegout Scheduler
+        let mut broadcasted_pegout_ids: HashSet<_> =
             self.db.get_finalized_pegout_ids().to_status()?.iter().map(|p| p.id).collect();
+        // Get Pegout Scheduler txs and add to hashset
+        let scheduler_txs = self.pegout_scheduler.lock().await.tracked_pegout_request_ids();
+        broadcasted_pegout_ids.extend(scheduler_txs);
         let pegouts_refs: Vec<&PegoutRequest> = pegouts
             .iter()
             .filter(|pegout| {
-                if finalized_pegout_ids.contains(&pegout.id) {
-                    error!("Received a pegout request for finalized id: {:?}", pegout.id);
+                if broadcasted_pegout_ids.contains(&pegout.id) {
+                    error!(
+                        "Received a pegout request for finalized or broadcasted id: L2 txid - {:?}, tx receipt log index - {:?}, bitcoin address - {:?}",
+                        hex::encode(pegout.id.txid),
+                        pegout.id.idx,
+                        bitcoin::Address::from_script(&pegout.spk, self.btc_network)
+                    );
                     return false;
                 }
                 true
