@@ -140,7 +140,8 @@ pub async fn test_prevent_resigning_pegout(
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
-    let spk = pk.p2wpkh_script_code().expect("valid pk");
+    let wpk = pk.wpubkey_hash().expect("valid wpubkey hash");
+    let spk = bitcoin::ScriptBuf::new_p2wpkh(&wpk);
 
     // Notify some pending pegouts
     let amount = bitcoin::Amount::from_sat(100_000);

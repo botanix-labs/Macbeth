@@ -1039,8 +1039,7 @@ impl TryFrom<RpcUtxo> for Utxo {
         let script_pubkey = tx_out
             .script_pubkey
             .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
-        let script = bitcoin::consensus::deserialize::<ScriptBuf>(&script_pubkey.script)
-            .map_err(|_| Error::RpcToDbMap("Unparsable ScriptBuf".to_string()))?;
+        let script = ScriptBuf::from_bytes(script_pubkey.script);
 
         // create the utxo
         Ok(Utxo::new(
@@ -1064,11 +1063,9 @@ impl TryFrom<Utxo> for RpcUtxo {
     type Error = Error;
 
     fn try_from(item: Utxo) -> Result<Self, Self::Error> {
-        let mut script_pk = vec![];
-        item.output
-            .script_pubkey
-            .consensus_encode(&mut script_pk)
-            .map_err(|_e| Error::RpcToDbMap("Failed to serialize scriptpubkey".to_string()))?;
+        // Use script bytes directly without additional consensus encoding
+        // The script is already in the correct format from the database
+        let script_pk = item.output.script_pubkey.to_bytes();
 
         Ok(RpcUtxo {
             outpoint: Some(RpcOutPoint {
@@ -1092,7 +1089,7 @@ mod tests {
 
     use crate::{
         pegout_scheduler::{PegoutRequest, Tx},
-        test_utils::{create_random_pegout_id, create_tx, random_p2wpkh_script, setup_db},
+        test_utils::{create_random_pegout_id, create_tx, random_p2wpkh_scriptpubkey, setup_db},
     };
     use std::{collections::HashSet, time::SystemTime};
 
@@ -1113,7 +1110,7 @@ mod tests {
         let pegout_id = PegoutId::new([0; 32], 0);
         let req = pegout_scheduler::PegoutRequest {
             id: pegout_id,
-            spk: ScriptBuf::from_bytes(vec![0x01, 0x02, 0x03]),
+            spk: random_p2wpkh_scriptpubkey(),
             value: Amount::from_sat(1000),
             botanix_height: 1,
             timestamp: None,
@@ -1149,7 +1146,7 @@ mod tests {
             let pegout_id = PegoutId::new([i as u8; 32], 0);
             let req = pegout_scheduler::PegoutRequest {
                 id: pegout_id,
-                spk: random_p2wpkh_script(),
+                spk: random_p2wpkh_scriptpubkey(),
                 value: Amount::from_sat(100_000),
                 botanix_height: 50 - i,
                 timestamp: None,
@@ -1196,7 +1193,7 @@ mod tests {
             let pegout_id = create_random_pegout_id();
             let req = pegout_scheduler::PegoutRequest {
                 id: pegout_id,
-                spk: random_p2wpkh_script(),
+                spk: random_p2wpkh_scriptpubkey(),
                 value: Amount::from_sat(100_000),
                 botanix_height: 1,
                 timestamp: None,
@@ -1226,7 +1223,7 @@ mod tests {
             let pegout_id = create_random_pegout_id();
             let req = pegout_scheduler::PegoutRequest {
                 id: pegout_id,
-                spk: random_p2wpkh_script(),
+                spk: random_p2wpkh_scriptpubkey(),
                 value: Amount::from_sat(100_000),
                 botanix_height: 1,
                 timestamp: None,
@@ -1255,7 +1252,7 @@ mod tests {
             let pegout_id = PegoutId::new([i as u8; 32], 0);
             let req = pegout_scheduler::PegoutRequest {
                 id: pegout_id,
-                spk: random_p2wpkh_script(),
+                spk: random_p2wpkh_scriptpubkey(),
                 value: Amount::from_sat(100_000),
                 botanix_height: 1,
                 timestamp: None,

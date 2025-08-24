@@ -265,7 +265,8 @@ pub async fn test_many_inputs_signing(
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
-    let spk = pk.p2wpkh_script_code().expect("valid pk");
+    let wpk = pk.wpubkey_hash().expect("valid wpubkey hash");
+    let spk = bitcoin::ScriptBuf::new_p2wpkh(&wpk);
 
     // Calling do_signing should fail as we have no pending pegouts
     let err_res = do_signing(&mut clients, &bitcoind, &[0u8; 32])
@@ -315,7 +316,8 @@ pub async fn test_many_inputs_signing(
         // get new a key
         let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
         let pk = sk.public_key(&secp);
-        let spk = pk.p2wpkh_script_code().expect("valid pk");
+        let wpk = pk.wpubkey_hash().expect("valid wpubkey hash");
+        let spk = bitcoin::ScriptBuf::new_p2wpkh(&wpk);
 
         pending_pegouts.push((pegout_id, amount, spk.clone(), pegout_id));
     }
@@ -424,7 +426,8 @@ pub async fn test_many_inputs_signing(
                                                       // get new a key
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
-    let spk = pk.p2wpkh_script_code().expect("valid pk");
+    let wpk = pk.wpubkey_hash().expect("valid wpubkey hash");
+    let spk = bitcoin::ScriptBuf::new_p2wpkh(&wpk);
 
     // update the checkpoint blockhash
     let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
