@@ -72,6 +72,7 @@ pub async fn do_signing_round1(
                 btc_server_client::SigningPackageRequest {
                     psbt: psbt.clone(),
                     signing_session_id: signing_session_id.to_vec(),
+                    psbt_type: 0,
                 },
             ))
             .await

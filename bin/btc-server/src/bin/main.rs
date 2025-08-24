@@ -35,7 +35,7 @@ use btcserverlib::{
     util::{
         btc_per_kb_to_sat_per_vb, deserialize_frost_peer_id, get_available_utxos,
         get_pegin_confirmation_depth, parse_eth_address, parse_signing_session_id, retry_exec,
-        ParsingError, UPPER_PEGOUT_BOUND,
+        ParsingError, SigningPsbtType, UPPER_PEGOUT_BOUND,
     },
     wallet::{
         self,
@@ -1221,8 +1221,11 @@ where
             }
         };
 
+        // Extract psbt_type from gRPC request
+        let psbt_type = SigningPsbtType::from(req.psbt_type);
         let nonces = signer::get_round1_signing_package(
             &mut psbt,
+            psbt_type,
             self.min_signers,
             &self.db,
             &self.identifier,
@@ -1242,6 +1245,7 @@ where
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
+            psbt_type: psbt_type.into(),
         };
 
         Ok(tonic::Response::new(res))
@@ -1283,8 +1287,11 @@ where
             }
         };
 
+        // Extract psbt_type from gRPC request
+        let psbt_type = SigningPsbtType::from(req.psbt_type);
         signer::get_round2_signing_package(
             &mut psbt,
+            psbt_type,
             self.min_signers,
             &self.db,
             &self.identifier,
@@ -1385,6 +1392,7 @@ where
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
+            psbt_type: psbt_type.into(),
         };
 
         Ok(tonic::Response::new(res))
@@ -1650,6 +1658,7 @@ where
             outputs,
             fee_rate,
             change_script,
+            SigningPsbtType::Pegout, // This is for pegout transactions
             &self.db,
             self.min_signers,
             tracked_txs,
@@ -1712,6 +1721,7 @@ where
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
+            psbt_type: SigningPsbtType::Pegout.into(), // This is make_tx, always pegout
         });
 
         // record the new signing session in telemetry
@@ -1773,6 +1783,7 @@ where
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
+            psbt_type: SigningPsbtType::Pegout.into(), // get_to_sign retrieves existing PSBT, defaults to pegout
         });
         Ok(res)
     }
@@ -1823,10 +1834,13 @@ where
             }
         };
 
+        // Extract psbt_type from gRPC request
+        let psbt_type = SigningPsbtType::from(req.psbt_type);
         if let Err(e) = coordinator::add_round1_signing(
             &signing_session_id,
             frost_id,
             &psbt,
+            psbt_type,
             &self.db,
             self.min_signers,
         )
@@ -1898,10 +1912,13 @@ where
             }
         };
 
+        // Extract psbt_type from gRPC request
+        let psbt_type = SigningPsbtType::from(req.psbt_type);
         if let Err(e) = coordinator::add_round2_signing(
             &signing_session_id,
             frost_id,
             &psbt,
+            psbt_type,
             &self.db,
             self.min_signers,
         )

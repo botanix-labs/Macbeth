@@ -5,7 +5,7 @@ use crate::{
     database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
     pegout_scheduler::Tx,
-    util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
+    util::{validate_psbt, SigningPsbtType, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     wallet::{
         coin_selection,
         psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
@@ -27,11 +27,12 @@ pub fn add_round1_signing(
     signing_session_id: &[u8; 32],
     frost_id: frost::Identifier,
     psbt: &Psbt,
+    psbt_type: SigningPsbtType,
     db: &Db,
     min_signers: u16,
 ) -> Result<(), CoordinatorError> {
     let _start = Instant::now();
-    validate_psbt(psbt, ROUND1, min_signers, db)?;
+    validate_psbt(psbt, psbt_type, ROUND1, min_signers, db)?;
 
     info!("psbt() = {}", psbt);
 
@@ -60,11 +61,12 @@ pub fn add_round2_signing(
     signing_session_id: &[u8; 32],
     frost_id: frost::Identifier,
     psbt: &Psbt,
+    psbt_type: SigningPsbtType,
     db: &Db,
     min_signers: u16,
 ) -> Result<(), CoordinatorError> {
     // validate PSBT
-    validate_psbt(psbt, ROUND2, min_signers, db)?;
+    validate_psbt(psbt, psbt_type, ROUND2, min_signers, db)?;
 
     db.update_psbt(signing_session_id, psbt)?;
     db.flush()?;
@@ -78,6 +80,7 @@ pub fn make_tx(
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
     change_script: ScriptBuf,
+    psbt_type: SigningPsbtType,
     db: &Db,
     min_signers: u16,
     tracked_txs: Vec<Tx>,
@@ -170,7 +173,7 @@ pub fn make_tx(
 
     // Sanity check that we created a valid PSBT
     // This should not fail
-    validate_psbt(&psbt, NO_FLAGS, min_signers, db)?;
+    validate_psbt(&psbt, psbt_type, NO_FLAGS, min_signers, db)?;
 
     Ok(psbt)
 }
@@ -196,7 +199,13 @@ pub fn get_to_sign(
             }
         }
 
-        validate_psbt(&psbt, ROUND1_TRANSITION, min_signers, db)?;
+        // Determine psbt_type from PSBT characteristics
+        let psbt_type = if psbt.outputs.len() == 1 && psbt.pegout_ids().is_empty() {
+            SigningPsbtType::Sweep
+        } else {
+            SigningPsbtType::Pegout
+        };
+        validate_psbt(&psbt, psbt_type, ROUND1_TRANSITION, min_signers, db)?;
         return Ok(psbt);
     }
 

@@ -881,7 +881,6 @@ mod tests {
         }
 
         WalletSweepSession {
-            coordinator_id: 1,
             bitcoin_network: Network::Bitcoin,
             bitcoin_destination_address: Address::from_str(
                 "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",

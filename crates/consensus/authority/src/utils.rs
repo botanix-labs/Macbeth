@@ -1,5 +1,6 @@
 //! Botanix consensus utility functions
 use bitcoin::{
+    absolute::LockTime,
     consensus::Encodable,
     hashes::{sha256, Hash},
     psbt::Psbt,

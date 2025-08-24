@@ -22,6 +22,32 @@ use std::{
 };
 use thiserror::Error;
 
+/// PSBT type for signing operations - compatible with reth_network::frost::SigningPsbtType
+#[repr(u8)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+pub enum SigningPsbtType {
+    /// PSBT for a pegout transaction
+    Pegout = 0x00,
+    /// PSBT for a wallet sweep transaction
+    Sweep = 0x01,
+}
+
+impl From<u32> for SigningPsbtType {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => SigningPsbtType::Pegout,
+            1 => SigningPsbtType::Sweep,
+            _ => SigningPsbtType::Pegout, // Default to Pegout for invalid values
+        }
+    }
+}
+
+impl From<SigningPsbtType> for u32 {
+    fn from(value: SigningPsbtType) -> Self {
+        value as u32
+    }
+}
+
 // Psbt validation flags
 pub(crate) const NO_FLAGS: u8 = 0u8;
 pub(crate) const ROUND1: u8 = 1u8;
@@ -269,6 +295,7 @@ impl PartialEq for ValidatePSBTError {
 /// the transition to round 2, ensuring signers match and Frost IDs align.
 pub fn validate_psbt(
     psbt: &Psbt,
+    psbt_type: SigningPsbtType,
     flags: u8,
     min_signers: u16,
     db: &database::Db,
@@ -285,7 +312,7 @@ pub fn validate_psbt(
         return Err(ValidatePSBTError::NoOutputs);
     }
 
-    validate_outputs(psbt, db)?;
+    validate_outputs(psbt, psbt_type, db)?;
 
     // Sanity fee checks
     let fee = match psbt.fee() {
@@ -429,7 +456,9 @@ pub enum ValidateOutputsError {
 /// - additional outputs are change outputs
 /// - pegouts have not already been finalized
 /// - there are no duplicate outputs
-pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
+pub(crate) fn validate_outputs(psbt: &Psbt, psbt_type: SigningPsbtType, db: &database::Db) -> Result<(), ValidateOutputsError> {
+    let is_sweep = matches!(psbt_type, SigningPsbtType::Sweep);
+
     // Ensure psbt.outputs and psbt.unsigned_tx.output have the same number of elements.
     // This is critical to prevent a malicious coordinator from adding arbitrary outputs
     // to psbt.unsigned_tx.output that are not declared in psbt.outputs.
@@ -497,18 +526,18 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         return Err(ValidateOutputsError::DuplicateOutputs);
     }
 
-    // if a change output exists, check if it is valid
+    // if a change output exists, check if it is valid (ignore for sweep transactions)
     if let Some(idx) = change_output {
-        // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
-        let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
-        let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
+        if !is_sweep {
+            let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
+            let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
 
-        let change_output =
-            psbt.unsigned_tx.output.get(idx).ok_or(ValidateOutputsError::InvalidChangeOutput)?;
+            let change_output =
+                psbt.unsigned_tx.output.get(idx).ok_or(ValidateOutputsError::InvalidChangeOutput)?;
 
-        let has_correct_change = change_output.script_pubkey == expected_script_pubkey;
-        if !has_correct_change {
-            return Err(ValidateOutputsError::InvalidChangeOutput);
+            if change_output.script_pubkey != expected_script_pubkey {
+                return Err(ValidateOutputsError::InvalidChangeOutput);
+            }
         }
     }
 
@@ -624,14 +653,14 @@ mod tests {
         db.flush().unwrap();
 
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
 
         // No inputs
         let db = db_setup();
         let mut psbt = create_psbt(2, 1, None);
         psbt.inputs.clear();
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "inputs cannot be 0");
 
@@ -639,7 +668,7 @@ mod tests {
         let db = db_setup();
         let mut psbt = create_psbt(2, 1, None);
         psbt.outputs.clear();
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "outputs cannot be 0");
     }
@@ -695,7 +724,7 @@ mod tests {
         for output in psbt.unsigned_tx.output.iter_mut() {
             output.value = output.value.checked_add(Amount::from_sat(diff)).unwrap_or_default();
         }
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db);
         assert_eq!(res.unwrap_err(), ValidatePSBTError::NegativeFee);
     }
 
@@ -754,7 +783,7 @@ mod tests {
         });
         assert!(total_outputs == Amount::ZERO);
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db);
         assert_eq!(
             res.unwrap_err(),
             ValidatePSBTError::FeeSanityCheck(Amount::from_sat(2346), Amount::ZERO)
@@ -779,7 +808,7 @@ mod tests {
         let mut psbt = create_psbt(1, 1, Some(get_change(&db)));
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND1, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "cannot find UTXO in db");
 
@@ -793,7 +822,7 @@ mod tests {
 
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND1, 2, &db);
         assert!(res.is_ok());
     }
 
@@ -824,11 +853,11 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND1, 2, &db);
         assert_eq!(res.unwrap_err().to_string(), "eth tweak mismatch");
 
         psbt.inputs[0].set_eth_address(eth);
-        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND1, 2, &db);
         assert!(res.is_ok());
     }
 
@@ -865,7 +894,7 @@ mod tests {
 
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND1, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "txout mismatch");
     }
@@ -894,7 +923,7 @@ mod tests {
 
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
-        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND1_TRANSITION, 2, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of signing commitments");
 
@@ -924,7 +953,7 @@ mod tests {
         psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits1);
         psbt.inputs[0].set_signing_commitment(frost_id!(2), &signing_commits2);
 
-        let res = validate_psbt(&psbt, ROUND1_TRANSITION, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND1_TRANSITION, 2, &db);
         assert!(res.is_ok());
 
         // Round 2 at this point should pass as well. B/c we have not hit a limit in the number of
@@ -940,7 +969,7 @@ mod tests {
         let pegout_id = store_pending_pegout(&db);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&psbt, ROUND2, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND2, 2, &db);
         assert!(res.is_ok());
     }
 
@@ -990,7 +1019,7 @@ mod tests {
         psbt.inputs[0].set_partial_signature(frost_id!(0), &sig_share1);
 
         // Should pass with 1 signature
-        let res = validate_psbt(&psbt, ROUND2, 1, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND2, 1, &db);
         assert!(res.is_ok());
 
         // Should fail with two signatures
@@ -1006,7 +1035,7 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND2, 1, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND2, 1, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
 
@@ -1021,7 +1050,7 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 1, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND2_TRANSITION, 1, &db);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().to_string(), "invalid number of partial signatures");
 
@@ -1039,7 +1068,7 @@ mod tests {
 
         let (_, signing_commits2) = frost::round1::commit(key_package2.signing_share(), rng);
         psbt.inputs[0].set_signing_commitment(frost_id!(1), &signing_commits2);
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND2_TRANSITION, 2, &db);
         assert!(res.is_ok());
 
         // Should fail if there is another signer as the number of signatures on a input is greater
@@ -1063,7 +1092,7 @@ mod tests {
         let sig = frost::round2::SignatureShare::deserialize(&[2u8; 32]).expect("valid sig share");
         psbt.inputs[0].set_partial_signature(frost_id!(2), &sig);
 
-        let res = validate_psbt(&psbt, ROUND2_TRANSITION, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, ROUND2_TRANSITION, 2, &db);
         assert_eq!(res.unwrap_err(), ValidatePSBTError::InvalidNumberOfPartialSignatures);
     }
 
@@ -1092,7 +1121,7 @@ mod tests {
         db.store_utxos(&[&utxo]).unwrap();
         db.flush().unwrap();
 
-        validate_psbt(&psbt, NO_FLAGS, 2, &db).expect("valid psbt");
+        validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db).expect("valid psbt");
 
         let mut dup_psbt = create_psbt(1, 2, Some(get_change(&db)));
 
@@ -1108,7 +1137,7 @@ mod tests {
         dup_psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
         dup_psbt.outputs[1].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&dup_psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db);
         assert!(res.is_err());
         assert_eq!(
             res.unwrap_err(),
@@ -1119,7 +1148,7 @@ mod tests {
         // multiple pegouts but they should have different pegout ids
         let pegout_id2 = store_pending_pegout(&db);
         dup_psbt.outputs[1].set_pegout_id(pegout_id2.as_bytes());
-        let res = validate_psbt(&dup_psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&dup_psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db);
         assert!(res.is_ok());
     }
 
@@ -1160,7 +1189,7 @@ mod tests {
         db.store_utxos(&[&utxo1, &utxo2]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).unwrap_err();
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db).unwrap_err();
         assert_eq!(
             res,
             ValidatePSBTError::InvalidOutputs(ValidateOutputsError::ExpectingOnlyOneChangeOutput)
@@ -1208,7 +1237,7 @@ mod tests {
         db.store_utxos(&[&utxo1, &utxo2]).unwrap();
         db.flush().unwrap();
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db).unwrap_err();
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db).unwrap_err();
         assert_eq!(
             res,
             ValidatePSBTError::InvalidOutputs(ValidateOutputsError::InvalidChangeOutput)
@@ -1243,7 +1272,7 @@ mod tests {
             "Test setup error: output lengths should be different"
         );
 
-        let res = validate_outputs(&psbt, &db);
+        let res = validate_outputs(&psbt, SigningPsbtType::Pegout, &db);
         assert!(res.is_err(), "validate_outputs should fail due to output count mismatch");
         match res.unwrap_err() {
             ValidateOutputsError::OutputCountMismatch(len_psbt_outputs, len_unsigned_tx_output) => {
@@ -1262,7 +1291,7 @@ mod tests {
         psbt2.outputs.push(Default::default());
         // Now psbt2.outputs.len() = 1, psbt2.unsigned_tx.output.len() = 0
 
-        let res2 = validate_outputs(&psbt2, &db);
+        let res2 = validate_outputs(&psbt2, SigningPsbtType::Pegout, &db);
         assert!(res2.is_err(), "validate_outputs should fail when psbt.outputs is longer");
         match res2.unwrap_err() {
             ValidateOutputsError::OutputCountMismatch(len_psbt_outputs, len_unsigned_tx_output) => {
@@ -1652,7 +1681,7 @@ mod tests {
         let mut psbt = create_psbt(1, 1, None);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res = validate_psbt(&psbt, SigningPsbtType::Pegout, NO_FLAGS, 2, &db);
         let res_error = res.unwrap_err().to_string();
         assert!(res_error
             .contains("error validating outputs: found already finalized psbt pegouts in db"));
@@ -1691,7 +1720,7 @@ mod tests {
         let mut psbt = create_psbt(1, 1, None);
         psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
 
-        let res = validate_outputs(&psbt, &db);
+        let res = validate_outputs(&psbt, SigningPsbtType::Pegout, &db);
 
         assert!(res.is_err());
         match res.unwrap_err() {
@@ -1707,5 +1736,16 @@ mod tests {
         // Assert the finalized pegout has been removed from the pending pegouts list
         let pending_pegouts = db.get_pending_pegouts().unwrap();
         assert_eq!(pending_pegouts.len(), 0, "Pending pegouts should be empty");
+    }
+
+    #[test]
+    fn test_signing_psbt_type_conversion() {
+        // Test conversion between u32 and SigningPsbtType
+        assert_eq!(SigningPsbtType::from(0u32), SigningPsbtType::Pegout);
+        assert_eq!(SigningPsbtType::from(1u32), SigningPsbtType::Sweep);
+        assert_eq!(SigningPsbtType::from(999u32), SigningPsbtType::Pegout); // Invalid defaults to Pegout
+        
+        assert_eq!(u32::from(SigningPsbtType::Pegout), 0u32);
+        assert_eq!(u32::from(SigningPsbtType::Sweep), 1u32);
     }
 }

@@ -10,16 +10,16 @@ use frost_secp256k1_tr::{
     Identifier, SigningParameters,
 };
 use rand::thread_rng;
-
 use crate::{
     database::Db as Database,
-    util::{validate_psbt, ROUND1},
+    util::{validate_psbt, SigningPsbtType, ROUND1},
 };
 
 pub mod error;
 
 pub fn get_round1_signing_package(
     psbt: &mut Psbt,
+    psbt_type: SigningPsbtType,
     min_signers: u16,
     db: &Database,
     my_identifier: &Identifier,
@@ -58,7 +58,7 @@ pub fn get_round1_signing_package(
     // }
 
     // Validate PSBT
-    validate_psbt(psbt, ROUND1, min_signers, db)?;
+    validate_psbt(psbt, psbt_type, ROUND1, min_signers, db)?;
 
     let num_inputs = psbt.inputs.len();
 
@@ -86,13 +86,14 @@ pub fn get_round1_signing_package(
 /// to provide new ones
 pub fn get_round2_signing_package(
     psbt: &mut Psbt,
+    psbt_type: SigningPsbtType,
     min_signers: u16,
     db: &Database,
     identifier: &Identifier,
     // Each nonce pair is commitment to a input of the tx
     signing_nonces: &[(SigningNonces, SigningCommitments)],
 ) -> Result<(), SigningRound2Error> {
-    validate_psbt(psbt, ROUND2, min_signers, db)?;
+    validate_psbt(psbt, psbt_type, ROUND2, min_signers, db)?;
 
     let tx = psbt.clone().extract_tx()?;
     let num_inputs = tx.input.len();

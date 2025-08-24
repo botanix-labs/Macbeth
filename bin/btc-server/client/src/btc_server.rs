@@ -233,6 +233,9 @@ pub struct SigningPackageRequest {
     pub psbt: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
+    /// 0 = Pegout, 1 = Sweep
+    #[prost(uint32, tag = "3")]
+    pub psbt_type: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SigningPackage {
@@ -242,6 +245,9 @@ pub struct SigningPackage {
     pub identifier: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
     pub signing_session_id: ::prost::alloc::vec::Vec<u8>,
+    /// 0 = Pegout, 1 = Sweep
+    #[prost(uint32, tag = "4")]
+    pub psbt_type: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Output {

@@ -268,12 +268,14 @@ where
         &mut self,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
+        psbt_type: SigningPsbtType,
     ) -> Result<SigningPackage, Error> {
         let round1_payload = self
             .btc_client
             .get_round1_signing_package(SigningPackageRequest {
                 psbt,
                 signing_session_id: signing_session_id.to_vec(),
+                psbt_type: psbt_type as u32,
             })
             .await;
 
@@ -288,12 +290,14 @@ where
         &mut self,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
+        psbt_type: SigningPsbtType,
     ) -> Result<SigningPackage, Error> {
         let round2_payload = self
             .btc_client
             .get_round2_signing_package(SigningPackageRequest {
                 psbt,
                 signing_session_id: signing_session_id.to_vec(),
+                psbt_type: psbt_type as u32,
             })
             .await;
 
@@ -309,6 +313,7 @@ where
         frost_identifier: &frost::Identifier,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
+        psbt_type: SigningPsbtType,
     ) -> Result<(), Error> {
         let new_round1_signing_package = self
             .btc_client
@@ -316,6 +321,7 @@ where
                 identifier: frost_identifier.serialize().to_vec(),
                 psbt,
                 signing_session_id: signing_session_id.to_vec(),
+                psbt_type: psbt_type as u32,
             })
             .await;
 
@@ -331,6 +337,7 @@ where
         frost_identifier: &frost::Identifier,
         signing_session_id: FixedBytes<32>,
         psbt: Vec<u8>,
+        psbt_type: SigningPsbtType,
     ) -> Result<(), Error> {
         let new_round2_signing_package = self
             .btc_client
@@ -338,6 +345,7 @@ where
                 identifier: frost_identifier.serialize().to_vec(),
                 psbt,
                 signing_session_id: signing_session_id.to_vec(),
+                psbt_type: psbt_type as u32,
             })
             .await;
 
@@ -472,7 +480,7 @@ where
         response_type: SigningEventResponseType,
         psbt_type: SigningPsbtType,
     ) -> Result<(), Error> {
-        let SigningPackage { identifier: _, signing_session_id, psbt } = signing_package;
+        let SigningPackage { identifier: _, signing_session_id, psbt, psbt_type: _ } = signing_package;
 
         let fut = || async {
             // get all connected peers
@@ -561,12 +569,13 @@ where
         // As the cord we generate round 1 nonces and save them
         // then we send the psbt to other peers
         let signing_round1_package =
-            self.get_round1_signing_package(signing_session_id, psbt).await?;
+            self.get_round1_signing_package(signing_session_id, psbt, psbt_type).await?;
         let my_frost_identifier = self.personal_frost_identifier;
         self.new_round1_signing_package(
             &my_frost_identifier,
             signing_session_id,
             signing_round1_package.clone().psbt,
+            psbt_type,
         )
         .await?;
         self.metrics.received_round1_signing_packages.increment(1);
@@ -647,8 +656,9 @@ where
 
         // add the transmitted round 1 package data (the original psbt package - there is only 1x of
         // them)
+        let psbt_type = self.get_psbt_type(session_id).await.unwrap_or(SigningPsbtType::Pegout);
         let signing_package_round1 = match self
-            .get_round1_signing_package(signing_session_id, psbt)
+            .get_round1_signing_package(signing_session_id, psbt, psbt_type)
             .await
         {
             Ok(signing_package_round1) => signing_package_round1,
@@ -722,8 +732,9 @@ where
         }
 
         // add the transmitted round 1 package data
+        let psbt_type = self.get_psbt_type(session_id).await.unwrap_or(SigningPsbtType::Pegout);
         if let Err(e) =
-            self.new_round1_signing_package(frost_identifier, signing_session_id, psbt).await
+            self.new_round1_signing_package(frost_identifier, signing_session_id, psbt, psbt_type).await
         {
             error!(target: "consensus::authority::signing::coordinator_process_round1","Error adding round 1 signing package {:?}", e);
             return Ok(());
@@ -734,12 +745,13 @@ where
         if let Ok(to_sign_payload) = self.get_to_sign_package(signing_session_id).await {
             // we should add the cord partial sig
             let cord_round2 = self
-                .get_round2_signing_package(signing_session_id, to_sign_payload.psbt.clone())
+                .get_round2_signing_package(signing_session_id, to_sign_payload.psbt.clone(), psbt_type)
                 .await?;
             self.new_round2_signing_package(
                 &my_frost_identifier,
                 signing_session_id,
                 cord_round2.psbt,
+                psbt_type,
             )
             .await?;
             self.metrics.received_round2_signing_packages.increment(1);
@@ -806,8 +818,9 @@ where
         }
 
         // add the transmitted round 2 package data
+        let psbt_type = self.get_psbt_type(session_id).await.unwrap_or(SigningPsbtType::Pegout);
         let signing_package_round2 =
-            match self.get_round2_signing_package(signing_session_id, psbt).await {
+            match self.get_round2_signing_package(signing_session_id, psbt, psbt_type).await {
                 Ok(signing_package_round2) => signing_package_round2,
                 Err(e) => {
                     error!("Error adding round 2 signing package {:?}", e);
@@ -880,8 +893,9 @@ where
         }
 
         // add the transmitted round 2 package data
+        let psbt_type = self.get_psbt_type(session_id).await.unwrap_or(SigningPsbtType::Pegout);
         if let Err(e) =
-            self.new_round2_signing_package(frost_identifier, signing_session_id, psbt).await
+            self.new_round2_signing_package(frost_identifier, signing_session_id, psbt, psbt_type).await
         {
             error!(target: "consensus::authority::signing::coordinator_process_round2", "Error adding round 2 signing package {:?}", e);
             self.update_signing_state(session_id, SigningState::Failed).await;

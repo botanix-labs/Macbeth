@@ -237,12 +237,14 @@ message DkgPayload {
 message SigningPackageRequest {
     bytes psbt = 1;
     bytes signing_session_id = 2;
+    uint32 psbt_type = 3; // 0 = Pegout, 1 = Sweep
 }
 
 message SigningPackage {
     bytes psbt = 1;
     bytes identifier = 2;
     bytes signing_session_id = 3;
+    uint32 psbt_type = 4; // 0 = Pegout, 1 = Sweep
 }
 
 message Output {

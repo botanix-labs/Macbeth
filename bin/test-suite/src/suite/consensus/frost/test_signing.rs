@@ -71,6 +71,7 @@ pub async fn do_signing(
                 btc_server_client::SigningPackageRequest {
                     psbt: original_psbt.clone(),
                     signing_session_id: signing_session_id.to_vec(),
+                    psbt_type: 0,
                 },
             ))
             .await
@@ -104,6 +105,7 @@ pub async fn do_signing(
             .get_round2_signing_package(tonic::Request::new(SigningPackageRequest {
                 psbt: to_sign_package.clone().psbt,
                 signing_session_id: signing_session_id.to_vec(),
+                psbt_type: 0,
             }))
             .await
             .map_err(Error::Request)?
