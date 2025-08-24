@@ -932,7 +932,7 @@ where
         // Create a WalletSweepRequest from the session data using the correct coordinator_id
         let sweep_request = botanix_wallet_sweep::WalletSweepRequest {
             coordinator_id: self.frost_config.authority_index as u16,
-            coordinator_signature: vec![], // Not needed for PSBT creation
+            coordinator_signature: session.coordinator_signature.clone(), // Use stored coordinator signature
             destination_network: session.bitcoin_network.to_string(),
             destination_address: session.bitcoin_destination_address.clone(),
             fee_rate_sat_vb: session.fee_rate_sat_vb,
@@ -1236,7 +1236,7 @@ where
     async fn run(mut self) {
         loop {
             let request = btc_server_client::WalletSweepSessionUpdatesRequest {};
-            let mut stream = match self
+            let stream = match self
                 .btc_server
                 .subscribe_to_wallet_sweep_session_updates(request)
                 .await
