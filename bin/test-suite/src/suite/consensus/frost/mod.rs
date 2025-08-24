@@ -16,3 +16,4 @@ pub mod test_signing;
 pub mod test_track_mempool;
 pub mod test_utxo_commitment;
 pub mod test_utxo_sync;
+pub mod test_wallet_sweep;

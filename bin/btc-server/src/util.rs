@@ -430,6 +430,7 @@ pub enum ValidateOutputsError {
 /// - pegouts have not already been finalized
 /// - there are no duplicate outputs
 pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), ValidateOutputsError> {
+    let is_sweep = psbt.outputs.len() == 1 && psbt.pegout_ids().is_empty();
     // Ensure psbt.outputs and psbt.unsigned_tx.output have the same number of elements.
     // This is critical to prevent a malicious coordinator from adding arbitrary outputs
     // to psbt.unsigned_tx.output that are not declared in psbt.outputs.
@@ -497,18 +498,17 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
         return Err(ValidateOutputsError::DuplicateOutputs);
     }
 
-    // if a change output exists, check if it is valid
     if let Some(idx) = change_output {
-        // TxOut scriptpubkey should be scriptpubkey derived from aggregated public key
-        let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
-        let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
+        if !is_sweep {
+            let agg_pk = public_key_package.verifying_key().to_secp_pk().expect("valid secp pk");
+            let expected_script_pubkey = generate_taproot_change_scriptpubkey(&agg_pk);
 
-        let change_output =
-            psbt.unsigned_tx.output.get(idx).ok_or(ValidateOutputsError::InvalidChangeOutput)?;
+            let change_output =
+                psbt.unsigned_tx.output.get(idx).ok_or(ValidateOutputsError::InvalidChangeOutput)?;
 
-        let has_correct_change = change_output.script_pubkey == expected_script_pubkey;
-        if !has_correct_change {
-            return Err(ValidateOutputsError::InvalidChangeOutput);
+            if change_output.script_pubkey != expected_script_pubkey {
+                return Err(ValidateOutputsError::InvalidChangeOutput);
+            }
         }
     }
 

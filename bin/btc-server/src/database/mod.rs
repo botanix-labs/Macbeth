@@ -1072,11 +1072,7 @@ impl TryFrom<Utxo> for RpcUtxo {
     type Error = Error;
 
     fn try_from(item: Utxo) -> Result<Self, Self::Error> {
-        let mut script_pk = vec![];
-        item.output
-            .script_pubkey
-            .consensus_encode(&mut script_pk)
-            .map_err(|_e| Error::RpcToDbMap("Failed to serialize scriptpubkey".to_string()))?;
+        let script_pk = item.output.script_pubkey.to_bytes();
 
         Ok(RpcUtxo {
             outpoint: Some(RpcOutPoint {

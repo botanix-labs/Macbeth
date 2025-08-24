@@ -198,6 +198,7 @@ impl TryInto<WalletSweepSession> for WalletSweepRequest {
             bitcoin_destination_address: self.destination_address,
             fee_rate_sat_vb: self.fee_rate_sat_vb,
             created_at: self.created_at,
+            coordinator_signature: self.coordinator_signature.clone(),
         };
 
         Ok(session)

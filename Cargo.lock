@@ -13718,6 +13718,7 @@ dependencies = [
  "botanix-configs",
  "botanix-data-parser",
  "botanix-storage",
+ "botanix-wallet-sweep",
  "btc-server",
  "btc-server-client",
  "bytes",

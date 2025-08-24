@@ -150,7 +150,8 @@ jobs:
           "test_conflicting_input",
           "test_round1_then_new_signing_session",
           "test_track_mempool",
-          "rpc_node"]
+          "rpc_node",
+          "wallet_sweep_flow"]
     env:
       RUST_BACKTRACE: 1
       TEST_TO_RUN: ${{ matrix.test }}

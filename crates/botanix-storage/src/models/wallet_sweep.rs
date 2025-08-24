@@ -26,6 +26,8 @@ pub struct WalletSweepSession {
     pub fee_rate_sat_vb: u64,
     /// Unix timestamp when this session was created.
     pub created_at: u64,
+    /// Coordinator signature used to authorize this emergency sweep operation.
+    pub coordinator_signature: Vec<u8>,
 }
 
 impl Compress for WalletSweepSession {
@@ -46,8 +48,10 @@ impl Compress for WalletSweepSession {
         // Write fee rate (8 bytes)
         buf.put_u64_le(self.fee_rate_sat_vb);
 
-        // Write timestamp
         buf.put_u64_le(self.created_at);
+
+        buf.put_u32_le(self.coordinator_signature.len() as u32);
+        buf.put(self.coordinator_signature.as_slice());
     }
 }
 
@@ -96,7 +100,18 @@ impl Decompress for WalletSweepSession {
         }
         let created_at = buf.get_u64_le();
 
-        Ok(Self { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at })
+        let coordinator_signature = if buf.remaining() >= 4 {
+            let signature_len = buf.get_u32_le() as usize;
+            if buf.remaining() >= signature_len {
+                buf.copy_to_bytes(signature_len).to_vec()
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
+        Ok(Self { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at, coordinator_signature })
     }
 }
 
@@ -120,13 +135,10 @@ impl WalletSweepSession {
         let address_str = self.bitcoin_destination_address.clone().assume_checked().to_string();
         data.extend_from_slice(address_str.as_bytes());
         
-        // Include fee rate
         data.extend_from_slice(&self.fee_rate_sat_vb.to_le_bytes());
-
-        // Include timestamp
         data.extend_from_slice(&self.created_at.to_le_bytes());
+        data.extend_from_slice(&self.coordinator_signature);
         
-        // Generate deterministic hash
         keccak256(data)
     }
 }
@@ -171,7 +183,13 @@ mod tests {
         let fee_rate_sat_vb = 1000;
         let created_at = 1234567890;
 
-        WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at }
+        WalletSweepSession { 
+            bitcoin_network, 
+            bitcoin_destination_address, 
+            fee_rate_sat_vb, 
+            created_at,
+            coordinator_signature: vec![0x01, 0x02, 0x03],
+        }
     }
 
     #[test]
@@ -207,7 +225,13 @@ mod tests {
         let created_at = 0;
 
         let session =
-            WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at };
+            WalletSweepSession { 
+                bitcoin_network, 
+                bitcoin_destination_address, 
+                fee_rate_sat_vb, 
+                created_at,
+                coordinator_signature: vec![],
+            };
 
         let mut buffer = Vec::new();
         session.clone().compress_to_buf(&mut buffer);
@@ -231,7 +255,13 @@ mod tests {
         let created_at = u64::MAX;
 
         let session =
-            WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at };
+            WalletSweepSession { 
+                bitcoin_network, 
+                bitcoin_destination_address, 
+                fee_rate_sat_vb, 
+                created_at,
+                coordinator_signature: vec![0xFF; 64],
+            };
 
         let mut buffer = Vec::new();
         session.clone().compress_to_buf(&mut buffer);
@@ -264,6 +294,7 @@ mod tests {
                 bitcoin_destination_address,
                 fee_rate_sat_vb,
                 created_at,
+                coordinator_signature: vec![0x42; 32],
             };
 
             let mut buffer = Vec::new();
