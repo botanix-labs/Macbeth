@@ -1,6 +1,16 @@
 #[macro_use]
 extern crate log;
 
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt::Debug,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+    str::FromStr,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
+};
+
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::{self, Decodable},
@@ -48,15 +58,6 @@ use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
-use std::{
-    collections::{BTreeMap, HashSet},
-    fmt::Debug,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::Path,
-    str::FromStr,
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
 use thiserror::Error;
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
@@ -791,14 +792,23 @@ where
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
         let pegouts = pegouts?;
-        // Check pegouts are not in the finalized pegout ids list
-        let finalized_pegout_ids: HashSet<_> =
+        // Check pegouts are not in the finalized pegout ids list or are tracked by the Pegout
+        // Scheduler
+        let mut broadcasted_pegout_ids: HashSet<_> =
             self.db.get_finalized_pegout_ids().to_status()?.iter().map(|p| p.id).collect();
+        // Get Pegout Scheduler txs and add to hashset
+        let scheduler_txs = self.pegout_scheduler.lock().await.tracked_pegout_request_ids();
+        broadcasted_pegout_ids.extend(scheduler_txs);
         let pegouts_refs: Vec<&PegoutRequest> = pegouts
             .iter()
             .filter(|pegout| {
-                if finalized_pegout_ids.contains(&pegout.id) {
-                    error!("Received a pegout request for finalized id: {:?}", pegout.id);
+                if broadcasted_pegout_ids.contains(&pegout.id) {
+                    error!(
+                        "Received a pegout request for finalized or broadcasted id: L2 txid - {:?}, tx receipt log index - {:?}, bitcoin address - {:?}",
+                        hex::encode(pegout.id.txid),
+                        pegout.id.idx,
+                        bitcoin::Address::from_script(&pegout.spk, self.btc_network)
+                    );
                     return false;
                 }
                 true
@@ -895,10 +905,10 @@ where
         tokio::spawn(async move {
             let stream = db.get_finalized_pegout_ids_stream(request.chunk_size as usize);
             pin_mut!(stream);
-            info!("get_finalized_pegout_ids stream task: Created DB stream.");
+            trace!("get_finalized_pegout_ids stream task: Created DB stream.");
 
             while let Some(chunk_result) = stream.next().await {
-                info!(
+                trace!(
                     "get_finalized_pegout_ids stream task: Received chunk from DB stream: {:?}",
                     chunk_result
                 );
@@ -924,7 +934,7 @@ where
                         };
 
                         // send the batch with retries
-                        debug!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
+                        trace!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
                         let fut = || async {
                             let tx = tx.clone();
                             let batch = batch.clone();
@@ -954,7 +964,7 @@ where
                     }
                 }
             }
-            info!("get_finalized_pegout_ids stream task: DB stream finished.");
+            trace!("get_finalized_pegout_ids stream task: DB stream finished.");
         });
 
         Ok(tonic::Response::new(ReceiverStream::new(rx)))

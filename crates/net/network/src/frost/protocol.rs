@@ -14,7 +14,7 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::sync::PollSender;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     frost::{
@@ -318,7 +318,7 @@ impl Stream for FrostProtoConnection {
         // poll the commands sent by us to send to another peer
         // TODO(lamafab): should we shutdown the connection if the commands_rx is dropped?
         if let Poll::Ready(Some(cmd)) = commands_rx.poll_next_unpin(cx) {
-            info!(target: "network::frost::protocol", "Received command: {:?}", cmd);
+            debug!(target: "network::frost::protocol", "Received command: {:?}", cmd);
             let resp = match cmd {
                 // if I want to send a ping message, save the response channel to later (below)
                 // answer once the pong is received
