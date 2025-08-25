@@ -14,7 +14,7 @@ pub const SEGWIT_FLAG_WEIGHT: Weight = Weight::from_wu(1);
 pub const SEGWIT_MARKER_WEIGHT: Weight = Weight::from_wu(1);
 
 // The standardness limit for a transaction is 400,000 weight units
-pub const MAX_TX_WEIGHT: u64 = 400_000;
+pub const MAX_BITCOIN_TX_WEIGHT: u64 = 400_000;
 
 // version = 4 bytes * 4 weight units
 // marker = 1 byte * 1 weight unit
@@ -22,7 +22,7 @@ pub const MAX_TX_WEIGHT: u64 = 400_000;
 // ninput = 3 bytes to encode values between 253 to 65,535 * 4 weight units
 // noutput = 3 bytes to encode values between 253 to 65,535 * 4 weight units
 // locktime = 4 bytes * 4 weight units
-pub const MAX_BASE_TX_WEIGHT: u64 = 16 + 1 + 1 + 12 + 12 + 16;
+pub const MAX_BASE_TX_WEIGHT: u64 = 4 * 4 + 1 + 1 + 3 * 4 + 3 * 4 + 4 * 4;
 
 // txid = 32 bytes * 4 weight units
 // vout = 4 bytes * 4 weight units
