@@ -3,6 +3,7 @@ use crate::{
     frost_task::FrostTask,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
     wallet_state_sync::WalletStateSyncEngine,
+    wallet_sweep_task::WalletSweepTask,
     AuthorityConsensus, Storage,
 };
 use botanix_activation_manager::{ActivationManager, VoteWatcher};
@@ -97,7 +98,7 @@ where
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     BD: botanix_btc_wallet::bitcoind::RpcApiExt + Send + Sync + 'static,
-    Source: RandomSource,
+    Source: RandomSource + Clone,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]
@@ -237,6 +238,7 @@ where
         Option<ABCIClientBuilder<EF, BF, RDB, BDB>>,
         Option<SnapshotManager<EF, BF, RDB, BDB>>,
         Option<WalletStateSyncEngine<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>>,
+        Option<WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient>>,
     )
     where
         BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,
@@ -300,6 +302,7 @@ where
         // create frost and block production tasks if btc_server is available:
         // only federation nodes will have btc_server
         let mut frost_task = None;
+        let mut wallet_sweep_task = None;
         if is_fed_node {
             // frost task
             let task = FrostTask::new(
@@ -315,7 +318,15 @@ where
                 cometbft_rpc_factory.clone(),
             );
 
+            let sweep_task = WalletSweepTask::new(
+                task.signing_state_machine.clone(),
+                storage.clone(),
+                btc_server_client.clone().expect("btc_server is available"),
+                Arc::clone(&metrics),
+            );
+
             frost_task = Some(task);
+            wallet_sweep_task = Some(sweep_task);
         }
 
         let snapshot_manager_state_lock =
@@ -405,6 +416,6 @@ where
             );
         }
 
-        (frost_task, abci_client_builder, snapshot_manager, wallet_sync)
+        (frost_task, abci_client_builder, snapshot_manager, wallet_sync, wallet_sweep_task)
     }
 }

@@ -113,8 +113,15 @@ pub(crate) struct SigningSession {
     psbt_type: SigningPsbtType,
 }
 
+impl SigningSession {
+    /// Returns the current state of the signing session
+    pub(crate) fn state(&self) -> SigningState {
+        self.state
+    }
+}
+
 /// A state machine for transitioning between different signing states
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct SigningStateMachine<ToFrostMan, Source, BtcServerClient> {
     chain_spec: Arc<ChainSpec>,
     btc_client: BtcServerClient,
@@ -129,7 +136,7 @@ pub(crate) struct SigningStateMachine<ToFrostMan, Source, BtcServerClient> {
 impl<ToFrostMan, Source, BtcServerClient> SigningStateMachine<ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
-    Source: RandomSource,
+    Source: RandomSource + Clone,
     BtcServerClient: BtcServerExtendedApi + Clone,
 {
     /// Constructs a new state machine with the given params
@@ -191,7 +198,13 @@ where
         }
         self.signing_states.write().await.insert(
             session_id,
-            SigningSession { session_id, state: signing_state, coordinator_index, original_psbt, psbt_type },
+            SigningSession {
+                session_id,
+                state: signing_state,
+                coordinator_index,
+                original_psbt,
+                psbt_type,
+            },
         );
     }
 
@@ -248,7 +261,7 @@ where
 impl<ToFrostMan, Source, BtcServerClient> SigningStateMachine<ToFrostMan, Source, BtcServerClient>
 where
     ToFrostMan: ToFrostManager + Clone,
-    Source: RandomSource,
+    Source: RandomSource + Clone,
     BtcServerClient: BtcServerExtendedApi + Clone,
 {
     async fn get_round1_signing_package(
@@ -610,8 +623,14 @@ where
             } else {
                 SigningPsbtType::Pegout
             };
-            self.insert_new_signing_session(session_id, coordinator_id, None, SigningState::Round1, psbt_type)
-                .await;
+            self.insert_new_signing_session(
+                session_id,
+                coordinator_id,
+                None,
+                SigningState::Round1,
+                psbt_type,
+            )
+            .await;
             self.metrics.signing_sessions.increment(1);
             // abort any previous session
             // coordinator should only send this request once and should always be in round 1

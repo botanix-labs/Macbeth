@@ -685,12 +685,12 @@ where
         if signing_session_id.ends_with(b"SWEEP_SIGNING") {
             return true;
         }
-        
+
         // Secondary detection: sweep PSBTs have exactly one output and no pegout metadata
         if psbt.outputs.len() != 1 {
             return false;
         }
-        
+
         // Check if PSBT has pegout IDs (pegout PSBTs have this, sweep PSBTs don't)
         let pegout_ids = psbt.pegout_ids();
         pegout_ids.is_empty()
@@ -708,13 +708,13 @@ where
         } else {
             info!("Sweep transaction already broadcasted and in pool");
         }
-        
+
         // Mark the sweep session as completed in the database
         // Note: We don't remove pending pegouts for sweep transactions as they don't have any
         let had_session = self.db.clear_wallet_sweep_session().map_err(|e| {
             tonic::Status::internal(format!("Failed to clear wallet sweep session: {}", e))
         })?;
-        
+
         if had_session {
             info!(
                 "[finalize_signing] Sweep session cleared for session: {}",
@@ -726,7 +726,7 @@ where
                 hex::encode(signing_session_id)
             );
         }
-        
+
         // Update telemetry for sweep transactions
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier);
@@ -736,31 +736,36 @@ where
                 *signing_session_id,
             );
         }
-        
+
         // Log sweep transaction details
         let tx = psbt.clone().extract_tx().map_err(|e| {
             tonic::Status::internal(format!("Failed to extract transaction from sweep PSBT: {}", e))
         })?;
-        
-        let total_input_value: u64 = psbt.inputs.iter()
+
+        let total_input_value: u64 = psbt
+            .inputs
+            .iter()
             .filter_map(|input| input.witness_utxo.as_ref())
             .map(|utxo| utxo.value.to_sat())
             .sum();
-        
+
         let output_value = tx.output[0].value.to_sat();
         let fee = total_input_value.saturating_sub(output_value);
-        
+
         info!(
             "Sweep transaction summary: {} inputs, output value: {} sats, fee: {} sats",
             psbt.inputs.len(),
             output_value,
             fee
         );
-        
+
         self.db.flush().map_err(|e| {
-            tonic::Status::internal(format!("Failed to flush database after sweep completion: {}", e))
+            tonic::Status::internal(format!(
+                "Failed to flush database after sweep completion: {}",
+                e
+            ))
         })?;
-        
+
         Ok(())
     }
 }
@@ -1408,14 +1413,14 @@ where
                     hex::encode(signing_session_id)
                 )
             })?;
-        
+
         // Detect if this is a sweep transaction
         let is_sweep = Self::is_sweep_psbt(&psbt, &signing_session_id);
-        
+
         // This should be a ready to broadcast tx
         let tx = psbt.clone().extract_tx().to_status()?;
         let tx_bytes = bitcoin::consensus::encode::serialize(&tx);
-        
+
         if is_sweep {
             info!("Signed sweep tx to be broadcast: {}", hex::encode(&tx_bytes));
         } else {
@@ -1476,7 +1481,8 @@ where
                     self.config.identifier,
                     -(pegout_ids.len() as i64),
                 );
-                telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier);
+                telemetry
+                    .record_finalized_signing_sessions(self.btc_network, self.config.identifier);
                 telemetry.update_signing_success_rate_metrics(
                     self.btc_network,
                     self.config.identifier,
@@ -2330,8 +2336,6 @@ where
 
         Ok(Response::new(AcceptWalletSweepSessionResponse {}))
     }
-
-
 
     async fn recover_missing_utxos(
         &self,

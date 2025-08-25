@@ -1,9 +1,8 @@
 use bitcoin::{address::NetworkUnchecked, Address, Network};
 use bytes::Buf;
 use reth_db_api::table::{Compress, Decompress};
-use reth_primitives::B256;
+use reth_primitives::{keccak256, B256};
 use serde::{Deserialize, Serialize};
-use reth_primitives::keccak256;
 // TODO: TBD
 
 /// Unique identifier for a wallet sweep session.
@@ -112,20 +111,20 @@ impl WalletSweepSession {
     pub fn calculate_id(&self) -> WalletSweepSessionId {
         // Create a deterministic hash based on session properties
         let mut data = Vec::new();
-        
+
         // Include network magic
         data.extend_from_slice(&self.bitcoin_network.magic().to_bytes());
-        
+
         // Include destination address
         let address_str = self.bitcoin_destination_address.clone().assume_checked().to_string();
         data.extend_from_slice(address_str.as_bytes());
-        
+
         // Include fee rate
         data.extend_from_slice(&self.fee_rate_sat_vb.to_le_bytes());
 
         // Include timestamp
         data.extend_from_slice(&self.created_at.to_le_bytes());
-        
+
         // Generate deterministic hash
         keccak256(data)
     }
@@ -171,7 +170,12 @@ mod tests {
         let fee_rate_sat_vb = 1000;
         let created_at = 1234567890;
 
-        WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at }
+        WalletSweepSession {
+            bitcoin_network,
+            bitcoin_destination_address,
+            fee_rate_sat_vb,
+            created_at,
+        }
     }
 
     #[test]
@@ -206,8 +210,12 @@ mod tests {
         let fee_rate_sat_vb = 0;
         let created_at = 0;
 
-        let session =
-            WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at };
+        let session = WalletSweepSession {
+            bitcoin_network,
+            bitcoin_destination_address,
+            fee_rate_sat_vb,
+            created_at,
+        };
 
         let mut buffer = Vec::new();
         session.clone().compress_to_buf(&mut buffer);
@@ -230,8 +238,12 @@ mod tests {
         let fee_rate_sat_vb = u64::MAX;
         let created_at = u64::MAX;
 
-        let session =
-            WalletSweepSession { bitcoin_network, bitcoin_destination_address, fee_rate_sat_vb, created_at };
+        let session = WalletSweepSession {
+            bitcoin_network,
+            bitcoin_destination_address,
+            fee_rate_sat_vb,
+            created_at,
+        };
 
         let mut buffer = Vec::new();
         session.clone().compress_to_buf(&mut buffer);
