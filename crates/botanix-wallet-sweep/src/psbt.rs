@@ -15,7 +15,6 @@
 //! Both systems use the same weight constants and calculation methods to ensure perfect
 //! consistency across the federation.
 
-use crate::request::WalletSweepRequest;
 use bitcoin::{
     hashes::Hash, psbt::PsbtSighashType, sighash::TapSighashType, Amount, FeeRate, OutPoint, Psbt,
     ScriptBuf, TxOut, Weight,
@@ -218,6 +217,9 @@ pub fn create_psbt_from_utxos(
     if available_utxos.is_empty() {
         return Err(SweepError::NoUtxos);
     }
+
+    // Validate session parameters first (before moving any fields)
+    validate_session_parameters(&session)?;
 
     // Extract network from address instead of using separate field
     // TODO: Remove destination_network field from WalletSweepRequest in future commit
@@ -480,43 +482,27 @@ fn validate_network_consistency(destination_network: bitcoin::Network) -> Result
 }
 
 // TODO: We should validate request before we accpet and on btc server side
-/// Validates request parameters for emergency wallet sweep
-fn validate_request_parameters(request: &WalletSweepRequest) -> Result<(), SweepError> {
+/// Validates session parameters for emergency wallet sweep
+fn validate_session_parameters(session: &WalletSweepSession) -> Result<(), SweepError> {
     // Validate fee rate bounds
-    if request.fee_rate_sat_vb == 0 ||
-        request.fee_rate_sat_vb < MIN_FEE_RATE_SAT_VB ||
-        request.fee_rate_sat_vb > MAX_FEE_RATE_SAT_VB
+    if session.fee_rate_sat_vb == 0 ||
+        session.fee_rate_sat_vb < MIN_FEE_RATE_SAT_VB ||
+        session.fee_rate_sat_vb > MAX_FEE_RATE_SAT_VB
     {
         return Err(SweepError::InvalidFeeRate {
-            fee_rate: request.fee_rate_sat_vb,
+            fee_rate: session.fee_rate_sat_vb,
             min: MIN_FEE_RATE_SAT_VB,
             max: MAX_FEE_RATE_SAT_VB,
         });
     }
 
     // Validate fee rate construction
-    if FeeRate::from_sat_per_vb(request.fee_rate_sat_vb).is_none() {
+    if FeeRate::from_sat_per_vb(session.fee_rate_sat_vb).is_none() {
         return Err(SweepError::InvalidFeeRate {
-            fee_rate: request.fee_rate_sat_vb,
+            fee_rate: session.fee_rate_sat_vb,
             min: MIN_FEE_RATE_SAT_VB,
             max: MAX_FEE_RATE_SAT_VB,
         });
-    }
-
-    // Validate coordinator signature presence and format
-    if request.coordinator_signature.is_empty() {
-        return Err(SweepError::InvalidRequest(
-            "Emergency sweep requires coordinator signature".to_string(),
-        ));
-    }
-
-    const MIN_SCHNORR_SIGNATURE_LENGTH: usize = 64;
-    if request.coordinator_signature.len() < MIN_SCHNORR_SIGNATURE_LENGTH {
-        return Err(SweepError::InvalidRequest(format!(
-            "Coordinator signature too short: {} bytes (minimum {} bytes required)",
-            request.coordinator_signature.len(),
-            MIN_SCHNORR_SIGNATURE_LENGTH
-        )));
     }
 
     Ok(())
@@ -851,8 +837,10 @@ mod tests {
     use super::*;
     use bitcoin::{absolute::LockTime, transaction::Version, Address, Network, Txid};
     use std::str::FromStr;
+    use crate::request::WalletSweepRequest;
 
     // Test helper functions
+    #[allow(dead_code)]
     fn create_test_request() -> WalletSweepRequest {
         // Create a valid 64-byte coordinator signature for testing
         let mut coordinator_signature = vec![0u8; 64];

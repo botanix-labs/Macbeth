@@ -1,6 +1,5 @@
 //! Botanix consensus utility functions
 use bitcoin::{
-    absolute::LockTime,
     consensus::Encodable,
     hashes::{sha256, Hash},
     psbt::Psbt,
@@ -1199,7 +1198,7 @@ pub fn transactions_signed_from_bytes(
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        consensus::Encodable,
+        absolute::LockTime,
         hashes::{sha256, Hash},
         psbt::{Input, Psbt},
         transaction::Version,

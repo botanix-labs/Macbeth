@@ -68,7 +68,6 @@ use botanix_btc_wallet::bitcoind::{
 };
 use botanix_storage::{models::Vote, BotanixProviderFactory};
 use botanix_storage_migrate::migrate_botanix_tables;
-use reth_authority_consensus::wallet_sweep_task::WalletSweepTask;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
@@ -903,7 +902,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 panic!("Frost task must be initialized for federation node");
             }
 
-            if let Some(mut wallet_sweep_task) = wallet_sweep_task {
+            if let Some(wallet_sweep_task) = wallet_sweep_task {
                 executor.spawn_critical("Wallet Sweep Task", wallet_sweep_task.run());
             } else {
                 panic!("Wallet Sweep task must be initialized for federation node");

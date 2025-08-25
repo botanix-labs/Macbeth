@@ -17,6 +17,7 @@ use async_trait as _;
 use botanix_authority_edh::header_ext::HeaderExt;
 use bytes as _;
 use displaydoc as _;
+use eyre as _;
 use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
     Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,

@@ -27,7 +27,6 @@ use crate::{
 use super::{
     messages::{FrostProtoMessage, FrostProtoMessageKind, SignRequest},
     ConnectionEstablishedStatus, FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse,
-    SigningPsbtType,
 };
 
 /// Frost Protocol Handler

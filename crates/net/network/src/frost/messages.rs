@@ -9,6 +9,7 @@ use reth_primitives::{Buf, BufMut, BytesMut};
 
 const MESSAGE_VERSION: usize = 0;
 
+#[allow(dead_code)]
 const SIGN_REQUEST_MESSAGE_VERSION_0: usize = 0;
 const SIGN_REQUEST_MESSAGE_VERSION_1: usize = 1;
 
@@ -622,6 +623,7 @@ mod tests {
         assert_eq!(decoded_message, message);
     }
 
+    #[test]
     fn test_signing_encoding_decoding_without_psbt_type_support() {
         let signing_request =
             SignRequest::new(vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0], SigningPsbtType::Sweep);
@@ -639,8 +641,15 @@ mod tests {
 
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode message");
-        // Check that the decoded message matches the original message
-        assert_eq!(decoded_message, message);
+        
+        // When PSBT type byte is missing, it should default to Pegout for backward compatibility
+        if let FrostProtoMessageKind::SignerRound1SigningPackage(decoded_request) = decoded_message.message {
+            assert_eq!(decoded_request.signing_session_id, vec![5, 6, 7, 8, 9]);
+            assert_eq!(decoded_request.psbt, vec![0, 1, 0, 1, 0]);
+            assert_eq!(decoded_request.psbt_type, SigningPsbtType::Pegout);
+        } else {
+            panic!("Decoded message is not a SignerRound1SigningPackage");
+        }
     }
 
     #[test]

@@ -1,3 +1,8 @@
+//! Wallet sweep task module for handling emergency wallet sweep operations.
+//!
+//! This module provides functionality to monitor wallet sweep session updates from the btc-server
+//! and coordinate FROST signing sessions for emergency wallet sweeps.
+
 use crate::{signing::SigningStateMachine, Storage};
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
@@ -8,14 +13,16 @@ use botanix_wallet_sweep::create_psbt_async;
 use btc_server_client::{BtcServerExtendedApi, WalletSweepSessionUpdateResponse};
 use futures::pin_mut;
 use futures_util::StreamExt;
-use reth_chain_state::CanonStateSubscriptions;
 use reth_db::table::Decompress;
 use reth_network::frost::{manager::ToFrostManager, SigningPsbtType};
-use reth_primitives::alloy_primitives::FixedBytes;
-use reth_provider::{BlockReaderIdExt, StateProviderFactory};
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
+/// A task that handles wallet sweep operations by monitoring for sweep session updates
+/// and coordinating FROST signing sessions for emergency wallet sweeps.
+///
+/// This task subscribes to wallet sweep session updates from the btc-server and
+/// manages the creation and coordination of FROST signing sessions for sweep PSBTs.
 pub struct WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient> {
     // Frost network Handler
     signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
@@ -24,6 +31,7 @@ pub struct WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient
     // btc-server client
     btc_server: BtcServerClient,
     // Authority Metrics
+    #[allow(dead_code)]
     metrics: Arc<AuthorityMetrics>,
 }
 
@@ -38,7 +46,7 @@ where
     BtcServerClient: BtcServerExtendedApi + Clone,
     Source: RandomSource + Clone,
 {
-    pub fn new(
+    pub(crate) fn new(
         signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
         storage: Storage<EF, BF, RDB, BDB>,
         btc_server: BtcServerClient,
@@ -197,10 +205,16 @@ where
         }
     }
 
+    /// Runs the wallet sweep task, continuously monitoring for wallet sweep session updates
+    /// and handling them appropriately.
+    ///
+    /// This method establishes a connection to the btc-server to subscribe to wallet sweep
+    /// session updates and processes incoming updates by either creating new signing sessions
+    /// or handling existing ones.
     pub async fn run(mut self) {
         loop {
             let request = btc_server_client::WalletSweepSessionUpdatesRequest {};
-            let mut stream = match self
+            let stream = match self
                 .btc_server
                 .subscribe_to_wallet_sweep_session_updates(request)
                 .await

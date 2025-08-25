@@ -17,7 +17,6 @@ use botanix_data_parser::{
     DataParser, Error as DataParserError,
 };
 use botanix_storage::{
-    models::{WalletSweepSession, WalletSweepSessionId},
     StagedHeaderReader, StagedHeaderWriter, WalletSweepSessionReader, WalletSweepSessionWriter,
 };
 use btc_server_client::{
@@ -26,7 +25,6 @@ use btc_server_client::{
 use btcserverlib::wallet::psbt::frost_id_from_bytes;
 use futures::{pin_mut, StreamExt};
 use reth_chainspec::ChainSpec;
-use reth_db::table::Decompress;
 use reth_network::{
     frost::{
         manager::{
@@ -40,14 +38,14 @@ use reth_network::{
 };
 use reth_primitives::{Header, B256};
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderResult,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions,
     StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tendermint_rpc::client::HttpClient;
 use tokio::sync::mpsc::{self, error::SendError};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, warn};
 
 // TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]

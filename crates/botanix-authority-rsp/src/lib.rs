@@ -56,8 +56,8 @@ mod tests {
         assert_eq!(random_bytes.as_slice(), &expected);
     }
 
-    // Mock implementation for testing trait objects
-    #[derive(Debug)]
+    // Mock implementation for testing
+    #[derive(Debug, Clone)]
     struct MockRandomSource {
         value: [u8; 32],
     }
@@ -75,13 +75,12 @@ mod tests {
     }
 
     #[test]
-    fn test_trait_object_usage() {
-        // Test that we can use the trait as a trait object
+    fn test_trait_implementation() {
+        // Test that we can use the trait implementation
         let mock_value = [42u8; 32];
         let mock_source = MockRandomSource::new(mock_value);
 
-        let trait_object: &dyn RandomSource = &mock_source;
-        let random_bytes = trait_object.random_source();
+        let random_bytes = mock_source.random_source();
 
         assert_eq!(random_bytes.as_slice(), &mock_value);
     }
