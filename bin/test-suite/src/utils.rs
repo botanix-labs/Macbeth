@@ -7,13 +7,13 @@ use crate::{
 };
 use bitcoin::{consensus::Encodable, hash_types::BlockHash, Address, Amount};
 use bitcoincore_rpc::RpcApi;
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use btcserverlib::pegout_id::PegoutId;
 use ethers::{
     providers::{JsonRpcClient, Provider, ProviderError},
     types::H256,
 };
 use reth::consensus_common::utils::unix_timestamp;
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::{Address as EthAddress, B256};
 use serde::Deserialize;
 use std::time::Duration;

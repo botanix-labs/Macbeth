@@ -24,6 +24,7 @@ members = [
     "crates/botanix-authority-peg",
     "crates/botanix-bitcoin-checkpoint",
     "crates/botanix-btc-wallet",
+    "crates/botanix-chainspec",
     "crates/botanix-cli",
     "crates/botanix-cli-args",
     "crates/botanix-cli-parsers",
@@ -388,6 +389,7 @@ botanix-utils = { path = "crates/botanix-utils" }
 botanix-authority-rsp = { path = "crates/botanix-authority-rsp" }
 botanix-authority-edh = { path = "crates/botanix-authority-edh" }
 botanix-authority-peg = { path = "crates/botanix-authority-peg" }
+botanix-hardforks = { path = "crates/botanix-hardforks" }
 botanix-bitcoin-checkpoint = { path = "crates/botanix-bitcoin-checkpoint" }
 botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
 botanix-activation-manager = { path = "crates/botanix-activation-manager" }
@@ -396,7 +398,8 @@ botanix-data-parser = { path = "crates/botanix-data-parser" }
 botanix-cli-parsers = { path = "crates/botanix-cli-parsers" }
 botanix-storage = { path = "crates/botanix-storage" }
 botanix-storage-migrate = { path = "crates/botanix-storage-migrate" }
-# frost
+botanix-chainspec = { path = "crates/botanix-chainspec" }
+
 # frost
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
     "serde",
@@ -566,6 +569,9 @@ c-kzg = "1.0.0"
 
 # config
 toml = "0.8"
+
+# askama
+askama = "0.12.1"
 
 # misc-testing
 arbitrary = "1.4"

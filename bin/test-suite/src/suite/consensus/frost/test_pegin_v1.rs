@@ -7,12 +7,12 @@ use botanix_authority_peg::{
     peg_contract::{PeginData, PeginMeta, PeginMetaV0, PeginMetaV1},
     utils::AmountExt,
 };
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::{revm_primitives::FixedBytes, Address};
 use serde_json::json;
 

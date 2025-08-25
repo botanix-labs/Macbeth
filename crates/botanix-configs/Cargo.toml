@@ -7,7 +7,7 @@ license = { workspace = true }
 
 [dependencies]
 alloy-primitives = { workspace = true }
-askama = "0.12.1"
+askama = { workspace = true }
 bitcoin = { workspace = true }
 displaydoc = { version = "0.2" }
 eyre = { workspace = true }

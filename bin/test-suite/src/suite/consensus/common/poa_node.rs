@@ -15,6 +15,7 @@ use bitcoin::hashes::Hash;
 use botanix_authority_edh::extra_data_header::{
     ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
 };
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
 use botanix_storage::BotanixProviderFactory;
 use btc_server_client::{
@@ -25,7 +26,6 @@ use ethers::{
     providers::{Middleware, PeerInfo, StreamExt},
     types::{BlockId, BlockNumber, H256},
 };
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_db::{
     mdbx::{DatabaseArguments, MaxReadTransactionDuration},
     models::ClientVersion,
@@ -408,7 +408,7 @@ impl FederationMemberTestConfig {
         let reth_static_file_provider = StaticFileProvider::read_only(reth_static_files_dir)?;
         let reth_provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
             reth_db,
-            node_config,
+            node_config.inner_arc(),
             reth_static_file_provider.clone(),
         );
 

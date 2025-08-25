@@ -1,8 +1,9 @@
 //! The purpose of this module is to provide a bridge between the CometBFT and the EVM application
 //! state
 use alloy_rpc_types_engine::ForkchoiceState;
+use botanix_chainspec::constants::BOTANIX_TESTNET_CHAIN_ID;
 use reth_chain_state::ExecutedBlock;
-use reth_chainspec::{ChainSpec, BOTANIX_TESTNET_CHAIN_ID};
+use reth_chainspec::ChainSpec;
 use reth_db::{Database, DatabaseEnv};
 use reth_provider::{
     providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
@@ -269,7 +270,7 @@ where
             .latest_header()
             .ok()
             .flatten()
-            .unwrap_or_else(|| storage.chain_spec.sealed_genesis_header());
+            .unwrap_or_else(|| storage.chain_spec.inner().sealed_genesis_header());
         let blockchain_db =
             BlockchainProvider2::with_latest(provider_factory.clone(), latest_sealed_header)
                 .expect("blockchain db to exist");
@@ -457,7 +458,7 @@ where
             snapshot_format,
             block_fee_recipient_address,
             blockchain_db,
-            is_testnet: storage.chain_spec.chain.id() == BOTANIX_TESTNET_CHAIN_ID,
+            is_testnet: storage.chain_spec.inner().chain.id() == BOTANIX_TESTNET_CHAIN_ID,
         }
     }
 
@@ -498,7 +499,7 @@ where
             Arc::new(best_block),
             reth_primitives::Bytes::default(),
             payload_builder_attributes,
-            chain_spec,
+            chain_spec.inner_arc(),
         ))
     }
 
@@ -670,7 +671,11 @@ where
                 panic!("Error parsing cometbft chain id: {:?}", e);
             }
         };
-        assert_eq!(self.storage.chain_spec.chain.id(), cometbft_chain_id, "Chain ID mismatch");
+        assert_eq!(
+            self.storage.chain_spec.inner().chain.id(),
+            cometbft_chain_id,
+            "Chain ID mismatch"
+        );
 
         let client = self.storage.reth_database.clone();
         let app_hash = match self.application_hash(&client) {
@@ -2599,10 +2604,10 @@ mod tests {
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,
     };
+    use botanix_chainspec::constants::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
     use botanix_storage::BotanixProviderFactory;
     use rand::thread_rng;
-    use reth_chainspec::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use reth_cli_runner::tokio_runtime;
     use reth_db::test_utils::{create_test_rw_db, create_test_static_files_dir};
     use reth_db_common::init::init_genesis;
@@ -2648,7 +2653,7 @@ mod tests {
         let spec = Arc::new(BOTANIX_TESTNET.as_ref().to_owned());
         let factory = ProviderFactory::new(
             Arc::new(reth_db),
-            spec.clone(),
+            spec.inner_arc(),
             StaticFileProvider::read_write(reth_static_path).expect("to create provider factory"),
         );
         let _ = init_genesis(factory.clone()).expect("to init genesis");
@@ -2679,11 +2684,12 @@ mod tests {
         let tokio_runtime: tokio::runtime::Runtime = tokio_runtime().expect("to create runtime");
         let task_manager = TaskManager::new(tokio_runtime.handle().clone());
         let task_executor = task_manager.executor();
-        let validator = TransactionValidationTaskExecutor::eth_builder(storage.chain_spec.clone())
-            .with_head_timestamp(0)
-            .kzg_settings(EnvKzgSettings::Default)
-            .with_additional_tasks(1)
-            .build_with_tasks(reth_provider.clone(), task_executor.clone(), blob_store.clone());
+        let validator =
+            TransactionValidationTaskExecutor::eth_builder(storage.chain_spec.inner_arc())
+                .with_head_timestamp(0)
+                .kzg_settings(EnvKzgSettings::Default)
+                .with_additional_tasks(1)
+                .build_with_tasks(reth_provider.clone(), task_executor.clone(), blob_store.clone());
 
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
@@ -2747,7 +2753,7 @@ mod tests {
         let abci_client = abci_client_builder();
 
         let request = RequestInitChain {
-            chain_id: BOTANIX_MAINNET.chain.id().to_string(),
+            chain_id: BOTANIX_MAINNET.inner().chain.id().to_string(),
             ..Default::default()
         };
         let _ = abci_client.init_chain(request);
@@ -2758,7 +2764,7 @@ mod tests {
         let abci_client = abci_client_builder();
 
         let request = RequestInitChain {
-            chain_id: BOTANIX_TESTNET.chain.id().to_string(),
+            chain_id: BOTANIX_TESTNET.inner().chain.id().to_string(),
             ..Default::default()
         };
         let response = abci_client.init_chain(request);
@@ -2771,7 +2777,7 @@ mod tests {
         let _response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
         assert_eq!(
             response.app_hash.to_vec(),
-            BOTANIX_TESTNET.genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
+            BOTANIX_TESTNET.inner().genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
         );
     }
 
@@ -2789,7 +2795,7 @@ mod tests {
         let _response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
         assert_eq!(
             response.last_block_app_hash.to_vec(),
-            BOTANIX_TESTNET.genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
+            BOTANIX_TESTNET.inner().genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
         );
     }
 

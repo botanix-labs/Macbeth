@@ -1,13 +1,13 @@
 use crate::utils::{parse_signing_session_id, retry_exec, retry_future, FrostParseError};
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
+use botanix_chainspec::BotanixChainSpec;
 use btc_server_client::{
     BtcServerExtendedApi, Empty, FinalizeSigningResponse, GrpcClientError, SigningPackage,
     SigningPackageRequest,
 };
 use frost_secp256k1_tr as frost;
 
-use reth_chainspec::ChainSpec;
 use reth_consensus_common::utils::{current_inturn_index, is_inturn, unix_timestamp};
 use reth_network::frost::{
     manager::{
@@ -113,7 +113,7 @@ pub(crate) struct SigningSession {
 /// A state machine for transitioning between different signing states
 #[derive(Debug)]
 pub(crate) struct SigningStateMachine<ToFrostMan, Source, BtcServerClient> {
-    chain_spec: Arc<ChainSpec>,
+    chain_spec: Arc<BotanixChainSpec>,
     btc_client: BtcServerClient,
     frost_handle: ToFrostMan,
     signing_states: Arc<RwLock<HashMap<[u8; 32], SigningSession>>>,
@@ -131,7 +131,7 @@ where
 {
     /// Constructs a new state machine with the given params
     pub(crate) fn new(
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: Arc<BotanixChainSpec>,
         btc_client: BtcServerClient,
         frost_handle: ToFrostMan,
         frost_config: FrostConfig,

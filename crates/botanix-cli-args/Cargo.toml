@@ -9,10 +9,11 @@ homepage = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-askama = "0.12.1"
+askama = { workspace = true }
 bitcoin = { workspace = true }
 botanix-authority-edh = { workspace = true }
 botanix-btc-wallet = { workspace = true }
+botanix-chainspec = { workspace = true }
 botanix-cli-parsers = { workspace = true }
 botanix-configs = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }

@@ -15,6 +15,7 @@ bitcoin = { workspace = true }
 
 # Botanix
 botanix-btc-wallet = { workspace = true }
+botanix-chainspec = { workspace = true }
 
 # misc
 eyre = { workspace = true }

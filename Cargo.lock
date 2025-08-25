@@ -2307,6 +2307,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "botanix-chainspec"
+version = "1.2.0"
+dependencies = [
+ "alloy-chains",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives 0.7.7",
+ "alloy-serde",
+ "askama",
+ "botanix-hardforks",
+ "clap",
+ "derive_more 2.0.1",
+ "eyre",
+ "once_cell",
+ "reth-chainspec",
+ "reth-cli",
+ "reth-ethereum-forks",
+ "reth-primitives-traits",
+ "serde",
+ "serde_json",
+ "shellexpand",
+]
+
+[[package]]
 name = "botanix-cli"
 version = "0.1.0"
 dependencies = [
@@ -2325,6 +2349,7 @@ dependencies = [
  "bitcoin 0.32.7",
  "botanix-authority-edh",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "botanix-cli-parsers",
  "botanix-configs",
  "clap",
@@ -2351,6 +2376,7 @@ dependencies = [
  "askama",
  "bitcoin 0.32.7",
  "botanix-authority-edh",
+ "botanix-chainspec",
  "botanix-configs",
  "eyre",
  "reth-chainspec",
@@ -2464,6 +2490,29 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "botanix-hardforks"
+version = "1.2.0"
+dependencies = [
+ "alloy-chains",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives 0.7.7",
+ "alloy-serde",
+ "askama",
+ "clap",
+ "derive_more 2.0.1",
+ "eyre",
+ "once_cell",
+ "reth-chainspec",
+ "reth-cli",
+ "reth-ethereum-forks",
+ "reth-primitives-traits",
+ "serde",
+ "serde_json",
+ "shellexpand",
 ]
 
 [[package]]
@@ -6881,9 +6930,9 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.9"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "391290121bad3d37fbddad76d8f5d1c1c314cfc646d143d7e07a3086ddff0ce3"
+checksum = "360e552c93fa0e8152ab463bc4c4837fce76a225df11dfaeea66c313de5e61f7"
 dependencies = [
  "bitflags 2.9.2",
  "libc",
@@ -9183,6 +9232,7 @@ dependencies = [
  "botanix-authority-rsp",
  "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "botanix-cli-args",
  "botanix-cli-parsers",
  "botanix-comet-bft-rpc",
@@ -9280,6 +9330,7 @@ dependencies = [
  "botanix-authority-rsp",
  "botanix-bitcoin-checkpoint",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "botanix-cli-args",
  "botanix-comet-bft-rpc",
  "botanix-data-parser",
@@ -9562,7 +9613,6 @@ dependencies = [
  "alloy-primitives 0.7.7",
  "alloy-rlp",
  "alloy-trie",
- "askama",
  "auto_impl",
  "derive_more 2.0.1",
  "once_cell",
@@ -9704,6 +9754,7 @@ name = "reth-consensus-common"
 version = "1.2.0-rc.3"
 dependencies = [
  "botanix-authority-edh",
+ "botanix-chainspec",
  "mockall",
  "rand 0.8.5",
  "reth-chainspec",
@@ -10316,6 +10367,7 @@ dependencies = [
  "botanix-authority-edh",
  "botanix-authority-peg",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "btc-server",
  "reth-chainspec",
  "reth-db",
@@ -10828,6 +10880,7 @@ dependencies = [
  "alloy-primitives 0.7.7",
  "bitcoin 0.32.7",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "eyre",
  "futures",
  "futures-util",
@@ -11015,7 +11068,6 @@ dependencies = [
  "reth-rpc-types",
  "revm-primitives",
  "roaring",
- "secp256k1 0.29.1",
  "serde",
  "serde_json",
  "test-fuzz",
@@ -11118,6 +11170,7 @@ name = "reth-revm"
 version = "1.2.0-rc.3"
 dependencies = [
  "alloy-eips",
+ "botanix-chainspec",
  "reth-chainspec",
  "reth-consensus-common",
  "reth-ethereum-forks",
@@ -13694,6 +13747,7 @@ dependencies = [
  "botanix-authority-edh",
  "botanix-authority-peg",
  "botanix-btc-wallet",
+ "botanix-chainspec",
  "botanix-cli-args",
  "botanix-comet-bft-rpc",
  "botanix-configs",
@@ -13968,9 +14022,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.47.1"
+version = "1.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89e49afdadebb872d3145a5638b59eb0691ea23e46ca484037cfab3b76b95038"
+checksum = "43864ed400b6043a4757a25c7a64a8efde741aed79a056a2fb348a406701bb35"
 dependencies = [
  "backtrace",
  "bytes",
@@ -14089,9 +14143,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.9.5"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75129e1dc5000bfbaa9fee9d1b21f974f9fbad9daec557a521ee6e080825f6e8"
+checksum = "e06723639aaded957e5a80be250c1f82f274b9d23ebb4d94163668470623461c"
 dependencies = [
  "indexmap 2.10.0",
  "serde",
@@ -14535,7 +14589,7 @@ dependencies = [
  "serde_json",
  "target-triple",
  "termcolor",
- "toml 0.9.5",
+ "toml 0.9.3",
 ]
 
 [[package]]

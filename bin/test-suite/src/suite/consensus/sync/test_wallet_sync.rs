@@ -11,6 +11,7 @@ use botanix_authority_peg::{
     peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
     utils::AmountExt,
 };
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use btc_server_client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
 use ethers::{
     prelude::Provider,
@@ -18,7 +19,6 @@ use ethers::{
     types::NameOrAddress,
 };
 use futures::StreamExt;
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;
 use tonic::transport::Channel;
 
