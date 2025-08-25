@@ -11,7 +11,6 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::{self, Decodable},
@@ -59,15 +58,6 @@ use file_descriptor::FILE_DESCRIPTOR_SET;
 use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
-use std::{
-    collections::{BTreeMap, HashSet},
-    fmt::Debug,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::Path,
-    str::FromStr,
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
 use thiserror::Error;
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;

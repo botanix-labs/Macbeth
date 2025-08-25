@@ -41,7 +41,7 @@ use reth_revm::primitives::FixedBytes;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tendermint_rpc::client::HttpClient;
 use tokio::sync::mpsc::{self, error::SendError};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 // TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]
