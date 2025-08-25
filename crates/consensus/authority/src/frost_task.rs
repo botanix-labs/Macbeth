@@ -40,7 +40,7 @@ use reth_provider::{
 use reth_revm::primitives::FixedBytes;
 use tendermint_rpc::client::HttpClient;
 use tokio::sync::mpsc::{self, error::SendError};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 // TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]

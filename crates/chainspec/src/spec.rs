@@ -334,7 +334,7 @@ pub struct ChainSpec {
     pub lst_fee_receiver: Option<String>,
 
     /// EIP-225: Clique Proof-of-Authority consensus protocol.
-    /// The number of blocks in an epoch for PoA consensus
+    /// The number of blocks in an epoch for `PoA` consensus
     pub epoch_length: u64,
 }
 
