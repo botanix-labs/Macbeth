@@ -39,6 +39,10 @@ pub const PER_P2TR_KEYSPEND_WEIGHT: u64 =
 // others are shorter))
 pub const PER_OUTPUT_MAX_WEIGHT: u64 = 8 * 4 + 1 * 4 + 34 * 4;
 
+// Bitcoin's maximum transaction weight is 400,000 weight units.
+// Conservatively setting this to 50,000 to allow for ~100s of pegouts in a single tx
+pub const MAX_PEGOUT_TX_WEIGHT: u64 = 50_000;
+
 #[cfg(test)]
 mod test {
     use super::*;

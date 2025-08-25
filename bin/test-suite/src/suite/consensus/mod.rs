@@ -408,6 +408,15 @@ impl Suite for ConsensusIntegrationTestSuite {
                 },
                 frost::test_signing::test_many_inputs_signing
             ),
+            "tx_weight_limit" => run_test!(
+                self,
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
+                frost::test_tx_weight_limit::test_tx_weight_limit
+            ),
             "utxo_commitment" => run_test!(
                 self,
                 CreateTestConfig {
