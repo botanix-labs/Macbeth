@@ -4,13 +4,13 @@ use std::fmt::Debug;
 use reth_revm::primitives::FixedBytes;
 
 /// Trait that provides a random source of 32 bytes.
-pub trait RandomSource: Debug {
+pub trait RandomSource: Debug + Clone {
     /// Returns a random source.
     fn random_source(&self) -> FixedBytes<32>;
 }
 
 /// Struct that provides a random source of 32 bytes.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RandomSourceProvider;
 
 impl RandomSourceProvider {

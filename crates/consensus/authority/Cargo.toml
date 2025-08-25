@@ -37,6 +37,7 @@ btc-server-client = { path = "../../../bin/btc-server/client" }
 bytes = "1.6.0"
 displaydoc = "0.2"
 ethabi = "18.0.0"
+eyre = { workspace = true }
 
 # frost
 frost-secp256k1-tr = { workspace = true }

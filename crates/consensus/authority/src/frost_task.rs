@@ -11,7 +11,6 @@ use bitcoin::consensus::Encodable;
 use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
-use botanix_wallet_sweep;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{
     prost_parser::{ProstError, ProstMessageSerdelizer},
@@ -41,7 +40,8 @@ use reth_network::{
 };
 use reth_primitives::{Header, B256};
 use reth_provider::{
-    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, StateProviderFactory,
+    BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderResult,
+    StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
@@ -88,7 +88,6 @@ pub struct FrostTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient> {
     /// aggregate public key is available, and the `start_task` method has hence
     /// started the DKG process.
     dkg_task: Option<mpsc::Sender<DkgResponse>>,
-    wallet_sweep_task: Option<mpsc::Sender<WalletSweepSessionId>>,
     /// Pre-configured data-parser
     compressor: DataParser,
     /// btc server client
@@ -124,7 +123,7 @@ where
         + Clone
         + 'static,
     EF: Clone + 'static + Send + Sync,
-    Source: RandomSource,
+    Source: RandomSource + Clone,
     BtcServerClient: BtcServerExtendedApi + Clone,
 {
     /// Creates a new instance of the task
@@ -164,7 +163,6 @@ where
             btc_server,
             check_staged_headers: true,
             dkg_task: None,
-            wallet_sweep_task: None,
             compressor,
             metrics,
             cbft_rpc_provider,
@@ -410,8 +408,10 @@ where
         );
 
         // Initiate signing session.
-        if let Err(e) =
-            self.signing_state_machine.initate_signing_session(header_hash, psbt_payload.psbt, SigningPsbtType::Pegout).await
+        if let Err(e) = self
+            .signing_state_machine
+            .initate_signing_session(header_hash, psbt_payload.psbt, SigningPsbtType::Pegout)
+            .await
         {
             error!(
                 target: "consensus::authority::frost_task::handle_canon_state_commit",
@@ -485,34 +485,14 @@ where
             info!(target: "consensus::authority::frost_task::start_task", "DKG runner task started...");
         }
 
-        {
-            let tx = WalletSweepTask::new(
-                self.frost_handle.clone(),
-                self.storage.clone(),
-                self.btc_server.clone(),
-                Arc::clone(&self.metrics),
-            );
-            self.wallet_sweep_task = Some(tx);
-        }
-
         let mut canon_state_notifs = self.storage.reth_database.subscribe_to_canonical_state();
 
         let mut abci_started = false;
-        let mut last_sweep_psbt_check = tokio::time::Instant::now();
-        const SWEEP_PSBT_CHECK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 
         loop {
             // check if abci has started
             if abci_started_rx.try_recv().is_ok() {
                 abci_started = true;
-            }
-
-            // Check for stored sweep PSBTs that need signing (only if coordinator)
-            if abci_started && 
-               self.signing_state_machine.is_coordinator() && 
-               last_sweep_psbt_check.elapsed() >= SWEEP_PSBT_CHECK_INTERVAL {
-                self.check_and_initiate_sweep_signing().await;
-                last_sweep_psbt_check = tokio::time::Instant::now();
             }
 
             if abci_started {
@@ -681,12 +661,8 @@ where
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse {
-                            response_type,
-                            signing_session_id,
-                            psbt,
-                            psbt_type,
-                        } = signing_response;
+                        let SigningResponse { response_type, signing_session_id, psbt, psbt_type } =
+                            signing_response;
                         let signing_session_id = match FixedBytes::try_from(
                             signing_session_id.as_slice(),
                         ) {
@@ -712,18 +688,19 @@ where
                                             &self.storage.reth_database,
                                             self.storage.btc_network,
                                             &psbt_res,
-                                        ).await
-                                    },
+                                        )
+                                        .await
+                                    }
                                     SigningPsbtType::Sweep => {
                                         validate_sweep_psbt(
                                             &mut self.btc_server,
                                             self.storage.btc_network,
                                             &psbt_res,
-                                        ).await
+                                        )
+                                        .await
                                     }
                                 };
-                                if let Err(e) = validation_result
-                                {
+                                if let Err(e) = validation_result {
                                     error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Error validating psbt {:?}", e);
                                     continue;
                                 }
@@ -755,18 +732,19 @@ where
                                             &self.storage.reth_database,
                                             self.storage.btc_network,
                                             &psbt_res,
-                                        ).await
-                                    },
+                                        )
+                                        .await
+                                    }
                                     SigningPsbtType::Sweep => {
                                         validate_sweep_psbt(
                                             &mut self.btc_server,
                                             self.storage.btc_network,
                                             &psbt_res,
-                                        ).await
+                                        )
+                                        .await
                                     }
                                 };
-                                if let Err(e) = validation_result
-                                {
+                                if let Err(e) = validation_result {
                                     error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error validating psbt {:?}", e);
                                     continue;
                                 }
@@ -798,18 +776,19 @@ where
                                             &self.storage.reth_database,
                                             self.storage.btc_network,
                                             &psbt_res,
-                                        ).await
-                                    },
+                                        )
+                                        .await
+                                    }
                                     SigningPsbtType::Sweep => {
                                         validate_sweep_psbt(
                                             &mut self.btc_server,
                                             self.storage.btc_network,
                                             &psbt_res,
-                                        ).await
+                                        )
+                                        .await
                                     }
                                 };
-                                if let Err(e) = validation_result
-                                {
+                                if let Err(e) = validation_result {
                                     error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Error validating psbt {:?}", e);
                                     continue;
                                 }
@@ -841,18 +820,19 @@ where
                                             &self.storage.reth_database,
                                             self.storage.btc_network,
                                             &psbt_res,
-                                        ).await
-                                    },
+                                        )
+                                        .await
+                                    }
                                     SigningPsbtType::Sweep => {
                                         validate_sweep_psbt(
                                             &mut self.btc_server,
                                             self.storage.btc_network,
                                             &psbt_res,
-                                        ).await
+                                        )
+                                        .await
                                     }
                                 };
-                                if let Err(e) = validation_result
-                                {
+                                if let Err(e) = validation_result {
                                     error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error validating psbt {:?}", e);
                                     continue;
                                 }
@@ -876,100 +856,6 @@ where
 
             // short sleep
             tokio::time::sleep(std::time::Duration::from_millis(1250)).await;
-        }
-    }
-
-    /// Check for wallet sweep sessions and create PSBTs directly for FROST signing
-    async fn check_and_initiate_sweep_signing(&mut self) {
-        // Check if there's an active wallet sweep session
-        let sweep_session = match self.storage.botanix_database_factory.get_wallet_sweep_session() {
-            Ok(Some((session_id, session))) => {
-                info!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-                      "Found active wallet sweep session: {}", hex::encode(session_id));
-                (session_id, session)
-            }
-            Ok(None) => {
-                // No active sweep session
-                return;
-            }
-            Err(e) => {
-                error!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-                       "Failed to check wallet sweep session: {}", e);
-                return;
-            }
-        };
-
-        let (_session_id, session) = sweep_session;
-        
-        // Generate the signing session ID deterministically using the same logic as CLI
-        let mut session_id_data = Vec::new();
-        // Use the actual coordinator's authority index (converted to u16 to match CLI logic)
-        session_id_data.extend_from_slice(&(self.frost_config.authority_index as u16).to_le_bytes());
-        session_id_data.extend_from_slice(session.bitcoin_destination_address.clone().assume_checked().to_string().as_bytes());
-        session_id_data.extend_from_slice(&session.created_at.to_le_bytes());
-        session_id_data.extend_from_slice(b"SWEEP_SIGNING");
-        let signing_session_id: [u8; 32] = reth_primitives::keccak256(session_id_data).0;
-        
-        let session_id_fixed: FixedBytes<32> = signing_session_id.into();
-        
-        // Check if we already have a signing session for this sweep
-        if self.signing_state_machine.signing_session_exists(signing_session_id).await {
-            trace!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-                   "Signing session already exists for sweep: {}", hex::encode(&signing_session_id));
-            return;
-        }
-        
-        // Only the coordinator should create and initiate the PSBT
-        if !self.signing_state_machine.is_coordinator() {
-            trace!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-                   "Not coordinator, waiting for sweep PSBT from coordinator");
-            return;
-        }
-        
-        info!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-              "Creating sweep PSBT directly for session: {}", hex::encode(&signing_session_id));
-        
-        // Create a WalletSweepRequest from the session data using the correct coordinator_id
-        let sweep_request = botanix_wallet_sweep::WalletSweepRequest {
-            coordinator_id: self.frost_config.authority_index as u16,
-            coordinator_signature: vec![], // Not needed for PSBT creation
-            destination_network: session.bitcoin_network.to_string(),
-            destination_address: session.bitcoin_destination_address.clone(),
-            fee_rate_sat_vb: session.fee_rate_sat_vb,
-            created_at: session.created_at,
-        };
-        
-        // Create the sweep PSBT directly using the same logic as the CLI
-        let sweep_psbt = match botanix_wallet_sweep::create_psbt_async(sweep_request, &mut self.btc_server).await {
-            Ok(psbt) => {
-                info!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-                      "Successfully created sweep PSBT with {} inputs, {} outputs", 
-                      psbt.inputs.len(), psbt.outputs.len());
-                psbt
-            }
-            Err(e) => {
-                error!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-                       "Failed to create sweep PSBT: {}", e);
-                return;
-            }
-        };
-        
-        // Serialize the PSBT for signing
-        let psbt_bytes = sweep_psbt.serialize();
-        
-        info!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-              "Initiating FROST signing for directly-created sweep PSBT: {}", hex::encode(&signing_session_id));
-        
-        // Initiate FROST signing session with the directly created PSBT
-        if let Err(e) = self.signing_state_machine
-            .initate_signing_session(session_id_fixed, psbt_bytes, SigningPsbtType::Sweep)
-            .await
-        {
-            error!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-                   "Failed to initiate FROST signing for sweep PSBT {}: {}", hex::encode(&signing_session_id), e);
-        } else {
-            info!(target: "consensus::authority::frost_task::check_and_initiate_sweep_signing", 
-                  "Successfully initiated FROST signing for directly-created sweep PSBT: {}", hex::encode(&signing_session_id));
         }
     }
 }
@@ -1186,121 +1072,5 @@ where
         }
 
         Ok(())
-    }
-}
-
-struct WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient> {
-    rx: mpsc::Receiver<WalletSweepSessionId>,
-    // Frost network Handler
-    frost_handle: ToFrostMan,
-    // Shared storage to insert aggregate public key
-    storage: Storage<EF, BF, RDB, BDB>,
-    // btc-server client
-    btc_server: BtcServerClient,
-    // Authority Metrics
-    metrics: Arc<AuthorityMetrics>,
-}
-
-impl<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
-    WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>
-where
-    EF: 'static + Send + Sync,
-    BF: 'static + Send + Sync,
-    RDB: BlockReaderIdExt
-        + StateProviderFactory
-        + CanonStateSubscriptions
-        + Clone
-        + 'static
-        + Send
-        + Sync,
-    BDB: WalletSweepSessionReader + WalletSweepSessionWriter + Clone + 'static + Send + Sync,
-    ToFrostMan: 'static + Send + Sync + ToFrostManager,
-    BtcServerClient: BtcServerExtendedApi,
-{
-    #[allow(clippy::new_ret_no_self)]
-    fn new(
-        frost_handle: ToFrostMan,
-        storage: Storage<EF, BF, RDB, BDB>,
-        btc_server: BtcServerClient,
-        metrics: Arc<AuthorityMetrics>,
-    ) -> mpsc::Sender<WalletSweepSessionId> {
-        let (tx, rx) = mpsc::channel(100);
-
-        let task = Self { rx, frost_handle, storage, btc_server, metrics };
-
-        // Spawn-off the task, which will keep interacting with the btc-server.
-        tokio::spawn(task.run());
-
-        tx
-    }
-    async fn run(mut self) {
-        loop {
-            let request = btc_server_client::WalletSweepSessionUpdatesRequest {};
-            let mut stream = match self
-                .btc_server
-                .subscribe_to_wallet_sweep_session_updates(request)
-                .await
-            {
-                Ok(stream) => {
-                    debug!(target: "consensus::authority::frost_task::WalletSweepTask", "Connected to wallet sweep session updates");
-
-                    stream
-                }
-                Err(_e) => {
-                    error!(target: "consensus::authority::frost_task::WalletSweepTask", "Failed to subscribe to wallet sweep session updates");
-
-                    continue;
-                }
-            };
-
-            pin_mut!(stream);
-
-            while let Some(received) = stream.next().await {
-                let session_update = match received {
-                    Ok(message) => {
-                        trace!(target: "consensus::authority::frost_task::WalletSweepTask", "Received message from wallet sweep session stream");
-
-                        message
-                    }
-                    Err(e) => {
-                        warn!(target: "consensus::authority::frost_task::WalletSweepTask", "Received error from wallet sweep session stream: {e}");
-
-                        continue;
-                    }
-                };
-
-                let session_id =
-                    session_update.session_id.as_slice().try_into().expect("todo: handle error");
-
-                if self
-                    .storage
-                    .botanix_database_factory
-                    .is_wallet_sweep_session_exists(session_id)
-                    .expect("todo: handle error")
-                {
-                    trace!(target: "consensus::authority::frost_task::WalletSweepTask", "Skip wallet sweep session update - session already exists");
-
-                    continue;
-                }
-
-                let session = match WalletSweepSession::decompress(session_update.session_bytes) {
-                    Ok(session) => session,
-                    Err(e) => {
-                        error!(target: "consensus::authority::frost_task::WalletSweepTask", "Failed to deserialize wallet sweep session: {e}");
-
-                        continue;
-                    }
-                };
-
-                self.storage
-                    .botanix_database_factory
-                    .update_wallet_sweep_session(session)
-                    .expect("failed to update wallet sweep session");
-            }
-
-            warn!(target: "consensus::authority::frost_task::WalletSweepTask", "Wallet sweep session stream disconnected. Reconnect in 1 second");
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
     }
 }

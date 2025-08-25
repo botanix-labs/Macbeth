@@ -68,6 +68,7 @@ use botanix_btc_wallet::bitcoind::{
 };
 use botanix_storage::{models::Vote, BotanixProviderFactory};
 use botanix_storage_migrate::migrate_botanix_tables;
+use reth_authority_consensus::wallet_sweep_task::WalletSweepTask;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
@@ -808,7 +809,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
         let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
-        let (frost_task, abci_client_builder, snapshot_manager, wallet_sync) =
+        let (frost_task, abci_client_builder, snapshot_manager, wallet_sync, wallet_sweep_task) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
                 blockchain_db.clone(),
@@ -890,13 +891,17 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // federation mode tasks
         // TODO  we should structure which tasks are spawned based on the node type using two
         // different structs
-        if is_fed_node {
+        if let Some(mut frost_task) = frost_task {
             executor.spawn_critical(
                 "Frost Task",
                 Box::pin(async move {
-                    frost_task.expect("frost task exists").start_task(abci_started_rx).await;
+                    frost_task.start_task(abci_started_rx).await;
                 }),
             );
+        }
+
+        if let Some(mut wallet_sweep_task) = wallet_sweep_task {
+            executor.spawn_critical("Wallet Sweep Task", wallet_sweep_task.run());
         }
 
         // NOTE: the node will block here until DKG has completed

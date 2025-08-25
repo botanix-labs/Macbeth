@@ -1,9 +1,13 @@
 //! Emergency wallet sweep command implementation
 
-use bitcoin::{address::NetworkUnchecked, FeeRate, hashes::{sha256, Hash, hex::FromHex}};
+use bitcoin::{
+    address::NetworkUnchecked,
+    hashes::{hex::FromHex, sha256, Hash},
+    FeeRate,
+};
+use botanix_configs::federation::FederationTomlConfig;
 use botanix_wallet_sweep::{create_psbt_async, request::DestinationConfig, WalletSweepRequest};
 use btc_server_client::{jwt::JwtSecret, BtcServerExtendedApi, Empty, GrpcClientFactory};
-use botanix_configs::federation::FederationTomlConfig;
 use clap::{Parser, Subcommand};
 use eyre::WrapErr;
 use reth_cli_runner::CliContext;
@@ -115,35 +119,42 @@ impl SweepCommand {
         btc_server_client: &mut impl BtcServerExtendedApi,
     ) -> eyre::Result<bool> {
         // Get our local identifier from btc-server configuration
-        let public_key_response = btc_server_client.get_public_key(Empty {}).await
+        let public_key_response = btc_server_client
+            .get_public_key(Empty {})
+            .await
             .wrap_err("Failed to get our public key from btc-server")?;
-        
+
         // Parse our public key using Vec<u8> to avoid sizing issues
         let our_public_key_bytes: Vec<u8> = FromHex::from_hex(&public_key_response.publickey)
             .wrap_err("Failed to decode our public key")?;
         let our_public_key = bitcoin::secp256k1::PublicKey::from_slice(&our_public_key_bytes)
             .wrap_err("Failed to parse our public key")?;
-        
+
         // Verify the coordinator signature to check if we are the coordinator
         let secp = bitcoin::secp256k1::Secp256k1::new();
-        
+
         // Reconstruct the signature data that was signed
         let mut signature_data = Vec::new();
         signature_data.extend_from_slice(&request.coordinator_id.to_le_bytes());
-        signature_data.extend_from_slice(&bitcoin::Network::from_str(&request.destination_network)?.magic().to_bytes());
-        signature_data.extend_from_slice(request.destination_address.clone().assume_checked().to_string().as_bytes());
+        signature_data.extend_from_slice(
+            &bitcoin::Network::from_str(&request.destination_network)?.magic().to_bytes(),
+        );
+        signature_data.extend_from_slice(
+            request.destination_address.clone().assume_checked().to_string().as_bytes(),
+        );
         signature_data.extend_from_slice(&request.fee_rate_sat_vb.to_le_bytes());
         signature_data.extend_from_slice(&request.created_at.to_le_bytes());
-        
+
         // Create message hash
         let hash = sha256::Hash::hash(&signature_data);
         let message = bitcoin::secp256k1::Message::from_digest_slice(hash.as_ref())
             .wrap_err("Failed to create message for signature verification")?;
-        
+
         // Parse the coordinator signature
-        let signature = bitcoin::secp256k1::ecdsa::Signature::from_compact(&request.coordinator_signature)
-            .wrap_err("Failed to parse coordinator signature")?;
-        
+        let signature =
+            bitcoin::secp256k1::ecdsa::Signature::from_compact(&request.coordinator_signature)
+                .wrap_err("Failed to parse coordinator signature")?;
+
         // Verify if the signature was created by our private key
         match secp.verify_ecdsa(&message, &signature, &our_public_key) {
             Ok(()) => {
@@ -207,13 +218,13 @@ impl SweepCommand {
                 info!("Starting emergency sweep initiation");
                 info!(
                     "Destination: {}, Fee rate: {} sat/vB, Network: {}",
-                    destination.address()?, 
+                    destination.address()?,
                     destination.fee_rate()?.to_sat_per_vb_floor(),
                     destination.network()?
                 );
                 info!(
                     "Federation config: {}, Coordinator key: {}",
-                    federation_config_path.display(), 
+                    federation_config_path.display(),
                     coordinator_key.display()
                 );
 
@@ -228,8 +239,9 @@ impl SweepCommand {
                     "Created wallet sweep request for coordinator ID: {}, notifying btc-server",
                     session_request.coordinator_id
                 );
-                
-                // Accept the request on the local btc-server (this creates the session and notifies other members)
+
+                // Accept the request on the local btc-server (this creates the session and notifies
+                // other members)
                 session_request.accept(&mut btc_server_client).await?;
 
                 info!("Wallet sweep session created and notification sent to federation members");
@@ -238,19 +250,23 @@ impl SweepCommand {
                 let request_string = serde_json::to_string_pretty(&session_request)
                     .wrap_err_with(|| "Failed to serialize wallet sweep request")?;
 
-                fs::write(output_request_file_path, &request_string)
-                    .wrap_err_with(|| format!("Failed to write request to {:?}", output_request_file_path))?;
-                
+                fs::write(output_request_file_path, &request_string).wrap_err_with(|| {
+                    format!("Failed to write request to {:?}", output_request_file_path)
+                })?;
+
                 info!("Wallet sweep request saved to: {:?}", output_request_file_path);
                 info!("Distribute this file to other federation members via secure channels");
             }
             SweepSubcommands::AcceptRequest { request_file_path } => {
                 info!("Processing wallet sweep accept request from file: {:?}", request_file_path);
-                
+
                 // Load and validate the wallet sweep request
-                let request = WalletSweepRequest::from_json_file(request_file_path).await
-                    .wrap_err_with(|| format!("Failed to load wallet sweep request from {:?}", request_file_path))?;
-                
+                let request = WalletSweepRequest::from_json_file(request_file_path)
+                    .await
+                    .wrap_err_with(|| {
+                        format!("Failed to load wallet sweep request from {:?}", request_file_path)
+                    })?;
+
                 info!(
                     "Loaded wallet sweep request - Coordinator ID: {}, Destination: {}, Fee rate: {} sat/vB",
                     request.coordinator_id,
@@ -259,16 +275,18 @@ impl SweepCommand {
                 );
 
                 // Accept the wallet sweep session (creates session in btc-server)
-                request.accept(&mut btc_server_client).await
+                request
+                    .accept(&mut btc_server_client)
+                    .await
                     .wrap_err("Failed to accept wallet sweep session")?;
-                
+
                 info!("Wallet sweep session accepted and stored in btc-server");
 
                 // Check if we are the coordinator by comparing the coordinator signature
                 // We need to validate if this request was signed by our private key
-                let is_coordinator = Self::validate_coordinator_authority(&request, &mut btc_server_client)
-                    .await?;
-                
+                let is_coordinator =
+                    Self::validate_coordinator_authority(&request, &mut btc_server_client).await?;
+
                 if is_coordinator {
                     info!("We are the coordinator - wallet sweep session accepted");
                     info!("FROST task will automatically detect the session and create sweep PSBT");
@@ -283,8 +301,9 @@ impl SweepCommand {
             }
             SweepSubcommands::Psbt { request_file_path } => {
                 let request = WalletSweepRequest::from_json_file(request_file_path).await?;
+                let session = request.try_into()?;
 
-                let psbt = create_psbt_async(request, &mut btc_server_client).await.wrap_err_with(
+                let psbt = create_psbt_async(session, &mut btc_server_client).await.wrap_err_with(
                     || format!("Failed to create PSBT from request file {:?}", request_file_path),
                 )?;
 

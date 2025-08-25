@@ -16,27 +16,30 @@
 //! consistency across the federation.
 
 use crate::request::WalletSweepRequest;
-use bitcoin::hashes::Hash;
-use bitcoin::psbt::PsbtSighashType;
-use bitcoin::sighash::TapSighashType;
-use bitcoin::{Amount, FeeRate, OutPoint, Psbt, ScriptBuf, TxOut, Weight};
+use bitcoin::{
+    hashes::Hash, psbt::PsbtSighashType, sighash::TapSighashType, Amount, FeeRate, OutPoint, Psbt,
+    ScriptBuf, TxOut, Weight,
+};
+use botanix_storage::models::WalletSweepSession;
 use btc_server_client::{BtcServerExtendedApi, Empty};
 use std::collections::HashSet;
 use thiserror::Error;
 
 // Transaction size limits for reliable Bitcoin network propagation
 /// Maximum transaction weight for emergency sweeps (400,000 WU ≈ 100KB)
-/// Uses standard relay limit to ensure propagation across all nodes while maximizing UTXO throughput
+/// Uses standard relay limit to ensure propagation across all nodes while maximizing UTXO
+/// throughput
 pub const EMERGENCY_SWEEP_WEIGHT_LIMIT: u64 = 400_000;
 
 /// Taproot keyspend input weight using IDENTICAL calculations to btc-server
-/// - Base input: 36 bytes (outpoint) + 1 byte (scriptSig) + 4 bytes (sequence) = 164 WU  
+/// - Base input: 36 bytes (outpoint) + 1 byte (scriptSig) + 4 bytes (sequence) = 164 WU
 /// - Witness: TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT (65 WU) + witness item count (1 WU) = 66 WU
 /// - Total: 230 WU per input (matches btc-server calculations exactly)
 pub const TAPROOT_KEYSPEND_INPUT_WEIGHT: u64 = 230;
 
 /// Base transaction weight for emergency sweep transactions
-/// - Version (4) + locktime (4) + segwit flag/marker (2) + output count (1) + P2TR output (34) = 186 WU
+/// - Version (4) + locktime (4) + segwit flag/marker (2) + output count (1) + P2TR output (34) =
+///   186 WU
 /// - Input count encoding: 12 WU (supports up to 65535 inputs)
 pub const EMERGENCY_SWEEP_BASE_WEIGHT: u64 = 186;
 
@@ -163,7 +166,7 @@ struct SweepInput {
 /// # Returns
 /// A PSBT that sweeps all available UTXOs to the specified destination address
 pub async fn create_psbt_async(
-    request: WalletSweepRequest,
+    session: WalletSweepSession,
     client: &mut impl BtcServerExtendedApi,
 ) -> Result<Psbt, SweepError> {
     tracing::warn!("EMERGENCY: Starting wallet sweep PSBT creation");
@@ -190,7 +193,7 @@ pub async fn create_psbt_async(
         tracked_inputs.len()
     );
 
-    create_psbt_from_utxos(request, utxos, tracked_inputs)
+    create_psbt_from_utxos(session, utxos, tracked_inputs)
 }
 
 /// Creates an emergency wallet sweep PSBT from provided UTXO data
@@ -206,7 +209,7 @@ pub async fn create_psbt_async(
 /// # Returns
 /// A PSBT that sweeps the provided UTXOs to the specified destination address
 pub fn create_psbt_from_utxos(
-    request: WalletSweepRequest,
+    session: WalletSweepSession,
     available_utxos: Vec<btc_server_client::Utxo>,
     tracked_inputs: HashSet<OutPoint>,
 ) -> Result<Psbt, SweepError> {
@@ -216,23 +219,20 @@ pub fn create_psbt_from_utxos(
         return Err(SweepError::NoUtxos);
     }
 
-    // Validate request parameters
-    validate_request_parameters(&request)?;
-
     // Extract network from address instead of using separate field
     // TODO: Remove destination_network field from WalletSweepRequest in future commit
-    let destination_network = extract_network_from_address(&request.destination_address)?;
-    let destination_address = request
-        .destination_address
+    let destination_network = extract_network_from_address(&session.bitcoin_destination_address)?;
+    let destination_address = session
+        .bitcoin_destination_address
         .require_network(destination_network)
         .map_err(|e| SweepError::AddressValidation(e.to_string()))?;
 
     // Network validation (TODO: integrate with node configuration)
     validate_network_consistency(destination_network)?;
 
-    let fee_rate = FeeRate::from_sat_per_vb(request.fee_rate_sat_vb).ok_or_else(|| {
+    let fee_rate = FeeRate::from_sat_per_vb(session.fee_rate_sat_vb).ok_or_else(|| {
         SweepError::InvalidFeeRate {
-            fee_rate: request.fee_rate_sat_vb,
+            fee_rate: session.fee_rate_sat_vb,
             min: MIN_FEE_RATE_SAT_VB,
             max: MAX_FEE_RATE_SAT_VB,
         }
@@ -434,6 +434,8 @@ fn extract_tracked_outpoints(tracked_txs: &[btc_server_client::TrackedTx]) -> Ha
 /// Extracts the network from a Bitcoin address
 /// This eliminates the need for a separate destination_network field
 fn extract_network_from_address(
+    // TODO: You shouldn't accept ref and then clone inside (hidden clone). You need to accept
+    // owned value so you make it implicit
     address: &bitcoin::Address<bitcoin::address::NetworkUnchecked>,
 ) -> Result<bitcoin::Network, SweepError> {
     // Try parsing with different networks - this is the most reliable approach
@@ -444,6 +446,7 @@ fn extract_network_from_address(
         bitcoin::Network::Signet,
         bitcoin::Network::Regtest,
     ] {
+        // TODO: is_valid_for_network ?
         if let Ok(_) = address.clone().require_network(network) {
             return Ok(network);
         }
@@ -476,12 +479,13 @@ fn validate_network_consistency(destination_network: bitcoin::Network) -> Result
     Ok(())
 }
 
+// TODO: We should validate request before we accpet and on btc server side
 /// Validates request parameters for emergency wallet sweep
 fn validate_request_parameters(request: &WalletSweepRequest) -> Result<(), SweepError> {
     // Validate fee rate bounds
-    if request.fee_rate_sat_vb == 0
-        || request.fee_rate_sat_vb < MIN_FEE_RATE_SAT_VB
-        || request.fee_rate_sat_vb > MAX_FEE_RATE_SAT_VB
+    if request.fee_rate_sat_vb == 0 ||
+        request.fee_rate_sat_vb < MIN_FEE_RATE_SAT_VB ||
+        request.fee_rate_sat_vb > MAX_FEE_RATE_SAT_VB
     {
         return Err(SweepError::InvalidFeeRate {
             fee_rate: request.fee_rate_sat_vb,
@@ -757,8 +761,8 @@ fn calculate_transaction_fee(psbt: &Psbt, fee_rate: FeeRate) -> Result<Amount, S
 
     // Calculate total weight including signatures
     let num_inputs = psbt.inputs.len() as u64;
-    let total_signature_weight = (TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT
-        + WITNESS_ITEM_COUNT_WEIGHT)
+    let total_signature_weight = (TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT +
+        WITNESS_ITEM_COUNT_WEIGHT)
         .checked_mul(num_inputs)
         .ok_or(SweepError::WeightCalculationOverflow)?;
 
@@ -869,6 +873,27 @@ mod tests {
         }
     }
 
+    fn create_test_session() -> WalletSweepSession {
+        // Create a valid 64-byte coordinator signature for testing
+        let mut coordinator_signature = vec![0u8; 64];
+        for i in 0..64 {
+            coordinator_signature[i] = (i % 256) as u8;
+        }
+
+        WalletSweepSession {
+            coordinator_id: 1,
+            bitcoin_network: Network::Bitcoin,
+            bitcoin_destination_address: Address::from_str(
+                "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+            )
+            .unwrap()
+            .as_unchecked()
+            .clone(),
+            fee_rate_sat_vb: 10,
+            created_at: 1234567890,
+        }
+    }
+
     fn create_test_utxo(
         value_sats: u64,
         vout: u32,
@@ -948,14 +973,14 @@ mod tests {
     // Essential tests - core functionality and error handling
     #[test]
     fn test_empty_utxos() {
-        let request = create_test_request();
-        let result = create_psbt_from_utxos(request, vec![], HashSet::new());
+        let session = create_test_session();
+        let result = create_psbt_from_utxos(session, vec![], HashSet::new());
         assert!(matches!(result.unwrap_err(), SweepError::NoUtxos));
     }
 
     #[test]
     fn test_all_utxos_tracked() {
-        let request = create_test_request();
+        let session = create_test_session();
         let utxo = create_test_utxo(100_000, 0, None);
         let outpoint = OutPoint {
             txid: Txid::from_slice(&utxo.outpoint.as_ref().unwrap().txid).unwrap(),
@@ -963,17 +988,17 @@ mod tests {
         };
         let tracked_inputs = [outpoint].into_iter().collect();
 
-        let result = create_psbt_from_utxos(request, vec![utxo], tracked_inputs);
+        let result = create_psbt_from_utxos(session, vec![utxo], tracked_inputs);
         assert!(matches!(result.unwrap_err(), SweepError::NoAvailableUtxos));
     }
 
     #[test]
     fn test_basic_sweep_psbt_creation() {
-        let request = create_test_request();
+        let session = create_test_session();
         let utxos =
             vec![create_test_utxo(50_000, 0, None), create_test_utxo(100_000, 1, Some([0xaa; 20]))];
 
-        let psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
 
         assert_eq!(psbt.inputs.len(), 2);
         assert_eq!(psbt.outputs.len(), 1);
@@ -990,7 +1015,7 @@ mod tests {
 
     #[test]
     fn test_utxo_filtering() {
-        let request = create_test_request();
+        let session = create_test_session();
         let utxo1 = create_test_utxo(50_000, 0, None);
         let utxo2 = create_test_utxo(75_000, 1, None);
 
@@ -1000,7 +1025,7 @@ mod tests {
         };
 
         let tracked_inputs = [outpoint1].into_iter().collect();
-        let psbt = create_psbt_from_utxos(request, vec![utxo1, utxo2], tracked_inputs).unwrap();
+        let psbt = create_psbt_from_utxos(session, vec![utxo1, utxo2], tracked_inputs).unwrap();
 
         // Should only use utxo2
         assert_eq!(psbt.inputs.len(), 1);
@@ -1009,13 +1034,13 @@ mod tests {
 
     #[test]
     fn test_insufficient_funds() {
-        let request = WalletSweepRequest {
+        let session = WalletSweepSession {
             fee_rate_sat_vb: 500, // High but within bounds fee rate
-            ..create_test_request()
+            ..create_test_session()
         };
         let utxo = create_test_utxo(1_000, 0, None); // Small UTXO
 
-        let result = create_psbt_from_utxos(request, vec![utxo], HashSet::new());
+        let result = create_psbt_from_utxos(session, vec![utxo], HashSet::new());
         assert!(matches!(result.unwrap_err(), SweepError::InsufficientFunds { .. }));
     }
 
@@ -1040,11 +1065,11 @@ mod tests {
 
     #[test]
     fn test_psbt_metadata() {
-        let request = create_test_request();
+        let session = create_test_session();
         let eth_addr = [0xaa; 20];
         let utxo = create_test_utxo(100_000, 0, Some(eth_addr));
 
-        let psbt = create_psbt_from_utxos(request, vec![utxo], HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, vec![utxo], HashSet::new()).unwrap();
 
         // Test ETH address metadata
         let stored_eth_addr =
@@ -1091,13 +1116,13 @@ mod tests {
     // Size limiting tests
     #[test]
     fn test_size_limits_with_many_utxos() {
-        let request = create_test_request();
+        let session = create_test_session();
         // Create a moderate number of UTXOs to test size limiting
         let utxos: Vec<_> = (0..1500) // Use fewer UTXOs to stay within limits
             .map(|i| create_test_utxo(10_000, i as u32, None))
             .collect();
 
-        let psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
 
         // Should be limited appropriately
         assert!(psbt.inputs.len() <= MAX_EMERGENCY_SWEEP_INPUTS);
@@ -1119,10 +1144,10 @@ mod tests {
 
     #[test]
     fn test_transaction_weight_calculation() {
-        let request = create_test_request();
+        let session = create_test_session();
         let utxos = vec![create_test_utxo(50_000, 0, None), create_test_utxo(75_000, 1, None)];
 
-        let psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
         let weight = calculate_transaction_weight(&psbt).unwrap();
 
         // Weight should be reasonable for a 2-input transaction
@@ -1136,10 +1161,10 @@ mod tests {
 
     #[test]
     fn test_weight_limits_enforcement() {
-        let request = create_test_request();
+        let session = create_test_session();
         let utxos = vec![create_test_utxo(100_000, 0, None)];
 
-        let psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
 
         // Should pass size verification
         verify_transaction_size_limits(&psbt).unwrap();
@@ -1150,14 +1175,14 @@ mod tests {
 
     #[test]
     fn test_utxo_sorting_by_value() {
-        let request = create_test_request();
+        let session = create_test_session();
         let utxos = vec![
             create_test_utxo(10_000, 0, None),  // smallest
             create_test_utxo(100_000, 1, None), // largest
             create_test_utxo(50_000, 2, None),  // medium
         ];
 
-        let psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
 
         // Should have all 3 inputs since we're under limits
         assert_eq!(psbt.inputs.len(), 3);
@@ -1179,8 +1204,8 @@ mod tests {
         assert!(EMERGENCY_SWEEP_WEIGHT_LIMIT < 4_000_000); // Bitcoin consensus limit
 
         // Verify our calculation math
-        let estimated_max_inputs = (EMERGENCY_SWEEP_WEIGHT_LIMIT - EMERGENCY_SWEEP_BASE_WEIGHT)
-            / TAPROOT_KEYSPEND_INPUT_WEIGHT;
+        let estimated_max_inputs = (EMERGENCY_SWEEP_WEIGHT_LIMIT - EMERGENCY_SWEEP_BASE_WEIGHT) /
+            TAPROOT_KEYSPEND_INPUT_WEIGHT;
         assert!(MAX_EMERGENCY_SWEEP_INPUTS as u64 <= estimated_max_inputs);
     }
 
@@ -1210,19 +1235,20 @@ mod tests {
 
     #[test]
     fn test_dust_threshold_validation() {
-        let request = create_test_request();
+        let session = create_test_session();
 
         // Test dust threshold validation with P2WPKH destination address (294 sats dust threshold)
         // Using 5 sat/vB fee rate to calculate the required UTXO value that results in dust output
-        let dust_request = WalletSweepRequest {
+        let dust_session = WalletSweepSession {
             fee_rate_sat_vb: 5, // Low fee rate
-            ..request
+            ..session
         };
 
-        // Use a UTXO value that will result in an output below the dust threshold after fee deduction
+        // Use a UTXO value that will result in an output below the dust threshold after fee
+        // deduction
         let utxo = create_test_utxo(750, 0, None); // Should result in output < 294 sats (P2WPKH dust threshold)
 
-        let result = create_psbt_from_utxos(dust_request.clone(), vec![utxo], HashSet::new());
+        let result = create_psbt_from_utxos(dust_session.clone(), vec![utxo], HashSet::new());
 
         match result {
             Err(SweepError::OutputBelowDustThreshold { value, dust_threshold }) => {
@@ -1246,7 +1272,7 @@ mod tests {
                 // that should pass insufficient funds check but fail dust check
                 let slightly_larger_utxo = create_test_utxo(780, 0, None);
                 let result2 = create_psbt_from_utxos(
-                    dust_request.clone(),
+                    dust_session.clone(),
                     vec![slightly_larger_utxo],
                     HashSet::new(),
                 );
@@ -1285,13 +1311,13 @@ mod tests {
 
     #[test]
     fn test_value_overflow_validation() {
-        let request = create_test_request();
+        let session = create_test_session();
 
         // Create UTXO with value exceeding maximum Bitcoin value
         let mut utxo = create_test_utxo(1000, 0, None);
         utxo.output.as_mut().unwrap().value = MAX_BITCOIN_VALUE_SATS + 1;
 
-        let result = create_psbt_from_utxos(request, vec![utxo], HashSet::new());
+        let result = create_psbt_from_utxos(session, vec![utxo], HashSet::new());
 
         // Should fail due to invalid Bitcoin amount
         assert!(matches!(result.unwrap_err(), SweepError::InvalidBitcoinAmount { .. }));
@@ -1331,10 +1357,10 @@ mod tests {
 
     #[test]
     fn test_rbf_sequence_enabled() {
-        let request = create_test_request();
+        let session = create_test_session();
         let utxos = vec![create_test_utxo(100_000, 0, None)];
 
-        let psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
 
         // Verify RBF is enabled (sequence < 0xfffffffe)
         for input in &psbt.unsigned_tx.input {
@@ -1342,38 +1368,37 @@ mod tests {
             assert!(input.sequence.is_rbf());
         }
     }
+    //
+    // #[test]
+    // fn test_error_specificity() {
+    //     let session = WalletSweepSession {
+    //         coordinator_signature: vec![], // Empty signature should cause InvalidRequest
+    //         ..create_test_session()
+    //     };
+    //
+    //     let utxos = vec![create_test_utxo(100_000, 0, None)];
+    //     let result = create_psbt_from_utxos(session, utxos, HashSet::new());
+    //
+    //     // Should fail with InvalidRequest, not DataParsing
+    //     assert!(matches!(result.unwrap_err(), SweepError::InvalidRequest(_)));
+    // }
 
-    #[test]
-    fn test_error_specificity() {
-        let request = WalletSweepRequest {
-            coordinator_signature: vec![], // Empty signature should cause InvalidRequest
-            ..create_test_request()
-        };
-
-        let utxos = vec![create_test_utxo(100_000, 0, None)];
-        let result = create_psbt_from_utxos(request, utxos, HashSet::new());
-
-        // Should fail with InvalidRequest, not DataParsing
-        assert!(matches!(result.unwrap_err(), SweepError::InvalidRequest(_)));
-    }
-
-    #[test]
-    fn test_coordinator_signature_validation() {
-        // Test empty signature
-        let request_empty =
-            WalletSweepRequest { coordinator_signature: vec![], ..create_test_request() };
-        let utxos = vec![create_test_utxo(100_000, 0, None)];
-        let result = create_psbt_from_utxos(request_empty, utxos.clone(), HashSet::new());
-        assert!(matches!(result.unwrap_err(), SweepError::InvalidRequest(_)));
-
-        // Test short signature
-        let request_short = WalletSweepRequest {
-            coordinator_signature: vec![0x01, 0x02, 0x03], // Only 3 bytes
-            ..create_test_request()
-        };
-        let result = create_psbt_from_utxos(request_short, utxos, HashSet::new());
-        assert!(matches!(result.unwrap_err(), SweepError::InvalidRequest(_)));
-    }
+    // #[test]
+    // fn test_coordinator_signature_validation() {
+    //     // Test empty signature
+    //     let session_empty = WalletSweepSession { ..create_test_session() };
+    //     let utxos = vec![create_test_utxo(100_000, 0, None)];
+    //     let result = create_psbt_from_utxos(session_empty, utxos.clone(), HashSet::new());
+    //     assert!(matches!(result.unwrap_err(), SweepError::InvalidRequest(_)));
+    //
+    //     // Test short signature
+    //     let session_short = WalletSweepSession {
+    //         coordinator_signature: vec![0x01, 0x02, 0x03], // Only 3 bytes
+    //         ..create_test_session()
+    //     };
+    //     let result = create_psbt_from_utxos(session_short, utxos, HashSet::new());
+    //     assert!(matches!(result.unwrap_err(), SweepError::InvalidRequest(_)));
+    // }
 
     #[test]
     fn test_network_extraction_from_address() {
@@ -1404,12 +1429,12 @@ mod tests {
 
     #[test]
     fn test_network_validation() {
-        let request = create_test_request();
+        let session = create_test_session();
         let utxos = vec![create_test_utxo(100_000, 0, None)];
 
-        // The test address in create_test_request() is a mainnet address,
+        // The test address in create_test_session() is a mainnet address,
         // so network extraction should work correctly
-        let result = create_psbt_from_utxos(request, utxos, HashSet::new());
+        let result = create_psbt_from_utxos(session, utxos, HashSet::new());
 
         // Should either succeed or fail on other validation, but not on network extraction
         if let Err(e) = result {
@@ -1422,21 +1447,21 @@ mod tests {
 
     #[test]
     fn test_invalid_utxo_scenarios() {
-        let request = create_test_request();
+        let session = create_test_session();
 
         // Test UTXO with invalid script length (non-P2TR)
         let mut utxo = create_test_utxo(100_000, 0, None);
         // Create a non-P2TR script (P2PKH = 25 bytes)
         utxo.output.as_mut().unwrap().script_pubkey.as_mut().unwrap().script = vec![0; 25];
 
-        let result = create_psbt_from_utxos(request.clone(), vec![utxo], HashSet::new());
+        let result = create_psbt_from_utxos(session.clone(), vec![utxo], HashSet::new());
         assert!(matches!(result.unwrap_err(), SweepError::InvalidUtxo(_)));
 
         // Test UTXO with zero value
         let mut utxo_zero = create_test_utxo(100_000, 0, None);
         utxo_zero.output.as_mut().unwrap().value = 0;
 
-        let result = create_psbt_from_utxos(request.clone(), vec![utxo_zero], HashSet::new());
+        let result = create_psbt_from_utxos(session.clone(), vec![utxo_zero], HashSet::new());
         assert!(matches!(result.unwrap_err(), SweepError::InvalidUtxo(_)));
 
         // Test UTXO missing outpoint
@@ -1444,7 +1469,7 @@ mod tests {
         utxo_no_outpoint.outpoint = None;
 
         let result =
-            create_psbt_from_utxos(request.clone(), vec![utxo_no_outpoint], HashSet::new());
+            create_psbt_from_utxos(session.clone(), vec![utxo_no_outpoint], HashSet::new());
         assert!(matches!(result.unwrap_err(), SweepError::InvalidUtxo(_)));
     }
 
@@ -1453,24 +1478,24 @@ mod tests {
         let utxos = vec![create_test_utxo(100_000, 0, None)];
 
         // Test zero fee rate
-        let request_zero_fee = WalletSweepRequest { fee_rate_sat_vb: 0, ..create_test_request() };
-        let result = create_psbt_from_utxos(request_zero_fee, utxos.clone(), HashSet::new());
+        let session_zero_fee = WalletSweepSession { fee_rate_sat_vb: 0, ..create_test_session() };
+        let result = create_psbt_from_utxos(session_zero_fee, utxos.clone(), HashSet::new());
         assert!(matches!(result.unwrap_err(), SweepError::InvalidFeeRate { .. }));
 
         // Test fee rate below minimum
-        let request_low_fee = WalletSweepRequest {
+        let session_low_fee = WalletSweepSession {
             fee_rate_sat_vb: MIN_FEE_RATE_SAT_VB - 1,
-            ..create_test_request()
+            ..create_test_session()
         };
-        let result = create_psbt_from_utxos(request_low_fee, utxos.clone(), HashSet::new());
+        let result = create_psbt_from_utxos(session_low_fee, utxos.clone(), HashSet::new());
         assert!(matches!(result.unwrap_err(), SweepError::InvalidFeeRate { .. }));
 
         // Test fee rate above maximum
-        let request_high_fee = WalletSweepRequest {
+        let session_high_fee = WalletSweepSession {
             fee_rate_sat_vb: MAX_FEE_RATE_SAT_VB + 1,
-            ..create_test_request()
+            ..create_test_session()
         };
-        let result = create_psbt_from_utxos(request_high_fee, utxos, HashSet::new());
+        let result = create_psbt_from_utxos(session_high_fee, utxos, HashSet::new());
         assert!(matches!(result.unwrap_err(), SweepError::InvalidFeeRate { .. }));
     }
 
@@ -1478,14 +1503,14 @@ mod tests {
     fn test_transaction_too_large_scenario() {
         // This test is challenging because we need to create a scenario where
         // the PSBT passes initial size limits but fails final verification
-        let request = create_test_request();
+        let session = create_test_session();
 
         // Create exactly at the limit to test boundary conditions
         let max_utxos = MAX_EMERGENCY_SWEEP_INPUTS;
         let utxos: Vec<_> =
             (0..max_utxos).map(|i| create_test_utxo(10_000, i as u32, None)).collect();
 
-        let psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
 
         // Verify we're close to but under the limit
         let weight = calculate_transaction_weight(&psbt).unwrap();
@@ -1498,7 +1523,7 @@ mod tests {
 
     #[test]
     fn test_psbt_serialization_preserves_ethereum_addresses() {
-        let request = create_test_request();
+        let session = create_test_session();
 
         // Create UTXOs with different Ethereum addresses
         // Note: UTXOs are sorted by value (largest first), so 200k will be first
@@ -1511,7 +1536,7 @@ mod tests {
         ];
 
         // Create original PSBT
-        let original_psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let original_psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
 
         // Verify original PSBT has the expected metadata
         assert_eq!(original_psbt.inputs.len(), 3);
@@ -1663,14 +1688,14 @@ mod tests {
 
     #[test]
     fn test_psbt_base64_and_hex_encoding_compatibility() {
-        let request = create_test_request();
+        let session = create_test_session();
         let eth_addr = [
             0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
             0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
         ];
         let utxos = vec![create_test_utxo(100_000, 0, Some(eth_addr))];
 
-        let psbt = create_psbt_from_utxos(request, utxos, HashSet::new()).unwrap();
+        let psbt = create_psbt_from_utxos(session, utxos, HashSet::new()).unwrap();
         let psbt_bytes = psbt.serialize();
 
         // Test base64 encoding (current implementation)
