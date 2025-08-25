@@ -41,7 +41,7 @@ use reth_revm::primitives::FixedBytes;
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use tendermint_rpc::client::HttpClient;
 use tokio::sync::mpsc::{self, error::SendError};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 // TODO: @rwlock Combine with FrostTaskError?
 #[derive(Debug, thiserror::Error)]
@@ -210,7 +210,7 @@ where
                     let mut wallet_state_response = wallet_state_response.clone();
                     wallet_state_response.finalized_pegout_ids = prost_serialized_compressed;
 
-                    info!(target: "consensus::authority::frost_task::start_task", "Sending wallet state to peer {:?}", peer_data.peer_id);
+                    trace!(target: "consensus::authority::frost_task::start_task", "Sending wallet state to peer {:?}", peer_data.peer_id);
                     if let Err(e) = peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
                         PeerMessageResponse::WalletState(wallet_state_response),
                     )) {
@@ -225,9 +225,9 @@ where
             }
 
             if (received_healthy_chunks == total_expected_chunks) && is_final_chunk_received {
-                info!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received all chunks");
+                trace!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received all chunks");
             } else {
-                warn!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received {} out of {} chunks", received_healthy_chunks, total_expected_chunks);
+                trace!(target: "consensus::authority::forst_task::send_serialized_compressed_finalized_pegout_ids", "Received {} out of {} chunks", received_healthy_chunks, total_expected_chunks);
             }
         }
         Ok(())

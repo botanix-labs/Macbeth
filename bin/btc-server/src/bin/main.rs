@@ -914,7 +914,7 @@ where
         tokio::spawn(async move {
             let stream = db.get_finalized_pegout_ids_stream(request.chunk_size as usize);
             pin_mut!(stream);
-            info!("get_finalized_pegout_ids stream task: Created DB stream.");
+            trace!("get_finalized_pegout_ids stream task: Created DB stream.");
 
             while let Some(chunk_result) = stream.next().await {
                 trace!(
@@ -973,7 +973,7 @@ where
                     }
                 }
             }
-            info!("get_finalized_pegout_ids stream task: DB stream finished.");
+            trace!("get_finalized_pegout_ids stream task: DB stream finished.");
         });
 
         Ok(tonic::Response::new(ReceiverStream::new(rx)))
