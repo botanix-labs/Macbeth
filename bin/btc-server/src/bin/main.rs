@@ -802,7 +802,8 @@ where
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
         let pegouts = pegouts?;
-        // Check pegouts are not in the finalized pegout ids list or are tracked by the Pegout Scheduler
+        // Check pegouts are not in the finalized pegout ids list or are tracked by the Pegout
+        // Scheduler
         let mut broadcasted_pegout_ids: HashSet<_> =
             self.db.get_finalized_pegout_ids().to_status()?.iter().map(|p| p.id).collect();
         // Get Pegout Scheduler txs and add to hashset
