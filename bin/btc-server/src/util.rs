@@ -58,18 +58,11 @@ where
     }
 }
 
-/// The upper bound on pegouts in a single transaction. We use a _reasonable_
-/// number based on the following properties:
-///
-/// * Bitcoin's upper bound on a transaction is 100kb
-/// * 32 bytes required for an output (ie. pegout)
-/// * 110 bytes required for an input
-/// * We assume each output has an input
-///   * In practice, it's more likely that an individual input will map to multiple smaller outputs.
-///     But a larger output could also consume multiple inputs.
-///
-/// With a pegout bound of 500, we can conclude: (32 + 110) * 500 = 71_000
-pub const UPPER_PEGOUT_BOUND: usize = 500;
+/// Conservative cap to keep the system stable, as we haven't load-tested very large pegouts;
+/// Assuming an equal number of inputs and outputs, the bitcoin tx weight limit (400k) allows for a
+/// max of ~994 outputs (including one change output). Note: total tx weight is enforced when
+/// building the PSBT; this just blocks oversized requests early.
+pub const UPPER_PEGOUT_BOUND: usize = 100;
 
 /// Converts the BTC/kB fee rate as returned by the Bitcoin Core API endpoint
 /// `estimatesmartfee` to sat/vB.
