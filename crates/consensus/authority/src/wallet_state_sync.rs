@@ -456,7 +456,9 @@ where
             match canon_event {
                 CanonStateNotification::Commit { new, .. } => {
                     let tip = new.tip();
-                    if !tip.is_poa_epoch() || tip.header().number == 0 {
+                    if !tip.is_poa_epoch(storage.chain_spec.epoch_length) ||
+                        tip.header().number == 0
+                    {
                         continue;
                     }
                     // Request the wallet state from all peers for poa epoch blocks only

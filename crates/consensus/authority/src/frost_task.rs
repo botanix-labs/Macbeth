@@ -343,7 +343,7 @@ where
 
         // Check if this is an epoch block and if we are the coordinator. If
         // yes, initiate signing session.
-        if !header.is_poa_epoch() {
+        if !header.is_poa_epoch(self.storage.chain_spec.epoch_length) {
             return;
         }
 

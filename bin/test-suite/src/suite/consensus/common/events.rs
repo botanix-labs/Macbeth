@@ -3,7 +3,7 @@ use crate::{
     suite::consensus::common::poa_node::{is_dkg_ready, FederationMemberTestConfig, Notifications},
 };
 use client::SigningStatus;
-use reth_primitives::{constants::EPOCH_LENGTH, B256};
+use reth_primitives::B256;
 use std::collections::BTreeMap;
 
 pub fn get_unique_wallet_name() -> String {
@@ -77,7 +77,10 @@ pub async fn await_botanix_event(
     }
 }
 
-pub async fn await_epoch_block(rx: &mut tokio::sync::broadcast::Receiver<Notifications>) {
+pub async fn await_epoch_block(
+    rx: &mut tokio::sync::broadcast::Receiver<Notifications>,
+    epoch_length: u64,
+) {
     // wait for a few blocks to make sure the tx got included and mined
     while let Ok(notification) = rx.recv().await {
         if let Notifications::CanonState(canon_state_notification) = notification {
@@ -87,7 +90,7 @@ pub async fn await_epoch_block(rx: &mut tokio::sync::broadcast::Receiver<Notific
             );
 
             if canon_state_notification.block.number.map(|b| b.as_u64()).unwrap_or_default() %
-                EPOCH_LENGTH ==
+                epoch_length ==
                 0
             {
                 break;
