@@ -177,11 +177,6 @@ pub const BEACON_CONSENSUS_REORG_UNWIND_DEPTH: u64 = 3;
 /// <https://github.com/ethereum/go-ethereum/blob/a196f3e8a22b6ad22ced5c2e3baf32bc3ebd4ec9/consensus/ethash/consensus.go#L227-L229>
 pub const ALLOWED_FUTURE_BLOCK_TIME_SECONDS: u64 = 15;
 
-/// EIP-225: Clique Proof-of-Authority consensus protocol.
-///
-/// The number of blocks to reset pending votes.
-pub const EPOCH_LENGTH: u64 = 10;
-
 /// Minimum difference between two consecutive block’s timestamps.
 pub const BLOCK_PERIOD: u64 = 1000;
 
