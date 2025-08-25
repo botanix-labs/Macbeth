@@ -889,19 +889,25 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Spawn authority consensus specific tasks
         // federation mode tasks
-        // TODO  we should structure which tasks are spawned based on the node type using two
-        // different structs
-        if let Some(mut frost_task) = frost_task {
-            executor.spawn_critical(
-                "Frost Task",
-                Box::pin(async move {
-                    frost_task.start_task(abci_started_rx).await;
-                }),
-            );
-        }
+        if is_fed_node {
+            // TODO  we should structure which tasks are spawned based on the node type using two
+            // different structs
+            if let Some(mut frost_task) = frost_task {
+                executor.spawn_critical(
+                    "Frost Task",
+                    Box::pin(async move {
+                        frost_task.start_task(abci_started_rx).await;
+                    }),
+                );
+            } else {
+                panic!("Frost task must be initialized for federation node");
+            }
 
-        if let Some(mut wallet_sweep_task) = wallet_sweep_task {
-            executor.spawn_critical("Wallet Sweep Task", wallet_sweep_task.run());
+            if let Some(mut wallet_sweep_task) = wallet_sweep_task {
+                executor.spawn_critical("Wallet Sweep Task", wallet_sweep_task.run());
+            } else {
+                panic!("Wallet Sweep task must be initialized for federation node");
+            }
         }
 
         // NOTE: the node will block here until DKG has completed
