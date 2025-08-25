@@ -1220,7 +1220,8 @@ where
         // pegouts from the database.
 
         // Extract pegout ids from the psbt to store with the tx
-        if psbt.outputs.len() > UPPER_PEGOUT_BOUND {
+        if psbt.outputs.len() > UPPER_PEGOUT_BOUND + 1 {
+            // +1 for the change output
             return Err(badarg!("Too many pegouts in the psbt"));
         }
         let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
@@ -1382,7 +1383,7 @@ where
         info!(
             "[finalize_signing] Removing {} pending pegouts from DB: {:?}",
             pegout_ids.len(),
-            pegout_ids
+            pegout_ids.iter().map(|p| p.to_string()).collect::<Vec<String>>().join(", ")
         );
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
         // remove the pegouts from the telemetry gauge
@@ -1551,6 +1552,7 @@ where
             .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
         let change_script = wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
+        info!("make_tx: creating psbt with {} outputs", outputs.len());
         let psbt = match coordinator::make_tx(
             outputs,
             fee_rate,
