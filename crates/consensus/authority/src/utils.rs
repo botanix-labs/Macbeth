@@ -5,7 +5,6 @@ use bitcoin::{
     psbt::Psbt,
     witness::Witness,
     Address, Amount, BlockHash,
-
 };
 use botanix_authority_peg::{
     mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
@@ -21,9 +20,8 @@ use btcserverlib::{
     wallet::psbt::{PsbtExt, PsbtOutputExt},
 };
 use futures_util::Future;
-use reth_network::{NetworkHandle, NetworkInfo, frost::SigningPsbtType};
-use reth_primitives::{Bloom, BloomInput, TransactionSigned};
-use reth_primitives::constants::EPOCH_LENGTH;
+use reth_network::{frost::SigningPsbtType, NetworkHandle, NetworkInfo};
+use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
@@ -787,7 +785,8 @@ pub fn validate_psbt_id_by_maximum_cutoff_age(
     Ok(())
 }
 
-/// Validates a sweep PSBT by verifying it against the local wallet state with threshold-based validation.
+/// Validates a sweep PSBT by verifying it against the local wallet state with threshold-based
+/// validation.
 ///
 /// This function validates that a sweep PSBT is legitimate by:
 /// 1. Checking basic PSBT structure (inputs, outputs)
@@ -813,12 +812,12 @@ pub async fn validate_sweep_psbt(
     psbt: &Psbt,
 ) -> Result<(), PsbtValidationError> {
     use btc_server_client::Empty;
-    
+
     // Configuration constants for threshold-based validation
     const MIN_UTXO_MATCH_THRESHOLD: f64 = 0.80; // Require 80% of UTXOs to match local set
     const MIN_VALUE_MATCH_THRESHOLD: f64 = 0.90; // Require 90% of total value to match local set
     const ENABLE_SELECTION_LOGIC_VALIDATION: bool = true; // Compare against expected UTXO selection
-    
+
     // Basic PSBT structure validation (strict)
     if psbt.inputs.is_empty() {
         error!(target: "consensus::authority::utils::validate_sweep_psbt", "Sweep PSBT has no inputs");
@@ -835,15 +834,16 @@ pub async fn validate_sweep_psbt(
     }
 
     // Get local UTXO set and tracked transactions
-    let utxos_response = client
-        .get_all_utxos(Empty {})
-        .await
-        .map_err(|e| PsbtValidationError::FailedToValidatePsbtByIds(format!("Failed to get UTXOs: {}", e)))?;
-    
-    let tracked_txs_response = client
-        .get_tracked_txs(Empty {})
-        .await
-        .map_err(|e| PsbtValidationError::FailedToValidatePsbtByIds(format!("Failed to get tracked transactions: {}", e)))?;
+    let utxos_response = client.get_all_utxos(Empty {}).await.map_err(|e| {
+        PsbtValidationError::FailedToValidatePsbtByIds(format!("Failed to get UTXOs: {}", e))
+    })?;
+
+    let tracked_txs_response = client.get_tracked_txs(Empty {}).await.map_err(|e| {
+        PsbtValidationError::FailedToValidatePsbtByIds(format!(
+            "Failed to get tracked transactions: {}",
+            e
+        ))
+    })?;
 
     // Build set of tracked outpoints
     let tracked_inputs = extract_tracked_outpoints_from_response(&tracked_txs_response.tracked_txs);
@@ -869,18 +869,20 @@ pub async fn validate_sweep_psbt(
     for (input_index, psbt_input) in psbt.inputs.iter().enumerate() {
         let witness_utxo = psbt_input.witness_utxo.as_ref().ok_or_else(|| {
             PsbtValidationError::FailedToValidatePsbtByIds(format!(
-                "Input {} missing witness UTXO", input_index
+                "Input {} missing witness UTXO",
+                input_index
             ))
         })?;
 
         // Extract outpoint from the transaction input
         let tx_input = psbt.unsigned_tx.input.get(input_index).ok_or_else(|| {
             PsbtValidationError::FailedToValidatePsbtByIds(format!(
-                "Missing transaction input at index {}", input_index
+                "Missing transaction input at index {}",
+                input_index
             ))
         })?;
         let outpoint = tx_input.previous_output;
-        
+
         // Accumulate total PSBT value
         total_psbt_value += witness_utxo.value;
 
@@ -888,7 +890,8 @@ pub async fn validate_sweep_psbt(
         if tracked_inputs.contains(&outpoint) {
             error!(target: "consensus::authority::utils::validate_sweep_psbt", "Input {} ({}) is currently being tracked/spent", input_index, outpoint);
             return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
-                "Input {} ({}) is currently being tracked/spent and cannot be swept", input_index, outpoint
+                "Input {} ({}) is currently being tracked/spent and cannot be swept",
+                input_index, outpoint
             )));
         }
 
@@ -902,7 +905,10 @@ pub async fn validate_sweep_psbt(
                 if witness_utxo.value.to_sat() != local_output_proto.value {
                     error!(target: "consensus::authority::utils::validate_sweep_psbt", "Input {} value mismatch: PSBT has {}, local has {}", input_index, witness_utxo.value.to_sat(), local_output_proto.value);
                     return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
-                        "Input {} value mismatch: PSBT has {}, local UTXO has {}", input_index, witness_utxo.value.to_sat(), local_output_proto.value
+                        "Input {} value mismatch: PSBT has {}, local UTXO has {}",
+                        input_index,
+                        witness_utxo.value.to_sat(),
+                        local_output_proto.value
                     )));
                 }
 
@@ -910,21 +916,24 @@ pub async fn validate_sweep_psbt(
                     if witness_utxo.script_pubkey.as_bytes() != script_proto.script.as_slice() {
                         error!(target: "consensus::authority::utils::validate_sweep_psbt", "Input {} script mismatch", input_index);
                         return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
-                            "Input {} script pubkey mismatch", input_index
+                            "Input {} script pubkey mismatch",
+                            input_index
                         )));
                     }
                 }
             }
         } else {
             // UTXO not found in local set - this is allowed under threshold validation
-            validation_warnings.push(format!("Input {} ({}) not found in local UTXO set", input_index, outpoint));
+            validation_warnings
+                .push(format!("Input {} ({}) not found in local UTXO set", input_index, outpoint));
         }
 
         // Validate that input is taproot (strict)
         if !witness_utxo.script_pubkey.is_p2tr() {
             error!(target: "consensus::authority::utils::validate_sweep_psbt", "Input {} is not taproot", input_index);
             return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
-                "Input {} is not taproot (emergency sweep only supports taproot)", input_index
+                "Input {} is not taproot (emergency sweep only supports taproot)",
+                input_index
             )));
         }
     }
@@ -939,65 +948,74 @@ pub async fn validate_sweep_psbt(
     };
 
     if utxo_match_ratio < MIN_UTXO_MATCH_THRESHOLD {
-        error!(target: "consensus::authority::utils::validate_sweep_psbt", 
-               "UTXO match ratio {:.2}% below threshold {:.2}% ({}/{} inputs matched)", 
+        error!(target: "consensus::authority::utils::validate_sweep_psbt",
+               "UTXO match ratio {:.2}% below threshold {:.2}% ({}/{} inputs matched)",
                utxo_match_ratio * 100.0, MIN_UTXO_MATCH_THRESHOLD * 100.0, matched_inputs, total_inputs);
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
-            "Insufficient UTXO overlap: {:.1}% matched (threshold: {:.1}%)", 
-            utxo_match_ratio * 100.0, MIN_UTXO_MATCH_THRESHOLD * 100.0
+            "Insufficient UTXO overlap: {:.1}% matched (threshold: {:.1}%)",
+            utxo_match_ratio * 100.0,
+            MIN_UTXO_MATCH_THRESHOLD * 100.0
         )));
     }
 
     if value_match_ratio < MIN_VALUE_MATCH_THRESHOLD {
-        error!(target: "consensus::authority::utils::validate_sweep_psbt", 
-               "Value match ratio {:.2}% below threshold {:.2}% ({} of {} sats matched)", 
-               value_match_ratio * 100.0, MIN_VALUE_MATCH_THRESHOLD * 100.0, 
+        error!(target: "consensus::authority::utils::validate_sweep_psbt",
+               "Value match ratio {:.2}% below threshold {:.2}% ({} of {} sats matched)",
+               value_match_ratio * 100.0, MIN_VALUE_MATCH_THRESHOLD * 100.0,
                matched_value.to_sat(), total_psbt_value.to_sat());
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
-            "Insufficient value overlap: {:.1}% matched (threshold: {:.1}%)", 
-            value_match_ratio * 100.0, MIN_VALUE_MATCH_THRESHOLD * 100.0
+            "Insufficient value overlap: {:.1}% matched (threshold: {:.1}%)",
+            value_match_ratio * 100.0,
+            MIN_VALUE_MATCH_THRESHOLD * 100.0
         )));
     }
 
     // Optional: Validate against expected UTXO selection logic
     if ENABLE_SELECTION_LOGIC_VALIDATION {
-        if let Err(selection_warning) = validate_utxo_selection_logic(psbt, &utxos_response.utxos, &tracked_inputs).await {
+        if let Err(selection_warning) =
+            validate_utxo_selection_logic(psbt, &utxos_response.utxos, &tracked_inputs).await
+        {
             // Log as warning but don't fail validation - selection differences are acceptable
-            warn!(target: "consensus::authority::utils::validate_sweep_psbt", 
+            warn!(target: "consensus::authority::utils::validate_sweep_psbt",
                   "UTXO selection differs from expected: {}", selection_warning);
         }
     }
 
     // Validate fee calculation (strict)
     let fee = psbt.fee().map_err(|e| {
-        PsbtValidationError::FailedToValidatePsbtByIds(format!("Failed to calculate PSBT fee: {}", e))
+        PsbtValidationError::FailedToValidatePsbtByIds(format!(
+            "Failed to calculate PSBT fee: {}",
+            e
+        ))
     })?;
 
     if fee <= bitcoin::Amount::ZERO {
         error!(target: "consensus::authority::utils::validate_sweep_psbt", "Sweep PSBT has non-positive fee: {}", fee);
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
-            "Sweep PSBT must have positive fee, got: {}", fee
+            "Sweep PSBT must have positive fee, got: {}",
+            fee
         )));
     }
 
     // Validate that the output amount is reasonable (total inputs - fee)
     let expected_output_value = total_psbt_value - fee;
     let actual_output_value = psbt.unsigned_tx.output[0].value;
-    
+
     if actual_output_value != expected_output_value {
         error!(target: "consensus::authority::utils::validate_sweep_psbt", "Output value mismatch: expected {}, got {}", expected_output_value, actual_output_value);
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(format!(
-            "Output value mismatch: expected {}, got {}", expected_output_value, actual_output_value
+            "Output value mismatch: expected {}, got {}",
+            expected_output_value, actual_output_value
         )));
     }
 
     // Log validation results
-    info!(target: "consensus::authority::utils::validate_sweep_psbt", 
-          "Sweep PSBT validation successful: {} inputs ({:.1}% matched), fee: {}, output: {}", 
+    info!(target: "consensus::authority::utils::validate_sweep_psbt",
+          "Sweep PSBT validation successful: {} inputs ({:.1}% matched), fee: {}, output: {}",
           psbt.inputs.len(), utxo_match_ratio * 100.0, fee, actual_output_value);
-    
+
     if !validation_warnings.is_empty() {
-        warn!(target: "consensus::authority::utils::validate_sweep_psbt", 
+        warn!(target: "consensus::authority::utils::validate_sweep_psbt",
               "Validation warnings: {}", validation_warnings.join("; "));
     }
 
@@ -1005,7 +1023,9 @@ pub async fn validate_sweep_psbt(
 }
 
 /// Extracts outpoints from tracked transactions response (helper function)
-fn extract_tracked_outpoints_from_response(tracked_txs: &[btc_server_client::TrackedTx]) -> std::collections::HashSet<bitcoin::OutPoint> {
+fn extract_tracked_outpoints_from_response(
+    tracked_txs: &[btc_server_client::TrackedTx],
+) -> std::collections::HashSet<bitcoin::OutPoint> {
     tracked_txs
         .iter()
         .filter_map(|tracked_tx| tracked_tx.tx.as_ref())
@@ -1038,16 +1058,14 @@ async fn validate_utxo_selection_logic(
     tracked_inputs: &std::collections::HashSet<bitcoin::OutPoint>,
 ) -> Result<(), String> {
     use std::collections::HashSet;
-    
+
     // Extract outpoints from PSBT
-    let psbt_outpoints: HashSet<bitcoin::OutPoint> = psbt.unsigned_tx.input
-        .iter()
-        .map(|input| input.previous_output)
-        .collect();
+    let psbt_outpoints: HashSet<bitcoin::OutPoint> =
+        psbt.unsigned_tx.input.iter().map(|input| input.previous_output).collect();
 
     // Apply the same filtering and sorting logic as in PSBT creation
     let mut local_spendable_utxos = Vec::new();
-    
+
     for utxo in available_utxos {
         // Skip if missing required fields
         let outpoint_proto = match utxo.outpoint.as_ref() {
@@ -1058,24 +1076,24 @@ async fn validate_utxo_selection_logic(
             Some(output) => output,
             None => continue,
         };
-        
+
         // Parse outpoint
         let txid = match bitcoin::Txid::from_slice(&outpoint_proto.txid) {
             Ok(txid) => txid,
             Err(_) => continue,
         };
         let outpoint = bitcoin::OutPoint { txid, vout: outpoint_proto.vout };
-        
+
         // Skip if tracked
         if tracked_inputs.contains(&outpoint) {
             continue;
         }
-        
+
         // Skip if zero value
         if output_proto.value == 0 {
             continue;
         }
-        
+
         // Skip if not taproot (basic validation)
         if let Some(script_proto) = &output_proto.script_pubkey {
             let script = bitcoin::ScriptBuf::from_bytes(script_proto.script.clone());
@@ -1083,10 +1101,10 @@ async fn validate_utxo_selection_logic(
                 continue;
             }
         }
-        
+
         local_spendable_utxos.push((outpoint, output_proto.value));
     }
-    
+
     // Sort by value descending (same as PSBT creation logic)
     local_spendable_utxos.sort_by(|a, b| {
         let value_cmp = b.1.cmp(&a.1);
@@ -1096,7 +1114,7 @@ async fn validate_utxo_selection_logic(
         // Secondary sort by outpoint for determinism
         a.0.cmp(&b.0)
     });
-    
+
     // Apply size limits (same constants as PSBT creation)
     // Calculate max inputs: (400,000 - 320) / 230 * 0.95 ≈ 1739
     const EMERGENCY_SWEEP_WEIGHT_LIMIT: u64 = 400_000;
@@ -1108,25 +1126,25 @@ async fn validate_utxo_selection_logic(
         let safety_margin = theoretical_max / 20; // 5% margin
         (theoretical_max - safety_margin) as usize
     };
-    
+
     if local_spendable_utxos.len() > MAX_EMERGENCY_SWEEP_INPUTS {
         local_spendable_utxos.truncate(MAX_EMERGENCY_SWEEP_INPUTS);
     }
-    
+
     // Check overlap with PSBT selection
     let expected_outpoints: HashSet<bitcoin::OutPoint> = local_spendable_utxos
         .into_iter()
         .take(psbt_outpoints.len()) // Take same number as in PSBT
         .map(|(outpoint, _)| outpoint)
         .collect();
-    
+
     let overlap_count = psbt_outpoints.intersection(&expected_outpoints).count();
-    let overlap_ratio = if psbt_outpoints.is_empty() { 
-        1.0 
-    } else { 
-        overlap_count as f64 / psbt_outpoints.len() as f64 
+    let overlap_ratio = if psbt_outpoints.is_empty() {
+        1.0
+    } else {
+        overlap_count as f64 / psbt_outpoints.len() as f64
     };
-    
+
     // Allow for reasonable differences in UTXO selection (70% overlap is acceptable)
     const MIN_SELECTION_OVERLAP: f64 = 0.70;
     if overlap_ratio < MIN_SELECTION_OVERLAP {
@@ -1135,7 +1153,7 @@ async fn validate_utxo_selection_logic(
             overlap_ratio * 100.0, MIN_SELECTION_OVERLAP * 100.0, overlap_count, psbt_outpoints.len()
         ));
     }
-    
+
     Ok(())
 }
 
@@ -1146,18 +1164,14 @@ pub async fn validate_psbt_by_type<T, U>(
     btc_network: bitcoin::Network,
     psbt: &Psbt,
     psbt_type: SigningPsbtType,
-) -> Result<(), PsbtValidationError> 
+) -> Result<(), PsbtValidationError>
 where
     T: ReceiptProvider + TransactionsProvider + HeaderProvider + Clone,
     U: BtcServerExtendedApi,
 {
     match psbt_type {
-        SigningPsbtType::Pegout => {
-            validate_psbt_by_ids(reth_client, btc_network, psbt).await
-        }
-        SigningPsbtType::Sweep => {
-            validate_sweep_psbt(btc_client, btc_network, psbt).await
-        }
+        SigningPsbtType::Pegout => validate_psbt_by_ids(reth_client, btc_network, psbt).await,
+        SigningPsbtType::Sweep => validate_sweep_psbt(btc_client, btc_network, psbt).await,
     }
 }
 
