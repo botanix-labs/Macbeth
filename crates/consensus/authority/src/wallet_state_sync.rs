@@ -270,7 +270,7 @@ where
             loop {
                 match peer_messages_rx.recv().await {
                     Some(peer_message_context) => {
-                        info!(target: "consensus::authority::sync_wallet_state", "Received wallet state from peer {:?}", peer_message_context.peer_id);
+                        trace!(target: "consensus::authority::sync_wallet_state", "Received wallet state from peer {:?}", peer_message_context.peer_id);
                         // Note: we ignore empty messages bc they are peer requests for wallet state
                         // which are handled by the frost task or are malicious/faulty requests
                         // that would cause the btc-server to wipe its state
@@ -346,7 +346,7 @@ where
                                                 finalized_pegout_ids_decompressed.data.into_iter().map(|pid | (pid.botanix_block_height, Bytes::from(pid.id))).collect::<Vec<_>>(),
                                             ) {
                                                 Ok(_) => {
-                                                    info!(target: "consensus::authority::sync_wallet_state", "Appended data to state sync record");
+                                                    trace!(target: "consensus::authority::sync_wallet_state", "Appended data to state sync record");
                                                 }
                                                 Err(e) => {
                                                     error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to append data to state sync record");
@@ -364,7 +364,7 @@ where
                                                 Some(finalized_pegout_ids_decompressed.data.into_iter().map(|pid| (pid.botanix_block_height, Bytes::from(pid.id))).collect::<Vec<_>>()),
                                             ) {
                                                 Ok(_) => {
-                                                    info!(target: "consensus::authority::sync_wallet_state", "Created new state sync record");
+                                                    trace!(target: "consensus::authority::sync_wallet_state", "Created new state sync record");
                                                 }
                                                 Err(e) => {
                                                     error!(target: "consensus::authority::sync_wallet_state", ?e, "Failed to create new state sync record");
@@ -403,7 +403,7 @@ where
                                                 })
                                                 .collect::<Vec<_>>();
 
-                                                info!(target: "consensus::authority::sync_wallet_state", "Found minimum superset, notifying frost manager");
+                                                trace!(target: "consensus::authority::sync_wallet_state", "Found minimum superset, notifying frost manager");
                                                 // Report to btc server to resync the wallet state
                                                 match btc_server
                                                     .reset_wallet_state(ResetWalletStateRequest {
