@@ -464,21 +464,19 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     }
 
     // check outputs are not in finalized pegouts list
-    let finalized_pegouts_ids = db
-        .get_finalized_pegout_ids()?
-        .into_iter()
-        .map(|id| (id.id, id.timestamp))
-        .collect::<Vec<_>>();
-
+    let finalized_pegouts_ids =
+        db.get_finalized_pegout_ids()?.into_iter().map(|id| id.id).collect::<Vec<_>>();
     for id in &psbt_pegout_ids {
         let finalized_pegouts_id = finalized_pegouts_ids
             .iter()
-            .find(|(finalized_pegouts_id, _)| finalized_pegouts_id == id)
+            .find(|finalized_pegouts_id| *finalized_pegouts_id == id)
             .cloned();
 
         if finalized_pegouts_id.is_some() {
             // Remove the finalized pegout id from the list of pending pegouts so it does not get
             // processed again.
+            info!("Finalized pegout id txid hash: {}", hex::encode(id.txid));
+            info!("Finalized pegout id tx receipt log index: {}", id.idx);
             db.remove_pending_pegout(&[*id]).ok();
             return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
         }
