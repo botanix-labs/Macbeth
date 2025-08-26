@@ -7,11 +7,14 @@ use bitcoin::{
 };
 use botanix_configs::federation::FederationTomlConfig;
 use botanix_wallet_sweep::{create_psbt_async, request::DestinationConfig, WalletSweepRequest};
-use btc_server_client::{jwt::JwtSecret, BtcServerExtendedApi, Empty, GrpcClientFactory};
+use btc_server_client::{
+    jwt::JwtSecret, AbortWalletSweepSessionRequest, BtcServerExtendedApi, Empty, GrpcClientFactory,
+};
 use clap::{Parser, Subcommand};
 use eyre::WrapErr;
 use reth_cli_runner::CliContext;
 
+use reth_primitives::hex;
 use std::{fs, net::SocketAddr, path::PathBuf, str::FromStr};
 use tracing::{info, warn};
 
@@ -75,6 +78,8 @@ pub enum SweepSubcommands {
         #[arg(long, value_parser = parse_file_exists)]
         request_file_path: PathBuf,
     },
+    #[command()]
+    Abort,
 }
 
 /// Destination configuration options for wallet sweep operations
@@ -323,6 +328,26 @@ impl SweepCommand {
                     format!("Failed to write PSBT to file {:?}", psbt_filename)
                 })?;
                 info!("PSBT saved to: {:?}", psbt_filename);
+            }
+            SweepSubcommands::Abort => {
+                info!("Cancelling any existing wallet sweep session",);
+
+                // Abort the wallet sweep session
+                let request = AbortWalletSweepSessionRequest {};
+
+                let response = btc_server_client
+                    .abort_wallet_sweep_session(request)
+                    .await
+                    .wrap_err("Failed to accept wallet sweep session")?;
+
+                if response.session_id.is_empty() {
+                    info!("No active wallet sweep session to abort");
+                } else {
+                    info!(
+                        "Aborted wallet sweep session with ID: {}",
+                        hex::encode(&response.session_id)
+                    );
+                }
             }
         }
 

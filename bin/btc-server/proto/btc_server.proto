@@ -70,6 +70,9 @@ service BtcServer {
 
     // Streaming endpoint to sync the wallet sweep session with poa node.
     rpc SubscribeToWalletSweepSessionUpdates(WalletSweepSessionUpdatesRequest) returns (stream WalletSweepSessionUpdateResponse) {}
+
+    // This method must be called by all signers, including coordinator to abort the wallet sweep session.
+    rpc AbortWalletSweepSession(AbortWalletSweepSessionRequest) returns (AbortWalletSweepSessionResponse) {}
 }
 
 message PendingPegout {
@@ -298,6 +301,13 @@ message WalletSweepSessionUpdatesRequest {
 message WalletSweepSessionUpdateResponse {
     bytes session_id = 1;
     bytes session_bytes = 2;
+}
+
+message AbortWalletSweepSessionRequest {
+}
+
+message AbortWalletSweepSessionResponse {
+    bytes session_id = 1;
 }
 
 enum SigningStatus {

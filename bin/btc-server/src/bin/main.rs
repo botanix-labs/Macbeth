@@ -63,7 +63,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use thiserror::Error;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{mpsc::error::SendError, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{
     codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server, Request,
@@ -2263,29 +2263,28 @@ where
 
         debug!("subscribe_to_wallet_sweep_session_updates: new client connected");
 
-        // Send an update message if we have an existing wallet sweep session
-        match db.get_wallet_sweep_session_bytes() {
-            Ok(Some((session_id_bytes, session_bytes))) => {
-                match tx.blocking_send(Ok(WalletSweepSessionUpdateResponse {
-                    session_id: session_id_bytes.to_vec(),
-                    session_bytes: session_bytes.to_vec(),
-                })) {
-                    Ok(_) => {
-                        trace!("subscribe_to_wallet_sweep_session_updates: sent existing wallet sweep session update")
-                    }
-                    Err(_) => {
-                        debug!("subscribe_to_wallet_sweep_session_updates: client disconnected before sending existing wallet sweep session update");
-
-                        receiver_stream.close();
-
-                        return Ok(Response::new(receiver_stream));
-                    }
-                }
-            }
-            // TODO: We need to send empty status as well
-            Ok(None) => {}
+        // Send a first update message to broadcast the current state
+        let first_update_request = match db.get_wallet_sweep_session_bytes() {
+            Ok(Some((session_id_bytes, session_bytes))) => WalletSweepSessionUpdateResponse {
+                session_id: session_id_bytes.to_vec(),
+                session_bytes: session_bytes.to_vec(),
+            },
+            Ok(None) => WalletSweepSessionUpdateResponse::default(),
             Err(_) => {
                 error!("subscribe_to_wallet_sweep_session_updates: failed to get existing wallet sweep session bytes");
+
+                receiver_stream.close();
+
+                return Ok(Response::new(receiver_stream));
+            }
+        };
+
+        match tx.blocking_send(Ok(first_update_request)) {
+            Ok(_) => {
+                trace!("subscribe_to_wallet_sweep_session_updates: sent existing wallet sweep session update")
+            }
+            Err(_) => {
+                debug!("subscribe_to_wallet_sweep_session_updates: client disconnected before sending existing wallet sweep session update");
 
                 receiver_stream.close();
 
@@ -2297,26 +2296,23 @@ where
             let mut subscriber = db.subscribe_to_wallet_sweep_session_updates();
 
             while let Some(event) = (&mut subscriber).await {
-                // TODO: We need to send remove as well
-                if let Event::Insert { key, value } = event {
-                    match tx
-                        .send(Ok(WalletSweepSessionUpdateResponse {
-                            session_id: key.to_vec(),
-                            session_bytes: value.to_vec(),
-                        }))
-                        .await
-                    {
-                        Ok(_) => {
-                            trace!("subscribe_to_wallet_sweep_session_updates: sent wallet sweep session update")
-                        }
-                        Err(_) => {
-                            debug!(
-                                "subscribe_to_wallet_sweep_session_updates: client disconnected"
-                            );
-                            break;
-                        }
-                    }
+                let update_request = match event {
+                    Event::Insert { key, value } => WalletSweepSessionUpdateResponse {
+                        session_id: key.to_vec(),
+                        session_bytes: value.to_vec(),
+                    },
+                    Event::Remove { .. } => WalletSweepSessionUpdateResponse::default(),
                 };
+
+                match tx.send(Ok(update_request)).await {
+                    Ok(_) => {
+                        trace!("subscribe_to_wallet_sweep_session_updates: sent wallet sweep session update")
+                    }
+                    Err(_) => {
+                        debug!("subscribe_to_wallet_sweep_session_updates: client disconnected");
+                        break;
+                    }
+                }
             }
 
             debug!("subscribe_to_wallet_sweep_session_updates: client disconnected");
@@ -2349,6 +2345,28 @@ where
             .to_status()?;
 
         Ok(Response::new(AcceptWalletSweepSessionResponse {}))
+    }
+
+    async fn abort_wallet_sweep_session(
+        &self,
+        rpc_request: Request<AbortWalletSweepSessionRequest>,
+    ) -> Result<Response<AbortWalletSweepSessionResponse>, Status> {
+        self.validate_jwt(&rpc_request)?;
+
+        let current_session_id = self
+            .db
+            .get_wallet_sweep_session_bytes()
+            .wrap_err("failed to get wallet sweep session")
+            .to_status()?
+            .map(|(session_id, _)| session_id.to_vec())
+            .unwrap_or_default();
+
+        self.db
+            .clear_wallet_sweep_session()
+            .wrap_err("failed to clear wallet sweep session")
+            .to_status()?;
+
+        Ok(Response::new(AbortWalletSweepSessionResponse { session_id: current_session_id }))
     }
 
     async fn recover_missing_utxos(

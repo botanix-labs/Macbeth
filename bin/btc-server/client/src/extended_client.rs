@@ -2,6 +2,7 @@
 
 use crate::{
     btc_server::{
+        AbortWalletSweepSessionRequest, AbortWalletSweepSessionResponse,
         ConsensusCheckpointRequest, DkgPayload, DkgPayloads, Empty, FinalizeSignerRequest,
         FinalizeSigningRequest, FinalizeSigningResponse, GetAllUtxosResponse,
         GetFinalizedPegoutIdsRequest, GetFinalizedPegoutIdsResponse, GetGatewayAddressRequest,
@@ -179,6 +180,11 @@ pub trait BtcServerExtendedApi: Clone + Send + Sync + 'static {
             GrpcClientError,
         >,
     >;
+
+    fn abort_wallet_sweep_session(
+        &mut self,
+        request: AbortWalletSweepSessionRequest,
+    ) -> BoxFuture<'_, Result<AbortWalletSweepSessionResponse, GrpcClientError>>;
 }
 
 /// Macros for generating grpc methods implementation
@@ -320,6 +326,11 @@ impl BtcServerExtendedApi for BtcServerExtendedClient {
         subscribe_to_wallet_sweep_session_updates,
         WalletSweepSessionUpdatesRequest,
         WalletSweepSessionUpdateResponse
+    );
+    generate_method!(
+        abort_wallet_sweep_session,
+        AbortWalletSweepSessionRequest,
+        AbortWalletSweepSessionResponse
     );
 }
 

@@ -579,6 +579,16 @@ impl<DB: Database> WalletSweepSessionWriter for BotanixProviderFactory<DB> {
 
         Ok(session_id)
     }
+
+    fn clear_wallet_sweep_session(&self) -> ProviderResult<Option<WalletSweepSessionId>> {
+        let provider = self.provider_rw()?;
+
+        let session_id = provider.clear_wallet_sweep_session()?;
+
+        provider.commit()?;
+
+        Ok(session_id)
+    }
 }
 
 #[cfg(test)]

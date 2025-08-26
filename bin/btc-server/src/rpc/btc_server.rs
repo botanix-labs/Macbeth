@@ -310,6 +310,13 @@ pub struct WalletSweepSessionUpdateResponse {
     #[prost(bytes = "vec", tag = "2")]
     pub session_bytes: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct AbortWalletSweepSessionRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AbortWalletSweepSessionResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub session_id: ::prost::alloc::vec::Vec<u8>,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SigningStatus {
@@ -526,6 +533,14 @@ pub mod btc_server_server {
             request: tonic::Request<super::WalletSweepSessionUpdatesRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::SubscribeToWalletSweepSessionUpdatesStream>,
+            tonic::Status,
+        >;
+        /// This method must be called by all signers, including coordinator to abort the wallet sweep session.
+        async fn abort_wallet_sweep_session(
+            &self,
+            request: tonic::Request<super::AbortWalletSweepSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AbortWalletSweepSessionResponse>,
             tonic::Status,
         >;
     }
@@ -1827,6 +1842,57 @@ pub mod btc_server_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/btc_server.BtcServer/AbortWalletSweepSession" => {
+                    #[allow(non_camel_case_types)]
+                    struct AbortWalletSweepSessionSvc<T: BtcServer>(pub Arc<T>);
+                    impl<
+                        T: BtcServer,
+                    > tonic::server::UnaryService<super::AbortWalletSweepSessionRequest>
+                    for AbortWalletSweepSessionSvc<T> {
+                        type Response = super::AbortWalletSweepSessionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::AbortWalletSweepSessionRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as BtcServer>::abort_wallet_sweep_session(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = AbortWalletSweepSessionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

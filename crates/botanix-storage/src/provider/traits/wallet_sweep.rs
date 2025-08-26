@@ -51,4 +51,11 @@ pub trait WalletSweepSessionWriter: Send + Sync {
         &self,
         session: WalletSweepSession,
     ) -> ProviderResult<WalletSweepSessionId>;
+
+    /// Removes the current wallet sweep session from storage.
+    ///
+    /// # Returns
+    ///
+    /// Returns the ID of the stored session on success.
+    fn clear_wallet_sweep_session(&self) -> ProviderResult<Option<WalletSweepSessionId>>;
 }
