@@ -2,16 +2,11 @@
 use core::fmt;
 use std::str::FromStr;
 
-use crate::frost::SigningPsbtType;
 use reth_eth_wire::{protocol::Protocol, Capability};
 use reth_network_peers::PeerId;
 use reth_primitives::{Buf, BufMut, BytesMut};
 
 const MESSAGE_VERSION: usize = 0;
-
-const SIGN_REQUEST_MESSAGE_VERSION_0: usize = 0;
-const SIGN_REQUEST_MESSAGE_VERSION_1: usize = 1;
-
 const WALLET_STATE_MESSAGE_VERSION: usize = 0;
 
 /// A structured frost DKG message
@@ -44,21 +39,13 @@ pub struct SignRequest {
     pub signing_session_id: Vec<u8>,
     /// Frost data
     pub psbt: Vec<u8>,
-    /// The type of the PSBT
-    /// New field added to distinguish between different PSBT types when we introduced
-    /// wallet sweep functionality. This field defaults to `Pegout` for backward compatibility.
-    pub psbt_type: SigningPsbtType,
 }
 
 impl SignRequest {
     /// Constructs a new sign Request using a frost identifier, signing session id and a psbt
     /// payload.
-    pub const fn new(
-        signing_session_id: Vec<u8>,
-        psbt: Vec<u8>,
-        psbt_type: SigningPsbtType,
-    ) -> Self {
-        Self { version: SIGN_REQUEST_MESSAGE_VERSION_1 as u16, signing_session_id, psbt, psbt_type }
+    pub const fn new(signing_session_id: Vec<u8>, psbt: Vec<u8>) -> Self {
+        Self { version: MESSAGE_VERSION as u16, signing_session_id, psbt }
     }
 }
 
@@ -275,8 +262,6 @@ impl FrostProtoMessage {
                 // psbt
                 buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
                 buf.put_slice(&resource.psbt);
-                // psbt type
-                buf.put_u8(resource.psbt_type as u8); // Store the PSBT type
             }
             FrostProtoMessageKind::WalletState(resource) => {
                 // uuid
@@ -459,25 +444,7 @@ impl FrostProtoMessage {
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
 
-                // PSBT type was added to distinguish between different PSBT types when we
-                // introduced wallet sweep functionality. We use `Pegout` for backward compatibility
-                // if the field is not present.
-                let psbt_type = if buf.len() >= 1 {
-                    let psbt_type_byte = buf[0];
-                    let psbt_type = match psbt_type_byte {
-                        0x00 => SigningPsbtType::Pegout,
-                        0x01 => SigningPsbtType::Sweep,
-                        _ => return None, // Invalid PSBT type
-                    };
-
-                    buf.advance(1);
-
-                    psbt_type
-                } else {
-                    SigningPsbtType::Pegout
-                };
-
-                let sign_request = SignRequest::new(signing_session_id, psbt, psbt_type);
+                let sign_request = SignRequest::new(signing_session_id, psbt);
 
                 match message_type {
                     FrostProtoMessageId::SignerRound1SigningPackage => {
@@ -567,11 +534,11 @@ impl FrostProtoMessage {
 
 #[cfg(test)]
 mod tests {
+    use super::WalletStateRequest;
     #[allow(unused_imports)]
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest,
     };
-    use super::{SigningPsbtType, WalletStateRequest};
     #[allow(unused_imports)]
     use reth_primitives::SealedBlock;
     #[allow(unused_imports)]
@@ -603,8 +570,7 @@ mod tests {
 
     #[test]
     fn test_signing_encoding_decoding() {
-        let signing_request =
-            SignRequest::new(vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0], SigningPsbtType::Sweep);
+        let signing_request = SignRequest::new(vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0]);
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::SignerRound1SigningPackage,
@@ -616,27 +582,6 @@ mod tests {
 
         // Simulate receiving the encoded bytes and decoding them
         let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
-        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
-            .expect("Failed to decode message");
-        // Check that the decoded message matches the original message
-        assert_eq!(decoded_message, message);
-    }
-
-    fn test_signing_encoding_decoding_without_psbt_type_support() {
-        let signing_request =
-            SignRequest::new(vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0], SigningPsbtType::Sweep);
-
-        let message = FrostProtoMessage {
-            message_type: FrostProtoMessageId::SignerRound1SigningPackage,
-            message: FrostProtoMessageKind::SignerRound1SigningPackage(signing_request),
-        };
-
-        // Encode the message
-        let encoded_bytes = message.encoded();
-
-        // Simulate receiving the encoded bytes and decoding them
-        let mut encoded_bytes_slice: &[u8] = &encoded_bytes[..encoded_bytes.len() - 1]; // Exclude the PSBT type byte
-
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode message");
         // Check that the decoded message matches the original message

@@ -37,7 +37,7 @@ use reth_network::{
             ToFrostManager,
         },
         DkgResponse, FrostPeerCommand, PeerMessageResponse, SigningEventResponseType,
-        SigningPsbtType, SigningResponse, WalletStateResponse,
+        SigningResponse, WalletStateResponse,
     },
     NetworkHandle,
 };
@@ -666,7 +666,7 @@ where
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, signing_session_id, psbt, psbt_type } =
+                        let SigningResponse { response_type, signing_session_id, psbt } =
                             signing_response;
                         let signing_session_id = match SigningSessionId::try_from(
                             signing_session_id.as_slice(),
@@ -687,8 +687,8 @@ where
                                     }
                                 };
 
-                                let validation_result = match psbt_type {
-                                    SigningPsbtType::Pegout => {
+                                let validation_result = match signing_session_id.session_type() {
+                                    SigningSessionType::Pegout => {
                                         validate_psbt_by_ids(
                                             &self.storage.reth_database,
                                             self.storage.btc_network,
@@ -696,7 +696,7 @@ where
                                         )
                                         .await
                                     }
-                                    SigningPsbtType::Sweep => {
+                                    SigningSessionType::Sweep => {
                                         validate_sweep_psbt(
                                             &mut self.btc_server,
                                             self.storage.btc_network,
@@ -731,8 +731,8 @@ where
                                     }
                                 };
 
-                                let validation_result = match psbt_type {
-                                    SigningPsbtType::Pegout => {
+                                let validation_result = match signing_session_id.session_type() {
+                                    SigningSessionType::Pegout => {
                                         validate_psbt_by_ids(
                                             &self.storage.reth_database,
                                             self.storage.btc_network,
@@ -740,7 +740,7 @@ where
                                         )
                                         .await
                                     }
-                                    SigningPsbtType::Sweep => {
+                                    SigningSessionType::Sweep => {
                                         validate_sweep_psbt(
                                             &mut self.btc_server,
                                             self.storage.btc_network,
@@ -775,8 +775,8 @@ where
                                     }
                                 };
 
-                                let validation_result = match psbt_type {
-                                    SigningPsbtType::Pegout => {
+                                let validation_result = match signing_session_id.session_type() {
+                                    SigningSessionType::Pegout => {
                                         validate_psbt_by_ids(
                                             &self.storage.reth_database,
                                             self.storage.btc_network,
@@ -784,7 +784,7 @@ where
                                         )
                                         .await
                                     }
-                                    SigningPsbtType::Sweep => {
+                                    SigningSessionType::Sweep => {
                                         validate_sweep_psbt(
                                             &mut self.btc_server,
                                             self.storage.btc_network,
@@ -819,8 +819,8 @@ where
                                     }
                                 };
 
-                                let validation_result = match psbt_type {
-                                    SigningPsbtType::Pegout => {
+                                let validation_result = match signing_session_id.session_type() {
+                                    SigningSessionType::Pegout => {
                                         validate_psbt_by_ids(
                                             &self.storage.reth_database,
                                             self.storage.btc_network,
@@ -828,7 +828,7 @@ where
                                         )
                                         .await
                                     }
-                                    SigningPsbtType::Sweep => {
+                                    SigningSessionType::Sweep => {
                                         validate_sweep_psbt(
                                             &mut self.btc_server,
                                             self.storage.btc_network,
