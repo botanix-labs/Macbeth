@@ -12,7 +12,7 @@ use futures::pin_mut;
 use futures_util::StreamExt;
 use reth_chain_state::CanonStateSubscriptions;
 use reth_db::table::Decompress;
-use reth_network::frost::{manager::ToFrostManager, SigningPsbtType};
+use reth_network::frost::manager::ToFrostManager;
 use reth_primitives::{alloy_primitives::FixedBytes, keccak256};
 use reth_provider::{BlockReaderIdExt, StateProviderFactory};
 use std::{ops::Deref, sync::Arc};

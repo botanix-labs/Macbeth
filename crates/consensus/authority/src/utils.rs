@@ -20,7 +20,7 @@ use btcserverlib::{
     wallet::psbt::{PsbtExt, PsbtOutputExt},
 };
 use futures_util::Future;
-use reth_network::{frost::SigningPsbtType, NetworkHandle, NetworkInfo};
+use reth_network::{NetworkHandle, NetworkInfo};
 use reth_primitives::{constants::EPOCH_LENGTH, Bloom, BloomInput, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
@@ -1155,24 +1155,6 @@ async fn validate_utxo_selection_logic(
     }
 
     Ok(())
-}
-
-/// Validates a PSBT based on its type (sweep or pegout)
-pub async fn validate_psbt_by_type<T, U>(
-    reth_client: &T,
-    btc_client: &mut U,
-    btc_network: bitcoin::Network,
-    psbt: &Psbt,
-    psbt_type: SigningPsbtType,
-) -> Result<(), PsbtValidationError>
-where
-    T: ReceiptProvider + TransactionsProvider + HeaderProvider + Clone,
-    U: BtcServerExtendedApi,
-{
-    match psbt_type {
-        SigningPsbtType::Pegout => validate_psbt_by_ids(reth_client, btc_network, psbt).await,
-        SigningPsbtType::Sweep => validate_sweep_psbt(btc_client, btc_network, psbt).await,
-    }
 }
 
 /// Convert bytes to [TransactionSigned] using an iterator

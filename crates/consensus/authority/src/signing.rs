@@ -14,8 +14,7 @@ use reth_network::frost::{
     manager::{
         authority_index_to_frost_identifier, FrostCommand, FrostConfig, PeerData, ToFrostManager,
     },
-    FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningPsbtType,
-    SigningResponse,
+    FrostPeerCommand, PeerMessageResponse, SigningEventResponseType, SigningResponse,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::PeerId;
@@ -484,10 +483,6 @@ where
                         response_type,
                         signing_session_id: session_id_vec.clone(),
                         psbt: psbt.clone(),
-                        psbt_type: match session_id.session_type() {
-                            SigningSessionType::Pegout => SigningPsbtType::Pegout,
-                            SigningSessionType::Sweep => SigningPsbtType::Sweep,
-                        },
                     });
                     connected_peer
                         .peer_commands_tx
@@ -640,10 +635,6 @@ where
                 response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                 signing_session_id: session_id.to_vec(),
                 psbt: signing_package_round1.psbt,
-                psbt_type: match session_id.session_type() {
-                    SigningSessionType::Pegout => SigningPsbtType::Pegout,
-                    SigningSessionType::Sweep => SigningPsbtType::Sweep,
-                },
             });
 
             retry_future(
@@ -782,10 +773,6 @@ where
             response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
             signing_session_id: session_id.to_vec(),
             psbt: signing_package_round2.psbt,
-            psbt_type: match session_id.session_type() {
-                SigningSessionType::Pegout => SigningPsbtType::Pegout,
-                SigningSessionType::Sweep => SigningPsbtType::Sweep,
-            },
         });
 
         retry_future(

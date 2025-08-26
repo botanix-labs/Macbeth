@@ -338,24 +338,24 @@ impl Stream for FrostProtoConnection {
                         FrostProtoMessage::dkg_request_message(req)
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, signing_session_id, psbt, psbt_type } =
+                        let SigningResponse { response_type, signing_session_id, psbt } =
                             signing_response;
 
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
-                                let req = SignRequest::new(signing_session_id, psbt, psbt_type);
+                                let req = SignRequest::new(signing_session_id, psbt);
                                 FrostProtoMessage::round1_signer_package_message(req)
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => {
-                                let req = SignRequest::new(signing_session_id, psbt, psbt_type);
+                                let req = SignRequest::new(signing_session_id, psbt);
                                 FrostProtoMessage::round1_coordinator_signing_package_message(req)
                             }
                             SigningEventResponseType::SignerRound2SigningPackage => {
-                                let req = SignRequest::new(signing_session_id, psbt, psbt_type);
+                                let req = SignRequest::new(signing_session_id, psbt);
                                 FrostProtoMessage::round2_signer_package_message(req)
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => {
-                                let req = SignRequest::new(signing_session_id, psbt, psbt_type);
+                                let req = SignRequest::new(signing_session_id, psbt);
                                 FrostProtoMessage::round2_coordinator_signing_package_message(req)
                             }
                         }
@@ -454,7 +454,6 @@ impl Stream for FrostProtoConnection {
                         response_type: SigningEventResponseType::SignerRound1SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
-                        psbt_type: data.psbt_type,
                     }),
                     peer_id: this.peer_id,
                 }
@@ -465,7 +464,6 @@ impl Stream for FrostProtoConnection {
                         response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
-                        psbt_type: data.psbt_type,
                     }),
                     peer_id: this.peer_id,
                 }
@@ -476,7 +474,6 @@ impl Stream for FrostProtoConnection {
                         response_type: SigningEventResponseType::SignerRound2SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
-                        psbt_type: data.psbt_type,
                     }),
                     peer_id: this.peer_id,
                 }
@@ -487,7 +484,6 @@ impl Stream for FrostProtoConnection {
                         response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
-                        psbt_type: data.psbt_type,
                     }),
                     peer_id: this.peer_id,
                 }
