@@ -22,10 +22,11 @@ use crate::{
     },
     utils::generate_blocks,
 };
+use btc_server_client as client;
 
 const NUM_PEGINS: usize = 5;
 
-pub async fn test_conflicting_input(
+pub async fn test_prevent_resigning_pegout(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), anyhow::Error> {
     let bitcoind = suite.global_context.bitcoind_rpc();

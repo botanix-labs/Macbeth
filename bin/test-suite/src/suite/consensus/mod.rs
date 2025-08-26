@@ -584,14 +584,14 @@ impl Suite for ConsensusIntegrationTestSuite {
                     frost::test_mempool_gossip::test_mempool_gossip
                 )
             }
-            "test_conflicting_input" => run_test!(
+            "test_prevent_resigning_pegout" => run_test!(
                 self,
                 CreateTestConfig {
                     create_bitcoind_node: true,
                     create_btc_servers: true,
                     ..Default::default()
                 },
-                frost::test_conflicting_input::test_conflicting_input
+                frost::test_prevent_resigning_pegout::test_prevent_resigning_pegout
             ),
             "test_round1_then_new_signing_session" => run_test!(
                 self,

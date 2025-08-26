@@ -4,7 +4,7 @@ set -e
 set -o pipefail
 
 # Define the list of strings
-tests_to_run=("dkg_flow" "utxo_commitment" "signing_flow" "test_mempool_gossip" "utxo_sync" "state_sync" "wallet_sync" "frost_e2e_stable" "test_pegin_v1" "invalid_pegin" "invalid_pegout" "block_builder" "test_conflicting_input" "test_round1_then_new_signing_session" "test_track_mempool" "rpc_node")
+tests_to_run=("dkg_flow" "utxo_commitment" "signing_flow" "test_mempool_gossip" "utxo_sync" "state_sync" "wallet_sync" "frost_e2e_stable" "test_pegin_v1" "invalid_pegin" "invalid_pegout" "block_builder" "test_prevent_resigning_pegout" "test_round1_then_new_signing_session" "test_track_mempool" "rpc_node")
 
 exit_codes=()
 
