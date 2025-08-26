@@ -2,20 +2,23 @@ use crate::{signing::SigningStateMachine, Storage};
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_storage::{
-    models::WalletSweepSession, WalletSweepSessionReader, WalletSweepSessionWriter,
+    models::{WalletSweepSession, WalletSweepSessionId},
+    WalletSweepSessionReader, WalletSweepSessionWriter,
 };
 use botanix_wallet_sweep::create_psbt_async;
 use btc_server_client::{BtcServerExtendedApi, WalletSweepSessionUpdateResponse};
+use btcserverlib::signer::{SigningSessionId, SigningSessionType};
 use futures::pin_mut;
 use futures_util::StreamExt;
 use reth_chain_state::CanonStateSubscriptions;
 use reth_db::table::Decompress;
 use reth_network::frost::{manager::ToFrostManager, SigningPsbtType};
-use reth_primitives::alloy_primitives::FixedBytes;
+use reth_primitives::{alloy_primitives::FixedBytes, keccak256};
 use reth_provider::{BlockReaderIdExt, StateProviderFactory};
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 use tracing::{debug, error, info, trace, warn};
 
+#[derive(Clone)]
 pub struct WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient> {
     // Frost network Handler
     signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
@@ -25,18 +28,19 @@ pub struct WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient
     btc_server: BtcServerClient,
     // Authority Metrics
     metrics: Arc<AuthorityMetrics>,
+    signing_session_id: Arc<tokio::sync::Mutex<Option<SigningSessionId>>>,
 }
 
 impl<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient>
     WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient>
 where
-    EF: 'static + Send + Sync,
-    BF: 'static + Send + Sync,
-    RDB: 'static + Send + Sync,
+    EF: Clone + 'static + Send + Sync,
+    BF: Clone + 'static + Send + Sync,
+    RDB: Clone + 'static + Send + Sync,
     BDB: WalletSweepSessionReader + WalletSweepSessionWriter + Clone + 'static + Send + Sync,
     ToFrostMan: Clone + 'static + Send + Sync + ToFrostManager,
     BtcServerClient: BtcServerExtendedApi + Clone,
-    Source: RandomSource + Clone,
+    Source: RandomSource + Clone + Send + Sync + 'static,
 {
     pub fn new(
         signing_state_machine: SigningStateMachine<ToFrostMan, Source, BtcServerClient>,
@@ -44,7 +48,13 @@ where
         btc_server: BtcServerClient,
         metrics: Arc<AuthorityMetrics>,
     ) -> Self {
-        Self { signing_state_machine, storage, btc_server, metrics }
+        Self {
+            signing_state_machine,
+            storage,
+            btc_server,
+            metrics,
+            signing_session_id: Arc::new(tokio::sync::Mutex::new(None)),
+        }
     }
 
     /// Check for wallet sweep sessions and create PSBTs directly for FROST signing
@@ -52,46 +62,38 @@ where
         &mut self,
         session_update: WalletSweepSessionUpdateResponse,
     ) {
-        let session_id =
+        let session_id: WalletSweepSessionId =
             session_update.session_id.as_slice().try_into().expect("todo: handle error");
 
-        // skip this update if the session already exists
-        if self
-            .storage
-            .botanix_database_factory
-            .is_wallet_sweep_session_exists(session_id)
-            .expect("todo: handle error")
-        {
-            trace!(target: "consensus::authority::frost_task::WalletSweepTask", "Skip wallet sweep session update - session already exists");
+        trace!(
+            sweep_session_id = hex::encode(&session_id),
+            "Update wallet sweep session from btc-server"
+        );
 
-            return;
-        }
-
-        // check if we another session and reject it first
+        // Check if we had another session
         match self.storage.botanix_database_factory.get_wallet_sweep_session() {
             Ok(Some((existing_session_id, _))) => {
-                warn!(
-                    new_session_id = hex::encode(&session_id),
-                    existing_session_id = hex::encode(&existing_session_id),
-                    "another wallet sweep session already exist. reject it first"
-                );
+                if existing_session_id == session_id {
+                    trace!(
+                        sweep_session_id = hex::encode(&session_id),
+                        "Wallet sweep session already exists. Skip update"
+                    );
 
-                // TODO: Reject exising session
-
-                // // Check if we already have a signing session for this sweep
-                // if self.signing_state_machine.signing_session_exists(signing_session_id).await {
-                //     trace!(target:
-                // "consensus::authority::frost_task::check_and_initiate_sweep_signing",
-                //    "Signing session already exists for sweep: {}",
-                // hex::encode(&signing_session_id));     return;
-                // }
+                    return;
+                } else {
+                    debug!(
+                        new_sweep_session_id = hex::encode(&session_id),
+                        existing_sweep_session_id = hex::encode(&existing_session_id),
+                        "Another wallet sweep session already exist. It will be replaced with the new one"
+                    );
+                }
             }
             Err(e) => {
                 error!("failed to fetch current wallet sweep session from database: {e}");
 
                 return;
             }
-            _ => {}
+            Ok(None) => {}
         };
 
         let session = match WalletSweepSession::decompress(session_update.session_bytes) {
@@ -105,66 +107,29 @@ where
 
         self.storage
             .botanix_database_factory
-            .update_wallet_sweep_session(session)
+            .update_wallet_sweep_session(session.clone())
             .expect("failed to update wallet sweep session");
-
-        // The logic bellow is only for the coordinator
-        if !self.signing_state_machine.is_coordinator() {
-            trace!("Not coordinator, waiting for sweep PSBT from coordinator");
-
-            return;
-        }
-
-        // TODO: We need to run it periodically to check if we have a session
-        //  and restart it if it fails
-        self.initiate_signing_session().await;
     }
 
-    async fn initiate_signing_session(&mut self) {
-        let (session_id, sweep_session) =
-            match self.storage.botanix_database_factory.get_wallet_sweep_session() {
-                Ok(Some((session_id, session))) => (session_id, session),
-                Err(e) => {
-                    error!("failed to fetch current wallet sweep session from database: {e}");
+    async fn initiate_signing_session(
+        &mut self,
+        sweep_session_id: WalletSweepSessionId,
+        sweep_session: WalletSweepSession,
+    ) -> Option<SigningSessionId> {
+        let signing_session_id = generate_signing_session_id(sweep_session_id);
 
-                    return;
-                }
-                _ => {
-                    trace!("No wallet sweep session found, skipping signing initiation");
-
-                    // Do nothing if the session doesn't exist
-                    return;
-                }
-            };
-
-        // Check if we already have a signing session for this sweep
-        if let Some(signing_session) =
-            self.signing_state_machine.get_signing_session(*session_id).await
-        {
-            if signing_session.state().has_failed() {
-                // It's failed, so we remove it
-                debug!(
-                    session_id = hex::encode(&session_id),
-                    "Signing session has failed, removing and retrying"
-                );
-
-                self.signing_state_machine.remove_signing_session(*session_id).await;
-            } else {
-                // It's still active, so we skip
-                trace!(
-                    session_id = hex::encode(&session_id),
-                    "Signing session already exists and is active, skipping initiation"
-                );
-
-                return;
-            }
-        }
+        info!(
+            sweep_session_id = hex::encode(&sweep_session_id),
+            signing_session_id = hex::encode(&signing_session_id),
+            "Initiating FROST signing for sweep PSBT"
+        );
 
         // Create the sweep PSBT
         let sweep_psbt = match create_psbt_async(sweep_session, &mut self.btc_server).await {
             Ok(psbt) => {
                 trace!(
-                    session_id = hex::encode(&session_id),
+                    sweep_session_id = hex::encode(&sweep_session_id),
+                    signing_session_id = hex::encode(&signing_session_id),
                     "Successfully created sweep PSBT with {} inputs, {} outputs",
                     psbt.inputs.len(),
                     psbt.outputs.len()
@@ -172,73 +137,216 @@ where
                 psbt
             }
             Err(e) => {
-                error!(session_id = hex::encode(&session_id), "Failed to create sweep PSBT: {}", e);
-                return;
+                error!(
+                    sweep_session_id = hex::encode(&sweep_session_id),
+                    signing_session_id = hex::encode(&signing_session_id),
+                    "Failed to create sweep PSBT: {}",
+                    e
+                );
+
+                return None;
             }
         };
 
         // Serialize the PSBT for signing
         let psbt_bytes = sweep_psbt.serialize();
 
-        info!(session_id = hex::encode(&session_id), "Initiating FROST signing for sweep PSBT");
-
         // Initiate FROST signing-session with the directly created PSBT
         if let Err(e) = self
             .signing_state_machine
-            .initate_signing_session(session_id, psbt_bytes, SigningPsbtType::Sweep)
+            .initiate_signing_session(signing_session_id, psbt_bytes)
             .await
         {
             error!(
-                session_id = hex::encode(&session_id),
+                sweep_session_id = hex::encode(&sweep_session_id),
+                %signing_session_id,
                 "Failed to initiate FROST signing for sweep PSBT: {}", e
             );
+
+            None
         } else {
-            info!(session_id = hex::encode(&session_id), "Initiating FROST signing for sweep PSBT");
+            info!(
+                sweep_session_id = hex::encode(&sweep_session_id),
+                signing_session_id = hex::encode(&signing_session_id),
+                "Initiated FROST signing for sweep PSBT"
+            );
+
+            Some(signing_session_id)
         }
     }
 
+    async fn handle_psbt_signing_session(&mut self) {
+        trace!("Handle signing session for wallet sweep");
+
+        let (sweep_session_id, sweep_session) = match self
+            .storage
+            .botanix_database_factory
+            .get_wallet_sweep_session()
+        {
+            Ok(Some((session_id, session))) => (session_id, session),
+            Ok(None) => {
+                // If we don't have a wallet sweep session, ensure no signing session is active
+                let mut maybe_signing_session_id = self.signing_session_id.lock().await;
+
+                if let Some(signing_session_id) = *maybe_signing_session_id {
+                    debug!(
+                        signing_session_id = hex::encode(&signing_session_id),
+                        "No wallet sweep session found, but there is an active signing session. Reject it."
+                    );
+
+                    self.signing_state_machine.remove_signing_session(signing_session_id).await;
+
+                    *maybe_signing_session_id = None;
+                } else {
+                    trace!("No wallet sweep session found");
+                }
+
+                return;
+            }
+            Err(e) => {
+                error!("Failed to fetch wallet sweep session from database: {e}");
+
+                return;
+            }
+        };
+
+        // Check if we have an active signing session
+        let mut maybe_signing_session_id = self.signing_session_id.lock().await;
+
+        if let Some(signing_session_id) = *maybe_signing_session_id {
+            // Check if the corresponding signing session exists and its status
+            if let Some(signing_session) =
+                self.signing_state_machine.get_signing_session(signing_session_id).await
+            {
+                if signing_session.state().is_finalized() {
+                    // Signing completed successfully.
+                    info!(
+                        sweep_session_id = hex::encode(&sweep_session_id),
+                        signing_session_id = hex::encode(&signing_session_id),
+                        "Wallet sweep signing session completed successfully"
+                    );
+
+                    *maybe_signing_session_id = None;
+
+                    return;
+                } else if signing_session.state().has_failed() {
+                    warn!(
+                        sweep_session_id = hex::encode(&sweep_session_id),
+                        signing_session_id = hex::encode(&signing_session_id),
+                        "Signing session failed after 1 minute, remove and retry"
+                    );
+
+                    // Remove the failed session
+                    self.signing_state_machine.remove_signing_session(signing_session_id).await;
+                } else if signing_session.state().is_running() {
+                    warn!(
+                        sweep_session_id = hex::encode(&sweep_session_id),
+                        signing_session_id = hex::encode(&signing_session_id),
+                        "Signing session still not completed after 1 minute, reject and retry"
+                    );
+
+                    // Remove the incomplete session
+                    self.signing_state_machine.remove_signing_session(signing_session_id).await;
+                } else {
+                    warn!(
+                            sweep_session_id = hex::encode(&sweep_session_id),
+                            signing_session_id = hex::encode(&signing_session_id),
+                            "Signing session in unexpected state after 1 minute, removing and will retry on next check"
+                        );
+
+                    // Remove the session in unexpected state
+                    self.signing_state_machine.remove_signing_session(signing_session_id).await;
+                }
+            } else {
+                warn!(
+                    sweep_session_id = hex::encode(&sweep_session_id),
+                    signing_session_id = hex::encode(&signing_session_id),
+                    "Signing session not found after 1 minute for some reason, retrying"
+                );
+            }
+        } else {
+            trace!("No active wallet sweep signing session, starting new one");
+        }
+
+        // We borrow mutable self bellow so we can't keep immutable borrowed lock
+        drop(maybe_signing_session_id);
+
+        // Start signing session again
+        let new_signing_session_id =
+            self.initiate_signing_session(sweep_session_id, sweep_session).await;
+
+        let mut maybe_signing_session_id = self.signing_session_id.lock().await;
+        *maybe_signing_session_id = new_signing_session_id;
+    }
+
     pub async fn run(mut self) {
+        let mut signing_check_interval =
+            tokio::time::interval(tokio::time::Duration::from_secs(60));
+
         loop {
             let request = btc_server_client::WalletSweepSessionUpdatesRequest {};
-            let mut stream = match self
-                .btc_server
-                .subscribe_to_wallet_sweep_session_updates(request)
-                .await
-            {
-                Ok(stream) => {
-                    debug!(target: "consensus::authority::frost_task::WalletSweepTask", "Connected to wallet sweep session updates");
+            let mut stream =
+                match self.btc_server.subscribe_to_wallet_sweep_session_updates(request).await {
+                    Ok(stream) => {
+                        debug!("Connected to wallet sweep session updates");
 
-                    stream
-                }
-                Err(_e) => {
-                    error!(target: "consensus::authority::frost_task::WalletSweepTask", "Failed to subscribe to wallet sweep session updates");
-
-                    continue;
-                }
-            };
-
-            pin_mut!(stream);
-
-            while let Some(received) = stream.next().await {
-                let session_update = match received {
-                    Ok(message) => {
-                        trace!(target: "consensus::authority::frost_task::WalletSweepTask", "Received message from wallet sweep session stream");
-
-                        message
+                        stream
                     }
                     Err(e) => {
-                        warn!(target: "consensus::authority::frost_task::WalletSweepTask", "Received error from wallet sweep session stream: {e}");
+                        error!("Failed to subscribe to wallet sweep session updates: {e}");
 
                         continue;
                     }
                 };
 
-                self.handle_wallet_sweep_session_update(session_update).await
-            }
+            pin_mut!(stream);
 
-            warn!(target: "consensus::authority::frost_task::WalletSweepTask", "Wallet sweep session stream disconnected. Reconnect in 1 second");
+            tokio::select! {
+                // Handle incoming wallet sweep session update stream messages
+                received = stream.next() => {
+                    match received {
+                        Some(Ok(message)) => {
+                            trace!("Received message from wallet sweep session stream");
+
+                            self.handle_wallet_sweep_session_update(message).await;
+                        }
+                        Some(Err(e)) => {
+                            error!("Wallet sweep session update stream error: {}", e);
+
+                            continue;
+                        }
+                        None => {
+                            warn!("Wallet sweep session stream disconnected. Reconnect in 1 second");
+
+                            continue;
+                        }
+                    }
+                }
+
+                // Handle periodic timer ticks (every minute)
+                _ = signing_check_interval.tick() => {
+                    self.handle_psbt_signing_session().await;
+                }
+            }
 
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
     }
+}
+
+/// Hash wallet sweep session id with current time to get unique signing session id
+fn generate_signing_session_id(sweep_session_id: WalletSweepSessionId) -> SigningSessionId {
+    let signing_session_id_payload = [
+        sweep_session_id.as_slice(),
+        &std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs()
+            .to_le_bytes(),
+    ]
+    .concat();
+
+    let signing_session_id_payload = keccak256(signing_session_id_payload);
+
+    SigningSessionId::new_sweep_session(signing_session_id_payload.as_ref())
 }

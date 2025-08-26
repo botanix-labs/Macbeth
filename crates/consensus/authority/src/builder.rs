@@ -98,7 +98,7 @@ where
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     BD: botanix_btc_wallet::bitcoind::RpcApiExt + Send + Sync + 'static,
-    Source: RandomSource + Clone,
+    Source: RandomSource + Clone + Send + Sync + 'static,
 {
     /// Creates a new builder instance to configure all parts.
     #[allow(clippy::too_many_arguments)]

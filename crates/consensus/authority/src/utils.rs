@@ -455,7 +455,7 @@ pub(crate) enum GenerateSigningSesssionIdError {
 }
 
 /// Generates a signing session id using a uuid v4 generator
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn generate_signing_session_id(
 ) -> Result<SigningSessionId, GenerateSigningSesssionIdError> {
     let id = Uuid::new_v4();

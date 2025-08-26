@@ -11,6 +11,8 @@ pub enum SigningError {
     Round1(#[from] SigningRound1Error),
     #[error("round 2 error: {0}")]
     Round2(#[from] SigningRound2Error),
+    #[error("invalid signing session id")]
+    InvalidSigningSessionId,
 }
 
 #[derive(Debug, Error)]
