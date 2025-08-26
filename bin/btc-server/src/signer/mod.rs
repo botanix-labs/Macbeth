@@ -17,6 +17,9 @@ use crate::{
 };
 
 pub mod error;
+pub mod session_id;
+
+pub use session_id::{SigningSessionId, SigningSessionType};
 
 pub fn get_round1_signing_package(
     psbt: &mut Psbt,

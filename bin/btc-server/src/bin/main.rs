@@ -30,6 +30,7 @@ use btcserverlib::{
     signer::{
         self,
         error::{SigningError, SigningRound1Error, SigningRound2Error},
+        SigningSessionId,
     },
     telemetry::Telemetry,
     util::{
@@ -678,28 +679,10 @@ where
         Ok(())
     }
 
-    /// Helper function to determine if a PSBT is a sweep transaction
-    /// Sweep PSBTs have exactly one output and no pegout IDs
-    fn is_sweep_psbt(psbt: &Psbt, signing_session_id: &[u8; 32]) -> bool {
-        // Primary detection: check if signing session ID ends with "SWEEP_SIGNING"
-        if signing_session_id.ends_with(b"SWEEP_SIGNING") {
-            return true;
-        }
-
-        // Secondary detection: sweep PSBTs have exactly one output and no pegout metadata
-        if psbt.outputs.len() != 1 {
-            return false;
-        }
-
-        // Check if PSBT has pegout IDs (pegout PSBTs have this, sweep PSBTs don't)
-        let pegout_ids = psbt.pegout_ids();
-        pegout_ids.is_empty()
-    }
-
     /// Handle sweep-specific cleanup after successful transaction broadcast
     async fn handle_sweep_transaction_success(
         &self,
-        signing_session_id: &[u8; 32],
+        signing_session_id: SigningSessionId,
         tx_id: Option<bitcoin::Txid>,
         psbt: &Psbt,
     ) -> Result<(), tonic::Status> {
@@ -733,7 +716,7 @@ where
             telemetry.update_signing_success_rate_metrics(
                 self.btc_network,
                 self.config.identifier,
-                *signing_session_id,
+                signing_session_id,
             );
         }
 
@@ -923,9 +906,12 @@ where
     ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
-        let signing_status = self.db.get_signing_status(&signing_session_id).to_status()?;
+        let signing_session_id = handle_signing_error!(
+            self,
+            req,
+            SigningSessionId::try_from(req.signing_session_id.as_slice())
+        );
+        let signing_status = self.db.get_signing_status(signing_session_id).to_status()?;
 
         let res =
             tonic::Response::new(rpc::GetSigningStatusResponse { status: signing_status.into() });
@@ -1189,8 +1175,11 @@ where
             "Received round1 signing package request for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+        let signing_session_id = handle_signing_error!(
+            self,
+            req,
+            SigningSessionId::try_from(req.signing_session_id.as_slice())
+        );
 
         // Check if we have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
@@ -1265,8 +1254,11 @@ where
         // Validate PSBT
         let req = req.into_inner();
         info!("Received round2 signing package request");
-        let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+        let signing_session_id = handle_signing_error!(
+            self,
+            req,
+            SigningSessionId::try_from(req.signing_session_id.as_slice())
+        );
 
         let mut psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
             Ok(psbt) => psbt,
@@ -1398,33 +1390,41 @@ where
         self.validate_jwt(&req)?;
         let req = req.into_inner();
         info!(
-            "Received finalize signing request with signing session id: {:?}",
-            hex::encode(req.signing_session_id.clone())
+            "Received finalize signing request with signing session id: {}",
+            hex::encode(&req.signing_session_id),
         );
-        let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+        let signing_session_id = handle_signing_error!(
+            self,
+            req,
+            SigningSessionId::try_from(req.signing_session_id.as_ref())
+        );
 
         let _tx_lock = self.tx_lock.lock().await;
         let psbt =
-            coordinator::finalize_signing(&signing_session_id, &self.db).await.map_err(|e| {
+            coordinator::finalize_signing(signing_session_id, &self.db).await.map_err(|e| {
                 internal!(
-                    "Failed to finalize signing: {}, signing session id: {:?}",
+                    "Failed to finalize signing: {}, signing session id: {}",
                     e,
-                    hex::encode(signing_session_id)
+                    signing_session_id
                 )
             })?;
-
-        // Detect if this is a sweep transaction
-        let is_sweep = Self::is_sweep_psbt(&psbt, &signing_session_id);
 
         // This should be a ready to broadcast tx
         let tx = psbt.clone().extract_tx().to_status()?;
         let tx_bytes = bitcoin::consensus::encode::serialize(&tx);
 
-        if is_sweep {
-            info!("Signed sweep tx to be broadcast: {}", hex::encode(&tx_bytes));
+        if signing_session_id.is_sweep_session() {
+            trace!(
+                "Signed sweep tx to be broadcast for session {}: {}",
+                signing_session_id,
+                hex::encode(&tx_bytes),
+            );
         } else {
-            info!("Signed pegout tx to be broadcast: {}", hex::encode(&tx_bytes));
+            trace!(
+                "Signed pegout tx to be broadcas for session {}: {}",
+                signing_session_id,
+                hex::encode(&tx_bytes),
+            );
         }
 
         let tx_id = match measure_rpc_latency!(
@@ -1458,9 +1458,9 @@ where
         .to_status()?;
 
         // Handle post-broadcast cleanup based on transaction type
-        if is_sweep {
+        if signing_session_id.is_sweep_session() {
             // Handle sweep transaction completion
-            self.handle_sweep_transaction_success(&signing_session_id, tx_id, &psbt).await?;
+            self.handle_sweep_transaction_success(signing_session_id, tx_id, &psbt).await?;
         } else {
             // Handle pegout transaction completion (existing logic)
             let pegout_ids = psbt
@@ -1534,8 +1534,11 @@ where
             "Received make tx request for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+        let signing_session_id = handle_signing_error!(
+            self,
+            req,
+            SigningSessionId::try_from(req.signing_session_id.as_ref())
+        );
 
         let checkpoint = match BlockHash::from_slice(&req.checkpoint_block_hash) {
             Ok(checkpoint) => checkpoint,
@@ -1686,7 +1689,7 @@ where
         handle_signing_error!(
             self,
             req.signing_session_id.try_into().expect("valid signing session id"),
-            self.db.update_psbt(&signing_session_id, &psbt),
+            self.db.update_psbt(signing_session_id, &psbt),
             check_only
         );
 
@@ -1733,10 +1736,13 @@ where
             "Received to sign package request, signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+        let signing_session_id = handle_signing_error!(
+            self,
+            req,
+            SigningSessionId::try_from(req.signing_session_id.as_slice())
+        );
 
-        let psbt = match coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
+        let psbt = match coordinator::get_to_sign(signing_session_id, &self.db, self.min_signers)
             .to_status()
         {
             Ok(psbt) => psbt,
@@ -1803,8 +1809,11 @@ where
             "Received new round1 signing package for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+        let signing_session_id = handle_signing_error!(
+            self,
+            req,
+            SigningSessionId::try_from(req.signing_session_id.as_slice())
+        );
 
         let frost_id = handle_signing_error!(self, req, deserialize_frost_peer_id(req.identifier));
 
@@ -1824,7 +1833,7 @@ where
         };
 
         if let Err(e) = coordinator::add_round1_signing(
-            &signing_session_id,
+            signing_session_id,
             frost_id,
             &psbt,
             &self.db,
@@ -1847,7 +1856,7 @@ where
             telemetry.update_round1_signing_metrics(
                 self.btc_network,
                 self.config.identifier,
-                &signing_session_id,
+                signing_session_id,
                 req.psbt.as_slice().len(),
                 start.elapsed().as_millis(),
             )
@@ -1878,8 +1887,11 @@ where
         };
 
         info!("Received round2 signing package");
-        let signing_session_id =
-            handle_signing_error!(self, req, parse_signing_session_id(&req.signing_session_id));
+        let signing_session_id = handle_signing_error!(
+            self,
+            req,
+            SigningSessionId::try_from(req.signing_session_id.as_slice())
+        );
 
         let frost_id = handle_signing_error!(self, req, deserialize_frost_peer_id(req.identifier));
 
@@ -1899,7 +1911,7 @@ where
         };
 
         if let Err(e) = coordinator::add_round2_signing(
-            &signing_session_id,
+            signing_session_id,
             frost_id,
             &psbt,
             &self.db,
@@ -1922,7 +1934,7 @@ where
             telemetry.update_round2_signing_metrics(
                 self.btc_network,
                 self.config.identifier,
-                &signing_session_id,
+                signing_session_id,
                 req.psbt.as_slice().len(),
                 start.elapsed().as_millis(),
             )
@@ -2270,6 +2282,7 @@ where
                     }
                 }
             }
+            // TODO: We need to send empty status as well
             Ok(None) => {}
             Err(_) => {
                 error!("subscribe_to_wallet_sweep_session_updates: failed to get existing wallet sweep session bytes");
@@ -2284,6 +2297,7 @@ where
             let mut subscriber = db.subscribe_to_wallet_sweep_session_updates();
 
             while let Some(event) = (&mut subscriber).await {
+                // TODO: We need to send remove as well
                 if let Event::Insert { key, value } = event {
                     match tx
                         .send(Ok(WalletSweepSessionUpdateResponse {

@@ -1,6 +1,7 @@
 mod metrics;
 mod system;
 
+use crate::signer::SigningSessionId;
 use log::error;
 use metrics::BtcServerMetrics;
 use parking_lot::RwLock;
@@ -50,7 +51,7 @@ impl Telemetry {
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
-        session_id: &[u8; 32],
+        session_id: SigningSessionId,
         data_size: usize,
         latency_millis: u128,
     ) {
@@ -89,7 +90,7 @@ impl Telemetry {
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
-        session_id: &[u8; 32],
+        session_id: SigningSessionId,
         data_size: usize,
         latency_millis: u128,
     ) {
@@ -232,7 +233,7 @@ impl Telemetry {
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
-        session_id: [u8; 32],
+        session_id: SigningSessionId,
     ) {
         self.maybe_use_metrics(|metrics| {
             metrics
@@ -250,7 +251,7 @@ impl Telemetry {
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
-        session_id: [u8; 32],
+        session_id: SigningSessionId,
         error: &str,
     ) {
         self.maybe_use_metrics(|metrics| {

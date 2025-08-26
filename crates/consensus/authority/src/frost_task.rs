@@ -23,7 +23,10 @@ use botanix_storage::{
 use btc_server_client::{
     BtcServerExtendedApi, ConsensusCheckpointRequest, GrpcClientError, PendingPegout, Utxo,
 };
-use btcserverlib::wallet::psbt::frost_id_from_bytes;
+use btcserverlib::{
+    signer::session_id::{SigningSessionId, SigningSessionType},
+    wallet::psbt::frost_id_from_bytes,
+};
 use futures::{pin_mut, StreamExt};
 use reth_chainspec::ChainSpec;
 use reth_db::table::Decompress;
@@ -263,6 +266,8 @@ where
     ) {
         debug_assert_eq!(header_hash, header.hash_slow());
 
+        // TODO: This could abort our sweep signing session
+
         info!(
             target: "consensus::authority::frost_task::handle_canon_state_commit",
             "Handling canon state commit for block number {:?}", header.number
@@ -407,11 +412,11 @@ where
             "Validated psbt successfully"
         );
 
-        // Initiate signing session.
-        if let Err(e) = self
-            .signing_state_machine
-            .initate_signing_session(header_hash, psbt_payload.psbt, SigningPsbtType::Pegout)
-            .await
+        // Initiate signing session
+        let session_id = SigningSessionId::new_pegout_session(&*header_hash);
+
+        if let Err(e) =
+            self.signing_state_machine.initiate_signing_session(session_id, psbt_payload.psbt).await
         {
             error!(
                 target: "consensus::authority::frost_task::handle_canon_state_commit",
@@ -663,7 +668,7 @@ where
                     PeerMessageResponse::Signing(signing_response) => {
                         let SigningResponse { response_type, signing_session_id, psbt, psbt_type } =
                             signing_response;
-                        let signing_session_id = match FixedBytes::try_from(
+                        let signing_session_id = match SigningSessionId::try_from(
                             signing_session_id.as_slice(),
                         ) {
                             Ok(signing_session_id) => signing_session_id,

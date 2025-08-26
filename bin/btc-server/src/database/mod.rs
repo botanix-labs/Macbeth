@@ -28,6 +28,7 @@ pub mod error;
 mod sweep;
 pub mod version;
 
+use crate::signer::SigningSessionId;
 pub use error::Error;
 use version::UtxoVersion;
 
@@ -182,9 +183,13 @@ impl Db {
     }
 
     /// Adds a PSBT to the database.
-    pub fn update_psbt(&self, signing_session_id: &[u8; 32], psbt: &Psbt) -> Result<usize, Error> {
+    pub fn update_psbt(
+        &self,
+        signing_session_id: SigningSessionId,
+        psbt: &Psbt,
+    ) -> Result<usize, Error> {
         let mut bytes = Vec::new();
-        if let Some(b) = self.psbt.get(&signing_session_id[..])? {
+        if let Some(b) = self.psbt.get(&signing_session_id)? {
             // if there is an existing psbt then we merge the new psbt with the existing one
             let mut existing_psbt = ciborium::from_reader::<Psbt, _>(b.as_ref())?;
             existing_psbt.combine(psbt.clone())?;
@@ -192,15 +197,15 @@ impl Db {
         } else {
             ciborium::into_writer(psbt, &mut bytes).expect("writing to buffer");
         }
-        self.psbt.insert(&signing_session_id[..], &bytes[..])?;
+        self.psbt.insert(&signing_session_id, &bytes[..])?;
         Ok(bytes.len())
     }
 
     /// Get PSBT from the database.
     /// Returns None if the PSBT is not found.
     /// Rertrieves psbt using signing_session_id
-    pub fn get_psbt(&self, signing_session_id: &[u8; 32]) -> Result<Option<Psbt>, Error> {
-        if let Some(b) = self.psbt.get(&signing_session_id[..])? {
+    pub fn get_psbt(&self, signing_session_id: SigningSessionId) -> Result<Option<Psbt>, Error> {
+        if let Some(b) = self.psbt.get(&signing_session_id)? {
             let ret = ciborium::from_reader::<Psbt, _>(b.as_ref())?;
             Ok(Some(ret))
         } else {
@@ -209,13 +214,13 @@ impl Db {
     }
 
     /// Get signing session ids from db
-    pub fn get_session_ids(&self, max_results: u32) -> Result<Vec<[u8; 32]>, Error> {
+    pub fn get_session_ids(&self, max_results: u32) -> Result<Vec<SigningSessionId>, Error> {
         let mut ret = Vec::new();
         let mut results = 0;
         for res in self.psbt.iter() {
             let (k, _) = res?;
-            let signing_session_id: [u8; 32] =
-                k.to_vec().as_slice().try_into().map_err(Error::Serialization)?;
+            let signing_session_id = SigningSessionId::try_from(k.as_ref())
+                .map_err(|e| Error::Database(e.to_string()))?;
             results += 1;
             if max_results == results {
                 break;
@@ -227,7 +232,7 @@ impl Db {
 
     pub fn get_signing_status(
         &self,
-        signing_session_id: &[u8; 32],
+        signing_session_id: SigningSessionId,
     ) -> Result<SigningStatus, Error> {
         match self.get_psbt(signing_session_id)? {
             Some(psbt) => {
@@ -1718,8 +1723,9 @@ mod tests {
 
         let tx = create_tx(2, 1, None);
         let psbt = Psbt::from_unsigned_tx(tx).unwrap();
-        let signing_session_id: [u8; 32] = [0; 32];
-        db.update_psbt(&signing_session_id, &psbt).unwrap();
+        let signing_session_id = SigningSessionId::new_pegout_session(&[0; 32]);
+
+        db.update_psbt(signing_session_id, &psbt).unwrap();
         db.flush().unwrap();
 
         let signing_session_ids = db.get_session_ids(10).unwrap();
@@ -1732,12 +1738,12 @@ mod tests {
 
         let tx = create_tx(2, 1, None);
         let psbt = Psbt::from_unsigned_tx(tx).unwrap();
-        let signing_session_id: [u8; 32] = [0; 32];
-        db.update_psbt(&signing_session_id, &psbt).unwrap();
+        let signing_session_id = SigningSessionId::new_pegout_session(&[0; 32]);
+        db.update_psbt(signing_session_id, &psbt).unwrap();
         db.flush().unwrap();
 
         let signing_session_id = db.get_session_ids(10).unwrap().first().cloned().unwrap();
-        let signing_status = db.get_signing_status(&signing_session_id).unwrap();
+        let signing_status = db.get_signing_status(signing_session_id).unwrap();
         assert!(signing_status == SigningStatus::Running);
     }
 

@@ -116,6 +116,7 @@ pub struct SigningResponse {
     pub signing_session_id: Vec<u8>,
     /// Frost data
     pub psbt: Vec<u8>,
+    // TODO: Remove - we can identify by session id
     /// The type of the PSBT
     /// New field added to distinguish between different PSBT types when we introduced
     /// wallet sweep functionality. This field defaults to `Pegout` for backward compatibility.

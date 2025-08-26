@@ -5,6 +5,7 @@ use crate::{
     database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
     pegout_scheduler::Tx,
+    signer::SigningSessionId,
     util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     wallet::{
         coin_selection,
@@ -24,7 +25,7 @@ pub mod error;
 const MIN_RELAY_FEE_RATE_SAT_VB: u64 = 1;
 
 pub fn add_round1_signing(
-    signing_session_id: &[u8; 32],
+    signing_session_id: SigningSessionId,
     frost_id: frost::Identifier,
     psbt: &Psbt,
     db: &Db,
@@ -57,7 +58,7 @@ pub fn add_round1_signing(
 }
 
 pub fn add_round2_signing(
-    signing_session_id: &[u8; 32],
+    signing_session_id: SigningSessionId,
     frost_id: frost::Identifier,
     psbt: &Psbt,
     db: &Db,
@@ -179,7 +180,7 @@ pub fn make_tx(
 /// signers nothing needs to be added to it as the signers all provided their signing
 /// commitments already and the coordinator just need to verify them
 pub fn get_to_sign(
-    signing_session_id: &[u8; 32],
+    signing_session_id: SigningSessionId,
     db: &Db,
     min_signers: u16,
 ) -> Result<Psbt, CoordinatorError> {
@@ -205,7 +206,7 @@ pub fn get_to_sign(
 
 /// Returns finalized and ready to broadcast tx
 pub async fn finalize_signing(
-    signing_session_id: &[u8; 32],
+    signing_session_id: SigningSessionId,
     db: &Db,
 ) -> Result<Psbt, CoordinatorError> {
     // Lock here to prevent a make_tx that uses utxos that will be removed
