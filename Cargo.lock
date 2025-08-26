@@ -2308,7 +2308,7 @@ dependencies = [
 
 [[package]]
 name = "botanix-chainspec"
-version = "1.2.0"
+version = "1.2.0-rc.3"
 dependencies = [
  "alloy-chains",
  "alloy-eips",
@@ -2494,7 +2494,7 @@ dependencies = [
 
 [[package]]
 name = "botanix-hardforks"
-version = "1.2.0"
+version = "1.2.0-rc.3"
 dependencies = [
  "alloy-chains",
  "alloy-eips",
@@ -8442,7 +8442,7 @@ dependencies = [
  "parking_lot 0.12.4",
  "procfs 0.17.0",
  "protobuf",
- "thiserror 2.0.12",
+ "thiserror 2.0.15",
 ]
 
 [[package]]
