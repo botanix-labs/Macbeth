@@ -310,6 +310,13 @@ pub struct WalletSweepSessionUpdateResponse {
     #[prost(bytes = "vec", tag = "2")]
     pub session_bytes: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct AbortWalletSweepSessionRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AbortWalletSweepSessionResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub session_id: ::prost::alloc::vec::Vec<u8>,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SigningStatus {
@@ -1069,6 +1076,33 @@ pub mod btc_server_client {
                     ),
                 );
             self.inner.server_streaming(req, path, codec).await
+        }
+        /// This method must be called by all signers, including coordinator to abort the wallet sweep session.
+        pub async fn abort_wallet_sweep_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AbortWalletSweepSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AbortWalletSweepSessionResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/AbortWalletSweepSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("btc_server.BtcServer", "AbortWalletSweepSession"),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }

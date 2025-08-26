@@ -194,6 +194,7 @@ where
                         "No wallet sweep session found, but there is an active signing session. Reject it."
                     );
 
+                    // TODO: Call abort signing too
                     self.signing_state_machine.remove_signing_session(signing_session_id).await;
 
                     *maybe_signing_session_id = None;
@@ -306,9 +307,21 @@ where
                 received = stream.next() => {
                     match received {
                         Some(Ok(message)) => {
-                            trace!("Received message from wallet sweep session stream");
+                            if message.session_id.is_empty() {
+                                // Empty session_id means the session was removed
+                                let session_id = self.storage.botanix_database_factory.clear_wallet_sweep_session().expect("todo: failed to clear wallet sweep session");
 
-                            self.handle_wallet_sweep_session_update(message).await;
+                                if let Some(session_id) = session_id {
+                                    trace!(
+                                        sweep_session_id = hex::encode(&session_id),
+                                        "Cleared wallet sweep session"
+                                    );
+                                } else {
+                                    trace!("No wallet sweep session to clear");
+                                }
+                            } else {
+                                self.handle_wallet_sweep_session_update(message).await;
+                            }
                         }
                         Some(Err(e)) => {
                             error!("Wallet sweep session update stream error: {}", e);
