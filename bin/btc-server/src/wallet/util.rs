@@ -4,6 +4,7 @@ use frost_secp256k1_tr as frost;
 use thiserror::Error;
 
 use crate::wallet::{
+    MAX_BASE_TX_WEIGHT, MAX_BITCOIN_TX_WEIGHT, PER_OUTPUT_MAX_WEIGHT, PER_P2TR_KEYSPEND_WEIGHT,
     SEGWIT_FLAG_WEIGHT, SEGWIT_MARKER_WEIGHT, TAPROOT_KEYSPEND_SIGHASH_DEFAULT_WEIGHT,
 };
 
@@ -90,6 +91,16 @@ pub fn calculate_signed_tx_fee_rate(psbt: &Psbt) -> Result<FeeRate, WalletCalcul
     Ok(fee_rate)
 }
 
+/// Returns the maximum number of inputs that can be added to a PSBT without exceeding the maximum
+/// transaction weight.
+pub fn max_number_of_psbt_inputs(num_outputs: u64) -> u64 {
+    let num_outputs = num_outputs;
+    let psbt_without_inputs_weight = MAX_BASE_TX_WEIGHT + num_outputs * PER_OUTPUT_MAX_WEIGHT;
+    let max_number_of_inputs =
+        (MAX_BITCOIN_TX_WEIGHT - psbt_without_inputs_weight) / PER_P2TR_KEYSPEND_WEIGHT;
+    max_number_of_inputs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,7 +110,11 @@ mod tests {
             add_dummy_signatures_to_psbt, create_random_pegout_id, random_compute_txid,
             random_p2tr_keyspend_script,
         },
-        wallet::psbt::{create_psbt, InputDTO},
+        util::UPPER_PEGOUT_BOUND,
+        wallet::{
+            psbt::{create_psbt, InputDTO},
+            MAX_BITCOIN_TX_WEIGHT,
+        },
     };
 
     use bitcoin::{Amount, OutPoint, TapSighashType, TxOut};
@@ -220,5 +235,67 @@ mod tests {
         outputs.push(output1);
 
         create_psbt(inputs, outputs, None)
+    }
+
+    fn create_signed_tx(num_inputs: u64, num_outputs: u64) -> Psbt {
+        let mut inputs = vec![];
+        for _ in 0..num_inputs {
+            let input = create_random_input(10_000);
+            inputs.push(input);
+        }
+
+        let mut outputs = vec![];
+        for _ in 0..num_outputs {
+            let output = (
+                TxOut {
+                    value: Amount::from_sat(10_000),
+                    script_pubkey: random_p2tr_keyspend_script(), // Recipient script
+                },
+                create_random_pegout_id().as_bytes(),
+            );
+            outputs.push(output);
+        }
+
+        let mut psbt = create_psbt(inputs, outputs, None);
+        add_dummy_signatures_to_psbt(&mut psbt, TapSighashType::Default);
+        psbt // with signatures
+    }
+
+    #[test]
+    fn test_max_number_of_psbt_inputs() {
+        let max_number_of_inputs = max_number_of_psbt_inputs(UPPER_PEGOUT_BOUND as u64);
+        println!("max number of pegout inputs: {}", max_number_of_inputs);
+
+        // Test 1: Create a pegout with exactly the max number of inputs
+        let tx = create_signed_tx(max_number_of_inputs, UPPER_PEGOUT_BOUND as u64);
+        let tx_weight = tx.clone().extract_tx().expect("Failed to extract tx").weight();
+
+        // The tx weight should be just below the max transaction weight
+        assert!(tx_weight.to_wu() <= MAX_BITCOIN_TX_WEIGHT, "tx weight: {}", tx_weight.to_wu());
+
+        // Test 2: Create a pegout with one more input than the max number of inputs
+        let tx = create_signed_tx(max_number_of_inputs + 1, UPPER_PEGOUT_BOUND as u64);
+        let tx_weight = tx.clone().extract_tx().expect("Failed to extract tx").weight();
+
+        // The tx weight should be above the max transaction weight
+        assert!(tx_weight.to_wu() > MAX_BITCOIN_TX_WEIGHT, "tx weight: {}", tx_weight.to_wu());
+    }
+
+    #[test]
+    fn test_max_number_of_psbt_inputs_for_sweep() {
+        let max_number_of_inputs = max_number_of_psbt_inputs(1);
+        println!("max number of sweep inputs: {}", max_number_of_inputs); // 1738
+
+        // Test 1: Create a sweep with max number of inputs
+        let tx = create_signed_tx(max_number_of_inputs, 1);
+        let tx_weight = tx.clone().extract_tx().expect("Failed to extract tx").weight();
+        // The tx weight should be just below the max transaction weight
+        assert!(tx_weight.to_wu() <= MAX_BITCOIN_TX_WEIGHT, "tx weight: {}", tx_weight.to_wu());
+
+        // Test 2: Create a sweep with one more input than the max number of inputs
+        let tx = create_signed_tx(max_number_of_inputs + 1, 1);
+        let tx_weight = tx.clone().extract_tx().expect("Failed to extract tx").weight();
+
+        assert!(tx_weight.to_wu() > MAX_BITCOIN_TX_WEIGHT, "tx weight: {}", tx_weight.to_wu());
     }
 }

@@ -10,11 +10,11 @@ use botanix_authority_peg::{
     },
     utils::AmountExt,
 };
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use ethers::{
     prelude::Provider,
     providers::{Http, PendingTransaction},
 };
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::{Address, B256};
 
 use crate::{

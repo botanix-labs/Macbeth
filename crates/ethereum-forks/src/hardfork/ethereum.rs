@@ -66,6 +66,9 @@ impl EthereumHardfork {
         if chain == Chain::holesky() {
             return self.holesky_activation_block()
         }
+        if chain == Chain::arbitrum_sepolia() {
+            return self.arbitrum_sepolia_activation_block()
+        }
 
         None
     }
@@ -158,9 +161,7 @@ impl EthereumHardfork {
             Self::GrayGlacier |
             Self::Paris => Some(0),
             Self::Shanghai => Some(10653737),
-            // Hardfork::ArbOS11 => Some(10653737),
             Self::Cancun => Some(18683405),
-            // Hardfork::ArbOS20Atlas => Some(18683405),
             _ => None,
         }
     }
@@ -385,27 +386,6 @@ impl EthereumHardfork {
             ),
             (Self::Shanghai, ForkCondition::Timestamp(1677557088)),
             (Self::Cancun, ForkCondition::Timestamp(1706655072)),
-        ]
-    }
-
-    /// Ethereum Botanix list of hardforks.
-    pub const fn botanix() -> [(Self, ForkCondition); 15] {
-        [
-            (Self::Frontier, ForkCondition::Block(0)),
-            (Self::Homestead, ForkCondition::Block(0)),
-            (Self::Dao, ForkCondition::Block(0)),
-            (Self::Tangerine, ForkCondition::Block(0)),
-            (Self::SpuriousDragon, ForkCondition::Block(0)),
-            (Self::Byzantium, ForkCondition::Block(0)),
-            (Self::Constantinople, ForkCondition::Block(0)),
-            (Self::Petersburg, ForkCondition::Block(0)),
-            (Self::Istanbul, ForkCondition::Block(0)),
-            (Self::MuirGlacier, ForkCondition::Block(0)),
-            (Self::Berlin, ForkCondition::Block(0)),
-            (Self::London, ForkCondition::Block(0)),
-            (Self::Paris, ForkCondition::TTD { fork_block: Some(0), total_difficulty: U256::ZERO }),
-            (Self::Shanghai, ForkCondition::Timestamp(0)),
-            (Self::Cancun, ForkCondition::Timestamp(0)),
         ]
     }
 

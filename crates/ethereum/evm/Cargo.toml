@@ -23,6 +23,7 @@ botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 
 # Botanix
 botanix-btc-wallet = { workspace = true }
+botanix-chainspec = { workspace = true }
 
 # BTC server
 btc-server = { path = "../../../bin/btc-server" }

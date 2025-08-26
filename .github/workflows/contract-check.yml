@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -41,7 +41,7 @@ jobs:
       MINTING_CONTRACT_ADDRESS: "0x0Ea320990B44236A0cEd0ecC0Fd2b2df33071e78"
     steps:
       - name: "Check out the repo"
-        uses: "actions/checkout@v4"
+        uses: "actions/checkout@v5"
 
       - name: "Install Foundry"
         uses: "foundry-rs/foundry-toolchain@v1"
@@ -81,7 +81,7 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout code
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v5
 
   #     - name: Run eburger contract analysis
   #       id: eburger-contract-analysis
@@ -113,7 +113,7 @@ jobs:
   #     security-events: write
   #   steps:
   #     - name: Checkout code
-  #       uses: actions/checkout@v4
+  #       uses: actions/checkout@v5
 
   #     - name: Run slither contract analysis
   #       id: slither-contract-analysis

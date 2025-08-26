@@ -1,0 +1,32 @@
+[package]
+name = "botanix-hardforks"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+# ethereum
+alloy-chains = { workspace = true, features = ["serde", "rlp"] }
+alloy-eips = { workspace = true, features = ["serde"] }
+alloy-genesis = { workspace = true }
+alloy-primitives = { workspace = true, features = ["rand", "rlp", "serde"] }
+alloy-serde = { workspace = true }
+
+# askama
+askama = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+derive_more = { workspace = true }
+eyre = { workspace = true }
+once_cell = { workspace = true }
+reth-chainspec = { workspace = true }
+reth-cli = { workspace = true }
+reth-ethereum-forks = { workspace = true }
+reth-primitives-traits = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true }
+shellexpand = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
