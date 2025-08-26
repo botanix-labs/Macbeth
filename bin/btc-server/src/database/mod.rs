@@ -1723,7 +1723,7 @@ mod tests {
 
         let tx = create_tx(2, 1, None);
         let psbt = Psbt::from_unsigned_tx(tx).unwrap();
-        let signing_session_id = SigningSessionId::new_pegout_session(&[0; 32]);
+        let signing_session_id = SigningSessionId::new_pegout_session([0; 32]);
 
         db.update_psbt(signing_session_id, &psbt).unwrap();
         db.flush().unwrap();
@@ -1738,13 +1738,13 @@ mod tests {
 
         let tx = create_tx(2, 1, None);
         let psbt = Psbt::from_unsigned_tx(tx).unwrap();
-        let signing_session_id = SigningSessionId::new_pegout_session(&[0; 32]);
+        let signing_session_id = SigningSessionId::new_pegout_session([0; 32]);
         db.update_psbt(signing_session_id, &psbt).unwrap();
         db.flush().unwrap();
 
         let signing_session_id = db.get_session_ids(10).unwrap().first().cloned().unwrap();
         let signing_status = db.get_signing_status(signing_session_id).unwrap();
-        assert!(signing_status == SigningStatus::Running);
+        assert_eq!(signing_status, SigningStatus::Running);
     }
 
     #[test]

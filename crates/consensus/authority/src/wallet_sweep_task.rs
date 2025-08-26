@@ -348,5 +348,5 @@ fn generate_signing_session_id(sweep_session_id: WalletSweepSessionId) -> Signin
 
     let signing_session_id_payload = keccak256(signing_session_id_payload);
 
-    SigningSessionId::new_sweep_session(signing_session_id_payload.as_ref())
+    SigningSessionId::new_sweep_session(*signing_session_id_payload)
 }

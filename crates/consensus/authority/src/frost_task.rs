@@ -413,7 +413,7 @@ where
         );
 
         // Initiate signing session
-        let session_id = SigningSessionId::new_pegout_session(&*header_hash);
+        let session_id = SigningSessionId::new_pegout_session(*header_hash);
 
         if let Err(e) =
             self.signing_state_machine.initiate_signing_session(session_id, psbt_payload.psbt).await

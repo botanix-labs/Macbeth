@@ -1,8 +1,7 @@
 use bitcoin::{address::NetworkUnchecked, Address, Network};
 use bytes::Buf;
-use reth_db_api::table::{Compress, Decode, Decompress, Encode};
+use reth_db_api::table::{Compress, Decompress};
 use reth_primitives::{keccak256, B256};
-use reth_storage_errors::db::DatabaseError;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 // TODO: TBD
