@@ -292,7 +292,7 @@ where
         }
 
         // Only coordinator can start signing session
-        if !self.signing_state_machine.is_coordinator() {
+        if !is_coordinator {
             return;
         }
 
@@ -308,6 +308,8 @@ where
     }
 
     async fn abort_wallet_sweep_session(&mut self) {
+        trace!("Wallet sweep session abort is requested from btc-server");
+
         // Clear the wallet sweep session from database
         let removed_session_id = self
             .storage
@@ -328,7 +330,7 @@ where
         let mut active_signing_session = self.signing_session_id.lock().await;
 
         if let Some(signing_session_id) = *active_signing_session {
-            debug!(
+            info!(
                 %signing_session_id,
                 "Rejecting active wallet sweep signing session"
             );
