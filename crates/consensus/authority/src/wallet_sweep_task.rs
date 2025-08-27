@@ -8,6 +8,7 @@ use botanix_storage::{
 use botanix_wallet_sweep::create_psbt_async;
 use btc_server_client::{BtcServerExtendedApi, WalletSweepSessionUpdateResponse};
 use btcserverlib::signer::{SigningSessionId, SigningSessionType};
+use eyre::WrapErr;
 use futures::pin_mut;
 use futures_util::StreamExt;
 use reth_chain_state::CanonStateSubscriptions;
@@ -176,7 +177,7 @@ where
     }
 
     async fn handle_psbt_signing_session(&mut self) {
-        trace!("Handle signing session for wallet sweep");
+        let is_coordinator = self.signing_state_machine.is_coordinator();
 
         let (sweep_session_id, sweep_session) = match self
             .storage
@@ -190,16 +191,18 @@ where
 
                 if let Some(signing_session_id) = *maybe_signing_session_id {
                     debug!(
-                        signing_session_id = hex::encode(&signing_session_id),
+                        %signing_session_id,
                         "No wallet sweep session found, but there is an active signing session. Reject it."
                     );
 
-                    // TODO: Call abort signing too
-                    self.signing_state_machine.remove_signing_session(signing_session_id).await;
+                    self.signing_state_machine
+                        .reject_signing_session(signing_session_id)
+                        .await
+                        .expect("todo: handle error");
 
                     *maybe_signing_session_id = None;
                 } else {
-                    trace!("No wallet sweep session found");
+                    trace!("No wallet sweep session found. Idle for 1 minute");
                 }
 
                 return;
@@ -222,51 +225,75 @@ where
                 if signing_session.state().is_finalized() {
                     // Signing completed successfully.
                     info!(
-                        sweep_session_id = hex::encode(&sweep_session_id),
-                        signing_session_id = hex::encode(&signing_session_id),
-                        "Wallet sweep signing session completed successfully"
+                        %sweep_session_id,
+                        %signing_session_id,
+                        "Wallet sweep signing session is completed successfully"
                     );
+
+                    // Remove the wallet sweep session from database as completed
+                    self.storage
+                        .botanix_database_factory
+                        .clear_wallet_sweep_session()
+                        .expect("todo: failed to clear wallet sweep session");
 
                     *maybe_signing_session_id = None;
 
                     return;
                 } else if signing_session.state().has_failed() {
                     warn!(
-                        sweep_session_id = hex::encode(&sweep_session_id),
-                        signing_session_id = hex::encode(&signing_session_id),
-                        "Signing session failed after 1 minute, remove and retry"
+                        %sweep_session_id,
+                        %signing_session_id,
+                        "Wallet sweep signing session failed. Retrying"
                     );
-
-                    // Remove the failed session
-                    self.signing_state_machine.remove_signing_session(signing_session_id).await;
                 } else if signing_session.state().is_running() {
                     warn!(
-                        sweep_session_id = hex::encode(&sweep_session_id),
-                        signing_session_id = hex::encode(&signing_session_id),
-                        "Signing session still not completed after 1 minute, reject and retry"
+                        %sweep_session_id,
+                        %signing_session_id,
+                        "Signing session still not completed after 1 minute. Reject and retry"
                     );
 
-                    // Remove the incomplete session
-                    self.signing_state_machine.remove_signing_session(signing_session_id).await;
+                    // Reject the incomplete session
+                    self.signing_state_machine
+                        .reject_signing_session(signing_session_id)
+                        .await
+                        .expect("todo: handle error");
                 } else {
                     warn!(
-                            sweep_session_id = hex::encode(&sweep_session_id),
-                            signing_session_id = hex::encode(&signing_session_id),
-                            "Signing session in unexpected state after 1 minute, removing and will retry on next check"
-                        );
+                        %sweep_session_id,
+                        %signing_session_id,
+                        "Signing session in unexpected state after 1 minute. Reject and retry"
+                    );
 
-                    // Remove the session in unexpected state
-                    self.signing_state_machine.remove_signing_session(signing_session_id).await;
+                    // Reject the session in unexpected state
+                    self.signing_state_machine
+                        .reject_signing_session(signing_session_id)
+                        .await
+                        .expect("todo: handle error");
                 }
             } else {
                 warn!(
-                    sweep_session_id = hex::encode(&sweep_session_id),
-                    signing_session_id = hex::encode(&signing_session_id),
-                    "Signing session not found after 1 minute for some reason, retrying"
+                    %sweep_session_id,
+                    %signing_session_id,
+                    "Signing session not found after 1 minute for some reason. Retrying"
                 );
             }
         } else {
-            trace!("No active wallet sweep signing session, starting new one");
+            if is_coordinator {
+                trace!(
+                    %sweep_session_id,
+                    "No active wallet sweep signing session found. Start a new one"
+                );
+            } else {
+                trace!(
+                    %sweep_session_id,
+                    "No active wallet sweep signing session found. Waiting for a new one"
+                );
+            }
+        }
+
+        // Only coordinator can start signing session
+        if !self.signing_state_machine.is_coordinator() {
+            return;
         }
 
         // We borrow mutable self bellow so we can't keep immutable borrowed lock
@@ -278,6 +305,43 @@ where
 
         let mut maybe_signing_session_id = self.signing_session_id.lock().await;
         *maybe_signing_session_id = new_signing_session_id;
+    }
+
+    async fn abort_wallet_sweep_session(&mut self) {
+        // Clear the wallet sweep session from database
+        let removed_session_id = self
+            .storage
+            .botanix_database_factory
+            .clear_wallet_sweep_session()
+            .expect("todo: handle error");
+
+        if let Some(sweep_session_id) = removed_session_id {
+            info!(
+                %sweep_session_id,
+                "Wallet sweep session is aborted"
+            );
+        } else {
+            trace!("No wallet sweep session found to abort");
+        }
+
+        // Reject any active signing session
+        let mut active_signing_session = self.signing_session_id.lock().await;
+
+        if let Some(signing_session_id) = *active_signing_session {
+            debug!(
+                %signing_session_id,
+                "Rejecting active wallet sweep signing session"
+            );
+
+            self.signing_state_machine
+                .reject_signing_session(signing_session_id)
+                .await
+                .expect("todo: handle error");
+
+            *active_signing_session = None;
+        } else {
+            trace!("No active signing session to reject");
+        }
     }
 
     pub async fn run(mut self) {
@@ -308,17 +372,7 @@ where
                     match received {
                         Some(Ok(message)) => {
                             if message.session_id.is_empty() {
-                                // Empty session_id means the session was removed
-                                let session_id = self.storage.botanix_database_factory.clear_wallet_sweep_session().expect("todo: failed to clear wallet sweep session");
-
-                                if let Some(session_id) = session_id {
-                                    trace!(
-                                        sweep_session_id = hex::encode(&session_id),
-                                        "Cleared wallet sweep session"
-                                    );
-                                } else {
-                                    trace!("No wallet sweep session to clear");
-                                }
+                                self.abort_wallet_sweep_session().await;
                             } else {
                                 self.handle_wallet_sweep_session_update(message).await;
                             }

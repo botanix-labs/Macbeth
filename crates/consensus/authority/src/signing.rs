@@ -245,6 +245,18 @@ where
             .map(|signing_session| signing_session.state.is_round2())
             .unwrap_or_default()
     }
+
+    pub(crate) async fn reject_signing_session(
+        &mut self,
+        session_id: SigningSessionId,
+    ) -> Result<(), Error> {
+        // abort any existing signing session
+        self.abort_signing().await?;
+        // remove the signing session from our state machine
+        self.remove_signing_session(session_id).await;
+        self.metrics.signing_sessions.decrement(1);
+        Ok(())
+    }
 }
 
 impl<ToFrostMan, Source, BtcServerClient> SigningStateMachine<ToFrostMan, Source, BtcServerClient>
