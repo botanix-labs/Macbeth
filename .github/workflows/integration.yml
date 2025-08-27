@@ -150,6 +150,7 @@ jobs:
           "test_prevent_resigning_pegout",
           "test_round1_then_new_signing_session",
           "test_track_mempool",
+          "tx_weight_limit",
           "rpc_node"]
     env:
       RUST_BACKTRACE: 1
