@@ -266,12 +266,27 @@ where
     ) {
         debug_assert_eq!(header_hash, header.hash_slow());
 
-        // TODO: This could abort our sweep signing session
-
         info!(
             target: "consensus::authority::frost_task::handle_canon_state_commit",
             "Handling canon state commit for block number {:?}", header.number
         );
+
+        let active_sweep_session = self
+            .storage
+            .botanix_database_factory
+            .get_wallet_sweep_session()
+            .expect("todo: handle error");
+
+        if let Some((sweep_session_id, _)) = active_sweep_session {
+            warn!(
+                target: "consensus::authority::frost_task::handle_canon_state_commit",
+                eth_block_height = header.number,
+                %sweep_session_id
+                "Wallet sweep session is initiated, pause pegout signing until it's completed."
+            );
+
+            return;
+        }
 
         let edh = match header.deserialize_extra_data_header() {
             Ok(edh) => edh,
