@@ -2154,8 +2154,9 @@ where
         // Get the UTXO set from the db
         let db_utxos = self.db.get_all_utxos().to_status()?;
         if db_utxos.is_empty() {
-            error!("BtcServer::recover_missing_utxos: No UTXOs found in the database.");
-            return Err(tonic::Status::internal("No UTXOs found in the database."));
+            // Not returning an error as it's possible for the db utxos to be empty after a wallet
+            // sweep
+            warn!("BtcServer::recover_missing_utxos: No UTXOs found in the database.");
         }
         info!("BtcServer::recover_missing_utxos: Found {} UTXOs in the database.", db_utxos.len());
 
