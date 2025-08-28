@@ -51,19 +51,21 @@ pub fn read_utxos_from_file(file_path: &Path) -> Vec<UtxoToRecover> {
                 .filter_map(|data| match UtxoToRecover::try_from(data) {
                     Ok(utxo) => Some(utxo),
                     Err(err) => {
-                        error!(target: "reth::cli", "Skipping invalid UTXO: {}", err);
+                        error!("utxo-recovery: Skipping invalid UTXO: {}", err);
                         None
                     }
                 })
                 .collect();
 
-            info!(target: "reth::cli", "Successfully loaded {} valid UTXOs from {:?}", 
-                valid_utxos.len(), file_path);
+            info!(
+                "utxo-recovery: Successfully loaded {} valid UTXOs from {:?}",
+                valid_utxos.len(),
+                file_path
+            );
             valid_utxos
         }
         Err(err) => {
-            error!(target: "reth::cli", "Failed to read UTXO recovery file {:?}: {}", 
-                file_path, err);
+            error!("utxo-recovery: Failed to read UTXO recovery file {:?}: {}", file_path, err);
             vec![]
         }
     }
