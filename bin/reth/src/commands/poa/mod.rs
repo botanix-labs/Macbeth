@@ -87,7 +87,7 @@ use reth_node_builder::{
 };
 use reth_node_core::{node_config::NodeConfig, version};
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
-use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
+use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, hex, Bytes, Head};
 use reth_provider::{
     providers::{BlockchainProvider2, StaticFileProvider},
     BlockHashReader, CanonStateSubscriptions, DatabaseProviderFactory, HeaderProvider,
@@ -377,26 +377,36 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             if let Some(utxo_recovery_file) = utxo_recovery_file {
                 info!(target: "reth::cli", "Recovering missing UTXOs from file: {}", utxo_recovery_file.display());
                 let utxos = read_utxos_from_file(std::path::Path::new(utxo_recovery_file));
-                info!(target: "reth::cli", "UTXOs to recover: {:?}", utxos);
+
+                // Print all outpoints with their txids in hex format
+                for (i, utxo) in utxos.iter().enumerate() {
+                    if let Some(outpoint) = &utxo.outpoint {
+                        let txid = hex::encode(&outpoint.txid);
+                        info!(
+                            "reth::cli::recover_missing_utxos: UTXO recovery request number {}: txid: {}, vout: {}, eth_address: {}",
+                            i, txid, outpoint.vout, utxo.eth_address
+                        );
+                    }
+                }
                 let recover_request = RecoverMissingUtxosRequest { utxos };
                 // Only proceed if we have UTXOs to recover
                 if !recover_request.utxos.is_empty() {
                     match btc_server_client.recover_missing_utxos(recover_request).await {
                         Ok(response) => {
                             info!(target: "reth::cli",
-                                "UTXO recovery completed successfully. Requested: {}, Recovered: {}",
+                                "reth::cli::recover_missing_utxos: UTXO recovery completed. Requested: {}, Recovered: {}",
                                 response.total_requested, response.total_recovered
                             );
                         }
                         Err(err) => {
-                            error!(target: "reth::cli", "UTXO recovery failed: {}", err);
+                            error!(target: "reth::cli", "reth::cli::recover_missing_utxos: UTXO recovery failed: {}", err);
                         }
                     }
                 } else {
-                    error!(target: "reth::cli", "UTXO_RECOVERY_FILE is provided but no UTXOs to recover");
+                    error!(target: "reth::cli", "reth::cli::recover_missing_utxos: UTXO_RECOVERY_FILE is provided but no UTXOs to recover");
                 }
             } else {
-                info!(target: "reth::cli", "No UTXOs recovery file provided");
+                info!(target: "reth::cli", "reth::cli::recover_missing_utxos:No UTXOs recovery file provided");
             };
 
             Some(btc_server_factory)
