@@ -1179,8 +1179,9 @@ pub fn transactions_signed_from_bytes(
 
 #[cfg(test)]
 mod tests {
+    use crate::test_utils::MockProvider;
     use bitcoin::{
-        consensus::Encodable,
+        absolute::LockTime,
         hashes::{sha256, Hash},
         psbt::{Input, Psbt},
         transaction::Version,
@@ -1196,8 +1197,6 @@ mod tests {
             Arc,
         },
     };
-
-    use crate::test_utils::MockProvider;
 
     use super::*;
 

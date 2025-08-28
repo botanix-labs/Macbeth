@@ -3,7 +3,7 @@ use crate::{
     frost_task::FrostTask,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
     wallet_state_sync::WalletStateSyncEngine,
-    wallet_sweep_task::WalletSweepTask,
+    wallet_sweep::WalletSweepTask,
     AuthorityConsensus, Storage,
 };
 use botanix_activation_manager::{ActivationManager, VoteWatcher};
@@ -321,7 +321,7 @@ where
             let sweep_task = WalletSweepTask::new(
                 task.signing_state_machine.clone(),
                 storage.clone(),
-                btc_server_client.clone().expect("btc_server is available"),
+                btc_server_client.clone().expect("btc_server exists"),
                 Arc::clone(&metrics),
             );
 

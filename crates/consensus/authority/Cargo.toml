@@ -108,3 +108,4 @@ rand = "0.8.5"
 reth-cli-runner = { workspace = true }
 reth-db-common = { workspace = true }
 reth-evm = { workspace = true, features = ["test-utils"] }
+tokio = { workspace = true, features = ["sync", "time", "test-util"] }
