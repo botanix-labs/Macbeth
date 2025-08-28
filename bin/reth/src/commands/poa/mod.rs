@@ -102,7 +102,7 @@ use tokio::{
     sync::{mpsc::unbounded_channel, oneshot},
     time::{timeout, Duration},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, log::warn};
 
 /// Start the node
 #[derive(Debug, Parser)]
@@ -216,6 +216,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     cometbft_rpc_port,
                     cometbft_rpc_host,
                     block_fee_recipient_address,
+                    wallet_sweep_enabled,
                 },
             datadir,
             metrics,
@@ -903,10 +904,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 panic!("Frost task must be initialized for federation node");
             }
 
-            if let Some(mut wallet_sweep_task) = wallet_sweep_task {
-                executor.spawn_critical("Wallet Sweep Task", wallet_sweep_task.run());
-            } else {
-                panic!("Wallet Sweep task must be initialized for federation node");
+            if *wallet_sweep_enabled {
+                warn!("Wallet sweep is enabled!");
+
+                if let Some(mut wallet_sweep_task) = wallet_sweep_task {
+                    executor.spawn_critical("Wallet Sweep Task", wallet_sweep_task.run());
+                } else {
+                    panic!("Wallet Sweep task must be initialized for federation node");
+                }
             }
         }
 

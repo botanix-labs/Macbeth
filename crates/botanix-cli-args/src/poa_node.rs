@@ -98,4 +98,7 @@ pub struct PoaNodeArgs {
         value_parser = parse_ethereum_address,
     )]
     pub block_fee_recipient_address: Option<Address>,
+
+    #[arg(long)]
+    pub wallet_sweep_enabled: bool,
 }
