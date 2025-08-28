@@ -26,10 +26,7 @@ pub trait WalletSweepSessionReader: Send + Sync {
     /// # Returns
     ///
     /// Returns `Ok(true)` if the session exists, `Ok(false)` otherwise.
-    fn is_wallet_sweep_session_exists(
-        &self,
-        session_id: WalletSweepSessionId,
-    ) -> ProviderResult<bool>;
+    fn is_wallet_sweep_session_exists(&self) -> ProviderResult<bool>;
 }
 
 /// Trait for writing wallet sweep session data to storage.

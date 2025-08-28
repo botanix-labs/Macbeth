@@ -558,11 +558,8 @@ impl<DB: Database> WalletSweepSessionReader for BotanixProviderFactory<DB> {
         self.provider()?.get_wallet_sweep_session()
     }
 
-    fn is_wallet_sweep_session_exists(
-        &self,
-        session_id: WalletSweepSessionId,
-    ) -> ProviderResult<bool> {
-        self.provider()?.is_wallet_sweep_session_exists(session_id)
+    fn is_wallet_sweep_session_exists(&self) -> ProviderResult<bool> {
+        self.provider()?.is_wallet_sweep_session_exists()
     }
 }
 

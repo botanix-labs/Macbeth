@@ -281,6 +281,21 @@ impl<BitcoindClient> App<BitcoindClient>
 where
     BitcoindClient: RpcApi + Send + Sync + 'static,
 {
+    fn validate_sweep_session(&self, signing_session_id: SigningSessionId) -> Result<(), Status> {
+        if !signing_session_id.is_sweep_session() {
+            return Ok(());
+        }
+
+        let has_active_session = self.db.has_active_wallet_sweep_session().map_err(|e| {
+            Status::internal(format!("Failed to check active wallet sweep session: {}", e))
+        })?;
+
+        if !has_active_session {
+            return Err(Status::failed_precondition("Wallet sweep session is not activated."));
+        }
+
+        Ok(())
+    }
     fn validate_jwt<T>(&self, request: &tonic::Request<T>) -> Result<(), tonic::Status> {
         let key = BinaryMetadataKey::from_static(JWT_HEADER_KEY);
         match (request.metadata().get_bin(key), self.btc_signing_server_jwt_secret.as_ref()) {
@@ -911,6 +926,7 @@ where
             req,
             SigningSessionId::try_from(req.signing_session_id.as_slice())
         );
+
         let signing_status = self.db.get_signing_status(signing_session_id).to_status()?;
 
         let res =
@@ -1181,6 +1197,8 @@ where
             SigningSessionId::try_from(req.signing_session_id.as_slice())
         );
 
+        self.validate_sweep_session(signing_session_id)?;
+
         // Check if we have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
         if nonces_lock.is_some() {
@@ -1259,6 +1277,8 @@ where
             req,
             SigningSessionId::try_from(req.signing_session_id.as_slice())
         );
+
+        self.validate_sweep_session(signing_session_id)?;
 
         let mut psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
             Ok(psbt) => psbt,
@@ -1388,6 +1408,7 @@ where
         req: tonic::Request<rpc::FinalizeSigningRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
+
         let req = req.into_inner();
         info!(
             "Received finalize signing request with signing session id: {}",
@@ -1398,6 +1419,8 @@ where
             req,
             SigningSessionId::try_from(req.signing_session_id.as_ref())
         );
+
+        self.validate_sweep_session(signing_session_id)?;
 
         let _tx_lock = self.tx_lock.lock().await;
         let psbt =
@@ -1742,6 +1765,8 @@ where
             SigningSessionId::try_from(req.signing_session_id.as_slice())
         );
 
+        self.validate_sweep_session(signing_session_id)?;
+
         let psbt = match coordinator::get_to_sign(signing_session_id, &self.db, self.min_signers)
             .to_status()
         {
@@ -1814,6 +1839,8 @@ where
             req,
             SigningSessionId::try_from(req.signing_session_id.as_slice())
         );
+
+        self.validate_sweep_session(signing_session_id)?;
 
         let frost_id = handle_signing_error!(self, req, deserialize_frost_peer_id(req.identifier));
 
@@ -1892,6 +1919,8 @@ where
             req,
             SigningSessionId::try_from(req.signing_session_id.as_slice())
         );
+
+        self.validate_sweep_session(signing_session_id)?;
 
         let frost_id = handle_signing_error!(self, req, deserialize_frost_peer_id(req.identifier));
 

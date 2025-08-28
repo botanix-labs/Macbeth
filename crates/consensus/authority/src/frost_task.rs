@@ -7,7 +7,7 @@ use crate::{
     },
     Storage,
 };
-use bitcoin::consensus::Encodable;
+use bitcoin::{consensus::Encodable, Psbt};
 use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
@@ -681,7 +681,7 @@ where
                         }
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, signing_session_id, psbt } =
+                        let SigningResponse { response_type, signing_session_id, psbt: psbt_bytes } =
                             signing_response;
                         let signing_session_id = match SigningSessionId::try_from(
                             signing_session_id.as_slice(),
@@ -694,7 +694,7 @@ where
                         };
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
-                                let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
+                                let psbt = match Psbt::deserialize(psbt_bytes.as_slice()) {
                                     Ok(psbt) => psbt,
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Error deserializing psbt {:?}", e);
@@ -702,26 +702,14 @@ where
                                     }
                                 };
 
-                                let validation_result = match signing_session_id.session_type() {
-                                    SigningSessionType::Pegout => {
-                                        validate_psbt_by_ids(
-                                            &self.storage.reth_database,
-                                            self.storage.btc_network,
-                                            &psbt_res,
-                                        )
-                                        .await
-                                    }
-                                    SigningSessionType::Sweep => {
-                                        validate_sweep_psbt(
-                                            &mut self.btc_server,
-                                            self.storage.btc_network,
-                                            &psbt_res,
-                                        )
-                                        .await
-                                    }
-                                };
-                                if let Err(e) = validation_result {
-                                    error!(target: "consensus::authority::frost_task::SignerRound1SigningPackage", "Error validating psbt {:?}", e);
+                                if !self
+                                    .is_signing_event_valid(
+                                        "SignerRound1SigningPackage",
+                                        signing_session_id,
+                                        &psbt,
+                                    )
+                                    .await
+                                {
                                     continue;
                                 }
 
@@ -730,7 +718,7 @@ where
                                     .signer_process_round1(
                                         &frost_identifier,
                                         signing_session_id,
-                                        psbt,
+                                        psbt_bytes,
                                     )
                                     .await
                                 {
@@ -738,7 +726,7 @@ where
                                 }
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => {
-                                let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
+                                let psbt = match Psbt::deserialize(psbt_bytes.as_slice()) {
                                     Ok(psbt) => psbt,
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error deserializing psbt {:?}", e);
@@ -746,26 +734,14 @@ where
                                     }
                                 };
 
-                                let validation_result = match signing_session_id.session_type() {
-                                    SigningSessionType::Pegout => {
-                                        validate_psbt_by_ids(
-                                            &self.storage.reth_database,
-                                            self.storage.btc_network,
-                                            &psbt_res,
-                                        )
-                                        .await
-                                    }
-                                    SigningSessionType::Sweep => {
-                                        validate_sweep_psbt(
-                                            &mut self.btc_server,
-                                            self.storage.btc_network,
-                                            &psbt_res,
-                                        )
-                                        .await
-                                    }
-                                };
-                                if let Err(e) = validation_result {
-                                    error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error validating psbt {:?}", e);
+                                if !self
+                                    .is_signing_event_valid(
+                                        "CoordinatorRound1SigningPackage",
+                                        signing_session_id,
+                                        &psbt,
+                                    )
+                                    .await
+                                {
                                     continue;
                                 }
 
@@ -774,7 +750,7 @@ where
                                     .coordinator_process_round1(
                                         &frost_identifier,
                                         signing_session_id,
-                                        psbt,
+                                        psbt_bytes,
                                     )
                                     .await
                                 {
@@ -782,7 +758,7 @@ where
                                 }
                             }
                             SigningEventResponseType::SignerRound2SigningPackage => {
-                                let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
+                                let psbt = match Psbt::deserialize(psbt_bytes.as_slice()) {
                                     Ok(psbt) => psbt,
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Error deserializing psbt {:?}", e);
@@ -790,26 +766,14 @@ where
                                     }
                                 };
 
-                                let validation_result = match signing_session_id.session_type() {
-                                    SigningSessionType::Pegout => {
-                                        validate_psbt_by_ids(
-                                            &self.storage.reth_database,
-                                            self.storage.btc_network,
-                                            &psbt_res,
-                                        )
-                                        .await
-                                    }
-                                    SigningSessionType::Sweep => {
-                                        validate_sweep_psbt(
-                                            &mut self.btc_server,
-                                            self.storage.btc_network,
-                                            &psbt_res,
-                                        )
-                                        .await
-                                    }
-                                };
-                                if let Err(e) = validation_result {
-                                    error!(target: "consensus::authority::frost_task::SignerRound2SigningPackage", "Error validating psbt {:?}", e);
+                                if !self
+                                    .is_signing_event_valid(
+                                        "SignerRound2SigningPackage",
+                                        signing_session_id,
+                                        &psbt,
+                                    )
+                                    .await
+                                {
                                     continue;
                                 }
 
@@ -818,7 +782,7 @@ where
                                     .signer_process_round2(
                                         &frost_identifier,
                                         signing_session_id,
-                                        psbt,
+                                        psbt_bytes,
                                     )
                                     .await
                                 {
@@ -826,7 +790,7 @@ where
                                 }
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => {
-                                let psbt_res = match bitcoin::Psbt::deserialize(psbt.as_slice()) {
+                                let psbt = match Psbt::deserialize(psbt_bytes.as_slice()) {
                                     Ok(psbt) => psbt,
                                     Err(e) => {
                                         error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error deserializing psbt {:?}", e);
@@ -834,26 +798,14 @@ where
                                     }
                                 };
 
-                                let validation_result = match signing_session_id.session_type() {
-                                    SigningSessionType::Pegout => {
-                                        validate_psbt_by_ids(
-                                            &self.storage.reth_database,
-                                            self.storage.btc_network,
-                                            &psbt_res,
-                                        )
-                                        .await
-                                    }
-                                    SigningSessionType::Sweep => {
-                                        validate_sweep_psbt(
-                                            &mut self.btc_server,
-                                            self.storage.btc_network,
-                                            &psbt_res,
-                                        )
-                                        .await
-                                    }
-                                };
-                                if let Err(e) = validation_result {
-                                    error!(target: "consensus::authority::frost_task::CoordinatorRound1SigningPackage", "Error validating psbt {:?}", e);
+                                if !self
+                                    .is_signing_event_valid(
+                                        "CoordinatorRound2SigningPackage",
+                                        signing_session_id,
+                                        &psbt,
+                                    )
+                                    .await
+                                {
                                     continue;
                                 }
 
@@ -862,7 +814,7 @@ where
                                     .coordinator_process_round2(
                                         &frost_identifier,
                                         signing_session_id,
-                                        psbt,
+                                        psbt_bytes,
                                     )
                                     .await
                                 {
@@ -875,8 +827,52 @@ where
             }
 
             // short sleep
-            tokio::time::sleep(std::time::Duration::from_millis(1250)).await;
+            tokio::time::sleep(Duration::from_millis(1250)).await;
         }
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    async fn is_signing_event_valid(
+        &mut self,
+        event_name: &str,
+        signing_session_id: SigningSessionId,
+        psbt: &Psbt,
+    ) -> bool {
+        let validation_result = match signing_session_id.session_type() {
+            SigningSessionType::Pegout => {
+                validate_psbt_by_ids(&self.storage.reth_database, self.storage.btc_network, &psbt)
+                    .await
+            }
+            SigningSessionType::Sweep => {
+                let is_wallet_sweep_session_exists = match self
+                    .storage
+                    .botanix_database_factory
+                    .is_wallet_sweep_session_exists()
+                {
+                    Ok(exists) => exists,
+                    Err(e) => {
+                        warn!("Failed to fetch wallet session existence status from database: {e}");
+
+                        return false;
+                    }
+                };
+
+                if !is_wallet_sweep_session_exists {
+                    warn!("Ignore frost signing event {event_name}. Wallet sweep session is not accepted.");
+
+                    return false;
+                };
+
+                validate_sweep_psbt(&mut self.btc_server, self.storage.btc_network, &psbt).await
+            }
+        };
+        if let Err(e) = validation_result {
+            error!("Error validating psbt for signing event {event_name}: {e}");
+
+            return false;
+        }
+
+        true
     }
 }
 
