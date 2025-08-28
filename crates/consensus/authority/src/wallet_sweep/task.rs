@@ -1,6 +1,4 @@
-use crate::{
-    signing::SigningStateMachine, wallet_sweep::scheduler::SigningHandlerSchedule, Storage,
-};
+use crate::{signing::SigningStateMachine, wallet_sweep::timer::SigningHandlerTimer, Storage};
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_storage::{
@@ -68,7 +66,7 @@ where
     async fn handle_wallet_sweep_session_update(
         &mut self,
         session_update: WalletSweepSessionUpdateResponse,
-    ) -> Option<SigningHandlerSchedule> {
+    ) -> Option<SigningHandlerTimer> {
         let sweep_session_id: WalletSweepSessionId =
             session_update.session_id.as_slice().try_into().expect("todo: handle error");
 
@@ -98,7 +96,7 @@ where
             Err(e) => {
                 error!("failed to fetch current wallet sweep session from database: {e}");
 
-                return Some(SigningHandlerSchedule::after(ERROR_RETRY_INTERVAL));
+                return Some(SigningHandlerTimer::after(ERROR_RETRY_INTERVAL));
             }
             Ok(None) => {}
         };
@@ -108,7 +106,7 @@ where
             Err(e) => {
                 error!("Failed to deserialize wallet sweep session: {e}");
 
-                return Some(SigningHandlerSchedule::after(ERROR_RETRY_INTERVAL));
+                return Some(SigningHandlerTimer::after(ERROR_RETRY_INTERVAL));
             }
         };
 
@@ -117,7 +115,7 @@ where
             .update_wallet_sweep_session(session.clone())
             .expect("failed to update wallet sweep session");
 
-        Some(SigningHandlerSchedule::after(SIGNING_EXPECTED_DURATION))
+        Some(SigningHandlerTimer::after(SIGNING_EXPECTED_DURATION))
     }
 
     async fn initiate_signing_session(
@@ -184,7 +182,7 @@ where
         }
     }
 
-    async fn handle_psbt_signing_session(&mut self) -> SigningHandlerSchedule {
+    async fn handle_psbt_signing_session(&mut self) -> SigningHandlerTimer {
         let is_coordinator = self.signing_state_machine.is_coordinator();
 
         let (sweep_session_id, sweep_session) = match self
@@ -213,12 +211,12 @@ where
                     trace!("No wallet sweep session found. Idle for 1 minute");
                 }
 
-                return SigningHandlerSchedule::pause();
+                return SigningHandlerTimer::pause();
             }
             Err(e) => {
                 error!("Failed to fetch wallet sweep session from database: {e}");
 
-                return SigningHandlerSchedule::after(ERROR_RETRY_INTERVAL);
+                return SigningHandlerTimer::after(ERROR_RETRY_INTERVAL);
             }
         };
 
@@ -247,7 +245,7 @@ where
                         "Wallet sweep signing session is completed successfully"
                     );
 
-                    return SigningHandlerSchedule::pause();
+                    return SigningHandlerTimer::pause();
                 } else if signing_session.state().has_failed() {
                     warn!(
                         %sweep_session_id,
@@ -302,7 +300,7 @@ where
 
         // Only coordinator can start signing session
         if !is_coordinator {
-            return SigningHandlerSchedule::after(SIGNING_EXPECTED_DURATION);
+            return SigningHandlerTimer::after(SIGNING_EXPECTED_DURATION);
         }
 
         // We borrow mutable self bellow so we can't keep immutable borrowed lock
@@ -315,10 +313,10 @@ where
         let mut active_signing_session_id = self.signing_session_id.lock().await;
         *active_signing_session_id = new_signing_session_id;
 
-        SigningHandlerSchedule::after(SIGNING_EXPECTED_DURATION)
+        SigningHandlerTimer::after(SIGNING_EXPECTED_DURATION)
     }
 
-    async fn abort_wallet_sweep_session(&mut self) -> Option<SigningHandlerSchedule> {
+    async fn abort_wallet_sweep_session(&mut self) -> Option<SigningHandlerTimer> {
         trace!("Wallet sweep session abort is requested from btc-server");
 
         // Clear the wallet sweep session from database
@@ -337,12 +335,12 @@ where
             trace!("No wallet sweep session found to abort");
         }
 
-        Some(SigningHandlerSchedule::immediately())
+        Some(SigningHandlerTimer::immediately())
     }
 
     pub async fn run(mut self) {
         // The timer to run signing session handler
-        let mut signing_handler_schedule = SigningHandlerSchedule::default();
+        let mut signing_handler_schedule = SigningHandlerTimer::default();
 
         loop {
             let request = btc_server_client::WalletSweepSessionUpdatesRequest {};

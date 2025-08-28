@@ -2,33 +2,31 @@ use std::{pin::Pin, time::Duration};
 use tokio::time::{sleep, Sleep};
 
 #[derive(Debug, Default)]
-pub enum SigningHandlerSchedule {
+pub enum SigningHandlerTimer {
     /// Never run
     #[default]
     None,
-    /// Schedule to run after a delay
+    /// Run after a delay
     Timer(Pin<Box<Sleep>>),
 }
 
-pub type SigningHandlerTimer = Option<Pin<Box<Sleep>>>;
-
-impl SigningHandlerSchedule {
+impl SigningHandlerTimer {
     pub fn after(d: Duration) -> Self {
-        SigningHandlerSchedule::Timer(Box::pin(sleep(d)))
+        SigningHandlerTimer::Timer(Box::pin(sleep(d)))
     }
 
     pub fn immediately() -> Self {
-        SigningHandlerSchedule::Timer(Box::pin(sleep(Duration::from_secs(0))))
+        SigningHandlerTimer::Timer(Box::pin(sleep(Duration::from_secs(0))))
     }
 
     pub fn pause() -> Self {
-        SigningHandlerSchedule::None
+        SigningHandlerTimer::None
     }
 
     pub async fn wait(&mut self) {
         match self {
-            SigningHandlerSchedule::None => futures::future::pending::<()>().await,
-            SigningHandlerSchedule::Timer(ref mut timer) => Pin::as_mut(timer).await,
+            SigningHandlerTimer::None => futures::future::pending::<()>().await,
+            SigningHandlerTimer::Timer(ref mut timer) => Pin::as_mut(timer).await,
         }
 
         // Disable schedule after it's triggered
@@ -44,9 +42,7 @@ mod tests {
     /// Helper that executes `schedule.wait()` in a task and returns a
     /// `tokio::sync::oneshot::Receiver<()>` that is fulfilled once the wait
     /// future completes.
-    async fn spawn_wait(
-        mut schedule: SigningHandlerSchedule,
-    ) -> tokio::sync::oneshot::Receiver<()> {
+    async fn spawn_wait(mut schedule: SigningHandlerTimer) -> tokio::sync::oneshot::Receiver<()> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
             schedule.wait().await;
@@ -57,7 +53,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn schedule_immediately_fires() {
-        let mut schedule = SigningHandlerSchedule::immediately();
+        let mut schedule = SigningHandlerTimer::immediately();
 
         // Should finish without advancing the clock.
         let before = Instant::now();
@@ -70,7 +66,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn schedule_after_fires_after_delay() {
         let delay = Duration::from_secs(5);
-        let schedule = SigningHandlerSchedule::after(delay);
+        let schedule = SigningHandlerTimer::after(delay);
 
         // Spawn the wait future and observe when it completes.
         let mut rx = spawn_wait(schedule).await;
@@ -89,7 +85,7 @@ mod tests {
         use advance;
         use sleep;
 
-        let mut schedule = SigningHandlerSchedule::after(Duration::from_secs(3));
+        let mut schedule = SigningHandlerTimer::after(Duration::from_secs(3));
 
         advance(Duration::from_secs(1)).await; // make 1-s timer ready
 
@@ -109,7 +105,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn schedule_fires_once_then_disarms() {
         let delay = Duration::from_secs(2);
-        let mut schedule = SigningHandlerSchedule::after(delay);
+        let mut schedule = SigningHandlerTimer::after(delay);
 
         // Trigger the first time.
         advance(delay).await;
