@@ -9302,7 +9302,6 @@ dependencies = [
  "reth-transaction-pool",
  "reth-trie",
  "reth-trie-db",
- "rsntp",
  "secp256k1 0.29.1",
  "serde",
  "serde_json",
@@ -12091,16 +12090,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7f89f654d51fffdd6026289d07d1fd523244d46ae0a8bc22caa6dd7f9e8cb0b"
 dependencies = [
  "archery",
-]
-
-[[package]]
-name = "rsntp"
-version = "3.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95538ef5297284300da4c3048a60309027e33bc25d96220429609f3fdb01e188"
-dependencies = [
- "chrono",
- "tokio",
 ]
 
 [[package]]
