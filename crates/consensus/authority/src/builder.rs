@@ -3,7 +3,7 @@ use crate::{
     frost_task::FrostTask,
     snapshot_manager::{SnapshotManager, SnapshotManagerStateLock},
     wallet_state_sync::WalletStateSyncEngine,
-    wallet_sweep_task::WalletSweepTask,
+    wallet_sweep::WalletSweepTask,
     AuthorityConsensus, Storage,
 };
 use botanix_activation_manager::{ActivationManager, VoteWatcher};

@@ -53,7 +53,7 @@ pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
 pub mod test_utils;
 pub mod wallet_state_sync;
-pub mod wallet_sweep_task;
+mod wallet_sweep;
 
 /// Max EDH size; for specific details see [ExtraDataHeader]
 pub const MAX_EDH_SIZE: usize = 93;
