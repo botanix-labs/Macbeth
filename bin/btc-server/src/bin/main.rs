@@ -2354,7 +2354,7 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
     }));
 
     let telemetry = if config.metrics_port.is_some() {
-        let telemetry = Telemetry::new(Some("btc_server".to_string())).await?;
+        let telemetry = Telemetry::new(None).await?;
         telemetry.start().await?;
         Some(telemetry)
     } else {
