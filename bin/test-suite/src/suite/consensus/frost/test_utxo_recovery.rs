@@ -5,7 +5,7 @@ use bitcoincore_rpc::RpcApi;
 use btc_server_client::BtcServerClient;
 use btcserverlib::pegout_id::PegoutId;
 use hex::{self, encode as hex_encode};
-use rand::{rngs::StdRng, Rng, RngCore, SeedableRng};
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tonic::transport::Channel;
 
 use crate::{
