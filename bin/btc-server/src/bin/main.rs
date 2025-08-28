@@ -2267,13 +2267,13 @@ where
             }
 
             // add the utxo to the list of utxos to be added
-            println!("BtcServer::recover_missing_utxos: UTXO {} passed all validations, adding to recovery list", outpoint);
+            info!("BtcServer::recover_missing_utxos: UTXO {} passed all validations, adding to recovery list", outpoint);
             utxos_to_add.push(utxo);
         }
 
         // add the utxos to the database
         let utxo_refs: Vec<&crate::database::Utxo> = utxos_to_add.iter().collect();
-        println!("BtcServer::recover_missing_utxos: Storing {} missing UTXOs.", utxo_refs.len());
+        info!("BtcServer::recover_missing_utxos: Storing {} missing UTXOs.", utxo_refs.len());
         self.db.store_utxos(&utxo_refs).to_status()?;
         self.db.update_utxo_merkle_root().to_status()?;
         self.db.flush().to_status()?;
@@ -3233,34 +3233,18 @@ mod tests {
 
         // Create request utxos
         let utxo_with_eth = rpc::UtxoToRecover {
-            outpoint: Some(rpc::OutPoint {
-                txid: bitcoin::consensus::serialize(&outpoint1.txid),
-                vout: outpoint1.vout,
-            }),
+            outpoint: Some(rpc::OutPoint::from(outpoint1)),
             eth_address: hex::encode(eth_address),
         };
 
         let utxo_without_eth = rpc::UtxoToRecover {
-            outpoint: Some(rpc::OutPoint {
-                txid: bitcoin::consensus::serialize(&outpoint2.txid),
-                vout: outpoint2.vout,
-            }),
+            outpoint: Some(rpc::OutPoint::from(outpoint2)),
             eth_address: String::new(), // Empty for change UTXO
         };
 
         let request = tonic::Request::new(RecoverMissingUtxosRequest {
             utxos: vec![utxo_with_eth, utxo_without_eth],
         });
-
-        // use hex encode to print the txid in the request
-        let txid = hex::encode(&outpoint1.txid);
-        println!("hex encoded txid: {}", txid);
-
-        let txid_bytes = bitcoin::consensus::serialize(&outpoint1.txid);
-        println!("txid bytes: {:?}", txid_bytes);
-
-        // print the request
-        println!("request: {:?}", request);
 
         let response = app.recover_missing_utxos(request).await.expect("successful recovery");
         let inner = response.into_inner();
@@ -3307,38 +3291,26 @@ mod tests {
 
         // Case 1 - utxo exists in db
         let existing_utxo = rpc::UtxoToRecover {
-            outpoint: Some(rpc::OutPoint {
-                txid: bitcoin::consensus::serialize(&existing_outpoint.txid),
-                vout: existing_outpoint.vout,
-            }),
+            outpoint: Some(rpc::OutPoint::from(existing_outpoint)),
             eth_address: String::new(),
         };
 
         // Case 2 - wrong eth address
         let wrong_eth_address = [2u8; 20];
         let utxo_wrong_eth_address = rpc::UtxoToRecover {
-            outpoint: Some(rpc::OutPoint {
-                txid: bitcoin::consensus::serialize(&outpoint1.txid),
-                vout: outpoint1.vout,
-            }),
+            outpoint: Some(rpc::OutPoint::from(outpoint1)),
             eth_address: hex::encode(wrong_eth_address),
         };
 
         // Case 3 - utxo does not match change script pubkey
         let utxo_not_change_script = rpc::UtxoToRecover {
-            outpoint: Some(rpc::OutPoint {
-                txid: bitcoin::consensus::serialize(&outpoint2.txid),
-                vout: outpoint2.vout,
-            }),
+            outpoint: Some(rpc::OutPoint::from(outpoint2)),
             eth_address: String::new(),
         };
 
         // Case 4 - utxo is not found by bitcoind
         let utxo_not_found = rpc::UtxoToRecover {
-            outpoint: Some(rpc::OutPoint {
-                txid: bitcoin::consensus::serialize(&outpoint3.txid),
-                vout: outpoint3.vout,
-            }),
+            outpoint: Some(rpc::OutPoint::from(outpoint3)),
             eth_address: String::new(),
         };
 
