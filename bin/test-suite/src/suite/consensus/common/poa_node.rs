@@ -325,8 +325,6 @@ impl FederationMemberTestConfig {
             "-vvv",
             "--disable-discovery",
             "--is-testnet",
-            "--ntp-server",
-            "time.cloudflare.com",
             "--federation-config-path",
             federation_config_path.as_str(),
             "--federation-mode",

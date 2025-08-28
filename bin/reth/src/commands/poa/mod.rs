@@ -75,7 +75,6 @@ use btcserverlib::utxo_recovery::read_utxos_from_file;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
-use reth_consensus_common::utils;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
@@ -99,7 +98,6 @@ use reth_static_file::StaticFileProducer;
 use reth_transaction_pool::{
     blobstore::InMemoryBlobStore, TransactionPoolExt, TransactionValidationTaskExecutor,
 };
-use rsntp::AsyncSntpClient;
 use tokio::{
     sync::{mpsc::unbounded_channel, oneshot},
     time::{timeout, Duration},
@@ -208,7 +206,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     network_config_path,
                     is_testnet,
                     is_devnet,
-                    ntp_server,
                     federation_config_path: _,
                     federation_mode,
                     state_sync,
@@ -343,32 +340,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Does not do anything on windows.
         raise_fd_limit()?;
 
-        // async task that checks system clock is in sync with NTP server
-        let ntp_server = ntp_server.clone();
-        info!("NTP server url: {}", ntp_server);
-        executor.spawn_critical(
-            "async system clock sync with ntp task",
-            Box::pin(async move {
-                let sleep_sec = tokio::time::Duration::from_secs(15);
-                let acceptable_drift_sec = 1;
-                loop {
-                    match ntp_unix_timestamp(&ntp_server).await {
-                        Ok(ntp_timestamp) => {
-                            let system_timestamp = utils::unix_timestamp();
-                            if (ntp_timestamp as i64 - system_timestamp as i64).abs() > acceptable_drift_sec {
-                                error!("System clock is not in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
-                            } else {
-                                info!("System clock is in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
-                            }
-                        }
-                        Err(err) => {
-                            error!("NTP sync failed: {}", err);
-                        }
-                    }
-                    tokio::time::sleep(sleep_sec).await;
-                }
-            }),
-        );
         // extract the btc server jwt secret from the args
         let btc_signing_server_jwt_secret = node_config.rpc.btc_signing_server_jwt_secret()?;
 
@@ -1180,28 +1151,6 @@ impl PayloadBuilderConfig for DefaultPoAPayloadBuilderConfig {
 
     fn max_gas_limit(&self) -> u64 {
         ETHEREUM_BLOCK_GAS_LIMIT
-    }
-}
-
-// *** Botanix specific
-// get unix timsestamp in seconds from ntp server
-async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
-    // create NTP client
-    let client = AsyncSntpClient::new();
-
-    // sync with NTP server
-    match client.synchronize(ntp_server).await {
-        Ok(sync_result) => match sync_result.datetime().unix_timestamp() {
-            Ok(duration) => Ok(duration.as_secs()),
-            Err(err) => {
-                error!("Failed to get unix timestamp from NTP response: {}", err);
-                Err(err.into())
-            }
-        },
-        Err(err) => {
-            error!("Failed to sync with NTP server: {}", err);
-            Err(err.into())
-        }
     }
 }
 
