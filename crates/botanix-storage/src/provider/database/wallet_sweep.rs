@@ -23,14 +23,10 @@ impl<TX: DbTx> WalletSweepSessionReader for BotanixDatabaseProvider<TX> {
             .map_err(Into::into)
     }
 
-    fn is_wallet_sweep_session_exists(
-        &self,
-        session_id: WalletSweepSessionId,
-    ) -> ProviderResult<bool> {
-        self.tx
-            .get::<WalletSweepSessions>(session_id)
-            .map(|maybe_session| maybe_session.is_some())
-            .map_err(Into::into)
+    fn is_wallet_sweep_session_exists(&self) -> ProviderResult<bool> {
+        let session = self.get_wallet_sweep_session()?;
+
+        Ok(session.is_some())
     }
 }
 
@@ -41,11 +37,8 @@ impl<DB: Database> WalletSweepSessionReader for BotanixDatabaseProviderRW<DB> {
         self.0.get_wallet_sweep_session()
     }
 
-    fn is_wallet_sweep_session_exists(
-        &self,
-        session_id: WalletSweepSessionId,
-    ) -> ProviderResult<bool> {
-        self.0.is_wallet_sweep_session_exists(session_id)
+    fn is_wallet_sweep_session_exists(&self) -> ProviderResult<bool> {
+        self.0.is_wallet_sweep_session_exists()
     }
 }
 
