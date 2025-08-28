@@ -281,7 +281,7 @@ where
             warn!(
                 target: "consensus::authority::frost_task::handle_canon_state_commit",
                 eth_block_height = header.number,
-                %sweep_session_id
+                %sweep_session_id,
                 "Wallet sweep session is initiated, pause pegout signing until it's completed."
             );
 

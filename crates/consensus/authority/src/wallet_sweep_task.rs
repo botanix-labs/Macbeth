@@ -16,8 +16,46 @@ use reth_db::table::Decompress;
 use reth_network::frost::manager::ToFrostManager;
 use reth_primitives::{alloy_primitives::FixedBytes, keccak256};
 use reth_provider::{BlockReaderIdExt, StateProviderFactory};
-use std::{ops::Deref, sync::Arc};
+use std::{ops::Deref, pin::Pin, sync::Arc, time::Duration};
+use tokio::time::{sleep, Sleep};
 use tracing::{debug, error, info, trace, warn};
+
+const SIGNING_EXPECTED_DURATION: Duration = Duration::from_secs(60);
+const ERROR_RETRY_INTERVAL: Duration = Duration::from_secs(10);
+
+enum SigningHandlerSchedule {
+    /// Schedule to run immediately
+    Immediately,
+    /// Schedule to run after a delay
+    After(Duration),
+    /// Schedule to pause
+    Pause,
+}
+
+type SigningHandlerTimer = Option<Pin<Box<Sleep>>>;
+
+impl SigningHandlerSchedule {
+    async fn wait(&mut self) {
+        match self {
+            SigningHandlerSchedule::Immediately => {
+                trace!("Scheduled signing handler to run immediately");
+            }
+            SigningHandlerSchedule::After(delay) => {
+                // Set the timer to run after the specified delay
+                trace!("Scheduled signing handler to run after {:?}", delay);
+
+                sleep(*delay).await;
+            }
+            SigningHandlerSchedule::Pause => {
+                // Wait forever
+
+                futures::future::pending::<()>().await
+            }
+        };
+
+        *self = Self::Pause
+    }
+}
 
 #[derive(Clone)]
 pub struct WalletSweepTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient> {
@@ -62,29 +100,29 @@ where
     async fn handle_wallet_sweep_session_update(
         &mut self,
         session_update: WalletSweepSessionUpdateResponse,
-    ) {
-        let session_id: WalletSweepSessionId =
+    ) -> Option<SigningHandlerSchedule> {
+        let sweep_session_id: WalletSweepSessionId =
             session_update.session_id.as_slice().try_into().expect("todo: handle error");
 
         trace!(
-            sweep_session_id = hex::encode(&session_id),
+            %sweep_session_id,
             "Update wallet sweep session from btc-server"
         );
 
         // Check if we had another session
         match self.storage.botanix_database_factory.get_wallet_sweep_session() {
-            Ok(Some((existing_session_id, _))) => {
-                if existing_session_id == session_id {
+            Ok(Some((existing_sweep_session_id, _))) => {
+                if existing_sweep_session_id == sweep_session_id {
                     trace!(
-                        sweep_session_id = hex::encode(&session_id),
+                        %sweep_session_id,
                         "Wallet sweep session already exists. Skip update"
                     );
 
-                    return;
+                    return None;
                 } else {
                     debug!(
-                        new_sweep_session_id = hex::encode(&session_id),
-                        existing_sweep_session_id = hex::encode(&existing_session_id),
+                        new_sweep_session_id = %sweep_session_id,
+                        %existing_sweep_session_id,
                         "Another wallet sweep session already exist. It will be replaced with the new one"
                     );
                 }
@@ -92,7 +130,7 @@ where
             Err(e) => {
                 error!("failed to fetch current wallet sweep session from database: {e}");
 
-                return;
+                return Some(SigningHandlerSchedule::After(ERROR_RETRY_INTERVAL));
             }
             Ok(None) => {}
         };
@@ -102,7 +140,7 @@ where
             Err(e) => {
                 error!("Failed to deserialize wallet sweep session: {e}");
 
-                return;
+                return Some(SigningHandlerSchedule::After(ERROR_RETRY_INTERVAL));
             }
         };
 
@@ -110,6 +148,8 @@ where
             .botanix_database_factory
             .update_wallet_sweep_session(session.clone())
             .expect("failed to update wallet sweep session");
+
+        Some(SigningHandlerSchedule::After(SIGNING_EXPECTED_DURATION))
     }
 
     async fn initiate_signing_session(
@@ -120,8 +160,8 @@ where
         let signing_session_id = generate_signing_session_id(sweep_session_id);
 
         info!(
-            sweep_session_id = hex::encode(&sweep_session_id),
-            signing_session_id = hex::encode(&signing_session_id),
+            %sweep_session_id,
+            %signing_session_id,
             "Initiating FROST signing for sweep PSBT"
         );
 
@@ -129,8 +169,8 @@ where
         let sweep_psbt = match create_psbt_async(sweep_session, &mut self.btc_server).await {
             Ok(psbt) => {
                 trace!(
-                    sweep_session_id = hex::encode(&sweep_session_id),
-                    signing_session_id = hex::encode(&signing_session_id),
+                    %sweep_session_id,
+                    %signing_session_id,
                     "Successfully created sweep PSBT with {} inputs, {} outputs",
                     psbt.inputs.len(),
                     psbt.outputs.len()
@@ -139,8 +179,8 @@ where
             }
             Err(e) => {
                 error!(
-                    sweep_session_id = hex::encode(&sweep_session_id),
-                    signing_session_id = hex::encode(&signing_session_id),
+                    %sweep_session_id,
+                    %signing_session_id,
                     "Failed to create sweep PSBT: {}",
                     e
                 );
@@ -159,7 +199,7 @@ where
             .await
         {
             error!(
-                sweep_session_id = hex::encode(&sweep_session_id),
+                %sweep_session_id,
                 %signing_session_id,
                 "Failed to initiate FROST signing for sweep PSBT: {}", e
             );
@@ -167,8 +207,8 @@ where
             None
         } else {
             info!(
-                sweep_session_id = hex::encode(&sweep_session_id),
-                signing_session_id = hex::encode(&signing_session_id),
+                %sweep_session_id,
+                %signing_session_id,
                 "Initiated FROST signing for sweep PSBT"
             );
 
@@ -176,7 +216,7 @@ where
         }
     }
 
-    async fn handle_psbt_signing_session(&mut self) {
+    async fn handle_psbt_signing_session(&mut self) -> SigningHandlerSchedule {
         let is_coordinator = self.signing_state_machine.is_coordinator();
 
         let (sweep_session_id, sweep_session) = match self
@@ -187,9 +227,9 @@ where
             Ok(Some((session_id, session))) => (session_id, session),
             Ok(None) => {
                 // If we don't have a wallet sweep session, ensure no signing session is active
-                let mut maybe_signing_session_id = self.signing_session_id.lock().await;
+                let mut active_signing_session_id = self.signing_session_id.lock().await;
 
-                if let Some(signing_session_id) = *maybe_signing_session_id {
+                if let Some(signing_session_id) = *active_signing_session_id {
                     debug!(
                         %signing_session_id,
                         "No wallet sweep session found, but there is an active signing session. Reject it."
@@ -200,35 +240,30 @@ where
                         .await
                         .expect("todo: handle error");
 
-                    *maybe_signing_session_id = None;
+                    *active_signing_session_id = None;
                 } else {
                     trace!("No wallet sweep session found. Idle for 1 minute");
                 }
 
-                return;
+                return SigningHandlerSchedule::Pause;
             }
             Err(e) => {
                 error!("Failed to fetch wallet sweep session from database: {e}");
 
-                return;
+                return SigningHandlerSchedule::After(ERROR_RETRY_INTERVAL);
             }
         };
 
         // Check if we have an active signing session
-        let mut maybe_signing_session_id = self.signing_session_id.lock().await;
+        let mut active_signing_session_id = self.signing_session_id.lock().await;
 
-        if let Some(signing_session_id) = *maybe_signing_session_id {
+        if let Some(signing_session_id) = *active_signing_session_id {
             // Check if the corresponding signing session exists and its status
             if let Some(signing_session) =
                 self.signing_state_machine.get_signing_session(signing_session_id).await
             {
                 if signing_session.state().is_finalized() {
-                    // Signing completed successfully.
-                    info!(
-                        %sweep_session_id,
-                        %signing_session_id,
-                        "Wallet sweep signing session is completed successfully"
-                    );
+                    // Signing is completed successfully.
 
                     // Remove the wallet sweep session from database as completed
                     self.storage
@@ -236,9 +271,15 @@ where
                         .clear_wallet_sweep_session()
                         .expect("todo: failed to clear wallet sweep session");
 
-                    *maybe_signing_session_id = None;
+                    *active_signing_session_id = None;
 
-                    return;
+                    info!(
+                        %sweep_session_id,
+                        %signing_session_id,
+                        "Wallet sweep signing session is completed successfully"
+                    );
+
+                    return SigningHandlerSchedule::Pause;
                 } else if signing_session.state().has_failed() {
                     warn!(
                         %sweep_session_id,
@@ -293,21 +334,23 @@ where
 
         // Only coordinator can start signing session
         if !is_coordinator {
-            return;
+            return SigningHandlerSchedule::After(SIGNING_EXPECTED_DURATION);
         }
 
         // We borrow mutable self bellow so we can't keep immutable borrowed lock
-        drop(maybe_signing_session_id);
+        drop(active_signing_session_id);
 
         // Start signing session again
         let new_signing_session_id =
             self.initiate_signing_session(sweep_session_id, sweep_session).await;
 
-        let mut maybe_signing_session_id = self.signing_session_id.lock().await;
-        *maybe_signing_session_id = new_signing_session_id;
+        let mut active_signing_session_id = self.signing_session_id.lock().await;
+        *active_signing_session_id = new_signing_session_id;
+
+        SigningHandlerSchedule::After(SIGNING_EXPECTED_DURATION)
     }
 
-    async fn abort_wallet_sweep_session(&mut self) {
+    async fn abort_wallet_sweep_session(&mut self) -> Option<SigningHandlerSchedule> {
         trace!("Wallet sweep session abort is requested from btc-server");
 
         // Clear the wallet sweep session from database
@@ -326,29 +369,12 @@ where
             trace!("No wallet sweep session found to abort");
         }
 
-        // Reject any active signing session
-        let mut active_signing_session = self.signing_session_id.lock().await;
-
-        if let Some(signing_session_id) = *active_signing_session {
-            info!(
-                %signing_session_id,
-                "Rejecting active wallet sweep signing session"
-            );
-
-            self.signing_state_machine
-                .reject_signing_session(signing_session_id)
-                .await
-                .expect("todo: handle error");
-
-            *active_signing_session = None;
-        } else {
-            trace!("No active signing session to reject");
-        }
+        Some(SigningHandlerSchedule::Immediately)
     }
 
     pub async fn run(mut self) {
-        let mut signing_check_interval =
-            tokio::time::interval(tokio::time::Duration::from_secs(60));
+        // The timer to run signing session handler
+        let mut signing_handler_schedule: SigningHandlerSchedule = SigningHandlerSchedule::Pause;
 
         loop {
             let request = btc_server_client::WalletSweepSessionUpdatesRequest {};
@@ -373,11 +399,15 @@ where
                 received = stream.next() => {
                     match received {
                         Some(Ok(message)) => {
-                            if message.session_id.is_empty() {
-                                self.abort_wallet_sweep_session().await;
+                            let schedule_update = if message.session_id.is_empty() {
+                                self.abort_wallet_sweep_session().await
                             } else {
-                                self.handle_wallet_sweep_session_update(message).await;
-                            }
+                                self.handle_wallet_sweep_session_update(message).await
+                            };
+
+                            if let Some(schedule) = schedule_update {
+                                signing_handler_schedule = schedule;
+                            };
                         }
                         Some(Err(e)) => {
                             error!("Wallet sweep session update stream error: {}", e);
@@ -393,8 +423,10 @@ where
                 }
 
                 // Handle periodic timer ticks (every minute)
-                _ = signing_check_interval.tick() => {
-                    self.handle_psbt_signing_session().await;
+                _ = signing_handler_schedule.wait() => {
+                    signing_handler_schedule = SigningHandlerSchedule::Pause;
+
+                    signing_handler_schedule = self.handle_psbt_signing_session().await;
                 }
             }
 
