@@ -321,7 +321,7 @@ where
             let sweep_task = WalletSweepTask::new(
                 task.signing_state_machine.clone(),
                 storage.clone(),
-                btc_server_client.clone().expect("btc_server is available"),
+                btc_server_client.clone().expect("btc_server exists"),
                 Arc::clone(&metrics),
             );
 
