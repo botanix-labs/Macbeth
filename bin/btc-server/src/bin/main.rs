@@ -1697,12 +1697,7 @@ where
                 outpoint,
                 output: TxOut {
                     value: on_chain_utxo.value,
-                    script_pubkey: consensus::deserialize::<bitcoin::ScriptBuf>(
-                        &on_chain_utxo.script_pub_key.hex,
-                    )
-                    .map_err(|e| {
-                        tonic::Status::internal(format!("Failed to decode script: {}", e))
-                    })?,
+                    script_pubkey: bitcoin::ScriptBuf::from_bytes(on_chain_utxo.script_pub_key.hex.clone()),
                 },
                 eth_address,
                 version: 0,
