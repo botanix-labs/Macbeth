@@ -87,7 +87,7 @@ use reth_node_builder::{
 };
 use reth_node_core::{node_config::NodeConfig, version};
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
-use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
+use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, hex, Bytes, Head};
 use reth_provider::{
     providers::{BlockchainProvider2, StaticFileProvider},
     BlockHashReader, CanonStateSubscriptions, DatabaseProviderFactory, HeaderProvider,
@@ -377,7 +377,14 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             if let Some(utxo_recovery_file) = utxo_recovery_file {
                 info!(target: "reth::cli", "Recovering missing UTXOs from file: {}", utxo_recovery_file.display());
                 let utxos = read_utxos_from_file(std::path::Path::new(utxo_recovery_file));
-                info!(target: "reth::cli", "UTXOs to recover: {:?}", utxos);
+                
+                // Print all outpoints with their txids in hex format
+                for (i, utxo) in utxos.iter().enumerate() {
+                    if let Some(outpoint) = &utxo.outpoint {
+                        let txid = hex::encode(&outpoint.txid);
+                        println!("UTXO recovery request number {}: txid: {}, vout: {}, eth_address: {}", i, txid, outpoint.vout, utxo.eth_address );
+                    }
+                }
                 let recover_request = RecoverMissingUtxosRequest { utxos };
                 // Only proceed if we have UTXOs to recover
                 if !recover_request.utxos.is_empty() {
