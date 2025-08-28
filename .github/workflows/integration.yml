@@ -136,6 +136,7 @@ jobs:
           "signing_flow",
           "test_mempool_gossip",
           "utxo_sync",
+          "utxo_recovery",
           "state_sync",
           "wallet_sync",
           "frost_e2e_stable",
