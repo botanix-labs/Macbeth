@@ -14,7 +14,7 @@ use std::{
 use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
-    consensus::{self, Decodable},
+    consensus::Decodable,
     secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
 };
 use bitcoin_hashes::Hash;

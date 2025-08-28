@@ -15,4 +15,5 @@ pub mod test_round1_then_new_signing_session;
 pub mod test_signing;
 pub mod test_track_mempool;
 pub mod test_utxo_commitment;
+pub mod test_utxo_recovery;
 pub mod test_utxo_sync;
