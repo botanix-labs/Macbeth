@@ -13,7 +13,7 @@ use std::{
 
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
-    consensus::{self, Decodable},
+    consensus::Decodable,
     secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
 };
 use bitcoin_hashes::Hash;

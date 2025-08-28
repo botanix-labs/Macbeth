@@ -16,4 +16,5 @@ pub mod test_signing;
 pub mod test_track_mempool;
 pub mod test_tx_weight_limit;
 pub mod test_utxo_commitment;
+pub mod test_utxo_recovery;
 pub mod test_utxo_sync;
