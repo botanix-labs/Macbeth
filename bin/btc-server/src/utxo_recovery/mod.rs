@@ -169,10 +169,6 @@ mod tests {
 
         let utxo: UtxoToRecover = data.try_into().unwrap();
 
-        let txid_bytes = &utxo.outpoint.as_ref().unwrap().txid;
-        let hex_string = hex::encode(txid_bytes);
-        println!("txid: {}", hex_string);
-
         assert_eq!(
             utxo.outpoint.as_ref().unwrap().txid,
             hex::decode("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
