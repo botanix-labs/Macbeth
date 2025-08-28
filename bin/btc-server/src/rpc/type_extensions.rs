@@ -2,7 +2,7 @@ use crate::{
     pegout_scheduler::{PegoutRequest, Tx},
     rpc::{OutPoint, PendingPegout, ScriptBuf, TrackedTx, Transaction, TxIn, TxOut},
 };
-use bitcoin::{hashes::Hash, TxIn as BtcTxIn, TxOut as BtcTxOut, Txid};
+use bitcoin::{hashes::Hash, OutPoint as BtcOutPoint, TxIn as BtcTxIn, TxOut as BtcTxOut, Txid};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -66,6 +66,12 @@ impl TryFrom<BtcTxOut> for TxOut {
             value: tx_out.value.to_sat(),
             script_pubkey: Some(ScriptBuf { script: tx_out.script_pubkey.to_bytes().to_vec() }),
         })
+    }
+}
+
+impl From<BtcOutPoint> for OutPoint {
+    fn from(outpoint: BtcOutPoint) -> Self {
+        OutPoint { txid: outpoint.txid.to_byte_array().to_vec(), vout: outpoint.vout }
     }
 }
 
@@ -155,8 +161,8 @@ impl TryFrom<Tx> for TrackedTx {
 
 #[cfg(test)]
 mod tests {
-    use crate::rpc::{self, TrackedTx};
-    use bitcoin::Txid;
+    use crate::rpc::{self, OutPoint, TrackedTx};
+    use bitcoin::{OutPoint as BtcOutPoint, Txid};
     use bitcoin_hashes::Hash;
     use prost_types::Timestamp;
     use rand::{thread_rng, Rng};
@@ -264,5 +270,25 @@ mod tests {
 
         let error = tx_out.validate().unwrap_err();
         assert_eq!(error, "script_pubkey field is required");
+    }
+
+    #[test]
+    fn test_bitcoin_outpoint_conversion() {
+        let txid = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            .parse::<bitcoin::Txid>()
+            .unwrap();
+        let bitcoin_outpoint = BtcOutPoint { txid, vout: 5 };
+
+        let proto_outpoint = OutPoint::from(bitcoin_outpoint);
+
+        assert_eq!(
+            proto_outpoint.txid,
+            hex::decode("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
+                .unwrap()
+                .into_iter()
+                .rev()
+                .collect::<Vec<u8>>()
+        );
+        assert_eq!(proto_outpoint.vout, 5);
     }
 }

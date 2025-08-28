@@ -133,16 +133,15 @@ pub async fn test_utxo_recovery(
         None,
     )?;
 
-    
     // get vout of the change output
     let change_tx_res = bitcoind.get_raw_transaction(&change_txid, None)?;
     let change_vout = change_tx_res
-    .output
-    .iter()
-    .enumerate()
-    .find(|(_, o)| o.script_pubkey == change_address.script_pubkey())
-    .ok_or_else(|| anyhow::anyhow!("change output not found"))?
-    .0;
+        .output
+        .iter()
+        .enumerate()
+        .find(|(_, o)| o.script_pubkey == change_address.script_pubkey())
+        .ok_or_else(|| anyhow::anyhow!("change output not found"))?
+        .0;
 
     // Generate some block to confirm the pegins
     generate_blocks(&bitcoind, 2).await;
@@ -184,7 +183,7 @@ pub async fn test_utxo_recovery(
     let utxos_to_recover = claimed_utxos
         .iter()
         .map(|utxo| {
-            btc_server_client::UtxoToRecover { 
+            btc_server_client::UtxoToRecover {
                 outpoint: utxo.outpoint.clone(), // note this is little endian
                 eth_address: utxo.eth_address.clone(),
             }
@@ -198,7 +197,7 @@ pub async fn test_utxo_recovery(
         .await?;
     let res = res.into_inner();
     assert_eq!(res.total_requested, NUM_CLAIMED_PEGINS as u64);
-    assert_eq!(res.total_recovered, 0); 
+    assert_eq!(res.total_recovered, 0);
 
     // Test 2: Attempting to recover the unclaimed pegins should add the unclaimed pegins to the
     // utxo set.
@@ -251,7 +250,6 @@ pub async fn test_utxo_recovery(
     // check that the utxo set is correct.
     let total_utxos = get_utxo_count(&mut clients).await?;
     assert_eq!(total_utxos, NUM_CLAIMED_PEGINS + NUM_UNCLAIMED_PEGINS + NUM_UNCLAIMED_CHANGE_UTXOS);
-
 
     // create a pegout that spends from every utxo in the utxo set
     let mut original_pending_pegouts = vec![];
