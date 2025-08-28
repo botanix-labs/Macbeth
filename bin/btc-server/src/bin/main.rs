@@ -1647,11 +1647,10 @@ where
                 tonic::Status::invalid_argument("UTXO missing outpoint")
             })?;
 
-            let txid = bitcoin::Txid::from_slice(&req_outpoint.txid.clone()).map_err(|e| {
-                error!("BtcServer::recover_missing_utxos: Invalid txid format: {}", e);
-                tonic::Status::invalid_argument(format!("Invalid txid format: {}", e))
+            let outpoint = bitcoin::OutPoint::try_from(req_outpoint.clone()).map_err(|e| {
+                error!("BtcServer::recover_missing_utxos: Invalid outpoint format: {}", e);
+                tonic::Status::invalid_argument(format!("Invalid outpoint format: {}", e))
             })?;
-            let outpoint = bitcoin::OutPoint { txid, vout: req_outpoint.vout };
             info!("BtcServer::recover_missing_utxos: converted bitcoin::OutPoint: {:?}", outpoint);
 
             // check if the utxo is already in the database
