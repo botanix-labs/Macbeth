@@ -7,18 +7,23 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 /// A snapshot sync id.
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub type SnapshotSyncId = u64;
 
 /// A snapshot id.
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub type SnapshotId = u64;
 
 /// A chunk id.
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub type ChunkId = u64;
 
 /// A chunk index.
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub type SnapshotChunkIndex = u64;
 
 /// A snapshot hash is a keccak hash of a snapshot.
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub type SnapshotChunkHash = B256;
 
 /// The storage of the a single chunk within a snapshot.
@@ -27,6 +32,7 @@ pub type SnapshotChunkHash = B256;
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct SnapshotChunk {
     /// The snapshot id
     snapshot_id: u64,
@@ -96,6 +102,7 @@ impl SnapshotChunk {
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct Snapshot {
     /// The snapshot id
     id: u64,
@@ -117,52 +124,62 @@ impl Snapshot {
     }
 
     /// Sets the snapshot id.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_id(&mut self, id: u64) {
         self.id = id;
     }
 
     /// Sets the snapshot height.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_height(&mut self, height: u64) {
         self.height = height;
     }
 
     /// Adds a chunk id to the snapshot.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn add_chunk_id(&mut self, chunk: ChunkId) {
         self.chunk_ids.push(chunk);
     }
 
     /// Sets the snapshot chunks, replacing the existing ones.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_chunks(&mut self, chunks: Vec<ChunkId>) {
         self.chunk_ids = chunks;
     }
 
     /// Adds a block ID to the snapshot.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn add_block_id(&mut self, block_id: u64) {
         self.block_ids.push(block_id);
     }
 
     /// Sets the snapshot block IDs, replacing the existing ones.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_block_ids(&mut self, block_ids: Vec<u64>) {
         self.block_ids = block_ids;
     }
 
     /// Sets the block hash of the snapshot.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_block_hash(&mut self, block_hash: B256) {
         self.block_hash = block_hash;
     }
 
     /// Get latest chunk id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn get_latest_chunk_id(&self) -> Option<ChunkId> {
         self.chunk_ids.last().copied()
     }
 
     /// Get oldest chunk id
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn get_oldest_chunk_id(&self) -> Option<ChunkId> {
         self.chunk_ids.first().copied()
     }
 
     /// Adds a block ID to the snapshot if it doesn't already exist.
     /// Returns `true` if the block ID was added, `false` if it was already present.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn add_block_id_if_not_exists(&mut self, block_id: BlockNumber) -> bool {
         let mut block_ids_set: BTreeSet<u64> = self.block_ids.iter().copied().collect();
         if block_ids_set.insert(block_id) {
@@ -175,6 +192,7 @@ impl Snapshot {
 
     /// Adds a chunk ID to the snapshot if it doesn't already exist.
     /// Returns `true` if the block ID was added, `false` if it was already present.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn add_chunk_id_if_not_exists(&mut self, chunk_id: ChunkId) -> bool {
         let mut chunk_ids_set: BTreeSet<u64> = self.chunk_ids.iter().copied().collect();
         if chunk_ids_set.insert(chunk_id) {
@@ -186,6 +204,7 @@ impl Snapshot {
     }
 
     /// Calculates the total size in bytes of this snapshot
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn size(&self) -> usize {
         // Size of u64 field (8 bytes)
         let height_size = std::mem::size_of::<u64>();
@@ -203,31 +222,37 @@ impl Snapshot {
     }
 
     /// Return the snapshot id.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn id(&self) -> u64 {
         self.id
     }
 
     /// Return the snapshot height.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn height(&self) -> u64 {
         self.height
     }
 
     /// Return the chunk ids.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn chunk_ids(&self) -> &[ChunkId] {
         self.chunk_ids.as_ref()
     }
 
     /// Return the block ids.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn block_ids(&self) -> &[u64] {
         self.block_ids.as_ref()
     }
 
     /// Return the hash of this snapshot block.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn block_hash(&self) -> B256 {
         self.block_hash
     }
 
     /// Gets the snapshot hash.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn get_hash(&self) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(self.id.to_le_bytes());
@@ -247,6 +272,7 @@ impl Snapshot {
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct SnapshotSync {
     /// The snapshot height (same as the block height
     height: u64,
@@ -267,41 +293,49 @@ impl SnapshotSync {
     }
 
     /// Sets the snapshot height.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_height(&mut self, height: u64) {
         self.height = height;
     }
 
     /// Sets the total chunks.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_total_chunks(&mut self, total_chunks: u64) {
         self.total_chunks = total_chunks;
     }
 
     /// Sets the `last_applied_chunk_index`.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub fn set_last_applied_chunk_index(&mut self, last_applied_chunk_index: u64) {
         self.last_applied_chunk_index = last_applied_chunk_index;
     }
 
     /// Return the height.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn height(&self) -> u64 {
         self.height
     }
 
     /// Return the hash of this snapshot block.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn snapshot_hash(&self) -> B256 {
         self.snapshot_hash
     }
 
     /// Return the number of total chunks.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn total_chunks(&self) -> u64 {
         self.total_chunks
     }
 
     /// Return the `last_applied_chunk_index`.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn last_applied_chunk_index(&self) -> u64 {
         self.last_applied_chunk_index
     }
 
     /// Return the format.
+    #[deprecated(note = "Please use `botanix-storage` create")]
     pub const fn format(&self) -> u64 {
         self.format
     }

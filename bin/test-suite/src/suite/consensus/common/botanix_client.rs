@@ -10,6 +10,7 @@ use crate::{
     suite::consensus::common::poa_node::RPC_PORT_BASE,
 };
 use anyhow::Context;
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use displaydoc::Display as DisplayDoc;
 use ethers::{
     abi::Address as AbiAddress,
@@ -26,7 +27,6 @@ use ethers::{
     types::{BlockId, NameOrAddress, TransactionReceipt, TransactionRequest, TxHash, H256, U256},
     utils,
 };
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;
 use std::sync::Arc;
 use thiserror::Error;
@@ -72,7 +72,10 @@ impl BotanixEthClient {
         // get chain id
         let chain_id =
             http_provider.get_chainid().await.context("chain id failed to be obtained")?;
-        assert!(U256::from(BOTANIX_TESTNET.chain().id()) == chain_id, "expected same chain id");
+        assert!(
+            U256::from(BOTANIX_TESTNET.inner().chain.id()) == chain_id,
+            "expected same chain id"
+        );
 
         // create a local wallet
         let wallet: LocalWallet = sender_secret_key
@@ -337,7 +340,7 @@ impl BotanixEthClient {
 
         // this also knows to estimate the `max_priority_fee_per_gas` but added it manually too
         let tx = TransactionRequest::new()
-            .chain_id(BOTANIX_TESTNET.chain().id())
+            .chain_id(BOTANIX_TESTNET.inner().chain().id())
             .to(receiver_address)
             .value(amount)
             .gas_price(gas_price)
@@ -507,8 +510,8 @@ impl BotanixEthClient {
         let http_provider =
             Provider::<Http>::try_from(&http_url).expect("To create botanix provider");
 
-        let wallet =
-            LocalWallet::new(&mut rand::thread_rng()).with_chain_id(BOTANIX_TESTNET.chain().id());
+        let wallet = LocalWallet::new(&mut rand::thread_rng())
+            .with_chain_id(BOTANIX_TESTNET.inner().chain().id());
 
         let client = SignerMiddleware::new(http_provider.clone(), wallet);
 

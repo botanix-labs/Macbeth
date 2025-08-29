@@ -13,10 +13,12 @@
 
 //! A [Consensus] implementation of Clique Proof of Authority (POA)
 //! that authoritymatically seals blocks.
-
 use async_trait as _;
-use metrics_util as _;
-use reth_chainspec::{ChainSpec, EthereumHardfork, EthereumHardforks};
+use botanix_authority_edh::{header_ext::HeaderExt, nums_secp256k1_pk};
+use botanix_chainspec::BotanixChainSpec;
+use bytes as _;
+use displaydoc as _;
+use reth_chainspec::{EthereumHardfork, EthereumHardforks};
 use reth_consensus::{
     Consensus, ConsensusError, InvalidAggregatedPublicKeyError, PostExecutionInput,
 };
@@ -31,33 +33,25 @@ use reth_consensus_common::{
 };
 use reth_ethereum_consensus::validate_block_post_execution;
 use reth_network_peers as _;
+use reth_node_core as _;
 use reth_node_ethereum::EthEvmConfig;
 use reth_primitives::{
-    constants::{nums_secp256k1_pk, MINIMUM_GAS_LIMIT},
-    header_ext::HeaderExt,
-    Address, BlockWithSenders, Header, SealedBlock, SealedHeader, EMPTY_OMMER_ROOT_HASH, U256,
+    constants::MINIMUM_GAS_LIMIT, Address, BlockWithSenders, Header, SealedBlock, SealedHeader,
+    EMPTY_OMMER_ROOT_HASH, U256,
 };
 use serde_json as _;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, warn};
-
 mod builder;
 /// Comet BFT abci and consensus driver
 pub mod comet_bft;
-
-pub use comet_bft::light_client::LightCBFTClientBuilder;
-pub mod activation_manager;
 mod excecution_utils;
 mod frost_task;
-mod prost_parser;
 mod signing;
 pub mod snapshot_manager;
 pub mod utils;
 pub use builder::AuthorityConsensusBuilder;
-pub mod bitcoin_checkpoint;
-pub mod metrics;
-pub mod random_source_provider;
 pub mod test_utils;
 pub mod wallet_state_sync;
 
@@ -70,12 +64,12 @@ pub const MAX_EDH_SIZE: usize = 93;
 #[derive(Clone, Debug)]
 pub struct AuthorityConsensus {
     /// Configuration
-    chain_spec: Arc<ChainSpec>,
+    chain_spec: Arc<BotanixChainSpec>,
 }
 
 impl AuthorityConsensus {
     /// Create a new instance of [AuthorityConsensus]
-    pub fn new(chain_spec: Arc<ChainSpec>) -> Self {
+    pub fn new(chain_spec: Arc<BotanixChainSpec>) -> Self {
         Self { chain_spec }
     }
 
@@ -90,15 +84,20 @@ impl AuthorityConsensus {
         parent: &SealedHeader,
     ) -> Result<(), ConsensusError> {
         // Determine the parent gas limit, considering elasticity multiplier on the London fork.
-        let parent_gas_limit =
-            if self.chain_spec.fork(EthereumHardfork::London).transitions_at_block(header.number) {
-                parent.gas_limit *
-                    self.chain_spec
-                        .base_fee_params_at_timestamp(header.timestamp)
-                        .elasticity_multiplier as u64
-            } else {
-                parent.gas_limit
-            };
+        let parent_gas_limit = if self
+            .chain_spec
+            .inner()
+            .fork(EthereumHardfork::London)
+            .transitions_at_block(header.number)
+        {
+            parent.gas_limit *
+                self.chain_spec
+                    .inner()
+                    .base_fee_params_at_timestamp(header.timestamp)
+                    .elasticity_multiplier as u64
+        } else {
+            parent.gas_limit
+        };
 
         // Check for an increase in gas limit beyond the allowed threshold.
         if header.gas_limit > parent_gas_limit {
@@ -129,7 +128,7 @@ impl AuthorityConsensus {
 
 impl Consensus for AuthorityConsensus {
     fn validate_block_pre_execution(&self, block: &SealedBlock) -> Result<(), ConsensusError> {
-        validate_block_pre_execution(block, &self.chain_spec)
+        validate_block_pre_execution(block, &self.chain_spec.inner())
     }
 
     fn validate_block_post_execution(
@@ -137,15 +136,20 @@ impl Consensus for AuthorityConsensus {
         block: &BlockWithSenders,
         input: PostExecutionInput<'_>,
     ) -> Result<(), ConsensusError> {
-        validate_block_post_execution(block, &self.chain_spec, input.receipts, input.requests)
+        validate_block_post_execution(
+            block,
+            &self.chain_spec.inner(),
+            input.receipts,
+            input.requests,
+        )
     }
 
     fn validate_header(&self, header: &SealedHeader) -> Result<(), ConsensusError> {
         validate_header_gas(header)?;
-        validate_header_base_fee(header, &self.chain_spec)?;
+        validate_header_base_fee(header, &self.chain_spec.inner())?;
 
         // Ensures that EIP-4844 fields are valid once cancun is active.
-        if self.chain_spec.is_cancun_active_at_timestamp(header.timestamp) {
+        if self.chain_spec.inner().is_cancun_active_at_timestamp(header.timestamp) {
             validate_4844_header_standalone(header)?;
         } else if header.blob_gas_used.is_some() {
             return Err(ConsensusError::BlobGasUsedUnexpected);
@@ -155,7 +159,7 @@ impl Consensus for AuthorityConsensus {
             return Err(ConsensusError::ParentBeaconBlockRootUnexpected);
         }
 
-        if self.chain_spec.is_prague_active_at_timestamp(header.timestamp) {
+        if self.chain_spec.inner().is_prague_active_at_timestamp(header.timestamp) {
             if header.requests_root.is_none() {
                 return Err(ConsensusError::RequestsRootMissing);
             }
@@ -179,10 +183,10 @@ impl Consensus for AuthorityConsensus {
         // Ace age did increment it by some formula that we need to follow.
         self.validate_against_parent_gas_limit(header, parent)?;
 
-        validate_against_parent_eip1559_base_fee(header, parent, &self.chain_spec)?;
+        validate_against_parent_eip1559_base_fee(header, parent, &self.chain_spec.inner())?;
 
         // ensure that the blob gas fields for this block
-        if self.chain_spec.is_cancun_active_at_timestamp(header.timestamp) {
+        if self.chain_spec.inner().is_cancun_active_at_timestamp(header.timestamp) {
             validate_against_parent_4844(header, parent)?;
         }
 
@@ -314,8 +318,11 @@ impl Consensus for AuthorityConsensus {
 /// All this struct does is provide a rwlock wrapper around the storage inner
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
-pub(crate) struct Storage<EF, BF, DB> {
-    pub(crate) client: DB,
+pub(crate) struct Storage<EF, BF, RDB, BDB> {
+    /// Reth Database Provider Factory
+    pub(crate) reth_database: RDB,
+    /// Botanix Database Provider Factory
+    pub(crate) botanix_database_factory: BDB,
     /// The authority list in the genesis block
     pub(crate) genesis_authorities: Vec<secp256k1::PublicKey>,
     /// keep track of my place among the signer
@@ -332,14 +339,14 @@ pub(crate) struct Storage<EF, BF, DB> {
     /// Bitcoind Factory
     pub(crate) bitcoind_factory: BF,
     /// Chain spec
-    pub(crate) chain_spec: Arc<ChainSpec>,
+    pub(crate) chain_spec: Arc<BotanixChainSpec>,
     /// Executor Factory
     pub(crate) executor_factory: EF,
     // The inner storage, everything here is rw locked
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
-impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
+impl<EF, BF, RDB: Clone, BDB: Clone> Storage<EF, BF, RDB, BDB> {
     /// Create a new instance of the storage
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -350,15 +357,17 @@ impl<EF, BF, DB: Clone> Storage<EF, BF, DB> {
         aggregate_public_key: Option<secp256k1::PublicKey>,
         authority_socket_addresses: Vec<SocketAddr>,
         evm_config: EthEvmConfig,
-        chain_spec: Arc<ChainSpec>,
+        chain_spec: Arc<BotanixChainSpec>,
         bitcoind_factory: BF,
         executor_factory: EF,
-        client: DB,
+        reth_database: RDB,
+        botanix_database_factory: BDB,
     ) -> Self {
         let storage_inner = StorageInner { aggregate_public_key, is_block_syncing: false };
 
         Self {
-            client,
+            reth_database,
+            botanix_database_factory,
             genesis_authorities,
             signer_index,
             authority,
@@ -397,17 +406,16 @@ pub(crate) struct StorageInner {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use random_source_provider::{RandomSource, RandomSourceProvider};
-    use reth_chainspec::BOTANIX_TESTNET;
+    use botanix_authority_edh::extra_data_header::{ExtraDataHeader, CHAIN_VERSION};
+    use botanix_authority_rsp::{RandomSource, RandomSourceProvider};
+    use botanix_chainspec::constants::BOTANIX_TESTNET;
     use reth_consensus::InvalidAggregatedPublicKeyError;
     use reth_consensus_common::utils::is_inturn;
     use reth_primitives::{
         constants::{ALLOWED_FUTURE_BLOCK_TIME_SECONDS, MAXIMUM_EXTRA_DATA_SIZE},
-        extra_data_header::{ExtraDataHeader, CHAIN_VERSION},
         Bytes,
     };
+    use std::str::FromStr;
 
     use super::*;
 

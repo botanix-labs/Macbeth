@@ -9,7 +9,8 @@ use crate::{
 };
 use bitcoin::{
     absolute::LockTime, block::Header, blockdata::transaction::TxOut, hashes::Hash, psbt::Psbt,
-    Amount, Block, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, Txid,
+    secp256k1, taproot::Signature as TaprootSignature, Amount, Block, FeeRate, OutPoint, ScriptBuf,
+    Sequence, TapSighashType, Transaction, TxIn, Txid, Witness,
 };
 use bitcoincore_rpc::json::{EstimateMode, EstimateSmartFeeResult, StringOrStringArray};
 use frost_secp256k1_tr as frost;
@@ -29,9 +30,61 @@ macro_rules! frost_id {
 const NETWORK: bitcoin::Network = bitcoin::Network::Regtest;
 const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
 
-#[derive(Clone, Debug)]
-pub struct MockBitcoind;
+pub struct MockBitcoind {
+    utxo_set: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<OutPoint, bitcoincore_rpc::json::GetTxOutResult>,
+        >,
+    >,
+}
+
+impl MockBitcoind {
+    pub fn new() -> Self {
+        Self { utxo_set: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())) }
+    }
+
+    /// Remove an output from the UTXO set (simulating a spent UTXO)
+    pub fn remove_utxo(&self, outpoint: OutPoint) {
+        self.utxo_set.lock().unwrap().remove(&outpoint);
+    }
+
+    /// Add a output to the UTXO set
+    pub fn add_utxo(&self, outpoint: OutPoint, value: Amount, script_pubkey: ScriptBuf) {
+        let script_hex = hex::encode(script_pubkey.to_bytes());
+        let json_str = format!(
+            r#"{{
+            "bestblock": "0000000000000000000000000000000000000000000000000000000000000000",
+            "confirmations": 6,
+            "value": {},
+            "scriptPubKey": {{
+                "asm": "",
+                "hex": "{}",
+                "type": "nonstandard"
+            }},
+            "coinbase": false
+        }}"#,
+            value.to_btc(),
+            script_hex
+        );
+
+        let result: bitcoincore_rpc::json::GetTxOutResult =
+            serde_json::from_str(&json_str).expect("valid JSON");
+        self.utxo_set.lock().unwrap().insert(outpoint, result);
+    }
+}
+
 impl bitcoincore_rpc::RpcApi for MockBitcoind {
+    fn get_tx_out(
+        &self,
+        txid: &Txid,
+        vout: u32,
+        _include_mempool: Option<bool>,
+    ) -> bitcoincore_rpc::Result<Option<bitcoincore_rpc::json::GetTxOutResult>> {
+        let outpoint = OutPoint::new(*txid, vout);
+        let utxo_set = self.utxo_set.lock().unwrap();
+        Ok(utxo_set.get(&outpoint).cloned())
+    }
+
     fn get_block_count(&self) -> Result<u64, bitcoincore_rpc::Error> {
         Ok(1)
     }
@@ -179,12 +232,6 @@ impl bitcoincore_rpc::RpcApi for MockBitcoind {
     }
 }
 
-impl MockBitcoind {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
 impl Default for MockBitcoind {
     fn default() -> Self {
         Self::new()
@@ -239,10 +286,19 @@ pub fn random_p2tr_keyspend_script() -> ScriptBuf {
     generate_taproot_change_scriptpubkey(&key_pair.1)
 }
 
+// FIXME: This creates P2WPKH script code (for spending), not scriptpubkey (for outputs).
+// Use `random_p2wpkh_scriptpubkey()` instead. Not fixing immediately to avoid breaking tests.
 pub fn random_p2wpkh_script() -> ScriptBuf {
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let sk = bitcoin::PrivateKey::generate(NETWORK);
     sk.public_key(&secp).p2wpkh_script_code().unwrap()
+}
+
+pub fn random_p2wpkh_scriptpubkey() -> ScriptBuf {
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let sk = bitcoin::PrivateKey::generate(NETWORK);
+    let wpk = sk.public_key(&secp).wpubkey_hash().unwrap();
+    ScriptBuf::new_p2wpkh(&wpk)
 }
 
 pub fn trusted_dealer_setup(
@@ -367,4 +423,26 @@ pub fn store_pending_pegout(db: &database::Db) -> PegoutId {
     let _ = db.store_pending_pegout(&pegout_request);
 
     pegout_id
+}
+
+// Add dummy signatures to a PSBT to help calculate weight and fee rate
+pub fn add_dummy_signatures_to_psbt(psbt: &mut Psbt, sighash_type: TapSighashType) {
+    for input in psbt.inputs.iter_mut() {
+        // For Taproot (P2TR) transactions
+        if let Some(_witness_utxo) = &input.witness_utxo {
+            let dummy_schnorr_sig_bytes = vec![0x42u8; 64];
+            let dummy_schnorr_sig =
+                secp256k1::schnorr::Signature::from_slice(&dummy_schnorr_sig_bytes)
+                    .expect("Valid dummy signature");
+
+            let taproot_sig = TaprootSignature { signature: dummy_schnorr_sig, sighash_type };
+
+            // Set the taproot signature
+            input.tap_key_sig = Some(taproot_sig.clone());
+
+            // Create the witness item with the signature
+            let witness = Witness::from_slice(&[taproot_sig.to_vec()]);
+            input.final_script_witness = Some(witness);
+        }
+    }
 }

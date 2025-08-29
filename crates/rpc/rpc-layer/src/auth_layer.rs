@@ -16,8 +16,9 @@ use tower::{Layer, Service};
 /// # How to integrate
 /// ```rust
 /// async fn build_layered_rpc_server() {
+///     use btc_server_client::jwt::JwtSecret;
 ///     use jsonrpsee::server::ServerBuilder;
-///     use reth_rpc_layer::{AuthLayer, JwtAuthValidator, JwtSecret};
+///     use reth_rpc_layer::{AuthLayer, JwtAuthValidator};
 ///     use std::net::SocketAddr;
 ///
 ///     const AUTH_PORT: u32 = 8551;
@@ -153,7 +154,7 @@ where
 mod tests {
     use super::*;
     use crate::JwtAuthValidator;
-    use alloy_rpc_types_engine::{Claims, JwtError, JwtSecret};
+    use btc_server_client::jwt::{Claims, JwtError, JwtSecret};
     use jsonrpsee::{
         server::{RandomStringIdProvider, ServerBuilder, ServerHandle},
         RpcModule,

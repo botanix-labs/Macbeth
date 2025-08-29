@@ -1,18 +1,18 @@
 //! Snapshot manager is responsible for persisting snapshot chunks to disk
 use crate::Storage;
-use comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
-use futures::StreamExt;
-use reth_btc_wallet::bitcoind::BitcoindFactory;
-use reth_data_parser::{DataParser, Error as DataParserError};
-use reth_db::{
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_data_parser::{DataParser, Error as DataParserError};
+use botanix_storage::{
     models::{ChunkId, Snapshot, SnapshotId},
-    DatabaseEnv,
+    SnapshotReader, SnapshotWriter,
 };
+use futures::StreamExt;
 use reth_evm::execute::BlockExecutorProvider;
 use reth_primitives::{BlockNumber, BlockWithSenders};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, CanonStateSubscriptions, ProviderError,
-    ProviderFactory, SnapshotReader, SnapshotWriter, TransactionVariant,
+    TransactionVariant,
 };
 use reth_rpc_types::BlockId;
 use std::{
@@ -120,10 +120,9 @@ pub trait SnapshotRunnable {
 
 /// Snapshot manager is responsible for persisting snapshot chunks to disk
 #[allow(dead_code)]
-pub struct SnapshotManager<EF, BF, DB> {
-    storage: Storage<EF, BF, DB>,
+pub struct SnapshotManager<EF, BF, RDB, BDB> {
+    storage: Storage<EF, BF, RDB, BDB>,
     compressor: DataParser,
-    provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     snapshots_to_keep: u64,
     snapshot_message_format: u32,
     state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
@@ -133,23 +132,18 @@ pub struct SnapshotManager<EF, BF, DB> {
     cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
 }
 
-impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
+impl<EF, BF, RDB, BDB> SnapshotManager<EF, BF, RDB, BDB>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    DB: BlockReaderIdExt
-        + SnapshotWriter
-        + SnapshotReader
-        + CanonStateSubscriptions
-        + Clone
-        + 'static,
+    RDB: BlockReaderIdExt + CanonStateSubscriptions + Clone + 'static,
+    BDB: SnapshotWriter + SnapshotReader + Clone + 'static,
 {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        storage: Storage<EF, BF, DB>,
+        storage: Storage<EF, BF, RDB, BDB>,
         compressor: DataParser,
-        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         snapshots_to_keep: u64,
         snapshot_message_format: u32,
         enable_state_sync: bool,
@@ -165,7 +159,6 @@ where
         Self {
             storage,
             compressor,
-            provider_factory,
             snapshots_to_keep,
             snapshot_message_format,
             state_lock,
@@ -181,18 +174,18 @@ where
         &self,
         sealed_block: &BlockWithSenders,
     ) -> Result<SnapshotId, SnapshotManagerError> {
-        let provider_rw = self.provider_factory.provider_rw()?;
-        let snapshot_id = provider_rw
+        let snapshot_id = self
+            .storage
+            .botanix_database_factory
             .create_new_snapshot(sealed_block.number, sealed_block.header.hash_slow())?;
-        provider_rw.commit()?;
+
         Ok(snapshot_id)
     }
 
     /// Remove oldest snapshot
     fn remove_oldest_snapshot(&self) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.provider_factory.provider_rw()?;
-        provider_rw.remove_oldest_snapshot()?;
-        provider_rw.commit()?;
+        self.storage.botanix_database_factory.remove_oldest_snapshot()?;
+
         Ok(())
     }
 
@@ -203,9 +196,12 @@ where
         block_id: BlockNumber,
         chunk_data: Vec<u8>,
     ) -> Result<ChunkId, SnapshotManagerError> {
-        let provider_rw = self.provider_factory.provider_rw()?;
-        let chunk_id = provider_rw.create_new_chunk(snapshot_id, block_id, chunk_data)?;
-        provider_rw.commit()?;
+        let chunk_id = self.storage.botanix_database_factory.create_new_chunk(
+            snapshot_id,
+            block_id,
+            chunk_data,
+        )?;
+
         Ok(chunk_id)
     }
 
@@ -215,9 +211,10 @@ where
         block_id: BlockNumber,
         snapshot_id: SnapshotId,
     ) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.provider_factory.provider_rw()?;
-        provider_rw.insert_block_snapshot_id_mapping(block_id, snapshot_id)?;
-        provider_rw.commit()?;
+        self.storage
+            .botanix_database_factory
+            .insert_block_snapshot_id_mapping(block_id, snapshot_id)?;
+
         Ok(())
     }
 
@@ -228,9 +225,8 @@ where
         block_id: BlockNumber,
         chunk_id: ChunkId,
     ) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.provider_factory.provider_rw()?;
-        provider_rw.update_snapshot(snapshot_id, block_id, chunk_id)?;
-        provider_rw.commit()?;
+        self.storage.botanix_database_factory.update_snapshot(snapshot_id, block_id, chunk_id)?;
+
         Ok(())
     }
 
@@ -239,26 +235,36 @@ where
         &self,
         last_snapshot_id: SnapshotId,
     ) -> Result<usize, SnapshotManagerError> {
-        Ok(self.provider_factory.provider()?.get_snapshot_size(last_snapshot_id)?)
+        let snapshot_size =
+            self.storage.botanix_database_factory.get_snapshot_size(last_snapshot_id)?;
+
+        Ok(snapshot_size)
     }
 
     /// Get snapshots count
     fn get_snapshots_count(&self) -> Result<usize, SnapshotManagerError> {
-        Ok(self.provider_factory.provider()?.get_snapshots_count()?)
+        let snapshots_count = self.storage.botanix_database_factory.get_snapshots_count()?;
+
+        Ok(snapshots_count)
     }
 
     /// Get last snapshot height
     fn get_last_snapshot_height(
         &self,
     ) -> Result<Option<(SnapshotId, BlockNumber)>, SnapshotManagerError> {
-        Ok(self.provider_factory.provider()?.get_last_snapshot_height()?)
+        let last_snapshot_height =
+            self.storage.botanix_database_factory.get_last_snapshot_height()?;
+
+        Ok(last_snapshot_height)
     }
 
     fn get_snapshot_by_id(
         &self,
         snapshot_id: SnapshotId,
     ) -> Result<Option<Snapshot>, SnapshotManagerError> {
-        Ok(self.provider_factory.provider()?.get_snapshot_by_id(snapshot_id)?)
+        let snapshot = self.storage.botanix_database_factory.get_snapshot_by_id(snapshot_id)?;
+
+        Ok(snapshot)
     }
 
     fn append_to_chunk(
@@ -267,7 +273,9 @@ where
         block_number: BlockNumber,
         data: Vec<u8>,
     ) -> Result<(), SnapshotManagerError> {
-        Ok(self.provider_factory.provider_rw()?.append_to_chunk(chunk_id, block_number, data)?)
+        self.storage.botanix_database_factory.append_to_chunk(chunk_id, block_number, data)?;
+
+        Ok(())
     }
 
     /// Get latest persisted block height
@@ -275,24 +283,21 @@ where
         &self,
     ) -> Result<Option<BlockNumber>, SnapshotManagerError> {
         if let Some((_snapshot_id, block_number)) =
-            self.provider_factory.provider()?.get_last_snapshot_height()?
+            self.storage.botanix_database_factory.get_last_snapshot_height()?
         {
             return Ok(Some(block_number));
         }
+
         Ok(None)
     }
 }
 
-impl<EF, BF, DB> SnapshotRunnable for SnapshotManager<EF, BF, DB>
+impl<EF, BF, RDB, BDB> SnapshotRunnable for SnapshotManager<EF, BF, RDB, BDB>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    DB: BlockReaderIdExt
-        + SnapshotWriter
-        + SnapshotReader
-        + CanonStateSubscriptions
-        + Clone
-        + 'static,
+    RDB: BlockReaderIdExt + CanonStateSubscriptions + Clone + 'static,
+    BDB: SnapshotWriter + SnapshotReader + Clone + 'static,
 {
     async fn run(&mut self) -> Result<(), SnapshotManagerError> {
         if !self.enable_state_sync {
@@ -302,7 +307,7 @@ where
         trace!(target: "consensus::authority::snapshot_manager::run", "started");
 
         // setup clients
-        let block_client = Arc::new(self.storage.client.clone());
+        let block_client = Arc::new(self.storage.reth_database.clone());
         let comet_rpc_client = match self.cometbft_rpc_factory.build_and_connect() {
             Ok(client) => client,
             Err(e) => {
@@ -393,7 +398,7 @@ where
         }
 
         info!(target: "consensus::authority::snapshot_manager::run", "Starting live sync");
-        let mut canon_events = self.storage.client.subscribe_to_canonical_state();
+        let mut canon_events = self.storage.reth_database.subscribe_to_canonical_state();
         while let Ok(canon_event) = canon_events.recv().await {
             debug!(target: "consensus::authority::snapshot_manager::run", "received canon event {:?}", canon_event);
 
@@ -421,16 +426,12 @@ where
     }
 }
 
-impl<EF, BF, DB> SnapshotManager<EF, BF, DB>
+impl<EF, BF, RDB, BDB> SnapshotManager<EF, BF, RDB, BDB>
 where
     BF: BitcoindFactory + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    DB: BlockReaderIdExt
-        + SnapshotWriter
-        + SnapshotReader
-        + CanonStateSubscriptions
-        + Clone
-        + 'static,
+    RDB: BlockReaderIdExt + CanonStateSubscriptions + Clone + 'static,
+    BDB: SnapshotWriter + SnapshotReader + Clone + 'static,
 {
     /// Process a single block and update snapshots accordingly
     async fn process_block(&self, block: &BlockWithSenders) -> Result<(), SnapshotManagerError> {
@@ -491,7 +492,7 @@ where
             Some(chunk_id) => {
                 // Check if there is enough space in the latest chunk
                 let latest_chunk_size =
-                    self.provider_factory.provider()?.get_chunk_size(chunk_id)?;
+                    self.storage.botanix_database_factory.get_chunk_size(chunk_id)?;
                 if latest_chunk_size + serialized_block.len() >
                     self.snapshot_size_limits.snapshot_chunk_size
                 {
@@ -520,7 +521,9 @@ where
         if !self.state_lock.read().expect("snapshot state sync locked").is_syncing_history() &&
             self.get_snapshots_count()? > self.snapshots_to_keep as usize
         {
-            if let Some((_, oldest_height)) = self.provider_factory.get_first_snapshot_height()? {
+            if let Some((_, oldest_height)) =
+                self.storage.botanix_database_factory.get_first_snapshot_height()?
+            {
                 let state_lock = self.state_lock.read().expect("snapshot state sync locked");
                 if state_lock.block_id != oldest_height {
                     info!(target: "consensus::authority::snapshot_manager",
@@ -550,17 +553,16 @@ async fn get_latest_comet_block_height(comet_rpc_client: &HttpClient) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reth_chainspec::MAINNET;
-    use reth_db_common::init::init_genesis;
+    use botanix_storage::{test_utils::create_test_provider_factory, DatabaseProviderFactoryRW};
     use reth_primitives::B256;
-    use reth_provider::test_utils::create_test_provider_factory_with_chain_spec;
     use std::time::Duration;
 
     #[tokio::test]
     async fn test_rw_snapshots() {
-        let provider_factory = create_test_provider_factory_with_chain_spec(MAINNET.clone());
+        let provider_factory = create_test_provider_factory();
 
-        init_genesis(provider_factory.clone()).unwrap();
+        // TODO: Remove init_genesis if we don't need
+        // init_genesis(provider_factory.clone()).unwrap();
         let client = provider_factory.provider_rw().unwrap();
 
         // insert a new snapshot at block height 1
@@ -639,9 +641,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rw_snapshots_with_chunks() {
-        let provider_factory = create_test_provider_factory_with_chain_spec(MAINNET.clone());
+        let provider_factory = create_test_provider_factory();
 
-        init_genesis(provider_factory.clone()).unwrap();
+        // init_genesis(provider_factory.clone()).unwrap();
         let client = provider_factory.provider_rw().unwrap();
 
         // insert a new snapshot
@@ -673,9 +675,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rw_snapshots_with_duplicate_chunks() {
-        let provider_factory = create_test_provider_factory_with_chain_spec(MAINNET.clone());
+        let provider_factory = create_test_provider_factory();
 
-        init_genesis(provider_factory.clone()).unwrap();
+        // init_genesis(provider_factory.clone()).unwrap();
         let client = provider_factory.provider_rw().unwrap();
 
         // insert a new snapshot
@@ -706,9 +708,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rw_snapshots_with_chunk_batches() {
-        let provider_factory = create_test_provider_factory_with_chain_spec(MAINNET.clone());
+        let provider_factory = create_test_provider_factory();
 
-        init_genesis(provider_factory.clone()).unwrap();
+        // init_genesis(provider_factory.clone()).unwrap();
         let client = provider_factory.provider_rw().unwrap();
 
         // insert a new snapshot
@@ -741,9 +743,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rw_chunks() {
-        let provider_factory = create_test_provider_factory_with_chain_spec(MAINNET.clone());
+        let provider_factory = create_test_provider_factory();
 
-        init_genesis(provider_factory.clone()).unwrap();
+        // init_genesis(provider_factory.clone()).unwrap();
         let client = provider_factory.provider_rw().unwrap();
 
         // insert block chunks
@@ -770,9 +772,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rw_snapshot_syncs() {
-        let provider_factory = create_test_provider_factory_with_chain_spec(MAINNET.clone());
+        let provider_factory = create_test_provider_factory();
 
-        init_genesis(provider_factory.clone()).unwrap();
+        // init_genesis(provider_factory.clone()).unwrap();
         let client = provider_factory.provider_rw().unwrap();
 
         // insert a new snapshot sync

@@ -5,28 +5,33 @@ use super::{
 use crate::{
     context::GlobalContext,
     it_error_print, it_info_print, it_warn_print,
-    suite::consensus::common::{spawn_child_process, Scope, MINTING_CONTRACT_BYTECODE},
+    suite::consensus::common::{
+        is_port_free, spawn_child_process, Scope, MINTING_CONTRACT_BYTECODE,
+    },
 };
 use anyhow::Context;
 use askama::Template;
 use bitcoin::hashes::Hash;
-use btcserverlib::extended_client::{BtcServerExtendedApi, BtcServerExtendedClient};
-use client::{Empty, GetSessionIdsRequest, GetSigningStatusRequest, SigningStatus};
+use botanix_authority_edh::extra_data_header::{
+    ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION,
+};
+use botanix_chainspec::constants::BOTANIX_TESTNET;
+use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
+use botanix_storage::BotanixProviderFactory;
+use btc_server_client::{
+    BtcServerExtendedApi, BtcServerExtendedClient, Empty, GetSessionIdsRequest,
+    GetSigningStatusRequest, SigningStatus,
+};
 use ethers::{
     providers::{Middleware, PeerInfo, StreamExt},
     types::{BlockId, BlockNumber, H256},
 };
-use reth::args::{FedMemberPubKey, FederationTomlConfig};
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_db::{
     mdbx::{DatabaseArguments, MaxReadTransactionDuration},
     models::ClientVersion,
     open_db_read_only, DatabaseEnv,
 };
-use reth_primitives::{
-    extra_data_header::{ExtraDataHeader, CHAIN_VERSION, EXTRA_HEADER_VERSION},
-    Address,
-};
+use reth_primitives::Address;
 use reth_provider::{errors::db::LogLevel, providers::StaticFileProvider, ProviderFactory};
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
@@ -75,7 +80,8 @@ pub struct SpawnedPoaServerProcess {
     pub ws_port: u16,
     pub discovery_port: u16,
     pub child_process: Child,
-    pub provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    pub reth_provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    pub botanix_provider_factory: BotanixProviderFactory<Arc<DatabaseEnv>>,
 }
 
 impl SpawnedPoaServerProcess {
@@ -319,8 +325,6 @@ impl FederationMemberTestConfig {
             "-vvv",
             "--disable-discovery",
             "--is-testnet",
-            "--ntp-server",
-            "time.cloudflare.com",
             "--federation-config-path",
             federation_config_path.as_str(),
             "--federation-mode",
@@ -379,41 +383,56 @@ impl FederationMemberTestConfig {
         let child_process =
             spawn_child_process(Scope::PoaNode(self.index), command, args, working_directory)?;
 
-        // database provider
+        // Reth database provider
         let db_args = DatabaseArguments::new(ClientVersion::default())
             .with_exclusive(Some(false))
             .with_log_level(Some(LogLevel::Debug))
             .with_max_read_transaction_duration(Some(MaxReadTransactionDuration::Unbounded));
         let node_config = BOTANIX_TESTNET.clone();
-        let db_dir = Path::new(&self.temp_path).join("db");
-        let static_files_dir = Path::new(&self.temp_path).join("static_files");
+        let reth_db_dir = Path::new(&self.temp_path).join("db");
+        let reth_static_files_dir = Path::new(&self.temp_path).join("static_files");
 
-        let db = loop {
-            match open_db_read_only(&db_dir, db_args.clone()) {
+        let reth_db = loop {
+            match open_db_read_only(&reth_db_dir, db_args.clone()) {
                 Ok(db) => {
-                    break db;
+                    break Arc::new(db);
                 }
                 Err(_) => {
                     std::thread::sleep(Duration::from_secs(1));
-                    continue;
                 }
             }
         };
 
-        let database = Arc::new(db);
-        let static_file_provider = StaticFileProvider::read_only(static_files_dir)?;
-        let provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
-            database,
-            node_config,
-            static_file_provider.clone(),
+        let reth_static_file_provider = StaticFileProvider::read_only(reth_static_files_dir)?;
+        let reth_provider_factory = ProviderFactory::<Arc<DatabaseEnv>>::new(
+            reth_db,
+            node_config.inner_arc(),
+            reth_static_file_provider.clone(),
         );
+
+        // Botanix database provider
+
+        let botanix_db_path = Path::new(&self.temp_path).join("botanix_db");
+        let botanix_db = loop {
+            match open_db_read_only(&botanix_db_path, db_args.clone()) {
+                Ok(db) => {
+                    break Arc::new(db);
+                }
+                Err(_) => {
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            }
+        };
+
+        let botanix_provider_factory = BotanixProviderFactory::<Arc<DatabaseEnv>>::new(botanix_db);
 
         Ok(SpawnedPoaServerProcess {
             child_process,
             discovery_port: self.discovery_port,
             rpc_port: self.rpc_port,
             ws_port: self.ws_port,
-            provider_factory,
+            reth_provider_factory,
+            botanix_provider_factory,
         })
     }
 
@@ -731,6 +750,20 @@ pub async fn create_poa_nodes(
             .cloned()
             .expect("To have keypair information");
 
+        let rpc_port = RPC_PORT_BASE + member_index;
+        let ws_port = WS_PORT_BASE + member_index;
+        let discovery_port = DISCOVERY_PORT_BASE + member_index;
+        let abci_port = ABCI_PORT_BASE + 1000 * member_index;
+        for port in [rpc_port, ws_port, discovery_port, abci_port] {
+            if !is_port_free(port) {
+                return Err(anyhow::anyhow!(
+                    "❌ POA node {} needs port {} but it's already in use by another process",
+                    member_index,
+                    port
+                ));
+            }
+        }
+
         let (test_signal_tx, _test_signal_rx) = channel::<TestSignal>(10);
         let fed_member_config = FederationMemberTestConfig::new(
             member_index,
@@ -746,10 +779,10 @@ pub async fn create_poa_nodes(
             global_context.max_signers,
             global_context.num_snapshots_to_keep,
             member_peerid,
-            RPC_PORT_BASE + member_index,
-            WS_PORT_BASE + member_index,
-            DISCOVERY_PORT_BASE + member_index,
-            ABCI_PORT_BASE + 1000 * member_index,
+            rpc_port,
+            ws_port,
+            discovery_port,
+            abci_port,
             test_signal_tx,
             global_context.botanix_fee_recipient.clone(),
             member_index > poa_instances - 1,

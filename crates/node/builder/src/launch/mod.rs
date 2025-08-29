@@ -5,13 +5,13 @@ mod exex;
 
 pub(crate) mod engine;
 
-pub use common::LaunchContext;
-pub use exex::ExExLauncher;
-use reth_btc_wallet::{
+use botanix_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
 };
-use reth_rpc_eth_types::builder::botanix_config::{Botanix, BotanixConfig};
+use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
+pub use common::LaunchContext;
+pub use exex::ExExLauncher;
 
 use std::{future::Future, sync::Arc};
 

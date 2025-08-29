@@ -1,0 +1,14 @@
+[package]
+name = "botanix-authority-metrics"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+reth-metrics = { workspace = true, features = ["common"] }
+botanix-storage = { workspace = true }
+botanix-activation-manager = { workspace = true }
+metrics = { workspace = true }
+metrics-util = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

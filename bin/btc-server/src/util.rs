@@ -58,18 +58,11 @@ where
     }
 }
 
-/// The upper bound on pegouts in a single transaction. We use a _reasonable_
-/// number based on the following properties:
-///
-/// * Bitcoin's upper bound on a transaction is 100kb
-/// * 32 bytes required for an output (ie. pegout)
-/// * 110 bytes required for an input
-/// * We assume each output has an input
-///   * In practice, it's more likely that an individual input will map to multiple smaller outputs.
-///     But a larger output could also consume multiple inputs.
-///
-/// With a pegout bound of 500, we can conclude: (32 + 110) * 500 = 71_000
-pub const UPPER_PEGOUT_BOUND: usize = 500;
+/// Conservative cap to keep the system stable, as we haven't load-tested very large pegouts;
+/// Assuming an equal number of inputs and outputs, the bitcoin tx weight limit (400k) allows for a
+/// max of ~994 outputs (including one change output). Note: total tx weight is enforced when
+/// building the PSBT; this just blocks oversized requests early.
+pub const UPPER_PEGOUT_BOUND: usize = 100;
 
 /// Converts the BTC/kB fee rate as returned by the Bitcoin Core API endpoint
 /// `estimatesmartfee` to sat/vB.
@@ -471,19 +464,20 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     }
 
     // check outputs are not in finalized pegouts list
-    let finalized_pegouts_ids = db
-        .get_finalized_pegout_ids()?
-        .into_iter()
-        .map(|id| (id.id, id.timestamp))
-        .collect::<Vec<_>>();
-
+    let finalized_pegouts_ids =
+        db.get_finalized_pegout_ids()?.into_iter().map(|id| id.id).collect::<Vec<_>>();
     for id in &psbt_pegout_ids {
         let finalized_pegouts_id = finalized_pegouts_ids
             .iter()
-            .find(|(finalized_pegouts_id, _)| finalized_pegouts_id == id)
+            .find(|finalized_pegouts_id| *finalized_pegouts_id == id)
             .cloned();
 
         if finalized_pegouts_id.is_some() {
+            // Remove the finalized pegout id from the list of pending pegouts so it does not get
+            // processed again.
+            info!("Finalized pegout id txid hash: {}", hex::encode(id.txid));
+            info!("Finalized pegout id tx receipt log index: {}", id.idx);
+            db.remove_pending_pegout(&[*id]).ok();
             return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
         }
     }
@@ -1671,6 +1665,18 @@ mod tests {
         let finalized_pegout =
             FinalizedPegout { id: pegout_id, block_number: 100, timestamp: None };
         db.store_finalized_pegout_ids_atomically(vec![&finalized_pegout].as_slice()).unwrap();
+        // Store the finalized pegout in the pending pegouts list
+        let tx = create_tx(1, 1, None);
+        let pegout_request = PegoutRequest {
+            spk: tx.output[0].script_pubkey.clone(),
+            value: tx.output[0].value,
+            id: pegout_id,
+            botanix_height: 0,
+            timestamp: None,
+        };
+        db.store_pending_pegout(&pegout_request).unwrap();
+        let pending_pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pending_pegouts.len(), 1, "Pending pegouts should have 1 item");
 
         // create a psbt with the finalized pegout id
         let mut psbt = create_psbt(1, 1, None);
@@ -1688,5 +1694,9 @@ mod tests {
                 panic!("Expected AlreadyFinalizedPegouts error, got {:?}", other_error);
             }
         }
+
+        // Assert the finalized pegout has been removed from the pending pegouts list
+        let pending_pegouts = db.get_pending_pegouts().unwrap();
+        assert_eq!(pending_pegouts.len(), 0, "Pending pegouts should be empty");
     }
 }

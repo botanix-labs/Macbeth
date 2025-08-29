@@ -70,7 +70,7 @@ where
 
         while let Some(response) = pending_calls.next().await {
             if let Err(too_large) = batch_response.append(&response) {
-                return Some(too_large.to_result())
+                return Some(too_large.to_result());
             }
         }
 
@@ -103,6 +103,7 @@ where
 }
 
 #[instrument(name = "method_call", fields(method = req.method.as_ref()), skip(req, rpc_service), level = "TRACE")]
+#[allow(clippy::needless_lifetimes)]
 pub(crate) async fn execute_call_with_tracing<'a, S>(
     req: Request<'a>,
     rpc_service: &S,
@@ -113,7 +114,9 @@ where
     rpc_service.call(req).await
 }
 
+#[allow(dead_code)]
 #[instrument(name = "notification", fields(method = notif.method.as_ref()), skip(notif, max_log_length), level = "TRACE")]
+#[allow(dead_code)]
 fn execute_notification(notif: &Notif<'_>, max_log_length: u32) -> MethodResponse {
     rx_log_from_json(notif, max_log_length);
     let response =
@@ -151,7 +154,7 @@ where
         return Some(batch_response_error(
             Id::Null,
             reject_too_big_request(max_request_body_size as u32),
-        ))
+        ));
     }
 
     // Single request or notification

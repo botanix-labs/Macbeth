@@ -1,0 +1,235 @@
+use std::str::FromStr;
+
+use crate::{
+    suite::consensus::frost::test_signing::{do_signing, Pegin},
+    utils::{
+        get_checkpoint_block_hash, send_pegin_notification, send_pegout_notification,
+        MIN_BLOCKS_COINBASE_MATURE,
+    },
+};
+use bitcoin::{consensus::Encodable, Address};
+use bitcoincore_rpc::RpcApi;
+use btcserverlib::pegout_id::PegoutId;
+use hex::{self, encode as hex_encode};
+use rand::{rngs::StdRng, RngCore, SeedableRng};
+
+use crate::{
+    it_info_print,
+    suite::consensus::{
+        common::events::get_unique_wallet_name,
+        frost::{error::Error, test_dkg::do_dkg},
+        ConsensusIntegrationTestSuite,
+    },
+    utils::generate_blocks,
+};
+use btc_server_client as client;
+
+const NUM_PEGINS: usize = 5;
+
+pub async fn test_prevent_resigning_pegout(
+    suite: &ConsensusIntegrationTestSuite,
+) -> anyhow::Result<(), anyhow::Error> {
+    let bitcoind = suite.global_context.bitcoind_rpc();
+    // Load up the bitcoin wallet and generate some blocks
+    for wallet in bitcoind.list_wallets()? {
+        it_info_print!("#UNLOADING WALLET?", &wallet);
+        let _ = bitcoind.unload_wallet(Some(&wallet))?;
+    }
+    let wallet_name = get_unique_wallet_name();
+    let create_res = bitcoind.create_wallet(&wallet_name, None, None, None, None);
+    if create_res.is_err() {
+        tracing::info!("Wallet already exists, loading wallet ...");
+        // wallet already exists, load wallet
+        let _ = bitcoind.load_wallet(&wallet_name);
+    }
+    generate_blocks(&bitcoind, MIN_BLOCKS_COINBASE_MATURE).await;
+
+    // create pegins container
+    let mut pegins = vec![];
+
+    // create btc server clients
+    let mut clients = suite
+        .local_context
+        .btc_server_clients
+        .clone()
+        .expect("btc server rpc clients to be defined");
+
+    // run the dkg
+    do_dkg(&mut clients).await?;
+    let amount_to_send = bitcoin::Amount::from_sat(100_000);
+    // create NUM_PEGINS pegins
+    for _ in 0..NUM_PEGINS {
+        let eth_address = ethers::core::types::Address::random();
+        // Lets get the gateway address for this eth address
+        let mut client =
+            clients.get(0).cloned().ok_or_else(|| anyhow::anyhow!("client not found"))?;
+        let res = client
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
+                eth_address: hex_encode(eth_address),
+            }))
+            .await
+            .map_err(Error::Request)?
+            .into_inner();
+        let btc_address = Address::from_str(&res.gateway_address)?.assume_checked();
+        let txid = bitcoind.send_to_address(
+            &btc_address,
+            amount_to_send,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+
+        // Generate some block to confirm it
+        generate_blocks(&bitcoind, 2).await;
+
+        let tx_res = bitcoind.get_transaction(&txid, None)?;
+        let pegin_tx = tx_res.transaction()?;
+        let spk = btc_address.script_pubkey();
+        let (vout, pegin_output) = pegin_tx
+            .output
+            .iter()
+            .enumerate()
+            .find(|(_, o)| o.script_pubkey == spk)
+            .ok_or_else(|| anyhow::anyhow!("pegin output not found"))?;
+
+        pegins.push(Pegin {
+            eth_address,
+            btc_address,
+            outpoint: bitcoin::OutPoint { txid, vout: vout as u32 },
+            amount: pegin_output.value,
+        });
+    }
+
+    // get the checkpoint blockhash
+    let bitcoind = suite.global_context.bitcoind_rpc();
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
+    // get the aggregate pk from any of the clients
+    // Here we are signing for a NUM_PEGINS inputs that are tweaked differently
+
+    // Notify peg ins to all peers
+    // signers will not sign if they cannot locate the UTXOs they are being requested to sign
+    for c in clients.iter_mut() {
+        for pegin in pegins.iter() {
+            let ot = pegin.outpoint;
+            let mut txid_bytes = Vec::with_capacity(32);
+            ot.txid.consensus_encode(&mut txid_bytes)?;
+            send_pegin_notification(
+                c,
+                checkpoint_block_hash.clone(),
+                pegin.btc_address.clone(),
+                hex_encode(pegin.eth_address),
+                txid_bytes.try_into().map_err(|_| anyhow::anyhow!("invalid txid"))?,
+                ot.vout,
+                pegin.amount.to_sat(),
+            )
+            .await?;
+        }
+    }
+
+    // Using stdRng here as it implements Send
+    let mut rand = StdRng::from_entropy();
+    let mut pegout_id_bytes = [0u8; 36];
+    rand.fill_bytes(&mut pegout_id_bytes);
+    let pegout_id =
+        PegoutId::from_bytes(&pegout_id_bytes).map_err(|_| anyhow::anyhow!("invalid pegout id"))?;
+
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
+    let pk = sk.public_key(&secp);
+    let spk = pk.p2wpkh_script_code().expect("valid pk");
+
+    // Notify some pending pegouts
+    let amount = bitcoin::Amount::from_sat(100_000);
+    for c in clients.iter_mut() {
+        // Each pegin is 100_000 satoshis, spending 100_000 should spend at least 2 inputs
+        send_pegout_notification(
+            c,
+            checkpoint_block_hash.clone(),
+            amount.to_sat(),
+            1,
+            pegout_id,
+            spk.clone(),
+        )
+        .await?;
+    }
+
+    // assert that the pegout was added to the pending pegouts list
+    assert_eq!(get_pending_pegouts_count(&mut clients[0]).await?, 1);
+
+    // signs, broadcasts, and tracks the psbt honoring pending pegouts
+    let _tracked_tx = do_signing(&mut clients, &bitcoind, &[1u8; 32]).await?;
+
+    // assert there is a tracked tx
+    assert_eq!(get_tracked_txs_count(&mut clients[0]).await?, 1);
+
+    // resend the same pegout notification so it is a pending pegout
+    for c in clients.iter_mut() {
+        send_pegout_notification(
+            c,
+            checkpoint_block_hash.clone(),
+            amount.to_sat(),
+            1,
+            pegout_id,
+            spk.clone(),
+        )
+        .await?;
+    }
+
+    // assert there is still a tracked tx
+    assert_eq!(get_tracked_txs_count(&mut clients[0]).await?, 1);
+
+    // assert that the pegout was not added to the pending pegouts list, as it's already in the
+    // tracked
+    assert_eq!(get_pending_pegouts_count(&mut clients[0]).await?, 0);
+
+    // generate blocks so that tracked_tx has now been finalized
+    generate_blocks(&bitcoind, 2).await;
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
+    // resend the same pegout notification so it is a pending pegout
+    for c in clients.iter_mut() {
+        send_pegout_notification(
+            c,
+            checkpoint_block_hash.clone(),
+            amount.to_sat(),
+            1,
+            pegout_id,
+            spk.clone(),
+        )
+        .await?;
+    }
+
+    // tracked tx should be finalized and untracked
+    assert_eq!(get_tracked_txs_count(&mut clients[0]).await?, 0);
+
+    // assert that the pegout was not added to the pending pegouts list, as it's already finalized
+    assert_eq!(get_pending_pegouts_count(&mut clients[0]).await?, 0);
+
+    Ok(())
+}
+
+pub async fn get_tracked_txs_count(
+    client: &mut client::BtcServerClient<tonic::transport::Channel>,
+) -> anyhow::Result<usize> {
+    let tracked_txs = client
+        .get_tracked_txs(tonic::Request::new(client::Empty {}))
+        .await?
+        .into_inner()
+        .tracked_txs;
+    Ok(tracked_txs.len())
+}
+
+pub async fn get_pending_pegouts_count(
+    client: &mut client::BtcServerClient<tonic::transport::Channel>,
+) -> anyhow::Result<usize> {
+    let pending_pegouts = client
+        .get_pending_pegouts(tonic::Request::new(client::Empty {}))
+        .await?
+        .into_inner()
+        .pending_pegouts;
+    Ok(pending_pegouts.len())
+}

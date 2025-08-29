@@ -46,7 +46,7 @@ where
 
 /// Truncated debug implementation for [RequestProcessProposal].
 /// It uses [TruncatedSlice] to limit the number of transactions displayed in the debug output.
-pub(crate) struct RequestProcessProposalTruncatedDebug<'a>(pub &'a RequestProcessProposal);
+pub(crate) struct RequestProcessProposalTruncatedDebug<'a>(pub(crate) &'a RequestProcessProposal);
 
 impl Debug for RequestProcessProposalTruncatedDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -67,7 +67,7 @@ impl Debug for RequestProcessProposalTruncatedDebug<'_> {
 
 /// Truncated debug implementation for [ResponsePrepareProposal].
 /// It uses [TruncatedSlice] to limit the number of transactions displayed in the debug output.
-pub(crate) struct ResponsePrepareProposalTruncatedDebug<'a>(pub &'a ResponsePrepareProposal);
+pub(crate) struct ResponsePrepareProposalTruncatedDebug<'a>(pub(crate) &'a ResponsePrepareProposal);
 
 impl Debug for ResponsePrepareProposalTruncatedDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -79,7 +79,9 @@ impl Debug for ResponsePrepareProposalTruncatedDebug<'_> {
 
 /// Truncated debug implementation for [RequestApplySnapshotChunk].
 /// It uses [TruncatedSlice] to limit the number of chunk bytes displayed in the debug output.
-pub(crate) struct RequestApplySnapshotChunkTruncatedDebug<'a>(pub &'a RequestApplySnapshotChunk);
+pub(crate) struct RequestApplySnapshotChunkTruncatedDebug<'a>(
+    pub(crate) &'a RequestApplySnapshotChunk,
+);
 
 impl Debug for RequestApplySnapshotChunkTruncatedDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -95,7 +97,9 @@ impl Debug for RequestApplySnapshotChunkTruncatedDebug<'_> {
 
 /// Truncated debug implementation for [ResponseLoadSnapshotChunk].
 /// It uses [TruncatedSlice] to limit the number of chunk bytes displayed in the debug output.
-pub(crate) struct ResponseLoadSnapshotChunkTruncatedDebug<'a>(pub &'a ResponseLoadSnapshotChunk);
+pub(crate) struct ResponseLoadSnapshotChunkTruncatedDebug<'a>(
+    pub(crate) &'a ResponseLoadSnapshotChunk,
+);
 
 impl Debug for ResponseLoadSnapshotChunkTruncatedDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -108,7 +112,7 @@ impl Debug for ResponseLoadSnapshotChunkTruncatedDebug<'_> {
 /// Truncated debug implementation for [RequestFinalizeBlock].
 /// It uses [TruncatedSlice] to limit the number of transactions displayed in the debug output.
 pub(crate) struct RequestFinalizeBlockTruncatedDebug<'a>(
-    pub &'a tendermint_proto::abci::RequestFinalizeBlock,
+    pub(crate) &'a tendermint_proto::abci::RequestFinalizeBlock,
 );
 
 impl Debug for RequestFinalizeBlockTruncatedDebug<'_> {

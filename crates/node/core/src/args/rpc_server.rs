@@ -1,25 +1,22 @@
 //! clap [Args](clap::Args) for RPC related arguments.
 
-use std::{
-    ffi::OsStr,
-    net::{IpAddr, Ipv4Addr},
-    path::PathBuf,
+use botanix_cli_args::bitcoind::{
+    BitcoindArgs, DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME,
 };
-
-use alloy_rpc_types_engine::{JwtError, JwtSecret};
+use botanix_cli_parsers::parsers::parse_grpc_address;
 use clap::{
     builder::{PossibleValue, RangedU64ValueParser, TypedValueParser},
     Arg, Args, Command,
 };
 use rand::Rng;
-use reth_cli_util::parsers::parse_grpc_address;
 use reth_rpc_server_types::{constants, RethRpcModule, RpcModuleSelection};
+use std::{
+    ffi::OsStr,
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+};
 use url::Url;
 
-use super::{
-    bitcoind_args::{DEFAULT_BITCOIND_PASSWORD, DEFAULT_BITCOIND_USERNAME},
-    BitcoindArgs,
-};
 use crate::{
     args::{
         types::{MaxU32, ZeroAsNoneU64},
@@ -27,6 +24,7 @@ use crate::{
     },
     cli::config::BtcServerConfig,
 };
+use btc_server_client::jwt::{JwtError, JwtSecret};
 
 /// Default max number of subscriptions per connection.
 pub(crate) const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;

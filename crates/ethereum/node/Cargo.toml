@@ -13,12 +13,15 @@ workspace = true
 [dependencies]
 bitcoin = { workspace = true }
 
+# Botanix
+botanix-btc-wallet = { workspace = true }
+botanix-chainspec = { workspace = true }
+
 # misc
 eyre = { workspace = true }
 reth-auto-seal-consensus = { workspace = true }
 reth-basic-payload-builder = { workspace = true }
 reth-beacon-consensus = { workspace = true }
-reth-btc-wallet = { workspace = true }
 reth-chainspec = { workspace = true }
 reth-consensus = { workspace = true }
 reth-db = { workspace = true }
@@ -30,6 +33,7 @@ reth-network = { workspace = true }
 reth-node-api = { workspace = true }
 reth-node-builder = { workspace = true }
 reth-node-core = { workspace = true }
+
 # reth
 reth-payload-builder = { workspace = true }
 reth-provider = { workspace = true }

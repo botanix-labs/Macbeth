@@ -43,16 +43,6 @@ pub use block::{
     ForkBlock, RpcBlockHash, SealedBlock, SealedBlockWithSenders,
 };
 
-/// Botanix specific stuff
-pub mod botanix;
-
-#[cfg(feature = "secp256k1")]
-/// Extra data header helpers
-pub mod extra_data_header;
-#[cfg(feature = "secp256k1")]
-/// Header extension helpers
-pub mod header_ext;
-
 #[cfg(feature = "reth-codec")]
 pub use compression::*;
 pub use constants::{

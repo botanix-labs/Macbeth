@@ -15,12 +15,12 @@ alloy-eips = { workspace = true }
 
 alloy-primitives = { workspace = true }
 alloy-rlp = { workspace = true }
+botanix-authority-edh = { workspace = true }
 
 derive_more = { workspace = true }
 nybbles = { workspace = true }
 # reth
 reth-consensus = { workspace = true }
-reth-primitives = { workspace = true, features = ["secp256k1"] }
 reth-prune-types = { workspace = true }
 reth-storage-errors = { workspace = true }
 revm-primitives = { workspace = true }

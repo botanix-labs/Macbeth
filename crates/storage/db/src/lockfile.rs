@@ -143,7 +143,6 @@ impl ProcessUID {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
     // helper to ensure some tests are run serially

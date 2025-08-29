@@ -2,6 +2,7 @@
 
 use std::{marker::PhantomData, sync::Arc, thread::available_parallelism};
 
+use btc_server_client::jwt::JwtSecret;
 use eyre::Context;
 use rayon::ThreadPoolBuilder;
 use reth_auto_seal_consensus::MiningMode;
@@ -39,7 +40,6 @@ use reth_provider::{
 };
 use reth_prune::{PruneModes, PrunerBuilder};
 use reth_rpc_builder::config::RethRpcServerConfig;
-use reth_rpc_layer::JwtSecret;
 use reth_stages::{sets::DefaultStages, MetricEvent, Pipeline, PipelineTarget, StageId};
 use reth_static_file::StaticFileProducer;
 use reth_tasks::TaskExecutor;

@@ -2,7 +2,7 @@
 extern crate log;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fmt::Debug,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
@@ -11,7 +11,6 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use alloy_rpc_types_engine::{JwtError, JwtSecret};
 use base64::{engine::general_purpose, Engine};
 use bitcoin::{
     consensus::Decodable, secp256k1, Amount, BlockHash, Psbt, ScriptBuf, Transaction, TxOut,
@@ -19,17 +18,20 @@ use bitcoin::{
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Auth, RpcApi};
 use btc_server::btc_server_server::{BtcServer, BtcServerServer};
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use btcserverlib::{
     badarg,
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self, error::CoordinatorError},
-    database, dkg,
+    database::{self},
+    dkg,
     federation_args::FederationTomlConfig,
-    frost_id,
+    frost_id, handle_signing_error,
     http::{create_web_server, state::ServerState},
+    measure_rpc_latency,
     merkle::get_wallet_state_commitment,
     pegout_id::PegoutId,
-    pegout_scheduler::{self, PegoutRequest, PegoutScheduler},
+    pegout_scheduler::{self, is_syncing, PegoutRequest, PegoutScheduler},
     rpc::{self, *},
     shutdown::{stop_signal, StopHandle},
     signer::{
@@ -44,7 +46,9 @@ use btcserverlib::{
     },
     wallet::{
         self,
-        address::{generate_taproot_address, generate_tweaked_public_key},
+        address::{
+            generate_taproot_address, generate_taproot_scriptpubkey, generate_tweaked_public_key,
+        },
         psbt::{PsbtExt, PsbtOutputExt},
         util::VerifyingKeyExt,
     },
@@ -54,11 +58,12 @@ use frost_secp256k1_tr as frost;
 use futures::{pin_mut, StreamExt};
 use futures_util::future::FutureExt;
 use thiserror::Error;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{codegen::CompressionEncoding, metadata::BinaryMetadataKey, transport::Server};
 
 const JWT_HEADER_KEY: &str = "trace-proto-bin";
+const DEFAULT_COORDINATOR_ID: u16 = 0;
 
 macro_rules! already_exists {
     ($($arg:tt)*) => {{
@@ -226,6 +231,7 @@ struct DkgState {
 }
 
 struct App<BitcoinRpcApi> {
+    start_time: Instant,
     db: database::Db,
     btc_network: bitcoin::Network,
     pegout_scheduler: Mutex<PegoutScheduler>,
@@ -304,14 +310,33 @@ where
         db: &database::Db,
         fallback_checkpoint: BlockHash,
         pegin_conf_depth: u32,
+        telemetry: Option<Arc<Telemetry>>,
+        btc_network: bitcoin::Network,
+        identifier: u16,
     ) -> Result<PegoutScheduler, database::Error> {
         if let Some(latest) = db.get_pegout_mgr_finalized_block()? {
             let txs = db.get_tracked_txs()?;
             info!("Loaded pegout scheduler with {} pending txs", txs.len());
-            Ok(PegoutScheduler::new(pegin_conf_depth, txs, latest, db.clone()))
+            Ok(PegoutScheduler::new(
+                pegin_conf_depth,
+                txs,
+                latest,
+                db.clone(),
+                telemetry,
+                btc_network,
+                identifier,
+            ))
         } else {
             info!("No finalized block found, using fallback checkpoint: {}", fallback_checkpoint);
-            Ok(PegoutScheduler::new(pegin_conf_depth, vec![], fallback_checkpoint, db.clone()))
+            Ok(PegoutScheduler::new(
+                pegin_conf_depth,
+                vec![],
+                fallback_checkpoint,
+                db.clone(),
+                telemetry,
+                btc_network,
+                identifier,
+            ))
         }
     }
 
@@ -344,8 +369,8 @@ where
             info!("Specified Frost coordinator: {:?} - {:?}", id, i);
             i
         } else {
-            let i = frost_id!(0);
-            info!("Default Frost coordinator: {:?} - {:?}", 0, i);
+            let i = frost_id!(DEFAULT_COORDINATOR_ID);
+            info!("Default Frost coordinator: {:?} - {:?}", DEFAULT_COORDINATOR_ID, i);
             i
         };
 
@@ -384,19 +409,62 @@ where
             bitcoin::FeeRate::from_sat_per_vb(config.fall_back_fee_rate_sat_per_vbyte)
                 .expect("valid fee rate");
 
+        if let Some(telemetry) = telemetry.as_ref() {
+            telemetry.update_transaction_fee_rates(
+                config.btc_network,
+                config.identifier,
+                fall_back_fee_rate.to_sat_per_kwu() as f64,
+            );
+
+            if fall_back_fee_rate <= bitcoin::FeeRate::MIN {
+                warn!("Fall back fee rate is below the minimum: {}", fall_back_fee_rate);
+                telemetry.update_fee_rate_abnormalities(config.btc_network, config.identifier)
+            }
+
+            if fall_back_fee_rate >= bitcoin::FeeRate::MAX {
+                warn!("Fall back fee rate is above the maximum: {}", fall_back_fee_rate);
+                telemetry.update_fee_rate_abnormalities(config.btc_network, config.identifier)
+            }
+        }
+
         let pegin_confirmation_depth = get_pegin_confirmation_depth(config.btc_network);
+
+        // update telemetry with the pegin confirmation depth
+        if let Some(telemetry) = telemetry.as_ref() {
+            telemetry.update_pegin_confirmation_depth(
+                config.btc_network,
+                config.identifier,
+                pegin_confirmation_depth,
+            );
+        }
+
         let fallback_checkpoint = {
-            let tip_height = bitcoind_client
-                .get_block_count()
-                .map_err(|e| Error::PegoutSchedulerSync(e.into()))?;
-            bitcoind_client
-                .get_block_hash(tip_height.saturating_sub(pegin_confirmation_depth as u64))
-                .map_err(|e| Error::PegoutSchedulerSync(e.into()))?
+            let tip_height = measure_rpc_latency!(
+                &telemetry,
+                config.btc_network,
+                config.identifier,
+                "get_block_count",
+                bitcoind_client.get_block_count()
+            )
+            .map_err(|e| Error::PegoutSchedulerSync(e.into()))?;
+
+            measure_rpc_latency!(
+                &telemetry,
+                config.btc_network,
+                config.identifier,
+                "get_block_hash",
+                bitcoind_client
+                    .get_block_hash(tip_height.saturating_sub(pegin_confirmation_depth as u64))
+            )
+            .map_err(|e| Error::PegoutSchedulerSync(e.into()))?
         };
         let pegout_manager = Mutex::new(Self::load_pegout_scheduler(
             &db,
             fallback_checkpoint,
             pegin_confirmation_depth,
+            telemetry.clone(),
+            config.btc_network,
+            config.identifier,
         )?);
 
         // NOTE (lamafab): in this implementation, the DKG state machine starts
@@ -464,6 +532,7 @@ where
         };
 
         Ok(Self {
+            start_time: Instant::now(),
             btc_network: config.btc_network,
             db,
             pegout_scheduler: pegout_manager,
@@ -564,7 +633,13 @@ where
         checkpoint: BlockHash,
     ) -> Result<(), pegout_scheduler::SyncError> {
         let mut lock = self.pegout_scheduler.lock().await;
-        lock.sync_until(&self.bitcoind_client, checkpoint, self.telemetry.clone())?;
+        lock.sync_until(
+            &self.bitcoind_client,
+            checkpoint,
+            &self.telemetry,
+            self.btc_network,
+            self.config.identifier,
+        )?;
         self.db.store_pegout_mgr_finalized_block(lock.last_finalized())?;
         self.db.update_utxo_merkle_root()?;
         self.db.flush()?;
@@ -584,6 +659,11 @@ where
         self.db.flush()?;
         Ok(())
     }
+
+    pub fn is_coordinator(&self) -> bool {
+        let coordinator_id = self.config.coordinator.unwrap_or(DEFAULT_COORDINATOR_ID);
+        self.config.identifier == coordinator_id
+    }
 }
 
 #[tonic::async_trait]
@@ -601,6 +681,25 @@ where
         request: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         self.validate_jwt(&request)?;
+        info!("Health check request received");
+
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            let is_bitcoind_syncing = is_syncing(
+                &self.bitcoind_client,
+                &self.telemetry,
+                self.btc_network,
+                self.config.identifier,
+            )
+            .ok()
+            .unwrap_or(true);
+            telemetry.update_health_check(
+                self.btc_network,
+                self.config.identifier,
+                self.start_time.elapsed().as_secs(),
+                &[("bitcoind", if is_bitcoind_syncing { "syncing" } else { "up" })],
+            )
+        };
+
         Ok(tonic::Response::new(rpc::Empty {}))
     }
 
@@ -619,18 +718,40 @@ where
             error!("Failed to parse checkpoint hash: {}", e);
             badarg!("Failed to parse checkpoint hash: {}", e)
         })?;
-        self.sync_pegout_scheduler(checkpoint).await.to_status()?;
+        self.sync_pegout_scheduler(checkpoint.clone()).await.to_status()?;
 
         // process and store pegin utxos
         let utxos: Result<Vec<crate::database::Utxo>, _> =
             req.pegins.into_iter().map(TryFrom::try_from).collect();
         let utxos = utxos.map_err(|e| badarg!("Failed to parse utxos: {}", e))?;
+        info!("processed pegins.len(): {:?}", utxos.len());
         let utxo_refs: Vec<&crate::database::Utxo> = utxos.iter().collect();
 
         self.db.store_utxos(&utxo_refs).to_status()?;
         self.db.update_utxo_merkle_root().to_status()?;
         self.db.flush().to_status()?;
-        info!("processed pegins.len(): {:?}", utxos.len());
+        // update metrics
+        let total_utxos = self.db.get_all_utxos().to_status()?;
+        let total_utxos_amount =
+            total_utxos.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            // seet attempted pegin height
+            telemetry.update_pegin_utxos(
+                self.btc_network,
+                self.config.identifier,
+                total_utxos.len() as i64,
+                total_utxos_amount.to_sat() as i64,
+            );
+            let block_result = self.bitcoind_client.get_block_info(&checkpoint).map_err(|e| {
+                error!("Failed to get block for checkpoint: {}", e);
+                badarg!("Failed to get block for checkpoint: {}", e)
+            })?;
+            telemetry.set_last_pegin_height(
+                self.btc_network,
+                self.config.identifier,
+                block_result.height as i64,
+            );
+        }
 
         // process and store pending pegout requests
         let (available_utxos, tracked_inputs) = get_available_utxos(&self.db).await.to_status()?;
@@ -670,10 +791,40 @@ where
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
         let pegouts = pegouts?;
-        let pegouts_refs: Vec<&PegoutRequest> = pegouts.iter().collect();
+        // Check pegouts are not in the finalized pegout ids list or are tracked by the Pegout
+        // Scheduler
+        let mut broadcasted_pegout_ids: HashSet<_> =
+            self.db.get_finalized_pegout_ids().to_status()?.iter().map(|p| p.id).collect();
+        // Get Pegout Scheduler txs and add to hashset
+        let scheduler_txs = self.pegout_scheduler.lock().await.tracked_pegout_request_ids();
+        broadcasted_pegout_ids.extend(scheduler_txs);
+        let pegouts_refs: Vec<&PegoutRequest> = pegouts
+            .iter()
+            .filter(|pegout| {
+                if broadcasted_pegout_ids.contains(&pegout.id) {
+                    error!(
+                        "Received a pegout request for finalized or broadcasted id: L2 txid - {:?}, tx receipt log index - {:?}, bitcoin address - {:?}",
+                        hex::encode(pegout.id.txid),
+                        pegout.id.idx,
+                        bitcoin::Address::from_script(&pegout.spk, self.btc_network)
+                    );
+                    return false;
+                }
+                true
+            })
+            .collect();
+
         self.db.store_pending_pegouts(&pegouts_refs).to_status()?;
         self.db.flush().to_status()?;
         info!("stored pegouts.len(): {:?}", pegouts.len());
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
+            telemetry.set_pending_pegouts(
+                self.btc_network,
+                self.config.identifier,
+                current_peding_pegouts.len() as i64,
+            );
+        }
 
         Ok(tonic::Response::new(rpc::Empty {}))
     }
@@ -684,7 +835,8 @@ where
     ) -> Result<tonic::Response<rpc::GetSigningStatusResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
         let req = req.into_inner();
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
+        let signing_session_id =
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
         let signing_status = self.db.get_signing_status(&signing_session_id).to_status()?;
 
         let res =
@@ -715,9 +867,6 @@ where
     ) -> Result<tonic::Response<rpc::GetPendingPegoutsResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
         let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
-        if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
-        }
         let res = tonic::Response::new(rpc::GetPendingPegoutsResponse {
             pending_pegouts: pending_pegouts
                 .into_iter()
@@ -745,7 +894,6 @@ where
     ) -> Result<tonic::Response<Self::GetFinalizedPegoutIdsStream>, tonic::Status> {
         self.validate_jwt(&req)?;
         let db = self.db.clone();
-        let telemetry = self.telemetry.clone();
         let request = req.into_inner();
 
         let (tx, rx) = tokio::sync::mpsc::channel(request.chunk_size as usize);
@@ -756,19 +904,15 @@ where
         tokio::spawn(async move {
             let stream = db.get_finalized_pegout_ids_stream(request.chunk_size as usize);
             pin_mut!(stream);
-            info!("get_finalized_pegout_ids stream task: Created DB stream.");
+            trace!("get_finalized_pegout_ids stream task: Created DB stream.");
 
             while let Some(chunk_result) = stream.next().await {
-                info!(
+                trace!(
                     "get_finalized_pegout_ids stream task: Received chunk from DB stream: {:?}",
                     chunk_result
                 );
                 match chunk_result {
                     Ok((pegout_ids, chunk_index, total_chunks)) => {
-                        if let Some(telemetry) = telemetry.as_ref() {
-                            telemetry.update_finalized_pegout_ids(pegout_ids.len() as i64);
-                        }
-
                         let batch = rpc::GetFinalizedPegoutIdsResponse {
                             data: pegout_ids
                                 .into_iter()
@@ -789,7 +933,7 @@ where
                         };
 
                         // send the batch with retries
-                        info!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
+                        trace!("get_finalized_pegout_ids stream task: Sending chunk {}/{} with {} IDs to client.", chunk_index + 1, total_chunks, batch.data.len());
                         let fut = || async {
                             let tx = tx.clone();
                             let batch = batch.clone();
@@ -819,7 +963,7 @@ where
                     }
                 }
             }
-            info!("get_finalized_pegout_ids stream task: DB stream finished.");
+            trace!("get_finalized_pegout_ids stream task: DB stream finished.");
         });
 
         Ok(tonic::Response::new(ReceiverStream::new(rx)))
@@ -957,7 +1101,8 @@ where
             "Received round1 signing package request for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
+        let signing_session_id =
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
         // Check if we have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
@@ -966,14 +1111,25 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    Some(signing_session_id),
                     &SigningRound1Error::AlreadyInSigningSession.to_string(),
                 );
             }
             return Err(tonic::Status::internal("Already in signing session"));
         }
 
-        let mut psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
+        let mut psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         let nonces = signer::get_round1_signing_package(
             &mut psbt,
@@ -1019,9 +1175,22 @@ where
         // Validate PSBT
         let req = req.into_inner();
         info!("Received round2 signing package request");
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
+        let signing_session_id =
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
-        let mut psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
+        let mut psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         signer::get_round2_signing_package(
             &mut psbt,
@@ -1035,7 +1204,6 @@ where
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
                     self.config.identifier,
-                    Some(signing_session_id),
                     &e.to_string(),
                 );
             }
@@ -1061,7 +1229,8 @@ where
         // pegouts from the database.
 
         // Extract pegout ids from the psbt to store with the tx
-        if psbt.outputs.len() > UPPER_PEGOUT_BOUND {
+        if psbt.outputs.len() > UPPER_PEGOUT_BOUND + 1 {
+            // +1 for the change output
             return Err(badarg!("Too many pegouts in the psbt"));
         }
         let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
@@ -1082,7 +1251,20 @@ where
         );
 
         // Get the matching pending pegouts
-        let pending_pegouts = self.db.get_pending_pegouts().to_status()?;
+        let pending_pegouts = match self.db.get_pending_pegouts().to_status() {
+            Ok(pending_pegouts) => pending_pegouts,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
         info!(
             "[get_round2_signing_package] Found {} pending pegouts in the DB",
             pending_pegouts.len()
@@ -1099,9 +1281,24 @@ where
         self.add_tracked_tx(signed_tx.clone(), &psbt_pending_pegouts, SystemTime::now())
             .await
             .to_status()?;
-        self.db.reset_pending_pegouts(&[]).to_status()?;
+
+        if !self.is_coordinator() {
+            // the coordinator will remove the pegout during finalize_signing
+            self.db.reset_pending_pegouts(&[]).to_status()?;
+            info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
+        }
+
         self.db.flush().to_status()?;
-        info!("[get_round2_signing_package] Pending pegouts removed and DB flushed.");
+
+        // set the telemetry for pending pegout
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
+            telemetry.set_pending_pegouts(
+                self.btc_network,
+                self.config.identifier,
+                current_peding_pegouts.len() as i64,
+            );
+        }
 
         let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
@@ -1124,10 +1321,7 @@ where
             hex::encode(req.signing_session_id.clone())
         );
         let signing_session_id =
-            parse_signing_session_id(&req.signing_session_id).map_err(|e| {
-                error!("Failed to parse signing session id: {}", e);
-                badarg!("Failed to parse signing session id: {}", e)
-            })?;
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
         let _tx_lock = self.tx_lock.lock().await;
         let psbt =
@@ -1140,19 +1334,55 @@ where
             })?;
         // This should be a ready to broadcast tx
         let tx = psbt.clone().extract_tx().to_status()?;
-        let tx_id = match self.bitcoind_client.send_raw_transaction(&tx) {
+        let tx_bytes = bitcoin::consensus::encode::serialize(&tx);
+        info!("Signed pegout tx to be broadcast: {}", hex::encode(&tx_bytes));
+
+        let tx_id = match measure_rpc_latency!(
+            &self.telemetry,
+            self.btc_network,
+            self.config.identifier,
+            "send_raw_transaction",
+            self.bitcoind_client.send_raw_transaction(&tx)
+        ) {
             Ok(tx_id) => Ok(Some(tx_id)),
             Err(err) => {
                 let err_msg = err.to_string();
-                if err_msg.contains("already in chain") {
-                    Ok(None)
-                } else {
-                    error!("Failed to broadcast tx: {}", err);
-                    Err(CoordinatorError::FailedToBroadcastTx(err))
+                match err_msg.as_str() {
+                    msg if msg.contains("already in chain") => {
+                        info!("Transaction already in chain, skipping");
+                        Ok(None)
+                    }
+                    msg if msg.contains("bad-txns-inputs-missingorspent") => {
+                        error!("Invalid input detected: {}", msg);
+                        self.handle_invalid_inputs(&tx).to_status()?;
+                        Err(CoordinatorError::FailedToBroadcastTx(err))
+                    }
+                    _ => {
+                        error!("Failed to broadcast transaction: {}", err_msg);
+                        error!("Failed tx: {:?}", tx);
+                        Err(CoordinatorError::FailedToBroadcastTx(err))
+                    }
                 }
             }
         }
         .to_status()?;
+
+        // set last attempted pegout height
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            let tip_height = measure_rpc_latency!(
+                &self.telemetry,
+                self.btc_network,
+                self.config.identifier,
+                "get_block_count",
+                self.bitcoind_client.get_block_count()
+            )
+            .map_err(|e| internal!("Failed to get btc tip height: {}", e))?;
+            telemetry.set_last_attempted_pegout_height(
+                self.btc_network,
+                self.config.identifier,
+                tip_height as i64,
+            );
+        }
 
         let pegout_ids = psbt
             .pegout_ids()
@@ -1162,9 +1392,18 @@ where
         info!(
             "[finalize_signing] Removing {} pending pegouts from DB: {:?}",
             pegout_ids.len(),
-            pegout_ids
+            pegout_ids.iter().map(|p| p.to_string()).collect::<Vec<String>>().join(", ")
         );
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
+        // remove the pegouts from the telemetry gauge
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
+            telemetry.set_pending_pegouts(
+                self.btc_network,
+                self.config.identifier,
+                current_peding_pegouts.len() as i64,
+            );
+        }
         self.db.flush().to_status()?;
 
         if let Some(tx_id) = tx_id {
@@ -1175,6 +1414,16 @@ where
 
         let psbt_bytes = hex::decode(psbt.serialize_hex())
             .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+
+        // mark the signing session as finalized
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier);
+            telemetry.update_signing_success_rate_metrics(
+                self.btc_network,
+                self.config.identifier,
+                signing_session_id,
+            )
+        }
 
         let res = tonic::Response::new(rpc::FinalizeSigningResponse { psbt: psbt_bytes });
         Ok(res)
@@ -1187,21 +1436,53 @@ where
         self.validate_jwt(&req)?;
         // Ensure we have a key package
         self.db.get_key_package().to_status()?;
+
+        let req = req.into_inner();
+
+        if let Err(e) = self.db.get_key_package().to_status() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        };
+
         // take a lock on the tx_lock
         let _tx_lock = self.tx_lock.lock();
 
-        let req = req.into_inner();
         info!(
             "Received make tx request for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let checkpoint = BlockHash::from_slice(&req.checkpoint_block_hash)
-            .map_err(|e| badarg!("invalid checkpoint hash: {}", e))?;
+        let signing_session_id =
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
-        let fee_res = self
-            .bitcoind_client
-            .estimate_smart_fee(1, Some(bitcoincore_rpc::json::EstimateMode::Conservative));
+        let checkpoint = match BlockHash::from_slice(&req.checkpoint_block_hash) {
+            Ok(checkpoint) => checkpoint,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(badarg!("invalid checkpoint hash: {}", e));
+            }
+        };
+
+        let fee_res = measure_rpc_latency!(
+            &self.telemetry,
+            self.btc_network,
+            self.config.identifier,
+            "estimate_smart_fee",
+            self.bitcoind_client
+                .estimate_smart_fee(1, Some(bitcoincore_rpc::json::EstimateMode::Conservative))
+        );
+
         let mut fee_rate = self.fall_back_fee_rate;
         if let Ok(fee) = fee_res {
             if let Some(f) = fee.fee_rate {
@@ -1209,20 +1490,59 @@ where
             }
         }
 
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.update_transaction_fee_rates(
+                self.btc_network,
+                self.config.identifier,
+                fee_rate.to_sat_per_kwu() as f64,
+            );
+
+            if fee_rate <= bitcoin::FeeRate::MIN {
+                warn!("Fee rate is below the minimum: {}", fee_rate);
+                telemetry.update_fee_rate_abnormalities(self.btc_network, self.config.identifier)
+            }
+
+            if fee_rate >= bitcoin::FeeRate::MAX {
+                warn!("Fee rate is above the maximum: {}", fee_rate);
+                telemetry.update_fee_rate_abnormalities(self.btc_network, self.config.identifier)
+            }
+        }
+
         debug!("Cord Fee rate: {:?}", fee_rate);
 
         // First sync the pegout scheduler as this may add tracked pegouts back to the pending
         // pegouts list
-        self.sync_pegout_scheduler(checkpoint).await.to_status()?;
-        let tracked_txs = self.db.get_tracked_txs().to_status()?;
+        handle_signing_error!(self, self.sync_pegout_scheduler(checkpoint).await, check_only);
+
+        let tracked_txs = match self.db.get_tracked_txs().to_status() {
+            Ok(tracked_txs) => tracked_txs,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         // Select up to `UPPER_PEGOUT_BOUND` pegouts, sorted by age in ascending
         // order. Respectively, the oldest pegouts come first.
-        let pending_pegouts = self.db.coord_pending_pegouts(UPPER_PEGOUT_BOUND).to_status()?;
-
-        if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pending_pegouts(pending_pegouts.len() as i64);
-        }
+        let pending_pegouts = match self.db.coord_pending_pegouts(UPPER_PEGOUT_BOUND).to_status() {
+            Ok(pending_pegouts) => pending_pegouts,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         let outputs = pending_pegouts
             .iter()
@@ -1241,7 +1561,8 @@ where
             .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
         let change_script = wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
 
-        let psbt = coordinator::make_tx(
+        info!("make_tx: creating psbt with {} outputs", outputs.len());
+        let psbt = match coordinator::make_tx(
             outputs,
             fee_rate,
             change_script,
@@ -1249,31 +1570,67 @@ where
             self.min_signers,
             tracked_txs,
         )
-        .to_status()?;
+        .to_status()
+        {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         // Log the outputs of the generated PSBT for debugging
         info!("PSBT generated by make_tx for session {:?}:", hex::encode(signing_session_id));
         // Iterate through the outputs of the unsigned transaction embedded in the PSBT
         for (i, tx_output) in psbt.unsigned_tx.output.iter().enumerate() {
             info!(
-                "- Output {}: value={}, script_pubkey={:?}",
-                i, tx_output.value, tx_output.script_pubkey
+                "- Output {}: value={}, script_pubkey={:?}, address={:?}",
+                i,
+                tx_output.value,
+                tx_output.script_pubkey,
+                bitcoin::Address::from_script(&tx_output.script_pubkey, self.btc_network)
             );
         }
         // Note: Standard PSBT doesn't explicitly track change_index in rust-bitcoin library easily.
         // We rely on our logic correctly identifying it later.
 
         // Save psbt to db
-        self.db.update_psbt(&signing_session_id, &psbt).to_status()?;
+        handle_signing_error!(self, self.db.update_psbt(&signing_session_id, &psbt), check_only);
+
         self.db.flush().to_status()?;
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex()).to_status()?;
+        let psbt_bytes = match hex::decode(psbt.serialize_hex()).to_status() {
+            Ok(psbt_bytes) => psbt_bytes,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
         let res = tonic::Response::new(rpc::SigningPackage {
             // identifier really doent matter here.
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
             signing_session_id: signing_session_id.to_vec(),
         });
+
+        // record the new signing session in telemetry
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.record_total_signing_sessions(self.btc_network, self.config.identifier);
+        }
+
         Ok(res)
     }
 
@@ -1288,12 +1645,39 @@ where
             "Received to sign package request, signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let psbt = coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
-            .to_status()?;
+        let signing_session_id =
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
-        let psbt_bytes = hex::decode(psbt.serialize_hex())
-            .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+        let psbt = match coordinator::get_to_sign(&signing_session_id, &self.db, self.min_signers)
+            .to_status()
+        {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        let psbt_bytes = match hex::decode(psbt.serialize_hex()) {
+            Ok(psbt_bytes) => psbt_bytes,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(internal!("Failed to serialize psbt: {}", e));
+            }
+        };
+
         let res = tonic::Response::new(rpc::SigningPackage {
             // identifier really doent matter here.
             identifier: self.identifier.serialize().to_vec(),
@@ -1309,26 +1693,62 @@ where
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         let start = Instant::now();
         self.validate_jwt(&req)?;
-        // Ensure we have a key package
-        self.db.get_key_package().to_status()?;
 
         let req = req.into_inner();
+
+        // Ensure we have a key package
+        if let Err(e) = self.db.get_key_package().to_status() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        };
+
         info!(
             "Received new round1 signing package for signing session id: {:?}",
             hex::encode(req.signing_session_id.clone())
         );
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let frost_id = deserialize_frost_peer_id(req.identifier).to_status()?;
-        let psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
+        let signing_session_id =
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
-        coordinator::add_round1_signing(
+        let frost_id = handle_signing_error!(self, deserialize_frost_peer_id(req.identifier));
+
+        let psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        if let Err(e) = coordinator::add_round1_signing(
             &signing_session_id,
             frost_id,
             &psbt,
             &self.db,
             self.min_signers,
         )
-        .to_status()?;
+        .to_status()
+        {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        };
 
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_round1_signing_metrics(
@@ -1349,23 +1769,58 @@ where
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
         let start = Instant::now();
         self.validate_jwt(&req)?;
-        // Ensure we have a key package
-        self.db.get_key_package().to_status()?;
 
         let req = req.into_inner();
-        info!("Received round2 signing package");
-        let signing_session_id = parse_signing_session_id(&req.signing_session_id).to_status()?;
-        let frost_id = deserialize_frost_peer_id(req.identifier).to_status()?;
-        let psbt = Psbt::deserialize(req.psbt.as_slice()).to_status()?;
+        // Ensure we have a key package
+        if let Err(e) = self.db.get_key_package().to_status() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        };
 
-        coordinator::add_round2_signing(
+        info!("Received round2 signing package");
+        let signing_session_id =
+            handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
+
+        let frost_id = handle_signing_error!(self, deserialize_frost_peer_id(req.identifier));
+
+        let psbt = match Psbt::deserialize(req.psbt.as_slice()).to_status() {
+            Ok(psbt) => psbt,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_signing_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        if let Err(e) = coordinator::add_round2_signing(
             &signing_session_id,
             frost_id,
             &psbt,
             &self.db,
             self.min_signers,
         )
-        .to_status()?;
+        .to_status()
+        {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_signing_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        }
 
         if let Some(telemetry) = self.telemetry.as_ref() {
             telemetry.update_round2_signing_metrics(
@@ -1480,29 +1935,128 @@ where
         req: tonic::Request<rpc::DkgPayload>,
     ) -> Result<tonic::Response<rpc::DkgPayloads>, tonic::Status> {
         self.validate_jwt(&req)?;
-
+        let start = Instant::now();
         // NOTE: we do not make an existing aggregated key check at the start
         // here, since we still want to respond to the coordinator in case they
         // have not received our acknowledgment yet.
 
         let req = req.into_inner();
-        let sender = deserialize_frost_peer_id(req.sender.clone()).to_status()?;
-        let recipient = deserialize_frost_peer_id(req.recipient.clone()).to_status()?;
+        let sender = match deserialize_frost_peer_id(req.sender.clone()).to_status() {
+            Ok(sender) => sender,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_dkg_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        let recipient = match deserialize_frost_peer_id(req.recipient.clone()).to_status() {
+            Ok(recipient) => recipient,
+            Err(e) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_dkg_error_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        &e.to_string(),
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         // Decode the payload.
         let msg =
-            ciborium::from_reader::<dkg::DkgMessage, _>(req.payload.as_slice()).to_status()?;
+            match ciborium::from_reader::<dkg::DkgMessage, _>(req.payload.as_slice()).to_status() {
+                Ok(msg) => msg,
+                Err(e) => {
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_dkg_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            &e.to_string(),
+                        );
+                    }
+                    return Err(e);
+                }
+            };
 
         let payload = dkg::DkgPayload { sender, recipient, msg };
+
+        match &payload.msg {
+            dkg::DkgMessage::Round1 {
+                initiator: _,
+                context: _,
+                nonce: _,
+                ephemeral_pub: _,
+                signature: _,
+                package,
+            } => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    let mut bytes = vec![];
+                    ciborium::into_writer(&package, &mut bytes)
+                        .expect("failed to encode Dkg payload");
+                    telemetry.update_round1_dkg_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        bytes.len(),
+                        start.elapsed().as_millis(),
+                    );
+                }
+            }
+            dkg::DkgMessage::Round2 { initiator: _, target: _, nonce: _, package } => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    let mut bytes = vec![];
+                    ciborium::into_writer(&package, &mut bytes)
+                        .expect("failed to encode Dkg payload");
+                    telemetry.update_round2_dkg_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        bytes.len(),
+                        start.elapsed().as_millis(),
+                    );
+                }
+            }
+            dkg::DkgMessage::Round3 { initiator: _, signature: _ } => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.update_round3_dkg_metrics(
+                        self.btc_network,
+                        self.config.identifier,
+                        start.elapsed().as_millis(),
+                    );
+                }
+            }
+            _ => {}
+        }
 
         // Acquire the lock on the dkg machine.
         let mut l = self.dkg.lock().await;
         let Some(dkg) = l.as_mut() else {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_dkg_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    "dkg not initialized",
+                );
+            }
             return Err(tonic::Status::internal("dkg not initialized"));
         };
 
         // Process the payload.
-        dkg.machine.recv(payload).to_status()?;
+        if let Err(e) = dkg.machine.recv(payload).to_status() {
+            if let Some(telemetry) = self.telemetry.as_ref() {
+                telemetry.update_dkg_error_metrics(
+                    self.btc_network,
+                    self.config.identifier,
+                    &e.to_string(),
+                );
+            }
+            return Err(e);
+        }
 
         // Logging DKG state.
         print_dkg_state_log(dkg);
@@ -1524,10 +2078,37 @@ where
         if let Some((sec_key, pub_key)) = dkg.machine.aggregate_key_packages() {
             if self.db.get_key_package().to_status()?.is_none() {
                 info!("DKG completed successfully, saving key packages...");
+                if let Err(e) = self.db.set_key_package(sec_key.clone()).to_status() {
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_dkg_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            &e.to_string(),
+                        );
+                    }
+                    return Err(e);
+                }
 
-                self.db.set_key_package(sec_key.clone()).to_status()?;
-                self.db.set_pubkey_package(pub_key.clone()).to_status()?;
-                self.db.flush().to_status()?;
+                if let Err(e) = self.db.set_pubkey_package(pub_key.clone()).to_status() {
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_dkg_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            &e.to_string(),
+                        );
+                    }
+                    return Err(e);
+                }
+                if let Err(e) = self.db.flush().to_status() {
+                    if let Some(telemetry) = self.telemetry.as_ref() {
+                        telemetry.update_dkg_error_metrics(
+                            self.btc_network,
+                            self.config.identifier,
+                            &e.to_string(),
+                        );
+                    }
+                    return Err(e);
+                }
 
                 // Note that we keep the dkg machine running, in case the
                 // coordinator does not receive the final acknowledgment and we need
@@ -1558,30 +2139,193 @@ where
         _req: tonic::Request<rpc::FinalizeSignerRequest>,
     ) -> Result<tonic::Response<rpc::FinalizeSigningResponse>, tonic::Status> {
         panic!("Not used");
-        // let req = req.into_inner();
-        // info!("Received finalize signer request");
+    }
 
-        // let finalized_psbt = bitcoin::Psbt::deserialize(&req.psbt).map_err(|e| {
-        //     error!("Failed to deserialize psbt: {}", e);
-        //     badarg!("Failed to deserialize psbt: {}", e)
-        // })?;
+    async fn recover_missing_utxos(
+        &self,
+        request: tonic::Request<RecoverMissingUtxosRequest>,
+    ) -> Result<tonic::Response<RecoverMissingUtxosResponse>, tonic::Status> {
+        // print the request
+        info!("BtcServer::recover_missing_utxos: Request: {:?}", request);
 
-        // let psbt = self
-        //     .finalize_signer(finalized_psbt)
-        //     .await
-        //     .map_err(|e| internal!("Failed to finalize signer: {}", e))?;
-        // let psbt_bytes = hex::decode(psbt.serialize_hex())
-        //     .map_err(|e| internal!("Failed to serialize psbt: {}", e))?;
+        self.validate_jwt(&request)?;
 
-        // let res = tonic::Response::new(rpc::FinalizeSigningResponse {
-        //     psbt: bitcoin::consensus::encode::serialize(&psbt_bytes),
-        // });
+        let total_requested = request.get_ref().utxos.len() as u64;
+        info!("BtcServer::recover_missing_utxos: Total UTXOs requested: {}", total_requested);
 
-        // if let Some(telemetry) = self.telemetry.as_ref() {
-        //     telemetry.record_finalized_signing_sessions(self.btc_network, self.config.identifier)
-        // }
+        // Get the UTXO set from the db
+        let db_utxos = self.db.get_all_utxos().to_status()?;
+        if db_utxos.is_empty() {
+            // Not returning an error as it's possible for the db utxos to be empty after a wallet
+            // sweep
+            warn!("BtcServer::recover_missing_utxos: No UTXOs found in the database.");
+        }
+        info!("BtcServer::recover_missing_utxos: Found {} UTXOs in the database.", db_utxos.len());
 
-        // Ok(res)
+        let db_outpoints = db_utxos.iter().map(|u| u.outpoint).collect::<HashSet<_>>();
+
+        // Ensure we have a key package
+        let key_package = self
+            .db
+            .get_key_package()
+            .to_status()?
+            .ok_or(tonic::Status::internal("Missing key package"))?;
+
+        let mut utxos_to_add = Vec::new();
+        for req_utxo in request.into_inner().utxos {
+            // convert the request outpoint to the database outpoint
+            let req_outpoint = req_utxo.outpoint.as_ref().ok_or_else(|| {
+                error!("BtcServer::recover_missing_utxos: UTXO has no outpoint");
+                tonic::Status::invalid_argument("UTXO missing outpoint")
+            })?;
+
+            let outpoint = bitcoin::OutPoint::try_from(req_outpoint.clone()).map_err(|e| {
+                error!("BtcServer::recover_missing_utxos: Invalid outpoint format: {}", e);
+                tonic::Status::invalid_argument(format!("Invalid outpoint format: {}", e))
+            })?;
+            info!("BtcServer::recover_missing_utxos: converted bitcoin::OutPoint: {:?}", outpoint);
+
+            // check if the utxo is already in the database
+            if db_outpoints.contains(&outpoint) {
+                warn!(
+                    "BtcServer::recover_missing_utxos: UTXO {} is already in the database.",
+                    outpoint
+                );
+                continue;
+            }
+
+            // verify that the utxo exists on chain
+            let on_chain_utxo = self
+                .bitcoind_client
+                .get_tx_out(&outpoint.txid, outpoint.vout, None)
+                .map_err(|e| {
+                    error!(
+                        "BtcServer::recover_missing_utxos: Failed to get tx out for input: {}: {}",
+                        outpoint, e
+                    );
+                    tonic::Status::internal(format!(
+                        "Failed to get tx out for input: {}: {}",
+                        outpoint, e
+                    ))
+                })?;
+
+            debug!("BtcServer::recover_missing_utxos: outpoint: {:?}", outpoint);
+            debug!("BtcServer::recover_missing_utxos: on_chain_utxo: {:?}", on_chain_utxo);
+            let Some(on_chain_utxo) = on_chain_utxo else {
+                warn!(
+                    "BtcServer::recover_missing_utxos: UTXO {} does not exist on chain, skipping.",
+                    outpoint
+                );
+                continue;
+            };
+
+            // parse the eth address if it is not empty
+            let eth_address: Option<[u8; 20]> = if req_utxo.eth_address.is_empty() {
+                None
+            } else {
+                let parsed_eth_address = parse_eth_address(req_utxo.eth_address).map_err(|e| {
+                    error!("BtcServer::recover_missing_utxos: Invalid ETH address format: {}", e);
+                    tonic::Status::internal(format!("Invalid ETH address format: {}", e))
+                })?;
+                Some(parsed_eth_address)
+            };
+
+            // convert on chain utxo to database utxo
+            let utxo = crate::database::Utxo {
+                outpoint,
+                output: TxOut {
+                    value: on_chain_utxo.value,
+                    script_pubkey: bitcoin::ScriptBuf::from_bytes(
+                        on_chain_utxo.script_pub_key.hex.clone(),
+                    ),
+                },
+                eth_address,
+                version: 0,
+            };
+
+            // Generate the expected scriptPubKey for the eth address (if present) or the change
+            // scriptPubKey otherwise
+            let expected_script_pubkey: ScriptBuf;
+            if let Some(eth_address) = eth_address {
+                let agg_key = key_package.verifying_key();
+                let tweaked_key = generate_tweaked_public_key(agg_key, &eth_address)
+                    .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
+                expected_script_pubkey = generate_taproot_scriptpubkey(&tweaked_key);
+            } else {
+                let secp_pk = key_package
+                    .verifying_key()
+                    .to_secp_pk()
+                    .map_err(|e| internal!("Failed to generate tweaked public key: {}", e))?;
+                expected_script_pubkey =
+                    wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+            }
+
+            // verify that the scriptPubKey matches the p2tr_script
+            if expected_script_pubkey.to_bytes() != utxo.output.script_pubkey.to_bytes() {
+                error!("BtcServer::recover_missing_utxos: UTXO {} does not match the tweaked scriptPubKey.", utxo.outpoint);
+                continue;
+            }
+
+            // add the utxo to the list of utxos to be added
+            info!("BtcServer::recover_missing_utxos: UTXO {} passed all validations, adding to recovery list", outpoint);
+            utxos_to_add.push(utxo);
+        }
+
+        // add the utxos to the database
+        let utxo_refs: Vec<&crate::database::Utxo> = utxos_to_add.iter().collect();
+        info!("BtcServer::recover_missing_utxos: Storing {} missing UTXOs.", utxo_refs.len());
+        self.db.store_utxos(&utxo_refs).to_status()?;
+        self.db.update_utxo_merkle_root().to_status()?;
+        self.db.flush().to_status()?;
+
+        Ok(tonic::Response::new(RecoverMissingUtxosResponse {
+            total_requested,
+            total_recovered: utxos_to_add.len() as u64,
+        }))
+    }
+}
+
+impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
+    /// Handles invalid inputs in the transaction by:
+    /// 1. Checking if the input's previous output exists in the database.
+    /// 2. If it exists, checks if it's already spent.
+    /// 3. If it is spent, removes it from the database.
+    ///
+    /// Returns `Ok(())` if all inputs are handled successfully, or an error if any operation fails.
+    fn handle_invalid_inputs(&self, tx: &Transaction) -> Result<(), btcserverlib::database::Error> {
+        for input in &tx.input {
+            if let Some(_utxo) = self.db.get_utxo(input.previous_output)? {
+                // Check on chain if the input is already spent
+                let result = self
+                    .bitcoind_client
+                    .get_tx_out(&input.previous_output.txid, input.previous_output.vout, None)
+                    .map_err(|e| {
+                        error!("Failed to get tx out for input: {}: {}", input.previous_output, e);
+                        btcserverlib::database::Error::BitcoindError(e)
+                    })?;
+
+                if result.is_none() {
+                    warn!(
+                        "Input {} was spent without being tracked by the PegoutScheduler",
+                        input.previous_output
+                    );
+                    // TODO: Technically we should only remove the input if it is deeply confirmed
+                    // https://github.com/botanix-labs/botanix/issues/1099
+                    match self.db.remove_utxo(&input.previous_output) {
+                        Ok(_) => {
+                            info!("Removed spent input: {} from DB", input.previous_output);
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to remove spent input: {} from DB: {}",
+                                input.previous_output, e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1595,13 +2339,36 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
 
     let config = btcserverlib::config::load_config()?;
 
+    // Create a shared shutdown signal that all components will monitor
+    let (shutdown_tx, _shutdown_rx) = broadcast::channel::<()>(1);
+
+    // Set up panic hook to ensure shutdown signal is sent even on panic
+    let shutdown_tx_for_panic = shutdown_tx.clone();
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        error!("BTC server panicked: {}", info);
+        // Send shutdown signal to stop metrics server: metrics server subscribes to `shutdown_tx`
+        let _ = shutdown_tx_for_panic.send(());
+        // Call the original panic hook
+        original_hook(info);
+    }));
+
     let telemetry = if config.metrics_port.is_some() {
-        let telemetry = Telemetry::new().await?;
+        let telemetry = Telemetry::new(None).await?;
         telemetry.start().await?;
         Some(telemetry)
     } else {
         None
     };
+
+    if let Some(metrics) = telemetry.as_ref() {
+        metrics.set_config_metrics(
+            config.btc_network,
+            config.identifier,
+            config.min_signers,
+            config.max_signers,
+        );
+    }
 
     // setup the grpc server
     let bitcoind_client = bitcoincore_rpc::Client::new(
@@ -1625,50 +2392,87 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // spawn terminate handlers routine
-    let grpc_join_handle = tokio::spawn(stop_signal(grpc_stop_tx));
+    // spawn terminate handlers routine with enhanced shutdown coordination
+    let shutdown_tx_for_signal = shutdown_tx.clone();
+    let grpc_join_handle = tokio::spawn(async move {
+        stop_signal(grpc_stop_tx).await;
+        // When signal handler completes, broadcast shutdown to all components
+        let _ = shutdown_tx_for_signal.send(());
+    });
 
-    let server_handle = if let Some(telemetry) = telemetry {
-        // create and spin up the http server
+    let (metrics_server_handle, metrics_join_handle) = if let Some(telemetry) = telemetry {
+        // create and spin up the metrics HTTP server
         let state = ServerState::new(telemetry.clone()).await;
-        // create the actix webserver
+        // create the actix web server for metrics
         let port = config.metrics_port.unwrap_or(7000);
-        let grpc_server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
-        let grpc_server = create_web_server(state, grpc_server_addr)?;
-        // get server handle
-        let server_handle = grpc_server.handle();
-        // spawn the server in the background
-        tokio::spawn(async move {
-            if let Err(err) = grpc_server.await {
-                error!("Actix Web server error: {:?}", err);
+        let metrics_server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
+
+        let metrics_http_server = create_web_server(state, metrics_server_addr)?;
+        // get handle to control the metrics server
+        let metrics_server_handle = metrics_http_server.handle();
+
+        // Create a shutdown receiver for the metrics server
+        let mut shutdown_rx = shutdown_tx.subscribe();
+        let metrics_handle_for_shutdown = metrics_server_handle.clone();
+
+        // spawn the metrics server with shutdown monitoring
+        let metrics_join_handle = tokio::spawn(async move {
+            tokio::select! {
+                result = metrics_http_server => {
+                    if let Err(err) = result {
+                        error!("Metrics HTTP server error: {:?}", err);
+                    }
+                }
+                _ = shutdown_rx.recv() => {
+                    info!("Metrics server received shutdown signal");
+                    metrics_handle_for_shutdown.stop(true).await;
+                }
             }
         });
-        info!("Grpc server started.");
-        Some(server_handle)
+
+        info!("Metrics HTTP server started on port {}", port);
+        (Some(metrics_server_handle), Some(metrics_join_handle))
     } else {
         info!("Telemetry is disabled. Not starting the http server.");
-        None
+        (None, None)
     };
 
-    // // block and wait for a shutdown signal to terminate
-    let _ = tokio::join!(grpc_join_handle);
-
-    info!("Grpc server stopped");
-
-    if let Some(server_handle) = server_handle {
-        // Await the Actix server shutdown
-        info!("Stopping actix server ...");
-        server_handle.stop(true).await;
-        info!("Actix server stopped. Goodbye!");
+    // Wait for either the gRPC server to finish or metrics server to finish
+    match metrics_join_handle {
+        Some(metrics_handle) => {
+            tokio::select! {
+                _ = grpc_join_handle => {
+                    info!("gRPC server stopped");
+                }
+                _ = metrics_handle => {
+                    info!("Metrics server stopped");
+                }
+            }
+        }
+        None => {
+            let _ = grpc_join_handle.await;
+            info!("gRPC server stopped");
+        }
     }
 
+    // Ensure metrics server is stopped
+    if let Some(metrics_handle) = metrics_server_handle {
+        info!("Ensuring metrics server is stopped...");
+        metrics_handle.stop(true).await;
+        info!("Metrics server stopped.");
+    }
+
+    // Send final shutdown signal to any remaining components
+    let _ = shutdown_tx.send(());
+
+    info!("BTC server shutdown complete.");
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use bitcoin::{secp256k1, OutPoint, Script, Txid};
-    use btcserverlib::dkg::DkgMessage;
+    use btcserverlib::{dkg::DkgMessage, wallet::address::generate_taproot_change_scriptpubkey};
     use frost_secp256k1_tr::keys::dkg::round1;
     use rand::{thread_rng, Rng};
     use std::{str::FromStr, vec};
@@ -1718,7 +2522,7 @@ mod tests {
         let bitcoind_client = MockBitcoind::new();
 
         let config = Config {
-            db: temp_db.into_path(),
+            db: temp_db.keep(),
             btc_network: bitcoin::Network::Regtest,
             identifier: 0,
             coordinator: Some(0),
@@ -2066,6 +2870,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_new_consensus_checkpoint_no_finalized_pegouts_stored() {
+        let app = setup().await;
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+
+        // Add some pegin utxos
+        let mut pegins = vec![];
+        for _ in 0..10 {
+            let dummy_tx = create_tx(1, 1, None);
+            let utxo = crate::database::Utxo::new(
+                dummy_tx.input[0].previous_output,
+                dummy_tx.output[0].clone(),
+                None,
+                None,
+            );
+
+            // create pegins btc client can send
+            let tx_out = dummy_tx.output.get(utxo.outpoint.vout as usize).expect("valid vout");
+            let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
+            let utxo = Utxo {
+                outpoint: Some(rpc::OutPoint {
+                    txid: bitcoin::consensus::serialize(&utxo.outpoint.txid),
+                    vout: utxo.outpoint.vout,
+                }),
+                output: Some(rpc::TxOut {
+                    script_pubkey: Some(rpc::ScriptBuf { script: serialized_script_pub_key }),
+                    value: tx_out.value.to_sat(),
+                }),
+                eth_address: hex::encode(&[0; 20]),
+            };
+            pegins.push(utxo);
+        }
+        let req = tonic::Request::new(rpc::ConsensusCheckpointRequest {
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+            pegins: pegins.clone(),
+            pending_pegouts: vec![],
+        });
+        let _res = app.new_consensus_checkpoint(req).await.unwrap();
+
+        // Store finalized pegout
+        let mut rng = thread_rng();
+        let pegout_id = PegoutId::new(rng.gen::<[u8; 32]>(), 0);
+        let finalized_pegout = btcserverlib::database::FinalizedPegout {
+            id: pegout_id,
+            block_number: 100,
+            timestamp: None,
+        };
+        app.db.store_finalized_pegout_ids(&[&finalized_pegout]).expect("valid finalized pegout");
+
+        // Try and store a pending pegout with the the finalized pegout id
+        let pending_pegout = rpc::PendingPegout {
+            pegout_id: finalized_pegout.id.as_bytes().to_vec(),
+            spk: random_p2wpkh_script().as_bytes().to_vec(),
+            amount: 100_000, // sats
+            height: 1,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("valid duration")
+                .as_secs(),
+        };
+        let req = tonic::Request::new(rpc::ConsensusCheckpointRequest {
+            checkpoint_block_hash: BlockHash::all_zeros().to_byte_array().to_vec(),
+            pegins: vec![],
+            pending_pegouts: vec![pending_pegout],
+        });
+        let _res = app.new_consensus_checkpoint(req).await.unwrap();
+
+        let pending_pegouts = app.db.get_pending_pegouts().expect("valid pending pegouts");
+        assert!(pending_pegouts.is_empty(), "No pending pegouts should be stored");
+    }
+
+    #[tokio::test]
     async fn test_finalized_pegout_ids_streaming_chunksize_gt_chunks() {
         let app = setup().await;
         let num_txs = 52;
@@ -2127,5 +3008,331 @@ mod tests {
             collected_chunks.extend_from_slice(&item.data);
         }
         assert_eq!(collected_chunks.len(), num_txs);
+    }
+
+    /// Helper function to create test input from OutPoint
+    fn create_test_input(outpoint: OutPoint) -> bitcoin::TxIn {
+        bitcoin::TxIn {
+            previous_output: outpoint,
+            script_sig: ScriptBuf::new(),
+            sequence: bitcoin::Sequence::MAX,
+            witness: bitcoin::Witness::default(),
+        }
+    }
+
+    /// Helper function to create test transaction with given inputs and outputs
+    fn create_test_transaction(inputs: Vec<OutPoint>) -> Transaction {
+        Transaction {
+            version: bitcoin::transaction::Version(2),
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: inputs.into_iter().map(create_test_input).collect(),
+            output: vec![bitcoin::TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_invalid_inputs_removes_spent_utxos() {
+        let app = setup().await;
+        let mut rng = thread_rng();
+
+        // Generate 3 different outpoints for testing
+        let input_1 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 0);
+        let input_2 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 1);
+        let input_3 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 0);
+
+        // Create transaction with these inputs
+        let tx = create_test_transaction(vec![input_1, input_2, input_3]);
+
+        // Set up mock responses: input_1 is spent, input_2 and input_3 are unspent
+        app.bitcoind_client.remove_utxo(input_1);
+        app.bitcoind_client.add_utxo(input_2, Amount::from_sat(5000), ScriptBuf::new());
+        app.bitcoind_client.add_utxo(input_3, Amount::from_sat(3000), ScriptBuf::new());
+
+        // Add all 3 UTXOs to the database initially
+        let utxos = vec![
+            database::Utxo::new(
+                input_1,
+                bitcoin::TxOut { value: Amount::from_sat(2000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+            database::Utxo::new(
+                input_2,
+                bitcoin::TxOut { value: Amount::from_sat(5000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+            database::Utxo::new(
+                input_3,
+                bitcoin::TxOut { value: Amount::from_sat(3000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+        ];
+        let utxo_refs: Vec<&database::Utxo> = utxos.iter().collect();
+        app.db.store_utxos(&utxo_refs).expect("Failed to store UTXOs");
+
+        // Verify all UTXOs are in database initially
+        assert!(app.db.get_utxo(input_1).unwrap().is_some());
+        assert!(app.db.get_utxo(input_2).unwrap().is_some());
+        assert!(app.db.get_utxo(input_3).unwrap().is_some());
+
+        // Call handle_invalid_inputs
+        let result = app.handle_invalid_inputs(&tx);
+        assert!(result.is_ok(), "handle_invalid_inputs should succeed");
+
+        // Verify that spent UTXOs (input_1 and input_3) are removed from database
+        assert!(
+            app.db.get_utxo(input_1).unwrap().is_none(),
+            "Spent UTXO input_1 should be removed"
+        );
+        assert!(app.db.get_utxo(input_2).unwrap().is_some(), "Unspent UTXO input_2 should remain");
+        assert!(app.db.get_utxo(input_3).unwrap().is_some(), "Unspent UTXO input_3 should remain");
+    }
+
+    #[tokio::test]
+    async fn test_handle_invalid_inputs_ignores_missing_utxos() {
+        let app = setup().await;
+
+        // Create transaction with input that doesn't exist in database
+        let missing_input =
+            OutPoint::new(Txid::from_slice(&thread_rng().gen::<[u8; 32]>()).unwrap(), 0);
+        let tx = create_test_transaction(vec![missing_input]);
+
+        // Verify UTXO doesn't exist in database
+        assert!(app.db.get_utxo(missing_input).unwrap().is_none());
+
+        // Call handle_invalid_inputs - should not error even though UTXO doesn't exist
+        let result = app.handle_invalid_inputs(&tx);
+        assert!(result.is_ok(), "handle_invalid_inputs should succeed even with missing UTXOs");
+    }
+
+    #[tokio::test]
+    async fn test_handle_invalid_inputs_handles_all_unspent() {
+        let app = setup().await;
+        let mut rng = thread_rng();
+
+        // Create test outpoints
+        let input_1 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 0);
+        let input_2 = OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 1);
+
+        let tx = create_test_transaction(vec![input_1, input_2]);
+
+        // Set both inputs as unspent
+        app.bitcoind_client.add_utxo(input_1, Amount::from_sat(2000), ScriptBuf::new()); // Changed
+        app.bitcoind_client.add_utxo(input_2, Amount::from_sat(3000), ScriptBuf::new()); // Changed
+
+        // Add both UTXOs to the database
+        let utxos = vec![
+            database::Utxo::new(
+                input_1,
+                bitcoin::TxOut { value: Amount::from_sat(2000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+            database::Utxo::new(
+                input_2,
+                bitcoin::TxOut { value: Amount::from_sat(3000), script_pubkey: ScriptBuf::new() },
+                None,
+                None,
+            ),
+        ];
+        let utxo_refs: Vec<&database::Utxo> = utxos.iter().collect();
+        app.db.store_utxos(&utxo_refs).expect("Failed to store UTXOs");
+
+        // Verify both UTXOs are in database initially
+        assert!(app.db.get_utxo(input_1).unwrap().is_some());
+        assert!(app.db.get_utxo(input_2).unwrap().is_some());
+
+        // Call handle_invalid_inputs
+        let result = app.handle_invalid_inputs(&tx);
+        assert!(result.is_ok(), "handle_invalid_inputs should succeed");
+
+        // Verify that both UTXOs remain in database since they're unspent
+        assert!(app.db.get_utxo(input_1).unwrap().is_some(), "Unspent UTXO input_1 should remain");
+        assert!(app.db.get_utxo(input_2).unwrap().is_some(), "Unspent UTXO input_2 should remain");
+    }
+
+    // Helper function to set up app with key package
+    async fn setup_app_with_keys() -> (App<MockBitcoind>, frost::keys::KeyPackage) {
+        let app = setup().await;
+        let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
+            .expect("valid key package");
+        app.db.set_pubkey_package(pk_package).expect("set public key package");
+        app.db.set_key_package(key_package.clone()).expect("set key package");
+        (app, key_package)
+    }
+
+    fn create_random_outpoint(rng: &mut impl Rng) -> OutPoint {
+        OutPoint::new(Txid::from_slice(&rng.gen::<[u8; 32]>()).unwrap(), 0)
+    }
+
+    fn create_utxo(
+        rng: &mut impl Rng,
+        amount: u64,
+        agg_key: &frost::VerifyingKey,
+        eth_address: Option<[u8; 20]>,
+    ) -> (OutPoint, Amount, ScriptBuf) {
+        let amount = Amount::from_sat(amount);
+        let script_pubkey = if let Some(eth_address) = eth_address {
+            let tweaked_key =
+                generate_tweaked_public_key(agg_key, &eth_address).expect("valid tweaked key");
+            generate_taproot_scriptpubkey(&tweaked_key)
+        } else {
+            let secp_pk = agg_key.to_secp_pk().expect("valid secp key");
+            generate_taproot_change_scriptpubkey(&secp_pk)
+        };
+        let outpoint = create_random_outpoint(rng);
+
+        (outpoint, amount, script_pubkey)
+    }
+
+    fn add_utxo_to_db(
+        app: &App<MockBitcoind>,
+        outpoint: OutPoint,
+        amount: Amount,
+        script_pubkey: ScriptBuf,
+        eth_address: Option<[u8; 20]>,
+    ) {
+        let utxo = database::Utxo::new(
+            outpoint,
+            bitcoin::TxOut { value: amount, script_pubkey: script_pubkey.clone() },
+            eth_address,
+            None,
+        );
+
+        let utxo_refs: Vec<&database::Utxo> = vec![&utxo];
+        app.db.store_utxos(&utxo_refs).expect("Failed to store UTXO");
+    }
+
+    #[tokio::test]
+    async fn test_recover_missing_utxos_success() {
+        let (app, key_package) = setup_app_with_keys().await;
+        let agg_key = key_package.verifying_key();
+        let mut rng = thread_rng();
+
+        // add dummy utxo to db to prevent 'no utxo in db' error
+        let (dummy_outpoint, dummy_amount, dummy_script_pubkey) =
+            create_utxo(&mut rng, 1000, agg_key, None);
+        add_utxo_to_db(&app, dummy_outpoint, dummy_amount, dummy_script_pubkey, None);
+
+        // Onchain UTXO 1: With eth_address (pegin UTXO)
+        let eth_address = [1u8; 20];
+        let (outpoint1, utxo1_amount, pegin_script_pubkey) =
+            create_utxo(&mut rng, 100000, agg_key, Some(eth_address));
+        app.bitcoind_client.add_utxo(outpoint1, utxo1_amount, pegin_script_pubkey.clone());
+
+        // Onchain UTXO 2: change UTXO
+        let (outpoint2, utxo2_amount, change_script_pubkey) =
+            create_utxo(&mut rng, 50000, agg_key, None);
+        app.bitcoind_client.add_utxo(outpoint2, utxo2_amount, change_script_pubkey.clone());
+
+        // Create request utxos
+        let utxo_with_eth = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint::from(outpoint1)),
+            eth_address: hex::encode(eth_address),
+        };
+
+        let utxo_without_eth = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint::from(outpoint2)),
+            eth_address: String::new(), // Empty for change UTXO
+        };
+
+        let request = tonic::Request::new(RecoverMissingUtxosRequest {
+            utxos: vec![utxo_with_eth, utxo_without_eth],
+        });
+
+        let response = app.recover_missing_utxos(request).await.expect("successful recovery");
+        let inner = response.into_inner();
+
+        // Verify results
+        assert_eq!(inner.total_requested, 2);
+        assert_eq!(inner.total_recovered, 2);
+
+        // Verify UTXOs were stored in database
+        let stored_utxo1 = app.db.get_utxo(outpoint1).unwrap().unwrap();
+        assert_eq!(stored_utxo1.output.value, utxo1_amount);
+        assert_eq!(stored_utxo1.output.script_pubkey, pegin_script_pubkey,);
+
+        let stored_utxo2 = app.db.get_utxo(outpoint2).unwrap().unwrap();
+        assert_eq!(stored_utxo2.output.value, utxo2_amount,);
+        assert_eq!(stored_utxo2.output.script_pubkey, change_script_pubkey,);
+    }
+
+    #[tokio::test]
+    async fn test_recover_missing_utxos_bad_requests() {
+        let (app, key_package) = setup_app_with_keys().await;
+        let agg_key = key_package.verifying_key();
+        let mut rng = thread_rng();
+
+        // add existing utxo to db
+        let (existing_outpoint, existing_amount, existing_script_pubkey) =
+            create_utxo(&mut rng, 1000, agg_key, None);
+        add_utxo_to_db(&app, existing_outpoint, existing_amount, existing_script_pubkey, None);
+
+        // add these utxos to bitcoind
+        // Onchain UTXO 1: With eth_address (pegin UTXO)
+        let eth_address = [1u8; 20];
+        let (outpoint1, utxo1_amount, pegin_script_pubkey) =
+            create_utxo(&mut rng, 100000, agg_key, Some(eth_address));
+        app.bitcoind_client.add_utxo(outpoint1, utxo1_amount, pegin_script_pubkey.clone());
+
+        // Onchain UTXO 2: change UTXO
+        let not_change_script_pubkey = ScriptBuf::new();
+        let (outpoint2, utxo2_amount, _) = create_utxo(&mut rng, 50000, agg_key, None);
+        app.bitcoind_client.add_utxo(outpoint2, utxo2_amount, not_change_script_pubkey);
+
+        // (not onchain) UTXO 3: not found by bitcoind
+        let (outpoint3, _, _) = create_utxo(&mut rng, 50000, agg_key, None);
+
+        // Case 1 - utxo exists in db
+        let existing_utxo = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint::from(existing_outpoint)),
+            eth_address: String::new(),
+        };
+
+        // Case 2 - wrong eth address
+        let wrong_eth_address = [2u8; 20];
+        let utxo_wrong_eth_address = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint::from(outpoint1)),
+            eth_address: hex::encode(wrong_eth_address),
+        };
+
+        // Case 3 - utxo does not match change script pubkey
+        let utxo_not_change_script = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint::from(outpoint2)),
+            eth_address: String::new(),
+        };
+
+        // Case 4 - utxo is not found by bitcoind
+        let utxo_not_found = rpc::UtxoToRecover {
+            outpoint: Some(rpc::OutPoint::from(outpoint3)),
+            eth_address: String::new(),
+        };
+
+        let request = tonic::Request::new(RecoverMissingUtxosRequest {
+            utxos: vec![
+                existing_utxo,
+                utxo_wrong_eth_address,
+                utxo_not_change_script,
+                utxo_not_found,
+            ],
+        });
+
+        let response = app.recover_missing_utxos(request).await.expect("successful recovery");
+        let inner = response.into_inner();
+
+        // Verify results
+        assert_eq!(inner.total_requested, 4);
+        assert_eq!(inner.total_recovered, 0);
+
+        // Verify no bad utxos were added to db
+        let utxos = app.db.get_all_utxos().unwrap();
+        assert_eq!(utxos.len(), 1);
+        assert_eq!(utxos[0].outpoint, existing_outpoint);
     }
 }

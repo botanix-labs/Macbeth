@@ -2,18 +2,16 @@ use crate::{
     suite::consensus::common::events::SEND_AMOUNT,
     utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
-use std::{str::FromStr, time::Duration};
-
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount, Txid};
 use bitcoincore_rpc::RpcApi;
-use ethers::{prelude::Provider, providers::Http};
-use reth_primitives::{
-    botanix::{
-        peg_contract::{PeginMeta, PeginMetaV0, PEGIN_META_VERSION_V0},
-        utils::AmountExt,
-    },
-    Address,
+use botanix_authority_peg::{
+    peg_contract::{PeginMeta, PeginMetaV0, PEGIN_META_VERSION_V0},
+    utils::AmountExt,
 };
+use botanix_chainspec::constants::BOTANIX_TESTNET;
+use ethers::{prelude::Provider, providers::Http};
+use reth_primitives::Address;
+use std::{str::FromStr, time::Duration};
 
 use crate::{
     it_info_print,
@@ -24,7 +22,7 @@ use crate::{
 pub async fn multi_pegin_revert_scenarios(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::InvalidTransactionError> {
-    let pegin_conf_depth = reth_chainspec::BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
+    let pegin_conf_depth = BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
 
     // Set up regtest connection
     let bitcoind_rpc = suite.global_context.bitcoind_rpc();

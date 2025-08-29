@@ -25,11 +25,5 @@ secp256k1 = { workspace = true, features = ["rand"] }
 # misc
 thiserror = { workspace = true }
 
-# Grpc
-tonic = "0.11.0"
-
-# url
-url = "2.2"
-
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

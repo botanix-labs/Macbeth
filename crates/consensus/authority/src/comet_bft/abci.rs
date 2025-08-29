@@ -1,14 +1,12 @@
 //! The purpose of this module is to provide a bridge between the CometBFT and the EVM application
 //! state
 use alloy_rpc_types_engine::ForkchoiceState;
+use botanix_chainspec::constants::BOTANIX_TESTNET_CHAIN_ID;
 use reth_chain_state::ExecutedBlock;
 use reth_chainspec::ChainSpec;
-use reth_db::{
-    models::{self, SnapshotSync, SnapshotSyncId},
-    Database, DatabaseEnv,
-};
+use reth_db::{Database, DatabaseEnv};
 use reth_provider::{
-    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome, StagedHeader,
+    providers::BlockchainProvider2, BlockWriter, CanonChainTracker, ExecutionOutcome,
 };
 use reth_trie::{updates::TrieUpdates, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
@@ -20,23 +18,22 @@ use std::{
 use thiserror::Error;
 use tokio::sync::Mutex;
 
+use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_data_parser::DataParser;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
-use reth_btc_wallet::bitcoind::BitcoindFactory;
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};
 use reth_consensus_common::utils::unix_timestamp;
-use reth_data_parser::DataParser;
 use reth_ethereum_payload_builder::default_ethereum_payload_builder;
 use reth_evm::execute::BlockExecutorProvider;
 
-use comet_bft_rpc::HttpCometBFTRpcClientFactory;
+use botanix_authority_edh::header_ext::HeaderExt;
+use botanix_authority_peg::block_with_peg::SealedBlockWithPeg;
+use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use reth_payload_builder::EthPayloadBuilderAttributes;
-use reth_primitives::{
-    botanix::block_with_peg::SealedBlockWithPeg, header_ext::HeaderExt, Address, BlockHash,
-    BlockNumber, BlockWithSenders, SealedBlock, B256,
-};
+use reth_primitives::{Address, BlockHash, BlockNumber, BlockWithSenders, SealedBlock, B256, U256};
 use reth_provider::{
     BlockReaderIdExt, CanonStateNotification, Chain, ProviderError, ProviderFactory,
-    SnapshotReader, SnapshotWriter, StateProviderFactory,
+    StateProviderFactory,
 };
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::{engine::PayloadAttributes, BlockId};
@@ -58,6 +55,18 @@ use tendermint_proto::{
         Snapshot,
     },
 };
+
+/// Runtime version 0.1 that Botanix launched with.
+pub const RUNTIME_VERSION_V1: RuntimeVersion = RUNTIME_VERSION_GENESIS;
+/// Runtime version 0.2 that introduced a minimum base fee per gas of 0.005 Gwei.
+pub const RUNTIME_VERSION_V2: RuntimeVersion = RuntimeVersion::new(0, 2);
+/// Runtime version 0.3 that reduced the minimum base fee per gas to 0.0005 Gwei.
+pub const RUNTIME_VERSION_V3: RuntimeVersion = RuntimeVersion::new(0, 3);
+
+/// The floor base fee for runtime version 0.2
+const FLOOR_BASE_FEE_PER_GAS_V2: u64 = 5_000_000; // 5_000_000 Wei = 0.005 Gwei
+/// The floor base fee for runtime version 0.3
+const FLOOR_BASE_FEE_PER_GAS_V3: u64 = 500_000; // 500_000 Wei = 0.0005 Gwei
 
 impl From<&Snapshot> for SnapshotSyncStateLock {
     fn from(snapshot: &Snapshot) -> Self {
@@ -99,23 +108,31 @@ pub enum ApplySnapshotResult {
     /// Reject this snapshot, try others
     RejectSnapshot = 5,
 }
-
-use super::proto_debug::{
-    RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
-    RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
-    ResponsePrepareProposalTruncatedDebug,
-};
+use super::non_deterministic_data::{NonDeterministicData, RUNTIME_VERSION_GENESIS};
 use crate::{
-    bitcoin_checkpoint::BitcoinCheckpointsChain,
-    comet_bft::{
-        non_deterministic_data::{NonDeterministicData, VERSION_1 as LATEST_NDD_VERSION},
-        utils::transactions_signed_from_bytes,
+    comet_bft::proto_debug::{
+        RequestApplySnapshotChunkTruncatedDebug, RequestFinalizeBlockTruncatedDebug,
+        RequestProcessProposalTruncatedDebug, ResponseLoadSnapshotChunkTruncatedDebug,
+        ResponsePrepareProposalTruncatedDebug,
     },
     excecution_utils::authority_execution_utils::{batch_execute, build_and_execute},
-    metrics::AuthorityMetrics,
     snapshot_manager::{SnapshotManagerError, SnapshotManagerStateLock},
-    utils::{get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data},
+    utils::{
+        get_staged_pegins_from_pegin_meta, get_staged_pegouts_from_pegout_data,
+        transactions_signed_from_bytes,
+    },
     AuthorityConsensus, Storage,
+};
+use botanix_activation_manager::{
+    ActivationManager, NetworkUpgradePayload, OnFinalizeBlockDecision, OnProcessProposalDecision,
+    VoteWatcher,
+};
+use botanix_authority_metrics::AuthorityMetrics;
+use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
+use botanix_storage::{
+    models::{HeaderWithPegs, PeginData, PegoutData, RuntimeVersion, SnapshotSync, SnapshotSyncId},
+    BotanixProviderFactory, DatabaseProviderFactoryRW, RuntimeTransitionsReadWrite, SnapshotReader,
+    SnapshotWriter, StagedHeaderWriter,
 };
 use tracing::{debug, error, info, instrument, trace, warn};
 
@@ -191,6 +208,10 @@ impl SnapshotSyncStateLock {
 pub struct BlockWithContext {
     /// The sealed block with peg data
     pub sealed_block_with_peg: SealedBlockWithPeg,
+    /// The Botanix runtime version.
+    pub runtime_version: RuntimeVersion,
+    /// The optional network upgrade payload.
+    pub network_upgrade_payload: Option<NetworkUpgradePayload>,
     /// The execution outcome
     pub exec_outcome: ExecutionOutcome,
     /// The trie updates
@@ -199,8 +220,9 @@ pub struct BlockWithContext {
 
 /// ABCI client builder
 #[derive(Clone)]
-pub struct ABCIClientBuilder<EF, BF, DB> {
-    storage: Storage<EF, BF, DB>,
+pub struct ABCIClientBuilder<EF, BF, RDB, BDB> {
+    storage: Storage<EF, BF, RDB, BDB>,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     authority_consensus: AuthorityConsensus,
     cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -217,21 +239,17 @@ pub struct ABCIClientBuilder<EF, BF, DB> {
     blockchain_db: BlockchainProvider2<Arc<DatabaseEnv>>,
 }
 
-impl<EF, BF, DB> ABCIClientBuilder<EF, BF, DB>
+impl<EF, BF, RDB, BDB> ABCIClientBuilder<EF, BF, RDB, BDB>
 where
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + Clone
-        + SnapshotReader
-        + SnapshotWriter
-        + CanonChainTracker
-        + 'static,
+    RDB: BlockReaderIdExt + StateProviderFactory + Clone + CanonChainTracker + 'static,
+    BDB: SnapshotReader + SnapshotWriter + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        storage: Storage<EF, BF, DB>,
+        storage: Storage<EF, BF, RDB, BDB>,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         authority_consensus: AuthorityConsensus,
         cbft_rpc_client_factory: HttpCometBFTRpcClientFactory,
@@ -245,18 +263,21 @@ where
         snapshot_format: u32,
         block_fee_recipient_address: Option<reth_primitives::Address>,
     ) -> Self {
+        // TODO: What is the difference with storage.reth_database? Why we have it instead of using
+        // storage?
         let latest_sealed_header = storage
-            .client
+            .reth_database
             .latest_header()
             .ok()
             .flatten()
-            .unwrap_or_else(|| storage.chain_spec.sealed_genesis_header());
+            .unwrap_or_else(|| storage.chain_spec.inner().sealed_genesis_header());
         let blockchain_db =
             BlockchainProvider2::with_latest(provider_factory.clone(), latest_sealed_header)
                 .expect("blockchain db to exist");
 
         Self {
             storage,
+            activation_manager,
             bitcoin_checkpoints,
             authority_consensus,
             cbft_rpc_client_factory,
@@ -285,6 +306,7 @@ where
         let app = ABCIClient::new(
             self.storage.clone(),
             tx_pool,
+            self.activation_manager.clone(),
             self.bitcoin_checkpoints.clone(),
             self.abci_driver_tx.clone(),
             self.cbft_rpc_client_factory.clone(),
@@ -356,9 +378,10 @@ struct BlockCache {
 }
 
 #[derive(Clone)]
-pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
-    storage: Storage<EF, BF, DB>,
+pub(crate) struct ABCIClient<EF, BF, RDB, DBD, Pool, DB> {
+    storage: Storage<EF, BF, RDB, DBD>,
     pool: Pool,
+    activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     block_cache: Arc<RwLock<BlockCache>>,
     driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
@@ -368,32 +391,32 @@ pub(crate) struct ABCIClient<EF, BF, DB, Pool> {
     is_fed_node: bool,
     metrics: Arc<AuthorityMetrics>,
     task_executor: TaskExecutor,
-    provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+    // TODO: We already have provider factory in Storage
+    reth_provider_factory: ProviderFactory<DB>,
     compressor: DataParser,
     snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
     snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
     snapshot_format: u32,
     block_fee_recipient_address: Option<reth_primitives::Address>,
-    blockchain_db: BlockchainProvider2<Arc<DatabaseEnv>>,
+    // TODO: We already have it in Storage
+    blockchain_db: BlockchainProvider2<DB>,
+    is_testnet: bool,
 }
 
-impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
+impl<EF, BF, RDB, DBD, Pool, DB> ABCIClient<EF, BF, RDB, DBD, Pool, DB>
 where
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + Clone
-        + SnapshotReader
-        + SnapshotWriter
-        + CanonChainTracker
-        + 'static,
+    RDB: BlockReaderIdExt + StateProviderFactory + Clone + CanonChainTracker + 'static,
+    DBD: SnapshotReader + SnapshotWriter + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
+    DB: Database + Clone + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        storage: Storage<EF, BF, DB>,
+        storage: Storage<EF, BF, RDB, DBD>,
         pool: Pool,
+        activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         driver_tx: tokio::sync::mpsc::Sender<ABCIDriverMessage>,
         cbft_rpc_provider: HttpCometBFTRpcClientFactory,
@@ -402,12 +425,12 @@ where
         metrics: Arc<AuthorityMetrics>,
         compressor: DataParser,
         task_executor: TaskExecutor,
-        provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
+        provider_factory: ProviderFactory<DB>,
         snapshot_manager_state_lock: Arc<RwLock<SnapshotManagerStateLock>>,
         snapshot_sync_state_lock: Option<Arc<RwLock<SnapshotSyncStateLock>>>,
         snapshot_format: u32,
         block_fee_recipient_address: Option<reth_primitives::Address>,
-        blockchain_db: BlockchainProvider2<Arc<DatabaseEnv>>,
+        blockchain_db: BlockchainProvider2<DB>,
     ) -> Self {
         // Saving the last 5 blocks that were proposed
         let block_cache = Arc::new(RwLock::new(BlockCache {
@@ -418,6 +441,7 @@ where
         Self {
             storage: storage.clone(),
             pool,
+            activation_manager,
             bitcoin_checkpoints,
             // Saving the last 5 blocks that were proposed
             block_cache,
@@ -428,12 +452,13 @@ where
             metrics,
             compressor,
             task_executor,
-            provider_factory,
+            reth_provider_factory: provider_factory,
             snapshot_manager_state_lock,
             snapshot_sync_state_lock,
             snapshot_format,
             block_fee_recipient_address,
             blockchain_db,
+            is_testnet: storage.chain_spec.inner().chain.id() == BOTANIX_TESTNET_CHAIN_ID,
         }
     }
 
@@ -442,7 +467,7 @@ where
     fn payload_builder_arguments(
         &self,
     ) -> Result<PayloadConfig<EthPayloadBuilderAttributes>, PayloadBuilderError> {
-        let client = self.storage.client.clone();
+        let client = self.storage.reth_database.clone();
         let chain_spec = self.storage.chain_spec.clone();
 
         let best_header =
@@ -474,20 +499,27 @@ where
             Arc::new(best_block),
             reth_primitives::Bytes::default(),
             payload_builder_attributes,
-            chain_spec,
+            chain_spec.inner_arc(),
         ))
     }
 
-    pub(crate) fn non_deterministic_data(&self) -> Result<NonDeterministicData, ConsensusError> {
+    pub(crate) fn non_deterministic_data(
+        &self,
+        runtime_version: RuntimeVersion,
+        network_upgrade_payload: Option<NetworkUpgradePayload>,
+    ) -> Result<NonDeterministicData, ConsensusError> {
         let aggregate_public_key = self.aggregate_public_key()?;
         let block_fee_recipient_address = self
             .block_fee_recipient_address
             .ok_or(ConsensusError::MissingBlockFeeRecipientAddress)?;
 
-        let ndd = NonDeterministicData::new(
+        // Construct a NDD using version 2.
+        let ndd = NonDeterministicData::new_v2(
             self.bitcoin_blockhash()?,
             aggregate_public_key,
             block_fee_recipient_address,
+            runtime_version,
+            network_upgrade_payload,
         );
 
         Ok(ndd)
@@ -577,9 +609,10 @@ where
     }
 }
 
-impl<EF, BF, DB, Pool> ABCIClient<EF, BF, DB, Pool>
+impl<EF, BF, RDB, BDB, Pool, DB> ABCIClient<EF, BF, RDB, BDB, Pool, DB>
 where
-    DB: BlockReaderIdExt + StateProviderFactory + SnapshotReader + SnapshotWriter + Clone + 'static,
+    RDB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
+    BDB: SnapshotReader + SnapshotWriter + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
@@ -591,10 +624,13 @@ where
         total_chunks: u64,
         format: u64,
     ) -> Result<u64, SnapshotManagerError> {
-        let provider_rw = self.provider_factory.provider_rw()?;
-        let snapshot_sync_id =
-            provider_rw.create_new_snapshot_sync(block_id, snapshot_hash, total_chunks, format)?;
-        provider_rw.commit()?;
+        let snapshot_sync_id = self.storage.botanix_database_factory.create_new_snapshot_sync(
+            block_id,
+            snapshot_hash,
+            total_chunks,
+            format,
+        )?;
+
         Ok(snapshot_sync_id)
     }
 
@@ -603,25 +639,22 @@ where
         snapshot_sync_id: SnapshotSyncId,
         updated_snapshot: SnapshotSync,
     ) -> Result<(), SnapshotManagerError> {
-        let provider_rw = self.provider_factory.provider_rw()?;
-        provider_rw.update_snapshot_sync(snapshot_sync_id, updated_snapshot)?;
-        provider_rw.commit()?;
+        self.storage
+            .botanix_database_factory
+            .update_snapshot_sync(snapshot_sync_id, updated_snapshot)?;
+
         Ok(())
     }
 }
 
-impl<EF, BF, DB, Pool> Application for ABCIClient<EF, BF, DB, Pool>
+impl<EF, BF, RDB, BDB, Pool, DB> Application for ABCIClient<EF, BF, RDB, BDB, Pool, DB>
 where
-    DB: BlockReaderIdExt
-        + StateProviderFactory
-        + Clone
-        + SnapshotReader
-        + SnapshotWriter
-        + CanonChainTracker
-        + 'static,
+    RDB: BlockReaderIdExt + StateProviderFactory + Clone + CanonChainTracker + 'static,
+    BDB: SnapshotReader + SnapshotWriter + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
     BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
+    DB: Database + Clone + 'static,
 {
     // docs: https://docs.cometbft.com/v0.38/spec/abci/abci++_methods#init_chain
     // Panic! on an error. Proceeding when the chain can't be initialized will lead
@@ -638,9 +671,13 @@ where
                 panic!("Error parsing cometbft chain id: {:?}", e);
             }
         };
-        assert_eq!(self.storage.chain_spec.chain.id(), cometbft_chain_id, "Chain ID mismatch");
+        assert_eq!(
+            self.storage.chain_spec.inner().chain.id(),
+            cometbft_chain_id,
+            "Chain ID mismatch"
+        );
 
-        let client = self.storage.client.clone();
+        let client = self.storage.reth_database.clone();
         let app_hash = match self.application_hash(&client) {
             Ok(app_hash) => app_hash,
             Err(e) => {
@@ -665,7 +702,7 @@ where
     fn info(&self, request: RequestInfo) -> ResponseInfo {
         trace!("request={:?}", request);
 
-        let client = self.storage.client.clone();
+        let client = self.storage.reth_database.clone();
 
         let latest_header = match client.latest_header() {
             Ok(Some(header)) => header,
@@ -701,8 +738,8 @@ where
     fn list_snapshots(&self) -> ResponseListSnapshots {
         trace!("list_snapshots request");
 
-        let client = self.storage.client.clone();
-        match client.get_snapshots() {
+        let botanix_database_factory = self.storage.botanix_database_factory.clone();
+        match botanix_database_factory.get_snapshots() {
             Ok(snapshots) => {
                 // ensure no historical sync is ongoing
                 let snapshot_manager_state_lock = match self.snapshot_manager_state_lock.read() {
@@ -786,7 +823,7 @@ where
             return ResponseOfferSnapshot { result: SnapshotOfferResult::Reject as i32 };
         }
 
-        let client = self.storage.client.clone();
+        let client = self.storage.reth_database.clone();
         let application_hash = match self.application_hash(&client) {
             Ok(application_hash) => application_hash,
             Err(e) => {
@@ -953,7 +990,7 @@ where
             return response;
         }
 
-        let client = self.storage.client.clone();
+        let botanix_database_provider_factory = self.storage.botanix_database_factory.clone();
 
         // check if the snapshot is already applied
         let snapshot_manager_state_lock_block_id = snapshot_manager_state_lock.get_block_id();
@@ -971,10 +1008,12 @@ where
             return response;
         }
 
-        let response = match client.get_snapshot_id_by_block_id(request.height) {
+        let response = match botanix_database_provider_factory
+            .get_snapshot_id_by_block_id(request.height)
+        {
             Ok(Some(snapshot_id)) => {
                 // now take the entire snapshot data
-                match client.get_snapshot_by_id(snapshot_id) {
+                match botanix_database_provider_factory.get_snapshot_by_id(snapshot_id) {
                     Ok(Some(snapshot)) => {
                         // NOTE: all cometbft numeration starts at 0
                         let requested_chunk_index = request.chunk;
@@ -995,7 +1034,7 @@ where
                                 }
                             };
 
-                        match client.get_chunk_by_id(chunk_id) {
+                        match botanix_database_provider_factory.get_chunk_by_id(chunk_id) {
                             Ok(Some(chunk)) => {
                                 let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
                                 let compressor = self.compressor.clone();
@@ -1112,32 +1151,35 @@ where
             };
         }
 
-        let client = self.storage.client.clone();
+        let botanix_database_provider_factory = self.storage.botanix_database_factory.clone();
 
         // get the last snapshot sync id - there should always be one provided the offer_snapshot
         // has already run
-        let last_snapshot_sync_id = match client.get_last_snapshot_sync_id() {
-            Ok(Some(snapshot_sync_id)) => snapshot_sync_id,
-            Ok(None) => {
-                error!("No last snapshot sync found");
-                return ResponseApplySnapshotChunk {
-                    result: ApplySnapshotResult::RetrySnapshot as i32,
-                    refetch_chunks: vec![],
-                    reject_senders: vec![],
-                };
-            }
-            Err(e) => {
-                error!("Error getting last snapshot sync: {:?}", e);
-                return ResponseApplySnapshotChunk {
-                    result: ApplySnapshotResult::RetrySnapshot as i32,
-                    refetch_chunks: vec![],
-                    reject_senders: vec![],
-                };
-            }
-        };
+        let last_snapshot_sync_id =
+            match botanix_database_provider_factory.get_last_snapshot_sync_id() {
+                Ok(Some(snapshot_sync_id)) => snapshot_sync_id,
+                Ok(None) => {
+                    error!("No last snapshot sync found");
+                    return ResponseApplySnapshotChunk {
+                        result: ApplySnapshotResult::RetrySnapshot as i32,
+                        refetch_chunks: vec![],
+                        reject_senders: vec![],
+                    };
+                }
+                Err(e) => {
+                    error!("Error getting last snapshot sync: {:?}", e);
+                    return ResponseApplySnapshotChunk {
+                        result: ApplySnapshotResult::RetrySnapshot as i32,
+                        refetch_chunks: vec![],
+                        reject_senders: vec![],
+                    };
+                }
+            };
 
         // fetch the actual snapshot sync
-        let mut snapshot = match client.get_snapshot_sync_by_id(last_snapshot_sync_id) {
+        let mut snapshot = match botanix_database_provider_factory
+            .get_snapshot_sync_by_id(last_snapshot_sync_id)
+        {
             Ok(Some(snapshot)) => snapshot,
             Ok(None) => {
                 error!("No snapshot sync found by id");
@@ -1216,7 +1258,7 @@ where
 
         let exec_outcome = match batch_execute(
             blocks_with_senders.clone(),
-            &self.provider_factory,
+            &self.reth_provider_factory,
             self.storage.executor_factory.clone(),
         ) {
             Ok(exec_outcome) => exec_outcome,
@@ -1230,7 +1272,7 @@ where
             }
         };
 
-        let provider = match self.provider_factory.provider_rw() {
+        let provider = match self.reth_provider_factory.provider_rw() {
             Ok(provider) => provider,
             Err(e) => {
                 error!("Error getting provider: {:?}", e);
@@ -1352,8 +1394,19 @@ where
         let max_tx_bytes: usize =
             request.max_tx_bytes.try_into().expect("Invalid request proposal max_tx_bytes value");
 
-        // create non-deterministic data tx at index 0 so historical sync will pass verification
-        let non_deterministic_data = match self.non_deterministic_data() {
+        // Activation Manager: decide whether we should build for the current or
+        // upgraded runtime version.
+        let decision = self
+            .activation_manager
+            .on_prepare_proposal(request.height as u64)
+            .expect("db cannot fail");
+
+        let use_version = decision.version;
+        let upgrade_vote = decision.vote;
+
+        // Construct the NDD version 2 with a runtime version indicator
+        // and an (optional) network upgrade payload.
+        let non_deterministic_data = match self.non_deterministic_data(use_version, upgrade_vote) {
             Ok(ndd) => ndd,
             Err(e) => {
                 panic!(
@@ -1363,9 +1416,22 @@ where
             }
         };
 
+        debug!("prepare_proposal: Building with version: {use_version}");
+
+        let floor_base_fee_per_gas = match use_version {
+            // Historic and unused; primarily required for unit tests.
+            RUNTIME_VERSION_V1 => None,
+            // Active
+            RUNTIME_VERSION_V2 => Some(FLOOR_BASE_FEE_PER_GAS_V2),
+            // Upgrade
+            RUNTIME_VERSION_V3 => Some(FLOOR_BASE_FEE_PER_GAS_V3),
+            _ => unreachable!(),
+        };
+
         trace!("non_deterministic_data={:?}", non_deterministic_data);
 
-        // serialize non-deterministic data tx to bytes
+        // serialize non-deterministic data tx at index 0 to bytes so historical
+        // sync will pass verification
         let non_deterministic_data_bytes = match self
             .serialize_non_deterministic_data_to_bytes(non_deterministic_data)
         {
@@ -1414,7 +1480,7 @@ where
             return response;
         }
 
-        let payload_config = match self.payload_builder_arguments() {
+        let mut payload_config = match self.payload_builder_arguments() {
             Ok(payload_config) => payload_config,
             Err(e) => {
                 panic!(
@@ -1423,7 +1489,15 @@ where
                 );
             }
         };
-        let client = self.storage.client.clone();
+        let client = self.storage.reth_database.clone();
+
+        // Set the floor base fee per gas if provided.
+        if let Some(floor) = floor_base_fee_per_gas {
+            let basefee = payload_config.initialized_block_env.basefee.to::<u64>();
+            let min_basefee = basefee.max(floor);
+
+            payload_config.initialized_block_env.basefee = U256::from(min_basefee);
+        }
 
         let build_args = BuildArguments {
             client,
@@ -1536,7 +1610,7 @@ where
 
                 if tracing::enabled!(tracing::Level::WARN) {
                     let execution_time = execution_start_time.elapsed().as_secs_f32();
-                    let app_hash = match self.application_hash(&self.storage.client) {
+                    let app_hash = match self.application_hash(&self.storage.reth_database) {
                         Ok(app_hash) => app_hash,
                         Err(e) => {
                             panic!("failed to get application hash on process proposal: {:?}", e);
@@ -1577,7 +1651,7 @@ where
 
                 if tracing::enabled!(tracing::Level::WARN) {
                     let execution_time = execution_start_time.elapsed().as_secs_f32();
-                    let app_hash = match self.application_hash(&self.storage.client) {
+                    let app_hash = match self.application_hash(&self.storage.reth_database) {
                         Ok(app_hash) => app_hash,
                         Err(e) => {
                             panic!("failed to get application hash on process proposal: {:?}", e);
@@ -1616,7 +1690,7 @@ where
 
                 if tracing::enabled!(tracing::Level::WARN) {
                     let execution_time = execution_start_time.elapsed().as_secs_f32();
-                    let app_hash = match self.application_hash(&self.storage.client) {
+                    let app_hash = match self.application_hash(&self.storage.reth_database) {
                         Ok(app_hash) => app_hash,
                         Err(e) => {
                             panic!("failed to get application hash on process proposal: {:?}", e);
@@ -1639,26 +1713,52 @@ where
             }
         };
 
-        if non_deterministic_data.version() != LATEST_NDD_VERSION {
-            warn!(
-                ?non_deterministic_data,
-                "processing block with unknown non-deterministic data version"
-            );
-        }
-
         trace!("non_deterministic_data={:?}", non_deterministic_data);
 
+        // Only NDD versions starting from 1 are supported for block production so validate
+        // `block_fee_recipient_address` exists
+        let block_fee_recipient_address = match non_deterministic_data.block_fee_recipient_address()
+        {
+            Some(address) => address,
+            None => {
+                warn!("Block fee recipient address is not set in process proposal");
+
+                if tracing::enabled!(tracing::Level::WARN) {
+                    let execution_time = execution_start_time.elapsed().as_secs_f32();
+                    let app_hash = match self.application_hash(&self.storage.reth_database) {
+                        Ok(app_hash) => app_hash,
+                        Err(e) => {
+                            panic!("failed to get application hash on process proposal: {:?}", e);
+                        }
+                    };
+
+                    warn!(
+                        app_hash = hex::encode(&app_hash),
+                        block_time = block_time.seconds,
+                        execution_time,
+                        cbft_transactions_count = txs_len,
+                        eth_transactions_count = txs_len - 1,
+                        "A proposal with {} transactions is rejected in {} seconds",
+                        txs_len,
+                        execution_time
+                    );
+                }
+
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        };
+
         // check non-deterministic data: btc block hash and aggregate public key
-        if !self.bitcoin_checkpoints.contains_by_hash(non_deterministic_data.bitcoin_block_hash) {
+        if !self.bitcoin_checkpoints.contains_by_hash(non_deterministic_data.bitcoin_block_hash()) {
             warn!(
                 checkpoints_chain = %self.bitcoin_checkpoints,
-                proposed_checkpoint_hash = %non_deterministic_data.bitcoin_block_hash,
+                proposed_checkpoint_hash = %non_deterministic_data.bitcoin_block_hash(),
                 "A proposed bitcoin checkpoint is not a part of local checkpoint chain. Most probably a proposer's or local bitcoin node is out of sync."
             );
 
             if tracing::enabled!(tracing::Level::WARN) {
                 let execution_time = execution_start_time.elapsed().as_secs_f32();
-                let app_hash = match self.application_hash(&self.storage.client) {
+                let app_hash = match self.application_hash(&self.storage.reth_database) {
                     Ok(app_hash) => app_hash,
                     Err(e) => {
                         panic!("failed to get application hash on process proposal: {:?}", e);
@@ -1680,12 +1780,12 @@ where
             return ResponseProcessProposal { status: VERIFY_REJECT };
         }
 
-        if agg_pk != non_deterministic_data.aggregated_public_key {
+        if agg_pk != non_deterministic_data.aggregated_public_key() {
             warn!("Aggregate public key mismatch");
 
             if tracing::enabled!(tracing::Level::WARN) {
                 let execution_time = execution_start_time.elapsed().as_secs_f32();
-                let app_hash = match self.application_hash(&self.storage.client) {
+                let app_hash = match self.application_hash(&self.storage.reth_database) {
                     Ok(app_hash) => app_hash,
                     Err(e) => {
                         panic!("failed to get application hash on process proposal: {:?}", e);
@@ -1715,7 +1815,7 @@ where
 
                 if tracing::enabled!(tracing::Level::WARN) {
                     let execution_time = execution_start_time.elapsed().as_secs_f32();
-                    let app_hash = match self.application_hash(&self.storage.client) {
+                    let app_hash = match self.application_hash(&self.storage.reth_database) {
                         Ok(app_hash) => app_hash,
                         Err(e) => {
                             panic!("failed to get application hash on process proposal: {:?}", e);
@@ -1738,6 +1838,43 @@ where
             }
         };
 
+        // Activation Manager: decide whether we should process for the current
+        // or upgraded runtime version.
+        let floor_base_fee_per_gas;
+        let comet_height = request.height as u64;
+        let runtime_version = non_deterministic_data.runtime_version();
+        let network_upgrade_payload = non_deterministic_data.network_upgrade_payload().copied();
+        //
+        match self
+            .activation_manager
+            .on_process_proposal(comet_height, runtime_version)
+            .expect("db cannot fail")
+        {
+            OnProcessProposalDecision::Process { version, conditions: _ } => {
+                debug!("process_proposal: Processing with version: {version}");
+
+                match version {
+                    // Historic and unused; primarily required for unit tests.
+                    RUNTIME_VERSION_V1 => {
+                        floor_base_fee_per_gas = None;
+                    }
+                    // Active
+                    RUNTIME_VERSION_V2 => {
+                        floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS_V2);
+                    }
+                    // Upgrade
+                    RUNTIME_VERSION_V3 => {
+                        floor_base_fee_per_gas = Some(FLOOR_BASE_FEE_PER_GAS_V3);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            OnProcessProposalDecision::RejectBlock { version, conditions: _ } => {
+                warn!("process_proposal: Rejecting block using Botanix runtime version: {version}");
+                return ResponseProcessProposal { status: VERIFY_REJECT };
+            }
+        }
+
         // Validation done as a result of this call:
         // - botanix consensus package created on the fly and compared to the incoming block EDH
         // - mint validation checks
@@ -1747,12 +1884,15 @@ where
         match build_and_execute(
             txs,
             self.storage.chain_spec.clone(),
-            &non_deterministic_data.block_fee_recipient_address,
+            runtime_version,
+            network_upgrade_payload,
+            floor_base_fee_per_gas,
+            &block_fee_recipient_address,
             self.storage.evm_config,
-            &self.provider_factory,
+            &self.reth_provider_factory,
             &self.storage.bitcoind_factory,
             self.storage.btc_network,
-            &non_deterministic_data.bitcoin_block_hash,
+            &non_deterministic_data.bitcoin_block_hash(),
             &agg_pk,
             block_time,
         ) {
@@ -1768,7 +1908,7 @@ where
 
                     if tracing::enabled!(tracing::Level::WARN) {
                         let execution_time = execution_start_time.elapsed().as_secs_f32();
-                        let app_hash = match self.application_hash(&self.storage.client) {
+                        let app_hash = match self.application_hash(&self.storage.reth_database) {
                             Ok(app_hash) => app_hash,
                             Err(e) => {
                                 panic!(
@@ -1829,7 +1969,8 @@ where
 
                         if tracing::enabled!(tracing::Level::WARN) {
                             let execution_time = execution_start_time.elapsed().as_secs_f32();
-                            let app_hash = match self.application_hash(&self.storage.client) {
+                            let app_hash = match self.application_hash(&self.storage.reth_database)
+                            {
                                 Ok(app_hash) => app_hash,
                                 Err(e) => {
                                     panic!(
@@ -1860,7 +2001,7 @@ where
 
                 if tracing::enabled!(tracing::Level::WARN) {
                     let execution_time = execution_start_time.elapsed().as_secs_f32();
-                    let app_hash = match self.application_hash(&self.storage.client) {
+                    let app_hash = match self.application_hash(&self.storage.reth_database) {
                         Ok(app_hash) => app_hash,
                         Err(e) => {
                             panic!("failed to get application hash on process proposal: {:?}", e);
@@ -1940,6 +2081,36 @@ where
                     }
                 };
 
+                // NDD V0 (no block_fee_recipient_address) is supported only for historical sync on
+                // testnet
+                let block_fee_recipient_address = match non_deterministic_data
+                    .block_fee_recipient_address()
+                {
+                    Some(address) => {
+                        debug!(%address, "use proposed block fee recipient address");
+                        address
+                    }
+                    // Need to extract from `request.proposer_address` which is legacy block
+                    // building behavior
+                    None if self.is_testnet => {
+                        let address = Address::new(
+                            FixedBytes::<20>::from_slice(
+                                request.proposer_address.to_vec().as_slice(),
+                            )
+                            .0,
+                        );
+
+                        debug!(%address, "use a proposer address as the block fee recipient address (testnet)");
+
+                        address
+                    }
+                    None => {
+                        panic!(
+                            "Block fee recipient address is not set in finalize block for mainnet"
+                        );
+                    }
+                };
+
                 let block_time = match request.time {
                     Some(time) => time,
                     None => {
@@ -1960,16 +2131,41 @@ where
                     }
                 };
 
+                let runtime_version = non_deterministic_data.runtime_version();
+                let network_upgrade_payload =
+                    non_deterministic_data.network_upgrade_payload().copied();
+
+                debug!("finalize_block: Finalizing block with runtime version: {runtime_version}");
+
+                let floor_base_fee_per_gas = match runtime_version {
+                    // Historic
+                    RUNTIME_VERSION_V1 => None,
+                    // Active
+                    RUNTIME_VERSION_V2 => Some(FLOOR_BASE_FEE_PER_GAS_V2),
+                    // Upgrade
+                    RUNTIME_VERSION_V3 => Some(FLOOR_BASE_FEE_PER_GAS_V3),
+                    // This software is outdated and just encountered an
+                    // upgraded runtime version; this will be rejected in the
+                    // upcoming `ActivationManager::on_finalize_block(..)` call.
+                    _ => {
+                        warn!("finalize_block: Unrecognized runtime version: {runtime_version}");
+                        Some(FLOOR_BASE_FEE_PER_GAS_V3) // just apply the latest change.
+                    }
+                };
+
                 match build_and_execute(
                     txs,
                     self.storage.chain_spec.clone(),
-                    &non_deterministic_data.block_fee_recipient_address,
+                    runtime_version,
+                    network_upgrade_payload,
+                    floor_base_fee_per_gas,
+                    &block_fee_recipient_address,
                     self.storage.evm_config,
-                    &self.provider_factory,
+                    &self.reth_provider_factory,
                     &self.storage.bitcoind_factory,
                     self.storage.btc_network,
-                    &non_deterministic_data.bitcoin_block_hash,
-                    &non_deterministic_data.aggregated_public_key,
+                    &non_deterministic_data.bitcoin_block_hash(),
+                    &non_deterministic_data.aggregated_public_key(),
                     block_time,
                 ) {
                     Ok(block_with_context) => {
@@ -1991,6 +2187,47 @@ where
                 }
             }
         };
+
+        // Activation Manager: decide whether we're willing to accept
+        // the runtime version.
+        //
+        // Note that lagging validators will automatically accept an upgrade as
+        // long as they're specifically configured to do so (non-default
+        // behavior), whether - from their perspective - the upgrade conditions
+        // are met or not.
+        let comet_height = request.height as u64;
+        let runtime_version = block_with_context.runtime_version;
+        let proposer_address = Address::from_slice(&request.proposer_address);
+        let proposer_vote = block_with_context.network_upgrade_payload;
+
+        match self
+            .activation_manager
+            .on_finalize_block(runtime_version, comet_height, proposer_address, proposer_vote)
+            .expect("db cannot fail")
+        {
+            OnFinalizeBlockDecision::Finalize { version: _ } => {
+                // Continue...
+            }
+            OnFinalizeBlockDecision::RejectBlockDeadEnd { version } => {
+                error!("finalize_block: Rejecting finalized block with Botanix runtime version: {version}");
+                panic!("finalize_block: Rejecting Botanix upgrade '{version}' - can no longer proceed...");
+            }
+        }
+
+        // Metrics
+        //
+        // Only create metrics if there's an actual upgrade event ongoing.
+        if let Some((upgrade_version, polling)) =
+            self.activation_manager.get_upgrade_polling().expect("db cannot fail")
+        {
+            // Track the raw vote by the proposer. Note that the proposer might
+            // be voting for a different version than the one we're interested
+            // in, or for none at all. The rendered metric is labeled accurately.
+            self.metrics.runtime_upgrade_vote(&proposer_address, &proposer_vote);
+
+            // Track the polling results for the specific version we're interested in.
+            self.metrics.runtime_upgrade_polling(&upgrade_version, &polling);
+        }
 
         // Track the finalized block hash for the commit stage.
         block_cache_write.tracked_final = Some(cbft_block_hash);
@@ -2164,7 +2401,10 @@ pub enum ABCIDriverMessage {
 #[derive(Clone)]
 pub struct ABCIDriver<DatabaseRW> {
     driver_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<ABCIDriverMessage>>>,
-    database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
+    // TODO: BlockchainProvider2 already contains ProviderFactory so we can get it from there
+    //  instead of duplicating it here
+    reth_database_provider_factory: ProviderFactory<DatabaseRW, ChainSpec>,
+    botanix_database_provider_factory: BotanixProviderFactory<DatabaseRW>,
     blockchain_provider: BlockchainProvider2<DatabaseRW>,
 }
 
@@ -2175,10 +2415,16 @@ where
     /// Create a new ABCI drivers
     pub fn new(
         driver_rx: tokio::sync::mpsc::Receiver<ABCIDriverMessage>,
-        database_provider: ProviderFactory<DatabaseRW, ChainSpec>,
+        reth_database_provider_factory: ProviderFactory<DatabaseRW, ChainSpec>,
+        botanix_database_provider_factory: BotanixProviderFactory<DatabaseRW>,
         blockchain_provider: BlockchainProvider2<DatabaseRW>,
     ) -> Self {
-        Self { driver_rx: Arc::new(Mutex::new(driver_rx)), database_provider, blockchain_provider }
+        Self {
+            driver_rx: Arc::new(Mutex::new(driver_rx)),
+            reth_database_provider_factory,
+            botanix_database_provider_factory,
+            blockchain_provider,
+        }
     }
 
     /// Start the ABCI driver
@@ -2228,39 +2474,69 @@ where
                         // once the Frost task has successfully initiated a new
                         // checkpoint on the btc-server.
 
-                        let staged_pegins: Vec<models::PeginData> =
+                        let staged_pegins: Vec<PeginData> =
                             get_staged_pegins_from_pegin_meta(&pegins);
-                        let staged_pegouts: Vec<models::PegoutData> =
+                        let staged_pegouts: Vec<PegoutData> =
                             get_staged_pegouts_from_pegout_data(&pegouts, new_header.number);
 
-                        let header_with_pegs = models::HeaderWithPegs {
+                        let header_with_pegs = HeaderWithPegs {
                             pegins: staged_pegins,
                             pegouts: staged_pegouts,
                             header: new_header.header().clone(),
                         };
 
-                        let db_rw = match self.database_provider.provider_rw() {
-                            Ok(db_rw) => db_rw,
-                            Err(e) => {
-                                // Panic bc this causes a db inconsistency:
-                                // CometBFT has already committed the block so if
-                                // the block can't be appended here, there will be an app hash
-                                // mismatch. This requires a manual
-                                // rollback to a healthy state.
-                                panic!("Error getting database rw provider: {:?}", e);
-                            }
-                        };
+                        // Commit block data to both reth and botanix databases
 
-                        db_rw.append_blocks_with_state(
+                        // To ensure consistency between databases (one of the commits failed) we
+                        // make the block commitment process idempotent:
+                        // 1. Panic in case any of the commits failed
+                        // 2. Reth process is restarted, that lead CometBFT to restart
+                        // 3. Reth send previous block height CometBFT tries to replay the block
+                        // 4. If botanix database commit failed (it goes first), then we are at the
+                        //    previous block state for both databases
+                        // 5. If reth database commit failed then we should have staged header in
+                        //    the botanix database but reth database in previous block state
+                        // 6. This is totally fine because `insert_staged_header` is idempotent
+
+                        let botanix_db_rw = self
+                            .botanix_database_provider_factory
+                            .provider_rw()
+                            .unwrap_or_else(|e| panic!("can't get botanix rw provider: {e}"));
+
+                        let reth_db_rw =
+                            self.reth_database_provider_factory.provider_rw().unwrap_or_else(|e| {
+                                panic!("Error getting database rw provider: {:?}", e);
+                            });
+
+                        // Update botanix database with the new header and pegins/pegouts
+
+                        botanix_db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
+
+                        // Track the last known runtime version.
+
+                        botanix_db_rw.insert_runtime_upgrade_version(
+                            new_header.number,
+                            sealed_block_with_context.runtime_version,
+                        )?;
+
+                        botanix_db_rw.commit().unwrap_or_else(|err| {
+                            panic!("Failed to commit block to botanix database: {err}");
+                        });
+
+                        // Update reth database with the new block
+
+                        reth_db_rw.append_blocks_with_state(
                             vec![sealed_block_with_senders.clone()],
                             sealed_block_with_context.exec_outcome.clone(),
                             hashed_state.into_sorted(),
                             trie_updates,
                         )?;
 
-                        db_rw.insert_staged_header(new_header.hash(), header_with_pegs)?;
+                        reth_db_rw.commit().unwrap_or_else(|err| {
+                            panic!("Failed to commit block to reth database: {err}");
+                        });
 
-                        db_rw.commit()?;
+                        // Update the in-memory state with the new canonical chain
 
                         let new_chain = reth_chain_state::NewCanonicalChain::Commit {
                             new: vec![executed_block],
@@ -2316,26 +2592,29 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{bitcoin_checkpoint::BitcoinCheckpoint, Storage};
+    use crate::Storage;
     use bitcoin::{
         block::{BlockHash, Header, Version},
         hashes::Hash,
         CompactTarget, TxMerkleNode,
     };
-    use comet_bft_rpc::HttpCometBFTRpcClientFactory;
-    use rand::thread_rng;
-    use reth_btc_wallet::{
+    use botanix_activation_manager::ActivationManagerBuilder;
+    use botanix_bitcoin_checkpoint::BitcoinCheckpoint;
+    use botanix_btc_wallet::{
         bitcoind::{BitcoindConfig, BitcoindFactory},
         test_utils::MockBitcoindFactory,
     };
-    use reth_chainspec::{BOTANIX_MAINNET, BOTANIX_TESTNET};
+    use botanix_chainspec::constants::{BOTANIX_MAINNET, BOTANIX_TESTNET};
+    use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
+    use botanix_storage::BotanixProviderFactory;
+    use rand::thread_rng;
     use reth_cli_runner::tokio_runtime;
-    use reth_db::{init_db, mdbx::DatabaseArguments};
+    use reth_db::test_utils::{create_test_rw_db, create_test_static_files_dir};
     use reth_db_common::init::init_genesis;
     use reth_evm::test_utils::MockExecutorProvider;
     use reth_node_core::{args::TxPoolArgs, cli::config::RethTransactionPoolConfig};
     use reth_node_ethereum::EthEvmConfig;
-    use reth_provider::providers::{ProviderFactory, StaticFileProvider};
+    use reth_provider::providers::StaticFileProvider;
     use reth_revm::primitives::EnvKzgSettings;
     use reth_tasks::TaskManager;
     use reth_transaction_pool::{
@@ -2343,25 +2622,22 @@ mod tests {
         EthTransactionValidator, Pool as RethPool, TransactionOrigin, TransactionPool,
         TransactionValidationTaskExecutor,
     };
-    use std::path::Path;
-    use tempfile::tempdir;
     use tendermint_abci::Application;
     use tendermint_proto::google::protobuf::Timestamp;
 
-    type ABCIClientType = ABCIClient<
+    type ABCIClientType<DB = Arc<DatabaseEnv>> = ABCIClient<
         MockExecutorProvider,
         MockBitcoindFactory,
-        BlockchainProvider2<Arc<reth_db::DatabaseEnv>>,
+        BlockchainProvider2<DB>,
+        BotanixProviderFactory<DB>,
         RethPool<
             TransactionValidationTaskExecutor<
-                EthTransactionValidator<
-                    BlockchainProvider2<Arc<reth_db::DatabaseEnv>>,
-                    EthPooledTransaction,
-                >,
+                EthTransactionValidator<BlockchainProvider2<DB>, EthPooledTransaction>,
             >,
             reth_transaction_pool::CoinbaseTipOrdering<EthPooledTransaction>,
             InMemoryBlobStore,
         >,
+        DB,
     >;
 
     /// Build the db and the ABCI client
@@ -2371,20 +2647,22 @@ mod tests {
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
 
         // setup db client
-        let temp_dir = tempdir().expect("to create temp dir");
-        let db_path = temp_dir.path().join("db");
-        let db_path = Path::new(&db_path);
-        let db = Arc::new(init_db(db_path, DatabaseArguments::default()).expect("to init db"));
+        let reth_db = Arc::try_unwrap(create_test_rw_db()).unwrap().into_inner_db();
+        let (_, reth_static_path) = create_test_static_files_dir();
+
         let spec = Arc::new(BOTANIX_TESTNET.as_ref().to_owned());
         let factory = ProviderFactory::new(
-            db.clone(),
-            spec.clone(),
-            StaticFileProvider::read_write(db_path.join("static_files"))
-                .expect("static file providerto exist"),
+            Arc::new(reth_db),
+            spec.inner_arc(),
+            StaticFileProvider::read_write(reth_static_path).expect("to create provider factory"),
         );
         let _ = init_genesis(factory.clone()).expect("to init genesis");
-        let client =
+
+        let reth_provider =
             BlockchainProvider2::new(factory.clone()).expect("to create blockchain provider");
+
+        let botanix_db = Arc::try_unwrap(create_test_rw_db()).unwrap().into_inner_db();
+        let botanix_provider_factory = BotanixProviderFactory::new(Arc::new(botanix_db));
 
         let storage = Storage::new(
             Vec::new(),
@@ -2397,7 +2675,8 @@ mod tests {
             BOTANIX_TESTNET.clone(),
             MockBitcoindFactory::new(BitcoindConfig::default()),
             MockExecutorProvider::default(),
-            client.clone(),
+            reth_provider.clone(),
+            botanix_provider_factory.clone(),
         );
 
         // setup validator with task executor
@@ -2405,14 +2684,19 @@ mod tests {
         let tokio_runtime: tokio::runtime::Runtime = tokio_runtime().expect("to create runtime");
         let task_manager = TaskManager::new(tokio_runtime.handle().clone());
         let task_executor = task_manager.executor();
-        let validator = TransactionValidationTaskExecutor::eth_builder(storage.chain_spec.clone())
-            .with_head_timestamp(0)
-            .kzg_settings(EnvKzgSettings::Default)
-            .with_additional_tasks(1)
-            .build_with_tasks(client.clone(), task_executor.clone(), blob_store.clone());
+        let validator =
+            TransactionValidationTaskExecutor::eth_builder(storage.chain_spec.inner_arc())
+                .with_head_timestamp(0)
+                .kzg_settings(EnvKzgSettings::Default)
+                .with_additional_tasks(1)
+                .build_with_tasks(reth_provider.clone(), task_executor.clone(), blob_store.clone());
 
         let transaction_pool =
             RethPool::eth_pool(validator.clone(), blob_store, TxPoolArgs::default().pool_config());
+
+        let activation_manager =
+            ActivationManagerBuilder::new(VoteWatcher::default(), RUNTIME_VERSION_V1)
+                .build_ignore_nework_upgrade();
 
         let bitcoin_checkpoints_chain =
             BitcoinCheckpointsChain::try_new(1, 0, 0).expect("create a valid chain");
@@ -2437,6 +2721,7 @@ mod tests {
         ABCIClient::new(
             storage,
             transaction_pool,
+            activation_manager,
             Arc::new(bitcoin_checkpoints_chain),
             driver_tx,
             cometbft_rpc_factory,
@@ -2450,7 +2735,7 @@ mod tests {
             Some(Arc::new(RwLock::new(SnapshotSyncStateLock::default()))),
             1,
             Some(Address::ZERO),
-            client,
+            reth_provider,
         )
     }
 
@@ -2458,7 +2743,7 @@ mod tests {
         client: &ABCIClientType,
     ) -> Result<prost::bytes::Bytes, ConsensusError> {
         client
-            .non_deterministic_data()
+            .non_deterministic_data(RUNTIME_VERSION_V1, None)
             .and_then(|ndd| client.serialize_non_deterministic_data_to_bytes(ndd))
     }
 
@@ -2468,7 +2753,7 @@ mod tests {
         let abci_client = abci_client_builder();
 
         let request = RequestInitChain {
-            chain_id: BOTANIX_MAINNET.chain.id().to_string(),
+            chain_id: BOTANIX_MAINNET.inner().chain.id().to_string(),
             ..Default::default()
         };
         let _ = abci_client.init_chain(request);
@@ -2479,7 +2764,7 @@ mod tests {
         let abci_client = abci_client_builder();
 
         let request = RequestInitChain {
-            chain_id: BOTANIX_TESTNET.chain.id().to_string(),
+            chain_id: BOTANIX_TESTNET.inner().chain.id().to_string(),
             ..Default::default()
         };
         let response = abci_client.init_chain(request);
@@ -2492,7 +2777,7 @@ mod tests {
         let _response_app_hash_hex = hex::encode(response.app_hash.to_vec().as_slice());
         assert_eq!(
             response.app_hash.to_vec(),
-            BOTANIX_TESTNET.genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
+            BOTANIX_TESTNET.inner().genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
         );
     }
 
@@ -2510,7 +2795,7 @@ mod tests {
         let _response_app_hash_hex = hex::encode(response.last_block_app_hash.to_vec().as_slice());
         assert_eq!(
             response.last_block_app_hash.to_vec(),
-            BOTANIX_TESTNET.genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
+            BOTANIX_TESTNET.inner().genesis_hash.expect("Failed to unwrap genesis hash").0.to_vec()
         );
     }
 
@@ -2526,10 +2811,12 @@ mod tests {
 
         let response = abci_client.prepare_proposal(request);
 
-        let expected_ndd = NonDeterministicData::new(
+        let expected_ndd = NonDeterministicData::new_v2(
             abci_client.bitcoin_blockhash().expect("to have bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
+            RUNTIME_VERSION_GENESIS,
+            None,
         );
         let response_ndd_bytes = response.txs.first().expect("to have tx").clone();
         let reader_inner: Vec<u8> = vec![response_ndd_bytes].into_iter().flatten().collect();
@@ -2563,7 +2850,7 @@ mod tests {
         let request = RequestPrepareProposal::default();
         let response = abci_client.prepare_proposal(request);
 
-        let expected_ndd = NonDeterministicData::new(
+        let expected_ndd = NonDeterministicData::new_v1(
             abci_client.bitcoin_blockhash().expect("to have agg bitcoin blockhash"),
             abci_client.aggregate_public_key().expect("to have agg pk"),
             Address::ZERO,
@@ -2674,7 +2961,8 @@ mod tests {
         let mut request = RequestFinalizeBlock::default();
 
         // first tx should be non-deterministic data
-        let ndd = abci_client.non_deterministic_data().expect("to have ndd");
+        let ndd =
+            abci_client.non_deterministic_data(RUNTIME_VERSION_V1, None).expect("to have ndd");
         let ndd_bytes =
             abci_client.serialize_non_deterministic_data_to_bytes(ndd).expect("to serialize ndd");
 

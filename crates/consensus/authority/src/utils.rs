@@ -6,23 +6,22 @@ use bitcoin::{
     witness::Witness,
     Address, Amount, BlockHash,
 };
+use botanix_authority_peg::{
+    mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
+    peg_contract::{PeginMeta, PegoutData, PegoutWithId},
+};
+use botanix_storage::models;
+use btc_server_client::{
+    BtcServerExtendedApi, GrpcClientError, MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage,
+    TxOut, Utxo,
+};
 use btcserverlib::{
-    extended_client::{BtcServerExtendedApi, GrpcClientError},
     pegout_id::PegoutId,
     wallet::psbt::{PsbtExt, PsbtOutputExt},
 };
-use client::{MakeTxRequest, PendingPegout, ScriptBuf, SigningPackage, TxOut, Utxo};
 use futures_util::Future;
-use reth_db::models;
 use reth_network::{NetworkHandle, NetworkInfo};
-use reth_primitives::{
-    botanix::{
-        mint_validation::{try_parse_burn_event, BURN_TOPIC, MINT_CONTRACT_ADDRESS, MINT_TOPIC},
-        peg_contract::{PeginMeta, PegoutData, PegoutWithId},
-    },
-    constants::EPOCH_LENGTH,
-    Bloom, BloomInput,
-};
+use reth_primitives::{Bloom, BloomInput, TransactionSigned};
 use reth_provider::{BlockReaderIdExt, HeaderProvider, ReceiptProvider, TransactionsProvider};
 use reth_revm::primitives::FixedBytes;
 use reth_rpc_types::BlockHashOrNumber;
@@ -151,7 +150,7 @@ fn utxo_from_pegin_meta(pegin_meta: &PeginMeta) -> Utxo {
     let serialized_script_pub_key = bitcoin::consensus::serialize(&tx_out.script_pubkey);
 
     Utxo {
-        outpoint: Some(client::OutPoint {
+        outpoint: Some(btc_server_client::OutPoint {
             txid: bitcoin::consensus::serialize(&pegin_meta.outpoint().txid),
             vout: pegin_meta.outpoint().vout,
         }),
@@ -184,7 +183,10 @@ pub(crate) fn get_utxos_from_staged_pegins(pegins: Vec<models::PeginData>) -> Ve
     pegins
         .into_iter()
         .map(|pegin| Utxo {
-            outpoint: Some(client::OutPoint { txid: pegin.txid, vout: pegin.vout as u32 }),
+            outpoint: Some(btc_server_client::OutPoint {
+                txid: pegin.txid,
+                vout: pegin.vout as u32,
+            }),
             output: Some(TxOut {
                 value: pegin.value,
                 script_pubkey: Some(ScriptBuf { script: pegin.script_pubkey }),
@@ -299,8 +301,9 @@ pub(crate) async fn epoch_pegouts(
     best_block: u64,
     client: &impl BlockReaderIdExt,
     btc_network: bitcoin::Network,
+    epoch_length: u64,
 ) -> Result<Vec<PegoutData>, EpochPegoutsError> {
-    let start_block = find_epoch_start(EPOCH_LENGTH, best_block);
+    let start_block = find_epoch_start(epoch_length, best_block);
     let mut pegouts = Vec::new();
     for block in start_block..=best_block {
         match client.block_by_number(block) {
@@ -783,6 +786,26 @@ pub fn validate_psbt_id_by_maximum_cutoff_age(
     Ok(())
 }
 
+/// Convert bytes to [TransactionSigned] using an iterator
+/// Iterator is passed in case some bytes need to be skipped
+/// For example, if the first Bytes are non-deterministic data
+pub fn transactions_signed_from_bytes(
+    bytes: impl Iterator<Item = prost::bytes::Bytes>,
+) -> Result<Vec<TransactionSigned>, Box<dyn std::error::Error>> {
+    let mut txs = Vec::new();
+    for tx in bytes {
+        match TransactionSigned::decode_enveloped(&mut tx.to_vec().as_slice()) {
+            Ok(signed_tx) => txs.push(signed_tx),
+            Err(e) => {
+                error!("Error decoding signed transaction: {:?}", e);
+                return Err(Box::new(e));
+            }
+        }
+    }
+
+    Ok(txs)
+}
+
 #[cfg(test)]
 mod tests {
     use bitcoin::{
@@ -806,7 +829,42 @@ mod tests {
 
     use super::*;
 
+    use reth_primitives::TransactionSigned;
+
     const FEERATE: FeeRate = FeeRate::from_sat_per_kwu(5 * 250);
+
+    #[test]
+    fn test_transactions_signed_from_bytes() {
+        let mut tx1 = TransactionSigned::default();
+        tx1.transaction.set_nonce(1);
+        let mut tx2 = TransactionSigned::default();
+        tx2.transaction.set_nonce(2);
+        let mut tx3 = TransactionSigned::default();
+        tx3.transaction.set_nonce(3);
+
+        let mut buf1 = Vec::new();
+        tx1.encode_enveloped(&mut buf1);
+        let signed_tx1 = TransactionSigned::decode_enveloped(&mut buf1.as_slice()).unwrap();
+        let bytes1 = prost::bytes::Bytes::copy_from_slice(buf1.as_slice());
+
+        let mut buf2 = Vec::new();
+        tx2.encode_enveloped(&mut buf2);
+        let signed_tx2 = TransactionSigned::decode_enveloped(&mut buf2.as_slice()).unwrap();
+        let bytes2 = prost::bytes::Bytes::copy_from_slice(buf2.as_slice());
+
+        let mut buf3 = Vec::new();
+        tx3.encode_enveloped(&mut buf3);
+        let signed_tx3 = TransactionSigned::decode_enveloped(&mut buf3.as_slice()).unwrap();
+        let bytes3 = prost::bytes::Bytes::copy_from_slice(buf3.as_slice());
+
+        let vec_bytes = [bytes1, bytes2, bytes3];
+        let txs = transactions_signed_from_bytes(vec_bytes.iter().cloned()).unwrap();
+
+        assert_eq!(txs.len(), 3);
+        assert_eq!(txs[0], signed_tx1);
+        assert_eq!(txs[1], signed_tx2);
+        assert_eq!(txs[2], signed_tx3);
+    }
 
     fn create_random_pegout_id() -> PegoutId {
         let mut rng = thread_rng();
@@ -903,9 +961,9 @@ mod tests {
             let script_pubkey = rng.gen::<[u8; 32]>().to_vec();
             let vout = rng.gen_range(0..u32::MAX);
             let utxo = Utxo {
-                outpoint: Some(client::OutPoint { txid: txid.clone(), vout }),
+                outpoint: Some(btc_server_client::OutPoint { txid: txid.clone(), vout }),
                 output: Some(TxOut {
-                    script_pubkey: Some(client::ScriptBuf { script: script_pubkey }),
+                    script_pubkey: Some(btc_server_client::ScriptBuf { script: script_pubkey }),
                     value: rng.gen::<u64>(),
                 }),
                 eth_address: "0x0".to_string(),
@@ -1032,16 +1090,17 @@ mod tests {
     #[test]
     fn test_find_epoch_start() {
         let mut rng = rand::thread_rng();
+        const TEST_EPOCH_LENGTH: u64 = 100;
 
         let current_block_1 = 0;
-        let current_block_2 = current_block_1 + rng.gen_range(1..EPOCH_LENGTH);
-        let current_block_3 = current_block_1 + EPOCH_LENGTH;
-        let current_block_4 = current_block_3 + rng.gen_range(1..EPOCH_LENGTH);
+        let current_block_2 = current_block_1 + rng.gen_range(1..TEST_EPOCH_LENGTH);
+        let current_block_3 = current_block_1 + TEST_EPOCH_LENGTH;
+        let current_block_4 = current_block_3 + rng.gen_range(1..TEST_EPOCH_LENGTH);
 
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_1), current_block_1);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_2), current_block_1);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_3), current_block_3);
-        assert_eq!(find_epoch_start(EPOCH_LENGTH, current_block_4), current_block_3);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_1), current_block_1);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_2), current_block_1);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_3), current_block_3);
+        assert_eq!(find_epoch_start(TEST_EPOCH_LENGTH, current_block_4), current_block_3);
     }
 
     #[test]

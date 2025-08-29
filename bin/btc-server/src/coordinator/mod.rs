@@ -1,4 +1,4 @@
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 use crate::{
     coordinator::error::CoordinatorError,
@@ -9,6 +9,8 @@ use crate::{
     wallet::{
         coin_selection,
         psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
+        util::calculate_signed_tx_weight,
+        MAX_PEGOUT_TX_WEIGHT,
     },
 };
 use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
@@ -81,6 +83,48 @@ pub fn make_tx(
     min_signers: u16,
     tracked_txs: Vec<Tx>,
 ) -> Result<Psbt, CoordinatorError> {
+    let mut attempted_outputs = outputs.clone();
+    loop {
+        let psbt = attempt_make_tx(
+            attempted_outputs.clone(),
+            fee_rate,
+            change_script.clone(),
+            db,
+            min_signers,
+            &tracked_txs,
+        )?;
+        let tx_weight = calculate_signed_tx_weight(&psbt)?;
+        if tx_weight.to_wu() <= MAX_PEGOUT_TX_WEIGHT {
+            info!(
+                "expected pegout tx weight: {}, num outputs: {}",
+                tx_weight,
+                attempted_outputs.len()
+            );
+            return Ok(psbt);
+        }
+
+        // Edge case: Even with a single output, the transaction exceeds the weight limit (requires
+        // more than ~1700 inputs). The pegout would have to be ~1700 times larger than the
+        // average of the 1700 largest utxos.
+        if attempted_outputs.len() <= 1 {
+            return Err(CoordinatorError::TransactionTooLarge);
+        }
+
+        // Remove 10% of the outputs and try again
+        attempted_outputs.truncate(attempted_outputs.len() - (attempted_outputs.len() / 10));
+        warn!("psbt expected weight was too big: {}, with outputs.len: {}. Truncating outputs to {} and trying again", tx_weight, attempted_outputs.len(), attempted_outputs.len());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn attempt_make_tx(
+    outputs: Vec<(TxOut, PegoutId)>,
+    fee_rate: FeeRate,
+    change_script: ScriptBuf,
+    db: &Db,
+    min_signers: u16,
+    tracked_txs: &[Tx],
+) -> Result<Psbt, CoordinatorError> {
     // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate
     // let mut fee_rate = fee_rate;
@@ -108,13 +152,14 @@ pub fn make_tx(
     debug!("tracked_inputs = {:?}", tracked_inputs);
 
     // Filter utxos that are still pending and conflict with pending txs.
-    let mut available_utxos = utxos
+    // These utxos are 'optional' in that they are not required to be included in the coin selection
+    let optional_utxos = utxos
         .clone()
         .into_iter()
         .filter(|(p, _u)| !tracked_inputs.contains(p))
         .collect::<HashMap<_, _>>();
-    debug!("available_utxos len = {:?}", available_utxos.len());
-    debug!("available_utxos = {:?}", available_utxos);
+    debug!("optional_utxos len = {:?}", optional_utxos.len());
+    debug!("optional_utxos = {:?}", optional_utxos);
 
     // if we are retrying pegouts, we need to add a conflicting input for each tracked tx
     // that honors each pegout
@@ -148,8 +193,6 @@ pub fn make_tx(
         .map(|op| {
             utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
                 |u: &Utxo| {
-                    // Conflicting utxos will be added to available utxos before finishing
-                    // coin selection
                     conflicting_utxos.insert(*op, u.clone());
                     u.clone()
                 },
@@ -160,13 +203,8 @@ pub fn make_tx(
     let _ = conflicting_inputs?;
     debug!("conflicting_utxos = {:?}", conflicting_utxos);
 
-    // include conflicting utxos when selecting from available utxos
-    conflicting_utxos.iter().for_each(|(op, u)| {
-        available_utxos.insert(*op, u.clone());
-    });
-
     let psbt = coin_selection::coin_selection(
-        available_utxos,
+        optional_utxos,
         conflicting_utxos,
         outputs,
         fee_rate,
@@ -246,7 +284,7 @@ pub async fn finalize_signing(
 
         // Note: we don't need to add the internal key here for a key spend path
         // as the output key is derived from the scriptpubkey
-        let hash_ty = bitcoin::sighash::TapSighashType::All;
+        let hash_ty = bitcoin::sighash::TapSighashType::Default;
         let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
         psbt_input.sighash_type = Some(sighash_type);
         psbt_input.tap_key_sig =

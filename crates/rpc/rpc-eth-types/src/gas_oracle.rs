@@ -290,7 +290,7 @@ pub struct GasPriceOracleResult {
 
 impl Default for GasPriceOracleResult {
     fn default() -> Self {
-        // Set default to 0.001 GWEI instead of 1 GWEI (previously used GWEI_TO_WEI constant).
+        // Set default to 0.025 GWEI instead of 1 GWEI (previously used GWEI_TO_WEI constant).
         // The initial base fee is 7 WEI so a default of 1 GWEI is not practical.
         Self { block_hash: B256::ZERO, price: U256::from(DEFAULT_SUGGESTED_TIP) }
     }

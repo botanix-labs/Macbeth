@@ -14,7 +14,6 @@ use reth_ethereum_forks::{
 use reth_network_peers::NodeRecord;
 use reth_primitives_traits::{
     constants::{
-        BOTANIX_INITIAL_BASE_FEE, BOTANIX_MAINNET_GENESIS, BOTANIX_TESTNET_GENESIS,
         DEV_GENESIS_HASH, EIP1559_INITIAL_BASE_FEE, EMPTY_WITHDRAWALS, ETHEREUM_BLOCK_GAS_LIMIT,
         HOLESKY_GENESIS_HASH, MAINNET_GENESIS_HASH, SEPOLIA_GENESIS_HASH,
     },
@@ -23,8 +22,6 @@ use reth_primitives_traits::{
 use reth_trie_common::root::state_root_ref_unhashed;
 #[cfg(feature = "std")]
 use std::sync::Arc;
-
-use askama::Template;
 
 use reth_network_peers::{
     base_nodes, base_testnet_nodes, holesky_nodes, mainnet_nodes, op_nodes, op_testnet_nodes,
@@ -55,12 +52,6 @@ pub static MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 20000,
-        bitcoin_checkpoint_confirmation_depth: 0,
-        weak_bitcoin_checkpoints_count: 0,
-        historical_bitcoin_checkpoints_count: 0,
-        leader_selection_window: None,
-        botanix_fee_recipient: None,
-        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -85,12 +76,6 @@ pub static SEPOLIA: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 10000,
-        bitcoin_checkpoint_confirmation_depth: 0,
-        weak_bitcoin_checkpoints_count: 0,
-        historical_bitcoin_checkpoints_count: 0,
-        leader_selection_window: None,
-        botanix_fee_recipient: None,
-        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -113,12 +98,6 @@ pub static HOLESKY: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
         base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
         max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
         prune_delete_limit: 10000,
-        bitcoin_checkpoint_confirmation_depth: 0,
-        weak_bitcoin_checkpoints_count: 0,
-        historical_bitcoin_checkpoints_count: 0,
-        leader_selection_window: None,
-        botanix_fee_recipient: None,
-        lst_fee_receiver: None,
     };
     spec.genesis.config.dao_fork_support = true;
     spec.into()
@@ -142,104 +121,6 @@ pub static DEV: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
     }
     .into()
 });
-
-/// The Botanix specs
-///
-/// Includes Testnet and Mainnet
-pub const BOTANIX_TESTNET_CHAIN_ID: u64 = 3636;
-/// Mainnet chain id
-pub const BOTANIX_MAINNET_CHAIN_ID: u64 = 3637;
-
-/// Botanix Testnet Genesis Configuration
-#[derive(Template, Clone, Debug)]
-#[template(path = "botanix_testnet_template.json", ext = "json", escape = "none")]
-pub struct BotanixTestnetGenesisConfig<'a> {
-    /// Extra data header field
-    pub edh: &'a str,
-}
-
-/// Botanix Mainnet Genesis Configuration
-#[derive(Template, Clone, Debug)]
-#[template(path = "botanix_mainnet_template.json", ext = "json", escape = "none")]
-pub struct BotanixMainnetGenesisConfig<'a> {
-    /// Extra data header field
-    pub edh: &'a str,
-}
-
-/// The Botanix Testnet
-pub static BOTANIX_TESTNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
-    let mut spec = ChainSpec {
-        chain: Chain::from_id(BOTANIX_TESTNET_CHAIN_ID),
-        genesis: serde_json::from_str(include_str!("../res/genesis/botanix_testnet.json"))
-            .expect("Can't deserialize Botanix Testnet genesis json"),
-        genesis_hash: Some(BOTANIX_TESTNET_GENESIS),
-        paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        hardforks: EthereumHardfork::botanix().into(),
-        deposit_contract: None, // only relevant for PoS chains
-        // Signet confirmation depth requirement
-        bitcoin_checkpoint_confirmation_depth: 1,
-        weak_bitcoin_checkpoints_count: 0,
-        historical_bitcoin_checkpoints_count: 1,
-        leader_selection_window: Some(20),
-        base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
-        max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
-        prune_delete_limit: 20000,
-        botanix_fee_recipient: None,
-        lst_fee_receiver: None,
-    };
-    spec.genesis.config.dao_fork_support = false;
-    spec.into()
-});
-
-/// The Botanix Mainnet
-pub static BOTANIX_MAINNET: Lazy<Arc<ChainSpec>> = Lazy::new(|| {
-    let mut spec = ChainSpec {
-        chain: Chain::from_id(BOTANIX_MAINNET_CHAIN_ID),
-        genesis: serde_json::from_str(include_str!("../res/genesis/botanix_mainnet.json"))
-            .expect("Can't deserialize Botanix Testnet genesis json"),
-        genesis_hash: Some(BOTANIX_MAINNET_GENESIS),
-        paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        hardforks: EthereumHardfork::botanix().into(),
-        deposit_contract: None, // only relevant for PoS chains
-        bitcoin_checkpoint_confirmation_depth: 18,
-        weak_bitcoin_checkpoints_count: 1,
-        historical_bitcoin_checkpoints_count: 1,
-        leader_selection_window: Some(20),
-        base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
-        max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
-        prune_delete_limit: 20000,
-        botanix_fee_recipient: None,
-        lst_fee_receiver: None,
-    };
-    spec.genesis.config.dao_fork_support = false;
-    spec.into()
-});
-
-/// Creates a new botanix chain spec using a custom genesis block
-pub fn create_botanix_config_with_genesis(
-    genesis: Genesis,
-    pegin_conf_depth: u32,
-    botanix_fee_recipient: String,
-    chain_id: u64,
-    genesis_hash: Option<B256>,
-    lst_fee_receiver: String,
-) -> ChainSpec {
-    ChainSpec {
-        chain: Chain::from_id(chain_id),
-        genesis,
-        genesis_hash,
-        paris_block_and_final_difficulty: Some((0, U256::from(0))),
-        hardforks: EthereumHardfork::botanix().into(),
-        deposit_contract: None, // Only relevant for PoS chains
-        bitcoin_checkpoint_confirmation_depth: pegin_conf_depth,
-        leader_selection_window: Some(20),
-        botanix_fee_recipient: Some(botanix_fee_recipient),
-        max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
-        prune_delete_limit: 1700,
-        lst_fee_receiver: Some(lst_fee_receiver),
-        ..Default::default()
-    }
-}
 
 /// A wrapper around [`BaseFeeParams`] that allows for specifying constant or dynamic EIP-1559
 /// parameters based on the active [Hardfork].
@@ -322,26 +203,6 @@ pub struct ChainSpec {
 
     /// The delete limit for pruner, per run.
     pub prune_delete_limit: usize,
-
-    /// The number of confirmations we require for pegins from the mainchain.
-    pub bitcoin_checkpoint_confirmation_depth: u32,
-
-    /// How many checkpoints before the strong confirmation depth to keep (depth < strong)
-    /// for validation
-    pub historical_bitcoin_checkpoints_count: usize,
-
-    /// How many historical checkpoints to keep (depth > strong) for validation
-    pub weak_bitcoin_checkpoints_count: usize,
-
-    /// Block times in seconds
-    pub leader_selection_window: Option<u64>,
-
-    /// Botanix fee recipient
-    pub botanix_fee_recipient: Option<String>,
-
-    /// LST fee receiver
-    /// This is the contract address that receives block fees as part of native staking
-    pub lst_fee_receiver: Option<String>,
 }
 
 impl Default for ChainSpec {
@@ -356,12 +217,6 @@ impl Default for ChainSpec {
             base_fee_params: BaseFeeParamsKind::Constant(BaseFeeParams::ethereum()),
             max_gas_limit: ETHEREUM_BLOCK_GAS_LIMIT,
             prune_delete_limit: MAINNET.prune_delete_limit,
-            bitcoin_checkpoint_confirmation_depth: 0,
-            weak_bitcoin_checkpoints_count: 0,
-            historical_bitcoin_checkpoints_count: 0,
-            leader_selection_window: None,
-            botanix_fee_recipient: None,
-            lst_fee_receiver: None,
         }
     }
 }
@@ -468,19 +323,11 @@ impl ChainSpec {
     /// Get the initial base fee of the genesis block.
     pub fn initial_base_fee(&self) -> Option<u64> {
         // If the base fee is set in the genesis block, we use that instead of the default.
-        let genesis_base_fee = self.clone().initial_base_fee_by_chain_id();
+        let genesis_base_fee =
+            self.genesis.base_fee_per_gas.unwrap_or(EIP1559_INITIAL_BASE_FEE as u128) as u64;
 
         // If London is activated at genesis, we set the initial base fee as per EIP-1559.
         self.hardforks.fork(EthereumHardfork::London).active_at_block(0).then_some(genesis_base_fee)
-    }
-
-    /// Returns the initial base fee based on chain id
-    pub fn initial_base_fee_by_chain_id(self) -> u64 {
-        if self.chain().id() == BOTANIX_TESTNET.chain().id() {
-            BOTANIX_INITIAL_BASE_FEE
-        } else {
-            EIP1559_INITIAL_BASE_FEE
-        }
     }
 
     /// Get the [`BaseFeeParams`] for the chain at the given timestamp.
