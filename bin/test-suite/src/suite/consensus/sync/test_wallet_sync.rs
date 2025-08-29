@@ -6,22 +6,20 @@ use std::{
 
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
-use client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
+use botanix_authority_peg::{
+    mint_validation::{BURN_TOPIC, MINT_TOPIC},
+    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
+    utils::AmountExt,
+};
+use botanix_chainspec::constants::BOTANIX_TESTNET;
+use btc_server_client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
 use futures::StreamExt;
-use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::{
-    botanix::{
-        mint_validation::{BURN_TOPIC, MINT_TOPIC},
-        peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
-        utils::AmountExt,
-    },
-    Address,
-};
+use reth_primitives::Address;
 use tonic::transport::Channel;
 
 use crate::{
@@ -277,8 +275,10 @@ pub async fn test_wallet_sync(
         .clone();
     it_info_print!("Waiting for tracked tx");
     loop {
-        let response =
-            signer.get_tracked_txs(tonic::Request::new(client::Empty {})).await?.into_inner();
+        let response = signer
+            .get_tracked_txs(tonic::Request::new(btc_server_client::Empty {}))
+            .await?
+            .into_inner();
         if !response.tracked_txs.is_empty() {
             it_info_print!("Tracked tx found");
             break;

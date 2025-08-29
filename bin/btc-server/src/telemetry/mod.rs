@@ -14,10 +14,12 @@ pub struct Telemetry {
 }
 
 impl Telemetry {
-    pub async fn new() -> anyhow::Result<Arc<Self>> {
+    pub async fn new(prefix: Option<String>) -> anyhow::Result<Arc<Self>> {
         let system = Arc::new(RwLock::new(System::new().await));
 
-        let btc_server_metrics = Some(Arc::new(BtcServerMetrics::default()));
+        let btc_server_metrics = Some(Arc::new(
+            BtcServerMetrics::new(prefix).expect("msg: failed to create BtcServerMetrics"),
+        ));
 
         Ok(Arc::new(Self { system, btc_server_metrics }))
     }
@@ -30,13 +32,33 @@ impl Telemetry {
         Ok(())
     }
 
+    pub fn record_bitcoind_rpc_latency(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        rpc_method: &str,
+        latency_millis: u128,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            // update latency histogram (in milliseconds)
+            metrics
+                .bitcoind_rpc_latency
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &rpc_method.to_string(),
+                ])
+                .observe(latency_millis as f64);
+        });
+    }
+
     pub fn update_round1_signing_metrics(
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
         session_id: &[u8; 32],
         data_size: usize,
-        latency: u128,
+        latency_millis: u128,
     ) {
         self.maybe_use_metrics(|metrics| {
             // Update package size histogram
@@ -45,11 +67,11 @@ impl Telemetry {
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
                 .observe(data_size as f64);
 
-            // update latency histogram
+            // update latency histogram (in milliseconds)
             metrics
-                .round1_signing_latency_histogram
+                .round1_signing_latency
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .observe(latency as f64);
+                .observe(latency_millis as f64);
 
             // Increment total received packages
             metrics
@@ -75,7 +97,7 @@ impl Telemetry {
         self_id: u16,
         session_id: &[u8; 32],
         data_size: usize,
-        latency: u128,
+        latency_millis: u128,
     ) {
         self.maybe_use_metrics(|metrics| {
             // Update package size histogram
@@ -86,9 +108,9 @@ impl Telemetry {
 
             // update latency histogram
             metrics
-                .round2_signing_latency_histogram
+                .round2_signing_latency
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .observe(latency as f64);
+                .observe(latency_millis as f64);
 
             // Increment total received packages
             metrics
@@ -113,7 +135,7 @@ impl Telemetry {
         btc_chain: bitcoin::Network,
         self_id: u16,
         data_size: usize,
-        latency: u128,
+        latency_millis: u128,
     ) {
         self.maybe_use_metrics(|metrics| {
             // Update package size histogram
@@ -126,7 +148,7 @@ impl Telemetry {
             metrics
                 .round1_dkg_latency_histogram
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .observe(latency as f64);
+                .observe(latency_millis as f64);
 
             // Increment total received packages
             metrics
@@ -147,7 +169,7 @@ impl Telemetry {
         btc_chain: bitcoin::Network,
         self_id: u16,
         data_size: usize,
-        latency: u128,
+        latency_millis: u128,
     ) {
         self.maybe_use_metrics(|metrics| {
             // Update package size histogram
@@ -160,7 +182,7 @@ impl Telemetry {
             metrics
                 .round2_dkg_latency_histogram
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .observe(latency as f64);
+                .observe(latency_millis as f64);
 
             // Increment total received packages
             metrics
@@ -176,11 +198,60 @@ impl Telemetry {
         });
     }
 
+    pub fn update_round3_dkg_metrics(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        latency_millis: u128,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            // update latency histogram
+            metrics
+                .round3_dkg_latency_histogram
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .observe(latency_millis as f64);
+
+            // Increment total received packages
+            metrics
+                .total_received_round3_dkg_packages
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+
+            // Increment throughput for sessionid
+            metrics
+                .round3_dkg_throughput
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
     pub fn update_dkg_error_metrics(&self, btc_chain: bitcoin::Network, self_id: u16, error: &str) {
         self.maybe_use_metrics(|metrics| {
             metrics
                 .dkg_error_rates
-                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string(), error])
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &error.to_string(),
+                ])
+                .inc();
+        });
+    }
+
+    pub fn update_signing_success_rate_metrics(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        session_id: [u8; 32],
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .signing_success_rate
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &hex::encode(session_id),
+                ])
                 .inc();
         });
     }
@@ -189,7 +260,6 @@ impl Telemetry {
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
-        session_id: Option<[u8; 32]>,
         error: &str,
     ) {
         self.maybe_use_metrics(|metrics| {
@@ -198,16 +268,27 @@ impl Telemetry {
                 .with_label_values(&[
                     &btc_chain.to_string(),
                     &self_id.to_string(),
-                    &session_id.map(hex::encode).unwrap_or_default(),
-                    error,
+                    &error.to_string(),
                 ])
                 .inc();
         });
     }
 
-    pub fn update_pegout_scheduler_error_metrics(&self, error: &str) {
+    pub fn update_pegout_scheduler_error_metrics(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        error: &str,
+    ) {
         self.maybe_use_metrics(|metrics| {
-            metrics.pegout_scheduler_error_rates.with_label_values(&[error]).inc();
+            metrics
+                .pegout_scheduler_error_rates
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &error.to_string(),
+                ])
+                .inc();
         });
     }
 
@@ -215,6 +296,15 @@ impl Telemetry {
         self.maybe_use_metrics(|metrics| {
             metrics
                 .total_aborted_signing_sessions
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
+    pub fn record_total_signing_sessions(&self, btc_chain: bitcoin::Network, self_id: u16) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .total_signing_sessions
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
                 .inc();
         });
@@ -229,15 +319,194 @@ impl Telemetry {
         });
     }
 
-    pub fn update_pending_pegouts(&self, pegouts: i64) {
+    pub fn set_last_attempted_pegout_height(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegout_height: i64,
+    ) {
         self.maybe_use_metrics(|metrics| {
-            metrics.pending_pegouts.with_label_values(&[]).set(pegouts);
+            metrics
+                .last_attempted_pegout_height
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(pegout_height);
         });
     }
 
-    pub fn update_finalized_pegout_ids(&self, pegout_ids: i64) {
+    pub fn set_last_successful_pegout_height(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegout_height: i64,
+    ) {
         self.maybe_use_metrics(|metrics| {
-            metrics.finalized_pegout_ids.with_label_values(&[]).set(pegout_ids);
+            metrics
+                .last_successful_pegout_height
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(pegout_height);
+        });
+    }
+
+    pub fn set_last_pegin_height(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegin_height: i64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .last_pegin_height
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(pegin_height);
+        });
+    }
+
+    pub fn update_pegin_utxos(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        utxos: i64,
+        total_value: i64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .pegin_utxos_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(utxos);
+
+            metrics
+                .pegin_utxos_total_value
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(total_value);
+        });
+    }
+
+    pub fn update_pegout_utxos(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        utxos: i64,
+        total_value: i64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .pegout_utxos_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(utxos);
+
+            metrics
+                .pegout_utxos_total_value
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(total_value);
+        });
+    }
+
+    pub fn update_health_check(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        upstream_time: u64,
+        service_status: &[(&str, &str)],
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .member_uptime
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(upstream_time as i64);
+
+            service_status.iter().for_each(|(service, status)| {
+                metrics
+                    .bitcoind_sync_status
+                    .with_label_values(&[
+                        &btc_chain.to_string(),
+                        &self_id.to_string(),
+                        &service.to_string(),
+                    ])
+                    .set(if *status == "up" { 1_i64 } else { 0_i64 });
+            });
+        });
+    }
+
+    pub fn set_pending_pegouts(&self, btc_chain: bitcoin::Network, self_id: u16, pegouts: i64) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .pending_pegouts
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(pegouts);
+        });
+    }
+
+    pub fn update_finalized_pegout_ids(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegout_ids: i64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .finalized_pegout_ids
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .add(pegout_ids);
+        });
+    }
+
+    pub fn update_pegin_confirmation_depth(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegin_confirmation_depth: u32,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            // Set pegin confirmation depth
+            metrics
+                .pegin_confirmation_depth
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .set(pegin_confirmation_depth as i64);
+        });
+    }
+
+    pub fn update_transaction_fee_rates(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        transaction_fee_rate: f64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            // Set pegin confirmation depth
+            metrics
+                .transaction_fee_rates
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .observe(transaction_fee_rate);
+        });
+    }
+
+    pub fn update_fee_rate_abnormalities(&self, btc_chain: bitcoin::Network, self_id: u16) {
+        self.maybe_use_metrics(|metrics| {
+            // Set pegin confirmation depth
+            metrics
+                .fee_rate_abnormalities
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
+    pub fn set_config_metrics(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        min_signers: u16,
+        max_signers: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .config
+                .with_label_values(&[
+                    &btc_chain.to_string(),
+                    &self_id.to_string(),
+                    &min_signers.to_string(),
+                    &max_signers.to_string(),
+                ])
+                .set(1.0f64);
         });
     }
 

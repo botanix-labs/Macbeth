@@ -37,10 +37,10 @@ use crate::{
     traits::{BlockSource, ReceiptProvider},
     AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
     ChainSpecProvider, ChangeSetReader, EvmEnvProvider, HeaderProvider, PruneCheckpointReader,
-    ReceiptProviderIdExt, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
-    StagedHeader, StateProvider, StateProviderBox, StateProviderFactory, StateRootProvider,
-    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WalletStateSyncReader,
-    WalletStateSyncWriter, WithdrawalsProvider,
+    ReceiptProviderIdExt, RequestsProvider, RuntimeTransitionsReadWrite, SnapshotReader,
+    SnapshotWriter, StageCheckpointReader, StagedHeader, StateProvider, StateProviderBox,
+    StateProviderFactory, StateRootProvider, StaticFileProviderFactory, TransactionVariant,
+    TransactionsProvider, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
 };
 
 /// Supports various api interfaces for testing purposes.
@@ -326,6 +326,26 @@ impl StagedHeader for NoopProvider {
 
     fn get_staged_headers(&self) -> ProviderResult<Vec<(B256, reth_db::models::HeaderWithPegs)>> {
         Ok(vec![])
+    }
+}
+
+impl RuntimeTransitionsReadWrite for NoopProvider {
+    fn insert_runtime_upgrade_version(
+        &self,
+        _height: BlockNumber,
+        _version: reth_db::models::RuntimeVersion,
+    ) -> ProviderResult<bool> {
+        Ok(false)
+    }
+
+    fn get_runtime_versions(
+        &self,
+    ) -> ProviderResult<Vec<(BlockNumber, reth_db::models::RuntimeVersion)>> {
+        Ok(vec![])
+    }
+
+    fn get_last_runtime_version(&self) -> ProviderResult<Option<reth_db::models::RuntimeVersion>> {
+        Ok(None)
     }
 }
 

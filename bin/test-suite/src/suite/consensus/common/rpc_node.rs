@@ -2,17 +2,15 @@ use crate::{
     it_error_print, it_info_print,
     suite::consensus::{
         common::{
-            poa_node::FederationMemberTestConfig, spawn_child_process, Scope,
+            is_port_free, poa_node::FederationMemberTestConfig, spawn_child_process, Scope,
             MINTING_CONTRACT_BYTECODE,
         },
         GlobalContext,
     },
 };
 use anyhow::Context;
+use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
 use reth_network_peers::pk2id;
-use reth_node_core::args::FederationTomlConfig;
-
-use reth::args::FedMemberPubKey;
 use reth_rpc_types::PeerId;
 use secp256k1::{PublicKey, SecretKey, SECP256K1};
 use std::{
@@ -210,8 +208,6 @@ impl NonFederationMemberTestConfig {
             "-vvv",
             "--disable-discovery",
             "--is-testnet",
-            "--ntp-server",
-            "time.cloudflare.com",
             "--federation-config-path",
             federation_config_path.as_str(),
             "--ipcdisable",
@@ -326,8 +322,25 @@ pub async fn create_rpc_nodes(
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let rpc_peer_id = pk2id(&pk);
 
+        // Note: make sure we start port assigning after poa servers
+        let rpc_port = RPC_PORT_BASE + global_context.fed_instances + member_index;
+        let ws_port = WS_PORT_BASE + global_context.fed_instances + member_index;
+        let discovery_port = DISCOVERY_PORT_BASE + global_context.fed_instances + member_index;
+        let abci_port = ABCI_PORT_BASE + 1000 * (global_context.fed_instances + member_index);
+
+        for port in [rpc_port, ws_port, discovery_port, abci_port] {
+            if !is_port_free(port) {
+                return Err(anyhow::anyhow!(
+                    "❌ RPC node {} needs port {} but it's already in use by another process",
+                    member_index,
+                    port
+                ));
+            }
+        }
+
         let rpc_node = NonFederationMemberTestConfig::new(
-            global_context.fed_instances + member_index, // indexing follows up from poa nodes onwards
+            global_context.fed_instances + member_index, /* indexing follows up from poa nodes
+                                                          * onwards */
             secret_key,
             tx.clone(),
             global_context.bitcoind_url.clone(),
@@ -335,16 +348,13 @@ pub async fn create_rpc_nodes(
             global_context.bitcoind_pass.clone(),
             rpc_peer_id,
             global_context.botanix_fee_recipient.clone(),
-            RPC_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we
-                                                                          * start port assigning
-                                                                          * after poa servers */
-    WS_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we
-                                                                          * start port assigning
-                                                                          * after poa servers */
-            DISCOVERY_PORT_BASE + global_context.fed_instances + member_index, /* Note: make sure we start port assigning after poa servers */
-            ABCI_PORT_BASE + 1000 * (global_context.fed_instances + member_index),
+            rpc_port,
+            ws_port,
+            discovery_port,
+            abci_port,
             global_context.lst_fee_receiver.clone(),
-        ).await?;
+        )
+        .await?;
         rpc_members.insert(member_index, rpc_node);
     }
 

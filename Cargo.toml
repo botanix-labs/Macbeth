@@ -1,5 +1,5 @@
 [workspace.package]
-version = "1.1.1"
+version = "1.2.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -12,29 +12,43 @@ resolver = "2"
 
 members = [
     "bin/botanix-db-cleaner",
+    "bin/botanix-federation-utils",
     "bin/botanix-up",
     "bin/btc-server",
-    "bin/federation-utils",
     "bin/reth-bench/",
     "bin/reth/",
     "bin/test-suite",
     "crates/blockchain-tree-api/",
+    "crates/botanix-activation-manager",
+    "crates/botanix-authority-edh",
+    "crates/botanix-authority-peg",
+    "crates/botanix-bitcoin-checkpoint",
+    "crates/botanix-btc-wallet",
+    "crates/botanix-chainspec",
     "crates/botanix-cli",
-    "crates/btc-wallet",
+    "crates/botanix-cli-args",
+    "crates/botanix-cli-parsers",
+    "crates/botanix-comet-bft-rpc",
+    "crates/botanix-configs",
+    "crates/botanix-data-parser",
+    "crates/botanix-rpc-client",
+    "crates/botanix-rpc-config",
+    "crates/botanix-rpc-types",
+    "crates/botanix-storage",
+    "crates/botanix-storage-migrate",
+    "crates/botanix-utils",
     "crates/chain-state/",
     "crates/chainspec/",
     "crates/cli/cli/",
     "crates/cli/commands/",
     "crates/cli/runner/",
     "crates/cli/util/",
-    "crates/comet-bft-rpc",
     "crates/config/",
     "crates/consensus/authority",
     "crates/consensus/auto-seal/",
     "crates/consensus/beacon/",
     "crates/consensus/common/",
     "crates/consensus/consensus/",
-    "crates/consensus/data-parser",
     "crates/consensus/debug-client/",
     "crates/e2e-test-utils/",
     "crates/engine/primitives/",
@@ -261,7 +275,6 @@ reth = { path = "bin/reth" }
 reth-auto-seal-consensus = { path = "crates/consensus/auto-seal" }
 reth-basic-payload-builder = { path = "crates/payload/basic" }
 reth-authority-consensus = { path = "crates/consensus/authority" }
-reth-data-parser = { path = "crates/consensus/data-parser" }
 reth-beacon-consensus = { path = "crates/consensus/beacon" }
 reth-bench = { path = "bin/reth-bench" }
 reth-blockchain-tree = { path = "crates/blockchain-tree" }
@@ -277,7 +290,6 @@ reth-codecs-derive = { path = "crates/storage/codecs/derive" }
 reth-config = { path = "crates/config" }
 reth-consensus = { path = "crates/consensus/consensus", default-features = false }
 reth-consensus-common = { path = "crates/consensus/common" }
-reth-btc-wallet = { path = "crates/btc-wallet" }
 reth-consensus-debug-client = { path = "crates/consensus/debug-client" }
 reth-db = { path = "crates/storage/db", default-features = false }
 reth-db-api = { path = "crates/storage/db-api" }
@@ -366,14 +378,33 @@ reth-trie-common = { path = "crates/trie/common" }
 reth-trie-db = { path = "crates/trie/db" }
 reth-trie-parallel = { path = "crates/trie/parallel" }
 
+# Botanix deps
+botanix-btc-wallet = { path = "crates/botanix-btc-wallet" }
+botanix-rpc-config = { path = "crates/botanix-rpc-config" }
+botanix-cli-args = { path = "crates/botanix-cli-args" }
+botanix-configs = { path = "crates/botanix-configs" }
+botanix-rpc-types = { path = "crates/botanix-rpc-types" }
+botanix-rpc-client = { path = "crates/botanix-rpc-client" }
+botanix-utils = { path = "crates/botanix-utils" }
+botanix-authority-rsp = { path = "crates/botanix-authority-rsp" }
+botanix-authority-edh = { path = "crates/botanix-authority-edh" }
+botanix-authority-peg = { path = "crates/botanix-authority-peg" }
+botanix-hardforks = { path = "crates/botanix-hardforks" }
+botanix-bitcoin-checkpoint = { path = "crates/botanix-bitcoin-checkpoint" }
+botanix-authority-metrics = { path = "crates/botanix-authority-metrics" }
+botanix-activation-manager = { path = "crates/botanix-activation-manager" }
+botanix-comet-bft-rpc = { path = "crates/botanix-comet-bft-rpc" }
+botanix-data-parser = { path = "crates/botanix-data-parser" }
+botanix-cli-parsers = { path = "crates/botanix-cli-parsers" }
+botanix-storage = { path = "crates/botanix-storage" }
+botanix-storage-migrate = { path = "crates/botanix-storage-migrate" }
+botanix-chainspec = { path = "crates/botanix-chainspec" }
+
 # frost
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
     "serde",
     "serialization",
 ] }
-
-# Comet BFT
-comet-bft-rpc = { path = "crates/comet-bft-rpc" }
 
 # revm
 revm = { version = "13.0.0", features = ["std", "secp256k1", "blst"], default-features = false }
@@ -538,6 +569,9 @@ c-kzg = "1.0.0"
 
 # config
 toml = "0.8"
+
+# askama
+askama = "0.12.1"
 
 # misc-testing
 arbitrary = "1.4"

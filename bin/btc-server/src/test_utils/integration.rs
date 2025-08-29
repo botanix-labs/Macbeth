@@ -35,7 +35,7 @@ mod integration_tests {
     /**
      * Round 2 DKG Tests
      */
- 
+
     #[tokio::test]
     async fn should_fail_dkg_when_round1_pkg_is_stale() {
         // DKG should fail all together if you are using a round1 secret that does not belong to
@@ -391,7 +391,7 @@ mod integration_tests {
             .to_secp_pk()
             .expect("valid secp pk");
         let change_script =
-            reth_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
+            botanix_btc_wallet::address::generate_taproot_change_scriptpubkey(&secp_pk);
         let change = TxOut { value: Amount::from_sat(500), script_pubkey: change_script };
 
         let mut psbt = create_psbt(1, 1, Some(change));

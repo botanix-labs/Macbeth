@@ -10,6 +10,10 @@ reviews:
   auto_review:
     enabled: true
     drafts: true
+    base_branches:
+      - develop
+      - hotfix
+      - .+
   path_instructions:
     - path: "*"
       instructions: |

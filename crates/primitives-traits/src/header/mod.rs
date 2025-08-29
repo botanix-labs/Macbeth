@@ -20,8 +20,6 @@ use reth_codecs::{add_arbitrary_tests, Compact};
 use revm_primitives::{calc_blob_gasprice, calc_excess_blob_gas};
 use serde::{Deserialize, Serialize};
 
-use crate::constants::EPOCH_LENGTH;
-
 /// Block header
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Compact)]
 #[add_arbitrary_tests(rlp, 25)]
@@ -285,8 +283,8 @@ impl Header {
 
     /// Returns true if header represents the start of an epoch
     #[inline]
-    pub const fn is_poa_epoch(&self) -> bool {
-        self.number % EPOCH_LENGTH == 0
+    pub const fn is_poa_epoch(&self, epoch_length: u64) -> bool {
+        self.number % epoch_length == 0
     }
 
     /// Calculate a heuristic for the in-memory size of the [Header].

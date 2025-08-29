@@ -14,12 +14,24 @@ jobs:
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/amd64,linux/arm64,linux/arm/v7
+
+      - name: gcloud auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: botanix-391913
+          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+
+      - name: gcloud setup
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: botanix-391913
 
       - name: Build Docker image
         run: |
@@ -40,10 +52,13 @@ jobs:
         id: tag
         run: echo "tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
 
+      - name: Configure Docker cred-helper
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS=/var/run/artifact-creds/sa_json
+          gcloud --quiet auth configure-docker us-central1-docker.pkg.dev
+          
       - name: Tag Docker images for testnet and mainnet
         run: |
-          cat /etc/gcp/sa_credentials.json | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
-          
           # Tag for testnet registry
           docker tag botanix_btc_server:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:${{ steps.sha.outputs.short_sha }}
           docker tag botanix_btc_server:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-btc-server-v1/botanix-btc-server-v1:${{ steps.tag.outputs.tag }}
@@ -68,12 +83,16 @@ jobs:
 
   build_and_deploy_reth_node:
     runs-on: botanix-actions-runner
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.8.2
+        uses: sigstore/cosign-installer@v3.9.2
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -96,14 +115,29 @@ jobs:
         id: sha
         run: echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
+      - name: gcloud auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: botanix-391913
+          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
+
+      - name: gcloud setup
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: botanix-391913
+
       - name: Get tag
         id: tag
         run: echo "tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
 
+      - name: Configure Docker cred-helper
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS=/var/run/artifact-creds/sa_json
+          gcloud --quiet auth configure-docker us-central1-docker.pkg.dev
+          
       - name: Tag Docker images for testnet and mainnet
         run: |
-          cat /etc/gcp/sa_credentials.json | docker login -u _json_key --password-stdin https://us-central1-docker.pkg.dev
-          
           # Tag for testnet registry
           docker tag botanix_reth:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:${{ steps.sha.outputs.short_sha }}
           docker tag botanix_reth:latest us-central1-docker.pkg.dev/botanix-391913/botanix-testnet-node-v1/botanix-poa-node:${{ steps.tag.outputs.tag }}

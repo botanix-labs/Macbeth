@@ -1,0 +1,47 @@
+[package]
+name = "botanix-storage"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+description = "Botanix storage implementation"
+
+[lints]
+workspace = true
+
+[dependencies]
+arbitrary = { workspace = true, features = ["derive"], optional = true }
+auto_impl = { workspace = true }
+bytes = { workspace = true }
+eyre = { workspace = true }
+itertools = { workspace = true }
+modular-bitfield = { workspace = true }
+reth-codecs = { workspace = true }
+
+# reth
+reth-db = { workspace = true, features = ["mdbx"] }
+reth-db-api = { workspace = true }
+reth-primitives = { workspace = true, features = ["reth-codec"] }
+reth-prune-types = { workspace = true }
+reth-storage-errors = { workspace = true }
+secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
+
+serde = { workspace = true, default-features = false }
+sha2 = { workspace = true }
+tracing = { workspace = true }
+uuid = { version = "1.8.0", features = ["v4"] }
+
+[dev-dependencies]
+arbitrary = { workspace = true, features = ["derive"] }
+botanix-storage = { path = ".", features = ["test-utils"] }
+proptest = { workspace = true }
+proptest-arbitrary-interop = { workspace = true }
+reth-primitives = { workspace = true, features = ["arbitrary"] }
+tempfile = { workspace = true }
+test-fuzz = { workspace = true }
+
+[features]
+arbitrary = ["dep:arbitrary"]
+test-utils = ["reth-db/test-utils"]

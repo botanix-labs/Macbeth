@@ -4,12 +4,19 @@ use crate::{
     dao_fork::{DAO_HARDFORK_BENEFICIARY, DAO_HARDKFORK_ACCOUNTS},
     EthEvmConfig,
 };
-use btcserverlib::pegout_id::PegoutId;
-use core::fmt::Display;
-use reth_btc_wallet::{
+use botanix_authority_edh::header_ext::HeaderExt;
+use botanix_authority_peg::{
+    consensus_package::BotanixConsensusPackage,
+    mint_validation::{try_parse_burn_event, try_parse_mint_event, MintContractError},
+    peg_contract::{PeginData, PegoutWithId},
+};
+use botanix_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
     test_utils::MockBitcoindFactory,
 };
+use botanix_chainspec::BotanixChainSpec;
+use btcserverlib::pegout_id::PegoutId;
+use core::fmt::Display;
 use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_db::{test_utils::TempDatabase, DatabaseEnv};
 use reth_ethereum_consensus::validate_block_post_execution;
@@ -27,12 +34,6 @@ use reth_evm::{
 };
 use reth_execution_types::ExecutionOutcome;
 use reth_primitives::{
-    botanix::{
-        consensus_package::BotanixConsensusPackage,
-        mint_validation::{try_parse_burn_event, try_parse_mint_event, MintContractError},
-        peg_contract::{PeginData, PegoutWithId},
-    },
-    header_ext::HeaderExt,
     Address, BlockNumber, BlockWithSenders, EthereumHardfork, Header, Receipt, Request, TxHash,
     U256,
 };
@@ -66,7 +67,7 @@ pub struct EthExecutorProvider<BF, RethDB, EvmConfig = EthEvmConfig>
 where
     RethDB: reth_db::Database,
 {
-    chain_spec: Arc<ChainSpec>,
+    botanix_chain_spec: Arc<BotanixChainSpec>,
     evm_config: EvmConfig,
     bitcoind_factory: BF,
     bitcoin_network: bitcoin::Network,
@@ -77,8 +78,9 @@ where
 pub fn create_noop_executor_provider(
     chain_spec: Arc<ChainSpec>,
 ) -> EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>, EthEvmConfig> {
+    let botanix_chain_spec = Arc::new(BotanixChainSpec::from_chain_spec((*chain_spec).clone()));
     EthExecutorProvider::new(
-        chain_spec,
+        botanix_chain_spec,
         EthEvmConfig::default(),
         MockBitcoindFactory::new(BitcoindConfig::default()),
         bitcoin::Network::Regtest,
@@ -92,12 +94,18 @@ where
 {
     /// Creates a new default ethereum executor provider.
     pub fn ethereum(
-        chain_spec: Arc<ChainSpec>,
+        botanix_chain_spec: Arc<BotanixChainSpec>,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
         provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
-        Self::new(chain_spec, Default::default(), bitcoind_factory, bitcoin_network, provider)
+        Self::new(
+            botanix_chain_spec,
+            Default::default(),
+            bitcoind_factory,
+            bitcoin_network,
+            provider,
+        )
     }
 }
 
@@ -107,13 +115,13 @@ where
 {
     /// Creates a new executor provider.
     pub const fn new(
-        chain_spec: Arc<ChainSpec>,
+        botanix_chain_spec: Arc<BotanixChainSpec>,
         evm_config: EvmConfig,
         bitcoind_factory: BF,
         bitcoin_network: bitcoin::Network,
         provider: Arc<DatabaseProviderRO<RethDB>>,
     ) -> Self {
-        Self { chain_spec, evm_config, bitcoind_factory, bitcoin_network, provider }
+        Self { botanix_chain_spec, evm_config, bitcoind_factory, bitcoin_network, provider }
     }
 }
 
@@ -128,7 +136,7 @@ where
         DB: Database<Error: Into<ProviderError>>,
     {
         EthBlockExecutor::new(
-            self.chain_spec.clone(),
+            self.botanix_chain_spec.clone(),
             self.evm_config.clone(),
             State::builder().with_database(db).with_bundle_update().without_state_clear().build(),
             self.bitcoind_factory.clone(),
@@ -183,8 +191,8 @@ struct EthEvmExecutor<EvmConfig, BF, RethDB>
 where
     RethDB: reth_db::Database,
 {
-    /// The chainspec
-    chain_spec: Arc<ChainSpec>,
+    /// Botanix chainspec
+    botanix_chain_spec: Arc<BotanixChainSpec>,
     /// How to create an EVM.
     evm_config: EvmConfig,
     /// The bitcoind factory used to connect to the L1 bitcoind RPC
@@ -226,7 +234,7 @@ where
         // apply pre execution changes
         apply_beacon_root_contract_call(
             &self.evm_config,
-            &self.chain_spec,
+            self.botanix_chain_spec.inner(),
             block.timestamp,
             block.number,
             block.parent_beacon_block_root,
@@ -234,7 +242,7 @@ where
         )?;
         apply_blockhashes_update(
             evm.db_mut(),
-            &self.chain_spec,
+            self.botanix_chain_spec.inner(),
             block.timestamp,
             block.number,
             block.parent_hash,
@@ -299,8 +307,10 @@ where
             })?;
 
             // calculate the total transaction fee
-            let transaction_fee =
-                transaction.clone().effective_tip_per_gas(base_fee).expect("base fee is valid");
+            let mut transaction_fee =
+                transaction.clone().effective_tip_per_gas(base_fee).expect("base fee exists");
+            // Include the base fee so it's not burned
+            transaction_fee += base_fee.unwrap_or(0) as u128;
             total_block_fees += transaction_fee * u128::from(result.gas_used());
 
             // append gas used
@@ -416,23 +426,26 @@ where
 
         // For eip-6110 we need to collect the deposit requests. This is irrelevant for poa
         // consensus
-        let requests = if self.chain_spec.is_prague_active_at_timestamp(block.timestamp) {
-            // Collect all EIP-6110 deposits
-            let deposit_requests =
-                crate::eip6110::parse_deposits_from_receipts(&self.chain_spec, &receipts)?;
+        let requests =
+            if self.botanix_chain_spec.inner().is_prague_active_at_timestamp(block.timestamp) {
+                // Collect all EIP-6110 deposits
+                let deposit_requests = crate::eip6110::parse_deposits_from_receipts(
+                    self.botanix_chain_spec.inner(),
+                    &receipts,
+                )?;
 
-            // Collect all EIP-7685 requests
-            let withdrawal_requests =
-                apply_withdrawal_requests_contract_call(&self.evm_config, &mut evm)?;
+                // Collect all EIP-7685 requests
+                let withdrawal_requests =
+                    apply_withdrawal_requests_contract_call(&self.evm_config, &mut evm)?;
 
-            // Collect all EIP-7251 requests
-            let consolidation_requests =
-                apply_consolidation_requests_contract_call(&self.evm_config, &mut evm)?;
+                // Collect all EIP-7251 requests
+                let consolidation_requests =
+                    apply_consolidation_requests_contract_call(&self.evm_config, &mut evm)?;
 
-            [deposit_requests, withdrawal_requests, consolidation_requests].concat()
-        } else {
-            vec![]
-        };
+                [deposit_requests, withdrawal_requests, consolidation_requests].concat()
+            } else {
+                vec![]
+            };
 
         Ok(EthExecuteOutput {
             receipts,
@@ -640,7 +653,7 @@ where
 {
     /// Creates a new Ethereum block executor.
     pub const fn new(
-        chain_spec: Arc<ChainSpec>,
+        botanix_chain_spec: Arc<BotanixChainSpec>,
         evm_config: EvmConfig,
         state: State<DB>,
         bitcoind_factory: BF,
@@ -649,7 +662,7 @@ where
     ) -> Self {
         Self {
             executor: EthEvmExecutor {
-                chain_spec,
+                botanix_chain_spec,
                 evm_config,
                 bitcoind_factory,
                 bitcoin_network,
@@ -661,7 +674,12 @@ where
 
     #[inline]
     fn chain_spec(&self) -> &ChainSpec {
-        self.executor.chain_spec.as_ref()
+        self.executor.botanix_chain_spec.inner()
+    }
+
+    #[inline]
+    fn botanix_chain_spec(&self) -> &BotanixChainSpec {
+        self.executor.botanix_chain_spec.as_ref()
     }
 
     /// Returns mutable reference to the state that wraps the underlying database.
@@ -768,7 +786,7 @@ where
         block_fee_recipient_address: Address,
     ) -> Result<(), BlockExecutionError> {
         let mut balance_increments = post_block_balance_increments(
-            self.chain_spec(),
+            self.botanix_chain_spec(),
             block,
             total_difficulty,
             total_block_fees,
@@ -931,10 +949,10 @@ mod tests {
         eip4788::{BEACON_ROOTS_ADDRESS, BEACON_ROOTS_CODE, SYSTEM_ADDRESS},
         eip7002::{WITHDRAWAL_REQUEST_PREDEPLOY_ADDRESS, WITHDRAWAL_REQUEST_PREDEPLOY_CODE},
     };
+    use botanix_authority_edh::extra_data_header::ExtraDataHeader;
     use reth_chainspec::{ChainSpecBuilder, ForkCondition, MAINNET};
     use reth_primitives::{
         constants::{EMPTY_ROOT_HASH, ETH_TO_WEI},
-        extra_data_header::ExtraDataHeader,
         keccak256, public_key_to_address, Account, Block, Transaction, TxKind, TxLegacy, B256,
     };
     use reth_revm::{

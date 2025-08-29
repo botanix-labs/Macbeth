@@ -4,12 +4,10 @@
 mod cli;
 use crate::comet_node::{get_enode, TestSignal};
 use anyhow::{Context, Result as AnyResult};
+use botanix_configs::federation::{FedMemberPubKey, FederationTomlConfig};
 use clap::Parser;
 use cli::Cli;
-use reth_node_core::{
-    args::{FedMemberPubKey, FederationTomlConfig},
-    primitives::Address,
-};
+use reth_node_core::primitives::Address;
 use secp256k1::SECP256K1;
 use std::{
     collections::HashMap,

@@ -56,9 +56,6 @@ pub const MIN_PROTOCOL_BASE_FEE_U256: U256 = U256::from_limbs([7u64, 0, 0, 0]);
 /// Initial base fee as defined in [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559)
 pub const EIP1559_INITIAL_BASE_FEE: u64 = 1_000_000_000;
 
-/// factor of 1000 less than the initial base fee of 1 gwei suggested in EIP-1559
-pub const BOTANIX_INITIAL_BASE_FEE: u64 = 1_000_000;
-
 /// Base fee max change denominator as defined in [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559)
 pub const EIP1559_DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR: u64 = 8;
 
@@ -99,6 +96,9 @@ pub const BASE_SEPOLIA_EIP1559_DEFAULT_ELASTICITY_MULTIPLIER: u128 = 10;
 /// Multiplier for converting gwei to wei.
 pub const GWEI_TO_WEI: u64 = 1_000_000_000;
 
+/// Default suggested tip of 0.0001 GWEI for the Gas Oracle.
+pub const DEFAULT_SUGGESTED_TIP: u128 = 100_000;
+
 /// Multiplier for converting finney (milliether) to wei.
 pub const FINNEY_TO_WEI: u128 = (GWEI_TO_WEI as u128) * 1_000_000;
 
@@ -121,15 +121,6 @@ pub const HOLESKY_GENESIS_HASH: B256 =
 /// Testnet genesis hash: `0x2f980576711e3617a5e4d83dd539548ec0f7792007d505a3d2e9674833af2d7c`
 pub const DEV_GENESIS_HASH: B256 =
     b256!("2f980576711e3617a5e4d83dd539548ec0f7792007d505a3d2e9674833af2d7c");
-
-/// Botanix Mainnet genesis hash:
-/// `0x0210ae550e730d0e18f96896b80caad6f59dcc0b83b67421975716d155d027c6`
-pub const BOTANIX_MAINNET_GENESIS: B256 =
-    b256!("0210ae550e730d0e18f96896b80caad6f59dcc0b83b67421975716d155d027c6");
-
-/// Botanix Testnet genesis hash.
-pub const BOTANIX_TESTNET_GENESIS: B256 =
-    b256!("3797638175875c37cefa72ef546db685e43c81ba4af8238b48a495f98d61588d");
 
 /// Keccak256 over empty array: `0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`
 pub const KECCAK_EMPTY: B256 =
@@ -174,11 +165,6 @@ pub const BEACON_CONSENSUS_REORG_UNWIND_DEPTH: u64 = 3;
 /// <https://github.com/ethereum/go-ethereum/blob/a196f3e8a22b6ad22ced5c2e3baf32bc3ebd4ec9/consensus/ethash/consensus.go#L227-L229>
 pub const ALLOWED_FUTURE_BLOCK_TIME_SECONDS: u64 = 15;
 
-/// EIP-225: Clique Proof-of-Authority consensus protocol.
-///
-/// The number of blocks to reset pending votes.
-pub const EPOCH_LENGTH: u64 = 10;
-
 /// Minimum difference between two consecutive block’s timestamps.
 pub const BLOCK_PERIOD: u64 = 1000;
 
@@ -187,22 +173,6 @@ pub const NONCE_AUTH: u64 = 0xffffffffffffffff;
 
 /// Magic nonce number 0x0000000000000000 to vote on removing a signer. Used in `PoA`
 pub const NONCE_DROP: u64 = 0x0000000000000000;
-
-/// "nothing up my sleve" NUMS point for the secp256k1 curve.
-/// Used as the first aggregate key for the botanix gensis block
-/// consensus should check that this key is being used in genesis and post genesis block is not
-/// being used
-// Pulled from secp256k1 crate `secp256k1::constants::GENERATOR_X`
-#[inline]
-pub fn nums_secp256k1_pk() -> secp256k1::PublicKey {
-    let nums_point = [
-        121, 190, 102, 126, 249, 220, 187, 172, 85, 160, 98, 149, 206, 135, 11, 7, 2, 155, 252,
-        219, 45, 206, 40, 217, 89, 242, 129, 91, 22, 248, 23, 152,
-    ];
-    secp256k1::XOnlyPublicKey::from_slice(&nums_point)
-        .expect("valid nums point")
-        .public_key(secp256k1::Parity::Even)
-}
 
 #[cfg(test)]
 mod tests {

@@ -9,11 +9,11 @@ use crate::{
 };
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
+use botanix_chainspec::constants::BOTANIX_TESTNET;
+use btc_server_client::{BtcServerClient, SigningPackage};
 use btcserverlib::pegout_id::PegoutId;
-use client::{BtcServerClient, SigningPackage};
 use hex::{self, encode as hex_encode};
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use reth_chainspec::BOTANIX_TESTNET;
 use tonic::transport::Channel;
 
 use crate::{
@@ -50,7 +50,7 @@ pub async fn do_signing_round1(
     };
 
     let psbt = coordinator
-        .get_psbt(tonic::Request::new(client::MakeTxRequest {
+        .get_psbt(tonic::Request::new(btc_server_client::MakeTxRequest {
             signing_session_id: signing_session_id.to_vec(),
             checkpoint_block_hash: checkpoint[..].to_vec(),
         }))
@@ -68,10 +68,12 @@ pub async fn do_signing_round1(
             continue;
         }
         let c_signing = client
-            .get_round1_signing_package(tonic::Request::new(client::SigningPackageRequest {
-                psbt: psbt.clone(),
-                signing_session_id: signing_session_id.to_vec(),
-            }))
+            .get_round1_signing_package(tonic::Request::new(
+                btc_server_client::SigningPackageRequest {
+                    psbt: psbt.clone(),
+                    signing_session_id: signing_session_id.to_vec(),
+                },
+            ))
             .await
             .map_err(Error::Request)?
             .into_inner();
@@ -131,7 +133,7 @@ pub async fn test_round1_then_new_signing_session(
         let mut client =
             clients.get(0).cloned().ok_or_else(|| anyhow::anyhow!("client not found"))?;
         let res = client
-            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -229,7 +231,9 @@ pub async fn test_round1_then_new_signing_session(
 
     // remove round 1 nonces so we can start a new signing session
     for c in clients.iter_mut() {
-        c.abort_signing(tonic::Request::new(client::Empty {})).await.map_err(Error::Request)?;
+        c.abort_signing(tonic::Request::new(btc_server_client::Empty {}))
+            .await
+            .map_err(Error::Request)?;
     }
 
     // Start a new signing session. The previous signing session completed round 1 signing only so

@@ -65,7 +65,7 @@ pub mod gas_oracle {
     pub const DEFAULT_GAS_PRICE_BLOCKS: u32 = 20;
 
     /// The percentile of gas prices to use for the estimate
-    pub const DEFAULT_GAS_PRICE_PERCENTILE: u32 = 60;
+    pub const DEFAULT_GAS_PRICE_PERCENTILE: u32 = 10;
 
     /// Maximum transaction priority fee (or gas price before London Fork) to be recommended by the
     /// gas price oracle

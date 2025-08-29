@@ -1,11 +1,15 @@
-use crate::activation_manager;
+//! Non-deterministic data (NDD) used for extend cometbft blocks with botanix specific data.
+
 use bitcoin::consensus::encode::{self, Decodable, Encodable};
+use botanix_activation_manager::NetworkUpgradePayload;
+use botanix_storage::models::{MajorVersion, MinorVersion, RuntimeVersion, Vote};
 use reth_primitives::Address;
 use std::io::{self, Write};
 use thiserror::Error;
 
 /// Errors that can occur when deserializing NonDeterministicData
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub(crate) enum NonDeterministicDataDeserializeError {
     #[error("I/O error")]
     /// I/O error
@@ -13,18 +17,40 @@ pub(crate) enum NonDeterministicDataDeserializeError {
     #[error("invalid data format")]
     /// Invalid data format
     Decoding(#[from] encode::Error),
+    #[error("invalid version")]
+    /// Invalid NonDeterministicData, version
+    InvalidVersion,
+    /// Invalid inclusion indicator, equivalent to Some/None
+    #[error("invalid inclusion indicator")]
+    InclusionIndicator,
+    /// // Invalid network upgrade vote
+    #[error("invalid network upgrade vote")]
+    NetworkUpgradePayloadVote,
 }
 
-// The default NDD version.
-pub(crate) const VERSION_1: u16 = 1;
+/// The implied Botanix runtime version at mainnet launch, created
+/// retroactively.
+pub(crate) const RUNTIME_VERSION_GENESIS: RuntimeVersion = RuntimeVersion::new(0, 1);
+
+/// Does not require `block_fee_recipient_address` to be present in NDD
+/// Only supported on testnet for historical syncing purposes
+const VERSION_0: u16 = 0;
+/// Requires `block_fee_recipient_address` to be present in NDD
+/// Supported on testnet and mainnet
+const VERSION_1: u16 = 1;
+/// Allows for custom runtime version indicators and an optional network upgrade
+/// payload.
+const VERSION_2: u16 = 2;
 
 /// Type that encapsulates non-deterministic data needed for consensus.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NonDeterministicData {
-    pub(crate) version: u16,
-    pub(crate) bitcoin_block_hash: bitcoin::hash_types::BlockHash,
-    pub(crate) aggregated_public_key: secp256k1::PublicKey,
-    pub(crate) block_fee_recipient_address: Address,
+    version: u16,
+    bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+    aggregated_public_key: secp256k1::PublicKey,
+    block_fee_recipient_address: Option<Address>,
+    runtime_version: RuntimeVersion,
+    network_upgrade_payload: Option<NetworkUpgradePayload>,
 }
 
 impl NonDeterministicData {
@@ -33,8 +59,50 @@ impl NonDeterministicData {
         self.version
     }
 
-    /// Constructor for the NDD.
-    pub(crate) fn new(
+    /// Returns the version of the Botanix runtime logic.
+    pub(crate) fn runtime_version(&self) -> RuntimeVersion {
+        self.runtime_version
+    }
+
+    /// The Bitcoin block hash.
+    pub(crate) fn bitcoin_block_hash(&self) -> bitcoin::hash_types::BlockHash {
+        self.bitcoin_block_hash
+    }
+
+    /// The aggregate public key.
+    pub(crate) fn aggregated_public_key(&self) -> secp256k1::PublicKey {
+        self.aggregated_public_key
+    }
+
+    /// The block fee recipient, only available in version 1.
+    pub(crate) fn block_fee_recipient_address(&self) -> Option<Address> {
+        self.block_fee_recipient_address
+    }
+
+    /// The optional network upgrade payload.
+    pub(crate) fn network_upgrade_payload(&self) -> Option<&NetworkUpgradePayload> {
+        self.network_upgrade_payload.as_ref()
+    }
+
+    /// Constructor for version 0 (without a fee recipient).
+    #[allow(dead_code)]
+    pub(crate) fn new_v0(
+        bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+        aggregated_public_key: secp256k1::PublicKey,
+    ) -> Self {
+        Self {
+            version: VERSION_0,
+            bitcoin_block_hash,
+            aggregated_public_key,
+            block_fee_recipient_address: None,
+            runtime_version: RUNTIME_VERSION_GENESIS,
+            network_upgrade_payload: None,
+        }
+    }
+
+    /// Constructor for version 1 with a fee recipient.
+    #[allow(dead_code)]
+    pub(crate) fn new_v1(
         bitcoin_block_hash: bitcoin::hash_types::BlockHash,
         aggregated_public_key: secp256k1::PublicKey,
         block_fee_recipient_address: Address,
@@ -43,7 +111,28 @@ impl NonDeterministicData {
             version: VERSION_1,
             bitcoin_block_hash,
             aggregated_public_key,
-            block_fee_recipient_address,
+            block_fee_recipient_address: Some(block_fee_recipient_address),
+            runtime_version: RUNTIME_VERSION_GENESIS,
+            network_upgrade_payload: None,
+        }
+    }
+
+    /// Constructor for version 2 with a fee recipient, active runtime version
+    /// and an optional network upgrade payload.
+    pub(crate) fn new_v2(
+        bitcoin_block_hash: bitcoin::hash_types::BlockHash,
+        aggregated_public_key: secp256k1::PublicKey,
+        block_fee_recipient_address: Address,
+        runtime_version: RuntimeVersion,
+        network_upgrade_payload: Option<NetworkUpgradePayload>,
+    ) -> Self {
+        Self {
+            version: VERSION_2,
+            bitcoin_block_hash,
+            aggregated_public_key,
+            block_fee_recipient_address: Some(block_fee_recipient_address),
+            runtime_version,
+            network_upgrade_payload,
         }
     }
 
@@ -53,7 +142,55 @@ impl NonDeterministicData {
         self.bitcoin_block_hash.consensus_encode(&mut writer)?;
         self.aggregated_public_key.serialize().consensus_encode(&mut writer)?;
         self.version().consensus_encode(&mut writer)?;
-        writer.write_all(self.block_fee_recipient_address.as_slice())?;
+
+        // Version 1 has a block fee recipient address.
+        match self.version() {
+            VERSION_0 => {
+                // Nothing left to do...
+            }
+            VERSION_1 => {
+                // Encode fee recipient address.
+                let address = self
+                    .block_fee_recipient_address
+                    .expect("fee recipient address must be set for NDD version 1");
+
+                writer.write_all(address.as_slice())?;
+            }
+            VERSION_2 => {
+                // Encode fee recipient address.
+                let address = self
+                    .block_fee_recipient_address
+                    .expect("fee recipient address must be set for NDD version 2");
+
+                writer.write_all(address.as_slice())?;
+
+                // Serialize runtime version.
+                let RuntimeVersion(MajorVersion(major), MinorVersion(minor)) = self.runtime_version;
+                (major, minor).consensus_encode(&mut writer)?;
+
+                // Serialize network upgrade payload, if available.
+                let Some(upgrade) = self.network_upgrade_payload.as_ref() else {
+                    0u8.consensus_encode(&mut writer)?; // ~= None
+                    return Ok(writer);
+                };
+
+                1u8.consensus_encode(&mut writer)?; // ~= Some(_)
+
+                // Serialize upgrade version
+                let RuntimeVersion(MajorVersion(major), MinorVersion(minor)) = upgrade.version;
+                (major, minor).consensus_encode(&mut writer)?;
+
+                // Serialize upgrade vote
+                match upgrade.vote {
+                    Vote::Abstain => 0u8.consensus_encode(&mut writer)?,
+                    Vote::Nay => 1u8.consensus_encode(&mut writer)?,
+                    Vote::Aye => 2u8.consensus_encode(&mut writer)?,
+                };
+
+                upgrade.is_compliant.consensus_encode(&mut writer)?;
+            }
+            _ => unreachable!("invalid NDD version: {}", self.version),
+        }
 
         Ok(writer)
     }
@@ -62,85 +199,115 @@ impl NonDeterministicData {
     pub(crate) fn deserialize(
         reader: &mut impl bitcoin::io::Read,
     ) -> Result<Self, NonDeterministicDataDeserializeError> {
-        // Read the bitcoin block hash.
         let bitcoin_block_hash = Decodable::consensus_decode(reader)?;
 
-        // Read the aggregated public key.
         let pk_bytes = <[u8; 33]>::consensus_decode(reader)?;
         let aggregated_public_key = secp256k1::PublicKey::from_slice(&pk_bytes)
             .map_err(|_e| encode::Error::ParseFailed("malformed aggregate public key"))?;
 
         // Read the version and conditionally read the address.
         let version = u16::consensus_decode(reader)?;
-
-        // Read the block fee recipient address.
-        let mut address_bytes = [0u8; 20];
-        reader
-            .read_exact(&mut address_bytes)
-            .map_err(|_e| encode::Error::ParseFailed("malformed block fee recipient address"))?;
-        let block_fee_recipient_address = Address::from(address_bytes);
-
-        let this = Self {
-            version,
-            bitcoin_block_hash,
-            aggregated_public_key,
-            block_fee_recipient_address,
-        };
-
         match version {
+            VERSION_0 => {
+                // No block fee recipient expected.
+                Ok(Self {
+                    version,
+                    bitcoin_block_hash,
+                    aggregated_public_key,
+                    block_fee_recipient_address: None,
+                    runtime_version: RUNTIME_VERSION_GENESIS,
+                    network_upgrade_payload: None,
+                })
+            }
             VERSION_1 => {
-                // The expected version 1 NDD.
+                let mut address_bytes = [0u8; 20];
+                reader.read_exact(&mut address_bytes).map_err(|_e| {
+                    encode::Error::ParseFailed("malformed block fee recipient address")
+                })?;
+                let block_fee_recipient_address = Address::from(address_bytes);
+
+                let mut this = Self {
+                    version,
+                    bitcoin_block_hash,
+                    aggregated_public_key,
+                    block_fee_recipient_address: Some(block_fee_recipient_address),
+                    runtime_version: RUNTIME_VERSION_GENESIS,
+                    network_upgrade_payload: None,
+                };
+
+                // For version 1 this is optional.
+                if let Ok((runtime_version, network_upgrade_payload)) =
+                    Self::_deserialize_version_2(reader)
+                {
+                    this.runtime_version = runtime_version;
+                    this.network_upgrade_payload = network_upgrade_payload;
+                }
+
                 Ok(this)
             }
-            _ => {
-                // IMPORTANT: This is a versioning mechanism designed for
-                // forward compatibility. We want to support new,
-                // backwards-compatible versions with enhanced functionality
-                // without requiring coordinated upgrades or hard-forks.
-                //
-                // When an older node encounters a newer, unknown version:
-                // 1. It extracts the data it can understand based on the known structure
-                // 2. It ignores any trailing data that may be present in newer versions
-                // 3. It continues to function normally despite version differences
-                //
-                // By design, encountering an unknown version alone MUST NEVER
-                // cause an error. The caller is responsible for validating
-                // whether the returned NDD is appropriate for their specific
-                // business logic requirements.
-                Ok(this)
+            VERSION_2 => {
+                let mut address_bytes = [0u8; 20];
+                reader.read_exact(&mut address_bytes).map_err(|_e| {
+                    encode::Error::ParseFailed("malformed block fee recipient address")
+                })?;
+                let block_fee_recipient_address = Address::from(address_bytes);
+
+                // For version 2 this MUST pass.
+                let (runtime_version, network_upgrade_payload) =
+                    Self::_deserialize_version_2(reader)?;
+
+                Ok(Self {
+                    version,
+                    bitcoin_block_hash,
+                    aggregated_public_key,
+                    block_fee_recipient_address: Some(block_fee_recipient_address),
+                    runtime_version,
+                    network_upgrade_payload,
+                })
             }
+            _ => Err(NonDeterministicDataDeserializeError::InvalidVersion),
         }
     }
-}
+    fn _deserialize_version_2(
+        reader: &mut impl bitcoin::io::Read,
+    ) -> Result<(RuntimeVersion, Option<NetworkUpgradePayload>), NonDeterministicDataDeserializeError>
+    {
+        // Decode runtime version.
+        let runtime_version = <(u16, u16)>::consensus_decode(reader)?.into();
 
-/// Represents a validator's stance on a network upgrade proposal.
-///
-/// This payload is included in each block's non-deterministic data when a node is
-/// configured to participate in the network upgrade voting process. It communicates
-/// the validator's current position on a specific upgrade version.
-///
-/// # Fields
-///
-/// * `version` - The specific runtime version that this vote applies to.
-///
-/// * `vote` - The validator's explicit opinion on the upgrade (Aye/Nay/Absent).
-///
-/// * `is_compliant` - Indicates whether the validator is technically ready to process blocks with
-///   the upgrade version. When `true`, the validator has the necessary software version and
-///   configuration to handle the upgrade. This can be independent of the vote - a validator may
-///   vote `Nay` but still be prepared to follow the network if the upgrade is adopted.
-#[derive(Debug, Clone, PartialEq)]
-pub struct NetworkUpgradePayload {
-    pub version: activation_manager::RuntimeVersion,
-    pub vote: activation_manager::Vote,
-    pub is_compliant: bool,
+        // Check whether the network upgrade payload is included.
+        match u8::consensus_decode(reader)? {
+            0 => {
+                // Is NOT included, return.
+                return Ok((runtime_version, None));
+            }
+            1 => {
+                // Is included, proceed...
+            }
+            _ => return Err(NonDeterministicDataDeserializeError::InclusionIndicator),
+        }
+
+        // Decode payload information
+        let upgrade_version = <(u16, u16)>::consensus_decode(reader)?.into();
+        let vote = match u8::consensus_decode(reader)? {
+            0 => Vote::Abstain,
+            1 => Vote::Nay,
+            2 => Vote::Aye,
+            _ => return Err(NonDeterministicDataDeserializeError::NetworkUpgradePayloadVote),
+        };
+        let is_compliant = bool::consensus_decode(reader)?;
+
+        let payload = Some(NetworkUpgradePayload { version: upgrade_version, vote, is_compliant });
+
+        Ok((runtime_version, payload))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, BlockHash};
-
     use super::*;
+
+    use bitcoin::{hashes::Hash, BlockHash};
 
     #[test]
     fn test_non_deterministic_data_new() {
@@ -151,19 +318,17 @@ mod tests {
                 .as_slice(),
         )
         .unwrap();
-        let block_fee_recipient_address =
-            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
-                .expect("valid address");
-
-        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk, block_fee_recipient_address);
-        assert_eq!(ndd.version, VERSION_1);
+        let ndd = NonDeterministicData::new_v0(bitcoin_block_hash, pk);
+        assert_eq!(ndd.version, VERSION_0);
         assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
         assert_eq!(ndd.aggregated_public_key, pk);
-        assert_eq!(ndd.block_fee_recipient_address, block_fee_recipient_address);
+        assert_eq!(ndd.block_fee_recipient_address, None);
+        assert_eq!(ndd.runtime_version, RUNTIME_VERSION_GENESIS);
+        assert_eq!(ndd.network_upgrade_payload, None);
     }
 
     #[test]
-    fn test_non_deterministic_data_serde() {
+    fn test_non_deterministic_data_new_v1() {
         let bitcoin_block_hash = BlockHash::all_zeros();
         let pk = secp256k1::PublicKey::from_slice(
             hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
@@ -175,21 +340,93 @@ mod tests {
             Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
                 .expect("valid address");
 
-        let ndd = NonDeterministicData::new(bitcoin_block_hash, pk, block_fee_recipient_address);
+        let ndd = NonDeterministicData::new_v1(bitcoin_block_hash, pk, block_fee_recipient_address);
+        assert_eq!(ndd.version, VERSION_1);
+        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
+        assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, Some(block_fee_recipient_address));
+        assert_eq!(ndd.runtime_version, RUNTIME_VERSION_GENESIS);
+        assert_eq!(ndd.network_upgrade_payload, None);
+    }
+
+    #[test]
+    fn test_non_deterministic_data_new_v2() {
+        let bitcoin_block_hash = BlockHash::all_zeros();
+        let pk = secp256k1::PublicKey::from_slice(
+            hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let block_fee_recipient_address =
+            Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
+                .expect("valid address");
+
+        // Without network upgrade payload.
+        let runtime_version = RuntimeVersion::new(1, 5);
+        let payload = None;
+
+        let ndd = NonDeterministicData::new_v2(
+            bitcoin_block_hash,
+            pk,
+            block_fee_recipient_address,
+            runtime_version,
+            payload,
+        );
+        assert_eq!(ndd.version, VERSION_2);
+        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
+        assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, Some(block_fee_recipient_address));
+        assert_eq!(ndd.runtime_version, runtime_version);
+        assert_eq!(ndd.network_upgrade_payload, None);
+
+        // With network upgrade payload.
+        let payload = Some(NetworkUpgradePayload {
+            version: RuntimeVersion::new(2, 5),
+            vote: Vote::Aye,
+            is_compliant: true,
+        });
+
+        let ndd = NonDeterministicData::new_v2(
+            bitcoin_block_hash,
+            pk,
+            block_fee_recipient_address,
+            runtime_version,
+            payload,
+        );
+        assert_eq!(ndd.version, VERSION_2);
+        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
+        assert_eq!(ndd.aggregated_public_key, pk);
+        assert_eq!(ndd.block_fee_recipient_address, Some(block_fee_recipient_address));
+        assert_eq!(ndd.runtime_version, runtime_version);
+        assert_eq!(ndd.network_upgrade_payload, payload); // IS SOME
+    }
+
+    #[test]
+    fn test_non_deterministic_data_serde_v0() {
+        let bitcoin_block_hash = BlockHash::all_zeros();
+        let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
+            hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let ndd = NonDeterministicData::new_v0(bitcoin_block_hash, pk);
         let res = ndd.serialize().unwrap();
         let mut reader = io::Cursor::new(res);
-
         let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
+
         assert_eq!(deserialized.version, ndd.version);
         assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
         assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
         assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
+        assert_eq!(deserialized.runtime_version, ndd.runtime_version);
+        assert_eq!(deserialized.network_upgrade_payload, ndd.network_upgrade_payload);
     }
 
     #[test]
-    /// Attempts to deserialize a NDD with an unknown version containing some
-    /// tailing data.
-    fn test_non_deterministic_data_serde_unknown_version() {
+    fn test_non_deterministic_data_serde_v1() {
         let bitcoin_block_hash = BlockHash::all_zeros();
         let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
             hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
@@ -201,28 +438,21 @@ mod tests {
             Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
                 .expect("valid address");
 
-        // NOTE: The last 32 bytes (all 1's) are ignored.
-        let bytes = hex::decode(
-            "0000000000000000000000000000000000000000000000000000000000000000\
-             039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d\
-             6300\
-             43c8bdcb9afebb1d834a7de18cc214a6fd1632d9\
-             1111111111111111111111111111111111111111111111111111111111111111",
-        )
-        .unwrap();
-        let mut reader = io::Cursor::new(bytes);
-        let ndd = NonDeterministicData::deserialize(&mut reader).unwrap();
+        let ndd = NonDeterministicData::new_v1(bitcoin_block_hash, pk, block_fee_recipient_address);
+        let res = ndd.serialize().unwrap();
+        let mut reader = io::Cursor::new(res);
+        let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
 
-        assert_eq!(ndd.version, 99); // Version 99 is unknown
-        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
-        assert_eq!(ndd.aggregated_public_key, pk);
-        assert_eq!(ndd.block_fee_recipient_address, block_fee_recipient_address);
+        assert_eq!(deserialized.version, ndd.version);
+        assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
+        assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
+        assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
+        assert_eq!(deserialized.runtime_version, ndd.runtime_version);
+        assert_eq!(deserialized.network_upgrade_payload, ndd.network_upgrade_payload);
     }
 
     #[test]
-    /// Attempts to deserialize a NDD from a deprecated implementation that
-    /// still used version 0.
-    fn test_non_deterministic_data_serde_from_deprecated_impl() {
+    fn test_non_deterministic_data_serde_v2() {
         let bitcoin_block_hash = BlockHash::all_zeros();
         let pk: secp256k1::PublicKey = secp256k1::PublicKey::from_slice(
             hex::decode("039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d")
@@ -234,19 +464,57 @@ mod tests {
             Address::parse_checksummed("0x43C8bDCb9AFeBB1D834A7de18CC214a6FD1632d9", None)
                 .expect("valid address");
 
-        let bytes = hex::decode(
-            "0000000000000000000000000000000000000000000000000000000000000000\
-             039bef292b80427d355cecb89eda8a50a7d2196a93d73dade5a0c4a07cd334815d\
-             0100\
-             43c8bdcb9afebb1d834a7de18cc214a6fd1632d9",
-        )
-        .unwrap();
-        let mut reader = io::Cursor::new(bytes);
-        let ndd = NonDeterministicData::deserialize(&mut reader).unwrap();
+        let runtime_version = RuntimeVersion::new(1, 0);
 
-        assert_eq!(ndd.version, VERSION_1);
-        assert_eq!(ndd.bitcoin_block_hash, bitcoin_block_hash);
-        assert_eq!(ndd.aggregated_public_key, pk);
-        assert_eq!(ndd.block_fee_recipient_address, block_fee_recipient_address);
+        let assert_ndd = |network_upgrade_payload: Option<NetworkUpgradePayload>| {
+            let ndd = NonDeterministicData::new_v2(
+                bitcoin_block_hash,
+                pk,
+                block_fee_recipient_address,
+                runtime_version,
+                network_upgrade_payload,
+            );
+            let res = ndd.serialize().unwrap();
+            let mut reader = io::Cursor::new(res);
+            let deserialized = NonDeterministicData::deserialize(&mut reader).unwrap();
+
+            assert_eq!(deserialized.version, VERSION_2);
+            assert_eq!(deserialized.bitcoin_block_hash, ndd.bitcoin_block_hash);
+            assert_eq!(deserialized.aggregated_public_key, ndd.aggregated_public_key);
+            assert_eq!(deserialized.block_fee_recipient_address, ndd.block_fee_recipient_address);
+            assert_eq!(deserialized.runtime_version, ndd.runtime_version);
+            // Check network upgrade payload.
+            assert_eq!(deserialized.network_upgrade_payload, ndd.network_upgrade_payload);
+            assert_eq!(deserialized.network_upgrade_payload, network_upgrade_payload);
+        };
+
+        // Without network upgrade payload
+        let payload = None;
+        assert_ndd(payload);
+
+        // With network upgrade payloads
+        let payload = Some(NetworkUpgradePayload {
+            version: RuntimeVersion::new(2, 5),
+            vote: Vote::Abstain,
+            is_compliant: false,
+        });
+
+        assert_ndd(payload);
+
+        let payload = Some(NetworkUpgradePayload {
+            version: RuntimeVersion::new(2, 5),
+            vote: Vote::Nay,
+            is_compliant: true,
+        });
+
+        assert_ndd(payload);
+
+        let payload = Some(NetworkUpgradePayload {
+            version: RuntimeVersion::new(2, 5),
+            vote: Vote::Aye,
+            is_compliant: true,
+        });
+
+        assert_ndd(payload);
     }
 }

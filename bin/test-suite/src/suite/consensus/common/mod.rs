@@ -70,6 +70,10 @@ pub fn kill_process_at_port(port: u16) {
     }
 }
 
+pub fn is_port_free(port: u16) -> bool {
+    std::net::TcpListener::bind(("0.0.0.0", port)).is_ok()
+}
+
 pub fn spawn_child_process(
     scope: Scope,
     command: &str,
@@ -249,7 +253,7 @@ pub trait TemplateWriter {
 pub fn create_temp_working_directory() -> anyhow::Result<PathBuf> {
     let ret = tempfile::TempDir::new()
         .context("could not create temp. directory")?
-        .into_path()
+        .keep()
         .join(format!("_{}", unix_timestamp().to_string()));
     std::fs::create_dir_all(&ret).expect("failed to create tempdir subdir");
     Ok(ret)

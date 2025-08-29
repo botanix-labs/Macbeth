@@ -44,7 +44,7 @@ jobs:
       RUST_BACKTRACE: 1
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -140,6 +140,7 @@ jobs:
           "signing_flow",
           "test_mempool_gossip",
           "utxo_sync",
+          "utxo_recovery",
           "state_sync",
           "wallet_sync",
           "frost_e2e_stable",
@@ -147,15 +148,16 @@ jobs:
           "invalid_pegin",
           "invalid_pegout",
           "block_builder",
-          "test_conflicting_input",
+          "test_prevent_resigning_pegout",
           "test_round1_then_new_signing_session",
           "test_track_mempool",
+          "tx_weight_limit",
           "rpc_node"]
     env:
       RUST_BACKTRACE: 1
       TEST_TO_RUN: ${{ matrix.test }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -181,7 +183,7 @@ jobs:
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
       - name: Download compiled binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: compiled-binaries
           path: /tmp/binaries

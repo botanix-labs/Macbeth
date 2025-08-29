@@ -8,7 +8,7 @@ use crate::{
     utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
 use bitcoincore_rpc::RpcApi;
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
     process::{Child, Command},

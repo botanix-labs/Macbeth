@@ -11,8 +11,10 @@ use crate::{
 };
 use anyhow::Context;
 use async_trait::async_trait;
-use client::BtcServerClient;
-use comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use botanix_comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
+use botanix_storage::BotanixProviderFactory;
+use btc_server_client::BtcServerClient;
 use common::{
     bitcoind_node::{
         create_bitcoind_node, BitcoindNodeConfig, Notifications as BitcoindNotifications,
@@ -32,7 +34,6 @@ use common::{
         SpawnedRpcServerProcess,
     },
 };
-use reth_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use reth_db::DatabaseEnv;
 use reth_network_peers::pk2id;
 use reth_primitives::{public_key_to_address, Address};
@@ -50,6 +51,7 @@ use std::{
 };
 use tonic::transport::Channel;
 use tracing::info;
+
 // scopes
 pub mod common;
 pub mod frost;
@@ -106,7 +108,7 @@ impl LocalContext {
     pub fn get_btc_server_process_port(&self, instance: usize) -> Option<u16> {
         self.btc_processes
             .as_ref()
-            .and_then(|processes| processes.iter().nth(instance).map(|val| val.port))
+            .and_then(|processes| processes.iter().nth(instance).map(|val| val.btc_server_port))
     }
 
     pub fn get_btc_server_processes_ids(&self) -> Vec<u32> {
@@ -129,7 +131,7 @@ impl LocalContext {
             .btc_processes
             .as_ref()
             .map(|btc_processes| {
-                btc_processes.iter().map(|process| process.port).collect::<Vec<u16>>()
+                btc_processes.iter().map(|process| process.btc_server_port).collect::<Vec<u16>>()
             })
             .unwrap_or_default();
 
@@ -220,15 +222,29 @@ impl LocalContext {
         hs.into_iter().collect()
     }
 
-    pub fn get_dbs(&self) -> Vec<ProviderFactory<Arc<DatabaseEnv>>> {
+    pub fn get_reth_dbs(&self) -> Vec<ProviderFactory<Arc<DatabaseEnv>>> {
         let db_provider_factories = self
             .poa_processes
             .as_ref()
             .map(|poa_processes| {
                 poa_processes
                     .iter()
-                    .map(|process| process.provider_factory.clone())
+                    .map(|process| process.reth_provider_factory.clone())
                     .collect::<Vec<ProviderFactory<Arc<DatabaseEnv>>>>()
+            })
+            .unwrap_or_default();
+        db_provider_factories
+    }
+
+    pub fn get_botanix_dbs(&self) -> Vec<BotanixProviderFactory<Arc<DatabaseEnv>>> {
+        let db_provider_factories = self
+            .poa_processes
+            .as_ref()
+            .map(|poa_processes| {
+                poa_processes
+                    .iter()
+                    .map(|process| process.botanix_provider_factory.clone())
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default();
         db_provider_factories
@@ -392,6 +408,15 @@ impl Suite for ConsensusIntegrationTestSuite {
                 },
                 frost::test_signing::test_many_inputs_signing
             ),
+            "tx_weight_limit" => run_test!(
+                self,
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
+                frost::test_tx_weight_limit::test_tx_weight_limit
+            ),
             "utxo_commitment" => run_test!(
                 self,
                 CreateTestConfig {
@@ -400,6 +425,15 @@ impl Suite for ConsensusIntegrationTestSuite {
                     ..Default::default()
                 },
                 frost::test_utxo_commitment::test_utxo_commitment
+            ),
+            "utxo_recovery" => run_test!(
+                self,
+                CreateTestConfig {
+                    create_bitcoind_node: true,
+                    create_btc_servers: true,
+                    ..Default::default()
+                },
+                frost::test_utxo_recovery::test_utxo_recovery
             ),
             "block_builder" => {
                 run_test!(
@@ -584,14 +618,14 @@ impl Suite for ConsensusIntegrationTestSuite {
                     frost::test_mempool_gossip::test_mempool_gossip
                 )
             }
-            "test_conflicting_input" => run_test!(
+            "test_prevent_resigning_pegout" => run_test!(
                 self,
                 CreateTestConfig {
                     create_bitcoind_node: true,
                     create_btc_servers: true,
                     ..Default::default()
                 },
-                frost::test_conflicting_input::test_conflicting_input
+                frost::test_prevent_resigning_pegout::test_prevent_resigning_pegout
             ),
             "test_round1_then_new_signing_session" => run_test!(
                 self,
@@ -849,8 +883,11 @@ impl Suite for ConsensusIntegrationTestSuite {
                         .local_context
                         .get_btc_server_process_port(instance as usize)
                         .context("could not find btc server at instance index")?;
-                    match client::BtcServerClient::connect(format!("http://localhost:{}", port))
-                        .await
+                    match btc_server_client::BtcServerClient::connect(format!(
+                        "http://localhost:{}",
+                        port
+                    ))
+                    .await
                     {
                         Ok(_) => {
                             it_info_print!("Connected to btc server at port", port.to_string());
@@ -876,9 +913,12 @@ impl Suite for ConsensusIntegrationTestSuite {
                     .local_context
                     .get_btc_server_process_port(instance as usize)
                     .context("could not find btc server at instance index")?;
-                let client = client::BtcServerClient::connect(format!("http://localhost:{}", port))
-                    .await
-                    .context("Unable to create and connect to a btc server client")?;
+                let client = btc_server_client::BtcServerClient::connect(format!(
+                    "http://localhost:{}",
+                    port
+                ))
+                .await
+                .context("Unable to create and connect to a btc server client")?;
                 btc_server_clients.push(client.clone());
             }
             self.local_context.btc_server_clients = Some(btc_server_clients.clone());
@@ -1006,7 +1046,7 @@ impl Suite for ConsensusIntegrationTestSuite {
             let mut keys = HashSet::new();
             for client in btc_server_clients.to_vec().iter_mut() {
                 let key = client
-                    .get_public_key(client::Empty {})
+                    .get_public_key(btc_server_client::Empty {})
                     .await
                     .context("Error getting a pub key from btc-server")?
                     .into_inner()

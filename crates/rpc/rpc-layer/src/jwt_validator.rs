@@ -1,4 +1,5 @@
-use crate::{AuthValidator, JwtError, JwtSecret};
+use crate::AuthValidator;
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use http::{header, HeaderMap, Response, StatusCode};
 use jsonrpsee_http_client::{HttpBody, HttpResponse};
 use tracing::error;

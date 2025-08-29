@@ -20,6 +20,7 @@ pub mod lockfile;
 #[cfg(feature = "mdbx")]
 mod metrics;
 pub mod static_file;
+#[allow(deprecated)]
 pub mod tables;
 #[cfg(feature = "mdbx")]
 mod utils;
@@ -134,7 +135,7 @@ pub mod test_utils {
     /// Get a temporary directory path to use for the database
     pub fn tempdir_path() -> PathBuf {
         let builder = tempfile::Builder::new().prefix("reth-test-").rand_bytes(8).tempdir();
-        builder.expect(ERROR_TEMPDIR).into_path()
+        builder.expect(ERROR_TEMPDIR).keep()
     }
 
     /// Create read/write database for testing

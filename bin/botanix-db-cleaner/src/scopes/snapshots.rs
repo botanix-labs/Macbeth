@@ -1,12 +1,15 @@
-use reth_db::{models::ChunkId, DatabaseEnv};
+use botanix_storage::{
+    models::ChunkId, BotanixProviderFactory, DatabaseProviderFactoryRW, SnapshotReader,
+    SnapshotWriter,
+};
+use reth_db::DatabaseEnv;
 use reth_node_core::primitives::BlockNumber;
-use reth_provider::{ProviderFactory, SnapshotReader, SnapshotWriter};
 use std::{ops::RangeInclusive, sync::Arc};
 
 /// Truncates all snapshots from the database.
 /// This includes removing all chunks and blocks associated with the snapshots.
 /// It also removes the snapshots themselves.
-pub fn truncate(provider_factory: &ProviderFactory<Arc<DatabaseEnv>>) -> anyhow::Result<()> {
+pub fn truncate(provider_factory: &BotanixProviderFactory<Arc<DatabaseEnv>>) -> anyhow::Result<()> {
     let provider_rw = provider_factory.provider_rw()?;
 
     for snapshot in provider_rw.get_snapshots()?.iter() {

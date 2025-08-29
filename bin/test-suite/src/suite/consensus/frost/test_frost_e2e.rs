@@ -2,18 +2,17 @@ use std::{str::FromStr, time::Duration};
 
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
+use botanix_authority_peg::{
+    mint_validation::{BURN_TOPIC, MINT_TOPIC},
+    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
+    utils::AmountExt,
+};
+use botanix_chainspec::constants::BOTANIX_TESTNET;
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
-use reth_primitives::botanix::{
-    mint_validation::{BURN_TOPIC, MINT_TOPIC},
-    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
-    utils::AmountExt,
-};
-
-use reth_chainspec::BOTANIX_TESTNET;
 use reth_primitives::Address;
 
 use crate::{
@@ -250,6 +249,27 @@ pub async fn frost_e2e_stable(
     assert!(match_found);
     // TODO We could do a precise amounts check here
     assert!(pegout_tx.output[1].value > Amount::from_sat(0));
+
+    // Verify the fee is exactly what we expect
+    let total_input_value = pegin_tx.output[vout].value;
+    it_info_print!("Total input value: ", total_input_value);
+    let total_output_value = pegout_tx.output[0].value + pegout_tx.output[1].value;
+    it_info_print!("Total output value: ", total_output_value);
+    let actual_fee = total_input_value - total_output_value;
+    it_info_print!("Actual fee: ", actual_fee);
+    let weight = pegout_tx.weight();
+    it_info_print!("Weight: ", weight);
+    let expected_fee_rate = 1250; // 1250 sat/kwu is equivalent to 0.00005 sat/byte, which is the fallbackfee set in bitcoin conf
+    let expected_fee = (expected_fee_rate * weight.to_wu() + 999) / 1000; // Rounding up to nearest sat
+    it_info_print!("Expected fee: ", expected_fee);
+    assert_eq!(actual_fee, Amount::from_sat(expected_fee));
+
+    // Verify witness signatures are 64 bytes (Taproot signature size when using SIGHASH_DEFAULT)
+    for input in pegout_tx.input.iter() {
+        let witness_item = &input.witness[0];
+        it_info_print!("Input witness (signature) length:", witness_item.len());
+        assert_eq!(witness_item.len(), 64);
+    }
 
     Ok(())
 }

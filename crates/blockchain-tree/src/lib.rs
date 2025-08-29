@@ -57,3 +57,4 @@ pub mod noop;
 mod state;
 
 use aquamarine as _;
+use botanix_authority_edh as _;

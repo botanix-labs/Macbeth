@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct HeaderWithPegs {
     /// The pegins associated with this header.
     pub pegins: Vec<PeginData>,
@@ -21,6 +22,7 @@ pub struct HeaderWithPegs {
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct PeginData {
     /// The Bitcoin transaction ID that contains the pegin output.
     pub txid: Vec<u8>,
@@ -38,6 +40,7 @@ pub struct PeginData {
 #[derive(Debug, Default, Eq, PartialEq, Clone, Serialize, Deserialize, Compact)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 #[add_arbitrary_tests(compact)]
+#[deprecated(note = "Please use `botanix-storage` create")]
 pub struct PegoutData {
     /// The pegout identifier.
     pub pegout_id: Vec<u8>,

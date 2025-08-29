@@ -431,6 +431,7 @@ struct ProcessConnection<'a, HttpMiddleware, RpcMiddleware> {
 
 /// Spawns the IPC connection onto a new task
 #[instrument(name = "connection", skip_all, fields(conn_id = %params.conn_id), level = "INFO")]
+#[allow(clippy::extra_unused_lifetimes)]
 fn process_connection<'b, RpcMiddleware, HttpMiddleware>(
     params: ProcessConnection<'_, HttpMiddleware, RpcMiddleware>,
 ) where

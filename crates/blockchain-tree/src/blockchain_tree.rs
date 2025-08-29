@@ -1389,6 +1389,7 @@ mod tests {
     use assert_matches::assert_matches;
     use linked_hash_set::LinkedHashSet;
 
+    use botanix_authority_edh::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
     use reth_chainspec::{ChainSpecBuilder, MAINNET};
     use reth_consensus::test_utils::TestConsensus;
     use reth_db::{tables, test_utils::TempDatabase, DatabaseEnv};
@@ -1397,8 +1398,6 @@ mod tests {
     use reth_evm_ethereum::execute::create_noop_executor_provider;
     use reth_primitives::{
         constants::{EIP1559_INITIAL_BASE_FEE, EMPTY_ROOT_HASH, ETHEREUM_BLOCK_GAS_LIMIT},
-        extra_data_header::ExtraDataHeader,
-        header_ext::HeaderExt,
         keccak256,
         proofs::{calculate_receipt_root, calculate_transaction_root},
         revm_primitives::AccountInfo,

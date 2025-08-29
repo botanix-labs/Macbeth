@@ -6,22 +6,20 @@ use std::{
 
 use bitcoin::{hashes::Hash, merkle_tree::PartialMerkleTree, Amount};
 use bitcoincore_rpc::RpcApi;
-use client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
+use botanix_authority_peg::{
+    mint_validation::{BURN_TOPIC, MINT_TOPIC},
+    peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
+    utils::AmountExt,
+};
+use botanix_chainspec::constants::BOTANIX_TESTNET;
+use btc_server_client::{BtcServerClient, GetFinalizedPegoutIdsRequest};
 use ethers::{
     prelude::Provider,
     providers::{Http, Middleware},
     types::NameOrAddress,
 };
 use futures::StreamExt;
-use reth_chainspec::BOTANIX_TESTNET;
-use reth_primitives::{
-    botanix::{
-        mint_validation::{BURN_TOPIC, MINT_TOPIC},
-        peg_contract::{PeginData, PeginMeta, PeginMetaV0, PegoutData},
-        utils::AmountExt,
-    },
-    Address,
-};
+use reth_primitives::Address;
 use tonic::transport::Channel;
 
 use crate::{
@@ -309,7 +307,7 @@ pub async fn test_wallet_sync_dynamic(
 
     // wait for an epoch since this is when the pegout scheduler
     // determines if tracked txs are finalized
-    await_epoch_block(&mut rx).await;
+    await_epoch_block(&mut rx, BOTANIX_TESTNET.epoch_length).await;
 
     // get all finalized pegout ids before the poa epoch (before wallets sync)
     let peers_finalized_pegout_ids_before = get_finalized_pegout_ids_from_peers(
@@ -325,7 +323,7 @@ pub async fn test_wallet_sync_dynamic(
         assert!(first_peer_finalized_pegout_ids == peer_finalized_pegout_ids);
     }
 
-    await_epoch_block(&mut rx).await;
+    await_epoch_block(&mut rx, BOTANIX_TESTNET.epoch_length).await;
 
     it_info_print!("Waiting for wallets to sync");
     loop {

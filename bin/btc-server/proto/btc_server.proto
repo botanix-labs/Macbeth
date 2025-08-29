@@ -16,7 +16,7 @@ service BtcServer {
     rpc GetGatewayAddress(GetGatewayAddressRequest) returns(GetGatewayAddressResponse){}
 
     rpc GetPublicKey(Empty) returns(GetPublicKeyResponse) {}
-    
+
     rpc GetDkgPayloads(Empty) returns(DkgPayloads) {}
 
     rpc NewDkgPayload(DkgPayload) returns(DkgPayloads) {}
@@ -53,6 +53,8 @@ service BtcServer {
 
     rpc ResetAllUtxos(ResetAllUtxosRequest) returns (Empty) {}
 
+    rpc RecoverMissingUtxos(RecoverMissingUtxosRequest) returns (RecoverMissingUtxosResponse) {}
+
     rpc GetSigningStatus(GetSigningStatusRequest) returns (GetSigningStatusResponse) {}
 
     rpc GetSessionIds(GetSessionIdsRequest) returns (GetSessionIdsResponse) {}
@@ -69,11 +71,13 @@ message PendingPegout {
     bytes spk = 2;
     uint64 amount = 3;
     uint64 height = 4;
+    uint64 timestamp = 5;
 }
 
 message FinalizedPegout {
     bytes id = 1;
     uint64 botanix_block_height = 2;
+    uint64 botanix_block_timestamp = 3;
 }
 
 message GetPendingPegoutsResponse {
@@ -105,6 +109,15 @@ message WalletStateResponse {
 // TODO: remove if we deprecate reset_all_utxos rpc call
 message ResetAllUtxosRequest {
     repeated Utxo utxos = 1;
+}
+
+message RecoverMissingUtxosRequest {
+    repeated UtxoToRecover utxos = 1;
+}
+
+message RecoverMissingUtxosResponse {
+    uint64 total_requested = 1;
+    uint64 total_recovered = 2;
 }
 
 message ResetWalletStateRequest {
@@ -140,6 +153,12 @@ message Utxo {
     OutPoint outpoint = 1;
     TxOut output = 2;
     string eth_address = 3;
+}
+
+message UtxoToRecover {
+    OutPoint outpoint = 1;
+    // empty eth_address for change utxo
+    string eth_address = 2;
 }
 
 message GetAllUtxosResponse {
@@ -226,13 +245,13 @@ message Output {
 }
 
 message MakeTxRequest {
-    bytes signing_session_id = 2;
+    bytes signing_session_id = 1;
     // The checkpoint of the best finalized Bitcoin block hash.
-    bytes checkpoint_block_hash = 3;
+    bytes checkpoint_block_hash = 2;
 }
 
 message ToSignRequest {
-    bytes signing_session_id = 3;
+    bytes signing_session_id = 1;
 }
 
 message FinalizeSigningRequest {

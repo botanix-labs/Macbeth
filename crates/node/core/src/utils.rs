@@ -1,6 +1,7 @@
 //! Utility functions for node startup and shutdown, for example path parsing and retrieving single
 //! blocks from the network.
 
+use btc_server_client::jwt::{JwtError, JwtSecret};
 use eyre::Result;
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_block_pre_execution;
@@ -10,7 +11,6 @@ use reth_network_p2p::{
     priority::Priority,
 };
 use reth_primitives::{BlockHashOrNumber, SealedBlock, SealedHeader};
-use reth_rpc_types::engine::{JwtError, JwtSecret};
 use std::{
     env::VarError,
     path::{Path, PathBuf},

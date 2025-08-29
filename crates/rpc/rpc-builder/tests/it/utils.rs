@@ -1,5 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
+use botanix_rpc_config::botanix_config::Botanix;
+use btc_server_client::jwt::JwtSecret;
 use reth_beacon_consensus::BeaconConsensusEngineHandle;
 use reth_chainspec::MAINNET;
 use reth_ethereum_engine_primitives::EthEngineTypes;
@@ -13,8 +15,6 @@ use reth_rpc_builder::{
     RpcModuleBuilder, RpcServerConfig, RpcServerHandle, TransportRpcModuleConfig,
 };
 use reth_rpc_engine_api::{capabilities::EngineCapabilities, EngineApi};
-use reth_rpc_eth_types::builder::botanix_config::Botanix;
-use reth_rpc_layer::JwtSecret;
 use reth_rpc_server_types::RpcModuleSelection;
 use reth_rpc_types::engine::{ClientCode, ClientVersionV1};
 use reth_tasks::TokioTaskExecutor;

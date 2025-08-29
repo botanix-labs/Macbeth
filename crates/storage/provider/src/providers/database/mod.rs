@@ -4,9 +4,10 @@ use crate::{
     traits::{BlockSource, ReceiptProvider},
     BlockHashReader, BlockNumReader, BlockReader, ChainSpecProvider, DatabaseProviderFactory,
     EvmEnvProvider, HeaderProvider, HeaderSyncGap, HeaderSyncGapProvider, ProviderError,
-    PruneCheckpointReader, RequestsProvider, SnapshotReader, SnapshotWriter, StageCheckpointReader,
-    StagedHeader, StateProviderBox, StaticFileProviderFactory, TransactionVariant,
-    TransactionsProvider, WalletStateSyncReader, WalletStateSyncWriter, WithdrawalsProvider,
+    PruneCheckpointReader, RequestsProvider, RuntimeTransitionsReadWrite, SnapshotReader,
+    SnapshotWriter, StageCheckpointReader, StagedHeader, StateProviderBox,
+    StaticFileProviderFactory, TransactionVariant, TransactionsProvider, WalletStateSyncReader,
+    WalletStateSyncWriter, WithdrawalsProvider,
 };
 use reth_chainspec::{ChainInfo, ChainSpec, EthChainSpec};
 use reth_db::{
@@ -953,6 +954,33 @@ impl<DB: Database> StagedHeader for ProviderFactory<DB> {
     }
 }
 
+impl<DB: Database> RuntimeTransitionsReadWrite for ProviderFactory<DB> {
+    fn insert_runtime_upgrade_version(
+        &self,
+        height: BlockNumber,
+        version: reth_db::models::RuntimeVersion,
+    ) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+        let did_change = provider.insert_runtime_upgrade_version(height, version)?;
+
+        if did_change {
+            provider.commit()?;
+        }
+
+        Ok(did_change)
+    }
+
+    fn get_runtime_versions(
+        &self,
+    ) -> ProviderResult<Vec<(BlockNumber, reth_db::models::RuntimeVersion)>> {
+        self.provider_rw()?.get_runtime_versions()
+    }
+
+    fn get_last_runtime_version(&self) -> ProviderResult<Option<reth_db::models::RuntimeVersion>> {
+        self.provider_rw()?.get_last_runtime_version()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1010,7 +1038,7 @@ mod tests {
         let chain_spec = ChainSpecBuilder::mainnet().build();
         let (_static_dir, static_dir_path) = create_test_static_files_dir();
         let factory = ProviderFactory::new_with_database_path(
-            tempfile::TempDir::new().expect(ERROR_TEMPDIR).into_path(),
+            tempfile::TempDir::new().expect(ERROR_TEMPDIR).keep(),
             Arc::new(chain_spec),
             DatabaseArguments::new(Default::default()),
             StaticFileProvider::read_write(static_dir_path).unwrap(),

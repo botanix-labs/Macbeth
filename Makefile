@@ -123,7 +123,7 @@ build-%:
 
 
 build-btc-server-%:
-		cross build --package btc-server --bin btc-server --target $* --release"
+	cross build --package btc-server --bin btc-server --target $* --release
 
 # Unfortunately we can't easily use cross to build for Darwin because of licensing issues.
 # If we wanted to, we would need to build a custom Docker image with the SDK available.
@@ -675,7 +675,6 @@ start-poa-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_1_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_1_DIR} \
@@ -705,13 +704,14 @@ start-poa-server-1:
 	--abci-port=26658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" \
+	--txpool.minimum-priority-fee 2500000 \
+	--txpool.minimal-protocol-fee 5000000
 
 start-poa-server-2:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_2_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_2_DIR} \
@@ -741,13 +741,14 @@ start-poa-server-2:
 	--abci-port=36658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" \
+	--txpool.minimum-priority-fee 2500000 \
+	--txpool.minimal-protocol-fee 5000000
 
 start-poa-server-3:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_3_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_3_DIR} \
@@ -777,13 +778,14 @@ start-poa-server-3:
 	--abci-port=46658 \
     --sync.enable_state_sync \
 	--sync.enable_historical_sync \
-	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}"
+	--block-fee-recipient-address "${BLOCK_FEE_RECIPIENT_ADDRESS}" \
+	--txpool.minimum-priority-fee 2500000 \
+	--txpool.minimal-protocol-fee 5000000
 
 start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
 	--datadir ${NON_FED_1_DIR} \
 	--http \
@@ -806,6 +808,8 @@ start-non-fed-server-1:
 	--abci-port=56658 \
 	--sync.enable_state_sync \
 	--sync.enable_historical_sync \
+  --txpool.minimum-priority-fee 2500000 \
+  --txpool.minimal-protocol-fee 5000000
 
 clean-poa-3:
 	cd ${NODE_3_DIR} && \
@@ -1046,7 +1050,6 @@ profile-btc:
 PROFILER_POA_SEVER_ARGS := \
 	poa \
 	--is-testnet \
-	--ntp-server ${NTP_SERVER_URL} \
 	--federation-config-path ${PROFILER_NODE_DIR}/federation.toml \
 	--federation-mode \
 	--datadir ${PROFILER_NODE_DIR} \
