@@ -24,15 +24,6 @@ pub struct PoaNodeArgs {
     #[arg(long, value_name = "IS_DEVNET", env = "RETH_DEVNET")]
     pub is_devnet: bool,
 
-    /// The NTP server url
-    #[arg(
-        long,
-        value_name = "NTP_SERVER",
-        env = "RETH_NTP_SERVER",
-        default_value = "time.cloudflare.com"
-    )]
-    pub ntp_server: String,
-
     /// The path to the configuration file for the federation setup.
     #[arg(
         long,

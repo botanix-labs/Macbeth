@@ -75,7 +75,6 @@ use btcserverlib::utxo_recovery::read_utxos_from_file;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
-use reth_consensus_common::utils;
 use reth_db::{database::Database, init_db, DatabaseEnv};
 use reth_exex::ExExManagerHandle;
 use reth_network::{
@@ -88,7 +87,7 @@ use reth_node_builder::{
 };
 use reth_node_core::{node_config::NodeConfig, version};
 use reth_node_ethereum::{EthEngineTypes, EthEvmConfig, EthExecutorProvider};
-use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, Bytes, Head};
+use reth_primitives::{constants::ETHEREUM_BLOCK_GAS_LIMIT, hex, Bytes, Head};
 use reth_provider::{
     providers::{BlockchainProvider2, StaticFileProvider},
     BlockHashReader, CanonStateSubscriptions, DatabaseProviderFactory, HeaderProvider,
@@ -99,7 +98,6 @@ use reth_static_file::StaticFileProducer;
 use reth_transaction_pool::{
     blobstore::InMemoryBlobStore, TransactionPoolExt, TransactionValidationTaskExecutor,
 };
-use rsntp::AsyncSntpClient;
 use tokio::{
     sync::{mpsc::unbounded_channel, oneshot},
     time::{timeout, Duration},
@@ -208,7 +206,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     network_config_path,
                     is_testnet,
                     is_devnet,
-                    ntp_server,
                     federation_config_path: _,
                     federation_mode,
                     state_sync,
@@ -343,32 +340,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         // Does not do anything on windows.
         raise_fd_limit()?;
 
-        // async task that checks system clock is in sync with NTP server
-        let ntp_server = ntp_server.clone();
-        info!("NTP server url: {}", ntp_server);
-        executor.spawn_critical(
-            "async system clock sync with ntp task",
-            Box::pin(async move {
-                let sleep_sec = tokio::time::Duration::from_secs(15);
-                let acceptable_drift_sec = 1;
-                loop {
-                    match ntp_unix_timestamp(&ntp_server).await {
-                        Ok(ntp_timestamp) => {
-                            let system_timestamp = utils::unix_timestamp();
-                            if (ntp_timestamp as i64 - system_timestamp as i64).abs() > acceptable_drift_sec {
-                                error!("System clock is not in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
-                            } else {
-                                info!("System clock is in sync with NTP server. System timestamp: {}, NTP timestamp: {}", system_timestamp, ntp_timestamp);
-                            }
-                        }
-                        Err(err) => {
-                            error!("NTP sync failed: {}", err);
-                        }
-                    }
-                    tokio::time::sleep(sleep_sec).await;
-                }
-            }),
-        );
         // extract the btc server jwt secret from the args
         let btc_signing_server_jwt_secret = node_config.rpc.btc_signing_server_jwt_secret()?;
 
@@ -406,26 +377,36 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             if let Some(utxo_recovery_file) = utxo_recovery_file {
                 info!(target: "reth::cli", "Recovering missing UTXOs from file: {}", utxo_recovery_file.display());
                 let utxos = read_utxos_from_file(std::path::Path::new(utxo_recovery_file));
-                info!(target: "reth::cli", "UTXOs to recover: {:?}", utxos);
+
+                // Print all outpoints with their txids in hex format
+                for (i, utxo) in utxos.iter().enumerate() {
+                    if let Some(outpoint) = &utxo.outpoint {
+                        let txid = hex::encode(&outpoint.txid);
+                        info!(
+                            "reth::cli::recover_missing_utxos: UTXO recovery request number {}: txid: {}, vout: {}, eth_address: {}",
+                            i, txid, outpoint.vout, utxo.eth_address
+                        );
+                    }
+                }
                 let recover_request = RecoverMissingUtxosRequest { utxos };
                 // Only proceed if we have UTXOs to recover
                 if !recover_request.utxos.is_empty() {
                     match btc_server_client.recover_missing_utxos(recover_request).await {
                         Ok(response) => {
                             info!(target: "reth::cli",
-                                "UTXO recovery completed successfully. Requested: {}, Recovered: {}",
+                                "reth::cli::recover_missing_utxos: UTXO recovery completed. Requested: {}, Recovered: {}",
                                 response.total_requested, response.total_recovered
                             );
                         }
                         Err(err) => {
-                            error!(target: "reth::cli", "UTXO recovery failed: {}", err);
+                            error!(target: "reth::cli", "reth::cli::recover_missing_utxos: UTXO recovery failed: {}", err);
                         }
                     }
                 } else {
-                    error!(target: "reth::cli", "UTXO_RECOVERY_FILE is provided but no UTXOs to recover");
+                    error!(target: "reth::cli", "reth::cli::recover_missing_utxos: UTXO_RECOVERY_FILE is provided but no UTXOs to recover");
                 }
             } else {
-                info!(target: "reth::cli", "No UTXOs recovery file provided");
+                info!(target: "reth::cli", "reth::cli::recover_missing_utxos:No UTXOs recovery file provided");
             };
 
             Some(btc_server_factory)
@@ -1180,28 +1161,6 @@ impl PayloadBuilderConfig for DefaultPoAPayloadBuilderConfig {
 
     fn max_gas_limit(&self) -> u64 {
         ETHEREUM_BLOCK_GAS_LIMIT
-    }
-}
-
-// *** Botanix specific
-// get unix timsestamp in seconds from ntp server
-async fn ntp_unix_timestamp(ntp_server: &str) -> eyre::Result<u64> {
-    // create NTP client
-    let client = AsyncSntpClient::new();
-
-    // sync with NTP server
-    match client.synchronize(ntp_server).await {
-        Ok(sync_result) => match sync_result.datetime().unix_timestamp() {
-            Ok(duration) => Ok(duration.as_secs()),
-            Err(err) => {
-                error!("Failed to get unix timestamp from NTP response: {}", err);
-                Err(err.into())
-            }
-        },
-        Err(err) => {
-            error!("Failed to sync with NTP server: {}", err);
-            Err(err.into())
-        }
     }
 }
 

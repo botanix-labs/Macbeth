@@ -50,7 +50,6 @@ services:
     command:
       - poa
       - --is-testnet
-      - --ntp-server=${NTP_SERVER_URL}
       - --federation-config-path=/app/config/federation.toml
       - --federation-mode
       - --datadir=/app

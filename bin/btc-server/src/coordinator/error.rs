@@ -63,4 +63,8 @@ pub enum CoordinatorError {
     NoConflictingInputs,
     #[error("Missing utxo for conflicting input")]
     MissingUtxoForConflictingInput,
+    #[error("wallet calculation error: {0}")]
+    WalletCalculationError(#[from] crate::wallet::util::WalletCalculationError),
+    #[error("Transaction exceeds maximum weight limit")]
+    TransactionTooLarge,
 }

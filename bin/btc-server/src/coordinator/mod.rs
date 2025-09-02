@@ -1,4 +1,4 @@
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 use crate::{
     coordinator::error::CoordinatorError,
@@ -9,6 +9,8 @@ use crate::{
     wallet::{
         coin_selection,
         psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
+        util::calculate_signed_tx_weight,
+        MAX_PEGOUT_TX_WEIGHT,
     },
 };
 use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
@@ -73,7 +75,6 @@ pub fn add_round2_signing(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn make_tx(
     outputs: Vec<(TxOut, PegoutId)>,
     fee_rate: FeeRate,
@@ -81,6 +82,48 @@ pub fn make_tx(
     db: &Db,
     min_signers: u16,
     tracked_txs: Vec<Tx>,
+) -> Result<Psbt, CoordinatorError> {
+    let mut attempted_outputs = outputs.clone();
+    loop {
+        let psbt = attempt_make_tx(
+            attempted_outputs.clone(),
+            fee_rate,
+            change_script.clone(),
+            db,
+            min_signers,
+            &tracked_txs,
+        )?;
+        let tx_weight = calculate_signed_tx_weight(&psbt)?;
+        if tx_weight.to_wu() <= MAX_PEGOUT_TX_WEIGHT {
+            info!(
+                "expected pegout tx weight: {}, num outputs: {}",
+                tx_weight,
+                attempted_outputs.len()
+            );
+            return Ok(psbt);
+        }
+
+        // Edge case: Even with a single output, the transaction exceeds the weight limit (requires
+        // more than ~1700 inputs). The pegout would have to be ~1700 times larger than the
+        // average of the 1700 largest utxos.
+        if attempted_outputs.len() <= 1 {
+            return Err(CoordinatorError::TransactionTooLarge);
+        }
+
+        // Remove 10% of the outputs and try again
+        attempted_outputs.truncate(attempted_outputs.len() - (attempted_outputs.len() / 10));
+        warn!("psbt expected weight was too big: {}, with outputs.len: {}. Truncating outputs to {} and trying again", tx_weight, attempted_outputs.len(), attempted_outputs.len());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn attempt_make_tx(
+    outputs: Vec<(TxOut, PegoutId)>,
+    fee_rate: FeeRate,
+    change_script: ScriptBuf,
+    db: &Db,
+    min_signers: u16,
+    tracked_txs: &[Tx],
 ) -> Result<Psbt, CoordinatorError> {
     // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate

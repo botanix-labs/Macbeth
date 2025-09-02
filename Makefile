@@ -675,7 +675,6 @@ start-poa-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_1_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_1_DIR} \
@@ -713,7 +712,6 @@ start-poa-server-2:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_2_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_2_DIR} \
@@ -751,7 +749,6 @@ start-poa-server-3:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NODE_3_DIR}/federation.toml" \
 	--federation-mode \
 	--datadir ${NODE_3_DIR} \
@@ -789,7 +786,6 @@ start-non-fed-server-1:
 	cd ./bin/reth && \
 	cargo run --bin reth -- poa \
 	--is-testnet \
-	--ntp-server "${NTP_SERVER_URL}" \
 	--federation-config-path "${NON_FED_1_DIR}/federation.toml" \
 	--datadir ${NON_FED_1_DIR} \
 	--http \
@@ -1054,7 +1050,6 @@ profile-btc:
 PROFILER_POA_SEVER_ARGS := \
 	poa \
 	--is-testnet \
-	--ntp-server ${NTP_SERVER_URL} \
 	--federation-config-path ${PROFILER_NODE_DIR}/federation.toml \
 	--federation-mode \
 	--datadir ${PROFILER_NODE_DIR} \
