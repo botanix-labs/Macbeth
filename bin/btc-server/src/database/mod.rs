@@ -1289,7 +1289,10 @@ mod tests {
 
     use crate::{
         pegout_scheduler::{PegoutRequest, Tx},
-        test_utils::{create_random_pegout_id, create_tx, random_p2wpkh_scriptpubkey, setup_db},
+        test_utils::{
+            create_random_pegout_id, create_tx, random_p2wpkh_scriptpubkey, setup_db,
+            trusted_dealer_setup,
+        },
     };
     use std::{collections::HashSet, time::SystemTime};
 
@@ -2384,5 +2387,60 @@ mod tests {
 
         assert_eq!(deserialized.id, pegout_id);
         assert_eq!(deserialized.block_number, 200);
+    }
+
+    #[tokio::test]
+    async fn test_export_import_key_package() {
+        let (db, _temp_dir) = setup_db();
+
+        let good_pass = Zeroizing::new("good_pass".to_string());
+        let bad_pass = Zeroizing::new("bad_pass".to_string());
+
+        // Key package does not exist yet.
+        let res = db.export_key_package(good_pass.clone()).unwrap();
+        assert!(res.is_none());
+
+        // Generate key packages.
+        let id = frost::Identifier::derive(0_u16.to_le_bytes().as_slice()).unwrap();
+        let (shares, pk_package) = trusted_dealer_setup(2, 3);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
+
+        // Set key packages.
+        db.set_pubkey_package(pk_package.clone()).unwrap();
+        db.set_key_package(key_package.clone()).unwrap();
+
+        let origin_pk_package = pk_package;
+        let origin_key_package = key_package;
+
+        // Each export creates a new nonce.
+        let mut export_1 = db.export_key_package(good_pass.clone()).unwrap().unwrap();
+        let export_2 = db.export_key_package(good_pass.clone()).unwrap().unwrap();
+        //
+        assert_ne!(export_1.iv, export_2.iv);
+        assert_ne!(export_1, export_2);
+
+        let prev_key = db.db.remove(TREE_KEY_PACKAGE).unwrap();
+        let prev_pk = db.db.remove(TREE_PUBKEY_PACKAGE).unwrap();
+        assert!(prev_key.is_some());
+        assert!(prev_pk.is_some());
+
+        // ERR: Bad password!
+        let err = db.import_key_package(bad_pass, export_1.clone()).unwrap_err();
+        assert_eq!(err, Error::BadDecryptionPassphrase);
+
+        // ERR: Bad IV/nonce!
+        export_1.iv = export_2.iv;
+        let err = db.import_key_package(good_pass.clone(), export_1.clone()).unwrap_err();
+        assert_eq!(err, Error::BadDecryptionPassphrase);
+
+        // OK: Successful import with good passphrase and export package.
+        db.import_key_package(good_pass.clone(), export_2.clone()).unwrap();
+
+        // Sanity check.
+        let new_pk_package = db.get_public_key_package().unwrap().unwrap();
+        let new_key_package = db.get_key_package().unwrap().unwrap();
+        //
+        assert_eq!(new_pk_package, origin_pk_package);
+        assert_eq!(new_key_package, origin_key_package);
     }
 }
