@@ -12,6 +12,7 @@ use bitcoin::{
     psbt::Psbt,
     Amount, BlockHash, OutPoint, ScriptBuf, TxOut, Txid,
 };
+use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
 use client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use futures::Stream;
@@ -22,6 +23,7 @@ pub mod error;
 pub mod version;
 pub use error::Error;
 use version::UtxoVersion;
+use zeroize::Zeroizing;
 
 /// sled tree id for the utxos tree.
 const TREE_UTXOS: &[u8; 5] = b"utxos";
@@ -88,6 +90,23 @@ impl FinalizedPegout {
     pub fn new(id: PegoutId, block_number: u64) -> Self {
         FinalizedPegout { id, block_number }
     }
+}
+
+/// Encrypted key package export format for secure backup and transfer.
+///
+/// This structure contains both secret and public key packages encrypted with a
+/// passphrase-derived key. A single random nonce is used for both encryption
+/// operations, with two separately derived keys.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct ExportedKeyPackage {
+    /// Random 96-bit nonce used for both encryption operations, in plaintext.
+    pub iv: [u8; 12],
+    /// Encrypted FROST secret key package. Contains the encrypted secret key
+    /// material with authentication tag.
+    pub enc_key_package: Vec<u8>,
+    /// Encrypted FROST public key package. Contains the encrypted public key
+    /// material with authentication tag.
+    pub enc_pk_package: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -288,6 +307,164 @@ impl Db {
         ciborium::into_writer(&pk_package, &mut bytes).expect("writing to buffer");
 
         self.db.insert(TREE_PUBKEY_PACKAGE, &bytes[..])?;
+        Ok(())
+    }
+
+    /// Exports the stored key packages as an encrypted, portable format.
+    ///
+    /// Creates an [`ExportedKeyPackage`] containing both the secret and public
+    /// key packages encrypted with a passphrase-derived key. The export can be
+    /// safely stored or transmitted since all sensitive material is encrypted
+    /// with ChaCha20-Poly1305.
+    ///
+    /// # Security Design
+    /// - Uses a single random nonce but derives separate encryption keys to prevent catastrophic
+    ///   nonce reuse
+    /// - Provides authenticated encryption; tampering will cause import to fail
+    /// - Passphrase is combined with random salt (nonce) for key derivation resistance
+    ///
+    /// # Arguments
+    /// * `passphrase` - User-provided passphrase for encryption. Should be strong as it's the
+    ///   primary protection for the exported keys.
+    ///
+    /// # Returns
+    /// * `Ok(Some(export))` - Successfully created encrypted export
+    /// * `Ok(None)` - No key packages available to export
+    /// * `Err(_)` - Database error during key retrieval
+    pub fn export_key_package(
+        &self,
+        passphrase: Zeroizing<String>,
+    ) -> Result<Option<ExportedKeyPackage>, Error> {
+        let Some(key_package) = self.db.get(TREE_KEY_PACKAGE)? else {
+            return Ok(None);
+        };
+
+        let Some(pk_package) = self.db.get(TREE_PUBKEY_PACKAGE)? else {
+            return Ok(None);
+        };
+
+        // Validate retrieved packages.
+        #[cfg(debug_assertions)]
+        {
+            ciborium::from_reader::<frost::keys::KeyPackage, _>(key_package.as_ref())
+                .expect("bad key package");
+
+            ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(pk_package.as_ref())
+                .expect("bad public key package");
+        }
+
+        // IMPORTANT: We randomly generate a single nonce, which is included in
+        // the export and saved alongside the encrypted data in plaintext. Since
+        // we encrypt the secret and public key packages separately with the
+        // same nonce, we deterministically derive separate encryption keys for
+        // each package using the Merlin transcript. This prevents catastrophic
+        // nonce reuse while keeping the export format simple (only one nonce to
+        // store).
+        let iv: [u8; 12] = rand::random();
+        let nonce = Nonce::from_slice(&iv);
+
+        let mut t = merlin::Transcript::new(b"Botanix_Macbeth_BtcServer_ExportedKeyPackage");
+        t.append_message(b"salt", nonce);
+        t.append_message(b"passphrase", passphrase.as_bytes());
+
+        // Scope the `master` key so we don't accidentally reuse it between
+        // separate encryption operations.
+
+        // Encrypt secret key package with derived key.
+        let enc_key_package: Vec<u8> = {
+            let mut master = Zeroizing::new([0; 32]);
+
+            // Derive NEW master key for the secret key package.
+            t.challenge_bytes(b"secret_key_package", master.as_mut_slice());
+            debug_assert_ne!(master.as_slice(), [0; 32]);
+
+            ChaCha20Poly1305::new_from_slice(master.as_slice())
+                .expect("master key must be 32-bytes")
+                .encrypt(nonce, key_package.as_ref())
+                .expect("output buffer must be valid")
+        };
+
+        // Encrypt public key package with derived key.
+        let enc_pk_package: Vec<u8> = {
+            let mut master = Zeroizing::new([0; 32]);
+
+            // Derive NEW master key for the public key package.
+            t.challenge_bytes(b"public_key_package", master.as_mut_slice());
+            debug_assert_ne!(master.as_slice(), [0; 32]);
+
+            ChaCha20Poly1305::new_from_slice(master.as_mut_slice())
+                .expect("master key must be 32-bytes")
+                .encrypt(nonce, pk_package.as_ref())
+                .expect("output buffer must be valid")
+        };
+
+        let export = ExportedKeyPackage { iv, enc_key_package, enc_pk_package };
+
+        Ok(Some(export))
+    }
+
+    /// Imports and validates an encrypted key package export.
+    ///
+    /// Decrypts an [`ExportedKeyPackage`] using the provided passphrase and
+    /// stores the recovered key packages in the database. The decrypted data is
+    /// validated by deserializing it into typed Rust structs, ensuring it's
+    /// well-formed.
+    ///
+    /// # Security Validation
+    /// - Authenticated decryption prevents accepting tampered data
+    /// - Deserialization validates the decrypted data structure
+    /// - Wrong passphrase will cause decryption to fail
+    ///
+    /// # Arguments
+    /// * `passphrase` - The same passphrase used during export
+    /// * `export` - The encrypted key package export to import
+    ///
+    /// # Returns
+    /// * `Ok(())` - Successfully imported and stored key packages
+    /// * `Err(_)` - Decryption failed (wrong passphrase), malformed data, or database error
+    pub fn import_key_package(
+        &self,
+        passphrase: Zeroizing<String>,
+        export: ExportedKeyPackage,
+    ) -> Result<(), Error> {
+        // Retrieve the nonce directly from the exported package.
+        let nonce = Nonce::from_slice(&export.iv);
+
+        let mut t = merlin::Transcript::new(b"Botanix_Macbeth_BtcServer_ExportedKeyPackage");
+        t.append_message(b"salt", nonce);
+        t.append_message(b"passphrase", passphrase.as_bytes());
+
+        let mut master = Zeroizing::new([0u8; 32]);
+
+        // Convert decrypted bytes into typed Rust structs rather than storing
+        // the raw bytes directly. This serves as validation/sanity-check that
+        // ensures the decrypted data is actually valid and not garbage.
+
+        let key_package: frost::keys::KeyPackage = {
+            t.challenge_bytes(b"secret_key_package", master.as_mut_slice());
+
+            let b = ChaCha20Poly1305::new_from_slice(master.as_slice())
+                .expect("master key must be 32-bytes")
+                .decrypt(nonce, export.enc_key_package.as_slice())
+                .map_err(|_| Error::BadDecryptionPassphrase)?;
+
+            ciborium::from_reader(b.as_slice())?
+        };
+
+        let pk_package: frost::keys::PublicKeyPackage = {
+            t.challenge_bytes(b"public_key_package", master.as_mut_slice());
+
+            let b = ChaCha20Poly1305::new_from_slice(master.as_slice())
+                .expect("master key must be 32-bytes")
+                .decrypt(nonce, export.enc_pk_package.as_slice())
+                .map_err(|_| Error::BadDecryptionPassphrase)?;
+
+            ciborium::from_reader(b.as_slice())?
+        };
+
+        self.set_key_package(key_package)?;
+        self.set_pubkey_package(pk_package)?;
+
         Ok(())
     }
 
