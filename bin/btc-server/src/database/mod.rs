@@ -2169,6 +2169,11 @@ mod tests {
         let err = db.import_key_package(good_pass.clone(), export_1.clone()).unwrap_err();
         assert_eq!(err, Error::BadDecryptionPassphrase);
 
+        // ERR: Bad version indicator!
+        export_1.version = u16::MAX;
+        let err = db.import_key_package(good_pass.clone(), export_1.clone()).unwrap_err();
+        assert_eq!(err, Error::BadExportedPackageFormatVersion);
+
         // OK: Successful import with good passphrase and export package.
         db.import_key_package(good_pass.clone(), export_2.clone()).unwrap();
 
