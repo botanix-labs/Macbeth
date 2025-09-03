@@ -333,8 +333,10 @@ pub fn create_tx(num_inputs: usize, num_outputs: usize, change: Option<TxOut>) -
 
     let mut outputs = vec![];
     for _ in 0..num_outputs {
-        outputs
-            .push(TxOut { value: Amount::from_sat(1000), script_pubkey: random_p2wpkh_scriptpubkey() });
+        outputs.push(TxOut {
+            value: Amount::from_sat(1000),
+            script_pubkey: random_p2wpkh_scriptpubkey(),
+        });
     }
 
     if let Some(change) = change {
