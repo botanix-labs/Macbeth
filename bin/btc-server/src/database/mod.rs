@@ -92,6 +92,9 @@ impl FinalizedPegout {
     }
 }
 
+/// Current version for [`ExportedKeyPackage`] (future-reserved).
+pub const EXPORTED_PACKAGE_VERSION: u16 = 0;
+
 /// Encrypted key package export format for secure backup and transfer.
 ///
 /// This structure contains both secret and public key packages encrypted with a
@@ -99,6 +102,9 @@ impl FinalizedPegout {
 /// operations, with two separately derived keys.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ExportedKeyPackage {
+    /// Version indicator (future-reserved), currently it's
+    /// [`EXPORTED_PACKAGE_VERSION`].
+    pub version: u16,
     /// Random 96-bit nonce used for both encryption operations, in plaintext.
     pub iv: [u8; 12],
     /// Encrypted FROST secret key package. Contains the encrypted secret key
@@ -398,7 +404,12 @@ impl Db {
                 .expect("output buffer must be valid")
         };
 
-        let export = ExportedKeyPackage { iv, enc_key_package, enc_pk_package };
+        let export = ExportedKeyPackage {
+            version: EXPORTED_PACKAGE_VERSION,
+            iv,
+            enc_key_package,
+            enc_pk_package,
+        };
 
         Ok(Some(export))
     }
@@ -427,6 +438,10 @@ impl Db {
         passphrase: Zeroizing<String>,
         export: ExportedKeyPackage,
     ) -> Result<(), Error> {
+        if export.version != EXPORTED_PACKAGE_VERSION {
+            return Err(Error::BadExportedPackageFormatVersion);
+        }
+
         // Retrieve the nonce directly from the exported package.
         let nonce = Nonce::from_slice(&export.iv);
 

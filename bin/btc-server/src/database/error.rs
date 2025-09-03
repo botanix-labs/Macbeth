@@ -37,6 +37,9 @@ pub enum Error {
     TrackedTxNotFoundInPegoutScheduler,
     #[error("Bad passphrase for decrypting key-package import")]
     BadDecryptionPassphrase,
+    /// Related to [`super::ExportedKeyPackage`].
+    #[error("Bad exported package format version")]
+    BadExportedPackageFormatVersion,
 }
 
 impl PartialEq for Error {
