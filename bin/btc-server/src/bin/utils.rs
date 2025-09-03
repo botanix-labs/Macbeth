@@ -54,7 +54,7 @@ pub struct ImportConfig {
 
 fn get_passphrase(
     provided: Option<Zeroizing<String>>,
-    do_confim: bool,
+    do_confirm: bool,
 ) -> anyhow::Result<Zeroizing<String>> {
     match provided {
         Some(p) => Ok(p.trim().to_string().into()),
@@ -62,7 +62,7 @@ fn get_passphrase(
             // Prompt user if CLI was not provided.
             let p1: Zeroizing<String> = rpassword::prompt_password("Passphrase: ")?.into();
 
-            if do_confim {
+            if do_confirm {
                 let p2: Zeroizing<String> =
                     rpassword::prompt_password("Confirm passphrase: ")?.into();
 
@@ -118,8 +118,8 @@ async fn main() -> anyhow::Result<(), anyhow::Error> {
             }
 
             // Retrieve the passphrase.
-            let do_confim = false;
-            let passphrase = get_passphrase(c.passphrase, do_confim)?;
+            let do_confirm = false;
+            let passphrase = get_passphrase(c.passphrase, do_confirm)?;
 
             // We don't bother checking whether the passphrase is empty here or
             // not; decryption (failure) handles that for us implicitly.
