@@ -1270,28 +1270,35 @@ mod tests {
     }
 
     #[test]
-    fn from_db_utxo_to_rpc_utxo() {
-        let tx = create_tx(1, 1, None);
-        let utxo = Utxo::new(
-            OutPoint::new(tx.compute_txid(), 0),
-            tx.output.get(0).expect("one output").clone(),
-            Some([0; 20]),
-            None,
-        );
-        let rpc_utxo = RpcUtxo::try_from(utxo.clone()).unwrap();
-        let utxo2 = Utxo::try_from(rpc_utxo).unwrap();
-        assert!(utxo == utxo2);
+    fn utxo_rpc_conversion_round_trip() {
+        // Test round-trip conversion: DbUtxo -> RpcUtxo -> DbUtxo
 
-        // Without eth address
-        let utxo = Utxo::new(
-            OutPoint::new(tx.compute_txid(), 2),
-            tx.output.get(0).expect("one output").clone(),
-            None,
-            None,
-        );
-        let rpc_utxo = RpcUtxo::try_from(utxo.clone()).unwrap();
-        let utxo2 = Utxo::try_from(rpc_utxo).unwrap();
-        assert!(utxo == utxo2);
+        let tx = create_tx(1, 1, None);
+        let txid = tx.compute_txid();
+
+        // Test cases: (eth_address, utxo_version, description)
+        let test_cases = [
+            (Some([0; 20]), Some(UtxoVersion::V1), "with eth address and version"),
+            (None, None, "without eth address or version"),
+        ];
+
+        for (eth_address, utxo_version, description) in test_cases.iter() {
+            let original_utxo = Utxo::new(
+                OutPoint::new(txid, 0),
+                tx.output.get(0).expect("one output").clone(),
+                *eth_address,
+                *utxo_version,
+            );
+
+            let rpc_utxo = RpcUtxo::try_from(original_utxo.clone()).unwrap();
+            let recovered_utxo = Utxo::try_from(rpc_utxo).unwrap();
+
+            assert_eq!(
+                original_utxo, recovered_utxo,
+                "Round-trip conversion should preserve all data ({})",
+                description
+            );
+        }
     }
 
     #[test]
