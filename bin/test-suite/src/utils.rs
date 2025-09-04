@@ -84,12 +84,11 @@ pub async fn send_pegin_notification(
     vout: u32,
     amount: u64,
 ) -> Result<(), Error> {
-    let mut prev_out_bytes = Vec::new();
-    address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
+    let script_bytes = address.script_pubkey().to_bytes();
     let utxos = [btc_server_client::Utxo {
         output: Some(btc_server_client::TxOut {
             value: Amount::from_sat(amount).to_sat(),
-            script_pubkey: Some(btc_server_client::ScriptBuf { script: prev_out_bytes }),
+            script_pubkey: Some(btc_server_client::ScriptBuf { script: script_bytes }),
         }),
         outpoint: Some(btc_server_client::OutPoint { txid: txid.to_vec(), vout }),
         eth_address,
@@ -129,12 +128,11 @@ pub async fn send_pegins_notifications(
         let btc_address = btc_addresses[i].clone();
         let amount = amounts[i];
 
-        let mut prev_out_bytes = Vec::new();
-        btc_address.script_pubkey().consensus_encode(&mut prev_out_bytes).unwrap();
+        let script_bytes = btc_address.script_pubkey().to_bytes();
         utxos.push(btc_server_client::Utxo {
             output: Some(btc_server_client::TxOut {
                 value: Amount::from_sat(amount).to_sat(),
-                script_pubkey: Some(btc_server_client::ScriptBuf { script: prev_out_bytes }),
+                script_pubkey: Some(btc_server_client::ScriptBuf { script: script_bytes }),
             }),
             outpoint: Some(btc_server_client::OutPoint { txid: txid.to_vec(), vout: 1 }),
             eth_address,

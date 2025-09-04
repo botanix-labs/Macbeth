@@ -123,7 +123,8 @@ pub async fn test_track_mempool(
     let sk = bitcoin::PrivateKey::generate(bitcoin::Network::Regtest);
     let pk = sk.public_key(&secp);
 
-    let spk = pk.p2wpkh_script_code().expect("valid pk");
+    let wpk = pk.wpubkey_hash().expect("valid wpubkey hash");
+    let spk = bitcoin::ScriptBuf::new_p2wpkh(&wpk);
 
     // Notify there is a pending pegout
     for c in clients.iter_mut() {
