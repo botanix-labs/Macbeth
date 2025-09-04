@@ -20,7 +20,7 @@ use bitcoin::{
 use btc_server_client::SigningStatus;
 use frost_secp256k1_tr as frost;
 use futures::Stream;
-use log::info;
+use log::{info, warn};
 use miniscript::psbt::PsbtExt;
 use serde::{Deserialize, Serialize};
 use sled::transaction::{ConflictableTransactionError, TransactionError};
@@ -1022,6 +1022,29 @@ impl Db {
     }
 }
 
+fn parse_p2tr_script_with_fallback(script_bytes: &[u8]) -> ScriptBuf {
+    // Parse as raw script bytes (expected format)
+    let script_from_raw = ScriptBuf::from_bytes(script_bytes.to_vec());
+    if script_from_raw.is_p2tr() {
+        return script_from_raw;
+    }
+
+    // Fallback: Handle legacy consensus-encoded format (with length prefix)
+    // Provides backwards compatibility in case other node services are still
+    // using the old encoding format (see https://github.com/botanix-labs/Macbeth/pull/949)
+    if let Ok(script_from_consensus) = bitcoin::consensus::deserialize::<ScriptBuf>(script_bytes) {
+        warn!("Received RpcUtxo with legacy consensus-encoded script format");
+        if script_from_consensus.is_p2tr() {
+            return script_from_consensus;
+        }
+    }
+
+    // If neither format produces a valid P2TR script, return the raw script
+    // as it may be a non-p2tr script
+    warn!("Received RpcUtxo with non-p2tr script format");
+    script_from_raw
+}
+
 impl TryFrom<RpcUtxo> for Utxo {
     type Error = Error;
 
@@ -1039,7 +1062,7 @@ impl TryFrom<RpcUtxo> for Utxo {
         let script_pubkey = tx_out
             .script_pubkey
             .ok_or_else(|| Error::RpcToDbMap("Script Pub Key is None".to_string()))?;
-        let script = ScriptBuf::from_bytes(script_pubkey.script);
+        let script = parse_p2tr_script_with_fallback(&script_pubkey.script);
 
         // create the utxo
         Ok(Utxo::new(
@@ -1272,9 +1295,9 @@ mod tests {
     #[test]
     fn utxo_rpc_conversion_round_trip() {
         // Test round-trip conversion: DbUtxo -> RpcUtxo -> DbUtxo
+        use crate::test_utils::{random_compute_txid, random_p2tr_keyspend_script};
 
-        let tx = create_tx(1, 1, None);
-        let txid = tx.compute_txid();
+        let txid = random_compute_txid();
 
         // Test cases: (eth_address, utxo_version, description)
         let test_cases = [
@@ -1282,23 +1305,84 @@ mod tests {
             (None, None, "without eth address or version"),
         ];
 
-        for (eth_address, utxo_version, description) in test_cases.iter() {
-            let original_utxo = Utxo::new(
-                OutPoint::new(txid, 0),
-                tx.output.get(0).expect("one output").clone(),
+        for (vout, (eth_address, utxo_version, description)) in test_cases.iter().enumerate() {
+            // Create a proper taproot TxOut instead of using create_tx which generates P2WPKH
+            let taproot_output = TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: random_p2tr_keyspend_script(),
+            };
+
+            let original_db_utxo = Utxo::new(
+                OutPoint::new(txid, vout as u32),
+                taproot_output,
                 *eth_address,
                 *utxo_version,
             );
 
-            let rpc_utxo = RpcUtxo::try_from(original_utxo.clone()).unwrap();
+            let rpc_utxo = RpcUtxo::try_from(original_db_utxo.clone()).unwrap();
             let recovered_utxo = Utxo::try_from(rpc_utxo).unwrap();
 
             assert_eq!(
-                original_utxo, recovered_utxo,
+                original_db_utxo, recovered_utxo,
                 "Round-trip conversion should preserve all data ({})",
                 description
             );
         }
+    }
+
+    #[test]
+    fn utxo_rpc_conversion_with_script_len_prefix() {
+        // Test to make sure we can still parse messages using the old RpcUtxo script format,
+        // which included the length prefix. see https://github.com/botanix-labs/Macbeth/pull/949
+        use bitcoin::consensus::encode::Encodable;
+
+        // Create a taproot script using the existing helper
+        let raw_script = crate::test_utils::random_p2tr_keyspend_script();
+
+        // Create script bytes using the OLD way (consensus encoding with length prefix)
+        let mut consensus_encoded_bytes = vec![];
+        raw_script.consensus_encode(&mut consensus_encoded_bytes).unwrap();
+
+        // Create a mock RpcUtxo with the consensus-encoded script bytes
+        let rpc_utxo = RpcUtxo {
+            outpoint: Some(RpcOutPoint {
+                txid: vec![0; 32], // dummy txid
+                vout: 0,
+            }),
+            output: Some(RpcTxOut {
+                value: 1000,
+                script_pubkey: Some(RpcScriptBuf {
+                    script: consensus_encoded_bytes, // OLD format with length prefix
+                }),
+            }),
+            eth_address: String::new(),
+        };
+
+        // Test that conversion from OLD format works successfully
+        let recovered_utxo = Utxo::try_from(rpc_utxo).unwrap();
+        assert_eq!(raw_script, recovered_utxo.output.script_pubkey);
+    }
+
+    #[test]
+    fn test_parse_p2tr_script_with_fallback() {
+        use bitcoin::consensus::encode::Encodable;
+
+        let script = crate::test_utils::random_p2tr_keyspend_script();
+
+        // Test raw bytes (current format)
+        let raw_bytes = script.to_bytes();
+        let parsed_raw = parse_p2tr_script_with_fallback(&raw_bytes);
+        assert_eq!(script, parsed_raw);
+
+        // Test consensus-encoded bytes (legacy format)
+        let mut consensus_bytes = vec![];
+        script.consensus_encode(&mut consensus_bytes).unwrap();
+        let parsed_consensus = parse_p2tr_script_with_fallback(&consensus_bytes);
+        assert_eq!(script, parsed_consensus);
+
+        // Test invalid script bytes
+        let invalid_bytes = vec![0x00, 0x14]; // Not a taproot script
+        assert!(!parse_p2tr_script_with_fallback(&invalid_bytes).is_p2tr());
     }
 
     #[test]
