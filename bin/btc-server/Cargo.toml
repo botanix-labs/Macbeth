@@ -14,6 +14,10 @@ name = "btcserverlib"
 name = "btc-server"
 path = "src/bin/main.rs"
 
+[[bin]]
+name = "sweep"
+path = "src/bin/sweep.rs"
+
 [features]
 default = []
 
