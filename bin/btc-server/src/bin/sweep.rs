@@ -1,4 +1,16 @@
+use std::{fs::File, io::Write, path::PathBuf};
+
+use base64::prelude::*;
+use rand::RngCore;
+use bitcoin::{consensus::encode::serialize_hex, psbt::Psbt, Amount, FeeRate, OutPoint, TxOut};
+use btcserverlib::{
+    database,
+    database::version::UtxoVersion,
+    wallet::{psbt::PsbtInputExt, util::calculate_signed_tx_weight},
+};
 use clap::Parser;
+use serde::Serialize;
+use std::str::FromStr;
 
 #[derive(Clone, Debug, Parser)]
 #[command(name = "sweep")]
@@ -15,32 +27,259 @@ pub enum Commands {
     FrostRound1(FrostRound1Config),
     #[command(name = "frost-round-2")]
     FrostRound2(FrostRound2Config),
+    #[command(name = "add-dummy-utxos")]
+    AddDummyUtxos(AddDummyUtxosConfig),
 }
 
 #[derive(Clone, Debug, Parser)]
-pub struct MakeSweepPsbtConfig {}
+pub struct MakeSweepPsbtConfig {
+    #[arg(long)]
+    pub db: PathBuf,
+    #[arg(long)]
+    pub output_address: String,
+    #[arg(long)]
+    pub sat_per_vbyte: u64,
+    /// Expects address to be testnet
+    #[arg(long)]
+    pub testnet: bool,
+}
 
 #[derive(Clone, Debug, Parser)]
-pub struct FrostRound1Config {}
+pub struct FrostRound1Config {
+    #[arg(long)]
+    pub db: PathBuf,
+}
 
 #[derive(Clone, Debug, Parser)]
 pub struct FrostRound2Config {}
 
+#[derive(Clone, Debug, Parser)]
+pub struct AddDummyUtxosConfig {
+    #[arg(long)]
+    pub db: PathBuf,
+}
+
+#[derive(Serialize)]
+struct SerializableSigningPackage {
+    psbt_hex: String,
+    psbt_base64: String,
+    identifier_hex: String,
+    signing_session_id_hex: String,
+}
+
+fn parse_and_validate_address(
+    address_str: &str,
+    testnet: bool,
+) -> anyhow::Result<bitcoin::Address> {
+    let network = if testnet { bitcoin::Network::Testnet } else { bitcoin::Network::Bitcoin };
+
+    bitcoin::Address::from_str(address_str)
+        .map_err(|e| anyhow::anyhow!("invalid address: {}", e))?
+        .require_network(network)
+        .map_err(|e| anyhow::anyhow!("address network error: {}", e))
+}
+
+// Based on wallet::psbt::create_psbt but with a single output with no pegout id
+pub(crate) fn create_sweep_psbt(
+    inputs: Vec<database::Utxo>,
+    script_pubkey: &bitcoin::ScriptBuf,
+    value: Amount,
+) -> Psbt {
+    let output = TxOut { value, script_pubkey: script_pubkey.clone() };
+
+    let tx = bitcoin::Transaction {
+        version: bitcoin::transaction::Version::TWO,
+        lock_time: bitcoin::locktime::absolute::LockTime::ZERO,
+        input: inputs
+            .iter()
+            .map(|u| bitcoin::TxIn {
+                previous_output: u.outpoint,
+                sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+                script_sig: bitcoin::ScriptBuf::new(),
+                witness: Default::default(),
+            })
+            .collect(),
+        output: vec![output],
+    };
+
+    // Create PSBT
+    // add input meta
+    let mut psbt = Psbt::from_unsigned_tx(tx).expect("tx is unsigned");
+    for (psbt_input, utxo) in psbt.inputs.iter_mut().zip(inputs.iter()) {
+        psbt_input.witness_utxo = Some(utxo.output.clone());
+        if let Some(eth_addr) = utxo.eth_address {
+            psbt_input.set_eth_address(eth_addr);
+        }
+        psbt_input.add_version_to_psbt(utxo.version as u32);
+    }
+
+    psbt
+}
+
+fn calculate_sweep_fee(
+    utxos: &[database::Utxo],
+    script_pubkey: &bitcoin::ScriptBuf,
+    fee_rate: FeeRate,
+) -> anyhow::Result<Amount> {
+    let psbt = create_sweep_psbt(utxos.to_vec(), &script_pubkey, Amount::from_sat(0));
+    let total_weight = calculate_signed_tx_weight(&psbt)?;
+    let absolute_fee = fee_rate.fee_wu(total_weight).ok_or(anyhow::anyhow!("fee rate overflow"))?;
+    Ok(absolute_fee)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<(), anyhow::Error> {
     let cli = Cli::parse();
-
     match cli.cmd {
-        Commands::MakeSweepPsbt(c) => {
-            println!("make sweep psbt");
-        }
-        Commands::FrostRound1(c) => {
-            println!("frost round 1");
-        }
-        Commands::FrostRound2(c) => {
-            println!("frost round 2");
-        }
+        Commands::MakeSweepPsbt(config) => handle_make_sweep_psbt(&config).await?,
+        Commands::FrostRound1(config) => handle_frost_round_1(&config).await?,
+        Commands::FrostRound2(config) => handle_frost_round_2(&config).await?,
+        Commands::AddDummyUtxos(config) => handle_add_dummy_utxos(&config).await?,
     }
 
+    Ok(())
+}
+
+pub async fn handle_make_sweep_psbt(c: &MakeSweepPsbtConfig) -> anyhow::Result<(), anyhow::Error> {
+    // get all utxos from the database
+    let db = database::Db::open(&c.db).expect("failed to open db");
+    let utxos: Vec<database::Utxo> = db.iter_utxos().collect::<Result<Vec<_>, _>>()?;
+
+    if utxos.is_empty() {
+        println!("no utxos found");
+        return Err(anyhow::anyhow!("no utxos found"));
+    }
+    println!("utxos = {:?}", utxos);
+
+    // Long term plans, not for now
+    // - sort utxos by value
+    // - truncate utxos to largest 1000 utxos
+
+    let address = parse_and_validate_address(&c.output_address, c.testnet)?;
+    let script_pubkey = address.script_pubkey();
+
+    // calculate the fee and subtract from the output value
+    let fee_rate: FeeRate = FeeRate::from_sat_per_vb(c.sat_per_vbyte).expect("fee rate overflow");
+    let absolute_fee = calculate_sweep_fee(&utxos, &script_pubkey, fee_rate)?;
+    println!("absolute fee = {:?}", absolute_fee);
+    let total_utxo_value = utxos.iter().map(|u| u.output.value).sum::<Amount>();
+    let output_value = total_utxo_value
+        .checked_sub(absolute_fee)
+        .ok_or(anyhow::anyhow!("output value underflow"))?;
+
+    let psbt = create_sweep_psbt(utxos, &script_pubkey, output_value);
+
+    // TODO: store the psbt in a new json file
+    let psbt_json = serde_json::to_string(&psbt).expect("failed to serialize psbt");
+    let mut file = File::create("psbt.json").expect("failed to create file");
+    file.write_all(psbt_json.as_bytes()).expect("failed to write to file");
+
+    println!("psbt: {:?}", psbt);
+
+    println!("psbt tx hex = {}", serialize_hex(&psbt.unsigned_tx));
+
+    // create random signing session id
+    let mut signing_session_id = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut signing_session_id);
+
+    // create a dummy identifier (since it doesn't matter for this use case)
+    let dummy_identifier = vec![1u8; 33]; // 33 bytes for a compressed public key
+
+    // create the serializable SigningPackage structure
+    let signing_package = SerializableSigningPackage {
+        psbt_hex: psbt.serialize_hex(),
+        psbt_base64: base64::prelude::BASE64_STANDARD.encode(psbt.serialize()),
+        identifier_hex: hex::encode(&dummy_identifier),
+        signing_session_id_hex: hex::encode(signing_session_id),
+    };
+
+    // serialize to JSON and save to file
+    let signing_package_json = serde_json::to_string_pretty(&signing_package)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize SigningPackage to JSON: {}", e))?;
+    
+    let mut signing_package_file = File::create("signing_package.json")
+        .map_err(|e| anyhow::anyhow!("Failed to create signing_package.json: {}", e))?;
+    
+    signing_package_file.write_all(signing_package_json.as_bytes())
+        .map_err(|e| anyhow::anyhow!("Failed to write to signing_package.json: {}", e))?;
+
+    println!("SigningPackage saved to signing_package.json");
+    println!("Signing session ID: {}", hex::encode(signing_session_id));
+
+    Ok(())
+}
+
+pub async fn handle_frost_round_1(c: &FrostRound1Config) -> anyhow::Result<(), anyhow::Error> {
+    println!("frost round 1");
+    Ok(())
+}
+
+pub async fn handle_frost_round_2(_c: &FrostRound2Config) -> anyhow::Result<(), anyhow::Error> {
+    println!("frost round 2");
+    Ok(())
+}
+
+pub async fn handle_add_dummy_utxos(c: &AddDummyUtxosConfig) -> anyhow::Result<(), anyhow::Error> {
+    let db = database::Db::open(&c.db).expect("failed to open db");
+    add_dummy_utxos_to_db(&db).expect("failed to add dummy utxos to db");
+    println!("dummy utxos added to db");
+    Ok(())
+}
+
+pub fn dummy_utxos() -> Result<Vec<bitcoincore_rpc::json::Utxo>, anyhow::Error> {
+    let json_data = r#"[{
+  "txid": "d8b268a579ffbc5e425d69ef5f7e0f1c8db8c73b6b13b6f5a06caf4788129705",
+  "vout": 1,
+  "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+  "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+  "amount": 0.00180655,
+  "height": 903664
+},
+{
+  "txid": "2792d9c79713b7b3d2c1d0267ec567a9e05f79b18355c782f379b35ca08bd50d",
+  "vout": 1,
+  "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+  "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+  "amount": 0.01088904,
+  "height": 904468
+},
+{
+  "txid": "365e926b53fd9c01bda2d44b4ce2fd04eb97c63fffc732c8813cb7f0e625c40e",
+  "vout": 2,
+  "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
+  "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
+  "amount": 0.00146289,
+  "height": 904173
+}
+]"#;
+
+    // Parse the JSON into a Vec<Utxo>
+    let utxos: Vec<bitcoincore_rpc::json::Utxo> = serde_json::from_str(json_data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
+
+    // Print the results
+    println!("Parsed {} UTXOs", utxos.len());
+
+    Ok(utxos)
+}
+
+// THIS IS PURELY TO HELP WITH TESTING AND SHOULD NOT BE MERGED INTO THE FINAL CODE
+pub fn add_dummy_utxos_to_db(db: &database::Db) -> Result<(), anyhow::Error> {
+    // Use the above code as a reference for how to convert the dummy utxos to database::Utxo
+    let utxos = dummy_utxos()?;
+    let utxo_refs: Vec<database::Utxo> = utxos
+        .iter()
+        .map(|u| {
+            database::Utxo::new(
+                OutPoint::new(u.txid, u.vout),
+                TxOut { value: u.amount, script_pubkey: u.script_pub_key.clone() },
+                None,
+                Some(UtxoVersion::V1),
+            )
+        })
+        .collect();
+
+    let utxo_refs_borrowed: Vec<&database::Utxo> = utxo_refs.iter().collect();
+    db.store_utxos(&utxo_refs_borrowed).expect("failed to store utxos");
     Ok(())
 }
