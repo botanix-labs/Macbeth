@@ -8,8 +8,10 @@ use btcserverlib::{
     database::version::UtxoVersion,
     wallet::{psbt::PsbtInputExt, util::calculate_signed_tx_weight},
 };
+use rand::thread_rng;
 use clap::Parser;
-use serde::Serialize;
+use frost_secp256k1_tr as frost;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 #[derive(Clone, Debug, Parser)]
@@ -47,7 +49,11 @@ pub struct MakeSweepPsbtConfig {
 #[derive(Clone, Debug, Parser)]
 pub struct FrostRound1Config {
     #[arg(long)]
+    pub input_json: PathBuf,
+    #[arg(long)]
     pub db: PathBuf,
+    #[arg(long)]
+    pub identifier: u16, // TODO: get this from the same config as btc-server
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -59,12 +65,64 @@ pub struct AddDummyUtxosConfig {
     pub db: PathBuf,
 }
 
-#[derive(Serialize)]
-struct SerializableSigningPackage {
+#[derive(Serialize, Deserialize)]
+struct SigningPackage {
     psbt_hex: String,
     psbt_base64: String,
     identifier_hex: String,
     signing_session_id_hex: String,
+}
+
+fn validate_psbt_fee_sanity(psbt: &Psbt) -> anyhow::Result<()> {
+    let fee = psbt.fee()
+    .map_err(|e| anyhow::anyhow!("Failed to calculate PSBT fee: {}", e))?;
+
+    let total_outputs_amount = psbt.unsigned_tx.output.iter()
+        .fold(Amount::ZERO, |total, output| {
+            total.checked_add(output.value).unwrap_or_default()
+        });
+
+    if fee > total_outputs_amount {
+        return Err(anyhow::anyhow!("Fee ({}) cannot be greater than total output value ({})", fee, total_outputs_amount));
+    }
+
+    Ok(())
+}
+
+/// Sweep-specific version of FROST round 1 signing that bypasses btc-server validations
+/// This is designed for sweep transactions which don't follow normal btc-server patterns
+fn get_round1_signing_package_sweep(
+    psbt: &mut Psbt,
+    key_package: &frost::keys::KeyPackage,
+    my_identifier: frost::Identifier,
+) -> anyhow::Result<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>> {
+    // Basic PSBT sanity checks (but skip btc-server specific validations)
+    if psbt.inputs.is_empty() {
+        return Err(anyhow::anyhow!("PSBT must have at least one input"));
+    }
+    
+    if psbt.outputs.is_empty() {
+        return Err(anyhow::anyhow!("PSBT must have at least one output"));
+    }
+
+    // Basic fee sanity check
+    validate_psbt_fee_sanity(psbt)?;
+
+    // Core FROST logic (copied from signer::get_round1_signing_package)
+    let num_inputs = psbt.inputs.len();
+    let secret = key_package.signing_share();
+    let mut nonces = vec![];
+    let mut rng = thread_rng();
+
+    // Generate nonces and commitments for each input
+    // Order is important - each nonce pair corresponds to a transaction input
+    for i in 0..num_inputs {
+        let nonce_pkg = frost::round1::commit(secret, &mut rng);
+        psbt.inputs[i].set_signing_commitment(my_identifier, &nonce_pkg.1);
+        nonces.push(nonce_pkg);
+    }
+
+    Ok(nonces)
 }
 
 fn parse_and_validate_address(
@@ -186,7 +244,7 @@ pub async fn handle_make_sweep_psbt(c: &MakeSweepPsbtConfig) -> anyhow::Result<(
     let dummy_identifier = vec![1u8; 33]; // 33 bytes for a compressed public key
 
     // create the serializable SigningPackage structure
-    let signing_package = SerializableSigningPackage {
+    let signing_package = SigningPackage {
         psbt_hex: psbt.serialize_hex(),
         psbt_base64: base64::prelude::BASE64_STANDARD.encode(psbt.serialize()),
         identifier_hex: hex::encode(&dummy_identifier),
@@ -210,7 +268,82 @@ pub async fn handle_make_sweep_psbt(c: &MakeSweepPsbtConfig) -> anyhow::Result<(
 }
 
 pub async fn handle_frost_round_1(c: &FrostRound1Config) -> anyhow::Result<(), anyhow::Error> {
-    println!("frost round 1");
+    // Read the input JSON file
+    let input_json = std::fs::read_to_string(&c.input_json)
+        .map_err(|e| anyhow::anyhow!("Failed to read input JSON file: {}", e))?;
+    
+    let input_package: SigningPackage = serde_json::from_str(&input_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse input JSON: {}", e))?;
+
+    // Parse the signing session ID
+    let signing_session_id = hex::decode(&input_package.signing_session_id_hex)
+        .map_err(|e| anyhow::anyhow!("Failed to decode signing session ID: {}", e))?;
+    
+    if signing_session_id.len() != 32 {
+        return Err(anyhow::anyhow!("Invalid signing session ID length"));
+    }
+    
+    let signing_session_id: [u8; 32] = signing_session_id.try_into().unwrap();
+
+    // Deserialize the PSBT
+    let mut psbt = Psbt::deserialize(&hex::decode(&input_package.psbt_hex)?)
+        .map_err(|e| anyhow::anyhow!("Failed to deserialize PSBT: {}", e))?;
+
+    // Open database and get key package
+    let db = database::Db::open(&c.db)
+        .map_err(|e| anyhow::anyhow!("Failed to open database: {}", e))?;
+    
+    let key_package = db.get_key_package()
+        .map_err(|e| anyhow::anyhow!("Failed to get key package from database: {}", e))?
+        .ok_or(anyhow::anyhow!("No key package found in database"))?;
+
+    // Derive FROST identifier from config (same as main code)
+    let frost_identifier = frost::Identifier::derive(c.identifier.to_le_bytes().as_slice())
+        .map_err(|e| anyhow::anyhow!("Failed to derive FROST identifier: {}", e))?;
+
+    println!("Processing FROST round 1 for identifier: {:?}", frost_identifier);
+    println!("Signing session ID: {}", hex::encode(signing_session_id));
+
+    // Use our sweep-specific FROST round 1 function (bypasses btc-server validations)
+    let nonces = get_round1_signing_package_sweep(
+        &mut psbt,
+        &key_package,
+        frost_identifier,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to process round 1 signing: {}", e))?;
+
+    println!("Generated {} nonce pairs for {} inputs", nonces.len(), psbt.inputs.len());
+
+    // Create response
+    let response = SigningPackage {
+        psbt_hex: psbt.serialize_hex(),
+        psbt_base64: BASE64_STANDARD.encode(psbt.serialize()),
+        identifier_hex: hex::encode(frost_identifier.serialize()),
+        signing_session_id_hex: hex::encode(signing_session_id),
+    };
+   
+    // Save response to JSON file with FROST ID prefix
+    let frost_id_prefix = hex::encode(frost_identifier.serialize())[..6].to_string();
+    let output_filename = format!("round_1_response_{}.json", frost_id_prefix);
+    
+    let response_json = serde_json::to_string_pretty(&response)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize response: {}", e))?;
+    
+    std::fs::write(&output_filename, response_json)
+        .map_err(|e| anyhow::anyhow!("Failed to write response JSON: {}", e))?;
+
+    println!("FROST round 1 response saved to: {}", output_filename);
+
+
+    // for debugging, save psbt to a json file with FROST ID prefix
+    let psbt_json = serde_json::to_string_pretty(&psbt)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize PSBT: {}", e))?;
+    let psbt_filename = format!("psbt_after_round_1_{}.json", frost_id_prefix);
+    std::fs::write(&psbt_filename, psbt_json)
+        .map_err(|e| anyhow::anyhow!("Failed to write PSBT JSON: {}", e))?;
+
+    println!("psbt after round 1 saved to: {}", psbt_filename);
+
     Ok(())
 }
 
