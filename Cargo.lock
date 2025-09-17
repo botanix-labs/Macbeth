@@ -2478,6 +2478,7 @@ version = "1.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "botanix-comet-bft-rpc",
  "clap",
  "dirs 6.0.0",
  "ethers",
@@ -2485,6 +2486,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tendermint-rpc",
  "thiserror 2.0.12",
  "tokio",
  "toml 0.8.23",
