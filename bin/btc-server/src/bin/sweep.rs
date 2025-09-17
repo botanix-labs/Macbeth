@@ -34,6 +34,8 @@ pub enum Commands {
     MakeSweepPsbt(MakeSweepPsbtConfig),
     #[command(name = "frost-round-1")]
     FrostRound1(FrostRound1Config),
+    #[command(name = "frost-coordinator-round-1")]
+    FrostCoordinatorRound1(FrostCoordinatorRound1Config),
     #[command(name = "frost-round-2")]
     FrostRound2(FrostRound2Config),
     #[command(name = "add-dummy-utxos")]
@@ -64,6 +66,22 @@ pub struct FrostRound1Config {
 }
 
 #[derive(Clone, Debug, Parser)]
+pub struct FrostCoordinatorRound1Config {
+    /// List of Round 1 response JSON files from signers
+    #[arg(long, value_delimiter = ',')]
+    pub round1_responses: Vec<PathBuf>,
+    /// Minimum number of signers required for threshold
+    #[arg(long)]
+    pub min_signers: u16,
+    /// Output JSON file for the combined signing package
+    #[arg(long, default_value = "signing_package_round2.json")]
+    pub output_json: PathBuf,
+    /// Database path for validation
+    #[arg(long)]
+    pub db: PathBuf,
+}
+
+#[derive(Clone, Debug, Parser)]
 pub struct FrostRound2Config {}
 
 #[derive(Clone, Debug, Parser)]
@@ -74,7 +92,6 @@ pub struct AddDummyUtxosConfig {
 
 #[derive(Serialize, Deserialize)]
 struct SigningPackage {
-    psbt_hex: String,
     psbt_base64: String,
     identifier_hex: String,
     signing_session_id_hex: String,
@@ -164,7 +181,7 @@ fn save_nonces_to_file(
 }
 
 /// Load secret nonces from JSON file for Round 2 usage
-fn load_nonces_from_file(filename: &str) -> anyhow::Result<StoredNonces> {
+fn _load_nonces_from_file(filename: &str) -> anyhow::Result<StoredNonces> {
     let content = std::fs::read_to_string(filename)
         .map_err(|e| anyhow::anyhow!("Failed to read nonces file {}: {}", filename, e))?;
 
@@ -274,6 +291,9 @@ async fn main() -> anyhow::Result<(), anyhow::Error> {
     match cli.cmd {
         Commands::MakeSweepPsbt(config) => handle_make_sweep_psbt(&config).await?,
         Commands::FrostRound1(config) => handle_frost_round_1(&config).await?,
+        Commands::FrostCoordinatorRound1(config) => {
+            handle_frost_coordinator_round_1(&config).await?
+        }
         Commands::FrostRound2(config) => handle_frost_round_2(&config).await?,
         Commands::AddDummyUtxos(config) => handle_add_dummy_utxos(&config).await?,
     }
@@ -315,8 +335,6 @@ pub async fn handle_make_sweep_psbt(c: &MakeSweepPsbtConfig) -> anyhow::Result<(
     let mut file = File::create("psbt.json").expect("failed to create file");
     file.write_all(psbt_json.as_bytes()).expect("failed to write to file");
 
-    println!("psbt: {:?}", psbt);
-
     println!("psbt tx hex = {}", serialize_hex(&psbt.unsigned_tx));
 
     // create random signing session id
@@ -328,7 +346,6 @@ pub async fn handle_make_sweep_psbt(c: &MakeSweepPsbtConfig) -> anyhow::Result<(
 
     // create the serializable SigningPackage structure
     let signing_package = SigningPackage {
-        psbt_hex: psbt.serialize_hex(),
         psbt_base64: base64::prelude::BASE64_STANDARD.encode(psbt.serialize()),
         identifier_hex: hex::encode(&dummy_identifier),
         signing_session_id_hex: hex::encode(signing_session_id),
@@ -370,7 +387,7 @@ pub async fn handle_frost_round_1(c: &FrostRound1Config) -> anyhow::Result<(), a
     let signing_session_id: [u8; SIGNING_SESSION_ID_SIZE] = signing_session_id.try_into().unwrap();
 
     // Deserialize the PSBT
-    let mut psbt = Psbt::deserialize(&hex::decode(&input_package.psbt_hex)?)
+    let mut psbt = Psbt::deserialize(&BASE64_STANDARD.decode(&input_package.psbt_base64)?)
         .map_err(|e| anyhow::anyhow!("Failed to deserialize PSBT: {}", e))?;
 
     // Open database and get key package
@@ -403,7 +420,6 @@ pub async fn handle_frost_round_1(c: &FrostRound1Config) -> anyhow::Result<(), a
 
     // Create response
     let response = SigningPackage {
-        psbt_hex: psbt.serialize_hex(),
         psbt_base64: BASE64_STANDARD.encode(psbt.serialize()),
         identifier_hex: hex::encode(frost_identifier.serialize()),
         signing_session_id_hex: hex::encode(signing_session_id),
@@ -429,6 +445,171 @@ pub async fn handle_frost_round_1(c: &FrostRound1Config) -> anyhow::Result<(), a
     std::fs::write(&psbt_filename, psbt_json)
         .map_err(|e| anyhow::anyhow!("Failed to write PSBT JSON: {}", e))?;
     println!("psbt after round 1 saved to: {}", psbt_filename);
+
+    Ok(())
+}
+
+pub async fn handle_frost_coordinator_round_1(
+    c: &FrostCoordinatorRound1Config,
+) -> anyhow::Result<(), anyhow::Error> {
+    println!(
+        "Collecting {} Round 1 responses with min_signers={}",
+        c.round1_responses.len(),
+        c.min_signers
+    );
+
+    // Validate we have enough responses
+    if c.round1_responses.len() < c.min_signers as usize {
+        return Err(anyhow::anyhow!(
+            "Not enough Round 1 responses: got {}, need at least {}",
+            c.round1_responses.len(),
+            c.min_signers
+        ));
+    }
+
+    // Load and parse all Round 1 response files
+    let mut signer_responses = Vec::new();
+    for response_file in &c.round1_responses {
+        println!("Loading Round 1 response from: {}", response_file.display());
+
+        let content = std::fs::read_to_string(response_file)
+            .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", response_file.display(), e))?;
+
+        let response: SigningPackage = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", response_file.display(), e))?;
+
+        signer_responses.push(response);
+    }
+
+    // All responses should have the same signing session ID and base PSBT structure
+    let reference_session_id = &signer_responses[0].signing_session_id_hex;
+    let reference_psbt_base64 = &signer_responses[0].psbt_base64;
+
+    for (i, response) in signer_responses.iter().enumerate().skip(1) {
+        if response.signing_session_id_hex != *reference_session_id {
+            return Err(anyhow::anyhow!(
+                "Signing session ID mismatch in file {}: expected {}, got {}",
+                c.round1_responses[i].display(),
+                reference_session_id,
+                response.signing_session_id_hex
+            ));
+        }
+    }
+
+    // Start with the first PSBT and merge commitments from others
+    let mut combined_psbt = Psbt::deserialize(&BASE64_STANDARD.decode(reference_psbt_base64)?)
+        .map_err(|e| anyhow::anyhow!("Failed to deserialize reference PSBT: {}", e))?;
+
+    println!("Base PSBT has {} inputs", combined_psbt.inputs.len());
+
+    // For each additional response, merge their commitments into our combined PSBT
+    for (i, response) in signer_responses.iter().enumerate().skip(1) {
+        let signer_psbt = Psbt::deserialize(&BASE64_STANDARD.decode(&response.psbt_base64)?)
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to deserialize PSBT from {}: {}",
+                    c.round1_responses[i].display(),
+                    e
+                )
+            })?;
+
+        // Verify structure matches
+        if signer_psbt.inputs.len() != combined_psbt.inputs.len() {
+            return Err(anyhow::anyhow!(
+                "Input count mismatch in {}: expected {}, got {}",
+                c.round1_responses[i].display(),
+                combined_psbt.inputs.len(),
+                signer_psbt.inputs.len()
+            ));
+        }
+
+        // Merge proprietary fields (commitments) from signer's PSBT into combined PSBT
+        for (input_idx, signer_input) in signer_psbt.inputs.iter().enumerate() {
+            let combined_input = &mut combined_psbt.inputs[input_idx];
+
+            // Copy over all proprietary fields from this signer
+            for (key, value) in &signer_input.proprietary {
+                if combined_input.proprietary.contains_key(key) {
+                    // Only error on duplicate FROST signing commitment keys (subtype 2)
+                    // Other fields like ETH addresses (subtype 1) or UTXO versions (subtype 4) are
+                    // expected to be the same
+                    if key.prefix == b"btx" && key.subtype == 2 {
+                        let frost_id_hex = hex::encode(&key.key);
+                        return Err(anyhow::anyhow!(
+                            "Duplicate FROST identifier found in input {}: FROST_ID:{}. \
+                             This means two signers have the same identifier. \
+                             Each signer must have a unique --identifier value. \
+                             Check your Round 1 response files for duplicate identifiers.",
+                            input_idx,
+                            frost_id_hex
+                        ));
+                    }
+                }
+                combined_input.proprietary.insert(key.clone(), value.clone());
+            }
+        }
+
+        println!("Merged commitments from {}", c.round1_responses[i].display());
+    }
+
+    // Validate we have enough commitments for each input
+    for (input_idx, input) in combined_psbt.inputs.iter().enumerate() {
+        let commitment_count = input
+            .proprietary
+            .iter()
+            .filter(|(key, _)| {
+                // Count signing commitment proprietary fields (subtype 2)
+                key.prefix == b"btx" && key.subtype == 2
+            })
+            .count();
+
+        println!("Input {}: {} signing commitments", input_idx, commitment_count);
+
+        if commitment_count < c.min_signers as usize {
+            return Err(anyhow::anyhow!(
+                "Input {} has insufficient commitments: got {}, need {}",
+                input_idx,
+                commitment_count,
+                c.min_signers
+            ));
+        }
+    }
+
+    // Create the final signing package for Round 2
+    let signing_session_id = hex::decode(reference_session_id)
+        .map_err(|e| anyhow::anyhow!("Failed to decode signing session ID: {}", e))?;
+
+    if signing_session_id.len() != SIGNING_SESSION_ID_SIZE {
+        return Err(anyhow::anyhow!("Invalid signing session ID length"));
+    }
+
+    let round2_package = SigningPackage {
+        psbt_base64: BASE64_STANDARD.encode(combined_psbt.serialize()),
+        identifier_hex: "combined".to_string(), // Coordinator identifier
+        signing_session_id_hex: reference_session_id.clone(),
+    };
+
+    // Save the combined signing package
+    let package_json = serde_json::to_string_pretty(&round2_package)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize signing package: {}", e))?;
+
+    std::fs::write(&c.output_json, package_json)
+        .map_err(|e| anyhow::anyhow!("Failed to write output file: {}", e))?;
+
+    println!("✅ Combined signing package saved to: {}", c.output_json.display());
+    println!("   - Inputs: {}", combined_psbt.inputs.len());
+    println!("   - Total signers: {}", signer_responses.len());
+    println!("   - Min signers: {}", c.min_signers);
+
+    // Save debug PSBT
+    let debug_psbt_filename = c.output_json.with_extension("psbt.json");
+    let psbt_json = serde_json::to_string_pretty(&combined_psbt)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize debug PSBT: {}", e))?;
+
+    std::fs::write(&debug_psbt_filename, psbt_json)
+        .map_err(|e| anyhow::anyhow!("Failed to write debug PSBT: {}", e))?;
+
+    println!("📋 Debug PSBT saved to: {}", debug_psbt_filename.display());
 
     Ok(())
 }
