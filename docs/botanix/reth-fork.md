@@ -2,9 +2,9 @@
 
 ## Background
 
-Our project, **Macbeth**, relies heavily on [reth-rs](https://github.com/paradigmxyz/reth), the modular and high-performance Ethereum execution layer written in Rust. 
+Our project, **Macbeth**, relies heavily on [reth-rs](https://github.com/paradigmxyz/reth), the modular and high-performance Ethereum execution layer written in Rust.
 
-Until now, our approach has been to **clone the official Reth repository**, apply our changes directly, and periodically pull in upstream changes. While this gives us full control, it has also made **upstream merges extremely painful**. 
+Until now, our approach has been to **clone the official Reth repository**, apply our changes directly, and periodically pull in upstream changes. While this gives us full control, it has also made **upstream merges extremely painful**.
 
 Each new upstream release introduces a complex and error-prone merge process due to conflicts between our internal modifications and Reth's evolving codebase. As the pace of upstream development increases, this approach is becoming unsustainable.
 
@@ -36,7 +36,7 @@ This approach reduces merge conflicts, improves maintainability, and creates a s
 
 ### Reth Fork Management
 
-We maintain a fork at **https://github.com/botanix-labs/reth** with the following characteristics:
+We maintain a fork at **<https://github.com/botanix-labs/reth>** with the following characteristics:
 
 - **Minimal Changes**: Only patches that improve reth's extensibility
 - **Upstream Friendly**: All changes designed to be proposable to upstream
@@ -147,20 +147,20 @@ When applying patches to our fork, we follow this structured process:
 
 To keep our fork updated and in sync with the official Reth repository:
 
-1. **Select an Upstream Release**  
+1. **Select an Upstream Release**
     - Select a stable release or commit from the official Reth repository (e.g., `v1.1.0`)
 
-2. **Create Update PR**  
+2. **Create Update PR**
     - Create a new branch and PR for the update branch
 
-3. **Merge Upstream Changes**  
+3. **Merge Upstream Changes**
     - Merge the selected upstream commit into our update branch, resolving any conflicts
     - Make sure our extensibility patches are not overridden
 
-4. **Test and Validate**  
+4. **Test and Validate**
     - Ensure all our extensions still work and that we haven't broken existing functionality
 
-5. **Update Patched Crates Specification**  
+5. **Update Patched Crates Specification**
     - Update `PATCHED_CRATES.md` to reflect the new upstream base and any changes made during the merge
 
 6. **Review and Merge**
@@ -341,7 +341,7 @@ To transition from our current setup to the proposed clean architecture:
    # Clone the fork locally
    git clone https://github.com/botanix-labs/reth.git
    cd reth
-   
+
    # Add upstream remote
    git remote add upstream https://github.com/paradigmxyz/reth.git
    ```
