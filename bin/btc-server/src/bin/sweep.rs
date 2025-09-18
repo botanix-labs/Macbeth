@@ -5,11 +5,17 @@ use bitcoin::{consensus::encode::serialize_hex, psbt::Psbt, Amount, FeeRate, Out
 use btcserverlib::{
     database,
     database::version::UtxoVersion,
-    wallet::{psbt::PsbtInputExt, util::calculate_signed_tx_weight},
+    wallet::{
+        psbt::{PsbtExt, PsbtInputExt},
+        util::calculate_signed_tx_weight,
+    },
 };
 use clap::Parser;
 use frost_secp256k1_tr as frost;
-use frost_secp256k1_tr::round1::{SigningCommitments, SigningNonces};
+use frost_secp256k1_tr::{
+    round1::{SigningCommitments, SigningNonces},
+    SigningParameters,
+};
 use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -82,7 +88,20 @@ pub struct FrostCoordinatorRound1Config {
 }
 
 #[derive(Clone, Debug, Parser)]
-pub struct FrostRound2Config {}
+pub struct FrostRound2Config {
+    /// Input JSON file from coordinator (signing_package_round2.json)
+    #[arg(long)]
+    pub input_json: PathBuf,
+    /// Nonces JSON file saved from Round 1 (nonces_*.json)
+    #[arg(long)]
+    pub nonces_json: PathBuf,
+    /// Database path for key package
+    #[arg(long)]
+    pub db: PathBuf,
+    /// FROST identifier (same as used in Round 1)
+    #[arg(long)]
+    pub identifier: u16,
+}
 
 #[derive(Clone, Debug, Parser)]
 pub struct AddDummyUtxosConfig {
@@ -181,7 +200,7 @@ fn save_nonces_to_file(
 }
 
 /// Load secret nonces from JSON file for Round 2 usage
-fn _load_nonces_from_file(filename: &str) -> anyhow::Result<StoredNonces> {
+fn load_nonces_from_file(filename: &str) -> anyhow::Result<StoredNonces> {
     let content = std::fs::read_to_string(filename)
         .map_err(|e| anyhow::anyhow!("Failed to read nonces file {}: {}", filename, e))?;
 
@@ -614,8 +633,210 @@ pub async fn handle_frost_coordinator_round_1(
     Ok(())
 }
 
-pub async fn handle_frost_round_2(_c: &FrostRound2Config) -> anyhow::Result<(), anyhow::Error> {
-    println!("frost round 2");
+pub async fn handle_frost_round_2(c: &FrostRound2Config) -> anyhow::Result<(), anyhow::Error> {
+    println!("Processing FROST Round 2 signing");
+    println!("  Input JSON: {}", c.input_json.display());
+    println!("  Nonces JSON: {}", c.nonces_json.display());
+    println!("  Database: {}", c.db.display());
+    println!("  Identifier: {}", c.identifier);
+
+    // 1. Load input JSON (signing_package_round2.json)
+    println!("Loading coordinator's signing package from: {}", c.input_json.display());
+
+    let input_content = std::fs::read_to_string(&c.input_json)
+        .map_err(|e| anyhow::anyhow!("Failed to read input JSON file: {}", e))?;
+
+    let input_package: SigningPackage = serde_json::from_str(&input_content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse input JSON: {}", e))?;
+
+    println!("Successfully loaded signing package:");
+    println!("  Session ID: {}", input_package.signing_session_id_hex);
+    println!("  Identifier: {}", input_package.identifier_hex);
+
+    // Deserialize the PSBT with all commitments
+    let psbt = Psbt::deserialize(&BASE64_STANDARD.decode(&input_package.psbt_base64)?)
+        .map_err(|e| anyhow::anyhow!("Failed to deserialize PSBT: {}", e))?;
+
+    println!("PSBT loaded with {} inputs", psbt.inputs.len());
+
+    // 2. Load nonces file
+    println!("Loading secret nonces from: {}", c.nonces_json.display());
+
+    let stored_nonces = load_nonces_from_file(&c.nonces_json.to_string_lossy())
+        .map_err(|e| anyhow::anyhow!("Failed to load nonces file: {}", e))?;
+
+    println!("Successfully loaded nonces:");
+    println!("  Session ID: {}", stored_nonces.signing_session_id_hex);
+    println!("  FROST ID: {}", stored_nonces.frost_identifier_hex);
+    println!("  Nonce pairs: {}", stored_nonces.nonces.len());
+
+    // Validate session ID matches
+    if stored_nonces.signing_session_id_hex != input_package.signing_session_id_hex {
+        return Err(anyhow::anyhow!(
+            "Session ID mismatch: nonces file has {}, input has {}",
+            stored_nonces.signing_session_id_hex,
+            input_package.signing_session_id_hex
+        ));
+    }
+
+    // Validate number of nonces matches number of inputs
+    if stored_nonces.nonces.len() != psbt.inputs.len() {
+        return Err(anyhow::anyhow!(
+            "Nonce count mismatch: {} nonces for {} inputs",
+            stored_nonces.nonces.len(),
+            psbt.inputs.len()
+        ));
+    }
+
+    println!("Nonces validation passed");
+
+    // 3. Load key package from database
+    println!("Loading key package from database: {}", c.db.display());
+
+    let db =
+        database::Db::open(&c.db).map_err(|e| anyhow::anyhow!("Failed to open database: {}", e))?;
+
+    let key_package = db
+        .get_key_package()
+        .map_err(|e| anyhow::anyhow!("Failed to get key package from database: {}", e))?
+        .ok_or(anyhow::anyhow!("No key package found in database"))?;
+
+    println!("Successfully loaded key package from database");
+    println!("Key package identifier: {}", hex::encode(key_package.identifier().serialize()));
+
+    // Derive FROST identifier from config (same as Round 1)
+    let frost_identifier = frost::Identifier::derive(c.identifier.to_le_bytes().as_slice())
+        .map_err(|e| anyhow::anyhow!("Failed to derive FROST identifier: {}", e))?;
+
+    println!("Derived FROST identifier: {}", hex::encode(frost_identifier.serialize()));
+
+    // Validate our FROST identifier matches the nonces file
+    let expected_frost_id = hex::encode(frost_identifier.serialize());
+    if stored_nonces.frost_identifier_hex != expected_frost_id {
+        return Err(anyhow::anyhow!(
+            "FROST identifier mismatch: nonces file has {}, derived {}",
+            stored_nonces.frost_identifier_hex,
+            expected_frost_id
+        ));
+    }
+
+    println!("FROST identifier validation passed");
+
+    let mut psbt_copy = psbt.clone();
+
+    // Convert stored nonces back to FROST types
+    let mut signing_nonces_vec = Vec::new();
+    for nonce_data in &stored_nonces.nonces {
+        let signing_nonces =
+            SigningNonces::deserialize(&hex::decode(&nonce_data.signing_nonces_hex)?)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize signing nonces: {}", e))?;
+        let signing_commitments =
+            SigningCommitments::deserialize(&hex::decode(&nonce_data.signing_commitments_hex)?)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize signing commitments: {}", e))?;
+
+        signing_nonces_vec.push((signing_nonces, signing_commitments));
+    }
+
+    println!("Successfully loaded {} nonce pairs", signing_nonces_vec.len());
+
+    // Get signing packages from PSBT (same as btc-server)
+    let mut signing_packages = psbt_copy
+        .signing_packages()
+        .map_err(|e| anyhow::anyhow!("Failed to get signing packages from PSBT: {}", e))?;
+
+    println!("Generated {} signing packages from PSBT", signing_packages.len());
+
+    // Validate nonce count matches input count
+    if signing_nonces_vec.len() != psbt_copy.inputs.len() {
+        return Err(anyhow::anyhow!(
+            "Number of signing nonces ({}) does not match number of inputs ({})",
+            signing_nonces_vec.len(),
+            psbt_copy.inputs.len()
+        ));
+    }
+
+    // Validate that our signer is in each signing package and nonces match
+    for (index, signing_package) in signing_packages.iter().enumerate() {
+        let signing_commitments = signing_package.signing_commitments();
+        if !signing_commitments.contains_key(&frost_identifier) {
+            return Err(anyhow::anyhow!("Signer not found in signing package for input {}", index));
+        }
+
+        let our_sc = signing_commitments
+            .get(&frost_identifier)
+            .ok_or(anyhow::anyhow!("Failed to get our signing commitment for input {}", index))?;
+        let our_nonce = signing_nonces_vec
+            .get(index)
+            .ok_or(anyhow::anyhow!("Failed to get our nonce for input {}", index))?;
+
+        if our_sc != &our_nonce.1 {
+            return Err(anyhow::anyhow!("Invalid nonce pair for input {}", index));
+        }
+    }
+
+    // Generate partial signature for each input (following btc-server logic)
+    for (index, (signing_package, psbt_in)) in
+        signing_packages.iter_mut().zip(psbt_copy.inputs.iter_mut()).enumerate()
+    {
+        let eth_address_tweak = psbt_in.eth_address();
+
+        // Create signing parameters with eth_address tweak if present
+        let signing_parameters = SigningParameters {
+            tapscript_merkle_root: None,
+            additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
+        };
+
+        println!("Generating partial signature for input {}", index);
+
+        // Generate the partial signature using FROST
+        let sig = frost::round2::sign_with_tweak(
+            signing_package,
+            &signing_nonces_vec.get(index).expect("valid index").0,
+            &key_package,
+            &signing_parameters,
+        )
+        .map_err(|e| {
+            anyhow::anyhow!("Failed to generate partial signature for input {}: {}", index, e)
+        })?;
+
+        // Set the partial signature in the PSBT
+        psbt_in.set_partial_signature(frost_identifier, &sig);
+    }
+
+    // 5. Save Round 2 response with identifier prefix
+
+    let frost_id_hex = hex::encode(frost_identifier.serialize());
+    let frost_id_short = &frost_id_hex[..FROST_ID_PREFIX_LENGTH];
+
+    let round2_response = SigningPackage {
+        psbt_base64: BASE64_STANDARD.encode(psbt_copy.serialize()),
+        identifier_hex: frost_id_hex.clone(),
+        signing_session_id_hex: stored_nonces.signing_session_id_hex.clone(),
+    };
+
+    // Save with identifier prefix like Round 1
+    let output_filename = format!("round_2_response_{}.json", frost_id_short);
+    let output_path = std::env::current_dir()?.join(output_filename);
+
+    let response_json = serde_json::to_string_pretty(&round2_response)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize Round 2 response: {}", e))?;
+
+    std::fs::write(&output_path, response_json)
+        .map_err(|e| anyhow::anyhow!("Failed to write Round 2 response file: {}", e))?;
+
+    println!("✅ Round 2 response saved to: {}", output_path.display());
+    println!("   - FROST ID: {}", frost_id_hex);
+    println!("   - Session ID: {}", stored_nonces.signing_session_id_hex);
+    println!("   - Partial signatures: {}", psbt_copy.inputs.len());
+
+    // // Cleanup: remove nonces file for security
+    // if std::fs::remove_file(&c.nonces_json).is_ok() {
+    //     println!("🗑️  Nonces file removed for security");
+    // } else {
+    //     println!("⚠️  Warning: Could not remove nonces file - please delete manually");
+    // }
+
+    println!("🎉 FROST Round 2 signing complete!");
     Ok(())
 }
 
