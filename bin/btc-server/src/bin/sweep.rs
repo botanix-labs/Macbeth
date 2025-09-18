@@ -13,6 +13,7 @@ use btcserverlib::{
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use frost_secp256k1_tr::{
+    keys::Tweak,
     round1::{SigningCommitments, SigningNonces},
     SigningParameters,
 };
@@ -44,6 +45,8 @@ pub enum Commands {
     Coordinator2CollectCommitments(CollectCommitmentsConfig),
     #[command(name = "signer-2-generate-signatures")]
     Signer2GenerateSignatures(GenerateSignaturesConfig),
+    #[command(name = "coordinator-3-finalize-transaction")]
+    Coordinator3FinalizeTransaction(FinalizeTransactionConfig),
     #[command(name = "utils-add-dummy-utxos")]
     UtilsAddDummyUtxos(AddDummyUtxosConfig),
 }
@@ -101,6 +104,22 @@ pub struct GenerateSignaturesConfig {
     /// FROST identifier (same as used in Round 1)
     #[arg(long)]
     pub identifier: u16,
+}
+
+#[derive(Clone, Debug, Parser)]
+pub struct FinalizeTransactionConfig {
+    /// List of Round 2 response JSON files from signers  
+    #[arg(long, value_delimiter = ',')]
+    pub round2_responses: Vec<PathBuf>,
+    /// Minimum number of signers required for threshold
+    #[arg(long)]
+    pub min_signers: u16,
+    /// Output file for the finalized transaction hex
+    #[arg(long, default_value = "finalized_transaction.hex")]
+    pub output_file: PathBuf,
+    /// Database path for validation
+    #[arg(long)]
+    pub db: PathBuf,
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -314,6 +333,9 @@ async fn main() -> anyhow::Result<(), anyhow::Error> {
             handle_frost_coordinator_round_1(&config).await?
         }
         Commands::Signer2GenerateSignatures(config) => handle_frost_round_2(&config).await?,
+        Commands::Coordinator3FinalizeTransaction(config) => {
+            handle_finalize_transaction(&config).await?
+        }
         Commands::UtilsAddDummyUtxos(config) => handle_add_dummy_utxos(&config).await?,
     }
 
@@ -840,6 +862,230 @@ pub async fn handle_frost_round_2(
     // }
 
     println!("🎉 FROST Round 2 signing complete!");
+    Ok(())
+}
+
+pub async fn handle_finalize_transaction(
+    c: &FinalizeTransactionConfig,
+) -> anyhow::Result<(), anyhow::Error> {
+    println!("Processing FROST Round 3 - Finalizing transaction");
+    println!("  Round 2 responses: {}", c.round2_responses.len());
+    println!("  Min signers: {}", c.min_signers);
+    println!("  Database: {}", c.db.display());
+
+    // Validate we have enough responses
+    if c.round2_responses.len() < c.min_signers as usize {
+        return Err(anyhow::anyhow!(
+            "Not enough Round 2 responses: got {}, need at least {}",
+            c.round2_responses.len(),
+            c.min_signers
+        ));
+    }
+
+    // Load and parse all Round 2 response files
+    let mut signer_responses = Vec::new();
+    for response_file in &c.round2_responses {
+        println!("Loading Round 2 response from: {}", response_file.display());
+
+        let content = std::fs::read_to_string(response_file)
+            .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", response_file.display(), e))?;
+
+        let response: SigningPackage = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", response_file.display(), e))?;
+
+        signer_responses.push(response);
+    }
+
+    // All responses should have the same signing session ID
+    let reference_session_id = &signer_responses[0].signing_session_id_hex;
+    for (i, response) in signer_responses.iter().enumerate().skip(1) {
+        if response.signing_session_id_hex != *reference_session_id {
+            return Err(anyhow::anyhow!(
+                "Signing session ID mismatch in file {}: expected {}, got {}",
+                c.round2_responses[i].display(),
+                reference_session_id,
+                response.signing_session_id_hex
+            ));
+        }
+    }
+
+    // Start with the first PSBT and merge partial signatures from others
+    let mut combined_psbt =
+        Psbt::deserialize(&BASE64_STANDARD.decode(&signer_responses[0].psbt_base64)?)
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize reference PSBT: {}", e))?;
+
+    println!("Base PSBT has {} inputs", combined_psbt.inputs.len());
+
+    // For each additional response, merge their partial signatures into our combined PSBT
+    for (i, response) in signer_responses.iter().enumerate().skip(1) {
+        let signer_psbt = Psbt::deserialize(&BASE64_STANDARD.decode(&response.psbt_base64)?)
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to deserialize PSBT from {}: {}",
+                    c.round2_responses[i].display(),
+                    e
+                )
+            })?;
+
+        // Verify structure matches
+        if signer_psbt.inputs.len() != combined_psbt.inputs.len() {
+            return Err(anyhow::anyhow!(
+                "Input count mismatch in {}: expected {}, got {}",
+                c.round2_responses[i].display(),
+                combined_psbt.inputs.len(),
+                signer_psbt.inputs.len()
+            ));
+        }
+
+        // Merge partial signatures from signer's PSBT into combined PSBT
+        for (input_idx, signer_input) in signer_psbt.inputs.iter().enumerate() {
+            let combined_input = &mut combined_psbt.inputs[input_idx];
+
+            // Copy over partial signatures (subtype 3)
+            for (key, value) in &signer_input.proprietary {
+                if key.prefix == b"btx" && key.subtype == 3 {
+                    // Check for duplicate partial signatures
+                    if combined_input.proprietary.contains_key(key) {
+                        let frost_id_hex = hex::encode(&key.key);
+                        return Err(anyhow::anyhow!(
+                            "Duplicate partial signature found in input {}: FROST_ID:{}. \
+                             This means the same signer provided multiple signatures.",
+                            input_idx,
+                            frost_id_hex
+                        ));
+                    }
+                    combined_input.proprietary.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        println!("Merged partial signatures from {}", c.round2_responses[i].display());
+    }
+
+    // Validate we have enough partial signatures for each input
+    for (input_idx, input) in combined_psbt.inputs.iter().enumerate() {
+        let signature_count = input
+            .proprietary
+            .iter()
+            .filter(|(key, _)| {
+                // Count partial signature proprietary fields (subtype 3)
+                key.prefix == b"btx" && key.subtype == 3
+            })
+            .count();
+
+        println!("Input {}: {} partial signatures", input_idx, signature_count);
+
+        if signature_count < c.min_signers as usize {
+            return Err(anyhow::anyhow!(
+                "Input {} has insufficient partial signatures: got {}, need {}",
+                input_idx,
+                signature_count,
+                c.min_signers
+            ));
+        }
+    }
+
+    // Now perform the actual aggregation using btc-server's finalize_signing logic
+    println!("Starting signature aggregation...");
+
+    // Load database to get public key package
+    let db =
+        database::Db::open(&c.db).map_err(|e| anyhow::anyhow!("Failed to open database: {}", e))?;
+
+    let pk_package = db
+        .get_public_key_package()
+        .map_err(|e| anyhow::anyhow!("Failed to get public key package from database: {}", e))?
+        .ok_or(anyhow::anyhow!("No public key package found in database"))?;
+
+    // Extract signing packages from PSBT (reusing btc-server logic)
+    let signing_packages = combined_psbt
+        .signing_packages()
+        .map_err(|e| anyhow::anyhow!("Failed to get signing packages from PSBT: {}", e))?;
+
+    println!("Generated {} signing packages from PSBT", signing_packages.len());
+
+    // Aggregate signatures for each input (based on btc-server's finalize_signing)
+    for (index, psbt_input) in combined_psbt.inputs.iter_mut().enumerate() {
+        let signing_package = signing_packages
+            .get(index)
+            .ok_or(anyhow::anyhow!("Missing signing package for input {}", index))?;
+
+        let partial_sig = psbt_input.all_partial_signatures();
+        let eth_address_tweak = psbt_input.eth_address();
+
+        let signing_parameters = SigningParameters {
+            tapscript_merkle_root: None,
+            additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
+        };
+
+        println!("Aggregating signatures for input {}", index);
+        println!("  Partial signatures: {}", partial_sig.len());
+
+        // Perform FROST aggregation (core btc-server logic)
+        let agg_sig = frost::aggregate_with_tweak(
+            signing_package,
+            &partial_sig,
+            &pk_package,
+            &signing_parameters,
+        )
+        .map_err(|e| {
+            anyhow::anyhow!("Failed to aggregate signatures for input {}: {}", index, e)
+        })?;
+
+        // Verify aggregated signature (btc-server validation)
+        let effective_key = pk_package.clone().tweak(&signing_parameters);
+        effective_key.verifying_key().verify(signing_package.message(), &agg_sig).map_err(|e| {
+            anyhow::anyhow!("Signature verification failed for input {}: {}", index, e)
+        })?;
+
+        // Convert to Bitcoin format and finalize PSBT input (btc-server logic)
+        let secp_sig = bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()?)
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to convert signature for input {}: {}", index, e)
+            })?;
+
+        let hash_ty = bitcoin::sighash::TapSighashType::Default;
+        let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
+        psbt_input.sighash_type = Some(sighash_type);
+        psbt_input.tap_key_sig =
+            Some(bitcoin::taproot::Signature { signature: secp_sig, sighash_type: hash_ty });
+
+        println!("✅ Input {} signature aggregated and verified", index);
+    }
+
+    // Clone PSBT for debug output before extracting transaction
+    let psbt_for_debug = combined_psbt.clone();
+
+    // Extract the final signed transaction
+    let final_tx = combined_psbt
+        .extract_tx()
+        .map_err(|e| anyhow::anyhow!("Failed to extract final transaction: {}", e))?;
+
+    let tx_hex = bitcoin::consensus::encode::serialize_hex(&final_tx);
+
+    // Save to output file
+    std::fs::write(&c.output_file, &tx_hex)
+        .map_err(|e| anyhow::anyhow!("Failed to write transaction hex to file: {}", e))?;
+
+    println!("🎉 Transaction finalization complete!");
+    println!("   - Transaction hex saved to: {}", c.output_file.display());
+    println!("   - Transaction ID: {}", final_tx.compute_txid());
+    println!(
+        "   - Transaction size: {} bytes",
+        bitcoin::consensus::encode::serialize(&final_tx).len()
+    );
+    println!("   - Ready for broadcast!");
+
+    // Save debug finalized PSBT
+    let debug_psbt_filename = c.output_file.with_extension("psbt.json");
+    let psbt_json = serde_json::to_string_pretty(&psbt_for_debug)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize debug PSBT: {}", e))?;
+
+    std::fs::write(&debug_psbt_filename, psbt_json)
+        .map_err(|e| anyhow::anyhow!("Failed to write debug PSBT: {}", e))?;
+
+    println!("📋 Debug finalized PSBT saved to: {}", debug_psbt_filename.display());
+
     Ok(())
 }
 
