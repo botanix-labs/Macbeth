@@ -36,20 +36,20 @@ pub struct Cli {
 
 #[derive(Clone, Debug, Parser)]
 pub enum Commands {
-    #[command(name = "make-sweep-psbt")]
-    MakeSweepPsbt(MakeSweepPsbtConfig),
-    #[command(name = "frost-round-1")]
-    FrostRound1(FrostRound1Config),
-    #[command(name = "frost-coordinator-round-1")]
-    FrostCoordinatorRound1(FrostCoordinatorRound1Config),
-    #[command(name = "frost-round-2")]
-    FrostRound2(FrostRound2Config),
-    #[command(name = "add-dummy-utxos")]
-    AddDummyUtxos(AddDummyUtxosConfig),
+    #[command(name = "coordinator-1-create-psbt")]
+    Coordinator1CreatePsbt(CreatePsbtConfig),
+    #[command(name = "signer-1-generate-commitments")]
+    Signer1GenerateCommitments(GenerateCommitmentsConfig),
+    #[command(name = "coordinator-2-collect-commitments")]
+    Coordinator2CollectCommitments(CollectCommitmentsConfig),
+    #[command(name = "signer-2-generate-signatures")]
+    Signer2GenerateSignatures(GenerateSignaturesConfig),
+    #[command(name = "utils-add-dummy-utxos")]
+    UtilsAddDummyUtxos(AddDummyUtxosConfig),
 }
 
 #[derive(Clone, Debug, Parser)]
-pub struct MakeSweepPsbtConfig {
+pub struct CreatePsbtConfig {
     #[arg(long)]
     pub db: PathBuf,
     #[arg(long)]
@@ -62,7 +62,7 @@ pub struct MakeSweepPsbtConfig {
 }
 
 #[derive(Clone, Debug, Parser)]
-pub struct FrostRound1Config {
+pub struct GenerateCommitmentsConfig {
     #[arg(long)]
     pub input_json: PathBuf,
     #[arg(long)]
@@ -72,7 +72,7 @@ pub struct FrostRound1Config {
 }
 
 #[derive(Clone, Debug, Parser)]
-pub struct FrostCoordinatorRound1Config {
+pub struct CollectCommitmentsConfig {
     /// List of Round 1 response JSON files from signers
     #[arg(long, value_delimiter = ',')]
     pub round1_responses: Vec<PathBuf>,
@@ -88,7 +88,7 @@ pub struct FrostCoordinatorRound1Config {
 }
 
 #[derive(Clone, Debug, Parser)]
-pub struct FrostRound2Config {
+pub struct GenerateSignaturesConfig {
     /// Input JSON file from coordinator (signing_package_round2.json)
     #[arg(long)]
     pub input_json: PathBuf,
@@ -308,19 +308,19 @@ fn calculate_sweep_fee(
 async fn main() -> anyhow::Result<(), anyhow::Error> {
     let cli = Cli::parse();
     match cli.cmd {
-        Commands::MakeSweepPsbt(config) => handle_make_sweep_psbt(&config).await?,
-        Commands::FrostRound1(config) => handle_frost_round_1(&config).await?,
-        Commands::FrostCoordinatorRound1(config) => {
+        Commands::Coordinator1CreatePsbt(config) => handle_make_sweep_psbt(&config).await?,
+        Commands::Signer1GenerateCommitments(config) => handle_frost_round_1(&config).await?,
+        Commands::Coordinator2CollectCommitments(config) => {
             handle_frost_coordinator_round_1(&config).await?
         }
-        Commands::FrostRound2(config) => handle_frost_round_2(&config).await?,
-        Commands::AddDummyUtxos(config) => handle_add_dummy_utxos(&config).await?,
+        Commands::Signer2GenerateSignatures(config) => handle_frost_round_2(&config).await?,
+        Commands::UtilsAddDummyUtxos(config) => handle_add_dummy_utxos(&config).await?,
     }
 
     Ok(())
 }
 
-pub async fn handle_make_sweep_psbt(c: &MakeSweepPsbtConfig) -> anyhow::Result<(), anyhow::Error> {
+pub async fn handle_make_sweep_psbt(c: &CreatePsbtConfig) -> anyhow::Result<(), anyhow::Error> {
     // get all utxos from the database
     let db = database::Db::open(&c.db).expect("failed to open db");
     let utxos: Vec<database::Utxo> = db.iter_utxos().collect::<Result<Vec<_>, _>>()?;
@@ -349,7 +349,6 @@ pub async fn handle_make_sweep_psbt(c: &MakeSweepPsbtConfig) -> anyhow::Result<(
 
     let psbt = create_sweep_psbt(utxos, &script_pubkey, output_value);
 
-    // TODO: store the psbt in a new json file
     let psbt_json = serde_json::to_string(&psbt).expect("failed to serialize psbt");
     let mut file = File::create("psbt.json").expect("failed to create file");
     file.write_all(psbt_json.as_bytes()).expect("failed to write to file");
@@ -387,7 +386,9 @@ pub async fn handle_make_sweep_psbt(c: &MakeSweepPsbtConfig) -> anyhow::Result<(
     Ok(())
 }
 
-pub async fn handle_frost_round_1(c: &FrostRound1Config) -> anyhow::Result<(), anyhow::Error> {
+pub async fn handle_frost_round_1(
+    c: &GenerateCommitmentsConfig,
+) -> anyhow::Result<(), anyhow::Error> {
     // Read the input JSON file
     let input_json = std::fs::read_to_string(&c.input_json)
         .map_err(|e| anyhow::anyhow!("Failed to read input JSON file: {}", e))?;
@@ -469,7 +470,7 @@ pub async fn handle_frost_round_1(c: &FrostRound1Config) -> anyhow::Result<(), a
 }
 
 pub async fn handle_frost_coordinator_round_1(
-    c: &FrostCoordinatorRound1Config,
+    c: &CollectCommitmentsConfig,
 ) -> anyhow::Result<(), anyhow::Error> {
     println!(
         "Collecting {} Round 1 responses with min_signers={}",
@@ -633,7 +634,9 @@ pub async fn handle_frost_coordinator_round_1(
     Ok(())
 }
 
-pub async fn handle_frost_round_2(c: &FrostRound2Config) -> anyhow::Result<(), anyhow::Error> {
+pub async fn handle_frost_round_2(
+    c: &GenerateSignaturesConfig,
+) -> anyhow::Result<(), anyhow::Error> {
     println!("Processing FROST Round 2 signing");
     println!("  Input JSON: {}", c.input_json.display());
     println!("  Nonces JSON: {}", c.nonces_json.display());
