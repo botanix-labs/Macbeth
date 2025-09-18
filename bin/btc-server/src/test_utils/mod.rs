@@ -333,8 +333,10 @@ pub fn create_tx(num_inputs: usize, num_outputs: usize, change: Option<TxOut>) -
 
     let mut outputs = vec![];
     for _ in 0..num_outputs {
-        outputs
-            .push(TxOut { value: Amount::from_sat(1000), script_pubkey: random_p2wpkh_script() });
+        outputs.push(TxOut {
+            value: Amount::from_sat(1000),
+            script_pubkey: random_p2wpkh_scriptpubkey(),
+        });
     }
 
     if let Some(change) = change {
@@ -416,7 +418,7 @@ pub fn store_pending_pegout(db: &database::Db) -> PegoutId {
     let pegout_request = PegoutRequest {
         id: pegout_id,
         value: Amount::from_sat(1000),
-        spk: random_p2wpkh_script(),
+        spk: random_p2wpkh_scriptpubkey(),
         botanix_height: 0,
         timestamp: None,
     };

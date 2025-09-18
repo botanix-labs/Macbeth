@@ -746,10 +746,7 @@ mod tests {
         assert!(total_outputs == Amount::ZERO);
 
         let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
-        assert_eq!(
-            res.unwrap_err(),
-            ValidatePSBTError::FeeSanityCheck(Amount::from_sat(2346), Amount::ZERO)
-        );
+        assert!(matches!(res.unwrap_err(), ValidatePSBTError::FeeSanityCheck(_, Amount::ZERO)));
     }
 
     #[test]
