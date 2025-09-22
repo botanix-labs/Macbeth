@@ -10,7 +10,6 @@ use btcserverlib::{
         util::calculate_signed_tx_weight,
     },
 };
-use miniscript::psbt::PsbtExt as MiniscriptPsbtExt;
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use frost_secp256k1_tr::{
@@ -18,6 +17,7 @@ use frost_secp256k1_tr::{
     round1::{SigningCommitments, SigningNonces},
     SigningParameters,
 };
+use miniscript::psbt::PsbtExt as MiniscriptPsbtExt;
 use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -48,8 +48,10 @@ pub enum Commands {
     Signer2GenerateSignatures(GenerateSignaturesConfig),
     #[command(name = "coordinator-3-finalize-transaction")]
     Coordinator3FinalizeTransaction(FinalizeTransactionConfig),
-    #[command(name = "utils-add-dummy-utxos")]
-    UtilsAddDummyUtxos(AddDummyUtxosConfig),
+    #[command(name = "test-add-dummy-utxos")]
+    TestAddDummyUtxos(AddDummyUtxosConfig),
+    #[command(name = "test-generate-change-address")]
+    TestGenerateChangeAddress(GenerateChangeAddressConfig),
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -127,6 +129,19 @@ pub struct FinalizeTransactionConfig {
 pub struct AddDummyUtxosConfig {
     #[arg(long)]
     pub db: PathBuf,
+    /// Explicitly confirm this is not production (for safety)
+    #[arg(long)]
+    pub not_prod: bool,
+}
+
+#[derive(Clone, Debug, Parser)]
+pub struct GenerateChangeAddressConfig {
+    /// Network: regtest, testnet, or bitcoin
+    #[arg(long, default_value = "testnet")]
+    pub network: String,
+    /// Explicitly confirm this is not production (for safety)
+    #[arg(long)]
+    pub not_prod: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -337,7 +352,10 @@ async fn main() -> anyhow::Result<(), anyhow::Error> {
         Commands::Coordinator3FinalizeTransaction(config) => {
             handle_finalize_transaction(&config).await?
         }
-        Commands::UtilsAddDummyUtxos(config) => handle_add_dummy_utxos(&config).await?,
+        Commands::TestAddDummyUtxos(config) => handle_add_dummy_utxos(&config).await?,
+        Commands::TestGenerateChangeAddress(config) => {
+            handle_generate_change_address(&config).await?
+        }
     }
 
     Ok(())
@@ -827,6 +845,12 @@ pub async fn handle_frost_round_2(
 
         // Set the partial signature in the PSBT
         psbt_in.set_partial_signature(frost_identifier, &sig);
+
+        println!(
+            "✅ Partial signature generated for input {}: {}",
+            index,
+            hex::encode(sig.serialize())
+        );
     }
 
     // 5. Save Round 2 response with identifier prefix
@@ -1033,9 +1057,28 @@ pub async fn handle_finalize_transaction(
             anyhow::anyhow!("Failed to aggregate signatures for input {}: {}", index, e)
         })?;
 
+        println!("🔍 Aggregating {} partial signatures for input {}", partial_sig.len(), index);
+        for (frost_id, sig) in &partial_sig {
+            println!(
+                "   - FROST ID: {}, Signature: {}",
+                hex::encode(frost_id.serialize()),
+                hex::encode(sig.serialize())
+            );
+        }
+
         // Verify aggregated signature (btc-server validation)
         let effective_key = pk_package.clone().tweak(&signing_parameters);
         effective_key.verifying_key().verify(signing_package.message(), &agg_sig).map_err(|e| {
+            println!("❌ Signature verification failed for input {}: {}", index, e);
+            println!("   - Message: {}", hex::encode(signing_package.message()));
+            println!(
+                "   - Aggregated signature: {}",
+                hex::encode(agg_sig.serialize().unwrap_or_default())
+            );
+            println!(
+                "   - Effective key: {}",
+                hex::encode(effective_key.verifying_key().serialize().unwrap_or_default())
+            );
             anyhow::anyhow!("Signature verification failed for input {}: {}", index, e)
         })?;
 
@@ -1052,37 +1095,95 @@ pub async fn handle_finalize_transaction(
             Some(bitcoin::taproot::Signature { signature: secp_sig, sighash_type: hash_ty });
 
         println!("✅ Input {} signature aggregated and verified", index);
+        println!("   - Bitcoin signature: {}", hex::encode(secp_sig.serialize()));
+        println!("   - Sighash type: {:?}", hash_ty);
     }
 
     // Clone PSBT for debug output before extracting transaction
     let psbt_for_debug = combined_psbt.clone();
 
     // Finalize PSBT to convert tap_key_sig to witness data (same as btc-server)
+    println!("🔧 Starting PSBT finalization...");
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let mut original_psbt = combined_psbt.clone();
+
+    // Debug: Check tap_key_sig before finalization
+    for (index, input) in combined_psbt.inputs.iter().enumerate() {
+        if let Some(tap_sig) = &input.tap_key_sig {
+            println!(
+                "🔍 Input {} has tap_key_sig: {}",
+                index,
+                hex::encode(tap_sig.signature.serialize())
+            );
+        } else {
+            println!("❌ Input {} missing tap_key_sig!", index);
+        }
+    }
+
     if let Err(errs) = MiniscriptPsbtExt::finalize_mut(&mut combined_psbt, &secp) {
-        println!("Had {} PSBT finalization errors:", errs.len());
+        println!("❌ Had {} PSBT finalization errors:", errs.len());
         for e in &errs {
-            println!("PSBT finalization error: {}", e);
+            println!("   - PSBT finalization error: {}", e);
         }
         return Err(anyhow::anyhow!("PSBT finalization failed with {} errors", errs.len()));
     }
 
+    println!("✅ PSBT finalization successful");
+
+    // Debug: Check final_script_witness after finalization
+    for (index, input) in combined_psbt.inputs.iter().enumerate() {
+        if let Some(witness) = &input.final_script_witness {
+            println!("🔍 Input {} final_script_witness: {} bytes", index, witness.len());
+            for (i, item) in witness.iter().enumerate() {
+                println!(
+                    "   - Witness item {}: {} bytes, hex: {}",
+                    i,
+                    item.len(),
+                    hex::encode(item)
+                );
+            }
+        } else {
+            println!("❌ Input {} missing final_script_witness after finalization!", index);
+        }
+    }
+
     // Copy the finalized witness data back to original PSBT
     for (index, input) in original_psbt.inputs.iter_mut().enumerate() {
-        input.final_script_witness = combined_psbt.inputs[index]
-            .final_script_witness
-            .clone();
+        input.final_script_witness = combined_psbt.inputs[index].final_script_witness.clone();
+
+        if input.final_script_witness.is_some() {
+            println!("✅ Copied witness data to original PSBT input {}", index);
+        } else {
+            println!("❌ No witness data to copy for input {}", index);
+        }
     }
 
     // Extract the final signed transaction
+    println!("🔧 Extracting final transaction...");
     let final_tx = original_psbt
         .extract_tx()
         .map_err(|e| anyhow::anyhow!("Failed to extract final transaction: {}", e))?;
 
+    // Debug: Check extracted transaction witness
+    for (index, input) in final_tx.input.iter().enumerate() {
+        println!("🔍 Final transaction input {} witness:", index);
+        if input.witness.is_empty() {
+            println!("   ❌ Empty witness!");
+        } else {
+            println!("   ✅ Witness has {} items", input.witness.len());
+            for (i, item) in input.witness.iter().enumerate() {
+                println!("     - Item {}: {} bytes, hex: {}", i, item.len(), hex::encode(item));
+            }
+        }
+    }
+
     // Serialize transaction with witness data (same as btc-server)
     let tx_bytes = bitcoin::consensus::encode::serialize(&final_tx);
     let tx_hex = hex::encode(&tx_bytes);
+
+    println!("🔍 Transaction serialization:");
+    println!("   - Raw bytes length: {}", tx_bytes.len());
+    println!("   - Hex length: {}", tx_hex.len());
 
     // Save to output file
     std::fs::write(&c.output_file, &tx_hex)
@@ -1111,6 +1212,13 @@ pub async fn handle_finalize_transaction(
 }
 
 pub async fn handle_add_dummy_utxos(c: &AddDummyUtxosConfig) -> anyhow::Result<(), anyhow::Error> {
+    // Safety check: require explicit confirmation this is not production
+    if !c.not_prod {
+        return Err(anyhow::anyhow!(
+            "Test utilities require --not-prod flag for safety. This command should not be used in production."
+        ));
+    }
+
     let db = database::Db::open(&c.db).expect("failed to open db");
     add_dummy_utxos_to_db(&db).expect("failed to add dummy utxos to db");
     println!("dummy utxos added to db");
@@ -1119,10 +1227,10 @@ pub async fn handle_add_dummy_utxos(c: &AddDummyUtxosConfig) -> anyhow::Result<(
 
 pub fn dummy_utxos() -> Result<Vec<bitcoincore_rpc::json::Utxo>, anyhow::Error> {
     let json_data = r#"[{
-  "txid": "990b00f269d4e4f96d394e2f435e26eb91f8851760ea44ab1b0572b8f8eaa97b",
+  "txid": "6329f2088f6e7c8d382f8fc6c5525f730310bae82e2b3859562308c473d5cdf3",
   "vout": 0,
   "desc": "rawtr(ignored)#ignored",
-  "scriptPubKey": "5120227a5a9ed1bdb1081737fa940de6cfc2b0e0e8c59c7277a4371690ea041bc145",
+  "scriptPubKey": "51201010449b1248eb11b4731a8b8dc0fe8ca0c1367f9d361a33801457b2cfc1d1c8",
   "amount": 0.00012333,
   "height": 0
 }
@@ -1138,9 +1246,15 @@ pub fn dummy_utxos() -> Result<Vec<bitcoincore_rpc::json::Utxo>, anyhow::Error> 
     Ok(utxos)
 }
 
-// THIS IS PURELY TO HELP WITH TESTING AND SHOULD NOT BE MERGED INTO THE FINAL CODE
 pub fn add_dummy_utxos_to_db(db: &database::Db) -> Result<(), anyhow::Error> {
     // Use the above code as a reference for how to convert the dummy utxos to database::Utxo
+
+    // Clear existing UTXOs by iterating and removing them
+    let existing_utxos: Vec<database::Utxo> = db.iter_utxos().collect::<Result<Vec<_>, _>>()?;
+    for utxo in existing_utxos {
+        let _ = db.remove_utxo(&utxo.outpoint);
+    }
+
     let utxos = dummy_utxos()?;
     let utxo_refs: Vec<database::Utxo> = utxos
         .iter()
@@ -1156,5 +1270,46 @@ pub fn add_dummy_utxos_to_db(db: &database::Db) -> Result<(), anyhow::Error> {
 
     let utxo_refs_borrowed: Vec<&database::Utxo> = utxo_refs.iter().collect();
     db.store_utxos(&utxo_refs_borrowed).expect("failed to store utxos");
+    Ok(())
+}
+
+pub async fn handle_generate_change_address(
+    c: &GenerateChangeAddressConfig,
+) -> anyhow::Result<(), anyhow::Error> {
+    // Safety check: require explicit confirmation this is not production
+    if !c.not_prod {
+        return Err(anyhow::anyhow!(
+            "Test utilities require --not-prod flag for safety. This command should not be used in production."
+        ));
+    }
+
+    use bitcoin::Network;
+    use btcserverlib::wallet::address::generate_taproot_change_scriptpubkey;
+
+    // Hardcode the test vector aggregate public key
+    let agg_pubkey_hex = "03b49757c09b228587cb73a8db35517f1050b364f7b80a19f9dbf990f507f5ed87";
+
+    let network = match c.network.to_lowercase().as_str() {
+        "bitcoin" | "mainnet" => Network::Bitcoin,
+        "testnet" => Network::Testnet,
+        "regtest" => Network::Regtest,
+        _ => return Err(anyhow::anyhow!("Invalid network: {}", c.network)),
+    };
+
+    // Parse the aggregate public key
+    let secp_pubkey = bitcoin::secp256k1::PublicKey::from_str(agg_pubkey_hex)
+        .map_err(|e| anyhow::anyhow!("Failed to parse aggregate public key: {}", e))?;
+
+    // Generate change script pubkey (same method as btc-server)
+    let change_script = generate_taproot_change_scriptpubkey(&secp_pubkey);
+    let change_address = bitcoin::Address::from_script(&change_script, network)
+        .map_err(|e| anyhow::anyhow!("Failed to create change address: {}", e))?;
+
+    println!("🔧 CHANGE ADDRESS GENERATOR (TESTING)");
+    println!("   - Network: {}", c.network);
+    println!("   - Aggregate pubkey: {}", agg_pubkey_hex);
+    println!("   - Change script pubkey: {}", hex::encode(change_script.to_bytes()));
+    println!("   - Change address: {}", change_address);
+
     Ok(())
 }
