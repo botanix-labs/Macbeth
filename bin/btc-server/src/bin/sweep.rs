@@ -10,6 +10,7 @@ use btcserverlib::{
         util::calculate_signed_tx_weight,
     },
 };
+use miniscript::psbt::PsbtExt as MiniscriptPsbtExt;
 use clap::Parser;
 use frost_secp256k1_tr as frost;
 use frost_secp256k1_tr::{
@@ -1056,12 +1057,32 @@ pub async fn handle_finalize_transaction(
     // Clone PSBT for debug output before extracting transaction
     let psbt_for_debug = combined_psbt.clone();
 
+    // Finalize PSBT to convert tap_key_sig to witness data (same as btc-server)
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let mut original_psbt = combined_psbt.clone();
+    if let Err(errs) = MiniscriptPsbtExt::finalize_mut(&mut combined_psbt, &secp) {
+        println!("Had {} PSBT finalization errors:", errs.len());
+        for e in &errs {
+            println!("PSBT finalization error: {}", e);
+        }
+        return Err(anyhow::anyhow!("PSBT finalization failed with {} errors", errs.len()));
+    }
+
+    // Copy the finalized witness data back to original PSBT
+    for (index, input) in original_psbt.inputs.iter_mut().enumerate() {
+        input.final_script_witness = combined_psbt.inputs[index]
+            .final_script_witness
+            .clone();
+    }
+
     // Extract the final signed transaction
-    let final_tx = combined_psbt
+    let final_tx = original_psbt
         .extract_tx()
         .map_err(|e| anyhow::anyhow!("Failed to extract final transaction: {}", e))?;
 
-    let tx_hex = bitcoin::consensus::encode::serialize_hex(&final_tx);
+    // Serialize transaction with witness data (same as btc-server)
+    let tx_bytes = bitcoin::consensus::encode::serialize(&final_tx);
+    let tx_hex = hex::encode(&tx_bytes);
 
     // Save to output file
     std::fs::write(&c.output_file, &tx_hex)
@@ -1098,28 +1119,12 @@ pub async fn handle_add_dummy_utxos(c: &AddDummyUtxosConfig) -> anyhow::Result<(
 
 pub fn dummy_utxos() -> Result<Vec<bitcoincore_rpc::json::Utxo>, anyhow::Error> {
     let json_data = r#"[{
-  "txid": "d8b268a579ffbc5e425d69ef5f7e0f1c8db8c73b6b13b6f5a06caf4788129705",
-  "vout": 1,
-  "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
-  "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
-  "amount": 0.00180655,
-  "height": 903664
-},
-{
-  "txid": "2792d9c79713b7b3d2c1d0267ec567a9e05f79b18355c782f379b35ca08bd50d",
-  "vout": 1,
-  "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
-  "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
-  "amount": 0.01088904,
-  "height": 904468
-},
-{
-  "txid": "365e926b53fd9c01bda2d44b4ce2fd04eb97c63fffc732c8813cb7f0e625c40e",
-  "vout": 2,
-  "scriptPubKey": "5120f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8",
-  "desc": "rawtr(f1de953e2a8b167981e9aaae3f02856dd491c431e0a37534a3859a18096feae8)#0wq8cgc9",
-  "amount": 0.00146289,
-  "height": 904173
+  "txid": "990b00f269d4e4f96d394e2f435e26eb91f8851760ea44ab1b0572b8f8eaa97b",
+  "vout": 0,
+  "desc": "rawtr(ignored)#ignored",
+  "scriptPubKey": "5120227a5a9ed1bdb1081737fa940de6cfc2b0e0e8c59c7277a4371690ea041bc145",
+  "amount": 0.00012333,
+  "height": 0
 }
 ]"#;
 
