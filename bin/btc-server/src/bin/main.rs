@@ -751,6 +751,7 @@ where
                 self.config.identifier,
                 block_result.height as i64,
             );
+            // TODO: increase pegin counter metric with req.pegins.len()
         }
 
         // process and store pending pegout requests
@@ -1092,6 +1093,8 @@ where
         &self,
         req: tonic::Request<rpc::SigningPackageRequest>,
     ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
+        // TODO: increase metric counter here for 'started_round1_signing'
+
         self.validate_jwt(&req)?;
         // Ensure we have a key package
         self.db.get_key_package().to_status()?;
@@ -1306,6 +1309,7 @@ where
             signing_session_id: signing_session_id.to_vec(),
         };
 
+        // TODO?: increase metric counter here for 'completed_round2_signing'. Maybe not necessary, but it could be a helpful metric to troubleshoot if there are signing failures?
         Ok(tonic::Response::new(res))
     }
 
@@ -1382,6 +1386,9 @@ where
                 self.config.identifier,
                 tip_height as i64,
             );
+            // TODO: increase metric counter here for broadcasted pegout tx, but only if 
+            // it was successful, i.e. Ok(tx_id) => Ok(Some(tx_id)),
+            // Otherwise, perhaps we could have a metric for failed broadcast attempts?
         }
 
         let pegout_ids = psbt
@@ -1397,6 +1404,7 @@ where
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
         // remove the pegouts from the telemetry gauge
         if let Some(telemetry) = self.telemetry.as_ref() {
+            // TODO: increase metric counter for pegouts using pegout_ids.len()
             let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
             telemetry.set_pending_pegouts(
                 self.btc_network,
