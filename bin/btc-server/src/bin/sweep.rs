@@ -25,7 +25,6 @@ use std::str::FromStr;
 // Constants
 const DEFAULT_NONCE_FILE_PERMISSIONS: u32 = 0o600;
 const FROST_ID_PREFIX_LENGTH: usize = 6;
-const SESSION_ID_PREFIX_LENGTH: usize = 12;
 const DUMMY_IDENTIFIER_SIZE: usize = 33;
 const SIGNING_SESSION_ID_SIZE: usize = 32;
 
@@ -193,8 +192,7 @@ fn save_nonces_to_file(
 ) -> anyhow::Result<String> {
     let frost_id_prefix =
         hex::encode(frost_identifier.serialize())[..FROST_ID_PREFIX_LENGTH].to_string();
-    let session_id_prefix = hex::encode(signing_session_id)[..SESSION_ID_PREFIX_LENGTH].to_string();
-    let filename = format!("nonces_{}_{}.json", frost_id_prefix, session_id_prefix);
+    let filename = format!("nonces_{}.json", frost_id_prefix);
 
     let nonce_entries: Vec<NonceEntry> = nonces
         .iter()

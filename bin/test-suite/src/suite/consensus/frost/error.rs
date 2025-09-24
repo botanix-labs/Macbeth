@@ -30,4 +30,6 @@ pub enum Error {
     GatewayAddressNotAvailable,
     /// Latest Block Does Not Exist
     LatestBlockDoesNotExist,
+    /// Test Vector Export Error {0}
+    TestVectorExport(String),
 }

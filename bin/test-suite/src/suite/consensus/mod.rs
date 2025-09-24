@@ -658,6 +658,19 @@ impl Suite for ConsensusIntegrationTestSuite {
                     frost::test_pegin_v1::test_pegin_v1
                 )
             }
+            "sweep_cli_e2e" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_sweep_cli_e2e::sweep_cli_e2e
+                )
+            }
             _ => {
                 error!("Test {:?} not found", test_to_run.as_str());
                 return vec![];

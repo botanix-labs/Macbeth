@@ -21,12 +21,29 @@ use crate::{
     utils::{generate_blocks, get_gateway_address_with_retry},
 };
 
+// Imports for test vector export functionality
+use btc_server_client;
+use btcserverlib::database;
+use serde::{Deserialize, Serialize};
+use std::{fs, path::Path};
+
 #[allow(clippy::too_many_lines)]
 pub async fn frost_e2e_stable(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), super::error::Error> {
     let pegin_conf_depth = BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
     it_info_print!("Pegin Confirmation Depth", pegin_conf_depth);
+
+    // TEST VECTOR EXPORT - Check environment variable and export if requested
+    // This is the perfect spot because:
+    // 1. DKG has already completed (POA nodes and BTC servers are running)
+    // 2. No UTXOs or transactions have been created yet
+    // 3. We have access to the suite context with all the database paths
+    if let Ok(export_path) = std::env::var("EXPORT_TEST_VECTOR") {
+        it_info_print!("Exporting test vector to: {}", export_path);
+        export_test_vector_db(suite, &export_path).await?;
+        it_info_print!("Test vector export completed");
+    }
 
     // Set up regtest connection
     // config is hardcoded to only work with regtest
@@ -269,6 +286,208 @@ pub async fn frost_e2e_stable(
         let witness_item = &input.witness[0];
         it_info_print!("Input witness (signature) length:", witness_item.len());
         assert_eq!(witness_item.len(), 64);
+    }
+
+    Ok(())
+}
+
+// TEST VECTOR EXPORT FUNCTIONS
+
+/// Metadata to save alongside the database export
+#[derive(Serialize, Deserialize)]
+struct TestVectorMetadata {
+    change_address: String,
+    network: String,
+    aggregate_public_key: String,
+    min_signers: u16,
+    max_signers: u16,
+    export_timestamp: u64,
+}
+/// Main export function - copies database and extracts metadata
+async fn export_test_vector_db(
+    suite: &ConsensusIntegrationTestSuite,
+    output_dir: &str,
+) -> Result<(), super::error::Error> {
+    // Create output directory
+    fs::create_dir_all(output_dir).map_err(|e| {
+        super::error::Error::TestVectorExport(format!("Failed to create output directory: {}", e))
+    })?;
+
+    // Get the first BTC server's database path
+    let source_db_path = get_btc_server_db_path(suite)?;
+
+    // Copy the entire sled database directory
+    let target_db_path = format!("{}/test_vector_db", output_dir);
+    copy_dir_recursively(&source_db_path, Path::new(&target_db_path))?;
+
+    // Extract change address and other metadata
+    let change_address = extract_change_address_from_db(&source_db_path)?;
+
+    // Get aggregate public key
+    let aggregate_public_key = extract_aggregate_public_key(suite).await?;
+
+    // Create metadata
+    let metadata = TestVectorMetadata {
+        change_address,
+        network: "regtest".to_string(),
+        aggregate_public_key,
+        min_signers: suite.global_context.min_signers,
+        max_signers: suite.global_context.max_signers,
+        export_timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| {
+                super::error::Error::TestVectorExport(format!("Failed to get timestamp: {}", e))
+            })?
+            .as_secs(),
+    };
+
+    // Save metadata
+    let metadata_json = serde_json::to_string_pretty(&metadata).map_err(|e| {
+        super::error::Error::TestVectorExport(format!("Failed to serialize metadata: {}", e))
+    })?;
+    fs::write(format!("{}/metadata.json", output_dir), metadata_json).map_err(|e| {
+        super::error::Error::TestVectorExport(format!("Failed to write metadata file: {}", e))
+    })?;
+
+    it_info_print!("CHANGE_ADDRESS: {}", metadata.change_address);
+    it_info_print!("AGGREGATE_PUBLIC_KEY: {}", metadata.aggregate_public_key);
+    it_info_print!("DATABASE_EXPORTED_TO: {}", target_db_path);
+
+    Ok(())
+}
+/// Get the database path from the first BTC server process
+fn get_btc_server_db_path(
+    suite: &ConsensusIntegrationTestSuite,
+) -> Result<std::path::PathBuf, super::error::Error> {
+    let btc_processes = suite.local_context.btc_processes.as_ref().ok_or_else(|| {
+        super::error::Error::TestVectorExport("No BTC server processes found".to_string())
+    })?;
+
+    let first_process = btc_processes.first().ok_or_else(|| {
+        super::error::Error::TestVectorExport("No BTC server processes in list".to_string())
+    })?;
+
+    Ok(first_process.db_path.clone())
+}
+/// Extract change address by deriving it from the public key package in the database
+fn extract_change_address_from_db(
+    db_path: &std::path::Path,
+) -> Result<String, super::error::Error> {
+    use bitcoin::{secp256k1::Secp256k1, Network};
+    use btcserverlib::wallet::util::VerifyingKeyExt;
+
+    // Open the database
+    let db = database::Db::open(db_path).map_err(|e| {
+        super::error::Error::TestVectorExport(format!("Failed to open database: {}", e))
+    })?;
+
+    // Get the public key package
+    let pk_package = db
+        .get_public_key_package()
+        .map_err(|e| {
+            super::error::Error::TestVectorExport(format!(
+                "Failed to get public key package: {}",
+                e
+            ))
+        })?
+        .ok_or_else(|| {
+            super::error::Error::TestVectorExport(
+                "No public key package found in database".to_string(),
+            )
+        })?;
+
+    // Convert FROST verifying key to secp256k1 public key
+    let verifying_key = pk_package.verifying_key();
+    let secp_pubkey = verifying_key.to_secp_pk().map_err(|e| {
+        super::error::Error::TestVectorExport(format!(
+            "Failed to convert FROST key to secp256k1: {}",
+            e
+        ))
+    })?;
+
+    // Generate change address (taproot P2TR without eth address tweak)
+    let secp = Secp256k1::new();
+    let script = bitcoin::ScriptBuf::new_p2tr(&secp, secp_pubkey.x_only_public_key().0, None);
+    let address = bitcoin::Address::from_script(&script, Network::Regtest).map_err(|e| {
+        super::error::Error::TestVectorExport(format!(
+            "Failed to create address from script: {}",
+            e
+        ))
+    })?;
+
+    Ok(address.to_string())
+}
+/// Extract aggregate public key from the test suite context
+async fn extract_aggregate_public_key(
+    suite: &ConsensusIntegrationTestSuite,
+) -> Result<String, super::error::Error> {
+    // Get BTC server clients to query for the public key
+    let btc_processes = suite.local_context.btc_processes.as_ref().ok_or_else(|| {
+        super::error::Error::TestVectorExport("No BTC server processes found".to_string())
+    })?;
+
+    let first_process = btc_processes.first().ok_or_else(|| {
+        super::error::Error::TestVectorExport("No BTC server processes in list".to_string())
+    })?;
+
+    // Connect to the first BTC server and get its public key
+    let client = btc_server_client::BtcServerClient::connect(format!(
+        "http://localhost:{}",
+        first_process.btc_server_port
+    ))
+    .await
+    .map_err(|e| {
+        super::error::Error::TestVectorExport(format!("Failed to connect to BTC server: {}", e))
+    })?;
+
+    let mut client = client;
+    let response = client
+        .get_public_key(tonic::Request::new(btc_server_client::Empty {}))
+        .await
+        .map_err(|e| {
+            super::error::Error::TestVectorExport(format!(
+                "Failed to get public key from BTC server: {}",
+                e
+            ))
+        })?;
+
+    Ok(response.into_inner().publickey)
+}
+/// Recursively copy a directory
+fn copy_dir_recursively(src: &Path, dst: &Path) -> Result<(), super::error::Error> {
+    fs::create_dir_all(dst).map_err(|e| {
+        super::error::Error::TestVectorExport(format!(
+            "Failed to create directory {}: {}",
+            dst.display(),
+            e
+        ))
+    })?;
+
+    for entry in fs::read_dir(src).map_err(|e| {
+        super::error::Error::TestVectorExport(format!(
+            "Failed to read directory {}: {}",
+            src.display(),
+            e
+        ))
+    })? {
+        let entry = entry.map_err(|e| {
+            super::error::Error::TestVectorExport(format!("Failed to read directory entry: {}", e))
+        })?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if src_path.is_dir() {
+            copy_dir_recursively(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path).map_err(|e| {
+                super::error::Error::TestVectorExport(format!(
+                    "Failed to copy file {} to {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                ))
+            })?;
+        }
     }
 
     Ok(())
