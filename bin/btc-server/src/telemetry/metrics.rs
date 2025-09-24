@@ -112,10 +112,8 @@ pub struct BtcServerMetrics {
     pub round2_signing_package_size_histogram: HistogramVec,
 
     // Wallet and UTXO Management Metrics
-    pub pegin_utxos_count: IntGaugeVec,
-    pub pegin_utxos_total_value: IntGaugeVec,
-    pub pegout_utxos_count: IntGaugeVec,
-    pub pegout_utxos_total_value: IntGaugeVec,
+    pub multisig_utxos_count: IntGaugeVec,
+    pub multisig_utxos_total_value: IntGaugeVec,
     pub input_selection_time: IntCounterVec, // TODO (to be done once Darius's PR is merged)
 
     // Federation Member Participation Metrics
@@ -254,30 +252,16 @@ impl BtcServerMetrics {
         )
         .expect("metric must be created");
 
-        let pegin_utxos_count = register_int_gauge_vec!(
-            "pegin_utxos_count",
-            "A metric counting the number of pegin UTXOs",
+        let multisig_utxos_count = register_int_gauge_vec!(
+            "multisig_utxos_count",
+            "A metric counting the number of multisig UTXOs",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
-        let pegin_utxos_total_value = register_int_gauge_vec!(
-            "pegin_utxos_total_value",
-            "A metric representing the total value of pegin UTXOs in satoshis",
-            &["btc_chain", "self_id"],
-        )
-        .expect("metric must be created");
-
-        let pegout_utxos_count = register_int_gauge_vec!(
-            "pegout_utxos_count",
-            "A metric counting the number of pegout UTXOs",
-            &["btc_chain", "self_id"],
-        )
-        .expect("metric must be created");
-
-        let pegout_utxos_total_value = register_int_gauge_vec!(
-            "pegout_utxos_total_value",
-            "A metric representing the total value of pegout UTXOs in satoshis",
+        let multisig_utxos_total_value = register_int_gauge_vec!(
+            "multisig_utxos_total_value",
+            "A metric representing the total value of multisig UTXOs in satoshis",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
@@ -531,10 +515,8 @@ impl BtcServerMetrics {
         registry.register(Box::new(round2_signing_throughput.clone()))?;
         registry.register(Box::new(round1_signing_package_size_histogram.clone()))?;
         registry.register(Box::new(round2_signing_package_size_histogram.clone()))?;
-        registry.register(Box::new(pegin_utxos_count.clone()))?;
-        registry.register(Box::new(pegin_utxos_total_value.clone()))?;
-        registry.register(Box::new(pegout_utxos_count.clone()))?;
-        registry.register(Box::new(pegout_utxos_total_value.clone()))?;
+        registry.register(Box::new(multisig_utxos_count.clone()))?;
+        registry.register(Box::new(multisig_utxos_total_value.clone()))?;
         registry.register(Box::new(input_selection_time.clone()))?;
         registry.register(Box::new(fee_rate_abnormalities.clone()))?;
 
@@ -586,10 +568,8 @@ impl BtcServerMetrics {
             round2_signing_package_size_histogram,
             total_received_round1_signing_packages,
             total_received_round2_signing_packages,
-            pegin_utxos_count,
-            pegin_utxos_total_value,
-            pegout_utxos_count,
-            pegout_utxos_total_value,
+            multisig_utxos_count,
+            multisig_utxos_total_value,
             input_selection_time,
             member_uptime,
             bitcoind_rpc_latency,
