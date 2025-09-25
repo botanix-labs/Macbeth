@@ -1,11 +1,12 @@
 use log::{debug, error, info, warn};
 
 use crate::{
+    config::Config,
     coordinator::error::CoordinatorError,
     database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
     pegout_scheduler::Tx,
-    util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
+    util::{parse_eth_address, validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     wallet::{
         coin_selection,
         psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
@@ -24,6 +25,38 @@ pub mod error;
 
 #[allow(dead_code)]
 const MIN_RELAY_FEE_RATE_SAT_VB: u64 = 1;
+
+/// Filters out UTXOs associated with excluded Ethereum addresses
+fn filter_excluded_utxos(
+    utxos: HashMap<OutPoint, Utxo>,
+    excluded_addresses: &[String],
+) -> HashMap<OutPoint, Utxo> {
+    if excluded_addresses.is_empty() {
+        info!("No excluded eth addresses provided, returning all utxos");
+        return utxos;
+    }
+
+    info!("Filtering out excluded eth addresses: {:?}", excluded_addresses);
+
+    // Parse excluded addresses from hex strings to byte arrays for comparison
+    let excluded_address_bytes: Vec<[u8; 20]> =
+        excluded_addresses.iter().filter_map(|addr| parse_eth_address(addr.clone()).ok()).collect();
+
+    // Filter out UTXOs associated with excluded Ethereum addresses
+    let filtered_utxos = utxos
+        .clone()
+        .into_iter()
+        .filter(|(_, utxo)| {
+            // Keep UTXO if it has no eth_address (change UTXO) or if its address is not in excluded
+            // list
+            utxo.eth_address.map_or(true, |addr| !excluded_address_bytes.contains(&addr))
+        })
+        .collect::<HashMap<_, _>>();
+
+    info!("excluded eth addresses utxos len = {:?}", utxos.len() - filtered_utxos.len());
+
+    filtered_utxos
+}
 
 pub fn add_round1_signing(
     signing_session_id: &[u8; 32],
@@ -82,6 +115,7 @@ pub fn make_tx(
     db: &Db,
     min_signers: u16,
     tracked_txs: Vec<Tx>,
+    config: &Config,
 ) -> Result<Psbt, CoordinatorError> {
     let mut attempted_outputs = outputs.clone();
     loop {
@@ -92,6 +126,7 @@ pub fn make_tx(
             db,
             min_signers,
             &tracked_txs,
+            config,
         )?;
         let tx_weight = calculate_signed_tx_weight(&psbt)?;
         if tx_weight.to_wu() <= MAX_PEGOUT_TX_WEIGHT {
@@ -124,6 +159,7 @@ pub fn attempt_make_tx(
     db: &Db,
     min_signers: u16,
     tracked_txs: &[Tx],
+    config: &Config,
 ) -> Result<Psbt, CoordinatorError> {
     // TODO: re-enable this check
     // Ensure we are above the minimum relay fee rate
@@ -144,6 +180,9 @@ pub fn attempt_make_tx(
     debug!("utxos len = {:?}", utxos.len());
     debug!("utxos = {:?}", utxos);
 
+    // Exclude UTXOs that have been specifically requested to not be included in the coin selection
+    let filtered_utxos = filter_excluded_utxos(utxos, &config.excluded_eth_addresses);
+
     let tracked_inputs = tracked_txs
         .iter()
         .flat_map(|tx| tx.inputs().collect::<Vec<OutPoint>>())
@@ -153,7 +192,7 @@ pub fn attempt_make_tx(
 
     // Filter utxos that are still pending and conflict with pending txs.
     // These utxos are 'optional' in that they are not required to be included in the coin selection
-    let optional_utxos = utxos
+    let optional_utxos = filtered_utxos
         .clone()
         .into_iter()
         .filter(|(p, _u)| !tracked_inputs.contains(p))
@@ -191,12 +230,13 @@ pub fn attempt_make_tx(
     let conflicting_inputs: Result<Vec<Utxo>, CoordinatorError> = matching_tracked_inputs
         .iter()
         .map(|op| {
-            utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
-                |u: &Utxo| {
+            filtered_utxos
+                .get(op)
+                .ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput)
+                .map(|u: &Utxo| {
                     conflicting_utxos.insert(*op, u.clone());
                     u.clone()
-                },
-            )
+                })
         })
         .collect();
 
@@ -316,4 +356,59 @@ pub async fn finalize_signing(
     }
 
     Ok(original_psbt)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{database::Utxo, test_utils::random_compute_txid};
+    use bitcoin::{Amount, ScriptBuf, TxOut};
+
+    #[test]
+    fn test_filter_excluded_utxos() {
+        let mut utxos = HashMap::new();
+
+        let outpoint_to_filter = OutPoint::new(random_compute_txid(), 0);
+        let eth_address = [0x12u8; 20]; // Simple test address
+
+        let utxo_to_filter = Utxo::new(
+            outpoint_to_filter,
+            TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() },
+            Some(eth_address),
+            None,
+        );
+
+        let outpoint_to_keep = OutPoint::new(random_compute_txid(), 1);
+        let eth_address_to_keep = [1u8; 20];
+        let utxo_to_keep = Utxo::new(
+            outpoint_to_keep,
+            TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() },
+            Some(eth_address_to_keep),
+            None,
+        );
+
+        let outpoint_change = OutPoint::new(random_compute_txid(), 2);
+        let utxo_change = Utxo::new(
+            outpoint_change,
+            TxOut { value: Amount::from_sat(1000), script_pubkey: ScriptBuf::new() },
+            None,
+            None,
+        );
+
+        utxos.insert(outpoint_to_filter, utxo_to_filter);
+        utxos.insert(outpoint_to_keep, utxo_to_keep);
+        utxos.insert(outpoint_change, utxo_change);
+
+        // Filter out the address
+        let excluded_addresses = vec!["1212121212121212121212121212121212121212".to_string()];
+        let result = filter_excluded_utxos(utxos, &excluded_addresses);
+
+        println!("result = {:?}", result);
+
+        // The UTXO should be filtered out
+        assert_eq!(result.len(), 2);
+        assert!(!result.contains_key(&outpoint_to_filter));
+        assert!(result.contains_key(&outpoint_to_keep));
+        assert!(result.contains_key(&outpoint_change));
+    }
 }

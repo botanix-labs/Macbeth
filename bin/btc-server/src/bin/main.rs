@@ -1616,6 +1616,7 @@ where
             &self.db,
             self.min_signers,
             tracked_txs,
+            &self.config,
         )
         .to_status()
         {
@@ -2586,6 +2587,7 @@ mod tests {
             metrics_port: Some(8080),
             fee_rate_diff_percentage: 10,
             fall_back_fee_rate_sat_per_vbyte: 1000,
+            excluded_eth_addresses: vec![],
         };
 
         let app = App::new(config, bitcoind_client, None).expect("btc server");

@@ -197,6 +197,9 @@ pub struct CliConfig {
     /// http port
     #[arg(long)]
     metrics_port: Option<u16>,
+    /// Comma-separated list of Ethereum addresses to exclude from coin selection
+    #[arg(long)]
+    excluded_eth_addresses: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -239,6 +242,8 @@ pub struct Config {
     pub fee_rate_diff_percentage: u32,
     /// Fall back fee rate expressed in sat per vbyte
     pub fall_back_fee_rate_sat_per_vbyte: u64,
+    /// Ethereum addresses to exclude from coin selection
+    pub excluded_eth_addresses: Vec<String>,
 }
 
 pub fn load_config() -> Result<Config, Error> {
@@ -263,6 +268,10 @@ pub fn load_config() -> Result<Config, Error> {
         metrics_port: cli_config.metrics_port,
         fee_rate_diff_percentage: cli_config.fee_rate_diff_percentage.unwrap_or(2),
         fall_back_fee_rate_sat_per_vbyte: cli_config.fall_back_fee_rate_sat_per_vbyte.unwrap_or(10),
+        excluded_eth_addresses: cli_config
+            .excluded_eth_addresses
+            .map(|s| s.split(',').map(|addr| addr.trim().to_string()).collect())
+            .unwrap_or_default(),
     };
     Ok(config)
 }
