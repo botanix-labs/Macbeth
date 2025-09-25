@@ -584,7 +584,7 @@ impl PegoutScheduler {
         let utxos = self.db.get_all_utxos()?;
         let utxos_amount = utxos.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
         if let Some(telemetry) = self.telemetry.as_ref() {
-            telemetry.update_pegout_utxos(
+            telemetry.update_utxos(
                 self.bitcoin_network,
                 self.identifier,
                 utxos.len() as i64,
