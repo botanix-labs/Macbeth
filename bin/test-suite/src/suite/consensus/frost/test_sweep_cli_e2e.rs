@@ -249,7 +249,7 @@ pub async fn sweep_cli_e2e(
     ])?;
     it_info_print!("PSBT creation result", psbt_result);
 
-    // TODO: Step 2: signer-1-generate-commitments (for multiple signers)
+    // Step 2: signer-1-generate-commitments (for multiple signers)
     // for each signer, including the coordinator, run the signer 1 command, pointing to that node's
     // db, and using their identifier
     for (index, db_path) in fed_db_paths.iter().enumerate() {
@@ -272,13 +272,7 @@ pub async fn sweep_cli_e2e(
         it_info_print!("Signer Round 1 result", signer_round1_result);
     }
 
-    // TODO: Step 3: coordinator-2-collect-commitments
-    // coordinator-2-collect-commitments \
-    // --round1-responses
-    // round_1_response_acc59f.json,round_1_response_3427a0.json,round_1_response_0cdfdb.json \
-    // --min-signers 3 \
-    // --output-json signing_package_round2.json \
-    // --db ./bin/test-suite/sweep_test_data/test_vector_db_0
+    // Step 3: coordinator-2-collect-commitments
     it_info_print!("Executing coordinator-2-collect-commitments command");
 
     // TODO: use frost identifier prefix from sweep.rs instead of hardcoding the file names
@@ -291,12 +285,7 @@ pub async fn sweep_cli_e2e(
     ])?;
     it_info_print!("Coordinator-2-Collect-Commitments result", collect_commitments_result);
 
-    // TODO: Step 4: signer-2-generate-signatures (for selected signers)
-    // cargo run --package btc-server --bin sweep -- signer-2-generate-signatures \
-    // --db ./bin/test-suite/sweep_test_data/test_vector_db_0 \
-    // --input-json signing_package_round2.json \
-    // --identifier 0 \
-    // --nonces-json nonces_acc59f.json
+    // Step 4: signer-2-generate-signatures (for selected signers)
     it_info_print!("Executing signer-2-generate-signatures command");
     for (index, db_path) in fed_db_paths.iter().enumerate() {
         // debugging: print the arguments being passed in
@@ -327,12 +316,7 @@ pub async fn sweep_cli_e2e(
         it_info_print!("Signer Round 2 result", signer_round2_result);
     }
 
-    // TODO: Step 5: coordinator-3-finalize-transaction
-    // coordinator-3-finalize-transaction
-    // --round2-responses
-    // round_2_response_0cdfdb.json,round_2_response_3427a0.json,round_2_response_acc59f.json
-    // --min-signers 3 --output-file finalized_sweep_transaction_testnet.hex
-    //--db ./bin/test-suite/sweep_test_data/test_vector_db_0
+    // Step 5: coordinator-3-finalize-transaction
     it_info_print!("Executing coordinator-3-finalize-transaction command");
     let finalize_transaction_result = run_sweep_cli_command(&[
         "coordinator-3-finalize-transaction",
@@ -349,7 +333,7 @@ pub async fn sweep_cli_e2e(
     assert!(finalized_transaction_path.exists());
     it_info_print!("Finalized transaction path", finalized_transaction_path.display());
 
-    // TODO: Phase 4 - Bitcoin Integration & Validation
+    // Phase 4 - Bitcoin Integration & Validation
 
     // parse the transaction hex from the saved file
     let transaction_hex = std::fs::read_to_string(finalized_transaction_path)
@@ -371,11 +355,11 @@ pub async fn sweep_cli_e2e(
 
     // TODO: more validation on the transaction itself, in particular the fee rate
 
-    // TODO: Phase 5 - Cleanup
-    // - Remove test files (mainly json files) created in current working directory
+    // Phase 5 - Cleanup
+    // TODO: Remove test files (mainly json files) created in current working directory
 
     // Cleanup: Remove temporary directory
-    // let _ = fs::remove_dir_all(&temp_db_dir);
+    let _ = fs::remove_dir_all(&temp_db_dir);
 
     it_info_print!("Sweep CLI E2E Test completed successfully");
 
