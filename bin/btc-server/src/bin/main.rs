@@ -737,7 +737,7 @@ where
             total_utxos.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
         if let Some(telemetry) = self.telemetry.as_ref() {
             // seet attempted pegin height
-            telemetry.update_pegin_utxos(
+            telemetry.update_utxos(
                 self.btc_network,
                 self.config.identifier,
                 total_utxos.len() as i64,

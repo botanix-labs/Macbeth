@@ -361,7 +361,7 @@ impl Telemetry {
         });
     }
 
-    pub fn update_pegin_utxos(
+    pub fn update_utxos(
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
@@ -370,32 +370,12 @@ impl Telemetry {
     ) {
         self.maybe_use_metrics(|metrics| {
             metrics
-                .pegin_utxos_count
+                .multisig_utxos_count
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
                 .set(utxos);
 
             metrics
-                .pegin_utxos_total_value
-                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .set(total_value);
-        });
-    }
-
-    pub fn update_pegout_utxos(
-        &self,
-        btc_chain: bitcoin::Network,
-        self_id: u16,
-        utxos: i64,
-        total_value: i64,
-    ) {
-        self.maybe_use_metrics(|metrics| {
-            metrics
-                .pegout_utxos_count
-                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .set(utxos);
-
-            metrics
-                .pegout_utxos_total_value
+                .multisig_utxos_total_value
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
                 .set(total_value);
         });

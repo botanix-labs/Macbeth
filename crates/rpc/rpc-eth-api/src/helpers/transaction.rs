@@ -528,10 +528,7 @@ pub trait EthTransactions: LoadTransaction {
     }
 
     /// Returns the signer for the given account, if found in configured signers.
-    fn find_signer(
-        &self,
-        account: &Address,
-    ) -> Result<Box<(dyn EthSigner + 'static)>, Self::Error> {
+    fn find_signer(&self, account: &Address) -> Result<Box<dyn EthSigner + 'static>, Self::Error> {
         self.signers()
             .read()
             .iter()
