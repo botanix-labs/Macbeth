@@ -397,6 +397,8 @@ where
             panic!("min_signers should be at least 2");
         }
 
+        info!("excluded eth addresses len = {:?}", config.excluded_eth_addresses.len());
+
         let mut btc_signing_server_jwt_secret = None;
         if let Some(btc_signing_server_jwt_path) = config.btc_signing_server_jwt_secret.as_ref() {
             btc_signing_server_jwt_secret = Some(
@@ -1616,6 +1618,7 @@ where
             &self.db,
             self.min_signers,
             tracked_txs,
+            &self.config,
         )
         .to_status()
         {
@@ -2586,6 +2589,7 @@ mod tests {
             metrics_port: Some(8080),
             fee_rate_diff_percentage: 10,
             fall_back_fee_rate_sat_per_vbyte: 1000,
+            excluded_eth_addresses: vec![],
         };
 
         let app = App::new(config, bitcoind_client, None).expect("btc server");
