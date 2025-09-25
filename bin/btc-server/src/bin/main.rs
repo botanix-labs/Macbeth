@@ -736,7 +736,7 @@ where
             total_utxos.iter().fold(Amount::ZERO, |acc, utxo| acc + utxo.output.value);
         if let Some(telemetry) = self.telemetry.as_ref() {
             // seet attempted pegin height
-            telemetry.update_pegin_utxos(
+            telemetry.update_utxos(
                 self.btc_network,
                 self.config.identifier,
                 total_utxos.len() as i64,
@@ -2354,7 +2354,7 @@ async fn main() -> anyhow::Result<(), Box<dyn std::error::Error>> {
     }));
 
     let telemetry = if config.metrics_port.is_some() {
-        let telemetry = Telemetry::new(None).await?;
+        let telemetry = Telemetry::new(Some("btc_server".to_string())).await?;
         telemetry.start().await?;
         Some(telemetry)
     } else {

@@ -972,10 +972,12 @@ impl Suite for ConsensusIntegrationTestSuite {
                 spawned_cometbft_processes.push(cometbft_node.spawn_service()?);
 
                 // create cometbft client
-                let cometbft_client = HttpCometBFTRpcClientFactory::new(
+                let url = format!(
+                    "http://{}:{}",
                     cometbft_node.rpc_listen_address.ip().to_string(),
-                    cometbft_node.rpc_listen_address.port(),
+                    cometbft_node.rpc_listen_address.port()
                 );
+                let cometbft_client = HttpCometBFTRpcClientFactory::new(url);
                 cometbft_rpc_clients.push(cometbft_client);
 
                 // await initialization

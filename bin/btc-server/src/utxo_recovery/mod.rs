@@ -14,11 +14,6 @@ pub enum UtxoRecoveryError {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct UtxosRecoveryConfig {
-    utxos: Vec<UtxoRecoveryData>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UtxoRecoveryData {
     /// Transaction ID as hex string

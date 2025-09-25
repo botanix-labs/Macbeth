@@ -776,8 +776,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         debug!(target: "reth::cli", "Spawned payload builder service");
 
         let cometbft_rpc_factory = HttpCometBFTRpcClientFactory::default()
-            .with_port(*cometbft_rpc_port)
-            .with_host(cometbft_rpc_host);
+            .with_url(&format!("http://{}:{}", cometbft_rpc_host, *cometbft_rpc_port));
 
         // ActivationManager: setup parameters and conditions.
         let quorum;
