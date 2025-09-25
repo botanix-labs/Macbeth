@@ -401,6 +401,86 @@ impl Telemetry {
         });
     }
 
+    pub fn increment_pegins_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegins_count: u64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .pegins_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc_by(pegins_count);
+        });
+    }
+
+    pub fn increment_pegouts_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegouts_count: u64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .pegouts_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc_by(pegouts_count);
+        });
+    }
+
+    pub fn increment_success_broadcasted_pegout_txs_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .success_broadcasted_pegout_txs_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
+    pub fn increment_failed_broadcasted_pegout_txs_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .failed_broadcasted_pegout_txs_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
+    pub fn increment_started_round1_signings_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .started_round1_signings_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
+    pub fn increment_completed_round2_signings_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .completed_round2_signings_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
     pub fn update_health_check(
         &self,
         btc_chain: bitcoin::Network,

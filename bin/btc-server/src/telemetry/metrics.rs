@@ -118,6 +118,13 @@ pub struct BtcServerMetrics {
     pub pegout_utxos_total_value: IntGaugeVec,
     pub input_selection_time: IntCounterVec, // TODO (to be done once Darius's PR is merged)
 
+    pub pegins_count: IntCounterVec,
+    pub pegouts_count: IntCounterVec,
+    pub success_broadcasted_pegout_txs_count: IntGaugeVec,
+    pub failed_broadcasted_pegout_txs_count: IntGaugeVec,
+    pub started_round1_signings_count: IntGaugeVec,
+    pub completed_round2_signings_count: IntGaugeVec,
+
     // Federation Member Participation Metrics
     pub member_uptime: IntGaugeVec,
 
@@ -285,6 +292,48 @@ impl BtcServerMetrics {
         let input_selection_time = register_int_counter_vec!(
             "input_selection_time",
             "A metric counting the time taken for input selection",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let pegins_count = register_int_counter_vec!(
+            "pegins_count",
+            "A metric counting the pegins",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let pegouts_count = register_int_counter_vec!(
+            "pegouts_count",
+            "A metric counting the pegouts",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let success_broadcasted_pegout_txs_count = register_int_gauge_vec!(
+            "success_broadcasted_pegout_txs_count",
+            "A metric counting the scuccessful broadcasted pegout txs",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let failed_broadcasted_pegout_txs_count = register_int_gauge_vec!(
+            "failed_broadcasted_pegout_txs_count",
+            "A metric counting the failed broadcasted pegout txs",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let started_round1_signings_count = register_int_gauge_vec!(
+            "started_round1_signings_count",
+            "A metric counting the started round1 signings",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let completed_round2_signings_count = register_int_gauge_vec!(
+            "completed_round2_signings_count",
+            "A metric counting the completed round2 signings",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
@@ -556,6 +605,11 @@ impl BtcServerMetrics {
         registry.register(Box::new(bitcoind_rpc_latency.clone()))?;
         registry.register(Box::new(bitcoind_sync_status.clone()))?;
 
+        registry.register(Box::new(pegins_count.clone()))?;
+        registry.register(Box::new(pegouts_count.clone()))?;
+        registry.register(Box::new(success_broadcasted_pegout_txs_count.clone()))?;
+        registry.register(Box::new(failed_broadcasted_pegout_txs_count.clone()))?;
+
         // Transaction Processing Metrics
         registry.register(Box::new(pending_pegouts.clone()))?;
         registry.register(Box::new(finalized_pegout_ids.clone()))?;
@@ -592,6 +646,12 @@ impl BtcServerMetrics {
             pegout_utxos_total_value,
             input_selection_time,
             member_uptime,
+            pegins_count,
+            pegouts_count,
+            success_broadcasted_pegout_txs_count,
+            failed_broadcasted_pegout_txs_count,
+            started_round1_signings_count,
+            completed_round2_signings_count,
             bitcoind_rpc_latency,
             bitcoind_sync_status,
             fee_rate_abnormalities,
