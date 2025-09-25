@@ -181,7 +181,7 @@ pub fn attempt_make_tx(
     debug!("utxos = {:?}", utxos);
 
     // Exclude UTXOs that have been specifically requested to not be included in the coin selection
-    let filtered_utxos = filter_excluded_utxos(utxos, &config.excluded_eth_addresses);
+    let filtered_utxos = filter_excluded_utxos(utxos.clone(), &config.excluded_eth_addresses);
 
     let tracked_inputs = tracked_txs
         .iter()
@@ -230,13 +230,12 @@ pub fn attempt_make_tx(
     let conflicting_inputs: Result<Vec<Utxo>, CoordinatorError> = matching_tracked_inputs
         .iter()
         .map(|op| {
-            filtered_utxos
-                .get(op)
-                .ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput)
-                .map(|u: &Utxo| {
+            utxos.get(op).ok_or_else(|| CoordinatorError::MissingUtxoForConflictingInput).map(
+                |u: &Utxo| {
                     conflicting_utxos.insert(*op, u.clone());
                     u.clone()
-                })
+                },
+            )
         })
         .collect();
 
