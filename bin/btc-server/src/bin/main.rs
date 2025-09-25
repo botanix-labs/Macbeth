@@ -397,6 +397,23 @@ where
             panic!("min_signers should be at least 2");
         }
 
+        // Validate excluded Ethereum addresses
+        let mut valid_addresses = 0;
+        for addr in &config.excluded_eth_addresses {
+            match parse_eth_address(addr.clone()) {
+                Ok(_) => {
+                    valid_addresses += 1;
+                }
+                Err(e) => {
+                    error!(
+                        "Invalid Ethereum address in excluded_eth_addresses will be ignored:{}: {}",
+                        addr, e
+                    );
+                }
+            }
+        }
+        info!("excluded eth addresses len = {:?}", valid_addresses);
+
         let mut btc_signing_server_jwt_secret = None;
         if let Some(btc_signing_server_jwt_path) = config.btc_signing_server_jwt_secret.as_ref() {
             btc_signing_server_jwt_secret = Some(
