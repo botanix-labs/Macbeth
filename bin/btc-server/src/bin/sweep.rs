@@ -368,20 +368,20 @@ pub async fn handle_make_sweep_psbt(c: &CreatePsbtConfig) -> anyhow::Result<(), 
         println!("no utxos found");
         return Err(anyhow::anyhow!("no utxos found"));
     }
-    
+
     // Sort UTXOs by value in descending order (largest first)
     let mut utxos = utxos;
     utxos.sort_by(|a, b| b.output.value.cmp(&a.output.value));
-    
+
     // Truncate to largest 1000 UTXOs for performance
     const MAX_UTXOS: usize = 1000;
     if utxos.len() > MAX_UTXOS {
         println!("Truncating {} UTXOs to largest {}", utxos.len(), MAX_UTXOS);
         utxos.truncate(MAX_UTXOS);
     }
-    
+
     // TODO: have a way to create select the next 1000 utxos
-    
+
     println!("Using {} UTXOs for sweep (sorted by value, descending)", utxos.len());
 
     let address = parse_and_validate_address(&c.output_address, c.testnet)?;
