@@ -28,25 +28,28 @@ const MIN_RELAY_FEE_RATE_SAT_VB: u64 = 1;
 
 /// Filters out UTXOs associated with excluded Ethereum addresses
 fn filter_excluded_utxos(
-    utxos: HashMap<OutPoint, Utxo>,
+    utxos: &HashMap<OutPoint, Utxo>,
     excluded_addresses: &[[u8; 20]],
 ) -> HashMap<OutPoint, Utxo> {
     if excluded_addresses.is_empty() {
         info!("No excluded eth addresses provided, returning all utxos");
-        return utxos;
+        return utxos.clone();
     }
 
     info!("Filtering out excluded eth addresses: {} addresses", excluded_addresses.len());
 
-    let mut filtered_utxos = utxos.clone();
-    filtered_utxos.retain(|_, utxo| {
-        match utxo.eth_address {
-            Some(addr) => !excluded_addresses.contains(&addr),
-            None => true, // change UTXOs don't have an eth_address
-        }
-    });
+    let filtered_utxos: HashMap<OutPoint, Utxo> = utxos
+        .iter()
+        .filter_map(|(op, utxo)| match utxo.eth_address {
+            Some(addr) if excluded_addresses.contains(&addr) => None,
+            _ => Some((*op, utxo.clone())),
+        })
+        .collect();
 
-    info!("excluded eth addresses utxos len = {:?}", utxos.len() - filtered_utxos.len());
+    info!(
+        "filtered out {} utxos due to excluded eth addresses",
+        utxos.len() - filtered_utxos.len()
+    );
 
     filtered_utxos
 }
@@ -174,7 +177,7 @@ pub fn attempt_make_tx(
     debug!("utxos = {:?}", utxos);
 
     // Exclude UTXOs that have been specifically requested to not be included in the coin selection
-    let filtered_utxos = filter_excluded_utxos(utxos.clone(), &config.excluded_eth_addresses);
+    let filtered_utxos = filter_excluded_utxos(&utxos, &config.excluded_eth_addresses);
 
     let tracked_inputs = tracked_txs
         .iter()
@@ -393,9 +396,7 @@ mod tests {
 
         // Filter out the address
         let excluded_addresses = vec![[0x12u8; 20]]; // Same as eth_address used above
-        let result = filter_excluded_utxos(utxos, &excluded_addresses);
-
-        println!("result = {:?}", result);
+        let result = filter_excluded_utxos(&utxos, &excluded_addresses);
 
         // The UTXO should be filtered out
         assert_eq!(result.len(), 2);
