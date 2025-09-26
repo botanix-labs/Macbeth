@@ -6,7 +6,7 @@ use crate::{
     database::{Db, Error as DbError, Utxo},
     pegout_id::PegoutId,
     pegout_scheduler::Tx,
-    util::{parse_eth_address, validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
+    util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
     wallet::{
         coin_selection,
         psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
@@ -29,18 +29,14 @@ const MIN_RELAY_FEE_RATE_SAT_VB: u64 = 1;
 /// Filters out UTXOs associated with excluded Ethereum addresses
 fn filter_excluded_utxos(
     utxos: HashMap<OutPoint, Utxo>,
-    excluded_addresses: &[String],
+    excluded_addresses: &[[u8; 20]],
 ) -> HashMap<OutPoint, Utxo> {
     if excluded_addresses.is_empty() {
         info!("No excluded eth addresses provided, returning all utxos");
         return utxos;
     }
 
-    info!("Filtering out excluded eth addresses: {:?}", excluded_addresses);
-
-    // Parse excluded addresses from hex strings to byte arrays for comparison
-    let excluded_address_bytes: Vec<[u8; 20]> =
-        excluded_addresses.iter().filter_map(|addr| parse_eth_address(addr.clone()).ok()).collect();
+    info!("Filtering out excluded eth addresses: {} addresses", excluded_addresses.len());
 
     // Filter out UTXOs associated with excluded Ethereum addresses
     let filtered_utxos = utxos
@@ -49,7 +45,7 @@ fn filter_excluded_utxos(
         .filter(|(_, utxo)| {
             // Keep UTXO if it has no eth_address (change UTXO) or if its address is not in excluded
             // list
-            utxo.eth_address.map_or(true, |addr| !excluded_address_bytes.contains(&addr))
+            utxo.eth_address.map_or(true, |addr| !excluded_addresses.contains(&addr))
         })
         .collect::<HashMap<_, _>>();
 
@@ -399,7 +395,7 @@ mod tests {
         utxos.insert(outpoint_change, utxo_change);
 
         // Filter out the address
-        let excluded_addresses = vec!["1212121212121212121212121212121212121212".to_string()];
+        let excluded_addresses = vec![[0x12u8; 20]]; // Same as eth_address used above
         let result = filter_excluded_utxos(utxos, &excluded_addresses);
 
         println!("result = {:?}", result);

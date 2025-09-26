@@ -11,6 +11,8 @@ use thiserror::Error;
 use tokio::{fs::File, io::AsyncReadExt};
 use url::Url;
 
+use crate::util::{parse_eth_address, ParsingError};
+
 #[derive(Debug, DisplayDoc, Error)]
 pub enum Error {
     /// Open config file: {0}
@@ -27,6 +29,8 @@ pub enum Error {
     Confy(ConfyError),
     /// Missing config element: {0}
     MissingConfigElement(&'static str),
+    /// Invalid Ethereum address: {0}
+    InvalidEthereumAddress(ParsingError),
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
@@ -141,6 +145,11 @@ async fn read_to_string(path: impl AsRef<Path> + Send) -> Result<String, Error> 
     String::from_utf8(contents).map_err(Error::ParseUtf8)
 }
 
+/// Clap value parser for Ethereum addresses
+fn parse_ethereum_address_for_clap(s: &str) -> Result<[u8; 20], String> {
+    parse_eth_address(s.to_string()).map_err(|e| e.to_string())
+}
+
 // Cli args and config
 
 #[derive(Clone, Debug, Parser)]
@@ -198,8 +207,8 @@ pub struct CliConfig {
     #[arg(long)]
     metrics_port: Option<u16>,
     /// Comma-separated list of Ethereum addresses to exclude from coin selection
-    #[arg(long)]
-    excluded_eth_addresses: Option<String>,
+    #[arg(long, value_delimiter = ',', value_parser = parse_ethereum_address_for_clap)]
+    excluded_eth_addresses: Vec<[u8; 20]>,
 }
 
 #[derive(Clone, Debug)]
@@ -243,7 +252,7 @@ pub struct Config {
     /// Fall back fee rate expressed in sat per vbyte
     pub fall_back_fee_rate_sat_per_vbyte: u64,
     /// Ethereum addresses to exclude from coin selection
-    pub excluded_eth_addresses: Vec<String>,
+    pub excluded_eth_addresses: Vec<[u8; 20]>,
 }
 
 pub fn load_config() -> Result<Config, Error> {
@@ -268,10 +277,37 @@ pub fn load_config() -> Result<Config, Error> {
         metrics_port: cli_config.metrics_port,
         fee_rate_diff_percentage: cli_config.fee_rate_diff_percentage.unwrap_or(2),
         fall_back_fee_rate_sat_per_vbyte: cli_config.fall_back_fee_rate_sat_per_vbyte.unwrap_or(10),
-        excluded_eth_addresses: cli_config
-            .excluded_eth_addresses
-            .map(|s| s.split(',').map(|addr| addr.trim().to_string()).collect())
-            .unwrap_or_default(),
+        excluded_eth_addresses: cli_config.excluded_eth_addresses,
     };
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ethereum_address_for_clap_valid() {
+        let result = parse_ethereum_address_for_clap("0x1234567890123456789012345678901234567890");
+        assert!(result.is_ok());
+
+        // Test without 0x prefix
+        let result = parse_ethereum_address_for_clap("1234567890123456789012345678901234567890");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_ethereum_address_for_clap_invalid() {
+        // Test invalid hex
+        let result = parse_ethereum_address_for_clap("invalid");
+        assert!(result.is_err());
+
+        // Test wrong length
+        let result = parse_ethereum_address_for_clap("0x1234");
+        assert!(result.is_err());
+
+        // Test empty string
+        let result = parse_ethereum_address_for_clap("");
+        assert!(result.is_err());
+    }
 }
