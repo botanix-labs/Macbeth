@@ -22,7 +22,7 @@ use crate::{
     },
     utils::generate_blocks,
 };
-use btc_server_client as client;
+use client;
 
 const NUM_PEGINS: usize = 5;
 
