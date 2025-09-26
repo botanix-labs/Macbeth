@@ -11,7 +11,7 @@ use thiserror::Error;
 use tokio::{fs::File, io::AsyncReadExt};
 use url::Url;
 
-use crate::util::{parse_eth_address, ParsingError};
+use crate::util::parse_eth_address;
 
 #[derive(Debug, DisplayDoc, Error)]
 pub enum Error {
@@ -29,8 +29,6 @@ pub enum Error {
     Confy(ConfyError),
     /// Missing config element: {0}
     MissingConfigElement(&'static str),
-    /// Invalid Ethereum address: {0}
-    InvalidEthereumAddress(ParsingError),
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
