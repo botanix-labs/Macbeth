@@ -38,16 +38,13 @@ fn filter_excluded_utxos(
 
     info!("Filtering out excluded eth addresses: {} addresses", excluded_addresses.len());
 
-    // Filter out UTXOs associated with excluded Ethereum addresses
-    let filtered_utxos = utxos
-        .clone()
-        .into_iter()
-        .filter(|(_, utxo)| {
-            // Keep UTXO if it has no eth_address (change UTXO) or if its address is not in excluded
-            // list
-            utxo.eth_address.map_or(true, |addr| !excluded_addresses.contains(&addr))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut filtered_utxos = utxos.clone();
+    filtered_utxos.retain(|_, utxo| {
+        match utxo.eth_address {
+            Some(addr) => !excluded_addresses.contains(&addr),
+            None => true, // change UTXOs don't have an eth_address
+        }
+    });
 
     info!("excluded eth addresses utxos len = {:?}", utxos.len() - filtered_utxos.len());
 
