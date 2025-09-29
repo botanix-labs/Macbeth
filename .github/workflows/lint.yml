@@ -56,7 +56,7 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
       - run: cargo clippy -p reth-authority-consensus -p reth-network -p reth-primitives -p reth-rpc --lib
-          --tests --benches --all-features -- --locked -A clippy::result-large-err
+          --tests --benches --all-features --locked -- -A clippy::result-large-err
         env:
           RUSTFLAGS: -D warnings
 
