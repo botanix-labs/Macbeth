@@ -397,6 +397,8 @@ where
             panic!("min_signers should be at least 2");
         }
 
+        info!("excluded eth addresses len = {:?}", config.excluded_eth_addresses.len());
+
         let mut btc_signing_server_jwt_secret = None;
         if let Some(btc_signing_server_jwt_path) = config.btc_signing_server_jwt_secret.as_ref() {
             btc_signing_server_jwt_secret = Some(
@@ -721,6 +723,7 @@ where
         self.sync_pegout_scheduler(checkpoint.clone()).await.to_status()?;
 
         // process and store pegin utxos
+        let pegins_count = req.pegins.len();
         let utxos: Result<Vec<crate::database::Utxo>, _> =
             req.pegins.into_iter().map(TryFrom::try_from).collect();
         let utxos = utxos.map_err(|e| badarg!("Failed to parse utxos: {}", e))?;
@@ -750,6 +753,12 @@ where
                 self.btc_network,
                 self.config.identifier,
                 block_result.height as i64,
+            );
+            // increase pegin counter metric
+            telemetry.increment_pegins_count(
+                self.btc_network,
+                self.config.identifier,
+                pegins_count as u64,
             );
         }
 
@@ -1104,6 +1113,12 @@ where
         let signing_session_id =
             handle_signing_error!(self, parse_signing_session_id(&req.signing_session_id));
 
+        // increase metric counter here for 'started_round1_signing'
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry
+                .increment_started_round1_signings_count(self.btc_network, self.config.identifier);
+        }
+
         // Check if we have already provided nonces for the current session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
         if nonces_lock.is_some() {
@@ -1300,6 +1315,14 @@ where
             );
         }
 
+        // increase metric counter here for 'completed_round2_signing'
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.increment_completed_round2_signings_count(
+                self.btc_network,
+                self.config.identifier,
+            );
+        }
+
         let res = rpc::SigningPackage {
             identifier: self.identifier.serialize().to_vec(),
             psbt: psbt_bytes,
@@ -1344,7 +1367,15 @@ where
             "send_raw_transaction",
             self.bitcoind_client.send_raw_transaction(&tx)
         ) {
-            Ok(tx_id) => Ok(Some(tx_id)),
+            Ok(tx_id) => {
+                if let Some(telemetry) = self.telemetry.as_ref() {
+                    telemetry.increment_success_broadcasted_pegout_txs_count(
+                        self.btc_network,
+                        self.config.identifier,
+                    );
+                }
+                Ok(Some(tx_id))
+            }
             Err(err) => {
                 let err_msg = err.to_string();
                 match err_msg.as_str() {
@@ -1355,11 +1386,23 @@ where
                     msg if msg.contains("bad-txns-inputs-missingorspent") => {
                         error!("Invalid input detected: {}", msg);
                         self.handle_invalid_inputs(&tx).to_status()?;
+                        if let Some(telemetry) = self.telemetry.as_ref() {
+                            telemetry.increment_failed_broadcasted_pegout_txs_count(
+                                self.btc_network,
+                                self.config.identifier,
+                            );
+                        }
                         Err(CoordinatorError::FailedToBroadcastTx(err))
                     }
                     _ => {
                         error!("Failed to broadcast transaction: {}", err_msg);
                         error!("Failed tx: {:?}", tx);
+                        if let Some(telemetry) = self.telemetry.as_ref() {
+                            telemetry.increment_failed_broadcasted_pegout_txs_count(
+                                self.btc_network,
+                                self.config.identifier,
+                            );
+                        }
                         Err(CoordinatorError::FailedToBroadcastTx(err))
                     }
                 }
@@ -1397,6 +1440,12 @@ where
         self.db.remove_pending_pegout(&pegout_ids).to_status()?;
         // remove the pegouts from the telemetry gauge
         if let Some(telemetry) = self.telemetry.as_ref() {
+            // increase metric counter for pegouts
+            telemetry.increment_pegouts_count(
+                self.btc_network,
+                self.config.identifier,
+                pegout_ids.len() as u64,
+            );
             let current_peding_pegouts = self.db.get_pending_pegouts().to_status()?;
             telemetry.set_pending_pegouts(
                 self.btc_network,
@@ -1569,6 +1618,7 @@ where
             &self.db,
             self.min_signers,
             tracked_txs,
+            &self.config,
         )
         .to_status()
         {
@@ -2539,6 +2589,7 @@ mod tests {
             metrics_port: Some(8080),
             fee_rate_diff_percentage: 10,
             fall_back_fee_rate_sat_per_vbyte: 1000,
+            excluded_eth_addresses: vec![],
         };
 
         let app = App::new(config, bitcoind_client, None).expect("btc server");
