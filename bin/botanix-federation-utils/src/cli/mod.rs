@@ -28,6 +28,8 @@ pub(crate) enum Commands {
     SweepBalance(SweepBalance),
     /// Get Transaction Details.
     GetTransaction(GetTransaction),
+    /// Get Block Validators.
+    GetBlockValidators(GetBlockValidators),
 }
 
 #[derive(Parser, Debug)]
@@ -41,6 +43,16 @@ pub(crate) struct GetBalance {
 pub(crate) struct GetTransaction {
     /// Transaction hash
     pub tx_hash: String,
+}
+
+#[derive(Parser, Debug)]
+pub(crate) struct GetBlockValidators {
+    /// Block number
+    #[arg(short, long)]
+    pub block_number: u32,
+    /// Tendermint RPC URL
+    #[arg(short, long)]
+    pub tendermint_rpc_url: String,
 }
 
 #[derive(Parser, Debug)]
@@ -77,6 +89,26 @@ mod tests {
             assert_eq!(get_balance.secret_key_path.unwrap(), "0x1234567890abcdef");
         } else {
             panic!("Expected GetBalance command.");
+        }
+    }
+
+    #[test]
+    fn test_cli_get_block_validators() {
+        let args = vec![
+            "wallet_cli",
+            "get-block-validators",
+            "--block-number",
+            "100",
+            "--tendermint-rpc-url",
+            "http://localhost:26657",
+        ];
+        let cli = Cli::parse_from(args);
+
+        if let Commands::GetBlockValidators(get_block_validators) = cli.command {
+            assert_eq!(get_block_validators.block_number, 100);
+            assert_eq!(get_block_validators.tendermint_rpc_url, "http://localhost:26657");
+        } else {
+            panic!("Expected GetBlockValidators command.");
         }
     }
 

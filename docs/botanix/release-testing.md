@@ -49,7 +49,7 @@ End-to-end (E2E) tests simulate complete user workflows and scenarios to validat
 
 Currently, while we don't have the test suite described above, we have to use our sidecar functional tests that cover some functionality and edge cases.
 
-Sidecar functional tests: https://github.com/botanix-labs/Side-Car/tree/main/functional-tests
+Sidecar functional tests: <https://github.com/botanix-labs/Side-Car/tree/main/functional-tests>
 
 TODO: @scoottay instructions to run them.
 
@@ -63,7 +63,7 @@ This testing involves:
 
 1. Syncing a new node from genesis block to current height using the updated software
 2. Verifying that all historical blocks are processed correctly up to the current tip
-3. Ensuring compatibility with both testnet and mainnet blockchains. 
+3. Ensuring compatibility with both testnet and mainnet blockchains.
    Currently, testnet blockchain is already contains incompatible blocks, so we can test only against mainnet.
    To fix testnet blockchain, we need to reset testnet chain preserving the state. This process will be proposed in a separate specification.
 
