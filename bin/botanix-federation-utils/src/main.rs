@@ -16,6 +16,7 @@ pub mod errors;
 pub mod handler;
 
 use crate::{config::load_config, errors::WalletError};
+use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use clap::Parser;
 use cli::{Cli, Commands};
 
@@ -86,7 +87,6 @@ async fn inner_main() -> Result<(), WalletError> {
 
             println!("Sweep successful: {:?}", sweep);
         }
-
         Commands::GetTransaction(get_tx) => {
             let chain_id = cli.chain_id.unwrap_or(config.chain_id);
             let provider_url = cli.provider_url.as_deref().unwrap_or(&config.provider_url);
@@ -97,6 +97,30 @@ async fn inner_main() -> Result<(), WalletError> {
             let tx_info = handle_get_transaction_info(&tx_hash, provider_url, chain_id).await?;
 
             println!("Transaction info: {:?}", tx_info);
+        }
+        Commands::GetBlockValidators(get_block_validators) => {
+            let tendermint_rpc_url = get_block_validators.tendermint_rpc_url.clone();
+            let block_number = get_block_validators.block_number;
+            if block_number == 0 {
+                return Err(WalletError::CustomError("Block number cannot be zero".to_string()));
+            }
+            let cometbft_client = HttpCometBFTRpcClientFactory::new(tendermint_rpc_url);
+            let http_client = cometbft_client.build_and_connect()?;
+            let resp = http_client.block(block_number).await?;
+            if resp.block.last_commit.is_none() {
+                return Err(WalletError::CustomError(
+                    "No commit signatures found for the block".to_string(),
+                ));
+            }
+            for (validator_index, sig) in
+                resp.block.last_commit.unwrap().signatures.iter().enumerate()
+            {
+                println!(
+                    "Signed by Validator --> (Index = {:?}, Address = {:?})",
+                    validator_index,
+                    sig.validator_address()
+                );
+            }
         }
     }
 
