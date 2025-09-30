@@ -1,5 +1,6 @@
 use ethers::providers::ProviderError;
 use std::io;
+use tendermint_rpc::Error as TenderMintError;
 use thiserror::Error;
 
 /// wallet error struct
@@ -39,6 +40,10 @@ pub enum WalletError {
     /// Error when an config file is invalid.
     #[error("Config.toml error: {0}")]
     TransactionNotFound(String),
+
+    /// Tendermint RPC client error.
+    #[error("Tendermint RPC client error: {0}")]
+    Tendermint(#[from] TenderMintError),
 }
 
 impl From<io::Error> for WalletError {
@@ -52,6 +57,7 @@ impl From<ProviderError> for WalletError {
         Self::RpcError(err.to_string())
     }
 }
+
 impl From<&str> for WalletError {
     fn from(message: &str) -> Self {
         Self::CustomError(message.to_string())
