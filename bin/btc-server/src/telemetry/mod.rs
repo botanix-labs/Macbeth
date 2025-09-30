@@ -361,7 +361,7 @@ impl Telemetry {
         });
     }
 
-    pub fn update_pegin_utxos(
+    pub fn update_utxos(
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
@@ -370,34 +370,94 @@ impl Telemetry {
     ) {
         self.maybe_use_metrics(|metrics| {
             metrics
-                .pegin_utxos_count
+                .multisig_utxos_count
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
                 .set(utxos);
 
             metrics
-                .pegin_utxos_total_value
+                .multisig_utxos_total_value
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
                 .set(total_value);
         });
     }
 
-    pub fn update_pegout_utxos(
+    pub fn increment_pegins_count(
         &self,
         btc_chain: bitcoin::Network,
         self_id: u16,
-        utxos: i64,
-        total_value: i64,
+        pegins_count: u64,
     ) {
         self.maybe_use_metrics(|metrics| {
             metrics
-                .pegout_utxos_count
+                .pegins_count
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .set(utxos);
+                .inc_by(pegins_count);
+        });
+    }
 
+    pub fn increment_pegouts_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+        pegouts_count: u64,
+    ) {
+        self.maybe_use_metrics(|metrics| {
             metrics
-                .pegout_utxos_total_value
+                .pegouts_count
                 .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
-                .set(total_value);
+                .inc_by(pegouts_count);
+        });
+    }
+
+    pub fn increment_success_broadcasted_pegout_txs_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .success_broadcasted_pegout_txs_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
+    pub fn increment_failed_broadcasted_pegout_txs_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .failed_broadcasted_pegout_txs_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
+    pub fn increment_started_round1_signings_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .started_round1_signings_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
+        });
+    }
+
+    pub fn increment_completed_round2_signings_count(
+        &self,
+        btc_chain: bitcoin::Network,
+        self_id: u16,
+    ) {
+        self.maybe_use_metrics(|metrics| {
+            metrics
+                .completed_round2_signings_count
+                .with_label_values(&[&btc_chain.to_string(), &self_id.to_string()])
+                .inc();
         });
     }
 
