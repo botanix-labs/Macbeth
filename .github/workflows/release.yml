@@ -176,7 +176,7 @@ jobs:
           service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
 
       - name: gcloud setup
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
@@ -317,7 +317,7 @@ jobs:
 #          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
 #
 #      - name: Setup gcloud
-#        uses: google-github-actions/setup-gcloud@v2
+#        uses: google-github-actions/setup-gcloud@v3
 #        with:
 #          project_id: botanix-391913
 #
@@ -403,7 +403,7 @@ jobs:
           service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: botanix-391913
 
