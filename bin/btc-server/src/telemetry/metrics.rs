@@ -112,11 +112,16 @@ pub struct BtcServerMetrics {
     pub round2_signing_package_size_histogram: HistogramVec,
 
     // Wallet and UTXO Management Metrics
-    pub pegin_utxos_count: IntGaugeVec,
-    pub pegin_utxos_total_value: IntGaugeVec,
-    pub pegout_utxos_count: IntGaugeVec,
-    pub pegout_utxos_total_value: IntGaugeVec,
+    pub multisig_utxos_count: IntGaugeVec,
+    pub multisig_utxos_total_value: IntGaugeVec,
     pub input_selection_time: IntCounterVec, // TODO (to be done once Darius's PR is merged)
+
+    pub pegins_count: IntCounterVec,
+    pub pegouts_count: IntCounterVec,
+    pub success_broadcasted_pegout_txs_count: IntGaugeVec,
+    pub failed_broadcasted_pegout_txs_count: IntGaugeVec,
+    pub started_round1_signings_count: IntGaugeVec,
+    pub completed_round2_signings_count: IntGaugeVec,
 
     // Federation Member Participation Metrics
     pub member_uptime: IntGaugeVec,
@@ -166,53 +171,54 @@ impl Default for BtcServerMetrics {
 
 impl BtcServerMetrics {
     pub fn new(prefix: Option<String>) -> anyhow::Result<Self> {
-        let metric_prefix = prefix.clone().map(|p| format!("{}_", p)).unwrap_or_default();
+        let metric_prefix = prefix.clone().unwrap_or("btc_server".to_string());
+        println!("Initializing metrics registry with prefix: {}", metric_prefix);
 
         // ================================== signing ==================================
         let total_signing_sessions = register_int_gauge_vec!(
-            format!("{}total_signing_sessions", metric_prefix),
+            "total_signing_sessions",
             "A metric counting the number of total signing sessions",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let total_aborted_signing_sessions = register_int_gauge_vec!(
-            format!("{}total_aborted_signing_sessions", metric_prefix),
+            "total_aborted_signing_sessions",
             "A metric counting the number of total aborted signing sessions",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let total_finalized_signing_sessions = register_int_gauge_vec!(
-            format!("{}total_finalized_signing_sessions", metric_prefix),
+            "total_finalized_signing_sessions",
             "A metric counting the number of total finalized signing sessions",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let total_received_round1_signing_packages = register_int_counter_vec!(
-            format!("{}total_received_round1_signing_packages", metric_prefix),
+            "total_received_round1_signing_packages",
             "A metric counting the number of received round 1 packages",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let total_received_round2_signing_packages = register_int_counter_vec!(
-            format!("{}total_received_round2_signing_packages", metric_prefix),
+            "total_received_round2_signing_packages",
             "A metric counting the number of received round 2 packages",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let round1_signing_throughput = register_int_counter_vec!(
-            format!("{}round1_signing_throughput", metric_prefix),
+            "round1_signing_throughput",
             "A metric counting the number of gossiped round1 signing messages per signing round and id",
             &["btc_chain", "self_id", "signing_session_id"],
         )
         .expect("metric must be created");
 
         let round2_signing_throughput = register_int_counter_vec!(
-            format!("{}round2_signing_throughput", metric_prefix),
+            "round2_signing_throughput",
             "A metric counting the number of gossiped round2 signing messages per signing round and id",
             &["btc_chain", "self_id", "signing_session_id"],
         )
@@ -220,7 +226,7 @@ impl BtcServerMetrics {
 
         // New histogram metric for block latency
         let round1_signing_latency = register_histogram_vec!(
-            format!("{}round1_signing_latency_ms", metric_prefix),
+            "round1_signing_latency_ms",
             "Histogram of latencies between receiving and writing round1 signing package to db",
             &["btc_chain", "self_id"],
             // buckets for latency measurement in ms (e.g., 0.1s, 0.5s, 1s, 5s, 10s)
@@ -229,7 +235,7 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let round2_signing_latency = register_histogram_vec!(
-            format!("{}round2_signing_latency_ms", metric_prefix),
+            "round2_signing_latency_ms",
             "Histogram of latencies between receiving and writing round2 signing package to db",
             &["btc_chain", "self_id"],
             // buckets for latency measurement in ms (e.g., 0.1s, 0.5s, 1s, 5s, 10s)
@@ -238,7 +244,7 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let round1_signing_package_size_histogram = register_histogram_vec!(
-            format!("{}round1_signing_package_size_bytes", metric_prefix),
+            "round1_signing_package_size_bytes",
             "Histogram of round1 signing packages sizes in bytes",
             &["btc_chain", "self_id"],
             vec![10.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 100000.0, 1000000.0]
@@ -246,64 +252,92 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let round2_signing_package_size_histogram = register_histogram_vec!(
-            format!("{}round2_signing_package_size_bytes", metric_prefix),
+            "round2_signing_package_size_bytes",
             "Histogram of round2 signing packages sizes in bytes",
             &["btc_chain", "self_id"],
             vec![10.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 100000.0, 1000000.0]
         )
         .expect("metric must be created");
 
-        let pegin_utxos_count = register_int_gauge_vec!(
-            format!("{}pegin_utxos_count", metric_prefix),
-            "A metric counting the number of pegin UTXOs",
+        let multisig_utxos_count = register_int_gauge_vec!(
+            "multisig_utxos_count",
+            "A metric counting the number of multisig UTXOs",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
-        let pegin_utxos_total_value = register_int_gauge_vec!(
-            format!("{}pegin_utxos_total_value", metric_prefix),
-            "A metric representing the total value of pegin UTXOs in satoshis",
-            &["btc_chain", "self_id"],
-        )
-        .expect("metric must be created");
-
-        let pegout_utxos_count = register_int_gauge_vec!(
-            format!("{}pegout_utxos_count", metric_prefix),
-            "A metric counting the number of pegout UTXOs",
-            &["btc_chain", "self_id"],
-        )
-        .expect("metric must be created");
-
-        let pegout_utxos_total_value = register_int_gauge_vec!(
-            format!("{}pegout_utxos_total_value", metric_prefix),
-            "A metric representing the total value of pegout UTXOs in satoshis",
+        let multisig_utxos_total_value = register_int_gauge_vec!(
+            "multisig_utxos_total_value",
+            "A metric representing the total value of multisig UTXOs in satoshis",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let input_selection_time = register_int_counter_vec!(
-            format!("{}input_selection_time", metric_prefix),
+            "input_selection_time",
             "A metric counting the time taken for input selection",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
+        let pegins_count = register_int_counter_vec!(
+            "pegins_count",
+            "A metric counting the pegins",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let pegouts_count = register_int_counter_vec!(
+            "pegouts_count",
+            "A metric counting the pegouts",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let success_broadcasted_pegout_txs_count = register_int_gauge_vec!(
+            "success_broadcasted_pegout_txs_count",
+            "A metric counting the scuccessful broadcasted pegout txs",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let failed_broadcasted_pegout_txs_count = register_int_gauge_vec!(
+            "failed_broadcasted_pegout_txs_count",
+            "A metric counting the failed broadcasted pegout txs",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let started_round1_signings_count = register_int_gauge_vec!(
+            "started_round1_signings_count",
+            "A metric counting the started round1 signings",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
+        let completed_round2_signings_count = register_int_gauge_vec!(
+            "completed_round2_signings_count",
+            "A metric counting the completed round2 signings",
+            &["btc_chain", "self_id"],
+        )
+        .expect("metric must be created");
+
         let signing_error_rates = register_int_counter_vec!(
-            format!("{}signing_error_rates", metric_prefix),
+            "signing_error_rates",
             "A metric counting errors or failures during signing message processing",
             &["btc_chain", "self_id", "error_type"],
         )
         .expect("metric must be created");
 
         let signing_success_rate = register_int_counter_vec!(
-            format!("{}signing_success_rate", metric_prefix),
+            "signing_success_rate",
             "A metric counting successfully signed messages",
             &["btc_chain", "self_id", "signing_session_id"],
         )
         .expect("metric must be created");
 
         let member_uptime = register_int_gauge_vec!(
-            format!("{}member_uptime", metric_prefix),
+            "member_uptime",
             "A metric counting the uptime of federation members",
             &["btc_chain", "self_id"],
         )
@@ -311,7 +345,7 @@ impl BtcServerMetrics {
 
         // System Performance Metrics
         let bitcoind_rpc_latency = register_histogram_vec!(
-            format!("{}bitcoind_rpc_latency", metric_prefix),
+            "bitcoind_rpc_latency",
             "A metric representing the latency of bitcoind RPC calls",
             &["btc_chain", "self_id", "rpc_method"],
             vec![10.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 100000.0, 1000000.0]
@@ -319,14 +353,14 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let bitcoind_sync_status = register_int_gauge_vec!(
-            format!("{}bitcoind_sync_status", metric_prefix),
+            "bitcoind_sync_status",
             "A metric representing the sync status of bitcoind",
             &["btc_chain", "self_id", "service"] // status can be "syncing" = 0 or "up" = 1
         )
         .expect("metric must be created");
 
         let fee_rate_abnormalities = register_int_counter_vec!(
-            format!("{}fee_rate_abnormalities", metric_prefix),
+            "fee_rate_abnormalities",
             "A metric counting fee rate abnormalities",
             &["btc_chain", "self_id"],
         )
@@ -334,21 +368,21 @@ impl BtcServerMetrics {
 
         //  ================================== dkg ==================================
         let total_received_round1_dkg_packages = register_int_counter_vec!(
-            format!("{}total_received_round1_dkg_packages", metric_prefix),
+            "total_received_round1_dkg_packages",
             "A metric counting the number of received round 1 dkg packages",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let total_received_round2_dkg_packages = register_int_counter_vec!(
-            format!("{}total_received_round2_dkg_packages", metric_prefix),
+            "total_received_round2_dkg_packages",
             "A metric counting the number of received round 2 dkg packages",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let total_received_round3_dkg_packages = register_int_counter_vec!(
-            format!("{}total_received_round3_dkg_packages", metric_prefix),
+            "total_received_round3_dkg_packages",
             "A metric counting the number of received round 3 dkg packages",
             &["btc_chain", "self_id"],
         )
@@ -356,21 +390,21 @@ impl BtcServerMetrics {
 
         // ---
         let round1_dkg_throughput = register_int_counter_vec!(
-            format!("{}round1_dkg_throughput", metric_prefix),
+            "round1_dkg_throughput",
             "A metric counting the number of gossiped round1 dkg messages per id",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let round2_dkg_throughput = register_int_counter_vec!(
-            format!("{}round2_dkg_throughput", metric_prefix),
+            "round2_dkg_throughput",
             "A metric counting the number of gossiped round2 dkg messages per id",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let round3_dkg_throughput = register_int_counter_vec!(
-            format!("{}round3_dkg_throughput", metric_prefix),
+            "round3_dkg_throughput",
             "A metric counting the number of gossiped round2 dkg messages per id",
             &["btc_chain", "self_id"],
         )
@@ -379,7 +413,7 @@ impl BtcServerMetrics {
         // ---
         // New histogram metric for package latency
         let round1_dkg_latency_histogram = register_histogram_vec!(
-            format!("{}round1_dkg_latency_secs", metric_prefix),
+            "round1_dkg_latency_secs",
             "Histogram of latencies between receiving and writing dkg package to db",
             &["btc_chain", "self_id"],
             // buckets for latency measurement (e.g., 0.1s, 0.5s, 1s, 5s, 10s)
@@ -388,7 +422,7 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let round2_dkg_latency_histogram = register_histogram_vec!(
-            format!("{}round2_dkg_latency_secs", metric_prefix),
+            "round2_dkg_latency_secs",
             "Histogram of latencies between receiving and writing round2 dkg package to db",
             &["btc_chain", "self_id"],
             // buckets for latency measurement (e.g., 0.1s, 0.5s, 1s, 5s, 10s)
@@ -397,7 +431,7 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let round3_dkg_latency_histogram = register_histogram_vec!(
-            format!("{}round3_dkg_latency_secs", metric_prefix),
+            "round3_dkg_latency_secs",
             "Histogram of latencies between receiving and writing round2 dkg package to db",
             &["btc_chain", "self_id"],
             // buckets for latency measurement (e.g., 0.1s, 0.5s, 1s, 5s, 10s)
@@ -407,7 +441,7 @@ impl BtcServerMetrics {
 
         // ---
         let round1_dkg_package_size_histogram = register_histogram_vec!(
-            format!("{}round1_dkg_package_size_bytes", metric_prefix),
+            "round1_dkg_package_size_bytes",
             "Histogram of round1 dkg packages sizes in bytes",
             &["btc_chain", "self_id"],
             vec![10.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 100000.0, 1000000.0]
@@ -415,7 +449,7 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let round2_dkg_package_size_histogram = register_histogram_vec!(
-            format!("{}round2_dkg_package_size_bytes", metric_prefix),
+            "round2_dkg_package_size_bytes",
             "Histogram of round2 dkg packages sizes in bytes",
             &["btc_chain", "self_id"],
             vec![10.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 100000.0, 1000000.0]
@@ -423,7 +457,7 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let dkg_error_rates = register_int_counter_vec!(
-            format!("{}dkg_error_rates", metric_prefix),
+            "dkg_error_rates",
             "A metric counting errors or failures during dkg message processing",
             &["btc_chain", "self_id", "error_type"],
         )
@@ -431,7 +465,7 @@ impl BtcServerMetrics {
 
         // ---
         let pegout_scheduler_error_rates = register_int_counter_vec!(
-            format!("{}pegout_scheduler_error_rates", metric_prefix),
+            "pegout_scheduler_error_rates",
             "A metric counting errors or failures during the pegout scheduler processing",
             &["btc_chain", "self_id", "error_type"],
         )
@@ -440,28 +474,28 @@ impl BtcServerMetrics {
         // ====================================================================
         // Transaction Processing Metrics
         let pending_pegouts = register_int_gauge_vec!(
-            format!("{}pending_pegouts", metric_prefix),
+            "pending_pegouts",
             "A metric counting the number of pending pegouts",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let finalized_pegout_ids = register_int_gauge_vec!(
-            format!("{}finalized_pegout_ids", metric_prefix),
+            "finalized_pegout_ids",
             "A metric counting the number of pending pegouts",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let pegin_confirmation_depth = register_int_gauge_vec!(
-            format!("{}pegin_confirmation_depth", metric_prefix),
+            "pegin_confirmation_depth",
             "A metric representing the confirmation depth of pegin transactions",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let transaction_fee_rates = register_histogram_vec!(
-            format!("{}transaction_fee_rates", metric_prefix),
+            "transaction_fee_rates",
             "A metric representing the transaction fee rates",
             &["btc_chain", "self_id"],
             // buckets for measurement in satoshis (e.g., 1.0, 100.0, 10000.0, 100000.0, 1000000.0,
@@ -471,21 +505,21 @@ impl BtcServerMetrics {
         .expect("metric must be created");
 
         let last_attempted_pegout_height = register_int_gauge_vec!(
-            format!("{}last_attempted_pegout_height", metric_prefix),
+            "last_attempted_pegout_height",
             "A metric representing the last attempted pegout height",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let last_successful_pegout_height = register_int_gauge_vec!(
-            format!("{}last_successful_pegout_height", metric_prefix),
+            "last_successful_pegout_height",
             "A metric representing the last successful pegout height",
             &["btc_chain", "self_id"],
         )
         .expect("metric must be created");
 
         let last_pegin_height = register_int_gauge_vec!(
-            format!("{}last_pegin_height", metric_prefix),
+            "last_pegin_height",
             "A metric representing the last pegin height",
             &["btc_chain", "self_id"],
         )
@@ -530,10 +564,8 @@ impl BtcServerMetrics {
         registry.register(Box::new(round2_signing_throughput.clone()))?;
         registry.register(Box::new(round1_signing_package_size_histogram.clone()))?;
         registry.register(Box::new(round2_signing_package_size_histogram.clone()))?;
-        registry.register(Box::new(pegin_utxos_count.clone()))?;
-        registry.register(Box::new(pegin_utxos_total_value.clone()))?;
-        registry.register(Box::new(pegout_utxos_count.clone()))?;
-        registry.register(Box::new(pegout_utxos_total_value.clone()))?;
+        registry.register(Box::new(multisig_utxos_count.clone()))?;
+        registry.register(Box::new(multisig_utxos_total_value.clone()))?;
         registry.register(Box::new(input_selection_time.clone()))?;
         registry.register(Box::new(fee_rate_abnormalities.clone()))?;
 
@@ -554,6 +586,13 @@ impl BtcServerMetrics {
         registry.register(Box::new(member_uptime.clone()))?;
         registry.register(Box::new(bitcoind_rpc_latency.clone()))?;
         registry.register(Box::new(bitcoind_sync_status.clone()))?;
+
+        registry.register(Box::new(pegins_count.clone()))?;
+        registry.register(Box::new(pegouts_count.clone()))?;
+        registry.register(Box::new(success_broadcasted_pegout_txs_count.clone()))?;
+        registry.register(Box::new(failed_broadcasted_pegout_txs_count.clone()))?;
+        registry.register(Box::new(started_round1_signings_count.clone()))?;
+        registry.register(Box::new(completed_round2_signings_count.clone()))?;
 
         // Transaction Processing Metrics
         registry.register(Box::new(pending_pegouts.clone()))?;
@@ -585,12 +624,16 @@ impl BtcServerMetrics {
             round2_signing_package_size_histogram,
             total_received_round1_signing_packages,
             total_received_round2_signing_packages,
-            pegin_utxos_count,
-            pegin_utxos_total_value,
-            pegout_utxos_count,
-            pegout_utxos_total_value,
+            multisig_utxos_count,
+            multisig_utxos_total_value,
             input_selection_time,
             member_uptime,
+            pegins_count,
+            pegouts_count,
+            success_broadcasted_pegout_txs_count,
+            failed_broadcasted_pegout_txs_count,
+            started_round1_signings_count,
+            completed_round2_signings_count,
             bitcoind_rpc_latency,
             bitcoind_sync_status,
             fee_rate_abnormalities,
