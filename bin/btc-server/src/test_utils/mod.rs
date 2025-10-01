@@ -49,7 +49,7 @@ impl MockBitcoind {
 
     /// Add a output to the UTXO set
     pub fn add_utxo(&self, outpoint: OutPoint, value: Amount, script_pubkey: ScriptBuf) {
-        let script_hex = bitcoin::consensus::encode::serialize_hex(&script_pubkey);
+        let script_hex = hex::encode(script_pubkey.to_bytes());
         let json_str = format!(
             r#"{{
             "bestblock": "0000000000000000000000000000000000000000000000000000000000000000",
