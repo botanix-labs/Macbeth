@@ -1,28 +1,11 @@
 //! POA node command
-use bitcoincore_zmq::subscribe_async_wait_handshake;
-use botanix_authority_peg::mint_validation::MINT_CONTRACT_ADDRESS;
-use botanix_authority_rsp::RandomSourceProvider;
-use botanix_cli_args::{
-    bitcoind::BitcoindArgs,
-    chain::{get_chain_from_federation_config, BotanixNetwork},
-    poa_node::PoaNodeArgs,
-};
-use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
-use botanix_configs::federation::load_federation_config_toml;
-use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
-use botanix_storage_migrate::is_migration_needed;
-use botanix_utils::panic_hook::set_panic_hook;
-use btc_server_client::{
-    BtcServerExtendedApi, BtcServerExtendedClient, Empty, GrpcClientFactory,
-    RecoverMissingUtxosRequest,
-};
 use bitcoin::hashes::Hash;
 use bitcoincore_rpc::RpcApi;
 use btcserverlib::extended_client::{
     BtcServerExtendedApi, BtcServerExtendedClient, GrpcClientFactory,
 };
 use clap::{value_parser, Parser};
-use client::Empty;
+use client::{Empty, RecoverMissingUtxosRequest};
 use comet_bft_rpc::HttpCometBFTRpcClientFactory;
 use core::panic;
 use eyre::Context;
@@ -73,10 +56,7 @@ use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGenera
 use reth_btc_wallet::bitcoind::{
     BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
 };
-use botanix_storage::{models::Vote, BotanixProviderFactory};
-use botanix_storage_migrate::migrate_botanix_tables;
 use btcserverlib::utxo_recovery::read_utxos_from_file;
-use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
 use reth_chainspec::{BOTANIX_MAINNET_CHAIN_ID, BOTANIX_TESTNET_CHAIN_ID};
 use reth_cli_runner::CliContext;
 use reth_config::{config::StageConfig, Config};
@@ -475,7 +455,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 let recover_request = RecoverMissingUtxosRequest { utxos };
                 // Only proceed if we have UTXOs to recover
                 if !recover_request.utxos.is_empty() {
-                    match btc_server_client.recover_missing_utxos(recover_request).await {
+                    match client.recover_missing_utxos(recover_request).await {
                         Ok(response) => {
                             info!(target: "reth::cli",
                                 "reth::cli::recover_missing_utxos: UTXO recovery completed. Requested: {}, Recovered: {}",

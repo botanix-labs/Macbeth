@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use bitcoin::{consensus::Encodable, Address};
 use bitcoincore_rpc::RpcApi;
-use btc_server_client::BtcServerClient;
+use client::BtcServerClient;
 use btcserverlib::pegout_id::PegoutId;
 use hex::{self, encode as hex_encode};
 use rand::{rngs::StdRng, RngCore, SeedableRng};
@@ -75,7 +75,7 @@ pub async fn test_utxo_recovery(
         let mut client =
             clients.get(0).cloned().ok_or_else(|| anyhow::anyhow!("client not found"))?;
         let res = client
-            .get_gateway_address(tonic::Request::new(btc_server_client::GetGatewayAddressRequest {
+            .get_gateway_address(tonic::Request::new(client::GetGatewayAddressRequest {
                 eth_address: hex_encode(eth_address),
             }))
             .await
@@ -174,7 +174,7 @@ pub async fn test_utxo_recovery(
 
     // Test 1: Attempting to recover an already claimed pegin should not add any new utxos.
     let claimed_utxos = clients[COORDINATOR_INDEX]
-        .get_all_utxos(tonic::Request::new(btc_server_client::Empty {}))
+        .get_all_utxos(tonic::Request::new(client::Empty {}))
         .await?
         .into_inner()
         .utxos;
@@ -183,7 +183,7 @@ pub async fn test_utxo_recovery(
     let utxos_to_recover = claimed_utxos
         .iter()
         .map(|utxo| {
-            btc_server_client::UtxoToRecover {
+            client::UtxoToRecover {
                 outpoint: utxo.outpoint.clone(), // note this is little endian
                 eth_address: utxo.eth_address.clone(),
             }
@@ -191,7 +191,7 @@ pub async fn test_utxo_recovery(
         .collect::<Vec<_>>();
 
     let res = clients[COORDINATOR_INDEX]
-        .recover_missing_utxos(btc_server_client::RecoverMissingUtxosRequest {
+        .recover_missing_utxos(client::RecoverMissingUtxosRequest {
             utxos: utxos_to_recover.clone(),
         })
         .await?;
@@ -203,8 +203,8 @@ pub async fn test_utxo_recovery(
     // utxo set.
     let unclaimed_utxos = unclaimed_pegin
         .iter()
-        .map(|pegin| btc_server_client::UtxoToRecover {
-            outpoint: Some(btc_server_client::OutPoint {
+        .map(|pegin| client::UtxoToRecover {
+            outpoint: Some(client::OutPoint {
                 txid: {
                     let mut txid_bytes = Vec::new();
                     pegin.outpoint.txid.consensus_encode(&mut txid_bytes).unwrap();
@@ -217,7 +217,7 @@ pub async fn test_utxo_recovery(
         .collect::<Vec<_>>();
 
     let res = clients[COORDINATOR_INDEX]
-        .recover_missing_utxos(btc_server_client::RecoverMissingUtxosRequest {
+        .recover_missing_utxos(client::RecoverMissingUtxosRequest {
             utxos: unclaimed_utxos.clone(),
         })
         .await?;
@@ -226,8 +226,8 @@ pub async fn test_utxo_recovery(
     assert_eq!(res.total_recovered, NUM_UNCLAIMED_PEGINS as u64);
 
     // test 3 is to try and recover the change output (has no eth address)
-    let change_utxos = vec![btc_server_client::UtxoToRecover {
-        outpoint: Some(btc_server_client::OutPoint {
+    let change_utxos = vec![client::UtxoToRecover {
+        outpoint: Some(client::OutPoint {
             txid: {
                 let mut txid_bytes = Vec::new();
                 change_txid.consensus_encode(&mut txid_bytes).unwrap();
@@ -239,7 +239,7 @@ pub async fn test_utxo_recovery(
     }];
 
     let res = clients[COORDINATOR_INDEX]
-        .recover_missing_utxos(btc_server_client::RecoverMissingUtxosRequest {
+        .recover_missing_utxos(client::RecoverMissingUtxosRequest {
             utxos: change_utxos.clone(),
         })
         .await?;
@@ -305,7 +305,7 @@ async fn get_change_address(
     clients: &mut Vec<BtcServerClient<Channel>>,
 ) -> anyhow::Result<bitcoin::Address> {
     let public_key_response = clients[COORDINATOR_INDEX]
-        .get_public_key(tonic::Request::new(btc_server_client::Empty {}))
+        .get_public_key(tonic::Request::new(client::Empty {}))
         .await?;
     let public_key_bytes = hex::decode(&public_key_response.into_inner().publickey)?;
     let public_key = secp256k1::PublicKey::from_slice(&public_key_bytes)?;
@@ -321,7 +321,7 @@ async fn sync_checkpoint(
 ) -> Result<(), Error> {
     for client in clients.iter_mut() {
         client
-            .new_consensus_checkpoint(btc_server_client::ConsensusCheckpointRequest {
+            .new_consensus_checkpoint(client::ConsensusCheckpointRequest {
                 checkpoint_block_hash: checkpoint_block_hash.clone(),
                 pegins: vec![],
                 pending_pegouts: vec![],
@@ -334,7 +334,7 @@ async fn sync_checkpoint(
 
 pub async fn get_utxo_count(clients: &mut Vec<BtcServerClient<Channel>>) -> anyhow::Result<usize> {
     let utxos = clients[COORDINATOR_INDEX]
-        .get_all_utxos(tonic::Request::new(btc_server_client::Empty {}))
+        .get_all_utxos(tonic::Request::new(client::Empty {}))
         .await?
         .into_inner()
         .utxos;

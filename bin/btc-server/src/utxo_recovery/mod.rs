@@ -5,7 +5,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use bitcoin_hashes::Hash;
-use btc_server_client::{OutPoint, UtxoToRecover};
+use client::{OutPoint, UtxoToRecover};
 
 #[derive(Debug, Error)]
 pub enum UtxoRecoveryError {
