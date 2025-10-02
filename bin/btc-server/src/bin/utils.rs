@@ -1,7 +1,20 @@
-use btcserverlib::database;
+use btcserverlib::{
+    database,
+    util::parse_eth_address,
+    wallet::address::{generate_taproot_address, generate_tweaked_public_key},
+};
 use clap::Parser;
 use std::path::PathBuf;
 use zeroize::Zeroizing;
+
+/// The aggregated Frost public key of the genesis federation.
+///
+/// > GENESIS_AGGR_KEY =
+/// > hex::decode("03ae26f6152efa6e65619f436aae5076356cacab97bed10c294a38b777efa66e72")
+const GENESIS_AGGR_KEY: &[u8] = &[
+    3, 174, 38, 246, 21, 46, 250, 110, 101, 97, 159, 67, 106, 174, 80, 118, 53, 108, 172, 171, 151,
+    190, 209, 12, 41, 74, 56, 183, 119, 239, 166, 110, 114,
+];
 
 #[derive(Clone, Debug, Parser)]
 #[command(name = "btc-utils")]
@@ -18,6 +31,9 @@ pub enum Commands {
     /// Import encrypted key packages from a file.
     #[command(name = "import-key-package")]
     ImportKeyPackage(ImportConfig),
+    #[command(name = "compute-gateway-address")]
+    /// Compute the gateway pegin address for a given Botanix address.
+    ComputeGatewayAddress(ComputeGatewayAddress),
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -50,6 +66,35 @@ pub struct ImportConfig {
     /// Overwrite existing key packages in the database.
     #[arg(long, default_value_t = false)]
     pub force_overwrite: bool,
+}
+
+#[derive(Clone, Debug, Parser)]
+pub struct ComputeGatewayAddress {
+    /// The Botanix (ETH) address to whom the BTC should be minted to.
+    #[arg(long)]
+    pub botanix_address: String,
+    /// Custom aggregated public key of a multisig federation. Uses the genesis
+    /// federation key on mainnet by default.
+    #[arg(long)]
+    pub aggregated_key: Option<String>,
+}
+
+impl ComputeGatewayAddress {
+    fn compute_gateway_address(self) -> anyhow::Result<String, anyhow::Error> {
+        let aggr_key = self
+            .aggregated_key
+            .map(|key| hex::decode(key))
+            .transpose()?
+            .unwrap_or(GENESIS_AGGR_KEY.to_vec());
+
+        let aggr_key = frost_secp256k1_tr::VerifyingKey::deserialize(&aggr_key)?;
+
+        let eth_address = parse_eth_address(self.botanix_address)?;
+        let tweaked_key = generate_tweaked_public_key(&aggr_key, &eth_address).unwrap();
+        let gateway_address = generate_taproot_address(&tweaked_key, bitcoin::Network::Bitcoin);
+
+        Ok(gateway_address.to_string())
+    }
 }
 
 fn get_passphrase(
@@ -132,7 +177,58 @@ async fn main() -> anyhow::Result<(), anyhow::Error> {
 
             println!("Successfully imported decrypted key package");
         }
+        Commands::ComputeGatewayAddress(c) => {
+            let gateway_address = c.compute_gateway_address()?;
+            println!("{}", gateway_address.to_string());
+        }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn btc_utils_test_genesis_aggr_key() {
+        let raw =
+            hex::decode(b"03ae26f6152efa6e65619f436aae5076356cacab97bed10c294a38b777efa66e72")
+                .unwrap();
+
+        assert_eq!(raw, GENESIS_AGGR_KEY);
+    }
+
+    #[test]
+    fn btc_utils_compute_gateway_address() {
+        const MATCH: &str = "bc1pdxrrvdqunlrwnt4qrqs52djk0g4r39s0f5qsa0j9dcctq6jvaf5qu9na42";
+
+        let c = ComputeGatewayAddress {
+            botanix_address: "0xE99F129Bb9d60a91f6d0Ae2d6bBC746C52A87220".to_string(),
+            aggregated_key: Some(hex::encode(GENESIS_AGGR_KEY)),
+        };
+
+        let addr = c.compute_gateway_address().unwrap();
+        assert_eq!(&addr, &MATCH);
+
+        // Uses the `GENESIS_AGGR_KEY` by default.
+        let c = ComputeGatewayAddress {
+            botanix_address: "0xE99F129Bb9d60a91f6d0Ae2d6bBC746C52A87220".to_string(),
+            aggregated_key: None,
+        };
+
+        let addr = c.compute_gateway_address().unwrap();
+        assert_eq!(&addr, MATCH);
+    }
+
+    #[test]
+    fn btc_utils_compute_gateway_address_bad_aggr_key() {
+        let c = ComputeGatewayAddress {
+            botanix_address: "0xE99F129Bb9d60a91f6d0Ae2d6bBC746C52A87220".to_string(),
+            aggregated_key: Some("zzz".to_string()),
+        };
+
+        // Bad aggregated key.
+        let _err = c.compute_gateway_address().unwrap_err();
+    }
 }
