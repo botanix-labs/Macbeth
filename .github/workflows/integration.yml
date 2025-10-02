@@ -35,7 +35,7 @@ concurrency:
 jobs:
   build:
     name: build test binaries
-    runs-on: ubuntu-latest
+    runs-on: k8-runners
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 30
@@ -110,10 +110,24 @@ jobs:
 
       - name: Prepare binaries for upload
         run: |
+          set -euo pipefail
+          OUT="${CARGO_TARGET_DIR:-$GITHUB_WORKSPACE/target}"
+          echo "Using target dir: $OUT"
+          ls -lah "$OUT/debug" || true
+      
           mkdir -p /tmp/binaries
-          cp target/debug/btc-server /tmp/binaries/ || true
-          cp target/debug/reth /tmp/binaries/ || true
-          cp target/debug/test-suite /tmp/binaries/ || true
+          for bin in btc-server reth test-suite; do
+            if [ -f "$OUT/debug/$bin" ]; then
+              cp "$OUT/debug/$bin" /tmp/binaries/
+              echo "copied $bin"
+            else
+              echo "$bin not found in $OUT/debug"
+            fi
+          done
+      
+          # Fail early if nothing was built
+          [ "$(ls -A /tmp/binaries 2>/dev/null || echo)" ] || {
+            echo "No binaries found in $OUT/debug"; exit 1; }
 
       - name: Upload compiled binaries
         uses: actions/upload-artifact@v4
@@ -136,6 +150,7 @@ jobs:
           "signing_flow",
           "test_mempool_gossip",
           "utxo_sync",
+          "utxo_recovery",
           "state_sync",
           "wallet_sync",
           "frost_e2e_stable",
@@ -143,7 +158,7 @@ jobs:
           "invalid_pegin",
           "invalid_pegout",
           "block_builder",
-          "test_conflicting_input",
+          "test_prevent_resigning_pegout",
           "test_round1_then_new_signing_session",
           "test_track_mempool",
           "rpc_node"]
