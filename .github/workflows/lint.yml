@@ -62,7 +62,7 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-      - uses: clechasseur/rs-clippy-check@ff884e6d84447e8bb55fa0a6510e058e0c40be19
+      - uses: clechasseur/rs-clippy-check@69da786488ddcceb16285b0219841750089369ba
         with:
           args: -p reth-authority-consensus -p reth-network --lib --tests --benches --all-features --locked -- --no-deps
 
@@ -115,7 +115,7 @@ jobs:
   #         toolchain: nightly
 
   #     - name: Install Node.js
-  #       uses: actions/setup-node@v4
+  #       uses: actions/setup-node@v5
   #       with:
   #         node-version: 20
 
@@ -189,7 +189,7 @@ jobs:
           toolchain: nightly
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -220,7 +220,7 @@ jobs:
           toolchain: nightly
 
       - name: Check formatting
-        uses: clechasseur/rs-fmt-check@b821b41cc907be559e0596ec6cf657ed627268cc
+        uses: clechasseur/rs-fmt-check@37e549d599544309c163b37650fe7cfee67390c4
 
   # cargo-verifications:
   #   name: Cargo verifications
@@ -238,7 +238,7 @@ jobs:
   #         toolchain: nightly
 
   #     - name: Install Node.js
-  #       uses: actions/setup-node@v4
+  #       uses: actions/setup-node@v5
   #       with:
   #         node-version: 20
 
