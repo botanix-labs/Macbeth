@@ -35,6 +35,11 @@ pub enum Error {
     BitcoindError(#[from] bitcoincore_rpc::Error),
     #[error("Tracked tx not found in Pegout Scheduler")]
     TrackedTxNotFoundInPegoutScheduler,
+    #[error("Bad passphrase for decrypting key-package import")]
+    BadDecryptionPassphrase,
+    /// Related to [`super::ExportedKeyPackage`].
+    #[error("Bad exported package format version")]
+    BadExportedPackageFormatVersion,
 }
 
 impl PartialEq for Error {

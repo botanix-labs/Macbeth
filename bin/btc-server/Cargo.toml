@@ -10,6 +10,10 @@ name = "btcserverlib"
 name = "btc-server"
 path = "src/bin/main.rs"
 
+[[bin]]
+name = "btc-utils"
+path = "src/bin/utils.rs"
+
 [features]
 default = []
 
@@ -55,6 +59,7 @@ prometheus = { version = "0.13", features = ["process"] }
 prost = "0.13.3"
 prost-types = "0.13.5"
 rand = "0.8.5"
+rpassword = "7.4.0"
 
 reth-fs-util = { workspace = true }
 rust_decimal = { version = "1.13" }
