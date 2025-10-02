@@ -22,10 +22,11 @@ use crate::{
     },
     utils::generate_blocks,
 };
+use client;
 
 const NUM_PEGINS: usize = 5;
 
-pub async fn test_conflicting_input(
+pub async fn test_prevent_resigning_pegout(
     suite: &ConsensusIntegrationTestSuite,
 ) -> anyhow::Result<(), anyhow::Error> {
     let bitcoind = suite.global_context.bitcoind_rpc();
@@ -155,8 +156,15 @@ pub async fn test_conflicting_input(
         )
         .await?;
     }
+
+    // assert that the pegout was added to the pending pegouts list
+    assert_eq!(get_pending_pegouts_count(&mut clients[0]).await?, 1);
+
     // signs, broadcasts, and tracks the psbt honoring pending pegouts
     let _tracked_tx = do_signing(&mut clients, &bitcoind, &[1u8; 32]).await?;
+
+    // assert there is a tracked tx
+    assert_eq!(get_tracked_txs_count(&mut clients[0]).await?, 1);
 
     // resend the same pegout notification so it is a pending pegout
     for c in clients.iter_mut() {
@@ -171,28 +179,57 @@ pub async fn test_conflicting_input(
         .await?;
     }
 
-    // Create a new psbt that honors the pending pegout that is already being tracked in the
-    // previous psbt.
+    // assert there is still a tracked tx
+    assert_eq!(get_tracked_txs_count(&mut clients[0]).await?, 1);
 
-    // FAILURE CASES:
-    // 1) Signers will reject the psbt if it contains no conflicting input. This does not happen b/c
-    //    the coordinator will include a conflicting input and signers will validate against this
-    // 2) The network will reject the broadcast psbt if it contains a conflicting input with error
-    //    "txn-mempool-conflict" since the first tx is still in the mempool.
-    // 3) The network will reject the broadcast psbt if the replacement fee isn't high enough.  We
-    //    are not trying to replace the tx so this is an acceptable failure case as well:
-    //    "insufficient fee, rejecting replacement"
-    // We want failure case 2 or 3.
-    if let Err(e) = do_signing(&mut clients, &bitcoind, &[2u8; 32]).await {
-        let error_message = e.to_string();
-        assert!(
-            error_message.contains("txn-mempool-conflict") ||
-                error_message.contains("insufficient fee, rejecting replacement"),
-            "Unexpected error: {}",
-            error_message
-        );
-        return Ok(());
+    // assert that the pegout was not added to the pending pegouts list, as it's already in the
+    // tracked
+    assert_eq!(get_pending_pegouts_count(&mut clients[0]).await?, 0);
+
+    // generate blocks so that tracked_tx has now been finalized
+    generate_blocks(&bitcoind, 2).await;
+    let checkpoint_block_hash = get_checkpoint_block_hash(&bitcoind)?;
+
+    // resend the same pegout notification so it is a pending pegout
+    for c in clients.iter_mut() {
+        send_pegout_notification(
+            c,
+            checkpoint_block_hash.clone(),
+            amount.to_sat(),
+            1,
+            pegout_id,
+            spk.clone(),
+        )
+        .await?;
     }
 
-    Err(anyhow::anyhow!("expected txn-mempool-conflict error"))
+    // tracked tx should be finalized and untracked
+    assert_eq!(get_tracked_txs_count(&mut clients[0]).await?, 0);
+
+    // assert that the pegout was not added to the pending pegouts list, as it's already finalized
+    assert_eq!(get_pending_pegouts_count(&mut clients[0]).await?, 0);
+
+    Ok(())
+}
+
+pub async fn get_tracked_txs_count(
+    client: &mut client::BtcServerClient<tonic::transport::Channel>,
+) -> anyhow::Result<usize> {
+    let tracked_txs = client
+        .get_tracked_txs(tonic::Request::new(client::Empty {}))
+        .await?
+        .into_inner()
+        .tracked_txs;
+    Ok(tracked_txs.len())
+}
+
+pub async fn get_pending_pegouts_count(
+    client: &mut client::BtcServerClient<tonic::transport::Channel>,
+) -> anyhow::Result<usize> {
+    let pending_pegouts = client
+        .get_pending_pegouts(tonic::Request::new(client::Empty {}))
+        .await?
+        .into_inner()
+        .pending_pegouts;
+    Ok(pending_pegouts.len())
 }

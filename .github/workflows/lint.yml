@@ -40,11 +40,11 @@ jobs:
     #         RUSTFLAGS: -D warnings
 
   clippy:
-    name: clippy-checks
+    name: Clippy
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Protobuf Compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@clippy
@@ -55,10 +55,9 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
-      - run: cargo clippy -p reth-authority-consensus -p reth-network -p reth-primitives -p reth-rpc --lib
-          --tests --benches --all-features --locked
-        env:
-          RUSTFLAGS: -D warnings
+      - uses: clechasseur/rs-clippy-check@ff884e6d84447e8bb55fa0a6510e058e0c40be19
+        with:
+          args: -p reth-authority-consensus -p reth-network --lib --tests --benches --all-features --locked -- --no-deps
 
   crate-checks:
     runs-on: ubuntu-latest
