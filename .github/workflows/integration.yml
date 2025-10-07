@@ -23,12 +23,10 @@ env:
   JWT_DIR: "/home/runner/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
   # sccache configuration
   RUSTC_WRAPPER: "sccache"
-  SCCACHE_GHA_ENABLED: "false"  # Disable GitHub Actions cache in favor of GCS
   SCCACHE_GCS_RW_MODE: "READ_WRITE"
   SCCACHE_GCS_BUCKET: "macbeth-sccache-bucket"
   SCCACHE_ERROR_LOG: "/tmp/sccache_log.txt"
   SCCACHE_LOG: "warn"
-  SCCACHE_GCS_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
   GCP_PROJECT_ID: botanix-391913
   SCCACHE_GCS_KEY_PATH: "/tmp/gcs-key.json"
 
@@ -55,8 +53,17 @@ jobs:
         run: |
           bash .github/scripts/deps.sh
 
+      - name: Configure cache mode for forks
+        run: |
+          if [ "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}" = "true" ]; then
+            echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+            echo "Skipping GCP auth/GCS cache for forked PR."
+          else
+            echo "SCCACHE_GHA_ENABLED=false" >> $GITHUB_ENV
+          fi
+
       - name: gcloud auth
-        id: 'auth'
+        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT != '' }}
         uses: google-github-actions/auth@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
@@ -64,11 +71,13 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: gcloud setup
+        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT != '' }}
         uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
       - name: 'Create GCS credentials file for sccache'
+        if: ${{ secrets.GKE_WORKLOAD_KEY != '' }}
         run: |
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
@@ -168,9 +177,18 @@ jobs:
 
       - name: Install killall
         run: sudo apt-get install psmisc
-
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
+        
+      - name: Configure cache mode for forks
+        run: |
+          if [ "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}" = "true" ]; then
+            echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+            echo "Skipping GCP auth/GCS cache for forked PR."
+          else
+            echo "SCCACHE_GHA_ENABLED=false" >> $GITHUB_ENV
+          fi
+          
+      - name: gcloud auth
+        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT != '' }}
         uses: 'google-github-actions/auth@v3'
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
@@ -178,6 +196,7 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: 'Create GCS credentials file for sccache'
+        if: ${{ secrets.GKE_WORKLOAD_KEY != '' }}
         run: |
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
