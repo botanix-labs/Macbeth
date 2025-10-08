@@ -62,8 +62,20 @@ jobs:
             echo "SCCACHE_GHA_ENABLED=false" >> $GITHUB_ENV
           fi
 
+      # Detect presence of auth inputs
+      - name: Detect auth inputs
+        id: gate
+        env:
+          WIP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SA:  ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GKE: ${{ secrets.GKE_WORKLOAD_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$WIP" && -n "$SA" ]]; then echo "has_gcp=true" >>"$GITHUB_OUTPUT"; else echo "has_gcp=false" >>"$GITHUB_OUTPUT"; fi
+          if [[ -n "$GKE" ]]; then echo "has_gke_key=true" >>"$GITHUB_OUTPUT"; else echo "has_gke_key=false" >>"$GITHUB_OUTPUT"; fi
+
       - name: gcloud auth
-        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ steps.gate.outputs.has_gcp == 'true' }}
         uses: google-github-actions/auth@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
@@ -71,13 +83,13 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: gcloud setup
-        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ steps.gate.outputs.has_gcp == 'true' }}
         uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
       - name: 'Create GCS credentials file for sccache'
-        if: ${{ secrets.GKE_WORKLOAD_KEY != '' }}
+        if: ${{ steps.gate.outputs.has_gke_key == 'true' }}
         run: |
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
@@ -186,9 +198,20 @@ jobs:
           else
             echo "SCCACHE_GHA_ENABLED=false" >> $GITHUB_ENV
           fi
+
+      - name: Detect auth inputs
+        id: gate
+        env:
+          WIP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SA:  ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GKE: ${{ secrets.GKE_WORKLOAD_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$WIP" && -n "$SA" ]]; then echo "has_gcp=true" >>"$GITHUB_OUTPUT"; else echo "has_gcp=false" >>"$GITHUB_OUTPUT"; fi
+          if [[ -n "$GKE" ]]; then echo "has_gke_key=true" >>"$GITHUB_OUTPUT"; else echo "has_gke_key=false" >>"$GITHUB_OUTPUT"; fi
           
       - name: gcloud auth
-        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ steps.gate.outputs.has_gcp == 'true' }}
         uses: 'google-github-actions/auth@v3'
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
@@ -196,7 +219,7 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: 'Create GCS credentials file for sccache'
-        if: ${{ secrets.GKE_WORKLOAD_KEY != '' }}
+        if: ${{ steps.gate.outputs.has_gke_key == 'true' }}
         run: |
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
