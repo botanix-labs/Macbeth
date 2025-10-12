@@ -34,7 +34,7 @@ pub enum Error {
     /// Failed to read config socket address: {0}
     #[allow(dead_code)]
     InvalidSocketAddress(#[from] std::net::AddrParseError),
-    /// Failed to resolve socket address: {0}
+    /// Failed to resolve socket address via DNS lookup: {0}
     #[allow(dead_code)]
     SocketAddressResolution(std::io::Error),
 }
