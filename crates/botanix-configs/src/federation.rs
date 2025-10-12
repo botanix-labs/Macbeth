@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::{Read, Write},
-    net::SocketAddr,
+    net::{SocketAddr, ToSocketAddrs},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -34,6 +34,9 @@ pub enum Error {
     /// Failed to read config socket address: {0}
     #[allow(dead_code)]
     InvalidSocketAddress(#[from] std::net::AddrParseError),
+    /// Failed to resolve socket address: {0}
+    #[allow(dead_code)]
+    SocketAddressResolution(std::io::Error),
 }
 
 /// Federation member public key and socket address
@@ -102,7 +105,20 @@ impl FederationTomlConfig {
             .map(|key| {
                 let public_key = secp256k1::PublicKey::from_str(&key.key).map_err(Error::from)?;
 
-                let soc_addr = key.socket_addr.parse::<SocketAddr>().map_err(Error::from)?;
+                let soc_addr = match key.socket_addr.parse::<SocketAddr>() {
+                    Ok(addr) => addr,
+                    Err(_) => key
+                        .socket_addr
+                        .to_socket_addrs()
+                        .map_err(Error::SocketAddressResolution)?
+                        .next()
+                        .ok_or_else(|| {
+                            Error::SocketAddressResolution(std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                format!("No addresses resolved for {}", key.socket_addr),
+                            ))
+                        })?,
+                };
 
                 Ok((public_key, soc_addr))
             })
