@@ -23,12 +23,10 @@ env:
   JWT_DIR: "/home/runner/actions-runner/_work/Macbeth/Macbeth/bin/test-suite/jwt"
   # sccache configuration
   RUSTC_WRAPPER: "sccache"
-  SCCACHE_GHA_ENABLED: "false"  # Disable GitHub Actions cache in favor of GCS
   SCCACHE_GCS_RW_MODE: "READ_WRITE"
   SCCACHE_GCS_BUCKET: "macbeth-sccache-bucket"
   SCCACHE_ERROR_LOG: "/tmp/sccache_log.txt"
   SCCACHE_LOG: "warn"
-  SCCACHE_GCS_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
   GCP_PROJECT_ID: botanix-391913
   SCCACHE_GCS_KEY_PATH: "/tmp/gcs-key.json"
 
@@ -55,20 +53,43 @@ jobs:
         run: |
           bash .github/scripts/deps.sh
 
+      - name: Configure cache mode for forks
+        run: |
+          if [ "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}" = "true" ]; then
+            echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+            echo "Skipping GCP auth/GCS cache for forked PR."
+          else
+            echo "SCCACHE_GHA_ENABLED=false" >> $GITHUB_ENV
+          fi
+
+      # Detect presence of auth inputs
+      - name: Detect auth inputs
+        id: gate
+        env:
+          WIP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SA:  ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GKE: ${{ secrets.GKE_WORKLOAD_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$WIP" && -n "$SA" ]]; then echo "has_gcp=true" >>"$GITHUB_OUTPUT"; else echo "has_gcp=false" >>"$GITHUB_OUTPUT"; fi
+          if [[ -n "$GKE" ]]; then echo "has_gke_key=true" >>"$GITHUB_OUTPUT"; else echo "has_gke_key=false" >>"$GITHUB_OUTPUT"; fi
+
       - name: gcloud auth
-        id: 'auth'
-        uses: google-github-actions/auth@v2
+        if: ${{ steps.gate.outputs.has_gcp == 'true' }}
+        uses: google-github-actions/auth@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: gcloud setup
-        uses: google-github-actions/setup-gcloud@v2
+        if: ${{ steps.gate.outputs.has_gcp == 'true' }}
+        uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
       - name: 'Create GCS credentials file for sccache'
+        if: ${{ steps.gate.outputs.has_gke_key == 'true' }}
         run: |
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
@@ -168,16 +189,37 @@ jobs:
 
       - name: Install killall
         run: sudo apt-get install psmisc
+        
+      - name: Configure cache mode for forks
+        run: |
+          if [ "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}" = "true" ]; then
+            echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+            echo "Skipping GCP auth/GCS cache for forked PR."
+          else
+            echo "SCCACHE_GHA_ENABLED=false" >> $GITHUB_ENV
+          fi
 
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v2'
+      - name: Detect auth inputs
+        id: gate
+        env:
+          WIP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SA:  ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          GKE: ${{ secrets.GKE_WORKLOAD_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$WIP" && -n "$SA" ]]; then echo "has_gcp=true" >>"$GITHUB_OUTPUT"; else echo "has_gcp=false" >>"$GITHUB_OUTPUT"; fi
+          if [[ -n "$GKE" ]]; then echo "has_gke_key=true" >>"$GITHUB_OUTPUT"; else echo "has_gke_key=false" >>"$GITHUB_OUTPUT"; fi
+          
+      - name: gcloud auth
+        if: ${{ steps.gate.outputs.has_gcp == 'true' }}
+        uses: 'google-github-actions/auth@v3'
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: 'Create GCS credentials file for sccache'
+        if: ${{ steps.gate.outputs.has_gke_key == 'true' }}
         run: |
           echo '${{ secrets.GKE_WORKLOAD_KEY }}' > ${SCCACHE_GCS_KEY_PATH}
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
@@ -244,5 +286,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Build Cache Performance" >> $GITHUB_STEP_SUMMARY
           echo "Parallel execution with sccache was used to optimize build times." >> $GITHUB_STEP_SUMMARY
-
 

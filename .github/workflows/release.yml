@@ -102,7 +102,7 @@ jobs:
 
       - name: Determine semantic version
         id: semantic
-        uses: cycjimmy/semantic-release-action@v4
+        uses: cycjimmy/semantic-release-action@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -169,14 +169,14 @@ jobs:
           toolchain: stable
 
       - name: gcloud auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           project_id: botanix-391913
           workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
 
       - name: gcloud setup
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
@@ -310,14 +310,14 @@ jobs:
 #        uses: docker/setup-buildx-action@v3
 #
 #      - name: Auth gcloud
-#        uses: google-github-actions/auth@v2
+#        uses: google-github-actions/auth@v3
 #        with:
 #          project_id: botanix-391913
 #          workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
 #          service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
 #
 #      - name: Setup gcloud
-#        uses: google-github-actions/setup-gcloud@v2
+#        uses: google-github-actions/setup-gcloud@v3
 #        with:
 #          project_id: botanix-391913
 #
@@ -396,14 +396,14 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Auth gcloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           project_id: botanix-391913
           workload_identity_provider: projects/1091390741689/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: github-actions-sa@botanix-391913.iam.gserviceaccount.com
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: botanix-391913
 
@@ -566,7 +566,7 @@ jobs:
 
       - name: Publish semantic release
         id: semantic
-        uses: cycjimmy/semantic-release-action@v4
+        uses: cycjimmy/semantic-release-action@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
