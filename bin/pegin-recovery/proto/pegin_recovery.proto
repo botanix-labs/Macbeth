@@ -1,0 +1,10 @@
+// Pegin Recovery Service Protocol
+syntax = "proto3";
+
+package pegin_recovery;
+
+service PeginRecoveryService {
+    rpc HealthCheck(Empty) returns (Empty) {}
+}
+
+message Empty {}

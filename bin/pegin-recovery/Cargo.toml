@@ -1,0 +1,34 @@
+[package]
+name = "pegin-recovery"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+
+[lib]
+name = "peginrecoverylib"
+
+[[bin]]
+name = "pegin-recovery"
+path = "src/bin/main.rs"
+
+[dependencies]
+anyhow = "1.0.75"
+log = "0.4.18"
+env_logger = "0.11.3"
+
+# gRPC/protobuf
+prost = "0.13.3"
+prost-types = "0.13.5"
+tokio = { version = "1.45.0", features = ["full"] }
+tokio-stream = "0.1"
+tonic = { version = "0.12.3", features = ["gzip"] }
+tonic-health = { version = "0.12.3" }
+tonic-reflection = { version = "0.12.3" }
+
+[build-dependencies]
+prost-build = "0.13.3"
+tonic-build = "0.12.3"
+
