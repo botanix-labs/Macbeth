@@ -9,8 +9,6 @@ use std::{
 };
 use thiserror::Error;
 
-// Dummy change to force build
-
 /// Error type for genesis config
 #[derive(Debug, DisplayDoc, Error)]
 pub enum Error {
