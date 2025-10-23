@@ -5,6 +5,27 @@ package pegin_recovery;
 
 service PeginRecoveryService {
     rpc HealthCheck(Empty) returns (Empty) {}
+    rpc AddKeyShare(AddKeyShareRequest) returns (Empty) {}
+    rpc RecoverPegin(RecoverPeginRequest) returns (RecoverPeginResponse) {}
 }
 
 message Empty {}
+
+message AddKeyShareRequest {
+    string multisig_id = 1;
+    string node_id = 2;
+    string keyshare = 3; // base64
+}
+
+message RecoverPeginRequest {
+    string destination = 1;
+    string txid = 2; // string so that it is in human readable form (BE)
+    uint32 vout = 3;
+    string eth_address = 4;
+    string signature = 5;
+}
+
+message RecoverPeginResponse {
+    string tx = 1;
+    string txid = 2;
+}

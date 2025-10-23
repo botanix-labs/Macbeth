@@ -19,6 +19,18 @@ anyhow = "1.0.75"
 log = "0.4.18"
 env_logger = "0.11.3"
 
+# Bitcoin related dependencies
+bitcoin = { version = "0.32.5", features = ["base64", "rand", "serde"] }
+btc-server = { path = "../btc-server" }
+frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
+    "serde",
+    "serialization",
+] }
+rand = "0.8.5"
+hex = "0.4.3"
+serde = "1.0.171"
+serde_json = "1.0"
+
 # gRPC/protobuf
 prost = "0.13.3"
 prost-types = "0.13.5"

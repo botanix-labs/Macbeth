@@ -7958,11 +7958,18 @@ name = "pegin-recovery"
 version = "1.2.0-rc.5"
 dependencies = [
  "anyhow",
+ "bitcoin 0.32.7",
+ "btc-server",
  "env_logger",
+ "frost-secp256k1-tr",
+ "hex",
  "log",
  "prost",
  "prost-build",
  "prost-types",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "tonic",
