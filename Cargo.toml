@@ -31,6 +31,7 @@ members = [
     "crates/botanix-comet-bft-rpc",
     "crates/botanix-configs",
     "crates/botanix-data-parser",
+    "crates/botanix-foundation-layer",
     "crates/botanix-rpc-client",
     "crates/botanix-rpc-config",
     "crates/botanix-rpc-types",

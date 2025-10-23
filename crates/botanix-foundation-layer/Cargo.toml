@@ -1,0 +1,19 @@
+[package]
+name = "botanix-foundation-layer"
+description = "Interface with the Botanix Foundation Layer"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+botanix-tem = { git = "ssh://git@github.com/lamafab/botanix-tee.git", branch = "state-restruct" }
+botanix-storage = { workspace = true }
+reth-db-api = { workspace = true }
+reth-storage-errors = { workspace = true }
+ciborium = "0.2.1"
+
+[dev-dependencies]
+reth-db = { workspace = true }
