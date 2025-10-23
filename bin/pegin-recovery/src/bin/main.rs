@@ -72,7 +72,8 @@ fn validate_psbt_fee_sanity(psbt: &Psbt) -> anyhow::Result<()> {
             "Fee ({}) cannot be greater than total output value ({})",
             fee,
             total_outputs_amount
-        ));
+        )
+        .into());
     }
 
     Ok(())
