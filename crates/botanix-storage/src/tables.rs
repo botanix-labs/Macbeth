@@ -27,10 +27,42 @@
 //! type-safe access to the underlying MDBX database with automatic serialization
 //! and deserialization of complex data structures.
 
-use super::models::*;
-use reth_db::{tables, TableType, TableViewer};
+use super::{models::*, UnoptimizedKey, UnoptimizedValue};
+use botanix_tem::{
+    foundation::{
+        bitcoin::{BlockHash, OutPoint, Txid},
+        OnchainHeaderEntry, OnchainUtxoEntry, ProposalEntry, UnassignedEntry,
+    },
+    validation::pegout::PegoutId,
+};
+use reth_db::{mdbx::DatabaseFlags, tables, DatabaseEnv, DatabaseError, TableType, TableViewer};
 use reth_primitives::{BlockNumber, B256};
 use std::fmt;
+
+/// Creates all the Botanix-specific tables as defined in [`Tables`], if necessary.
+///
+/// This replicates the logic of [`reth_db::DatabaseEnv::create_tables`].
+pub fn create_botanix_tables(db: &mut DatabaseEnv) -> Result<(), DatabaseError> {
+    let tx = db.begin_rw_txn().map_err(|e| DatabaseError::InitTx(e.into()))?;
+
+    for table in crate::tables::Tables::ALL {
+        let flags = match table.table_type() {
+            TableType::Table => DatabaseFlags::default(),
+            TableType::DupSort => DatabaseFlags::DUP_SORT,
+        };
+
+        tx.create_db(Some(table.name()), flags)
+            .map_err(|e| DatabaseError::CreateTable(e.into()))?;
+    }
+
+    tx.commit().map_err(|e| DatabaseError::Commit(e.into()))?;
+
+    Ok(())
+}
+
+// Aliases for better readability
+type UKey<T> = UnoptimizedKey<T>;
+type UVal<T> = UnoptimizedValue<T>;
 
 tables! {
     /// Store snapshot id to snapshot data.
@@ -83,4 +115,23 @@ tables! {
     /// Tracks the progress of snapshot synchronization operations,
     /// including total chunks, applied chunks, and synchronization state.
     table SnapshotSyncs<Key = SnapshotSyncId, Value = SnapshotSync>;
+
+    /// Table used for unassigned pegouts (foundation layer).
+    table UnassignedPegouts<Key = UKey<PegoutId>, Value = UVal<UnassignedEntry>>;
+
+    /// Table used for onchain utxos (foundation layer).
+    table OnchainUtxos<Key = UKey<OutPoint>, Value = UVal<OnchainUtxoEntry>>;
+
+    /// Table used for onchain headers (foundation layer).
+    table OnchainHeaders<Key = UKey<BlockHash>, Value = UVal<OnchainHeaderEntry>>;
+
+    /// Table used for pegout proposals (foundation layer).
+    table PegoutProposals<Key = UKey<Txid>, Value = UVal<ProposalEntry>>;
+
+    /// Table used for trie commitments (foundation layer).
+    // TODO: Maybe the TEM should export `StorageKey` and `StorageValue`?
+    table FoundationCommitments<Key = UKey<[u8; 32]>, Value = UVal<Vec<u8>>>;
+
+    /// Table used for the trie commitment root (foundation layer).
+    table FoundationCommitmentRoots<Key = UKey<()>, Value = UVal<[u8; 32]>>;
 }

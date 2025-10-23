@@ -1,6 +1,6 @@
 use crate::{
-    SnapshotReader, SnapshotWriter, StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader,
-    WalletStateSyncWriter,
+    FoundationLayerReader, FoundationLayerWriter, SnapshotReader, SnapshotWriter,
+    StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use reth_storage_errors::provider::ProviderResult;
 
@@ -13,7 +13,10 @@ pub trait DatabaseProviderFactoryRO {
     /// The type of provider created by this factory.
     ///
     /// Must implement all reader traits for accessing Botanix storage data.
-    type Provider: WalletStateSyncReader + SnapshotReader + StagedHeaderReader;
+    type Provider: WalletStateSyncReader
+        + SnapshotReader
+        + StagedHeaderReader
+        + FoundationLayerReader;
 
     /// Creates a new read-only database provider.
     ///
@@ -44,7 +47,9 @@ pub trait DatabaseProviderFactoryRW {
         + SnapshotReader
         + SnapshotWriter
         + StagedHeaderWriter
-        + StagedHeaderReader;
+        + StagedHeaderReader
+        + FoundationLayerReader
+        + FoundationLayerWriter;
 
     /// Creates a new read-write database provider.
     ///

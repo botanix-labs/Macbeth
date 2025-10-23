@@ -26,12 +26,15 @@ reth-db-api = { workspace = true }
 reth-primitives = { workspace = true, features = ["reth-codec"] }
 reth-prune-types = { workspace = true }
 reth-storage-errors = { workspace = true }
-secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
 
 serde = { workspace = true, default-features = false }
 sha2 = { workspace = true }
 tracing = { workspace = true }
 uuid = { version = "1.8.0", features = ["v4"] }
+
+# foundation layer
+botanix-tem = { git = "ssh://git@github.com/lamafab/botanix-tee.git", branch = "state-restruct" }
+ciborium = "0.2.1"
 
 [dev-dependencies]
 arbitrary = { workspace = true, features = ["derive"] }

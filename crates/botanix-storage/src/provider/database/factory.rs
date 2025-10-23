@@ -6,9 +6,9 @@ use crate::{
     provider::database::provider::{
         BotanixDatabaseProvider, BotanixDatabaseProviderRO, BotanixDatabaseProviderRW,
     },
-    DatabaseProviderFactoryRO, DatabaseProviderFactoryRW, RuntimeTransitionsReadWrite,
-    SnapshotReader, SnapshotWriter, StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader,
-    WalletStateSyncWriter,
+    DatabaseProviderFactoryRO, DatabaseProviderFactoryRW, FoundationLayerReader,
+    FoundationLayerWriter, RuntimeTransitionsReadWrite, SnapshotReader, SnapshotWriter,
+    StagedHeaderReader, StagedHeaderWriter, WalletStateSyncReader, WalletStateSyncWriter,
 };
 use reth_db::{init_db, mdbx::DatabaseArguments, DatabaseEnv};
 use reth_db_api::database::Database;
@@ -247,6 +247,45 @@ impl<DB: Database> SnapshotReader for BotanixProviderFactory<DB> {
     #[inline(always)]
     fn get_first_chunk_id(&self) -> ProviderResult<Option<ChunkId>> {
         self.provider()?.get_first_chunk_id()
+    }
+}
+
+impl<DB: Database> FoundationLayerReader for BotanixProviderFactory<DB> {
+    #[inline(always)]
+    fn get_unassigned_pegout(
+        &self,
+        id: botanix_tem::validation::pegout::PegoutId,
+    ) -> ProviderResult<Option<botanix_tem::foundation::UnassignedEntry>> {
+        self.provider()?.get_unassigned_pegout(id)
+    }
+    #[inline(always)]
+    fn get_onchain_utxo(
+        &self,
+        utxo: botanix_tem::foundation::bitcoin::OutPoint,
+    ) -> ProviderResult<Option<botanix_tem::foundation::OnchainUtxoEntry>> {
+        self.provider()?.get_onchain_utxo(utxo)
+    }
+    #[inline(always)]
+    fn get_onchain_header(
+        &self,
+        header: botanix_tem::foundation::bitcoin::BlockHash,
+    ) -> ProviderResult<Option<botanix_tem::foundation::OnchainHeaderEntry>> {
+        self.provider()?.get_onchain_header(header)
+    }
+    #[inline(always)]
+    fn get_pegout_proposal(
+        &self,
+        txid: botanix_tem::foundation::bitcoin::Txid,
+    ) -> ProviderResult<Option<botanix_tem::foundation::ProposalEntry>> {
+        self.provider()?.get_pegout_proposal(txid)
+    }
+    #[inline(always)]
+    fn get_foundation_commitment(&self, key: [u8; 32]) -> ProviderResult<Option<Vec<u8>>> {
+        self.provider()?.get_foundation_commitment(key)
+    }
+    #[inline(always)]
+    fn get_foundation_commitment_root(&self) -> ProviderResult<Option<[u8; 32]>> {
+        self.provider()?.get_foundation_commitment_root()
     }
 }
 
@@ -547,6 +586,123 @@ impl<DB: Database> RuntimeTransitionsReadWrite for BotanixProviderFactory<DB> {
 
     fn get_last_runtime_version(&self) -> ProviderResult<Option<RuntimeVersion>> {
         self.provider_rw()?.get_last_runtime_version()
+    }
+}
+
+impl<DB: Database> FoundationLayerWriter for BotanixProviderFactory<DB> {
+    fn insert_unassigned_pegout(
+        &self,
+        id: botanix_tem::validation::pegout::PegoutId,
+        entry: botanix_tem::foundation::UnassignedEntry,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+        provider.insert_unassigned_pegout(id, entry)?;
+        provider.commit()?;
+        Ok(())
+    }
+    fn remove_unassigned_pegout(
+        &self,
+        id: botanix_tem::validation::pegout::PegoutId,
+    ) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+        let did_remove = provider.remove_unassigned_pegout(id)?;
+
+        if did_remove {
+            provider.commit()?;
+        }
+
+        Ok(did_remove)
+    }
+    fn insert_onchain_utxo(
+        &self,
+        utxo: botanix_tem::foundation::bitcoin::OutPoint,
+        entry: botanix_tem::foundation::OnchainUtxoEntry,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+        provider.insert_onchain_utxo(utxo, entry)?;
+        provider.commit()?;
+        Ok(())
+    }
+    fn remove_onchain_utxo(
+        &self,
+        utxo: botanix_tem::foundation::bitcoin::OutPoint,
+    ) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+        let did_remove = provider.remove_onchain_utxo(utxo)?;
+
+        if did_remove {
+            provider.commit()?;
+        }
+
+        Ok(did_remove)
+    }
+    fn insert_onchain_header(
+        &self,
+        header: botanix_tem::foundation::bitcoin::BlockHash,
+        entry: botanix_tem::foundation::OnchainHeaderEntry,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+        provider.insert_onchain_header(header, entry)?;
+        provider.commit()?;
+        Ok(())
+    }
+    fn remove_onchain_header(
+        &self,
+        header: botanix_tem::foundation::bitcoin::BlockHash,
+    ) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+        let did_remove = provider.remove_onchain_header(header)?;
+
+        if did_remove {
+            provider.commit()?;
+        }
+
+        Ok(did_remove)
+    }
+    fn insert_pegout_proposal(
+        &self,
+        txid: botanix_tem::foundation::bitcoin::Txid,
+        entry: botanix_tem::foundation::ProposalEntry,
+    ) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+        provider.insert_pegout_proposal(txid, entry)?;
+        provider.commit()?;
+        Ok(())
+    }
+    fn remove_pegout_proposal(
+        &self,
+        txid: botanix_tem::foundation::bitcoin::Txid,
+    ) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+        let did_remove = provider.remove_pegout_proposal(txid)?;
+
+        if did_remove {
+            provider.commit()?;
+        }
+
+        Ok(did_remove)
+    }
+    fn insert_foundation_commitment(&self, key: [u8; 32], value: Vec<u8>) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+        provider.insert_foundation_commitment(key, value)?;
+        provider.commit()?;
+        Ok(())
+    }
+    fn remove_foundation_commitment(&self, key: [u8; 32]) -> ProviderResult<bool> {
+        let provider = self.provider_rw()?;
+        let did_remove = provider.remove_foundation_commitment(key)?;
+
+        if did_remove {
+            provider.commit()?;
+        }
+
+        Ok(did_remove)
+    }
+    fn insert_foundation_commitment_root(&self, root: [u8; 32]) -> ProviderResult<()> {
+        let provider = self.provider_rw()?;
+        provider.insert_foundation_commitment_root(root)?;
+        provider.commit()?;
+        Ok(())
     }
 }
 

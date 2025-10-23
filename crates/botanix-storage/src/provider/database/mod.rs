@@ -33,6 +33,7 @@
 //! database errors in a consistent error type for proper error propagation.
 
 mod factory;
+mod foundation;
 mod provider;
 mod runtime_transitions;
 mod snapshot;
@@ -40,4 +41,5 @@ mod staged_header;
 mod wallet_state_sync;
 
 pub use factory::*;
+pub use foundation::*;
 pub use provider::*;
