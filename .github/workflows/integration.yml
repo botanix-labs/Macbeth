@@ -225,7 +225,7 @@ jobs:
           chmod 600 ${SCCACHE_GCS_KEY_PATH}
 
       - name: Download compiled binaries
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: compiled-binaries
           path: /tmp/binaries
