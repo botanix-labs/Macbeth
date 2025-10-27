@@ -141,7 +141,7 @@ jobs:
           cp target/debug/test-suite /tmp/binaries/ || true
 
       - name: Upload compiled binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: compiled-binaries
           path: /tmp/binaries
