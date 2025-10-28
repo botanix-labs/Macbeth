@@ -469,20 +469,22 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     // check outputs are not in finalized pegouts list
     let finalized_pegouts_ids =
         db.get_finalized_pegout_ids()?.into_iter().map(|id| id.id).collect::<Vec<_>>();
-    for id in &psbt_pegout_ids {
-        let finalized_pegouts_id = finalized_pegouts_ids
-            .iter()
-            .find(|finalized_pegouts_id| *finalized_pegouts_id == id)
-            .cloned();
+        
+    // Find all matching finalized pegout IDs
+    let matching_finalized_pegouts = psbt_pegout_ids
+        .iter()
+        .filter(|id| finalized_pegouts_ids.iter().any(|finalized_id| finalized_id == *id))
+        .cloned()
+        .collect::<Vec<_>>();
 
-        if finalized_pegouts_id.is_some() {
-            // Remove the finalized pegout id from the list of pending pegouts so it does not get
-            // processed again.
+    // If any matching finalized pegouts were found, remove them all at once and return error
+    if !matching_finalized_pegouts.is_empty() {
+        for id in &matching_finalized_pegouts {
             info!("Finalized pegout id txid hash: {}", hex::encode(id.txid));
             info!("Finalized pegout id tx receipt log index: {}", id.idx);
-            db.remove_pending_pegout(&[*id]).ok();
-            return Err(ValidateOutputsError::AlreadyFinalizedPegouts(vec![*id]));
         }
+        db.remove_pending_pegout(&matching_finalized_pegouts).ok();
+        return Err(ValidateOutputsError::AlreadyFinalizedPegouts(matching_finalized_pegouts));
     }
 
     // check for duplicate outputs by pegout ids
@@ -1639,5 +1641,66 @@ mod tests {
         let res_error = res.unwrap_err().to_string();
         assert!(res_error
             .contains("error validating outputs: found already finalized psbt pegouts in db"));
+    }
+
+    #[test]
+    fn test_validate_outputs_should_remove_all_finalized_pegouts_from_pending_pegouts() {
+        let (db, _temp_dir) = setup_db();
+        let (shares, pk_package) = trusted_dealer_setup(2, 2);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
+            .expect("valid key package");
+
+        // Add the key packages
+        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_key_package(key_package.clone()).expect("set key package");
+
+        // create pegouts and store them as finalized and pending pegouts
+        let mut pending_pegouts = Vec::new();
+        let mut finalized_pegouts = Vec::new();
+        let mut valid_pending_pegouts_count = 0;
+        for i in 0..5 {
+            let pegout_id = PegoutId::new(rand::thread_rng().gen::<[u8; 32]>(), 0);
+            let pending_pegout = PegoutRequest {
+                spk: ScriptBuf::new(),
+                value: Amount::from_sat(1000),
+                id: pegout_id,
+                botanix_height: 0,
+            };
+            pending_pegouts.push(pending_pegout);
+            // Store every odd pegout as finalized so some pending pegouts are valid and should not
+            // be removed during validate_outputs()
+            if i % 2 == 0 {
+                valid_pending_pegouts_count += 1;
+                continue;
+            }
+            let finalized_pegout = FinalizedPegout { id: pegout_id, block_number: 100 };
+            finalized_pegouts.push(finalized_pegout);
+        }
+        let pending_pegouts_refs: Vec<&PegoutRequest> = pending_pegouts.iter().collect();
+        db.store_pending_pegouts_atomically(pending_pegouts_refs.as_slice())
+            .expect("to store pending pegouts");
+        let finalized_pegouts_refs: Vec<&FinalizedPegout> = finalized_pegouts.iter().collect();
+        db.store_finalized_pegout_ids_atomically(finalized_pegouts_refs.as_slice())
+            .expect("to store finalized pegouts");
+
+        // create a psbt with the finalized pegout ids
+        let mut psbt = create_psbt(1, finalized_pegouts.len(), None);
+        for (i, finalized_pegout) in finalized_pegouts.iter().enumerate() {
+            psbt.outputs[i].set_pegout_id(finalized_pegout.id.as_bytes());
+        }
+
+        let res = validate_psbt(&psbt, NO_FLAGS, 2, &db);
+        let res_error = res.unwrap_err().to_string();
+        assert!(res_error
+            .contains("error validating outputs: found already finalized psbt pegouts in db"));
+
+        // Check the expected count for pending pegouts
+        let pending_pegouts = db.get_pending_pegouts().expect("to get pending pegouts");
+        assert_eq!(pending_pegouts.len(), valid_pending_pegouts_count);
+
+        // Check that the pending pegouts do not contain any finalized pegouts
+        for pending_pegout in pending_pegouts {
+            assert!(!finalized_pegouts.iter().any(|fp| fp.id == pending_pegout.id));
+        }
     }
 }
