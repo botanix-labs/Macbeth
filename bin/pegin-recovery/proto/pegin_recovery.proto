@@ -31,7 +31,7 @@ message ImportKeyShareRequest {
 
 // Compatible with btc-server's ExportedKeyPackage format
 message ExportedKeyPackage {
-    uint32 version = 1;
+    uint16 version = 1;
     bytes iv = 2;                  // 12-byte nonce
     bytes enc_key_package = 3;     // Encrypted FROST KeyPackage
     bytes enc_pk_package = 4;      // Encrypted PublicKeyPackage (ignored by pegin-recovery)
