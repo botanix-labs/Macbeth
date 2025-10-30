@@ -1,13 +1,15 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 #[macro_use]
 extern crate log;
 
-use bitcoin::{psbt::Psbt, Amount, FeeRate, OutPoint, TxOut};
+use bitcoin::{psbt::Psbt, Amount, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoincore_rpc::RpcApi;
 use btcserverlib::{
     badarg, database,
     util::parse_eth_address,
     wallet::{
+        address::{generate_taproot_scriptpubkey, generate_tweaked_public_key},
         psbt::{PsbtExt, PsbtInputExt},
         util::calculate_signed_tx_weight,
     },
@@ -46,6 +48,18 @@ struct Args {
     /// gRPC server port
     #[arg(long, env = "PEGIN_RECOVERY_PORT", default_value_t = DEFAULT_PORT)]
     port: u16,
+
+    /// Bitcoin RPC URL
+    #[arg(long, env = "BITCOIN_RPC_URL", default_value = "http://localhost:18443")]
+    bitcoin_rpc_url: String,
+
+    /// Bitcoin RPC username
+    #[arg(long, env = "BITCOIN_RPC_USER", default_value = "user")]
+    bitcoin_rpc_user: String,
+
+    /// Bitcoin RPC password
+    #[arg(long, env = "BITCOIN_RPC_PASSWORD", default_value = "password")]
+    bitcoin_rpc_password: String,
 }
 
 
@@ -288,14 +302,15 @@ fn aggregate_and_finalize(
 }
 
 /// Main service implementation
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PeginRecoveryServiceImpl {
     db: recovery_db::Db,
+    bitcoind_client: Arc<bitcoincore_rpc::Client>,
 }
 
 impl PeginRecoveryServiceImpl {
-    pub fn new(db: recovery_db::Db) -> Self {
-        Self { db }
+    pub fn new(db: recovery_db::Db, bitcoind_client: Arc<bitcoincore_rpc::Client>) -> Self {
+        Self { db, bitcoind_client }
     }
 }
 
@@ -408,13 +423,56 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         let eth_address = parse_eth_address(req.eth_address)
             .map_err(|e| badarg!("Invalid eth address: {}", e))?;
 
-        // TODO: validate utxo is on chain and matches
-        let input_amount = Amount::from_sat(1000); // TODO: get from on-chain validation
+        let outpoint = OutPoint::new(txid, vout);
 
-        // Create the utxo
+        // Validate UTXO exists on chain
+        info!("Validating UTXO {} exists on chain", outpoint);
+        let on_chain_utxo = self
+            .bitcoind_client
+            .get_tx_out(&txid, vout, None)
+            .map_err(|e| {
+                Status::internal(format!("Failed to query Bitcoin RPC for UTXO {}: {}", outpoint, e))
+            })?;
+
+        let on_chain_utxo = on_chain_utxo.ok_or_else(|| {
+            badarg!("UTXO {} not found on chain or already spent", outpoint)
+        })?;
+
+        info!(
+            "UTXO {} found on chain with {} confirmations",
+            outpoint, on_chain_utxo.confirmations
+        );
+
+        // Extract validated on-chain values
+        let input_amount = on_chain_utxo.value;
+        let on_chain_script_pubkey =
+            ScriptBuf::from_bytes(on_chain_utxo.script_pub_key.hex.clone());
+
+        // Generate expected scriptPubKey from the public key package and eth address
+        let agg_key = pk_package.verifying_key();
+        let tweaked_key = generate_tweaked_public_key(agg_key, &eth_address).map_err(|e| {
+            Status::internal(format!("Failed to generate tweaked public key: {}", e))
+        })?;
+        let expected_script_pubkey = generate_taproot_scriptpubkey(&tweaked_key);
+
+        // Verify the on-chain scriptPubKey matches what we expect
+        if on_chain_script_pubkey != expected_script_pubkey {
+            return Err(badarg!(
+                "UTXO {} scriptPubKey does not match expected address for eth_address {}",
+                outpoint,
+                hex::encode(eth_address)
+            ));
+        }
+
+        info!(
+            "UTXO {} validated successfully: amount={}, scriptPubKey matches",
+            outpoint, input_amount
+        );
+
+        // Create the utxo with validated on-chain data
         let utxo = database::Utxo {
-            outpoint: OutPoint::new(txid, vout),
-            output: TxOut { value: input_amount, script_pubkey: script_pubkey.clone() },
+            outpoint,
+            output: TxOut { value: input_amount, script_pubkey: expected_script_pubkey.clone() },
             eth_address: Some(eth_address),
             version: 1,
         };
@@ -499,12 +557,29 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to open database at {:?}: {}", args.db, e))?;
     info!("Database opened at: {:?}", args.db);
 
+    // Create Bitcoin RPC client
+    info!("Connecting to Bitcoin RPC at: {}", args.bitcoin_rpc_url);
+    let bitcoind_client = bitcoincore_rpc::Client::new(
+        &args.bitcoin_rpc_url,
+        bitcoincore_rpc::Auth::UserPass(args.bitcoin_rpc_user.clone(), args.bitcoin_rpc_password.clone()),
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to connect to Bitcoin RPC: {}", e))?;
+    
+    // Verify connection by getting blockchain info
+    let blockchain_info = bitcoind_client.get_blockchain_info()
+        .map_err(|e| anyhow::anyhow!("Failed to get blockchain info from Bitcoin RPC: {}", e))?;
+    info!(
+        "Connected to Bitcoin RPC - Chain: {}, Blocks: {}", 
+        blockchain_info.chain, 
+        blockchain_info.blocks
+    );
+
     // Configure service address
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
     info!("gRPC server listening on {}", addr);
 
     // Create service
-    let service = PeginRecoveryServiceImpl::new(db);
+    let service = PeginRecoveryServiceImpl::new(db, Arc::new(bitcoind_client));
     let svc = PeginRecoveryServiceServer::new(service);
 
     // Configure reflection (for grpcurl and similar tools)

@@ -7959,6 +7959,7 @@ version = "1.2.0-rc.5"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
+ "bitcoincore-rpc",
  "btc-server",
  "chacha20poly1305",
  "ciborium",

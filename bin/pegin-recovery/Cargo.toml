@@ -24,6 +24,7 @@ clap = { version = "4.5", features = ["derive", "env"] }
 
 # Bitcoin related dependencies
 bitcoin = { version = "0.32.5", features = ["base64", "rand", "serde"] }
+bitcoincore-rpc = "0.19.0"
 btc-server = { path = "../btc-server" }
 frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
     "serde",
