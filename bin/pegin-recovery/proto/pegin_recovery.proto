@@ -31,10 +31,10 @@ message ImportKeyShareRequest {
 
 // Compatible with btc-server's ExportedKeyPackage format
 message ExportedKeyPackage {
-    uint16 version = 1;
+    uint32 version = 1;            // stored as u16 in Rust
     bytes iv = 2;                  // 12-byte nonce
     bytes enc_key_package = 3;     // Encrypted FROST KeyPackage
-    bytes enc_pk_package = 4;      // Encrypted PublicKeyPackage (ignored by pegin-recovery)
+    bytes enc_pk_package = 4;      // Encrypted PublicKeyPackage
 }
 
 message RecoverPeginRequest {
@@ -43,6 +43,7 @@ message RecoverPeginRequest {
     uint32 vout = 3;
     string eth_address = 4;
     string signature = 5;
+    bytes multisig_id = 6; // Identifier for which set of key shares to use
 }
 
 message RecoverPeginResponse {
