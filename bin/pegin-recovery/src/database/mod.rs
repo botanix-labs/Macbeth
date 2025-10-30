@@ -23,7 +23,7 @@ pub struct MultisigKeyShares {
 }
 
 /// Database handle for the pegin-recovery service.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Db {
     /// The underlying sled database.
     db: sled::Db,

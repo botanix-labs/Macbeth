@@ -2,14 +2,34 @@
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct Empty {}
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AddKeyShareRequest {
-    #[prost(string, tag = "1")]
-    pub multisig_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub node_id: ::prost::alloc::string::String,
-    /// base64
+pub struct ImportKeyShareRequest {
+    /// Identifier for the multisig (arbitrary bytes, e.g., "mainnet_v1")
+    #[prost(bytes = "vec", tag = "1")]
+    pub multisig_id: ::prost::alloc::vec::Vec<u8>,
+    /// FROST identifier serialized as 32 bytes (u16 index -> frost::Identifier::derive)
+    #[prost(bytes = "vec", tag = "2")]
+    pub node_identifier: ::prost::alloc::vec::Vec<u8>,
+    /// Passphrase to decrypt the exported key package
     #[prost(string, tag = "3")]
-    pub keyshare: ::prost::alloc::string::String,
+    pub passphrase: ::prost::alloc::string::String,
+    /// The encrypted export from btc-server (ExportedKeyPackage)
+    #[prost(message, optional, tag = "4")]
+    pub export: ::core::option::Option<ExportedKeyPackage>,
+}
+/// Compatible with btc-server's ExportedKeyPackage format
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ExportedKeyPackage {
+    #[prost(uint32, tag = "1")]
+    pub version: u32,
+    /// 12-byte nonce
+    #[prost(bytes = "vec", tag = "2")]
+    pub iv: ::prost::alloc::vec::Vec<u8>,
+    /// Encrypted FROST KeyPackage
+    #[prost(bytes = "vec", tag = "3")]
+    pub enc_key_package: ::prost::alloc::vec::Vec<u8>,
+    /// Encrypted PublicKeyPackage (ignored by pegin-recovery)
+    #[prost(bytes = "vec", tag = "4")]
+    pub enc_pk_package: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecoverPeginRequest {
@@ -49,10 +69,12 @@ pub mod pegin_recovery_service_server {
             &self,
             request: tonic::Request<super::Empty>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
-        async fn add_key_share(
+        /// Import a key share from btc-server's encrypted export format
+        async fn import_key_share(
             &self,
-            request: tonic::Request<super::AddKeyShareRequest>,
+            request: tonic::Request<super::ImportKeyShareRequest>,
         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status>;
+        /// Recover a pegin by constructing and signing a transaction
         async fn recover_pegin(
             &self,
             request: tonic::Request<super::RecoverPeginRequest>,
@@ -183,13 +205,13 @@ pub mod pegin_recovery_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/pegin_recovery.PeginRecoveryService/AddKeyShare" => {
+                "/pegin_recovery.PeginRecoveryService/ImportKeyShare" => {
                     #[allow(non_camel_case_types)]
-                    struct AddKeyShareSvc<T: PeginRecoveryService>(pub Arc<T>);
+                    struct ImportKeyShareSvc<T: PeginRecoveryService>(pub Arc<T>);
                     impl<
                         T: PeginRecoveryService,
-                    > tonic::server::UnaryService<super::AddKeyShareRequest>
-                    for AddKeyShareSvc<T> {
+                    > tonic::server::UnaryService<super::ImportKeyShareRequest>
+                    for ImportKeyShareSvc<T> {
                         type Response = super::Empty;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -197,11 +219,14 @@ pub mod pegin_recovery_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::AddKeyShareRequest>,
+                            request: tonic::Request<super::ImportKeyShareRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as PeginRecoveryService>::add_key_share(&inner, request)
+                                <T as PeginRecoveryService>::import_key_share(
+                                        &inner,
+                                        request,
+                                    )
                                     .await
                             };
                             Box::pin(fut)
@@ -213,7 +238,7 @@ pub mod pegin_recovery_service_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = AddKeyShareSvc(inner);
+                        let method = ImportKeyShareSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

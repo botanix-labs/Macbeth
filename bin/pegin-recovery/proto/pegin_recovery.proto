@@ -5,16 +5,36 @@ package pegin_recovery;
 
 service PeginRecoveryService {
     rpc HealthCheck(Empty) returns (Empty) {}
-    rpc AddKeyShare(AddKeyShareRequest) returns (Empty) {}
+    
+    // Import a key share from btc-server's encrypted export format
+    rpc ImportKeyShare(ImportKeyShareRequest) returns (Empty) {}
+    
+    // Recover a pegin by constructing and signing a transaction
     rpc RecoverPegin(RecoverPeginRequest) returns (RecoverPeginResponse) {}
 }
 
 message Empty {}
 
-message AddKeyShareRequest {
-    string multisig_id = 1;
-    string node_id = 2;
-    string keyshare = 3; // base64
+message ImportKeyShareRequest {
+    // Identifier for the multisig (arbitrary bytes, e.g., "mainnet_v1")
+    bytes multisig_id = 1;
+    
+    // FROST identifier serialized as 32 bytes (u16 index -> frost::Identifier::derive)
+    bytes node_identifier = 2;
+    
+    // Passphrase to decrypt the exported key package
+    string passphrase = 3;
+    
+    // The encrypted export from btc-server (ExportedKeyPackage)
+    ExportedKeyPackage export = 4;
+}
+
+// Compatible with btc-server's ExportedKeyPackage format
+message ExportedKeyPackage {
+    uint32 version = 1;
+    bytes iv = 2;                  // 12-byte nonce
+    bytes enc_key_package = 3;     // Encrypted FROST KeyPackage
+    bytes enc_pk_package = 4;      // Encrypted PublicKeyPackage (ignored by pegin-recovery)
 }
 
 message RecoverPeginRequest {

@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 
 #[macro_use]
 extern crate log;
@@ -11,17 +11,16 @@ use bitcoin::{
 use btcserverlib::{
     badarg, database,
     util::parse_eth_address,
-    wallet::{
-        psbt::{PsbtExt, PsbtInputExt},
-        util::calculate_signed_tx_weight,
-    },
+    wallet::{psbt::PsbtInputExt, util::calculate_signed_tx_weight},
 };
+use clap::Parser;
 use frost_secp256k1_tr as frost;
+use peginrecoverylib::database as recovery_db;
 use rand::{thread_rng, RngCore};
 
 use peginrecoverylib::rpc::pegin_recovery::{
     pegin_recovery_service_server::{PeginRecoveryService, PeginRecoveryServiceServer},
-    AddKeyShareRequest, Empty, RecoverPeginRequest, RecoverPeginResponse, FILE_DESCRIPTOR_SET,
+    Empty, ImportKeyShareRequest, RecoverPeginRequest, RecoverPeginResponse, FILE_DESCRIPTOR_SET,
 };
 
 use std::net::SocketAddr;
@@ -30,21 +29,29 @@ use tonic::{transport::Server, Request, Response, Status};
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_PORT: u16 = 50052;
 
+#[derive(Parser)]
+#[command(name = "pegin-recovery")]
+#[command(version = VERSION)]
+#[command(about = "Pegin Recovery Service for FROST threshold signatures")]
+struct Args {
+    /// Path to the database
+    #[arg(long, env = "PEGIN_RECOVERY_DB_PATH", default_value = "./pegin-recovery.db")]
+    db: PathBuf,
+
+    /// gRPC server port
+    #[arg(long, env = "PEGIN_RECOVERY_PORT", default_value_t = DEFAULT_PORT)]
+    port: u16,
+}
+
 const DUMMY_IDENTIFIER_SIZE: usize = 33;
 const SIGNING_SESSION_ID_SIZE: usize = 32;
 
 struct SigningPackage {
     psbt_base64: String,
+    #[allow(dead_code)]
     identifier_hex: String,
+    #[allow(dead_code)]
     signing_session_id_hex: String,
-}
-
-macro_rules! internal {
-    ($($arg:tt)*) => {{
-        let msg = format!($($arg)*);
-        error!("INTERNAL ERROR: {}", msg);
-        tonic::Status::internal(format!("internal error: {}", msg))
-    }};
 }
 
 fn parse_and_validate_address(
@@ -59,6 +66,7 @@ fn parse_and_validate_address(
         .map_err(|e| badarg!("address network error: {}", e))
 }
 
+#[allow(dead_code)]
 fn validate_psbt_fee_sanity(psbt: &Psbt) -> anyhow::Result<()> {
     let fee = psbt.fee().map_err(|e| badarg!("Failed to calculate PSBT fee: {}", e))?;
 
@@ -146,6 +154,7 @@ fn create_round1_signing_package(psbt: Psbt) -> Result<SigningPackage, tonic::St
     Ok(signing_package)
 }
 
+#[allow(dead_code)]
 fn round1_signing_package(
     psbt: &mut Psbt,
     key_package: &frost::keys::KeyPackage,
@@ -181,8 +190,16 @@ fn round1_signing_package(
 }
 
 /// Main service implementation
-#[derive(Debug, Default)]
-pub struct PeginRecoveryServiceImpl {}
+#[derive(Debug, Clone)]
+pub struct PeginRecoveryServiceImpl {
+    db: recovery_db::Db,
+}
+
+impl PeginRecoveryServiceImpl {
+    pub fn new(db: recovery_db::Db) -> Self {
+        Self { db }
+    }
+}
 
 #[tonic::async_trait]
 impl PeginRecoveryService for PeginRecoveryServiceImpl {
@@ -191,19 +208,47 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         Ok(Response::new(Empty {}))
     }
 
-    async fn add_key_share(
+    async fn import_key_share(
         &self,
-        request: Request<AddKeyShareRequest>,
+        request: Request<ImportKeyShareRequest>,
     ) -> Result<Response<Empty>, Status> {
         let req = request.into_inner();
-        info!("AddKeyShare requested - multisig_id: {}, node_id: {}", req.multisig_id, req.node_id);
+        info!("ImportKeyShare requested - multisig_id: {} bytes", req.multisig_id.len());
 
-        // TODO: Implement key share storage logic
-        // - Validate the multisig_id and node_id
-        // - Decode and validate the keyshare (base64)
-        // - Store the key share
-        // - Return error if validation fails
+        // Deserialize the FROST identifier
+        let node_identifier = frost::Identifier::deserialize(
+            req.node_identifier
+                .as_slice()
+                .try_into()
+                .map_err(|_| Status::invalid_argument("node_identifier must be 32 bytes"))?,
+        )
+        .map_err(|_| Status::invalid_argument("Invalid FROST identifier"))?;
 
+        // Convert the protobuf ExportedKeyPackage to the Rust type
+        let export_proto =
+            req.export.ok_or_else(|| Status::invalid_argument("export is required"))?;
+        let export = btcserverlib::database::ExportedKeyPackage {
+            version: export_proto.version as u16,
+            iv: export_proto
+                .iv
+                .as_slice()
+                .try_into()
+                .map_err(|_| Status::invalid_argument("iv must be 12 bytes"))?,
+            enc_key_package: export_proto.enc_key_package,
+            enc_pk_package: export_proto.enc_pk_package,
+        };
+
+        // Import the key
+        self.db
+            .import_from_btc_server(
+                &req.multisig_id,
+                node_identifier,
+                zeroize::Zeroizing::new(req.passphrase),
+                export,
+            )
+            .map_err(|e| Status::internal(format!("Failed to import key: {}", e)))?;
+
+        info!("Successfully imported key share for node_identifier: {:?}", node_identifier);
         Ok(Response::new(Empty {}))
     }
 
@@ -281,14 +326,22 @@ async fn main() -> anyhow::Result<()> {
         .filter_module("pegin_recovery", log::LevelFilter::Debug)
         .init();
 
+    // Parse command line arguments
+    let args = Args::parse();
+
     info!("Starting Pegin Recovery Service v{}", VERSION);
 
+    // Open database
+    let db = recovery_db::Db::open(&args.db)
+        .map_err(|e| anyhow::anyhow!("Failed to open database at {:?}: {}", args.db, e))?;
+    info!("Database opened at: {:?}", args.db);
+
     // Configure service address
-    let addr = SocketAddr::from(([0, 0, 0, 0], DEFAULT_PORT));
+    let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
     info!("gRPC server listening on {}", addr);
 
     // Create service
-    let service = PeginRecoveryServiceImpl::default();
+    let service = PeginRecoveryServiceImpl::new(db);
     let svc = PeginRecoveryServiceServer::new(service);
 
     // Configure reflection (for grpcurl and similar tools)
