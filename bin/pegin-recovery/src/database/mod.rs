@@ -393,13 +393,9 @@ mod tests {
         // Create a test public key package
         use frost::rand_core::OsRng;
         let mut rng = OsRng;
-        let (_, pk_package) = frost::keys::generate_with_dealer(
-            3,
-            2,
-            frost::keys::IdentifierList::Default,
-            &mut rng,
-        )
-        .unwrap();
+        let (_, pk_package) =
+            frost::keys::generate_with_dealer(3, 2, frost::keys::IdentifierList::Default, &mut rng)
+                .unwrap();
 
         // Initially, no public key package should exist
         let result = db.get_public_key_package(multisig_id).unwrap();
@@ -430,21 +426,13 @@ mod tests {
         let multisig_id_1 = b"multisig_1";
         let multisig_id_2 = b"multisig_2";
 
-        let (_, pk_package_1) = frost::keys::generate_with_dealer(
-            3,
-            2,
-            frost::keys::IdentifierList::Default,
-            &mut rng,
-        )
-        .unwrap();
+        let (_, pk_package_1) =
+            frost::keys::generate_with_dealer(3, 2, frost::keys::IdentifierList::Default, &mut rng)
+                .unwrap();
 
-        let (_, pk_package_2) = frost::keys::generate_with_dealer(
-            5,
-            3,
-            frost::keys::IdentifierList::Default,
-            &mut rng,
-        )
-        .unwrap();
+        let (_, pk_package_2) =
+            frost::keys::generate_with_dealer(5, 3, frost::keys::IdentifierList::Default, &mut rng)
+                .unwrap();
 
         // Store both
         db.set_public_key_package(multisig_id_1, pk_package_1.clone()).unwrap();

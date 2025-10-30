@@ -62,7 +62,6 @@ struct Args {
     bitcoin_rpc_password: String,
 }
 
-
 fn parse_and_validate_address(
     address_str: &str,
     testnet: bool,
@@ -242,10 +241,9 @@ fn aggregate_and_finalize(
 
     // Aggregate signatures for each input
     for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
-        let signing_package =
-            signing_packages.get(index).ok_or_else(|| {
-                anyhow::anyhow!("Missing signing package at index {}", index)
-            })?;
+        let signing_package = signing_packages
+            .get(index)
+            .ok_or_else(|| anyhow::anyhow!("Missing signing package at index {}", index))?;
 
         // Collect all partial signatures for this input
         let partial_sigs = psbt_input.all_partial_signatures();
@@ -258,8 +256,12 @@ fn aggregate_and_finalize(
         };
 
         // Aggregate the partial signatures
-        let agg_sig =
-            frost::aggregate_with_tweak(signing_package, &partial_sigs, pk_package, &signing_parameters)?;
+        let agg_sig = frost::aggregate_with_tweak(
+            signing_package,
+            &partial_sigs,
+            pk_package,
+            &signing_parameters,
+        )?;
 
         // Verify the aggregated signature
         let effective_key = pk_package.clone().tweak(&signing_parameters);
@@ -283,16 +285,17 @@ fn aggregate_and_finalize(
 
     // Finalize the PSBT
     if let Err(errs) = MiniscriptPsbtExt::finalize_mut(psbt, &secp) {
-        return Err(anyhow::anyhow!("PSBT finalization failed with {} errors: {:?}", errs.len(), errs));
+        return Err(anyhow::anyhow!(
+            "PSBT finalization failed with {} errors: {:?}",
+            errs.len(),
+            errs
+        ));
     }
 
     // Copy finalized witness data back to original PSBT
     for (index, input) in original_psbt.inputs.iter_mut().enumerate() {
-        let final_witness = psbt
-            .inputs
-            .get(index)
-            .and_then(|i| i.final_script_witness.clone());
-        
+        let final_witness = psbt.inputs.get(index).and_then(|i| i.final_script_witness.clone());
+
         input.final_script_witness = final_witness;
     }
 
@@ -427,16 +430,12 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
 
         // Validate UTXO exists on chain
         info!("Validating UTXO {} exists on chain", outpoint);
-        let on_chain_utxo = self
-            .bitcoind_client
-            .get_tx_out(&txid, vout, None)
-            .map_err(|e| {
-                Status::internal(format!("Failed to query Bitcoin RPC for UTXO {}: {}", outpoint, e))
-            })?;
-
-        let on_chain_utxo = on_chain_utxo.ok_or_else(|| {
-            badarg!("UTXO {} not found on chain or already spent", outpoint)
+        let on_chain_utxo = self.bitcoind_client.get_tx_out(&txid, vout, None).map_err(|e| {
+            Status::internal(format!("Failed to query Bitcoin RPC for UTXO {}: {}", outpoint, e))
         })?;
+
+        let on_chain_utxo = on_chain_utxo
+            .ok_or_else(|| badarg!("UTXO {} not found on chain or already spent", outpoint))?;
 
         info!(
             "UTXO {} found on chain with {} confirmations",
@@ -494,9 +493,10 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         let mut all_nonces = Vec::new();
         for (node_id_bytes, key_package) in selected_shares.iter() {
             let identifier = frost::Identifier::deserialize(
-                node_id_bytes.as_slice().try_into().map_err(|_| {
-                    Status::internal("Invalid node identifier in key share")
-                })?,
+                node_id_bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| Status::internal("Invalid node identifier in key share"))?,
             )
             .map_err(|_| Status::internal("Failed to deserialize node identifier"))?;
 
@@ -561,17 +561,20 @@ async fn main() -> anyhow::Result<()> {
     info!("Connecting to Bitcoin RPC at: {}", args.bitcoin_rpc_url);
     let bitcoind_client = bitcoincore_rpc::Client::new(
         &args.bitcoin_rpc_url,
-        bitcoincore_rpc::Auth::UserPass(args.bitcoin_rpc_user.clone(), args.bitcoin_rpc_password.clone()),
+        bitcoincore_rpc::Auth::UserPass(
+            args.bitcoin_rpc_user.clone(),
+            args.bitcoin_rpc_password.clone(),
+        ),
     )
     .map_err(|e| anyhow::anyhow!("Failed to connect to Bitcoin RPC: {}", e))?;
-    
+
     // Verify connection by getting blockchain info
-    let blockchain_info = bitcoind_client.get_blockchain_info()
+    let blockchain_info = bitcoind_client
+        .get_blockchain_info()
         .map_err(|e| anyhow::anyhow!("Failed to get blockchain info from Bitcoin RPC: {}", e))?;
     info!(
-        "Connected to Bitcoin RPC - Chain: {}, Blocks: {}", 
-        blockchain_info.chain, 
-        blockchain_info.blocks
+        "Connected to Bitcoin RPC - Chain: {}, Blocks: {}",
+        blockchain_info.chain, blockchain_info.blocks
     );
 
     // Configure service address
