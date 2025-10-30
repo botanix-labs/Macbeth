@@ -7968,6 +7968,7 @@ dependencies = [
  "hex",
  "log",
  "merlin",
+ "miniscript 12.3.5",
  "prost",
  "prost-build",
  "prost-types",

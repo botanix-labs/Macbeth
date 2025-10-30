@@ -3,20 +3,25 @@ use std::{path::PathBuf, str::FromStr};
 #[macro_use]
 extern crate log;
 
-use bitcoin::{
-    base64::{self, Engine},
-    psbt::Psbt,
-    Amount, FeeRate, OutPoint, TxOut,
-};
+use bitcoin::{psbt::Psbt, Amount, FeeRate, OutPoint, TxOut};
 use btcserverlib::{
     badarg, database,
     util::parse_eth_address,
-    wallet::{psbt::PsbtInputExt, util::calculate_signed_tx_weight},
+    wallet::{
+        psbt::{PsbtExt, PsbtInputExt},
+        util::calculate_signed_tx_weight,
+    },
 };
 use clap::Parser;
-use frost_secp256k1_tr as frost;
+use frost_secp256k1_tr::{
+    self as frost,
+    keys::Tweak,
+    round1::{SigningCommitments, SigningNonces},
+    SigningParameters,
+};
+use miniscript::psbt::PsbtExt as MiniscriptPsbtExt;
 use peginrecoverylib::database as recovery_db;
-use rand::{thread_rng, RngCore};
+use rand::thread_rng;
 
 use peginrecoverylib::rpc::pegin_recovery::{
     pegin_recovery_service_server::{PeginRecoveryService, PeginRecoveryServiceServer},
@@ -43,16 +48,6 @@ struct Args {
     port: u16,
 }
 
-const DUMMY_IDENTIFIER_SIZE: usize = 33;
-const SIGNING_SESSION_ID_SIZE: usize = 32;
-
-struct SigningPackage {
-    psbt_base64: String,
-    #[allow(dead_code)]
-    identifier_hex: String,
-    #[allow(dead_code)]
-    signing_session_id_hex: String,
-}
 
 fn parse_and_validate_address(
     address_str: &str,
@@ -136,31 +131,13 @@ pub(crate) fn create_recovery_psbt(
     psbt
 }
 
-fn create_round1_signing_package(psbt: Psbt) -> Result<SigningPackage, tonic::Status> {
-    // create random signing session id
-    let mut signing_session_id = [0u8; SIGNING_SESSION_ID_SIZE];
-    rand::thread_rng().fill_bytes(&mut signing_session_id);
-
-    // create a dummy identifier (since it doesn't matter for this use case)
-    let dummy_identifier = vec![1u8; DUMMY_IDENTIFIER_SIZE]; // 33 bytes for a compressed public key
-
-    // create the serializable SigningPackage structure
-    let signing_package = SigningPackage {
-        psbt_base64: base64::prelude::BASE64_STANDARD.encode(psbt.serialize()),
-        identifier_hex: hex::encode(&dummy_identifier),
-        signing_session_id_hex: hex::encode(signing_session_id),
-    };
-
-    Ok(signing_package)
-}
-
-#[allow(dead_code)]
-fn round1_signing_package(
+/// Perform round 1 signing: generate nonces and commitments for each input
+fn do_round1_signing(
     psbt: &mut Psbt,
     key_package: &frost::keys::KeyPackage,
-    my_identifier: frost::Identifier,
-) -> anyhow::Result<Vec<(frost::round1::SigningNonces, frost::round1::SigningCommitments)>> {
-    // Basic PSBT sanity checks (but skip btc-server specific validations)
+    identifier: frost::Identifier,
+) -> anyhow::Result<Vec<(SigningNonces, SigningCommitments)>> {
+    // Basic PSBT sanity checks
     if psbt.inputs.is_empty() {
         return Err(anyhow::anyhow!("PSBT must have at least one input"));
     }
@@ -172,21 +149,142 @@ fn round1_signing_package(
     // Basic fee sanity check
     validate_psbt_fee_sanity(psbt)?;
 
-    // Core FROST logic (copied from signer::get_round1_signing_package)
+    // Generate nonces and commitments for each input
     let num_inputs = psbt.inputs.len();
     let secret = key_package.signing_share();
     let mut nonces = vec![];
     let mut rng = thread_rng();
 
-    // Generate nonces and commitments for each input
     // Order is important - each nonce pair corresponds to a transaction input
     for i in 0..num_inputs {
         let nonce_pkg = frost::round1::commit(secret, &mut rng);
-        psbt.inputs[i].set_signing_commitment(my_identifier, &nonce_pkg.1);
+        psbt.inputs[i].set_signing_commitment(identifier, &nonce_pkg.1);
         nonces.push(nonce_pkg);
     }
 
     Ok(nonces)
+}
+
+/// Perform round 2 signing: generate partial signatures for each input
+fn do_round2_signing(
+    psbt: &mut Psbt,
+    key_package: &frost::keys::KeyPackage,
+    identifier: frost::Identifier,
+    signing_nonces: &[(SigningNonces, SigningCommitments)],
+) -> anyhow::Result<()> {
+    let num_inputs = psbt.inputs.len();
+    if signing_nonces.len() != num_inputs {
+        return Err(anyhow::anyhow!(
+            "Number of signing nonces ({}) does not match number of inputs ({})",
+            signing_nonces.len(),
+            num_inputs
+        ));
+    }
+
+    // Get signing packages from the PSBT (which now has commitments from all signers)
+    let signing_packages = psbt.signing_packages()?;
+
+    // Generate partial signature for each input
+    for (index, (signing_package, psbt_in)) in
+        signing_packages.iter().zip(psbt.inputs.iter_mut()).enumerate()
+    {
+        // Check if this signer is in the signing set
+        let signing_commitments = signing_package.signing_commitments();
+        if !signing_commitments.contains_key(&identifier) {
+            return Err(anyhow::anyhow!("Signer not found in signing package at index {}", index));
+        }
+
+        // Get the eth_address tweak if present
+        let eth_address_tweak = psbt_in.eth_address();
+
+        // Create signing parameters with the tweak
+        let signing_parameters = SigningParameters {
+            tapscript_merkle_root: None,
+            additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
+        };
+
+        // Generate partial signature
+        let sig = frost::round2::sign_with_tweak(
+            signing_package,
+            &signing_nonces.get(index).expect("valid index").0,
+            key_package,
+            &signing_parameters,
+        )?;
+
+        // Store the partial signature
+        psbt_in.set_partial_signature(identifier, &sig);
+    }
+
+    Ok(())
+}
+
+/// Aggregate partial signatures and finalize the PSBT into a ready-to-broadcast transaction
+fn aggregate_and_finalize(
+    psbt: &mut Psbt,
+    pk_package: &frost::keys::PublicKeyPackage,
+) -> anyhow::Result<bitcoin::Transaction> {
+    // Get signing packages for aggregation
+    let signing_packages = psbt.signing_packages()?;
+
+    // Aggregate signatures for each input
+    for (index, psbt_input) in psbt.inputs.iter_mut().enumerate() {
+        let signing_package =
+            signing_packages.get(index).ok_or_else(|| {
+                anyhow::anyhow!("Missing signing package at index {}", index)
+            })?;
+
+        // Collect all partial signatures for this input
+        let partial_sigs = psbt_input.all_partial_signatures();
+
+        // Get eth_address tweak if present
+        let eth_address_tweak = psbt_input.eth_address();
+        let signing_parameters = SigningParameters {
+            tapscript_merkle_root: None,
+            additional_tweak: eth_address_tweak.map(|e| e.to_vec()),
+        };
+
+        // Aggregate the partial signatures
+        let agg_sig =
+            frost::aggregate_with_tweak(signing_package, &partial_sigs, pk_package, &signing_parameters)?;
+
+        // Verify the aggregated signature
+        let effective_key = pk_package.clone().tweak(&signing_parameters);
+        effective_key.verifying_key().verify(signing_package.message(), &agg_sig)?;
+
+        // Convert to bitcoin schnorr signature
+        let secp_sig = bitcoin::secp256k1::schnorr::Signature::from_slice(&agg_sig.serialize()?)?;
+
+        // Add signature to PSBT
+        let hash_ty = bitcoin::sighash::TapSighashType::Default;
+        let sighash_type = bitcoin::psbt::PsbtSighashType::from(hash_ty);
+        psbt_input.sighash_type = Some(sighash_type);
+        psbt_input.tap_key_sig =
+            Some(bitcoin::taproot::Signature { signature: secp_sig, sighash_type: hash_ty });
+    }
+
+    // Keep a copy of the original psbt as we need to add back the signing commitments and
+    // partial signatures - `finalize_mut` removes everything that is not a witness
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let mut original_psbt = psbt.clone();
+
+    // Finalize the PSBT
+    if let Err(errs) = MiniscriptPsbtExt::finalize_mut(psbt, &secp) {
+        return Err(anyhow::anyhow!("PSBT finalization failed with {} errors: {:?}", errs.len(), errs));
+    }
+
+    // Copy finalized witness data back to original PSBT
+    for (index, input) in original_psbt.inputs.iter_mut().enumerate() {
+        let final_witness = psbt
+            .inputs
+            .get(index)
+            .and_then(|i| i.final_script_witness.clone());
+        
+        input.final_script_witness = final_witness;
+    }
+
+    // Extract the final transaction
+    let tx = original_psbt.extract_tx()?;
+    Ok(tx)
 }
 
 /// Main service implementation
@@ -258,18 +356,49 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
     ) -> Result<Response<RecoverPeginResponse>, Status> {
         let req = request.into_inner();
         info!(
-            "RecoverPegin requested - destination: {}, txid: {}, vout: {}",
-            req.destination, req.txid, req.vout
+            "RecoverPegin requested - destination: {}, txid: {}, vout: {}, multisig_id: {} bytes",
+            req.destination,
+            req.txid,
+            req.vout,
+            req.multisig_id.len()
         );
 
-        // TODO: Implement pegin recovery logic
-        // - do the signing rounds
-        // - broadcast the transaction
-        // - return the signed transaction and its txid
-
         let testnet = true; // TODO: get from config
+        let multisig_id = &req.multisig_id;
 
-        // parse and validate the request
+        if multisig_id.is_empty() {
+            return Err(badarg!("multisig_id is required"));
+        }
+
+        // Load key shares and public key package for this multisig
+        let multisig_shares = self
+            .db
+            .get_key_shares(multisig_id)
+            .map_err(|e| Status::internal(format!("Failed to get key shares: {}", e)))?
+            .ok_or_else(|| badarg!("No key shares found for multisig_id"))?;
+
+        let pk_package = self
+            .db
+            .get_public_key_package(multisig_id)
+            .map_err(|e| Status::internal(format!("Failed to get public key package: {}", e)))?
+            .ok_or_else(|| badarg!("No public key package found for multisig_id"))?;
+
+        // Use all available key shares for signing
+        // In a proper recovery scenario, we need at least min_signers shares,
+        // but since we don't have a direct way to get that from PublicKeyPackage,
+        // we'll use all shares we have. The FROST protocol will validate if we have enough.
+        let num_shares = multisig_shares.shares.len();
+        info!("Using {} key shares for signing", num_shares);
+
+        if num_shares == 0 {
+            return Err(badarg!("No key shares available for signing"));
+        }
+
+        // Select all available key shares
+        let selected_shares: Vec<_> = multisig_shares.shares.iter().collect();
+        info!("Selected {} key shares for signing", selected_shares.len());
+
+        // Parse and validate the request
         let destination = parse_and_validate_address(&req.destination, testnet)
             .map_err(|e| badarg!("Invalid destination: {}", e))?;
         let script_pubkey = destination.script_pubkey();
@@ -282,7 +411,7 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         // TODO: validate utxo is on chain and matches
         let input_amount = Amount::from_sat(1000); // TODO: get from on-chain validation
 
-        // create the utxo
+        // Create the utxo
         let utxo = database::Utxo {
             outpoint: OutPoint::new(txid, vout),
             output: TxOut { value: input_amount, script_pubkey: script_pubkey.clone() },
@@ -290,7 +419,8 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
             version: 1,
         };
         let utxos = vec![utxo];
-        // calculate the fee and subtract from the output value
+
+        // Calculate the fee and subtract from the output value
         let fee_rate_sat_per_vbyte = 5; // TODO: get from config
         let fee_rate: FeeRate = FeeRate::from_sat_per_vb(fee_rate_sat_per_vbyte)
             .ok_or(badarg!("Invalid fee rate: {}", fee_rate_sat_per_vbyte))?;
@@ -299,21 +429,54 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         let output_value =
             input_amount.checked_sub(absolute_fee).ok_or(badarg!("output value underflow"))?;
 
-        // create the psbt
-        let psbt = create_recovery_psbt(utxos, &script_pubkey, output_value);
+        // Create the PSBT
+        let mut psbt = create_recovery_psbt(utxos, &script_pubkey, output_value);
 
-        let signing_package = create_round1_signing_package(psbt.clone())?;
+        // Round 1: Generate nonces and commitments from each selected key share
+        let mut all_nonces = Vec::new();
+        for (node_id_bytes, key_package) in selected_shares.iter() {
+            let identifier = frost::Identifier::deserialize(
+                node_id_bytes.as_slice().try_into().map_err(|_| {
+                    Status::internal("Invalid node identifier in key share")
+                })?,
+            )
+            .map_err(|_| Status::internal("Failed to deserialize node identifier"))?;
 
-        // TODO:
-        // for each key share, do round 1 signing
-        // create round 2 signing package
-        // for each key share, do round 2 signing
-        // aggregate the signatures
-        // broadcast the transaction
+            let nonces = do_round1_signing(&mut psbt, key_package, identifier)
+                .map_err(|e| Status::internal(format!("Round 1 signing failed: {}", e)))?;
+
+            all_nonces.push((identifier, nonces));
+            info!("Round 1 complete for identifier: {:?}", identifier);
+        }
+
+        // Round 2: Generate partial signatures from each selected key share
+        for (identifier, nonces) in all_nonces.iter() {
+            let key_package = multisig_shares
+                .shares
+                .get(&identifier.serialize().to_vec())
+                .ok_or_else(|| Status::internal("Key package not found for identifier"))?;
+
+            do_round2_signing(&mut psbt, key_package, *identifier, nonces)
+                .map_err(|e| Status::internal(format!("Round 2 signing failed: {}", e)))?;
+
+            info!("Round 2 complete for identifier: {:?}", identifier);
+        }
+
+        // Aggregate and finalize
+        let final_tx = aggregate_and_finalize(&mut psbt, &pk_package)
+            .map_err(|e| Status::internal(format!("Aggregation/finalization failed: {}", e)))?;
+
+        info!("Transaction successfully signed. Txid: {}", final_tx.compute_txid());
+
+        // Serialize the transaction
+        let tx_bytes = bitcoin::consensus::serialize(&final_tx);
+        let tx_hex = hex::encode(&tx_bytes);
+
+        // TODO: Broadcast the transaction to Bitcoin network
 
         Ok(Response::new(RecoverPeginResponse {
-            tx: signing_package.psbt_base64,
-            txid: txid.to_string(),
+            tx: tx_hex,
+            txid: final_tx.compute_txid().to_string(),
         }))
     }
 }

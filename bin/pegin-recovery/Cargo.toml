@@ -29,6 +29,7 @@ frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c
     "serde",
     "serialization",
 ] }
+miniscript = "12.3.0"
 rand = "0.8.5"
 hex = "0.4.3"
 serde = "1.0.171"
