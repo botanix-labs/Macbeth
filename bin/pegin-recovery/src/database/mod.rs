@@ -15,6 +15,9 @@ pub use error::Error;
 /// Tree identifier for key shares storage.
 const TREE_KEY_SHARES: &[u8; 9] = b"keyshares";
 
+/// Tree identifier for public key packages storage.
+const TREE_PUBLIC_KEY_PACKAGES: &[u8; 15] = b"public_key_pkgs";
+
 /// Represents a collection of key shares for a single multisig.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct MultisigKeyShares {
@@ -29,17 +32,24 @@ pub struct Db {
     db: sled::Db,
     /// Tree for storing key shares, indexed by multisig_id.
     key_shares: sled::Tree,
+    /// Tree for storing public key packages, indexed by multisig_id.
+    public_key_packages: sled::Tree,
 }
 
 impl Db {
     pub fn open(path: impl AsRef<Path>) -> Result<Db, sled::Error> {
         let db = sled::open(path)?;
-        Ok(Db { key_shares: db.open_tree(TREE_KEY_SHARES)?, db })
+        Ok(Db {
+            key_shares: db.open_tree(TREE_KEY_SHARES)?,
+            public_key_packages: db.open_tree(TREE_PUBLIC_KEY_PACKAGES)?,
+            db,
+        })
     }
 
     pub fn flush(&self) -> Result<(), Error> {
         self.db.flush()?;
         self.key_shares.flush()?;
+        self.public_key_packages.flush()?;
         Ok(())
     }
 
@@ -90,6 +100,31 @@ impl Db {
         }
     }
 
+    /// Get the public key package for a given multisig.
+    pub fn get_public_key_package(
+        &self,
+        multisig_id: &[u8],
+    ) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
+        if let Some(b) = self.public_key_packages.get(multisig_id)? {
+            let pk_package = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
+            Ok(Some(pk_package))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Set the public key package for a given multisig.
+    pub fn set_public_key_package(
+        &self,
+        multisig_id: &[u8],
+        pk_package: frost::keys::PublicKeyPackage,
+    ) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&pk_package, &mut bytes).expect("writing to buffer");
+        self.public_key_packages.insert(multisig_id, &bytes[..])?;
+        Ok(())
+    }
+
     /// Imports a key package from btc-server's ExportedKeyPackage format.
     /// Uses the same crypto (Merlin + ChaCha20Poly1305) as btc-server for compatibility.
     pub fn import_from_btc_server(
@@ -105,27 +140,45 @@ impl Db {
 
         let nonce = Nonce::from_slice(&export.iv);
 
-        // Derive decryption key using Merlin transcript (matches btc-server)
+        // Derive decryption keys using Merlin transcript (matches btc-server)
         let mut t = merlin::Transcript::new(b"Botanix_Macbeth_BtcServer_ExportedKeyPackage");
         t.append_message(b"salt", nonce);
         t.append_message(b"passphrase", passphrase.as_bytes());
 
-        let mut master = Zeroizing::new([0u8; 32]);
-        t.challenge_bytes(b"secret_key_package", master.as_mut_slice());
+        // Decrypt secret key package
+        let key_package = {
+            let mut master = Zeroizing::new([0u8; 32]);
+            t.challenge_bytes(b"secret_key_package", master.as_mut_slice());
 
-        // Decrypt and deserialize
-        let cipher = ChaCha20Poly1305::new_from_slice(master.as_slice())
-            .expect("master key must be 32-bytes");
+            let cipher = ChaCha20Poly1305::new_from_slice(master.as_slice())
+                .expect("master key must be 32-bytes");
 
-        let decrypted = cipher
-            .decrypt(nonce, export.enc_key_package.as_slice())
-            .map_err(|_| Error::BadDecryptionPassphrase)?;
+            let decrypted = cipher
+                .decrypt(nonce, export.enc_key_package.as_slice())
+                .map_err(|_| Error::BadDecryptionPassphrase)?;
 
-        let key_package: frost::keys::KeyPackage = ciborium::from_reader(decrypted.as_slice())?;
+            ciborium::from_reader::<frost::keys::KeyPackage, _>(decrypted.as_slice())?
+        };
 
-        // Store it
+        // Decrypt public key package
+        let pk_package = {
+            let mut master = Zeroizing::new([0u8; 32]);
+            t.challenge_bytes(b"public_key_package", master.as_mut_slice());
+
+            let cipher = ChaCha20Poly1305::new_from_slice(master.as_slice())
+                .expect("master key must be 32-bytes");
+
+            let decrypted = cipher
+                .decrypt(nonce, export.enc_pk_package.as_slice())
+                .map_err(|_| Error::BadDecryptionPassphrase)?;
+
+            ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(decrypted.as_slice())?
+        };
+
+        // Store both packages
         let node_id = node_identifier.serialize();
         self.add_key_share(multisig_id, &node_id, key_package)?;
+        self.set_public_key_package(multisig_id, pk_package)?;
 
         Ok(())
     }
@@ -288,7 +341,7 @@ mod tests {
         let passphrase = Zeroizing::new("test_passphrase_123".to_string());
         let key_package = create_test_key_package(1);
 
-        let export = {
+        let (export, original_pk_package) = {
             let btc_db = BtcDb::open(temp_dir_btc.path()).unwrap();
 
             // Store key package in btc-server
@@ -304,10 +357,11 @@ mod tests {
                 &mut rng,
             )
             .unwrap();
-            btc_db.set_pubkey_package(pk_package).unwrap();
+            btc_db.set_pubkey_package(pk_package.clone()).unwrap();
 
             // Export
-            btc_db.export_key_package(passphrase.clone()).unwrap().unwrap()
+            let export = btc_db.export_key_package(passphrase.clone()).unwrap().unwrap();
+            (export, pk_package)
         };
 
         // Import into pegin-recovery
@@ -319,9 +373,89 @@ mod tests {
             .import_from_btc_server(multisig_id, node_identifier, passphrase, export)
             .unwrap();
 
-        // Verify the import worked
+        // Verify the KeyPackage import worked
         let node_id = node_identifier.serialize();
-        let retrieved = recovery_db.get_key_share(multisig_id, &node_id).unwrap().unwrap();
-        assert_eq!(retrieved, key_package);
+        let retrieved_key = recovery_db.get_key_share(multisig_id, &node_id).unwrap().unwrap();
+        assert_eq!(retrieved_key, key_package);
+
+        // Verify the PublicKeyPackage import worked
+        let retrieved_pk = recovery_db.get_public_key_package(multisig_id).unwrap().unwrap();
+        assert_eq!(retrieved_pk, original_pk_package);
+    }
+
+    #[test]
+    fn test_public_key_package_storage() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = Db::open(temp_dir.path()).unwrap();
+
+        let multisig_id = b"test_multisig_pk";
+
+        // Create a test public key package
+        use frost::rand_core::OsRng;
+        let mut rng = OsRng;
+        let (_, pk_package) = frost::keys::generate_with_dealer(
+            3,
+            2,
+            frost::keys::IdentifierList::Default,
+            &mut rng,
+        )
+        .unwrap();
+
+        // Initially, no public key package should exist
+        let result = db.get_public_key_package(multisig_id).unwrap();
+        assert!(result.is_none());
+
+        // Store the public key package
+        db.set_public_key_package(multisig_id, pk_package.clone()).unwrap();
+
+        // Retrieve it
+        let retrieved = db.get_public_key_package(multisig_id).unwrap().unwrap();
+        assert_eq!(retrieved, pk_package);
+
+        // Verify it persists across flushes
+        db.flush().unwrap();
+        let retrieved_after_flush = db.get_public_key_package(multisig_id).unwrap().unwrap();
+        assert_eq!(retrieved_after_flush, pk_package);
+    }
+
+    #[test]
+    fn test_multiple_multisigs_with_public_key_packages() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = Db::open(temp_dir.path()).unwrap();
+
+        use frost::rand_core::OsRng;
+        let mut rng = OsRng;
+
+        // Create two different multisigs with different public key packages
+        let multisig_id_1 = b"multisig_1";
+        let multisig_id_2 = b"multisig_2";
+
+        let (_, pk_package_1) = frost::keys::generate_with_dealer(
+            3,
+            2,
+            frost::keys::IdentifierList::Default,
+            &mut rng,
+        )
+        .unwrap();
+
+        let (_, pk_package_2) = frost::keys::generate_with_dealer(
+            5,
+            3,
+            frost::keys::IdentifierList::Default,
+            &mut rng,
+        )
+        .unwrap();
+
+        // Store both
+        db.set_public_key_package(multisig_id_1, pk_package_1.clone()).unwrap();
+        db.set_public_key_package(multisig_id_2, pk_package_2.clone()).unwrap();
+
+        // Verify both can be retrieved independently
+        let retrieved_1 = db.get_public_key_package(multisig_id_1).unwrap().unwrap();
+        let retrieved_2 = db.get_public_key_package(multisig_id_2).unwrap().unwrap();
+
+        assert_eq!(retrieved_1, pk_package_1);
+        assert_eq!(retrieved_2, pk_package_2);
+        assert_ne!(retrieved_1, retrieved_2);
     }
 }
