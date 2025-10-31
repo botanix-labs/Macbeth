@@ -19,6 +19,7 @@ pub struct ImportKeyShareRequest {
 /// Compatible with btc-server's ExportedKeyPackage format
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExportedKeyPackage {
+    /// stored as u16 in Rust
     #[prost(uint32, tag = "1")]
     pub version: u32,
     /// 12-byte nonce
@@ -27,7 +28,7 @@ pub struct ExportedKeyPackage {
     /// Encrypted FROST KeyPackage
     #[prost(bytes = "vec", tag = "3")]
     pub enc_key_package: ::prost::alloc::vec::Vec<u8>,
-    /// Encrypted PublicKeyPackage (ignored by pegin-recovery)
+    /// Encrypted PublicKeyPackage
     #[prost(bytes = "vec", tag = "4")]
     pub enc_pk_package: ::prost::alloc::vec::Vec<u8>,
 }
@@ -44,6 +45,9 @@ pub struct RecoverPeginRequest {
     pub eth_address: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
     pub signature: ::prost::alloc::string::String,
+    /// Identifier for which set of key shares to use
+    #[prost(bytes = "vec", tag = "6")]
+    pub multisig_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecoverPeginResponse {

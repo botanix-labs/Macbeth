@@ -1,3 +1,4 @@
+use super::error::Error;
 use crate::{
     it_info_print,
     suite::consensus::ConsensusIntegrationTestSuite,
@@ -9,8 +10,9 @@ use botanix_chainspec::constants::BOTANIX_TESTNET;
 use btcserverlib::{database, database::version::UtxoVersion};
 use ethers::{prelude::Provider, providers::Http};
 use frost_secp256k1_tr as frost;
+use pegin_recovery_client::{self, PeginRecoveryServiceClient};
 use std::{fs, path::Path, process::Command, str::FromStr, time::Duration};
-
+use tonic::transport::Channel;
 pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> anyhow::Result<()> {
     it_info_print!("Starting pegin recovery test...");
 
@@ -128,9 +130,82 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
 
     // Export key packages for all federation members
     it_info_print!("Starting Phase 3: Key Package Export");
-    export_key_packages_for_all_members(&fed_db_paths, &temp_db_dir)?;
+    let fed_key_package_paths = export_key_packages_for_all_members(&fed_db_paths, &temp_db_dir)?;
+
+    // Start pegin recovery service
+    it_info_print!("Starting Phase 4: Pegin Recovery Service");
+    const DEFAULT_PORT: u16 = 50052;
+
+    let pegin_recovery_db_path = temp_db_dir.join("pegin_recovery_db");
+    std::fs::create_dir_all(&pegin_recovery_db_path).map_err(|e| {
+        Error::TestVectorExport(format!("Failed to create pegin recovery db directory: {}", e))
+    })?;
+
+    let mut pegin_recovery_process = Command::new("cargo")
+        .args(&[
+            "run",
+            "--package",
+            "pegin-recovery",
+            "--",
+            "--db",
+            &pegin_recovery_db_path.to_string_lossy(),
+            "--port",
+            &DEFAULT_PORT.to_string(),
+            "--log-level",
+            "info",
+        ])
+        .spawn()
+        .map_err(|e| {
+            Error::TestVectorExport(format!("Failed to start pegin recovery service: {}", e))
+        })?;
+
+    // Wait for service to start up
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    //create pegin recovery service client
+    let client = pegin_recovery_client::PeginRecoveryServiceClient::connect(format!(
+        "http://localhost:{}",
+        DEFAULT_PORT
+    ))
+    .await
+    .map_err(Error::ServerConnect)?;
+
+    //import keyshare packcage for each exported federation member key package
+    for (index, db_path) in fed_key_package_paths.iter().enumerate() {
+        let frost_identifier = frost::Identifier::derive((index as u16).to_le_bytes().as_slice())
+            .expect("valid frost identifier")
+            .serialize();
+        let key_package_data = std::fs::read(db_path).map_err(|e| {
+            Error::TestVectorExport(format!("Failed to read key package file: {}", e))
+        })?;
+
+        // Deserialize the ExportedKeyPackage from CBOR format
+        let exported_package: btcserverlib::database::ExportedKeyPackage =
+            ciborium::from_reader(key_package_data.as_slice()).map_err(|e| {
+                Error::TestVectorExport(format!("Failed to deserialize key package: {}", e))
+            })?;
+
+        client
+            .clone()
+            .import_key_share(tonic::Request::new(pegin_recovery_client::ImportKeyShareRequest {
+                multisig_id: gateway_address_response.aggregate_public_key.as_bytes().to_vec(),
+                node_identifier: frost_identifier.to_vec(),
+                passphrase: "test_passphrase".to_string(),
+                export: Some(pegin_recovery_client::ExportedKeyPackage {
+                    version: exported_package.version as u32,
+                    iv: exported_package.iv.to_vec(),
+                    enc_key_package: exported_package.enc_key_package,
+                    enc_pk_package: exported_package.enc_pk_package,
+                }),
+            }))
+            .await
+            .map_err(Error::Request)?;
+    }
 
     it_info_print!("Pegin recovery test completed successfully.");
+
+    // Clean up: kill the pegin recovery service
+    let _ = pegin_recovery_process.kill();
 
     Ok(())
 }
@@ -139,7 +214,9 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
 fn export_key_packages_for_all_members(
     fed_db_paths: &[std::path::PathBuf],
     temp_db_dir: &std::path::Path,
-) -> Result<(), super::error::Error> {
+) -> Result<Vec<std::path::PathBuf>, super::error::Error> {
+    let mut output_paths = Vec::new();
+
     for (index, db_path) in fed_db_paths.iter().enumerate() {
         let output_path = temp_db_dir.join(format!("key_package_fed_member_{}.bin", index));
 
@@ -167,7 +244,10 @@ fn export_key_packages_for_all_members(
             ])
             .output()
             .map_err(|e| {
-                super::error::Error::TestVectorExport(format!("Failed to execute CLI command: {}", e))
+                super::error::Error::TestVectorExport(format!(
+                    "Failed to execute CLI command: {}",
+                    e
+                ))
             })?;
 
         if !output.status.success() {
@@ -182,9 +262,11 @@ fn export_key_packages_for_all_members(
             "Successfully exported key package",
             format!("Fed member {} to {}", index, output_path.display())
         );
+
+        output_paths.push(output_path);
     }
 
-    Ok(())
+    Ok(output_paths)
 }
 
 /// Recursively copy a directory

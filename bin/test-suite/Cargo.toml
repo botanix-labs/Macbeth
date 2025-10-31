@@ -26,6 +26,9 @@ bitcoincore-rpc = { workspace = true }
 botanix-authority-edh = { workspace = true }
 botanix-authority-peg = { workspace = true, features = ["secp256k1"] }
 
+# Bitcoin related dependencies
+ciborium = "0.2.1"
+
 # Botanix
 botanix-btc-wallet = { path = "../../crates/botanix-btc-wallet" }
 botanix-chainspec = { workspace = true }
@@ -36,6 +39,8 @@ botanix-data-parser = { workspace = true }
 botanix-storage = { workspace = true }
 btc-server = { path = "../btc-server" }
 btc-server-client = { path = "../btc-server/client" }
+pegin-recovery = { path = "../pegin-recovery" }
+pegin-recovery-client = { path = "../pegin-recovery/client" }
 
 # other dependencies
 bytes = "1.4.0"
@@ -71,7 +76,11 @@ reth-rpc-types = { workspace = true }
 reth-tracing = { workspace = true }
 
 ## Crypto
-secp256k1 = { workspace = true, features = ["global-context", "rand-std", "recovery"] }
+secp256k1 = { workspace = true, features = [
+    "global-context",
+    "rand-std",
+    "recovery",
+] }
 serde = { version = "1.0.164", features = ["derive"] }
 serde_json = "1.0.96"
 strum = { version = "0.25.0", features = ["derive"] }

@@ -32,4 +32,6 @@ pub enum Error {
     LatestBlockDoesNotExist,
     /// Test Vector Export Error {0}
     TestVectorExport(String),
+    /// Invalid Pegin Recovery Client port
+    InvalidPeginRecoveryClientPort,
 }

@@ -31,6 +31,7 @@ frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c
     "serialization",
 ] }
 miniscript = "12.3.0"
+pegin-recovery-client = { path = "./client" }
 rand = "0.8.5"
 hex = "0.4.3"
 serde = "1.0.171"
