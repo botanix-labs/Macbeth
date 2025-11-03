@@ -531,10 +531,18 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         let tx_hex = hex::encode(&tx_bytes);
 
         // Broadcast the transaction
+        let client = Arc::clone(&self.bitcoind_client);
+        let tx_for_broadcast = final_tx.clone();
         let broadcasted_txid =
-            self.bitcoind_client.send_raw_transaction(&final_tx).map_err(|e| {
-                Status::internal(format!("Failed to broadcast pegin recovery transaction: {}", e))
-            })?;
+            tokio::task::spawn_blocking(move || client.send_raw_transaction(&tx_for_broadcast))
+                .await
+                .map_err(|e| Status::internal(format!("Task join error: {}", e)))?
+                .map_err(|e| {
+                    Status::internal(format!(
+                        "Failed to broadcast pegin recovery transaction: {}",
+                        e
+                    ))
+                })?;
 
         info!(
             "Pegin Recovery Transaction broadcasted successfully. Broadcasted txid: {}",
