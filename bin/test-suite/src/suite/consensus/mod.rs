@@ -359,10 +359,7 @@ impl LocalContext {
     }
 
     pub fn get_pegin_recovery_process_port(&self) -> u16 {
-        self.pegin_recovery_process
-            .as_ref()
-            .map(|process| process.port)
-            .unwrap_or_default()
+        self.pegin_recovery_process.as_ref().map(|process| process.port).unwrap_or_default()
     }
 }
 
