@@ -4,33 +4,17 @@ use crate::{
     suite::consensus::ConsensusIntegrationTestSuite,
     utils::{generate_blocks, get_gateway_address_with_retry},
 };
-use bitcoin::{consensus::encode::deserialize_hex, Amount, OutPoint, Transaction, TxOut};
+use bitcoin::Amount;
 use bitcoincore_rpc::RpcApi;
 use botanix_chainspec::constants::BOTANIX_TESTNET;
-use btcserverlib::{database, database::version::UtxoVersion};
+use btcserverlib;
 use ethers::{prelude::Provider, providers::Http};
 use frost_secp256k1_tr as frost;
-use pegin_recovery_client::{self, PeginRecoveryServiceClient};
+use pegin_recovery_client;
 use std::{fs, path::Path, process::Command, str::FromStr, time::Duration};
-use tonic::transport::Channel;
+
 pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> anyhow::Result<()> {
     it_info_print!("Starting pegin recovery test...");
-
-    // Simulate test steps
-    // inital fed memebers setup , bitcoind, btc server setup and do DKG
-    // Generate gateway address for random ETH address
-    // Fund the gateway address with some BTC
-    // Simulate pegin recovery process this process includes
-
-    // - Detecting the pegin transaction on the Bitcoin network
-    // - Verifying the transaction details
-    // - creating a PSBT transaction to move BTC into PRS detination address
-    // - Signing the PSBT transaction using federation members
-    // - Broadcasting the signed transaction to the Bitcoin network
-    // - Confirming the transaction and updating the state accordingly
-    // - Validating that the pegin recovery was successful
-    //
-    //
 
     // DKG Setup (copied from frost_e2e but stopping after key generation)
     let pegin_conf_depth = BOTANIX_TESTNET.bitcoin_checkpoint_confirmation_depth;
@@ -95,7 +79,6 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
     let amount = pegin_output.value;
     it_info_print!("Btc Amount", amount);
 
-    //export all fedration databases to tempoary directories
     it_info_print!("Starting Phase 2: Database Export");
 
     // Export all federation databases to temporary directories
@@ -132,40 +115,21 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
     it_info_print!("Starting Phase 3: Key Package Export");
     let fed_key_package_paths = export_key_packages_for_all_members(&fed_db_paths, &temp_db_dir)?;
 
-    // Start pegin recovery service
-    it_info_print!("Starting Phase 4: Pegin Recovery Service");
-    const DEFAULT_PORT: u16 = 50052;
+    // Get pegin recovery service port from the managed instance
+    it_info_print!("Connecting to Pegin Recovery Service");
+    let pegin_recovery_port = suite.local_context.get_pegin_recovery_process_port();
 
-    let pegin_recovery_db_path = temp_db_dir.join("pegin_recovery_db");
-    std::fs::create_dir_all(&pegin_recovery_db_path).map_err(|e| {
-        Error::TestVectorExport(format!("Failed to create pegin recovery db directory: {}", e))
-    })?;
-
-    let mut pegin_recovery_process = Command::new("cargo")
-        .args(&[
-            "run",
-            "--package",
-            "pegin-recovery",
-            "--",
-            "--db",
-            &pegin_recovery_db_path.to_string_lossy(),
-            "--port",
-            &DEFAULT_PORT.to_string(),
-            "--log-level",
-            "info",
-        ])
-        .spawn()
-        .map_err(|e| {
-            Error::TestVectorExport(format!("Failed to start pegin recovery service: {}", e))
-        })?;
-
-    // Wait for service to start up
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    if pegin_recovery_port == 0 {
+        return Err(super::error::Error::TestVectorExport(
+            "Pegin recovery service not started".to_string(),
+        )
+        .into());
+    }
 
     //create pegin recovery service client
     let client = pegin_recovery_client::PeginRecoveryServiceClient::connect(format!(
         "http://localhost:{}",
-        DEFAULT_PORT
+        pegin_recovery_port
     ))
     .await
     .map_err(Error::ServerConnect)?;
@@ -202,10 +166,42 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
             .map_err(Error::Request)?;
     }
 
-    it_info_print!("Pegin recovery test completed successfully.");
+    // Now call recover_pegin
+    it_info_print!("Starting pegin recovery process");
 
-    // Clean up: kill the pegin recovery service
-    let _ = pegin_recovery_process.kill();
+    let recover_response = client
+        .clone()
+        .recover_pegin(tonic::Request::new(pegin_recovery_client::RecoverPeginRequest {
+            destination: "tb1pqgjf350affpm9339lzvsqjdwjpfheg6wr6ufc82r9hmj8hk2pjksum5kxs"
+                .to_string(),
+            txid: pegin_txid.to_string(),
+            vout: vout as u32,
+            eth_address: format!("0x{:x}", eth_destination),
+            signature: "test_signature".to_string(),
+            multisig_id: gateway_address_response.aggregate_public_key.as_bytes().to_vec(),
+        }))
+        .await
+        .map_err(Error::Request)?;
+
+    let recovery_result = recover_response.into_inner();
+    it_info_print!("Recovery transaction", recovery_result.tx);
+    it_info_print!("Recovery txid", recovery_result.txid);
+
+    // Parse recovery txid for further checks
+    let recovery_txid =
+        bitcoin::Txid::from_str(&recovery_result.txid).expect("valid recovery txid");
+
+    // Generate blocks to confirm the recovery transaction
+    generate_blocks(&bitcoind_rpc, 2).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    let tx_info = bitcoind_rpc.get_raw_transaction_info(&recovery_txid, None).expect("valid tx");
+
+    let confirmations = tx_info.confirmations.unwrap_or(0);
+    assert!(confirmations > 1);
+    it_info_print!("Pegin recovery tx_info", tx_info);
+
+    it_info_print!("Pegin recovery test completed successfully.");
 
     Ok(())
 }
