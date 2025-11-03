@@ -524,18 +524,23 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         let final_tx = aggregate_and_finalize(&mut psbt, &pk_package)
             .map_err(|e| Status::internal(format!("Aggregation/finalization failed: {}", e)))?;
 
-        info!("Transaction successfully signed. Txid: {}", final_tx.compute_txid());
+        info!("Transaction successfully signed. txid: {}", final_tx.compute_txid());
 
         // Serialize the transaction
         let tx_bytes = bitcoin::consensus::serialize(&final_tx);
         let tx_hex = hex::encode(&tx_bytes);
 
-        // TODO: Broadcast the transaction to Bitcoin network
+        // Broadcast the transaction
+        let broadcasted_txid =
+            self.bitcoind_client.send_raw_transaction(&final_tx).map_err(|e| {
+                Status::internal(format!("Failed to broadcast pegin recovery transaction: {}", e))
+            })?;
 
-        Ok(Response::new(RecoverPeginResponse {
-            tx: tx_hex,
-            txid: final_tx.compute_txid().to_string(),
-        }))
+        info!(
+            "Pegin Recovery Transaction broadcasted successfully. Broadcasted txid: {}",
+            broadcasted_txid
+        );
+        Ok(Response::new(RecoverPeginResponse { tx: tx_hex, txid: broadcasted_txid.to_string() }))
     }
 }
 
