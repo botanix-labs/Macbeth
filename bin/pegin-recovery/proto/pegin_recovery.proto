@@ -20,7 +20,7 @@ message ImportKeyShareRequest {
     bytes multisig_id = 1;
     
     // FROST identifier serialized as 32 bytes (u16 index -> frost::Identifier::derive)
-    bytes node_identifier = 2;
+    bytes frost_identifier = 2;
     
     // Passphrase to decrypt the exported key package
     string passphrase = 3;

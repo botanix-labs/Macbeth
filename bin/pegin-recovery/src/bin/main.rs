@@ -332,11 +332,11 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         info!("ImportKeyShare requested - multisig_id: {} bytes", req.multisig_id.len());
 
         // Deserialize the FROST identifier
-        let node_identifier = frost::Identifier::deserialize(
-            req.node_identifier
+        let frost_identifier = frost::Identifier::deserialize(
+            req.frost_identifier
                 .as_slice()
                 .try_into()
-                .map_err(|_| Status::invalid_argument("node_identifier must be 32 bytes"))?,
+                .map_err(|_| Status::invalid_argument("frost_identifier must be 32 bytes"))?,
         )
         .map_err(|_| Status::invalid_argument("Invalid FROST identifier"))?;
 
@@ -358,13 +358,13 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         self.db
             .import_from_btc_server(
                 &req.multisig_id,
-                node_identifier,
+                frost_identifier,
                 zeroize::Zeroizing::new(req.passphrase),
                 export,
             )
             .map_err(|e| Status::internal(format!("Failed to import key: {}", e)))?;
 
-        info!("Successfully imported key share for node_identifier: {:?}", node_identifier);
+        info!("Successfully imported key share for frost_identifier: {:?}", frost_identifier);
         Ok(Response::new(Empty {}))
     }
 

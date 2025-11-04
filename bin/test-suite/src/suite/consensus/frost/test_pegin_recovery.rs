@@ -153,7 +153,7 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
             .clone()
             .import_key_share(tonic::Request::new(pegin_recovery_client::ImportKeyShareRequest {
                 multisig_id: gateway_address_response.aggregate_public_key.as_bytes().to_vec(),
-                node_identifier: frost_identifier.to_vec(),
+                frost_identifier,
                 passphrase: "test_passphrase".to_string(),
                 export: Some(pegin_recovery_client::ExportedKeyPackage {
                     version: exported_package.version as u32,

@@ -8,7 +8,7 @@ pub struct ImportKeyShareRequest {
     pub multisig_id: ::prost::alloc::vec::Vec<u8>,
     /// FROST identifier serialized as 32 bytes (u16 index -> frost::Identifier::derive)
     #[prost(bytes = "vec", tag = "2")]
-    pub node_identifier: ::prost::alloc::vec::Vec<u8>,
+    pub frost_identifier: ::prost::alloc::vec::Vec<u8>,
     /// Passphrase to decrypt the exported key package
     #[prost(string, tag = "3")]
     pub passphrase: ::prost::alloc::string::String,
