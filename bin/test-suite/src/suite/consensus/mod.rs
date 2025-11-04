@@ -25,6 +25,9 @@ use common::{
         SpawnedCometBftProcess,
     },
     create_botanix_eth_client, kill_process_at_port,
+    pegin_recovery_node::{
+        create_pegin_recovery_node, PeginRecoveryNodeConfig, SpawnedPeginRecoveryProcess,
+    },
     poa_node::{
         create_poa_nodes, FederationMemberTestConfig, Notifications as PoaNodeNotifications,
         SpawnedPoaServerProcess,
@@ -80,6 +83,9 @@ pub struct LocalContext {
     pub bitcoind_process: Option<SpawnedBitcoindProcess>,
     pub bitcoind_node: Option<BitcoindNodeConfig>,
     pub bitcoind_notification: Option<tokio::sync::broadcast::Sender<BitcoindNotifications>>,
+    // pegin recovery
+    pub pegin_recovery_process: Option<SpawnedPeginRecoveryProcess>,
+    pub pegin_recovery_node: Option<PeginRecoveryNodeConfig>,
     // btc
     pub btc_processes: Option<Vec<SpawnedBtcServerProcess>>,
     pub btc_server_clients: Option<Vec<BtcServerClient<Channel>>>,
@@ -342,10 +348,24 @@ impl LocalContext {
             .map(|bitcoind_process| bitcoind_process.port)
             .unwrap_or_default()
     }
+
+    // pegin recovery service
+    pub fn get_pegin_recovery_process_id(&self) -> u32 {
+        self.pegin_recovery_process
+            .as_ref()
+            .map(|process| process.child_process.id())
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    pub fn get_pegin_recovery_process_port(&self) -> u16 {
+        self.pegin_recovery_process.as_ref().map(|process| process.port).unwrap_or_default()
+    }
 }
 
 pub struct CreateTestConfig {
     pub create_bitcoind_node: bool,
+    pub create_pegin_recovery_service: bool,
     pub create_poa_nodes: bool,
     pub create_rpc_nodes: bool,
     pub create_btc_servers: bool,
@@ -358,6 +378,7 @@ impl CreateTestConfig {
     fn full_scope() -> Self {
         Self {
             create_bitcoind_node: true,
+            create_pegin_recovery_service: true,
             create_poa_nodes: true,
             create_rpc_nodes: true,
             create_btc_servers: true,
@@ -371,6 +392,7 @@ impl Default for CreateTestConfig {
     fn default() -> Self {
         Self {
             create_bitcoind_node: false,
+            create_pegin_recovery_service: false,
             create_poa_nodes: false,
             create_rpc_nodes: false,
             create_btc_servers: false,
@@ -658,6 +680,20 @@ impl Suite for ConsensusIntegrationTestSuite {
                     frost::test_pegin_v1::test_pegin_v1
                 )
             }
+            "test_pegin_recovery" => {
+                run_test!(
+                    self,
+                    CreateTestConfig {
+                        create_bitcoind_node: true,
+                        create_pegin_recovery_service: true,
+                        create_poa_nodes: true,
+                        create_btc_servers: true,
+                        create_cometbft_nodes: true,
+                        ..Default::default()
+                    },
+                    frost::test_pegin_recovery::test_pegin_recovery
+                )
+            }
             _ => {
                 error!("Test {:?} not found", test_to_run.as_str());
                 return vec![];
@@ -694,6 +730,10 @@ impl Suite for ConsensusIntegrationTestSuite {
         // =================== BITCOIND NODE ================== //
         let bitcoind_process_id = self.local_context.get_bitcoind_process_id();
         let bitcoind_port = self.local_context.get_bitcoind_process_port();
+
+        // =================== PEGIN RECOVERY SERVICE ================== //
+        let pegin_recovery_process_id = self.local_context.get_pegin_recovery_process_id();
+        let pegin_recovery_port = self.local_context.get_pegin_recovery_process_port();
 
         // set the panic hook so it kills them whenever activated
         std::panic::set_hook(Box::new(move |panic_info| {
@@ -773,6 +813,14 @@ impl Suite for ConsensusIntegrationTestSuite {
                 .output();
             kill_process_at_port(bitcoind_port);
 
+            // =================== PEGIN RECOVERY SERVICE ================== //
+            // Send a termination signal to the child process
+            let _ = Command::new("kill")
+                .arg("-9") // Use SIGKILL for immediate termination
+                .arg(format!("{pegin_recovery_process_id}"))
+                .output();
+            kill_process_at_port(pegin_recovery_port);
+
             std::process::exit(1);
         }));
     }
@@ -812,6 +860,11 @@ impl Suite for ConsensusIntegrationTestSuite {
         if let Some(bitcoind_process) = self.local_context.bitcoind_process.as_mut() {
             bitcoind_process.destroy_all_async().await
         }
+
+        // =================== PEGIN RECOVERY SERVICE ================== //
+        if let Some(pegin_recovery_process) = self.local_context.pegin_recovery_process.as_mut() {
+            pegin_recovery_process.destroy_all_async().await
+        }
     }
 
     #[allow(clippy::too_many_lines)]
@@ -839,6 +892,19 @@ impl Suite for ConsensusIntegrationTestSuite {
             self.local_context.bitcoind_process = Some(spawned_bitcoind_process);
             self.local_context.bitcoind_node = Some(bitcoind_node);
             self.local_context.bitcoind_notification = Some(tx);
+        }
+
+        // =================== PEGIN RECOVERY SERVICE ================== //
+        if create_test_config.create_pegin_recovery_service {
+            let pegin_recovery_node = create_pegin_recovery_node(self.global_context.clone())?;
+            it_info_print!("Starting pegin recovery service ...");
+            // spawn pegin recovery service as a process
+            let spawned_pegin_recovery_process = pegin_recovery_node.spawn_service()?;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+
+            // update local context
+            self.local_context.pegin_recovery_process = Some(spawned_pegin_recovery_process);
+            self.local_context.pegin_recovery_node = Some(pegin_recovery_node);
         }
 
         // Create member keypairs, where each corresponding secret key and
@@ -1167,6 +1233,8 @@ impl ConsensusIntegrationTestSuite {
                 bitcoind_node: None,
                 bitcoind_notification: None,
                 bitcoind_process: None,
+                pegin_recovery_process: None,
+                pegin_recovery_node: None,
                 authorities: vec![],
             },
         }

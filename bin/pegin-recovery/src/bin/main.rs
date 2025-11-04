@@ -332,11 +332,11 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         info!("ImportKeyShare requested - multisig_id: {} bytes", req.multisig_id.len());
 
         // Deserialize the FROST identifier
-        let node_identifier = frost::Identifier::deserialize(
-            req.node_identifier
+        let frost_identifier = frost::Identifier::deserialize(
+            req.frost_identifier
                 .as_slice()
                 .try_into()
-                .map_err(|_| Status::invalid_argument("node_identifier must be 32 bytes"))?,
+                .map_err(|_| Status::invalid_argument("frost_identifier must be 32 bytes"))?,
         )
         .map_err(|_| Status::invalid_argument("Invalid FROST identifier"))?;
 
@@ -358,13 +358,13 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         self.db
             .import_from_btc_server(
                 &req.multisig_id,
-                node_identifier,
+                frost_identifier,
                 zeroize::Zeroizing::new(req.passphrase),
                 export,
             )
             .map_err(|e| Status::internal(format!("Failed to import key: {}", e)))?;
 
-        info!("Successfully imported key share for node_identifier: {:?}", node_identifier);
+        info!("Successfully imported key share for frost_identifier: {:?}", frost_identifier);
         Ok(Response::new(Empty {}))
     }
 
@@ -524,18 +524,31 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         let final_tx = aggregate_and_finalize(&mut psbt, &pk_package)
             .map_err(|e| Status::internal(format!("Aggregation/finalization failed: {}", e)))?;
 
-        info!("Transaction successfully signed. Txid: {}", final_tx.compute_txid());
+        info!("Transaction successfully signed. txid: {}", final_tx.compute_txid());
 
         // Serialize the transaction
         let tx_bytes = bitcoin::consensus::serialize(&final_tx);
         let tx_hex = hex::encode(&tx_bytes);
 
-        // TODO: Broadcast the transaction to Bitcoin network
+        // Broadcast the transaction
+        let client = Arc::clone(&self.bitcoind_client);
+        let tx_for_broadcast = final_tx.clone();
+        let broadcasted_txid =
+            tokio::task::spawn_blocking(move || client.send_raw_transaction(&tx_for_broadcast))
+                .await
+                .map_err(|e| Status::internal(format!("Task join error: {}", e)))?
+                .map_err(|e| {
+                    Status::internal(format!(
+                        "Failed to broadcast pegin recovery transaction: {}",
+                        e
+                    ))
+                })?;
 
-        Ok(Response::new(RecoverPeginResponse {
-            tx: tx_hex,
-            txid: final_tx.compute_txid().to_string(),
-        }))
+        info!(
+            "Pegin Recovery Transaction broadcasted successfully. Broadcasted txid: {}",
+            broadcasted_txid
+        );
+        Ok(Response::new(RecoverPeginResponse { tx: tx_hex, txid: broadcasted_txid.to_string() }))
     }
 }
 

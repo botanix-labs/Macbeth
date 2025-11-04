@@ -7970,6 +7970,7 @@ dependencies = [
  "log",
  "merlin",
  "miniscript 12.3.5",
+ "pegin-recovery-client",
  "prost",
  "prost-build",
  "prost-types",
@@ -7986,6 +7987,26 @@ dependencies = [
  "tonic-health",
  "tonic-reflection",
  "zeroize",
+]
+
+[[package]]
+name = "pegin-recovery-client"
+version = "1.2.0-rc.5"
+dependencies = [
+ "alloy-primitives 1.3.1",
+ "assert_matches",
+ "bitcoin 0.32.7",
+ "displaydoc",
+ "futures-util",
+ "hex",
+ "prost",
+ "prost-types",
+ "rand 0.8.5",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.16",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
@@ -13806,6 +13827,7 @@ dependencies = [
  "btc-server",
  "btc-server-client",
  "bytes",
+ "ciborium",
  "clap",
  "displaydoc",
  "dotenv",
@@ -13814,6 +13836,8 @@ dependencies = [
  "frost-secp256k1-tr",
  "futures",
  "hex",
+ "pegin-recovery",
+ "pegin-recovery-client",
  "port-killer",
  "pretty_assertions",
  "rand 0.8.5",
