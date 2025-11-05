@@ -213,6 +213,26 @@ fn export_key_packages_for_all_members(
 ) -> Result<Vec<std::path::PathBuf>, super::error::Error> {
     let mut output_paths = Vec::new();
 
+    // Get project root directory (same pattern as btc-server)
+    let mut working_directory = std::env::current_dir().unwrap();
+    for _ in 0..2 {
+        working_directory.pop();
+    }
+
+    // Use pre-compiled binary
+    let command = "target/debug/btc-utils";
+    let binary_abs_path = working_directory.join(std::path::Path::new(command));
+
+    // Check if binary exists
+    if !std::fs::exists(&binary_abs_path).map_err(|e| {
+        super::error::Error::TestVectorExport(format!("Failed to check binary: {}", e))
+    })? {
+        return Err(super::error::Error::TestVectorExport(
+            format!("btc-utils binary not found at {}. Please compile it first before running the test-suite", 
+                binary_abs_path.display())
+        ));
+    }
+
     for (index, db_path) in fed_db_paths.iter().enumerate() {
         let output_path = temp_db_dir.join(format!("key_package_fed_member_{}.bin", index));
 
@@ -221,15 +241,9 @@ fn export_key_packages_for_all_members(
             format!("Fed member {} -> {}", index, output_path.display())
         );
 
-        // Run the btc-utils export-key-package command
-        let output = Command::new("cargo")
+        // Run the btc-utils export-key-package command using pre-compiled binary
+        let output = Command::new(&binary_abs_path)
             .args(&[
-                "run",
-                "--package",
-                "btc-server",
-                "--bin",
-                "btc-utils",
-                "--",
                 "export-key-package",
                 "--db",
                 &db_path.to_string_lossy(),

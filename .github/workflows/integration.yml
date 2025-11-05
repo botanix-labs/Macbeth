@@ -117,6 +117,14 @@ jobs:
           echo "Bitcoin server compiled successfully!"
           sccache --show-stats
 
+      - name: Compile btc-utils
+        run: |
+          set -eo pipefail
+          cd ./bin/btc-server 
+          cargo build --bin btc-utils
+          echo "BTC utils compiled successfully!"
+          sccache --show-stats
+
       - name: Compile poa-node
         run: |
           set -eo pipefail
@@ -144,6 +152,7 @@ jobs:
         run: |
           mkdir -p /tmp/binaries
           cp target/debug/btc-server /tmp/binaries/ || true
+          cp target/debug/btc-utils /tmp/binaries/ || true
           cp target/debug/reth /tmp/binaries/ || true
           cp target/debug/test-suite /tmp/binaries/ || true
           cp target/debug/pegin-recovery /tmp/binaries/ || true
@@ -247,6 +256,11 @@ jobs:
           if [ -f "/tmp/binaries/btc-server" ]; then
             cp /tmp/binaries/btc-server target/debug/ 
             chmod +x target/debug/btc-server
+          fi
+
+          if [ -f "/tmp/binaries/btc-utils" ]; then
+            cp /tmp/binaries/btc-utils target/debug/
+            chmod +x target/debug/btc-utils
           fi
           
           if [ -f "/tmp/binaries/reth" ]; then
