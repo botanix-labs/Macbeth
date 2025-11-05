@@ -35,6 +35,7 @@ use tonic::{transport::Server, Request, Response, Status};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_PORT: u16 = 50052;
+const FALLBACK_FEE_RATE_SAT_PER_VBYTE: u64 = 5;
 
 #[derive(Parser)]
 #[command(name = "pegin-recovery")]
@@ -477,10 +478,24 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         };
         let utxos = vec![utxo];
 
+        // Get fee estimate from bitcoind
+        let fee_res = self
+            .bitcoind_client
+            .estimate_smart_fee(1, Some(bitcoincore_rpc::json::EstimateMode::Conservative));
+
+        let fallback_fee_rate: FeeRate = FeeRate::from_sat_per_vb(FALLBACK_FEE_RATE_SAT_PER_VBYTE)
+            .ok_or(badarg!("Invalid fallback fee rate: {}", FALLBACK_FEE_RATE_SAT_PER_VBYTE))?;
+
+        let mut fee_rate = fallback_fee_rate;
+        if let Ok(fee) = fee_res {
+            if let Some(f) = fee.fee_rate {
+                fee_rate = btcserverlib::util::btc_per_kb_to_sat_per_vb(f);
+            }
+        }
+
+        info!("Using fee rate: {} sat/vb", fee_rate.to_sat_per_vb_ceil());
+
         // Calculate the fee and subtract from the output value
-        let fee_rate_sat_per_vbyte = 5; // TODO: get from config
-        let fee_rate: FeeRate = FeeRate::from_sat_per_vb(fee_rate_sat_per_vbyte)
-            .ok_or(badarg!("Invalid fee rate: {}", fee_rate_sat_per_vbyte))?;
         let absolute_fee = calculate_fee(&utxos, &script_pubkey, fee_rate)
             .map_err(|e| badarg!("Invalid fee: {}", e))?;
         let output_value =
