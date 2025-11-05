@@ -35,7 +35,7 @@ use tonic::{transport::Server, Request, Response, Status};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_PORT: u16 = 50052;
-const FALLBACK_FEE_RATE_SAT_PER_VBYTE: u64 = 5;
+const DEFAULT_FEE_RATE_SAT_PER_VBYTE: u64 = 5;
 
 #[derive(Parser)]
 #[command(name = "pegin-recovery")]
@@ -61,6 +61,10 @@ struct Args {
     /// Bitcoin RPC password
     #[arg(long, env = "BITCOIN_RPC_PASSWORD", default_value = "password")]
     bitcoin_rpc_password: String,
+
+    /// Fallback fee rate in sat/vByte (used when estimate_smart_fee fails)
+    #[arg(long, env = "FALLBACK_FEE_RATE", default_value_t = DEFAULT_FEE_RATE_SAT_PER_VBYTE)]
+    fallback_fee_rate: u64,
 }
 
 fn parse_and_validate_address(
@@ -310,11 +314,16 @@ fn aggregate_and_finalize(
 pub struct PeginRecoveryServiceImpl {
     db: recovery_db::Db,
     bitcoind_client: Arc<bitcoincore_rpc::Client>,
+    fallback_fee_rate: u64,
 }
 
 impl PeginRecoveryServiceImpl {
-    pub fn new(db: recovery_db::Db, bitcoind_client: Arc<bitcoincore_rpc::Client>) -> Self {
-        Self { db, bitcoind_client }
+    pub fn new(
+        db: recovery_db::Db,
+        bitcoind_client: Arc<bitcoincore_rpc::Client>,
+        fallback_fee_rate: u64,
+    ) -> Self {
+        Self { db, bitcoind_client, fallback_fee_rate }
     }
 }
 
@@ -483,8 +492,8 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
             .bitcoind_client
             .estimate_smart_fee(1, Some(bitcoincore_rpc::json::EstimateMode::Conservative));
 
-        let fallback_fee_rate: FeeRate = FeeRate::from_sat_per_vb(FALLBACK_FEE_RATE_SAT_PER_VBYTE)
-            .ok_or(badarg!("Invalid fallback fee rate: {}", FALLBACK_FEE_RATE_SAT_PER_VBYTE))?;
+        let fallback_fee_rate: FeeRate = FeeRate::from_sat_per_vb(self.fallback_fee_rate)
+            .ok_or(badarg!("Invalid fallback fee rate: {}", self.fallback_fee_rate))?;
 
         let mut fee_rate = fallback_fee_rate;
         if let Ok(fee) = fee_res {
@@ -608,9 +617,11 @@ async fn main() -> anyhow::Result<()> {
     // Configure service address
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
     info!("gRPC server listening on {}", addr);
+    info!("Fallback fee rate: {} sat/vB", args.fallback_fee_rate);
 
     // Create service
-    let service = PeginRecoveryServiceImpl::new(db, Arc::new(bitcoind_client));
+    let service =
+        PeginRecoveryServiceImpl::new(db, Arc::new(bitcoind_client), args.fallback_fee_rate);
     let svc = PeginRecoveryServiceServer::new(service);
 
     // Configure reflection (for grpcurl and similar tools)

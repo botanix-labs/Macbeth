@@ -37,6 +37,7 @@ pub struct PeginRecoveryNodeConfig {
     pub bitcoin_rpc_url: String,
     pub bitcoin_rpc_user: String,
     pub bitcoin_rpc_password: String,
+    pub fallback_fee_rate: u64,
 }
 
 impl PeginRecoveryNodeConfig {
@@ -59,6 +60,7 @@ impl PeginRecoveryNodeConfig {
             .context("Failed to create pegin recovery db directory")?;
         let db = db_path.to_string_lossy();
         let port = self.port.to_string();
+        let fallback_fee_rate = self.fallback_fee_rate.to_string();
 
         let args = vec![
             "--db",
@@ -71,6 +73,8 @@ impl PeginRecoveryNodeConfig {
             &self.bitcoin_rpc_user,
             "--bitcoin-rpc-password",
             &self.bitcoin_rpc_password,
+            "--fallback-fee-rate",
+            &fallback_fee_rate,
         ];
 
         it_info_print!(
@@ -106,5 +110,6 @@ pub fn create_pegin_recovery_node(
         bitcoin_rpc_url: global_context.bitcoind_url.to_string(),
         bitcoin_rpc_user: global_context.bitcoind_user.clone(),
         bitcoin_rpc_password: global_context.bitcoind_pass.clone(),
+        fallback_fee_rate: 5, // Default to 5 sat/vB for tests
     })
 }
