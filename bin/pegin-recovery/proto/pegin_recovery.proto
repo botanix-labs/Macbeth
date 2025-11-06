@@ -43,7 +43,7 @@ message RecoverPeginRequest {
     uint32 vout = 3;
     string eth_address = 4;
     string signature = 5;
-    bytes multisig_id = 6; // Identifier for which set of key shares to use
+    bytes multisig_id = 6;
 }
 
 message RecoverPeginResponse {

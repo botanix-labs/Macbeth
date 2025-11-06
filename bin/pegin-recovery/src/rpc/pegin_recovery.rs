@@ -45,7 +45,6 @@ pub struct RecoverPeginRequest {
     pub eth_address: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
     pub signature: ::prost::alloc::string::String,
-    /// Identifier for which set of key shares to use
     #[prost(bytes = "vec", tag = "6")]
     pub multisig_id: ::prost::alloc::vec::Vec<u8>,
 }
