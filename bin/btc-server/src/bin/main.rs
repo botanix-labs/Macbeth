@@ -1392,6 +1392,10 @@ where
                                 self.config.identifier,
                             );
                         }
+
+                        let mut lock = self.pegout_scheduler.lock().await;
+                        lock.un_track_tx(&tx.compute_txid()).to_status()?;
+
                         Err(CoordinatorError::FailedToBroadcastTx(err))
                     }
                     _ => {
@@ -1403,6 +1407,10 @@ where
                                 self.config.identifier,
                             );
                         }
+
+                        let mut lock = self.pegout_scheduler.lock().await;
+                        lock.un_track_tx(&tx.compute_txid()).to_status()?;
+
                         Err(CoordinatorError::FailedToBroadcastTx(err))
                     }
                 }
