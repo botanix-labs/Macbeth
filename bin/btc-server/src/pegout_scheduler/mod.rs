@@ -308,20 +308,32 @@ impl PegoutScheduler {
         timestamp: SystemTime,
     ) -> &Tx {
         let pegout_idxs = {
-            let mut ret = Vec::with_capacity(pegouts.len());
             info!(
                 "PegoutScheduler::add_tx: tx output length: {}, pegouts length: {}",
                 tx.output.len(),
                 pegouts.len()
             );
-            // TODO: the same pegout could be in the tx multiple times
+
+            let mut ret = Vec::with_capacity(pegouts.len());
+            // Prevent multiple pegouts with the same destination and value from matching the same
+            // output
+            let mut used_indices = HashSet::new();
+
             for pegout in pegouts {
                 let pegout_txout = pegout.txout();
                 let idx = tx
                     .output
                     .iter()
-                    .position(|txout| txout.script_pubkey == pegout_txout.script_pubkey)
+                    .enumerate()
+                    .find(|(idx, txout)| {
+                        !used_indices.contains(idx) &&
+                            txout.script_pubkey == pegout_txout.script_pubkey &&
+                            txout.value == pegout_txout.value
+                    })
+                    .map(|(idx, _)| idx)
                     .expect("tx doesn't contain all pegouts");
+
+                used_indices.insert(idx);
                 ret.push(idx);
             }
             ret
