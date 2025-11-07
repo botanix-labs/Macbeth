@@ -118,7 +118,7 @@ where
     Node: FullNodeTypes<ChainSpec = ChainSpec>,
 {
     type EVM = EthEvmConfig;
-    type Executor = EthExecutorProvider<MockBitcoindFactory, Arc<DatabaseEnv>, Self::EVM>;
+    type Executor = EthExecutorProvider<Arc<DatabaseEnv>, Self::EVM>;
 
     async fn build_evm(
         self,

@@ -1,7 +1,7 @@
 #[cfg(test)]
 use crate::fallback::tests::MockableRpcClient;
 use crate::{
-    bitcoind::BitcoindClient,
+    bitcoind::{BitcoindClient, BitcoindConfig},
     error::{BitcoindAdapterError, BitcoindAdapterResult},
 };
 use async_trait::async_trait;
@@ -20,6 +20,17 @@ pub enum ClientSelection {
 pub struct FallbackBitcoindClient {
     clients: Vec<BitcoindClientWrapper>,
     selection: ClientSelection,
+}
+
+impl Default for FallbackBitcoindClient {
+    fn default() -> Self {
+        FallbackBitcoindClient {
+            clients: vec![BitcoindClientWrapper::Provider1(Arc::new(
+                BitcoindClient::new(BitcoindConfig::default()).expect("must create client"),
+            ))],
+            selection: ClientSelection::Fallback,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -130,8 +141,8 @@ impl FallbackBitcoindClient {
     fn should_fallback(error: &BitcoindAdapterError) -> bool {
         match error {
             BitcoindAdapterError::BitcoindRpc(_) => true, // Fallback on all rpc errors
-            BitcoindAdapterError::NoClientsAvailable => false, /* No point in falling back as no
-                                                            * clients are available */
+            BitcoindAdapterError::NoClientsAvailable => false, /* No point in falling back as no */
+            // clients are available
             _ => true, // Fallback on other errors
         }
     }

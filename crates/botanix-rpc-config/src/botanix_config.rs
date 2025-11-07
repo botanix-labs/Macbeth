@@ -2,8 +2,10 @@
 
 use std::{fmt, str::FromStr};
 
-use bitcoincore_rpc::RpcApi;
-use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
+use botanix_btc_wallet::{
+    bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory},
+    error::BitcoindError,
+};
 use frost_secp256k1_tr::{self as frost};
 
 use botanix_authority_edh::header_ext::HeaderExt;
@@ -114,7 +116,7 @@ impl From<MerkleProofRPCError> for String {
 #[derive(Debug)]
 pub enum BtcFeeRateRPCError {
     /// Failed to get estimate smart fee rate
-    FailedToGetEstimateSmartFee(bitcoincore_rpc::Error),
+    FailedToGetEstimateSmartFee(BitcoindError),
     /// Failed to initialize bitcoind client
     BitcoindClientInitialization,
     /// Failed to get estimate smart fee rate
@@ -226,7 +228,8 @@ impl Botanix {
             .map_err(|_e| MerkleProofRPCError::MalformedBlockHash)?;
 
         let txids = bitcoind_client
-            .get_block_info(&block_hash)
+            .get_rpc_client_dyn()
+            .get_block_info_rpc(&block_hash)
             .map_err(|_e| MerkleProofRPCError::BitcoindClientInitialization)?
             .tx;
 
@@ -249,7 +252,8 @@ impl Botanix {
             .build_and_connect()
             .map_err(|_| BtcFeeRateRPCError::BitcoindClientInitialization)?;
         let fee_result = bitcoind_client
-            .estimate_smart_fee(1, None)
+            .get_rpc_client_dyn()
+            .get_estimate_smart_fee_rpc()
             .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
 
         if let Some(fee) = fee_result.fee_rate {
