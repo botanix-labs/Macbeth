@@ -208,7 +208,7 @@ pub struct PegoutScheduler {
     /// be added to the UTXO set as a spendable output
     /// If a tracked tx is reorged or dropped from the mempool the application must
     /// Add the non-change outputs back to the pending pegouts set.
-    txs: HashMap<Txid, Tx>,
+    pub txs: HashMap<Txid, Tx>,
     /// A mapping of input to the txs that spend them.
     /// This is used to detect when a tracked tx is reorged or dropped from the mempool.
     txs_by_input: HashMap<OutPoint, Vec<Txid>>,
