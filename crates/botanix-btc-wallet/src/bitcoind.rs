@@ -1,44 +1,21 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use bitcoincore_rpc::json::GetBlockResult;
 pub use bitcoincore_rpc::{
     json::{EstimateMode, EstimateSmartFeeResult, GetBlockHeaderResult},
     jsonrpc, Auth, Client, Error as JsonRPCError, RpcApi,
 };
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
-use thiserror::Error;
 use url::Url;
 
-#[derive(Debug, Error)]
-pub enum BitcoindError {
-    #[error("Client initialization failed")]
-    ClientInitFailed(bitcoincore_rpc::Error),
-    #[error("Block Header retrieval failed")]
-    BlockHeaderRetrievalFailed(bitcoincore_rpc::Error),
-    #[error("Block Tip retrieval failed")]
-    BlockTipRetrievalFailed(bitcoincore_rpc::Error),
-    #[error("Empty block tip")]
-    EmptyBlockTip,
-    #[error("Block hash retrieval failed")]
-    BlockHashRetrievalFailed(bitcoincore_rpc::Error),
-    #[error("Tx broadcast failed")]
-    TransactionBroadcastFailed(bitcoincore_rpc::Error),
-    #[error("Block index failed")]
-    BlockIndexStatusFailed(bitcoincore_rpc::Error),
-    #[error("Blockchain index failed")]
-    BlockchainInfoFailed(bitcoincore_rpc::Error),
-    #[error("Best block hash retrieval failed")]
-    BestBlockHashRetrievalFailed(bitcoincore_rpc::Error),
-    #[error("Block info retrieval failed")]
-    BlockInfoRetrievalFailed(bitcoincore_rpc::Error),
-    #[error("Smart estimate fee retrieval failed")]
-    EstimateSmartFeeFailed(bitcoincore_rpc::Error),
-}
+use crate::error::BitcoindError;
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct BitcoindConfig {
-    url: Url,
-    username: String,
-    password: String,
+    pub url: Url,
+    pub username: String,
+    pub password: String,
 }
 
 impl Default for BitcoindConfig {
@@ -69,14 +46,99 @@ impl BitcoindConfig {
     }
 }
 
-#[derive(Debug)]
+#[async_trait]
+pub trait BitcoindRpc: Send + Sync {
+    async fn is_synced(&self) -> Result<bool, BitcoindError>;
+    async fn wait_until_synced(&self);
+
+    fn get_best_block_hash_rpc(&self) -> Result<bitcoin::BlockHash, BitcoindError>;
+    fn get_block_header_rpc(
+        &self,
+        h: &bitcoin::BlockHash,
+    ) -> Result<bitcoin::blockdata::block::Header, BitcoindError>;
+    fn get_block_hash_rpc(&self, height: u64) -> Result<bitcoin::BlockHash, BitcoindError>;
+    fn get_txids_rpc(&self, h: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>, BitcoindError>;
+    fn get_estimate_smart_fee_rpc(&self) -> Result<EstimateSmartFeeResult, BitcoindError>;
+    fn get_block_info_rpc(
+        &self,
+        block_hash: &bitcoin::BlockHash,
+    ) -> Result<GetBlockResult, BitcoindError>;
+    fn get_block_count_rpc(&self) -> Result<u64, BitcoindError>;
+}
+
+#[async_trait]
+impl BitcoindRpc for Client {
+    async fn is_synced(&self) -> Result<bool, BitcoindError> {
+        #[derive(serde::Deserialize)]
+        struct Res {
+            initialblockdownload: bool,
+        }
+
+        match self.call::<Res>("getblockchaininfo", &[]) {
+            Ok(res) => Ok(!res.initialblockdownload),
+            Err(e) => {
+                tracing::error!("getblockchaininfo failed: {e:?}");
+                Ok(false)
+            }
+        }
+    }
+
+    async fn wait_until_synced(&self) {
+        use std::time::Duration;
+        loop {
+            match self.is_synced().await {
+                Ok(true) => break,
+                _ => tokio::time::sleep(Duration::from_secs(5)).await,
+            }
+        }
+    }
+
+    fn get_best_block_hash_rpc(&self) -> Result<bitcoin::BlockHash, BitcoindError> {
+        self.get_best_block_hash().map_err(BitcoindError::BestBlockHashRetrievalFailed)
+    }
+
+    fn get_block_header_rpc(
+        &self,
+        h: &bitcoin::BlockHash,
+    ) -> Result<bitcoin::blockdata::block::Header, BitcoindError> {
+        self.get_block_header(h).map_err(BitcoindError::BlockHeaderRetrievalFailed)
+    }
+
+    fn get_block_hash_rpc(&self, height: u64) -> Result<bitcoin::BlockHash, BitcoindError> {
+        self.get_block_hash(height).map_err(BitcoindError::BlockHeaderRetrievalFailed)
+    }
+
+    fn get_txids_rpc(&self, h: &bitcoin::BlockHash) -> Result<Vec<bitcoin::Txid>, BitcoindError> {
+        self.get_block_info(h).map(|b| b.tx).map_err(BitcoindError::BlockHeaderRetrievalFailed)
+    }
+
+    fn get_estimate_smart_fee_rpc(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
+        self.estimate_smart_fee(1, Some(EstimateMode::Conservative))
+            .map_err(BitcoindError::EstimateSmartFeeFailed)
+    }
+
+    fn get_block_info_rpc(
+        &self,
+        block_hash: &bitcoin::BlockHash,
+    ) -> Result<GetBlockResult, BitcoindError> {
+        let block =
+            self.get_block_info(block_hash).map_err(BitcoindError::BlockInfoRetrievalFailed)?;
+        Ok(block)
+    }
+
+    fn get_block_count_rpc(&self) -> Result<u64, BitcoindError> {
+        let block_count = self.get_block_count().map_err(BitcoindError::BlockCountFailed)?;
+        Ok(block_count)
+    }
+}
+
 pub struct BitcoindClient {
-    rpc: Client,
+    pub rpc: Box<dyn BitcoindRpc>,
 }
 
 pub trait BitcoindFactory: Clone + Send + Sync {
     fn new(config: BitcoindConfig) -> Self;
-    fn build_and_connect(&self) -> Result<impl RpcApiExt, JsonRPCError>;
+    fn build_and_connect(&self) -> Result<BitcoindClient, JsonRPCError>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -84,166 +146,39 @@ pub struct BitcoindClientFactory {
     config: BitcoindConfig,
 }
 
-#[allow(async_fn_in_trait)]
-#[async_trait]
-pub trait RpcApiExt: RpcApi + Send + Sync + 'static {
-    async fn is_synced(&self) -> Result<bool, BitcoindError>;
-    async fn wait_until_synced(&self);
-}
-
-#[async_trait]
-impl RpcApiExt for Client {
-    async fn is_synced(&self) -> Result<bool, BitcoindError> {
-        #[derive(Deserialize)]
-        struct Res {
-            initialblockdownload: bool,
-        }
-
-        match self
-            .call::<Res>("getblockchaininfo", &[])
-            .map_err(BitcoindError::BlockchainInfoFailed)
-        {
-            Ok(blockchain_info_result) => Ok(!blockchain_info_result.initialblockdownload),
-            Err(err) => {
-                tracing::error!("error getting get_blockchain_info(): {:?}", err);
-                Ok(false)
-            }
-        }
-    }
-
-    async fn wait_until_synced(&self) {
-        loop {
-            match self.is_synced().await {
-                Ok(is_synced) => {
-                    if !is_synced {
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        continue;
-                    }
-                    break;
-                }
-                Err(_) => {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
-                }
-            }
-        }
-    }
-}
-
 impl BitcoindFactory for BitcoindClientFactory {
     fn new(config: BitcoindConfig) -> Self {
         Self { config }
     }
 
-    fn build_and_connect(&self) -> Result<impl RpcApiExt, JsonRPCError> {
+    fn build_and_connect(&self) -> Result<BitcoindClient, JsonRPCError> {
         let BitcoindConfig { url, username, password } = &self.config;
         let creds = Auth::UserPass(username.clone(), password.clone());
         let rpc = Client::new(url.to_string().as_str(), creds)?;
-        Ok(rpc)
+        Ok(BitcoindClient::new_boxed(Box::new(rpc)))
     }
 }
 
 // TODO(armins) we dont really need this. We can just use BitcoindClientFactory directly
 impl BitcoindClient {
+    pub fn new_boxed(rpc: Box<dyn BitcoindRpc>) -> Self {
+        Self { rpc }
+    }
+
+    pub fn get_rpc_client_dyn(&self) -> &dyn BitcoindRpc {
+        &*self.rpc
+    }
+
+    pub fn into_rpc_arc(self) -> Arc<dyn BitcoindRpc> {
+        Arc::from(self.rpc)
+    }
+
     pub fn new(config: BitcoindConfig) -> Result<Self, BitcoindError> {
         let BitcoindConfig { url, username, password } = config;
         let creds = Auth::UserPass(username, password);
         let rpc = Client::new(url.to_string().as_str(), creds)
             .map_err(BitcoindError::ClientInitFailed)?;
-        Ok(BitcoindClient { rpc })
-    }
-
-    pub fn get_rpc_client(&self) -> &Client {
-        &self.rpc
-    }
-
-    pub fn get_best_block_hash(&self) -> Result<bitcoin::BlockHash, BitcoindError> {
-        let best_block_hash =
-            self.rpc.get_best_block_hash().map_err(BitcoindError::BestBlockHashRetrievalFailed)?;
-        Ok(best_block_hash)
-    }
-
-    pub fn get_block_header(
-        &self,
-        block_hash: bitcoin::BlockHash,
-    ) -> Result<bitcoin::blockdata::block::Header, BitcoindError> {
-        let header = self
-            .rpc
-            .get_block_header(&block_hash)
-            .map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
-        Ok(header)
-    }
-
-    pub async fn is_synced(&self) -> Result<bool, BitcoindError> {
-        #[derive(Deserialize)]
-        struct Res {
-            initialblockdownload: bool,
-        }
-
-        match self
-            .rpc
-            .call::<Res>("getblockchaininfo", &[])
-            .map_err(BitcoindError::BlockchainInfoFailed)
-        {
-            Ok(blockchain_info_result) => Ok(!blockchain_info_result.initialblockdownload),
-            Err(err) => {
-                // TODO (armins) use logger library
-                println!("error getting get_blockchain_info(): {:?}", err);
-                Ok(false)
-            }
-        }
-    }
-
-    pub fn get_block_hash(&self, height: u64) -> Result<bitcoin::BlockHash, BitcoindError> {
-        let block_hash =
-            self.rpc.get_block_hash(height).map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
-        Ok(block_hash)
-    }
-
-    pub fn get_block_info(
-        &self,
-        block_hash: &bitcoin::BlockHash,
-    ) -> Result<GetBlockHeaderResult, BitcoindError> {
-        let block = self
-            .rpc
-            .get_block_header_info(block_hash)
-            .map_err(BitcoindError::BlockInfoRetrievalFailed)?;
-        Ok(block)
-    }
-
-    pub fn get_txids(
-        &self,
-        block_hash: bitcoin::BlockHash,
-    ) -> Result<Vec<bitcoin::Txid>, BitcoindError> {
-        let block = self
-            .rpc
-            .get_block_info(&block_hash)
-            .map_err(BitcoindError::BlockHeaderRetrievalFailed)?;
-        Ok(block.tx)
-    }
-
-    pub async fn wait_until_synced(&self) {
-        loop {
-            match self.is_synced().await {
-                Ok(is_synced) => {
-                    if !is_synced {
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        continue;
-                    }
-                    break;
-                }
-                Err(_) => {
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
-                }
-            }
-        }
-    }
-
-    pub fn get_estimate_smart_fee(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
-        self.rpc
-            .estimate_smart_fee(1, Some(EstimateMode::Conservative))
-            .map_err(BitcoindError::EstimateSmartFeeFailed)
+        Ok(BitcoindClient::new_boxed(Box::new(rpc)))
     }
 }
 
