@@ -208,7 +208,7 @@ pub struct PegoutScheduler {
     /// be added to the UTXO set as a spendable output
     /// If a tracked tx is reorged or dropped from the mempool the application must
     /// Add the non-change outputs back to the pending pegouts set.
-    txs: HashMap<Txid, Tx>,
+    pub txs: HashMap<Txid, Tx>,
     /// A mapping of input to the txs that spend them.
     /// This is used to detect when a tracked tx is reorged or dropped from the mempool.
     txs_by_input: HashMap<OutPoint, Vec<Txid>>,
@@ -405,7 +405,7 @@ impl PegoutScheduler {
     /// Note: Technically we should not untrack a tx simply because it was dropped from our local
     /// mempool, as it may still be in other nodes mempools and could still get confirmed.
     /// Leaving this as-is for now as it'll be resolved with the new TEM implementation.
-    fn un_track_tx(&mut self, txid: &Txid) -> Result<(), database::Error> {
+    pub fn un_track_tx(&mut self, txid: &Txid) -> Result<(), database::Error> {
         let tx = self.txs.get(txid).expect("relevant tx should exist");
         info!("PegoutScheduler::un_track_tx: Untracking txid={}", txid);
         for input in tx.inputs() {
