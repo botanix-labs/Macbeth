@@ -15,6 +15,7 @@
 //! that authoritymatically seals blocks.
 use async_trait as _;
 use botanix_authority_edh::{header_ext::HeaderExt, nums_secp256k1_pk};
+use botanix_btc_wallet::{bitcoind::BitcoindClientFactory, fallback::FallbackBitcoindClient};
 use botanix_chainspec::BotanixChainSpec;
 use bytes as _;
 use displaydoc as _;
@@ -317,8 +318,8 @@ impl Consensus for AuthorityConsensus {
 /// In memory storage
 /// All this struct does is provide a rwlock wrapper around the storage inner
 #[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub(crate) struct Storage<EF, BF, RDB, BDB> {
+#[derive(Clone)]
+pub(crate) struct Storage<EF, RDB, BDB> {
     /// Reth Database Provider Factory
     pub(crate) reth_database: RDB,
     /// Botanix Database Provider Factory
@@ -337,7 +338,7 @@ pub(crate) struct Storage<EF, BF, RDB, BDB> {
     /// Evm config
     pub(crate) evm_config: EthEvmConfig,
     /// Bitcoind Factory
-    pub(crate) bitcoind_factory: BF,
+    pub(crate) bitcoind_factory: Arc<FallbackBitcoindClient>,
     /// Chain spec
     pub(crate) chain_spec: Arc<BotanixChainSpec>,
     /// Executor Factory
@@ -346,7 +347,7 @@ pub(crate) struct Storage<EF, BF, RDB, BDB> {
     pub(crate) inner: Arc<RwLock<StorageInner>>,
 }
 
-impl<EF, BF, RDB: Clone, BDB: Clone> Storage<EF, BF, RDB, BDB> {
+impl<EF, RDB: Clone, BDB: Clone> Storage<EF, RDB, BDB> {
     /// Create a new instance of the storage
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -358,7 +359,7 @@ impl<EF, BF, RDB: Clone, BDB: Clone> Storage<EF, BF, RDB, BDB> {
         authority_socket_addresses: Vec<SocketAddr>,
         evm_config: EthEvmConfig,
         chain_spec: Arc<BotanixChainSpec>,
-        bitcoind_factory: BF,
+        bitcoind_factory: Arc<FallbackBitcoindClient>,
         executor_factory: EF,
         reth_database: RDB,
         botanix_database_factory: BDB,

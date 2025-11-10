@@ -12,7 +12,7 @@ use crate::{
 use botanix_rpc_config::botanix_config::Botanix;
 
 /// Context for building the `eth` namespace API.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EthApiBuilderCtx<Provider, Pool, EvmConfig, Network, Tasks, Events> {
     /// Database handle.
     pub provider: Provider,

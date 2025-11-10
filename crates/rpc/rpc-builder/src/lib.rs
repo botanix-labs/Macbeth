@@ -141,7 +141,7 @@ where
 /// A builder type to configure the RPC module: See [`RpcModule`]
 ///
 /// This is the main entrypoint and the easiest way to configure an RPC server.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RpcModuleBuilder<Provider, Pool, Network, Tasks, Events, EvmConfig> {
     /// The Provider type to when creating all rpc handlers
     provider: Provider,

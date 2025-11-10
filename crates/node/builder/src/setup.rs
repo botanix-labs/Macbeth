@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_btc_wallet::{bitcoind::BitcoindFactory, fallback::FallbackBitcoindClient};
 use reth_config::{config::StageConfig, PruneConfig};
 use reth_consensus::Consensus;
 use reth_db_api::database::Database;
@@ -26,7 +26,7 @@ use tokio::sync::watch;
 
 /// Constructs a [Pipeline] that's wired to the network
 #[allow(clippy::too_many_arguments)]
-pub fn build_networked_pipeline<DB, Client, Executor, BF>(
+pub fn build_networked_pipeline<DB, Client, Executor>(
     config: &StageConfig,
     client: Client,
     consensus: Arc<dyn Consensus>,
@@ -38,14 +38,13 @@ pub fn build_networked_pipeline<DB, Client, Executor, BF>(
     static_file_producer: StaticFileProducer<DB>,
     executor: Executor,
     exex_manager_handle: ExExManagerHandle,
-    bitcoind_factory: BF,
+    bitcoind_factory: Arc<FallbackBitcoindClient>,
     bitcoin_network: bitcoin::Network,
 ) -> eyre::Result<Pipeline<DB>>
 where
     DB: Database + Unpin + Clone + 'static,
     Client: BlockClient + HeadersClient + BodiesClient + Clone + 'static,
     Executor: BlockExecutorProvider,
-    BF: BitcoindFactory + Clone + 'static,
 {
     // building network downloaders using the fetch client
     let header_downloader = ReverseHeadersDownloaderBuilder::new(config.headers)
@@ -77,7 +76,7 @@ where
 
 /// Builds the [Pipeline] with the given [`ProviderFactory`] and downloaders.
 #[allow(clippy::too_many_arguments)]
-pub fn build_pipeline<DB, H, B, Executor, BF>(
+pub fn build_pipeline<DB, H, B, Executor>(
     provider_factory: ProviderFactory<DB>,
     stage_config: &StageConfig,
     header_downloader: H,
@@ -89,14 +88,13 @@ pub fn build_pipeline<DB, H, B, Executor, BF>(
     static_file_producer: StaticFileProducer<DB>,
     executor: Executor,
     exex_manager_handle: ExExManagerHandle,
-    _bitcoind_factory: BF,
+    _bitcoind_factory: Arc<FallbackBitcoindClient>,
     _bitcoin_network: bitcoin::Network,
 ) -> eyre::Result<Pipeline<DB>>
 where
     DB: Database + Clone + 'static,
     H: HeaderDownloader + 'static,
     B: BodyDownloader + 'static,
-    BF: BitcoindFactory + Clone + 'static,
     Executor: BlockExecutorProvider,
 {
     let mut builder = Pipeline::builder();

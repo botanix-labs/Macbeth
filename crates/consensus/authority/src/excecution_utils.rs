@@ -1,5 +1,5 @@
 pub(crate) mod authority_execution_utils {
-    use botanix_btc_wallet::bitcoind::BitcoindFactory;
+    use botanix_btc_wallet::fallback::FallbackBitcoindClient;
     use botanix_chainspec::BotanixChainSpec;
     use botanix_storage::models::RuntimeVersion;
     use reth_chainspec::{ChainSpec, EthereumHardforks};
@@ -41,7 +41,7 @@ pub(crate) mod authority_execution_utils {
     /// This returns bundle state, block, and gas used.
     #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, level = "trace")]
-    pub(crate) fn build_and_execute<BF, DB>(
+    pub(crate) fn build_and_execute<DB>(
         transactions: Vec<TransactionSigned>,
         chain_spec: Arc<BotanixChainSpec>,
         runtime_version: RuntimeVersion,
@@ -50,14 +50,13 @@ pub(crate) mod authority_execution_utils {
         block_fee_recipient_address: &Address,
         evm_config: EthEvmConfig,
         database_provider: &ProviderFactory<DB>,
-        bitcoind_factory: &BF,
+        bitcoind_factory: Arc<FallbackBitcoindClient>,
         bitcoin_network: bitcoin::Network,
         bitcoin_checkpoint_block_hash: &bitcoin::BlockHash,
         agg_pk: &secp256k1::PublicKey,
         timestamp: Timestamp,
     ) -> Result<BlockWithContext, BlockExecutionError>
     where
-        BF: BitcoindFactory + Clone + Unpin + 'static,
         DB: Database,
     {
         let start_execution_time = std::time::Instant::now();
@@ -403,17 +402,16 @@ pub(crate) mod authority_execution_utils {
     /// Executes the block with the given block and senders, on the provided [Executor].
     ///
     /// This returns the poststate from execution and post-block changes, as well as the gas used.
-    fn execute<BF, DB>(
+    fn execute<DB>(
         block: &BlockWithSenders,
         database_provider: &ProviderFactory<DB>,
         _block_fee_recipient_address: Option<Address>,
-        bitcoind_factory: &BF,
+        bitcoind_factory: Arc<FallbackBitcoindClient>,
         bitcoin_network: bitcoin::Network,
         chain_spec: Arc<BotanixChainSpec>,
         evm_config: EthEvmConfig,
     ) -> Result<BlockExecutionOutput<Receipt>, BlockExecutionError>
     where
-        BF: BitcoindFactory + Clone + Unpin + 'static,
         DB: Database,
     {
         // We cannot call `execute_and_verify_receipt()` here as we dont know the gas used yet
@@ -430,11 +428,11 @@ pub(crate) mod authority_execution_utils {
             .with_database_boxed(Box::new(StateProviderDatabase::new(provider)))
             .with_bundle_update()
             .build();
-        let executor = EthBlockExecutor::<EthEvmConfig, _, BF, DB>::new(
+        let executor = EthBlockExecutor::<EthEvmConfig, _, DB>::new(
             chain_spec,
             evm_config,
             db,
-            bitcoind_factory.clone(),
+            bitcoind_factory,
             bitcoin_network,
             Arc::new(blockchain_provider),
         );

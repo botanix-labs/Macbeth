@@ -220,8 +220,8 @@ pub struct BlockWithContext {
 
 /// ABCI client builder
 #[derive(Clone)]
-pub struct ABCIClientBuilder<EF, BF, RDB, BDB> {
-    storage: Storage<EF, BF, RDB, BDB>,
+pub struct ABCIClientBuilder<EF, RDB, BDB> {
+    storage: Storage<EF, RDB, BDB>,
     activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
     authority_consensus: AuthorityConsensus,
@@ -239,16 +239,15 @@ pub struct ABCIClientBuilder<EF, BF, RDB, BDB> {
     blockchain_db: BlockchainProvider2<Arc<DatabaseEnv>>,
 }
 
-impl<EF, BF, RDB, BDB> ABCIClientBuilder<EF, BF, RDB, BDB>
+impl<EF, RDB, BDB> ABCIClientBuilder<EF, RDB, BDB>
 where
     RDB: BlockReaderIdExt + StateProviderFactory + Clone + CanonChainTracker + 'static,
     BDB: SnapshotReader + SnapshotWriter + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + Unpin + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        storage: Storage<EF, BF, RDB, BDB>,
+        storage: Storage<EF, RDB, BDB>,
         activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
         authority_consensus: AuthorityConsensus,
@@ -378,8 +377,8 @@ struct BlockCache {
 }
 
 #[derive(Clone)]
-pub(crate) struct ABCIClient<EF, BF, RDB, DBD, Pool, DB> {
-    storage: Storage<EF, BF, RDB, DBD>,
+pub(crate) struct ABCIClient<EF, RDB, DBD, Pool, DB> {
+    storage: Storage<EF, RDB, DBD>,
     pool: Pool,
     activation_manager: ActivationManager<VoteWatcher, Address>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
@@ -403,18 +402,17 @@ pub(crate) struct ABCIClient<EF, BF, RDB, DBD, Pool, DB> {
     is_testnet: bool,
 }
 
-impl<EF, BF, RDB, DBD, Pool, DB> ABCIClient<EF, BF, RDB, DBD, Pool, DB>
+impl<EF, RDB, DBD, Pool, DB> ABCIClient<EF, RDB, DBD, Pool, DB>
 where
     RDB: BlockReaderIdExt + StateProviderFactory + Clone + CanonChainTracker + 'static,
     DBD: SnapshotReader + SnapshotWriter + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
     DB: Database + Clone + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        storage: Storage<EF, BF, RDB, DBD>,
+        storage: Storage<EF, RDB, DBD>,
         pool: Pool,
         activation_manager: ActivationManager<VoteWatcher, Address>,
         bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
@@ -609,12 +607,11 @@ where
     }
 }
 
-impl<EF, BF, RDB, BDB, Pool, DB> ABCIClient<EF, BF, RDB, BDB, Pool, DB>
+impl<EF, RDB, BDB, Pool, DB> ABCIClient<EF, RDB, BDB, Pool, DB>
 where
     RDB: BlockReaderIdExt + StateProviderFactory + Clone + 'static,
     BDB: SnapshotReader + SnapshotWriter + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
 {
     fn create_new_snapshot_sync(
@@ -647,12 +644,11 @@ where
     }
 }
 
-impl<EF, BF, RDB, BDB, Pool, DB> Application for ABCIClient<EF, BF, RDB, BDB, Pool, DB>
+impl<EF, RDB, BDB, Pool, DB> Application for ABCIClient<EF, RDB, BDB, Pool, DB>
 where
     RDB: BlockReaderIdExt + StateProviderFactory + Clone + CanonChainTracker + 'static,
     BDB: SnapshotReader + SnapshotWriter + Clone + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + Unpin + 'static,
     Pool: TransactionPool + Clone + 'static,
     DB: Database + Clone + 'static,
 {
@@ -1890,7 +1886,7 @@ where
             &block_fee_recipient_address,
             self.storage.evm_config,
             &self.reth_provider_factory,
-            &self.storage.bitcoind_factory,
+            self.storage.bitcoind_factory.clone(),
             self.storage.btc_network,
             &non_deterministic_data.bitcoin_block_hash(),
             &agg_pk,
@@ -2162,7 +2158,7 @@ where
                     &block_fee_recipient_address,
                     self.storage.evm_config,
                     &self.reth_provider_factory,
-                    &self.storage.bitcoind_factory,
+                    self.storage.bitcoind_factory.clone(),
                     self.storage.btc_network,
                     &non_deterministic_data.bitcoin_block_hash(),
                     &non_deterministic_data.aggregated_public_key(),

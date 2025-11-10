@@ -8,6 +8,7 @@ use super::{
 };
 use bitcoin::block::BlockHash as BitcoinBlockHash;
 use bitcoincore_zmq::{Message, SocketEvent, SocketMessage};
+use botanix_btc_wallet::fallback::FallbackBitcoindClient;
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{sync::Arc, time::Duration};
@@ -68,9 +69,9 @@ enum SyncLoopControl {
 /// This structure manages the synchronization process between a Bitcoin node (via RPC)
 /// and our local checkpoints chain, ensuring the chain is kept up to date with
 /// confirmed blocks from the Bitcoin network.
-pub struct BitcoinCheckpointsChainSynchronizer<R> {
+pub struct BitcoinCheckpointsChainSynchronizer {
     /// RPC client for communicating with a Bitcoin node
-    rpc: R,
+    rpc: Arc<FallbackBitcoindClient>,
     /// The checkpoints chain to be synchronized
     checkpoints_chain: Arc<BitcoinCheckpointsChain>,
     /// The height of the last Bitcoin block that has been processed
@@ -78,13 +79,7 @@ pub struct BitcoinCheckpointsChainSynchronizer<R> {
     last_synced_height: Option<u64>,
 }
 
-impl<R> BitcoinCheckpointsChainSynchronizer<R>
-where
-    R: botanix_btc_wallet::bitcoind::BitcoindRpc
-        + botanix_btc_wallet::bitcoind::RpcApi
-        + Send
-        + 'static,
-{
+impl BitcoinCheckpointsChainSynchronizer {
     /// Creates a new Bitcoin checkpoints chain synchronizer.
     ///
     /// # Arguments
@@ -95,7 +90,10 @@ where
     /// # Returns
     ///
     /// A new synchronizer instance with the last synced height initialized from the chain.
-    pub fn new(checkpoints_chain: Arc<BitcoinCheckpointsChain>, rpc: R) -> Self {
+    pub fn new(
+        checkpoints_chain: Arc<BitcoinCheckpointsChain>,
+        rpc: Arc<FallbackBitcoindClient>,
+    ) -> Self {
         // Calculate the last synced height based on the most recent checkpoint
         // in chain and the lowest confirmation depth
         let last_synced_height = checkpoints_chain
@@ -375,9 +373,9 @@ async fn handle_hash_block_stream_messages<S, E>(
     }
 }
 
-async fn handle_new_blocks_sync_result<R>(
+async fn handle_new_blocks_sync_result(
     result: Result<Vec<SyncedCheckpointInfo>, BitcoinCheckpointError>,
-    syncer_lock: Arc<Mutex<BitcoinCheckpointsChainSynchronizer<R>>>,
+    syncer_lock: Arc<Mutex<BitcoinCheckpointsChainSynchronizer>>,
 ) -> SyncLoopControl {
     match result {
         Ok(synced_checkpoints) => {

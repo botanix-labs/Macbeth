@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::extra_data_header::{ExtraDataHeader, ExtraDataHeaderDeserializeError};
 use alloy_primitives::Bytes;
-use bitcoincore_rpc::{Error as BitcoindError, RpcApi};
+use bitcoincore_rpc::Error as BitcoindError;
 use botanix_authority_peg::consensus_package::{BotanixConsensusPackage, RecentHeader};
 use botanix_btc_wallet::{error::BitcoindAdapterError, fallback::FallbackBitcoindClient};
 use reth_primitives_traits::Header;

@@ -1,7 +1,10 @@
 //! Engine node related functionality.
 
+use std::sync::Arc;
+
 use botanix_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
+    fallback::FallbackBitcoindClient,
     test_utils::MockBitcoindFactory,
 };
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
@@ -188,7 +191,7 @@ where
             static_file_producer,
             ctx.components().block_executor().clone(),
             pipeline_exex_handle,
-            MockBitcoindFactory::new(BitcoindConfig::default()),
+            Arc::new(FallbackBitcoindClient::default()),
             node_config.rpc.btc_network,
         )?;
 

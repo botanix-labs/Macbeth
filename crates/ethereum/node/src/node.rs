@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use botanix_btc_wallet::{
     bitcoind::{BitcoindConfig, BitcoindFactory},
+    fallback::FallbackBitcoindClient,
     test_utils::MockBitcoindFactory,
 };
 use botanix_chainspec::BotanixChainSpec;
@@ -126,7 +127,7 @@ where
     ) -> eyre::Result<(Self::EVM, Self::Executor)> {
         let chain_spec = ctx.chain_spec();
         let evm_config = EthEvmConfig::default();
-        let mock_bitcoind_factory = MockBitcoindFactory::new(BitcoindConfig::default());
+        let mock_bitcoind_factory = Arc::new(FallbackBitcoindClient::default());
         let regtest = bitcoin::Network::Regtest;
         let data_dir = if let Some(dir) = reth_node_core::dirs::database_path() {
             dir

@@ -66,8 +66,9 @@ use botanix_bitcoin_checkpoint::{
     BitcoinCheckpointsChain, BitcoinCheckpointsChainSynchronizer, BitcoinHashBlockStream,
     DummyHashBlockStream,
 };
-use botanix_btc_wallet::bitcoind::{
-    BitcoindClientFactory, BitcoindConfig, BitcoindFactory, RpcApiExt,
+use botanix_btc_wallet::{
+    bitcoind::{BitcoindClient, BitcoindClientFactory, BitcoindConfig, BitcoindFactory},
+    fallback::{BitcoindClientWrapper, ClientSelection, FallbackBitcoindClient},
 };
 use botanix_storage::{models::Vote, BotanixProviderFactory};
 use botanix_storage_migrate::migrate_botanix_tables;
@@ -209,7 +210,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                     federation_config_path: _,
                     federation_mode,
                     state_sync,
-                    bitcoind_config_path,
                     abci_host,
                     abci_port,
                     cometbft_rpc_port,
@@ -282,20 +282,6 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             builder: PayloadBuilderArgs::default(),
             state_sync: state_sync.clone(),
         };
-
-        let mut bitcoind_config: BitcoindConfig = node_config.rpc.bitcoind.clone().into();
-        // prioritize the bitcoind config path from cli args
-        if let Some(bitcoind_config_path) = bitcoind_config_path {
-            let config =
-                confy::load_path::<BitcoindArgs>(&bitcoind_config_path).wrap_err_with(|| {
-                    format!("Could not load config file {:?}", bitcoind_config_path)
-                })?;
-
-            info!(target: "reth::cli", path = ?bitcoind_config_path, "Bitcoind config loaded from file");
-            bitcoind_config = config.into();
-        }
-        let bitcoind_factory: BitcoindClientFactory =
-            BitcoindClientFactory::new(bitcoind_config.clone());
 
         // Register the prometheus recorder before creating the database,
         // because database init needs it to register metrics.
@@ -415,9 +401,11 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         };
 
         // create bitcoind client and make sure its synced
-        let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
-
+        let bitcoind_client =
+            setup_bitcoind_client(&node_config.rpc.bitcoind, ClientSelection::Fallback).await?;
+        let bitcoind_client = Arc::new(bitcoind_client);
         info!(target: "reth::cli", "Waiting for bitcoind client to sync...");
+
         match tokio::time::timeout(Duration::from_secs(60), bitcoind_client.wait_until_synced())
             .await
         {
@@ -580,8 +568,8 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
         let evm_config = EthEvmConfig::default();
         let executor_factory = EthExecutorProvider::new(
             chain.clone().into(),
-            evm_config,
-            bitcoind_factory.clone(),
+            evm_config.clone(),
+            bitcoind_client.clone(),
             node_config.rpc.btc_network,
             Arc::new(reth_provider_factory.database_provider_ro()?),
         );
@@ -816,7 +804,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Build authority Consensus
         let (abci_started_tx, abci_started_rx) = tokio::sync::oneshot::channel::<()>();
-        let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
+        // let bitcoind_client = bitcoind_factory.build_and_connect().expect("bitcoind client");
         let (frost_task, abci_client_builder, snapshot_manager, wallet_sync) =
             match AuthorityConsensusBuilder::try_new(
                 Arc::clone(&chain_arc.clone()),
@@ -833,7 +821,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 genesis_authorities.clone(),
                 authorities_socket_addresses,
                 executor_factory.clone(),
-                bitcoind_factory.clone(),
+                bitcoind_client.clone(),
                 evm_config,
                 cometbft_rpc_factory,
                 RandomSourceProvider::new(),
@@ -842,7 +830,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
                 reth_provider_factory.clone(),
                 botanix_database_provider_factory,
                 *block_fee_recipient_address,
-                bitcoind_client,
+                bitcoind_client.clone(),
             ) {
                 Ok(consensus) => consensus.build::<BtcServerExtendedClient>().await,
                 Err(e) => {
@@ -891,7 +879,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
             reth_static_file_producer.clone(),
             executor_factory.clone(),
             exex_manager,
-            bitcoind_factory.clone(),
+            bitcoind_client.clone(),
             node_config.rpc.btc_network,
         )?;
 
@@ -934,7 +922,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // create botanix client
         let botanix_config =
-            BotanixConfig::new(node_config.rpc.btc_network, bitcoind_factory.clone());
+            BotanixConfig::new(node_config.rpc.btc_network, bitcoind_client.clone());
 
         // Start RPC servers
         let botanix_provider = Botanix::new(botanix_config);
@@ -1106,7 +1094,7 @@ pub struct PoaNodeComponents<P> {
     pub evm_config: EthEvmConfig,
     #[allow(dead_code)]
     /// evm executor factory
-    pub executor: EthExecutorProvider<BitcoindClientFactory, Arc<DatabaseEnv>>,
+    pub executor: EthExecutorProvider<Arc<FallbackBitcoindClient>, Arc<DatabaseEnv>>,
     /// network handle
     pub network: NetworkHandle,
     #[allow(dead_code)]
@@ -1125,7 +1113,7 @@ where
     pub(crate) const fn new(
         pool: P,
         evm_config: EthEvmConfig,
-        executor: EthExecutorProvider<BitcoindClientFactory, Arc<DatabaseEnv>>,
+        executor: EthExecutorProvider<Arc<FallbackBitcoindClient>, Arc<DatabaseEnv>>,
         network: NetworkHandle,
         provider: BlockchainProvider2<Arc<DatabaseEnv>>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,
@@ -1161,6 +1149,60 @@ impl PayloadBuilderConfig for DefaultPoAPayloadBuilderConfig {
     fn max_gas_limit(&self) -> u64 {
         ETHEREUM_BLOCK_GAS_LIMIT
     }
+}
+
+fn create_bitcoind_client(
+    bitcoind_config: &BitcoindConfig,
+) -> eyre::Result<(BitcoindClient, BitcoindClientFactory)> {
+    let bitcoind_factory = BitcoindClientFactory::new(bitcoind_config.clone());
+
+    // create bitcoind client and make sure its synced
+    let bitcoind_client = bitcoind_factory.build_and_connect().wrap_err_with(|| {
+        format!("Could build and connect to bitcoind at {}", bitcoind_config.url)
+    })?;
+    Ok((bitcoind_client, bitcoind_factory))
+}
+
+/// Sets up and returns a Bitcoind client using the provided configuration arguments.
+pub async fn setup_bitcoind_client(
+    bitcoind_cfg: &BitcoindArgs,
+    client_selection: ClientSelection,
+) -> eyre::Result<FallbackBitcoindClient> {
+    let primary_bitcoind_config = get_bitcoind_config(bitcoind_cfg, true)?;
+    let (primary_bitcoind_client, _) = create_bitcoind_client(&primary_bitcoind_config)?;
+
+    let secondary_bitcoind_config = get_bitcoind_config(bitcoind_cfg, false)?;
+    let (secondary_bitcoind_client, _) = create_bitcoind_client(&secondary_bitcoind_config)?;
+
+    let fallback_client = FallbackBitcoindClient::new(
+        vec![
+            BitcoindClientWrapper::Provider1(Arc::new(primary_bitcoind_client)),
+            BitcoindClientWrapper::Provider2(Arc::new(secondary_bitcoind_client)),
+        ],
+        client_selection,
+    );
+
+    Ok(fallback_client)
+}
+
+fn get_bitcoind_config(
+    bitcoind_cfg: &BitcoindArgs,
+    is_primary: bool,
+) -> eyre::Result<BitcoindConfig> {
+    let bitcoind_config = if is_primary {
+        BitcoindConfig {
+            url: bitcoind_cfg.primary_url.clone(),
+            username: bitcoind_cfg.primary_username.clone(),
+            password: bitcoind_cfg.primary_password.clone(),
+        }
+    } else {
+        BitcoindConfig {
+            url: bitcoind_cfg.secondary_url.clone(),
+            username: bitcoind_cfg.secondary_username.clone(),
+            password: bitcoind_cfg.secondary_password.clone(),
+        }
+    };
+    Ok(bitcoind_config)
 }
 
 #[cfg(test)]

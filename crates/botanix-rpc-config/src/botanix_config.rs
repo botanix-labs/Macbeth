@@ -1,11 +1,8 @@
 //! Defines structure for botanix RPC configurables and business logic
 
-use std::{fmt, str::FromStr};
+use std::{fmt, str::FromStr, sync::Arc};
 
-use botanix_btc_wallet::{
-    bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory},
-    error::BitcoindError,
-};
+use botanix_btc_wallet::{error::BitcoindAdapterError, fallback::FallbackBitcoindClient};
 use frost_secp256k1_tr::{self as frost};
 
 use botanix_authority_edh::header_ext::HeaderExt;
@@ -14,16 +11,15 @@ use reth_primitives::U256;
 use reth_storage_api::BlockReaderIdExt;
 use thiserror::Error;
 use tracing::error;
-use url::Url;
 
 /// Settings for the [`BotanixConfig`]
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct BotanixConfig {
     /// Bitcoin network
     pub bitcoin_network: bitcoin::Network,
 
     /// bitcoind configuration
-    pub bitcoind_factory: BitcoindClientFactory,
+    pub bitcoind_factory: Arc<FallbackBitcoindClient>,
 }
 
 impl Default for BotanixConfig {
@@ -32,11 +28,7 @@ impl Default for BotanixConfig {
         Self {
             bitcoin_network: bitcoin::Network::Regtest,
             // Use a public signet endpoint by default
-            bitcoind_factory: BitcoindClientFactory::new(BitcoindConfig::new(
-                "http://localhost:18443".parse::<Url>().expect("must be valid url address"),
-                "foo".to_string(),
-                "bar".to_string(),
-            )),
+            bitcoind_factory: Arc::new(FallbackBitcoindClient::default()),
         }
     }
 }
@@ -45,7 +37,7 @@ impl BotanixConfig {
     /// Creates a new [`BotanixConfig`]
     pub const fn new(
         bitcoin_network: bitcoin::Network,
-        bitcoind_factory: BitcoindClientFactory,
+        bitcoind_factory: Arc<FallbackBitcoindClient>,
     ) -> Self {
         Self { bitcoin_network, bitcoind_factory }
     }
@@ -116,7 +108,7 @@ impl From<MerkleProofRPCError> for String {
 #[derive(Debug)]
 pub enum BtcFeeRateRPCError {
     /// Failed to get estimate smart fee rate
-    FailedToGetEstimateSmartFee(BitcoindError),
+    FailedToGetEstimateSmartFee(BitcoindAdapterError),
     /// Failed to initialize bitcoind client
     BitcoindClientInitialization,
     /// Failed to get estimate smart fee rate
@@ -140,7 +132,7 @@ impl fmt::Display for BtcFeeRateRPCError {
 }
 
 /// Botanix config
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct Botanix {
     /// Botanix config
     pub botanix_rpc_config: BotanixConfig,
@@ -219,16 +211,12 @@ impl Botanix {
         let tx_id: bitcoin::Txid = bitcoin::Txid::from_str(txid.as_str())
             .map_err(|_e| MerkleProofRPCError::InvalidTxId)?;
 
-        let bitcoind_client = self.botanix_rpc_config.bitcoind_factory.clone();
-        let bitcoind_client = bitcoind_client
-            .build_and_connect()
-            .map_err(|_| MerkleProofRPCError::BitcoindClientInitialization)?;
-
         let block_hash = bitcoin::BlockHash::from_str(&block_hash)
             .map_err(|_e| MerkleProofRPCError::MalformedBlockHash)?;
 
-        let txids = bitcoind_client
-            .get_rpc_client_dyn()
+        let txids = self
+            .botanix_rpc_config
+            .bitcoind_factory
             .get_block_info_rpc(&block_hash)
             .map_err(|_e| MerkleProofRPCError::BitcoindClientInitialization)?
             .tx;
@@ -247,12 +235,9 @@ impl Botanix {
     ///
     /// Converts fee rate to sat/vB and returns it.
     pub async fn get_btc_fee_rate(&self) -> std::result::Result<U256, BtcFeeRateRPCError> {
-        let bitcoind_client = self.botanix_rpc_config.bitcoind_factory.clone();
-        let bitcoind_client = bitcoind_client
-            .build_and_connect()
-            .map_err(|_| BtcFeeRateRPCError::BitcoindClientInitialization)?;
-        let fee_result = bitcoind_client
-            .get_rpc_client_dyn()
+        let fee_result = self
+            .botanix_rpc_config
+            .bitcoind_factory
             .get_estimate_smart_fee_rpc()
             .map_err(BtcFeeRateRPCError::FailedToGetEstimateSmartFee)?;
 

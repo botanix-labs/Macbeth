@@ -10,7 +10,10 @@ use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
-use botanix_btc_wallet::bitcoind::BitcoindFactory;
+use botanix_btc_wallet::{
+    bitcoind::{BitcoindClientFactory, BitcoindFactory, BitcoindRpc},
+    fallback::FallbackBitcoindClient,
+};
 use botanix_chainspec::BotanixChainSpec;
 use botanix_cli_args::state_sync::StateSyncArgs;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
@@ -42,9 +45,9 @@ use tracing::{info, warn};
 
 /// Builder type for configuring the setup
 #[allow(dead_code)]
-pub struct AuthorityConsensusBuilder<EF, BF, RDB, BDB, BD, ToFrostMan, Source> {
+pub struct AuthorityConsensusBuilder<EF, RDB, BDB, ToFrostMan, Source> {
     consensus: AuthorityConsensus,
-    storage: Storage<EF, BF, RDB, BDB>,
+    storage: Storage<EF, RDB, BDB>,
     activation_manager: ActivationManager<VoteWatcher, Address>,
     btc_server_factory: Option<GrpcClientFactory>,
     bitcoin_checkpoints: Arc<BitcoinCheckpointsChain>,
@@ -59,7 +62,7 @@ pub struct AuthorityConsensusBuilder<EF, BF, RDB, BDB, BD, ToFrostMan, Source> {
     reth_provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
     state_sync: StateSyncArgs,
     block_fee_recipient_address: Option<reth_primitives::Address>,
-    bitcoind_client: BD,
+    bitcoind_client: Arc<FallbackBitcoindClient>,
 }
 
 /// Errors that can occur when building an authority consensus.
@@ -72,8 +75,7 @@ pub enum AuthorityConsensusBuilderError {
 }
 
 // ===== impl AuthorityConsensusBuilder =====
-impl<EF, BF, RDB, BDB, BD, ToFrostMan, Source>
-    AuthorityConsensusBuilder<EF, BF, RDB, BDB, BD, ToFrostMan, Source>
+impl<EF, RDB, BDB, ToFrostMan, Source> AuthorityConsensusBuilder<EF, RDB, BDB, ToFrostMan, Source>
 where
     ToFrostMan: ToFrostManager + Clone + 'static + Send + Sync,
     RDB: BlockReaderIdExt
@@ -92,8 +94,6 @@ where
         + Clone
         + 'static,
     EF: BlockExecutorProvider + Clone + 'static,
-    BF: BitcoindFactory + Clone + Unpin + 'static,
-    BD: botanix_btc_wallet::bitcoind::RpcApiExt + Send + Sync + 'static,
     Source: RandomSource,
 {
     /// Creates a new builder instance to configure all parts.
@@ -113,7 +113,7 @@ where
         genesis_authorities: Vec<secp256k1::PublicKey>,
         authority_socket_addresses: Vec<SocketAddr>,
         executor_factory: EF,
-        bitcoind_factory: BF,
+        bitcoind_factory: Arc<FallbackBitcoindClient>,
         evm_config: EthEvmConfig,
         cometbft_rpc_factory: HttpCometBFTRpcClientFactory,
         random_source_provider: Source,
@@ -122,7 +122,7 @@ where
         reth_provider_factory: ProviderFactory<Arc<DatabaseEnv>>,
         botanix_provider_factory: BDB,
         block_fee_recipient_address: Option<reth_primitives::Address>,
-        bitcoind_client: BD,
+        bitcoind_client: Arc<FallbackBitcoindClient>,
     ) -> Result<Self, AuthorityConsensusBuilderError> {
         // only a federation node has a btc_server
         let is_fed_node = btc_server_factory.is_some();
@@ -230,10 +230,10 @@ where
     pub async fn build<BtcServerClient>(
         self,
     ) -> (
-        Option<FrostTask<EF, BF, RDB, BDB, ToFrostMan, Source, BtcServerClient>>,
-        Option<ABCIClientBuilder<EF, BF, RDB, BDB>>,
-        Option<SnapshotManager<EF, BF, RDB, BDB>>,
-        Option<WalletStateSyncEngine<EF, BF, RDB, BDB, ToFrostMan, BtcServerClient>>,
+        Option<FrostTask<EF, RDB, BDB, ToFrostMan, Source, BtcServerClient>>,
+        Option<ABCIClientBuilder<EF, RDB, BDB>>,
+        Option<SnapshotManager<EF, RDB, BDB>>,
+        Option<WalletStateSyncEngine<EF, RDB, BDB, ToFrostMan, BtcServerClient>>,
     )
     where
         BtcServerClient: BtcServerExtendedApi + Clone + Send + Sync + 'static,

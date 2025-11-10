@@ -141,8 +141,8 @@ impl FallbackBitcoindClient {
     fn should_fallback(error: &BitcoindAdapterError) -> bool {
         match error {
             BitcoindAdapterError::BitcoindRpc(_) => true, // Fallback on all rpc errors
-            BitcoindAdapterError::NoClientsAvailable => false, /* No point in falling back as no */
-            // clients are available
+            BitcoindAdapterError::NoClientsAvailable => false, /* No point in falling back as no
+                                                            * clients are available */
             _ => true, // Fallback on other errors
         }
     }
@@ -320,7 +320,10 @@ impl FallbackBitcoindClient {
 
 #[cfg(test)]
 mod tests {
+    use crate::{bitcoind::BitcoindRpc, error::BitcoindError};
+
     use super::*;
+    use bitcoin::{hashes::Hash, BlockHash};
     use mockall::{mock, predicate::*};
 
     // Create a mockable trait
@@ -364,373 +367,483 @@ mod tests {
         }
     }
 
-    //     #[tokio::test]
-    //     async fn test_fallback_on_first_client_failure() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-
-    //         let expected_hash = Hash::new_unique();
-
-    //         // First client fails
-    //         mock_client1
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(|| Err(SolanaAdapterError::SessionKeyExpired));
-
-    //         // Second client succeeds
-    //         mock_client2
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(move || Ok(expected_hash));
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
-
-    //         // Test
-    //         let result = fallback_client.get_latest_blockhash().await;
-
-    //         // Assert
-    //         assert!(result.is_ok());
-    //         assert_eq!(result.unwrap(), expected_hash);
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_no_fallback_on_business_logic_error() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-
-    //         // First client returns business logic error (shouldn't fallback)
-    //         mock_client1
-    //             .expect_get_account_data()
-    //             .times(1)
-    //             .returning(|_| {
-    //                 Err(SolanaAdapterError::Redis(redis::RedisError::from((
-    //                     redis::ErrorKind::ParseError,
-    //                     "test error",
-    //                 ))))
-    //             });
-
-    //         // Second client should never be called
-    //         mock_client2.expect_get_account_data().times(0);
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
-
-    //         let test_pubkey = Pubkey::new_unique();
-    //         let result = fallback_client.get_account_data(&test_pubkey).await;
-
-    //         assert!(result.is_err());
-
-    //         match result.unwrap_err() {
-    //             SolanaAdapterError::Redis(_) => {
-    //                 // Expected error type
-    //             }
-    //             other => {
-    //                 panic!("Expected Redis error, got: {:?}", other);
-    //             }
-    //         }
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_all_clients_fail() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-
-    //         // Both clients fail
-    //         mock_client1
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(|| Err(SolanaAdapterError::SessionKeyExpired));
-
-    //         mock_client2
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(|| Err(SolanaAdapterError::InvalidSessionKey));
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
-
-    //         let result = fallback_client.get_latest_blockhash().await;
-
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             SolanaAdapterError::InvalidSessionKey
-    //         ));
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_no_fallback_on_helius_only_operation() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-
-    //         mock_client1
-    //             .expect_get_account_data()
-    //             .times(1)
-    //             .returning(|_| {
-    //                 Err(SolanaAdapterError::OperationOnlySupportedByHelius(
-    //                     "get_priority_fees".to_string(),
-    //                 ))
-    //             });
-
-    //         // Second client should never be called
-    //         mock_client2.expect_get_account_data().times(0);
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
-
-    //         let test_pubkey = Pubkey::new_unique();
-    //         let result = fallback_client.get_account_data(&test_pubkey).await;
-
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             SolanaAdapterError::OperationOnlySupportedByHelius(_)
-    //         ));
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_empty_clients_list() {
-    //         let clients: Vec<BitcoindClientWrapper> = vec![];
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
-
-    //         let result = fallback_client.get_latest_blockhash().await;
-
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             SolanaAdapterError::NoClientsAvailable
-    //         ));
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_client_selection_primary_only_fails() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-
-    //         // Primary client fails
-    //         mock_client1
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(|| {
-    //                 Err(SolanaAdapterError::SolanaRpc(
-    //                     solana_client::client_error::ClientError::from(
-    //                         solana_client::client_error::ClientErrorKind::Custom(
-    //                             "Connection failed".to_string(),
-    //                         ),
-    //                     ),
-    //                 ))
-    //             });
-
-    //         // Second client should never be called in Primary mode
-    //         mock_client2.expect_get_latest_blockhash().times(0);
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Primary);
-
-    //         let result = fallback_client.get_latest_blockhash().await;
-
-    //         assert!(result.is_err());
-    //         assert!(matches!(
-    //             result.unwrap_err(),
-    //             SolanaAdapterError::SolanaRpc(_)
-    //         ));
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_client_selection_primary_only() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-
-    //         let expected_hash = Hash::new_unique();
-
-    //         // Only first client should be called
-    //         mock_client1
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(move || Ok(expected_hash));
-
-    //         // Second client should never be called even if available
-    //         mock_client2.expect_get_latest_blockhash().times(0);
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Primary);
-
-    //         let result = fallback_client.get_latest_blockhash().await;
-
-    //         assert!(result.is_ok());
-    //         assert_eq!(result.unwrap(), expected_hash);
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_fallback_chain_with_multiple_failures() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-    //         let mut mock_client3 = MockRpcClient::new();
-
-    //         let expected_hash = Hash::new_unique();
-
-    //         // First two clients fail with fallback-worthy errors
-    //         mock_client1
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(|| {
-    //                 Err(SolanaAdapterError::SolanaRpc(
-    //                     solana_client::client_error::ClientError::from(
-    //                         solana_client::client_error::ClientErrorKind::Custom(
-    //                             "Timeout".to_string(),
-    //                         ),
-    //                     ),
-    //                 ))
-    //             });
-
-    //         mock_client2
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(|| {
-    //                 Err(SolanaAdapterError::SolanaRpc(
-    //                     solana_client::client_error::ClientError::from(
-    //                         solana_client::client_error::ClientErrorKind::Custom(
-    //                             "Rate limited".to_string(),
-    //                         ),
-    //                     ),
-    //                 ))
-    //             });
-
-    //         // Third client succeeds
-    //         mock_client3
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(move || Ok(expected_hash));
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client3)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
-
-    //         let result = fallback_client.get_latest_blockhash().await;
-
-    //         assert!(result.is_ok());
-    //         assert_eq!(result.unwrap(), expected_hash);
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_first_client_succeeds_no_fallback_needed() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-
-    //         let expected_hash = Hash::new_unique();
-
-    //         // First client succeeds
-    //         mock_client1
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(move || Ok(expected_hash));
-
-    //         // Second client should never be called
-    //         mock_client2.expect_get_latest_blockhash().times(0);
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
-
-    //         let result = fallback_client.get_latest_blockhash().await;
-
-    //         assert!(result.is_ok());
-    //         assert_eq!(result.unwrap(), expected_hash);
-    //     }
-
-    //     #[tokio::test]
-    //     async fn test_all_clients_fail_with_fallback_errors() {
-    //         let mut mock_client1 = MockRpcClient::new();
-    //         let mut mock_client2 = MockRpcClient::new();
-
-    //         // Both clients fail with errors that should trigger fallback
-    //         mock_client1
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(|| {
-    //                 Err(SolanaAdapterError::SolanaRpc(
-    //                     solana_client::client_error::ClientError::from(
-    //                         solana_client::client_error::ClientErrorKind::Custom(
-    //                             "Connection timeout".to_string(),
-    //                         ),
-    //                     ),
-    //                 ))
-    //             });
-
-    //         mock_client2
-    //             .expect_get_latest_blockhash()
-    //             .times(1)
-    //             .returning(|| {
-    //                 Err(SolanaAdapterError::SolanaRpc(
-    //                     solana_client::client_error::ClientError::from(
-    //                         solana_client::client_error::ClientErrorKind::Custom(
-    //                             "Service unavailable".to_string(),
-    //                         ),
-    //                     ),
-    //                 ))
-    //             });
-
-    //         let clients = vec![
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
-    //             BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
-    //         ];
-
-    //         let fallback_client =
-    //             FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
-
-    //         let result = fallback_client.get_latest_blockhash().await;
-
-    //         assert!(result.is_err());
-
-    //         let received_error = result.unwrap_err();
-    //         match received_error {
-    //             SolanaAdapterError::SolanaRpc(err) => match err.kind() {
-    //                 solana_client::client_error::ClientErrorKind::Custom(msg) => {
-    //                     assert_eq!(msg, "Service unavailable");
-    //                 }
-    //                 _ => panic!("Expected Custom error, got {:?}", err),
-    //             },
-    //             _ => panic!("Expected SolanaRpc error, got {:?}", received_error),
-    //         }
+    #[async_trait]
+    impl BitcoindRpc for MockRpcClient {
+        async fn is_synced(&self) -> Result<bool, BitcoindError> {
+            MockableRpcClient::is_synced(self).await.map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::BlockchainInfoFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        async fn wait_until_synced(&self) {
+            MockableRpcClient::wait_until_synced(self).await
+        }
+
+        fn get_best_block_hash_rpc(&self) -> Result<bitcoin::BlockHash, BitcoindError> {
+            MockableRpcClient::get_best_block_hash_rpc(self).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::BestBlockHashRetrievalFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn get_block_header_rpc(
+            &self,
+            h: &bitcoin::BlockHash,
+        ) -> Result<bitcoin::blockdata::block::Header, BitcoindError> {
+            MockableRpcClient::get_block_header_rpc(self, h).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::BlockHeaderRetrievalFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn get_block_hash_rpc(&self, height: u64) -> Result<bitcoin::BlockHash, BitcoindError> {
+            MockableRpcClient::get_block_hash_rpc(self, height).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::BlockHashRetrievalFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn get_txids_rpc(
+            &self,
+            h: &bitcoin::BlockHash,
+        ) -> Result<Vec<bitcoin::Txid>, BitcoindError> {
+            MockableRpcClient::get_txids_rpc(self, h).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::BlockHeaderRetrievalFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn get_estimate_smart_fee_rpc(&self) -> Result<EstimateSmartFeeResult, BitcoindError> {
+            MockableRpcClient::get_estimate_smart_fee_rpc(self).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::EstimateSmartFeeFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn get_block_info_rpc(
+            &self,
+            block_hash: &bitcoin::BlockHash,
+        ) -> Result<GetBlockResult, BitcoindError> {
+            MockableRpcClient::get_block_info_rpc(self, block_hash).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::BlockInfoRetrievalFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn get_block_count_rpc(&self) -> Result<u64, BitcoindError> {
+            MockableRpcClient::get_block_count_rpc(self).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::BlockCountFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fallback_on_first_client_failure() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        let expected_hash = BlockHash::all_zeros();
+
+        // First client fails
+        mock_client1.expect_get_best_block_hash_rpc().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Connection failed".to_string().into(),
+                )),
+            )))
+        });
+
+        // Second client succeeds
+        mock_client2.expect_get_best_block_hash_rpc().times(1).returning(move || Ok(expected_hash));
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        // Test
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected_hash);
+    }
+
+    #[tokio::test]
+    async fn test_no_fallback_on_no_clients_available() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        // First client returns NoClientsAvailable error (shouldn't fallback)
+        mock_client1
+            .expect_get_block_count_rpc()
+            .times(1)
+            .returning(|| Err(BitcoindAdapterError::NoClientsAvailable));
+
+        // Second client should never be called
+        mock_client2.expect_get_block_count_rpc().times(0);
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        let result = fallback_client.get_block_count_rpc();
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), BitcoindAdapterError::NoClientsAvailable));
+    }
+
+    #[tokio::test]
+    async fn test_all_clients_fail() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        // Both clients fail
+        mock_client1.expect_get_best_block_hash_rpc().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Connection timeout".to_string().into(),
+                )),
+            )))
+        });
+
+        mock_client2.expect_get_best_block_hash_rpc().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Service unavailable".to_string().into(),
+                )),
+            )))
+        });
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        assert!(result.is_err());
+        // Should return the last error
+        assert!(matches!(result.unwrap_err(), BitcoindAdapterError::BitcoindRpc(_)));
+    }
+
+    #[tokio::test]
+    async fn test_empty_clients_list() {
+        let clients: Vec<BitcoindClientWrapper> = vec![];
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), BitcoindAdapterError::NoClientsAvailable));
+    }
+
+    #[tokio::test]
+    async fn test_client_selection_primary_only_fails() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        // Primary client fails
+        mock_client1.expect_get_best_block_hash_rpc().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Connection failed".to_string().into(),
+                )),
+            )))
+        });
+
+        // Second client should never be called in Primary mode
+        mock_client2.expect_get_best_block_hash_rpc().times(0);
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Primary);
+
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), BitcoindAdapterError::BitcoindRpc(_)));
+    }
+
+    #[tokio::test]
+    async fn test_client_selection_primary_only() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        let expected_hash = BlockHash::all_zeros();
+
+        // Only first client should be called
+        mock_client1.expect_get_best_block_hash_rpc().times(1).returning(move || Ok(expected_hash));
+
+        // Second client should never be called even if available
+        mock_client2.expect_get_best_block_hash_rpc().times(0);
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Primary);
+
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected_hash);
+    }
+
+    #[tokio::test]
+    async fn test_client_selection_secondary_only() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        let expected_hash = BlockHash::all_zeros();
+
+        // First client should never be called in Secondary mode
+        mock_client1.expect_get_best_block_hash_rpc().times(0);
+
+        // Only second client should be called
+        mock_client2.expect_get_best_block_hash_rpc().times(1).returning(move || Ok(expected_hash));
+
+        let clients = vec![
+            BitcoindClientWrapper::Provider1(Arc::new(BitcoindClient::new_boxed(Box::new(
+                mock_client1,
+            )))),
+            BitcoindClientWrapper::Provider2(Arc::new(BitcoindClient::new_boxed(Box::new(
+                mock_client2,
+            )))),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Secondary);
+
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected_hash);
+    }
+
+    #[tokio::test]
+    async fn test_fallback_chain_with_multiple_failures() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+        let mut mock_client3 = MockRpcClient::new();
+
+        let expected_hash = BlockHash::all_zeros();
+
+        // First two clients fail with fallback-worthy errors
+        mock_client1.expect_get_best_block_hash_rpc().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Timeout".to_string().into(),
+                )),
+            )))
+        });
+
+        mock_client2.expect_get_best_block_hash_rpc().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Rate limited".to_string().into(),
+                )),
+            )))
+        });
+
+        // Third client succeeds
+        mock_client3.expect_get_best_block_hash_rpc().times(1).returning(move || Ok(expected_hash));
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client3)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected_hash);
+    }
+
+    #[tokio::test]
+    async fn test_first_client_succeeds_no_fallback_needed() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        let expected_hash = BlockHash::all_zeros();
+
+        // First client succeeds
+        mock_client1.expect_get_best_block_hash_rpc().times(1).returning(move || Ok(expected_hash));
+
+        // Second client should never be called
+        mock_client2.expect_get_best_block_hash_rpc().times(0);
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected_hash);
+    }
+
+    #[tokio::test]
+    async fn test_all_clients_fail_with_fallback_errors() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        // Both clients fail with errors that should trigger fallback
+        mock_client1.expect_get_best_block_hash_rpc().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Connection timeout".to_string().into(),
+                )),
+            )))
+        });
+
+        mock_client2.expect_get_best_block_hash_rpc().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Service unavailable".to_string().into(),
+                )),
+            )))
+        });
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        let result = fallback_client.get_best_block_hash_rpc();
+
+        assert!(result.is_err());
+
+        let received_error = result.unwrap_err();
+        match received_error {
+            BitcoindAdapterError::BitcoindRpc(BitcoindError::BestBlockHashRetrievalFailed(_)) => {
+                // Expected error type - last error in chain
+            }
+            other => {
+                panic!("Expected BestBlockHashRetrievalFailed error, got: {:?}", other);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_is_synced_with_fallback() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        // First client fails
+        mock_client1.expect_is_synced().times(1).returning(|| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BlockchainInfoFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Connection failed".to_string().into(),
+                )),
+            )))
+        });
+
+        // Second client succeeds
+        mock_client2.expect_is_synced().times(1).returning(|| Ok(true));
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        let result = fallback_client.is_synced().await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_get_block_header_with_fallback() {
+        let mut mock_client1 = MockRpcClient::new();
+        let mut mock_client2 = MockRpcClient::new();
+
+        let test_hash = BlockHash::all_zeros();
+        let expected_header = bitcoin::blockdata::block::Header {
+            version: bitcoin::block::Version::ONE,
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: bitcoin::hash_types::TxMerkleNode::all_zeros(),
+            time: 1231006505,
+            bits: bitcoin::CompactTarget::from_consensus(1),
+            nonce: 2083236893,
+        };
+
+        // First client fails
+        mock_client1.expect_get_block_header_rpc().times(1).returning(|_| {
+            Err(BitcoindAdapterError::BitcoindRpc(BitcoindError::BlockHeaderRetrievalFailed(
+                bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                    "Connection failed".to_string().into(),
+                )),
+            )))
+        });
+
+        // Second client succeeds
+        mock_client2.expect_get_block_header_rpc().times(1).returning(move |_| Ok(expected_header));
+
+        let clients = vec![
+            BitcoindClientWrapper::Mock(Arc::new(mock_client1)),
+            BitcoindClientWrapper::Mock(Arc::new(mock_client2)),
+        ];
+
+        let fallback_client = FallbackBitcoindClient::new(clients, ClientSelection::Fallback);
+
+        let result = fallback_client.get_block_header_rpc(&test_hash);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().time, 1231006505);
+    }
 }
