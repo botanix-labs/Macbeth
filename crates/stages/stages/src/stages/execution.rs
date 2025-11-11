@@ -656,7 +656,6 @@ mod tests {
     use alloy_rlp::Decodable;
     use assert_matches::assert_matches;
     use botanix_authority_edh::{extra_data_header::ExtraDataHeader, header_ext::HeaderExt};
-    use botanix_btc_wallet::test_utils::MockBitcoindFactory;
     use reth_chainspec::ChainSpecBuilder;
     use reth_db::{test_utils::TempDatabase, DatabaseEnv};
     use reth_db_api::{models::AccountBeforeTx, transaction::DbTxMut};
@@ -674,9 +673,7 @@ mod tests {
     use reth_stages_api::StageUnitCheckpoint;
     use std::collections::BTreeMap;
 
-    fn stage(
-    ) -> ExecutionStage<EthExecutorProvider<MockBitcoindFactory, Arc<TempDatabase<DatabaseEnv>>>>
-    {
+    fn stage() -> ExecutionStage<EthExecutorProvider<Arc<TempDatabase<DatabaseEnv>>>> {
         let executor_provider = create_noop_executor_provider(Arc::new(
             ChainSpecBuilder::mainnet().berlin_activated().build(),
         ));

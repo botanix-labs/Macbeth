@@ -160,7 +160,11 @@ mod tests {
         hashes::Hash,
         CompactTarget, TxMerkleNode,
     };
-    use botanix_btc_wallet::{bitcoind::BitcoindConfig, test_utils::MockBitcoindFactory};
+    use botanix_btc_wallet::{
+        bitcoind::{BitcoindConfig, BitcoindFactory},
+        fallback::{BitcoindClientWrapper, ClientSelection},
+        test_utils::MockBitcoindFactory,
+    };
 
     use super::*;
     use reth_primitives_traits::Header;
@@ -177,32 +181,42 @@ mod tests {
         assert_eq!(deserialized_edh, edh);
     }
 
-    // #[test]
-    // fn test_botanix_consensus_package() {
-    //     let mut header = Header::default();
-    //     let edh = ExtraDataHeader::default();
-    //     header.add_extra_data_header(&edh);
-    //     let btc_network = bitcoin::Network::Testnet;
-    //     let bitcoind_factory = MockBitcoindFactory::new(BitcoindConfig::default());
+    #[test]
+    fn test_botanix_consensus_package() {
+        let mut header = Header::default();
+        let edh = ExtraDataHeader::default();
+        header.add_extra_data_header(&edh);
+        let btc_network = bitcoin::Network::Testnet;
 
-    //     let res = header.botanix_consensus_package(btc_network, bitcoind_factory);
-    //     assert!(res.is_ok());
+        // Create the mock factory and build a client from it
+        let bitcoind_factory = MockBitcoindFactory::new(BitcoindConfig::default());
+        let bitcoind_client =
+            bitcoind_factory.build_and_connect().expect("Failed to build mock client");
 
-    //     let BotanixConsensusPackage { bitcoin_checkpoint, aggregate_public_key, btc_network } =
-    //         res.unwrap();
+        // Wrap the client in the appropriate wrapper variant
+        let clients = vec![BitcoindClientWrapper::Provider1(Arc::new(bitcoind_client))];
 
-    //     let expected_header = BtcHeader {
-    //         version: Version::default(),
-    //         prev_blockhash: BlockHash::all_zeros(),
-    //         merkle_root: TxMerkleNode::from_slice(&[0; 32]).unwrap(),
-    //         time: 0,
-    //         bits: CompactTarget::from_consensus(0),
-    //         nonce: 0,
-    //     };
+        let fallback_client =
+            Arc::new(FallbackBitcoindClient::new(clients, ClientSelection::Fallback));
+        let res = header.botanix_consensus_package(btc_network, fallback_client);
+        println!("res={:?}", res);
+        assert!(res.is_ok());
 
-    //     assert_eq!(bitcoin_checkpoint.0, expected_header);
-    //     assert_eq!(bitcoin_checkpoint.1, 0);
-    //     assert_eq!(aggregate_public_key, edh.aggregated_public_key);
-    //     assert_eq!(btc_network, bitcoin::Network::Testnet);
-    // }
+        let BotanixConsensusPackage { bitcoin_checkpoint, aggregate_public_key, btc_network } =
+            res.unwrap();
+
+        let expected_header = BtcHeader {
+            version: Version::default(),
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: TxMerkleNode::from_slice(&[0; 32]).unwrap(),
+            time: 0,
+            bits: CompactTarget::from_consensus(0),
+            nonce: 0,
+        };
+
+        assert_eq!(bitcoin_checkpoint.0, expected_header);
+        assert_eq!(bitcoin_checkpoint.1, 0);
+        assert_eq!(aggregate_public_key, edh.aggregated_public_key);
+        assert_eq!(btc_network, bitcoin::Network::Testnet);
+    }
 }

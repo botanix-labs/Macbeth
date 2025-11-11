@@ -2596,10 +2596,7 @@ mod tests {
     };
     use botanix_activation_manager::ActivationManagerBuilder;
     use botanix_bitcoin_checkpoint::BitcoinCheckpoint;
-    use botanix_btc_wallet::{
-        bitcoind::{BitcoindConfig, BitcoindFactory},
-        test_utils::MockBitcoindFactory,
-    };
+    use botanix_btc_wallet::{fallback::FallbackBitcoindClient, test_utils::MockBitcoindFactory};
     use botanix_chainspec::constants::{BOTANIX_MAINNET, BOTANIX_TESTNET};
     use botanix_comet_bft_rpc::HttpCometBFTRpcClientFactory;
     use botanix_storage::BotanixProviderFactory;
@@ -2622,18 +2619,18 @@ mod tests {
     use tendermint_proto::google::protobuf::Timestamp;
 
     type ABCIClientType<DB = Arc<DatabaseEnv>> = ABCIClient<
-        MockExecutorProvider,
-        MockBitcoindFactory,
-        BlockchainProvider2<DB>,
-        BotanixProviderFactory<DB>,
+        MockExecutorProvider,       // EF
+        BlockchainProvider2<DB>,    // RDB
+        BotanixProviderFactory<DB>, // DBD
         RethPool<
+            // Pool
             TransactionValidationTaskExecutor<
                 EthTransactionValidator<BlockchainProvider2<DB>, EthPooledTransaction>,
             >,
             reth_transaction_pool::CoinbaseTipOrdering<EthPooledTransaction>,
             InMemoryBlobStore,
         >,
-        DB,
+        DB, // DB
     >;
 
     /// Build the db and the ABCI client
@@ -2669,7 +2666,7 @@ mod tests {
             Vec::new(),
             EthEvmConfig::default(),
             BOTANIX_TESTNET.clone(),
-            MockBitcoindFactory::new(BitcoindConfig::default()),
+            Arc::new(FallbackBitcoindClient::default()),
             MockExecutorProvider::default(),
             reth_provider.clone(),
             botanix_provider_factory.clone(),

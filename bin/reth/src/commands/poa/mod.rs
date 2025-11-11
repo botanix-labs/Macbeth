@@ -428,7 +428,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         let checkpoints_synchronizer = BitcoinCheckpointsChainSynchronizer::new(
             Arc::clone(&bitcoin_checkpoints),
-            bitcoind_client,
+            bitcoind_client.clone(),
         );
 
         // Connect to Bitcoin ZMQ socket to receive new block notifications
@@ -566,7 +566,7 @@ impl<Ext: clap::Args + fmt::Debug> PoaNodeCommand<Ext> {
 
         // Config executor factory
         let evm_config = EthEvmConfig::default();
-        let executor_factory = EthExecutorProvider::new(
+        let executor_factory: EthExecutorProvider<Arc<DatabaseEnv>> = EthExecutorProvider::new(
             chain.clone().into(),
             evm_config.clone(),
             bitcoind_client.clone(),
@@ -1094,7 +1094,7 @@ pub struct PoaNodeComponents<P> {
     pub evm_config: EthEvmConfig,
     #[allow(dead_code)]
     /// evm executor factory
-    pub executor: EthExecutorProvider<Arc<FallbackBitcoindClient>, Arc<DatabaseEnv>>,
+    pub executor: EthExecutorProvider<Arc<DatabaseEnv>>,
     /// network handle
     pub network: NetworkHandle,
     #[allow(dead_code)]
@@ -1113,7 +1113,7 @@ where
     pub(crate) const fn new(
         pool: P,
         evm_config: EthEvmConfig,
-        executor: EthExecutorProvider<Arc<FallbackBitcoindClient>, Arc<DatabaseEnv>>,
+        executor: EthExecutorProvider<Arc<DatabaseEnv>>,
         network: NetworkHandle,
         provider: BlockchainProvider2<Arc<DatabaseEnv>>,
         payload_builder: PayloadBuilderHandle<EthEngineTypes>,

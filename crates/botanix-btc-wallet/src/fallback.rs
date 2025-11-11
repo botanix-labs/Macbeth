@@ -141,8 +141,8 @@ impl FallbackBitcoindClient {
     fn should_fallback(error: &BitcoindAdapterError) -> bool {
         match error {
             BitcoindAdapterError::BitcoindRpc(_) => true, // Fallback on all rpc errors
-            BitcoindAdapterError::NoClientsAvailable => false, /* No point in falling back as no
-                                                            * clients are available */
+            BitcoindAdapterError::NoClientsAvailable => false, /* No point in falling back as no */
+            // clients are available
             _ => true, // Fallback on other errors
         }
     }
