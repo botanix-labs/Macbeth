@@ -10,10 +10,7 @@ use botanix_authority_edh::header_ext::HeaderExt;
 use botanix_authority_metrics::AuthorityMetrics;
 use botanix_authority_rsp::RandomSource;
 use botanix_bitcoin_checkpoint::BitcoinCheckpointsChain;
-use botanix_btc_wallet::{
-    bitcoind::{BitcoindClientFactory, BitcoindFactory, BitcoindRpc},
-    fallback::FallbackBitcoindClient,
-};
+use botanix_btc_wallet::fallback::FallbackBitcoindClient;
 use botanix_chainspec::BotanixChainSpec;
 use botanix_cli_args::state_sync::StateSyncArgs;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};

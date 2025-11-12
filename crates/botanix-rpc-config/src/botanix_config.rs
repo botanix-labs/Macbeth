@@ -13,7 +13,7 @@ use thiserror::Error;
 use tracing::error;
 
 /// Settings for the [`BotanixConfig`]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BotanixConfig {
     /// Bitcoin network
     pub bitcoin_network: bitcoin::Network,
@@ -132,7 +132,7 @@ impl fmt::Display for BtcFeeRateRPCError {
 }
 
 /// Botanix config
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Botanix {
     /// Botanix config
     pub botanix_rpc_config: BotanixConfig,

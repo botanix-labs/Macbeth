@@ -4,7 +4,7 @@
 //! management, and synchronization.
 
 use bitcoin::block::BlockHash as BitcoinBlockHash;
-use botanix_btc_wallet::error::{BitcoindAdapterError, BitcoindError};
+use botanix_btc_wallet::error::BitcoindAdapterError;
 
 /// Errors that can occur in Bitcoin checkpoint operations.
 #[derive(thiserror::Error, Debug)]

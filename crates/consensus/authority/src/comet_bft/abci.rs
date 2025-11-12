@@ -18,7 +18,6 @@ use std::{
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_data_parser::DataParser;
 use reth_basic_payload_builder::{BuildArguments, PayloadConfig};
 use reth_consensus::{Consensus, ConsensusError, InvalidAggregatedPublicKeyError};

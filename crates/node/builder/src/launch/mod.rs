@@ -5,11 +5,7 @@ mod exex;
 
 pub(crate) mod engine;
 
-use botanix_btc_wallet::{
-    bitcoind::{BitcoindConfig, BitcoindFactory},
-    fallback::FallbackBitcoindClient,
-    test_utils::MockBitcoindFactory,
-};
+use botanix_btc_wallet::fallback::FallbackBitcoindClient;
 use botanix_rpc_config::botanix_config::{Botanix, BotanixConfig};
 pub use common::LaunchContext;
 pub use exex::ExExLauncher;

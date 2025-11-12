@@ -15,7 +15,7 @@
 //! that authoritymatically seals blocks.
 use async_trait as _;
 use botanix_authority_edh::{header_ext::HeaderExt, nums_secp256k1_pk};
-use botanix_btc_wallet::{bitcoind::BitcoindClientFactory, fallback::FallbackBitcoindClient};
+use botanix_btc_wallet::fallback::FallbackBitcoindClient;
 use botanix_chainspec::BotanixChainSpec;
 use bytes as _;
 use displaydoc as _;

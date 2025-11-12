@@ -10,11 +10,7 @@ use botanix_authority_peg::{
     mint_validation::{try_parse_burn_event, try_parse_mint_event, MintContractError},
     peg_contract::{PeginData, PegoutWithId},
 };
-use botanix_btc_wallet::{
-    bitcoind::{BitcoindConfig, BitcoindFactory},
-    fallback::FallbackBitcoindClient,
-    test_utils::MockBitcoindFactory,
-};
+use botanix_btc_wallet::fallback::FallbackBitcoindClient;
 use botanix_chainspec::BotanixChainSpec;
 use btcserverlib::pegout_id::PegoutId;
 use core::fmt::Display;
@@ -63,7 +59,7 @@ use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use std::sync::Arc;
 
 /// Provides executors to execute regular ethereum blocks
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct EthExecutorProvider<RethDB, EvmConfig = EthEvmConfig>
 where
     RethDB: reth_db::Database,
@@ -185,7 +181,7 @@ struct EthExecuteOutput {
 }
 
 /// Helper container type for EVM with chain spec.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct EthEvmExecutor<EvmConfig, RethDB>
 where
     RethDB: reth_db::Database,
@@ -634,6 +630,7 @@ where
 /// Expected usage:
 /// - Create a new instance of the executor.
 /// - Execute the block.
+#[derive(Debug)]
 pub struct EthBlockExecutor<EvmConfig, DB, RethDB>
 where
     RethDB: reth_db::Database,
@@ -848,6 +845,7 @@ where
 /// An executor for a batch of blocks.
 ///
 /// State changes are tracked until the executor is finalized.
+#[derive(Debug)]
 pub struct EthBatchExecutor<EvmConfig, DB, RethDB>
 where
     RethDB: reth_db::Database,

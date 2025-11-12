@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use botanix_btc_wallet::{bitcoind::BitcoindFactory, fallback::FallbackBitcoindClient};
+use botanix_btc_wallet::fallback::FallbackBitcoindClient;
 use reth_config::{config::StageConfig, PruneConfig};
 use reth_consensus::Consensus;
 use reth_db_api::database::Database;

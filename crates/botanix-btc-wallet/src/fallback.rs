@@ -7,9 +7,9 @@ use crate::{
 #[cfg(test)]
 use async_trait::async_trait;
 use bitcoincore_rpc::json::{EstimateSmartFeeResult, GetBlockResult};
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientSelection {
     #[default]
     Fallback, // Use all clients with fallback
@@ -21,6 +21,15 @@ pub enum ClientSelection {
 pub struct FallbackBitcoindClient {
     clients: Vec<BitcoindClientWrapper>,
     selection: ClientSelection,
+}
+
+impl Debug for FallbackBitcoindClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FallbackBitcoindClient")
+            .field("clients_count", &self.clients.len())
+            .field("selection", &self.selection)
+            .finish()
+    }
 }
 
 impl Default for FallbackBitcoindClient {

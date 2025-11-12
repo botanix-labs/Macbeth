@@ -2,11 +2,7 @@
 
 use std::sync::Arc;
 
-use botanix_btc_wallet::{
-    bitcoind::{BitcoindConfig, BitcoindFactory},
-    fallback::FallbackBitcoindClient,
-    test_utils::MockBitcoindFactory,
-};
+use botanix_btc_wallet::fallback::FallbackBitcoindClient;
 use botanix_chainspec::BotanixChainSpec;
 use reth_auto_seal_consensus::AutoSealConsensus;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
