@@ -5,7 +5,6 @@ use crate::{
 };
 use bitcoin::hashes::{sha256::Hash as Sha256Hash, FromSliceError};
 use botanix_authority_edh::extra_data_header::ExtraDataHeaderDeserializeError;
-use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_data_parser::{
     prost_parser::ProstMessageSerdelizer, DataParser, Error as CompressorError, SerializationType,
 };

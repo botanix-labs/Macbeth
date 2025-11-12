@@ -1,6 +1,5 @@
 //! Snapshot manager is responsible for persisting snapshot chunks to disk
 use crate::Storage;
-use botanix_btc_wallet::bitcoind::BitcoindFactory;
 use botanix_comet_bft_rpc::{Client, CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_data_parser::{DataParser, Error as DataParserError};
 use botanix_storage::{

@@ -1,3 +1,4 @@
+pub mod bitcoind;
 pub mod bitcoind_node;
 pub mod botanix_client;
 pub mod btc_server;

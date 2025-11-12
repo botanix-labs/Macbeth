@@ -35,6 +35,14 @@ pub enum BitcoindError {
     BlockInfoRetrievalFailed(bitcoincore_rpc::Error),
     #[error("Smart estimate fee retrieval failed")]
     EstimateSmartFeeFailed(bitcoincore_rpc::Error),
+    #[error("Failed to load wallet")]
+    WalletLoadingFailed(bitcoincore_rpc::Error),
     #[error("Block count failed")]
     BlockCountFailed(bitcoincore_rpc::Error),
+    #[error("Wallet creation failed")]
+    WalletCreationFailed(bitcoincore_rpc::Error),
+    #[error("Generate to address failed")]
+    GenerateToAddressFailed(bitcoincore_rpc::Error),
+    #[error("Get new address failed")]
+    GetNewAddressFailed(bitcoincore_rpc::Error),
 }

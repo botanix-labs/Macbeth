@@ -4,6 +4,7 @@ use crate::{
     context::GlobalContext,
     it_info_print, it_warn_print, run_test,
     suite::consensus::common::{
+        bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory},
         btc_server::{spawn_n_btc_server_processes, SpawnedBtcServerProcess},
         events::await_dkg,
     },
@@ -11,7 +12,6 @@ use crate::{
 };
 use anyhow::Context;
 use async_trait::async_trait;
-use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use botanix_comet_bft_rpc::{CometBftRpcFactory, HttpCometBFTRpcClientFactory};
 use botanix_storage::BotanixProviderFactory;
 use btc_server_client::BtcServerClient;

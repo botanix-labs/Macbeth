@@ -4,6 +4,7 @@ use crate::{
     bitcoind::{BitcoindClient, BitcoindConfig},
     error::{BitcoindAdapterError, BitcoindAdapterResult},
 };
+#[cfg(test)]
 use async_trait::async_trait;
 use bitcoincore_rpc::json::{EstimateSmartFeeResult, GetBlockResult};
 use std::sync::Arc;
@@ -142,8 +143,6 @@ impl FallbackBitcoindClient {
         match error {
             BitcoindAdapterError::BitcoindRpc(_) => true, // Fallback on all rpc errors
             BitcoindAdapterError::NoClientsAvailable => false, /* No point in falling back as no */
-            // clients are available
-            _ => true, // Fallback on other errors
         }
     }
 }
@@ -324,6 +323,7 @@ mod tests {
 
     use super::*;
     use bitcoin::{hashes::Hash, BlockHash};
+    use bitcoincore_rpc::json::LoadWalletResult;
     use mockall::{mock, predicate::*};
 
     // Create a mockable trait
@@ -348,6 +348,25 @@ mod tests {
             block_hash: &bitcoin::BlockHash,
         ) -> BitcoindAdapterResult<GetBlockResult>;
         fn get_block_count_rpc(&self) -> BitcoindAdapterResult<u64>;
+        fn load_wallet_rpc<'a>(&self, wallet: &'a str) -> BitcoindAdapterResult<LoadWalletResult>;
+        fn get_new_address_rpc<'a>(
+            &self,
+            label: Option<&'a str>,
+            address_type: Option<bitcoincore_rpc::json::AddressType>,
+        ) -> BitcoindAdapterResult<bitcoin::Address<bitcoin::address::NetworkUnchecked>>;
+        fn generate_to_address_rpc<'a>(
+            &self,
+            block_num: u64,
+            address: &'a bitcoin::Address<bitcoin::address::NetworkChecked>,
+        ) -> BitcoindAdapterResult<Vec<bitcoin::BlockHash>>;
+        fn create_wallet_rpc<'a>(
+            &self,
+            wallet: &'a str,
+            disable_private_keys: Option<bool>,
+            blank: Option<bool>,
+            passphrase: Option<&'a str>,
+            avoid_reuse: Option<bool>,
+        ) -> BitcoindAdapterResult<LoadWalletResult>;
     }
 
     mock! {
@@ -364,6 +383,11 @@ mod tests {
             fn get_estimate_smart_fee_rpc(&self) -> BitcoindAdapterResult<EstimateSmartFeeResult>;
             fn get_block_info_rpc(&self, block_hash: &bitcoin::BlockHash,) -> BitcoindAdapterResult<GetBlockResult>;
             fn get_block_count_rpc(&self) -> BitcoindAdapterResult<u64>;
+            fn load_wallet_rpc<'a>(&self, wallet: &'a str) -> BitcoindAdapterResult<LoadWalletResult>;
+            fn get_new_address_rpc<'a>(&self, label: Option<&'a str>, address_type: Option<bitcoincore_rpc::json::AddressType>) -> BitcoindAdapterResult<bitcoin::Address<bitcoin::address::NetworkUnchecked>>;
+            fn generate_to_address_rpc<'a>(&self, block_num: u64, address: &'a bitcoin::Address<bitcoin::address::NetworkChecked>) -> BitcoindAdapterResult<Vec<bitcoin::BlockHash>>;
+            fn create_wallet_rpc<'a>(&self, wallet: &'a str, disable_private_keys: Option<bool>, blank: Option<bool>, passphrase: Option<&'a str>, avoid_reuse: Option<bool>) -> BitcoindAdapterResult<LoadWalletResult>;
+
         }
     }
 
@@ -390,6 +414,17 @@ mod tests {
                 _ => BitcoindError::BestBlockHashRetrievalFailed(bitcoincore_rpc::Error::JsonRpc(
                     bitcoincore_rpc::jsonrpc::error::Error::Transport(
                         "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn load_wallet_rpc(&self, wallet: &str) -> Result<LoadWalletResult, BitcoindError> {
+            MockableRpcClient::load_wallet_rpc(self, wallet).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::WalletLoadingFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Wallet Load Error".to_string().into(),
                     ),
                 )),
             })
@@ -463,6 +498,64 @@ mod tests {
             MockableRpcClient::get_block_count_rpc(self).map_err(|e| match e {
                 BitcoindAdapterError::BitcoindRpc(err) => err,
                 _ => BitcoindError::BlockCountFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn create_wallet_rpc(
+            &self,
+            wallet: &str,
+            disable_private_keys: Option<bool>,
+            blank: Option<bool>,
+            passphrase: Option<&str>,
+            avoid_reuse: Option<bool>,
+        ) -> Result<LoadWalletResult, BitcoindError> {
+            MockableRpcClient::create_wallet_rpc(
+                self,
+                wallet,
+                disable_private_keys,
+                blank,
+                passphrase,
+                avoid_reuse,
+            )
+            .map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::WalletCreationFailed(bitcoincore_rpc::Error::JsonRpc(
+                    bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                        "Mock error".to_string().into(),
+                    ),
+                )),
+            })
+        }
+
+        fn generate_to_address_rpc(
+            &self,
+            block_num: u64,
+            address: &bitcoin::Address<bitcoin::address::NetworkChecked>,
+        ) -> Result<Vec<bitcoin::BlockHash>, BitcoindError> {
+            MockableRpcClient::generate_to_address_rpc(self, block_num, address).map_err(
+                |e| match e {
+                    BitcoindAdapterError::BitcoindRpc(err) => err,
+                    _ => BitcoindError::GenerateToAddressFailed(bitcoincore_rpc::Error::JsonRpc(
+                        bitcoincore_rpc::jsonrpc::error::Error::Transport(
+                            "Mock error".to_string().into(),
+                        ),
+                    )),
+                },
+            )
+        }
+
+        fn get_new_address_rpc(
+            &self,
+            label: Option<&str>,
+            address_type: Option<bitcoincore_rpc::json::AddressType>,
+        ) -> Result<bitcoin::Address<bitcoin::address::NetworkUnchecked>, BitcoindError> {
+            MockableRpcClient::get_new_address_rpc(self, label, address_type).map_err(|e| match e {
+                BitcoindAdapterError::BitcoindRpc(err) => err,
+                _ => BitcoindError::GetNewAddressFailed(bitcoincore_rpc::Error::JsonRpc(
                     bitcoincore_rpc::jsonrpc::error::Error::Transport(
                         "Mock error".to_string().into(),
                     ),

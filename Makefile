@@ -693,9 +693,9 @@ start-poa-server-1:
 	--btc-server "localhost:8081" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--btc-signing-server-jwt-secret "${NODE_1_DIR}/bjwt.hex" \
-	--bitcoind.primary_url "${BITCOIND_URL}" \
-	--bitcoind.primary_username "${BITCOIND_USER}" \
-	--bitcoind.primary_password "${BITCOIND_PWD}" \
+	--bitcoind.primary-url "${BITCOIND_URL}" \
+	--bitcoind.primary-username "${BITCOIND_USER}" \
+	--bitcoind.primary-password "${BITCOIND_PWD}" \
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
 	--sync.num_snapshots_to_keep 3 \
@@ -730,9 +730,9 @@ start-poa-server-2:
 	--btc-server "localhost:8082" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--btc-signing-server-jwt-secret "${NODE_2_DIR}/bjwt.hex" \
-	--bitcoind.primary_url "${BITCOIND_URL}" \
-	--bitcoind.primary_username "${BITCOIND_USER}" \
-	--bitcoind.primary_password "${BITCOIND_PWD}" \
+	--bitcoind.primary-url "${BITCOIND_URL}" \
+	--bitcoind.primary-username "${BITCOIND_USER}" \
+	--bitcoind.primary-password "${BITCOIND_PWD}" \
 	--frost.min_signers 2 \
 	--frost.max_signers 2 \
 	--sync.num_snapshots_to_keep 3 \
@@ -767,9 +767,9 @@ start-poa-server-3:
 	--btc-server "localhost:8083" \
 	--btc-network "${BITCOIND_NETWORK}" \
 	--btc-signing-server-jwt-secret "${NODE_3_DIR}/bjwt.hex" \
-	--bitcoind.primary_url "${BITCOIND_URL}" \
-	--bitcoind.primary_username "${BITCOIND_USER}" \
-	--bitcoind.primary_password "${BITCOIND_PWD}" \
+	--bitcoind.primary-url "${BITCOIND_URL}" \
+	--bitcoind.primary-username "${BITCOIND_USER}" \
+	--bitcoind.primary-password "${BITCOIND_PWD}" \
 	--frost.min_signers 3 \
 	--frost.max_signers 3 \
 	--sync.num_snapshots_to_keep 3 \
@@ -800,9 +800,9 @@ start-non-fed-server-1:
 	--ws.api eth,net,trace,txpool,web3,rpc,admin \
 	-vvv \
 	--btc-network "${BITCOIND_NETWORK}" \
-	--bitcoind.primary_url "${BITCOIND_URL}" \
-	--bitcoind.primary_username "${BITCOIND_USER}" \
-	--bitcoind.primary_password "${BITCOIND_PWD}" \
+	--bitcoind.primary-url "${BITCOIND_URL}" \
+	--bitcoind.primary-username "${BITCOIND_USER}" \
+	--bitcoind.primary-password "${BITCOIND_PWD}" \
 	--p2p-secret-key "${NON_FED_1_DIR}/discovery-secret" \
 	--port 30306 \
 	--abci-port=56658 \
@@ -1033,9 +1033,9 @@ PROFILE_BTC_SERVER_ARGS := \
 	--toml ./bin/btc-server/config.toml \
 	--fee-rate-diff-percentage 30 \
 	--btc-network ${BITCOIND_NETWORK} \
-	--bitcoind.primary_url "${BITCOIND_URL}" \
-	--bitcoind.primary_username "${BITCOIND_USER}" \
-	--bitcoind.primary_password "${BITCOIND_PWD}" \
+	--bitcoind.primary-url "${BITCOIND_URL}" \
+	--bitcoind.primary-username "${BITCOIND_USER}" \
+	--bitcoind.primary-password "${BITCOIND_PWD}" \
 	--btc-signing-server-jwt-secret ${PROFILER_NODE_DIR}/bjwt.hex \
 	--fall-back-fee-rate-sat-per-vbyte 5
 
@@ -1067,9 +1067,9 @@ PROFILER_POA_SEVER_ARGS := \
 	--btc-server localhost:${PROFILER_BTC_SERVER_PORT} \
 	--btc-network ${BITCOIND_NETWORK} \
 	--btc-signing-server-jwt-secret ${PROFILER_NODE_DIR}/bjwt.hex \
-	--bitcoind.primary_url "${BITCOIND_URL}" \
-	--bitcoind.primary_username "${BITCOIND_USER}" \
-	--bitcoind.primary_password "${BITCOIND_PWD}" \
+	--bitcoind.primary-url "${BITCOIND_URL}" \
+	--bitcoind.primary-username "${BITCOIND_USER}" \
+	--bitcoind.primary-password "${BITCOIND_PWD}" \
 	--frost.min_signers ${PROFILER_FROST_MIN_SIGNERS} \
 	--frost.max_signers ${PROFILER_FROST_MAX_SIGNERS} \
 	--p2p-secret-key ${PROFILER_NODE_DIR}/discovery-secret \

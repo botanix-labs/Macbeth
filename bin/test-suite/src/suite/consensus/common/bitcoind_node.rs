@@ -1,4 +1,7 @@
-use super::{create_temp_working_directory, kill_process_at_port, Scope};
+use super::{
+    bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory},
+    create_temp_working_directory, kill_process_at_port, Scope,
+};
 use crate::{
     context::GlobalContext,
     suite::consensus::{
@@ -8,7 +11,6 @@ use crate::{
     utils::{generate_blocks, MIN_BLOCKS_COINBASE_MATURE},
 };
 use bitcoincore_rpc::RpcApi;
-use botanix_btc_wallet::bitcoind::{BitcoindClientFactory, BitcoindConfig, BitcoindFactory};
 use std::{fs, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
     process::{Child, Command},
