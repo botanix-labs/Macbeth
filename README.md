@@ -22,6 +22,10 @@
     </p>
 </div>
 
+## Note
+
+This repository will be superseded by the [botanix](https://github.com/botanix-labs/botanix) repository which is currently in development. This repository will be deprecated in Q1 2026. 
+
 # Running and Testing the Project
 
 1.  [Setting up nodes locally](./docs/local_setup.md)
