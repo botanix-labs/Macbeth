@@ -345,6 +345,122 @@ impl Db {
         Ok(())
     }
 
+    /// Retrieves a key package by multisig_id from the multi-key storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `multisig_id` - The u32 identifier for the multisig/federation.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Some(key_package))` if the key package is found.
+    /// Returns `Ok(None)` if the key package is not found.
+    /// Returns `Err` in case of deserialization or other errors.
+    pub fn get_key_package_by_id(
+        &self,
+        multisig_id: u32,
+    ) -> Result<Option<frost::keys::KeyPackage>, Error> {
+        let key = multisig_id.to_le_bytes();
+        if let Some(b) = self.key_packages.get(&key)? {
+            let ret = ciborium::from_reader::<frost::keys::KeyPackage, _>(b.as_ref())?;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Retrieves a public key package by multisig_id from the multi-key storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `multisig_id` - The u32 identifier for the multisig/federation.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Some(public_key_package))` if the public key package is found.
+    /// Returns `Ok(None)` if the public key package is not found.
+    /// Returns `Err` in case of deserialization or other errors.
+    pub fn get_public_key_package_by_id(
+        &self,
+        multisig_id: u32,
+    ) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
+        let key = multisig_id.to_le_bytes();
+        if let Some(b) = self.pubkey_packages.get(&key)? {
+            let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Sets a key package by multisig_id in the multi-key storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `multisig_id` - The u32 identifier for the multisig/federation.
+    /// * `key_package` - The `frost::keys::KeyPackage` to be stored.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the key package is successfully stored.
+    /// Returns `Err` in case of serialization or other errors.
+    pub fn set_key_package_by_id(
+        &self,
+        multisig_id: u32,
+        key_package: frost::keys::KeyPackage,
+    ) -> Result<(), Error> {
+        let key = multisig_id.to_le_bytes();
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&key_package, &mut bytes).expect("writing to buffer");
+
+        self.key_packages.insert(&key, &bytes[..])?;
+        Ok(())
+    }
+
+    /// Sets a public key package by multisig_id in the multi-key storage.
+    ///
+    /// # Arguments
+    ///
+    /// * `multisig_id` - The u32 identifier for the multisig/federation.
+    /// * `pk_package` - The `frost::keys::PublicKeyPackage` to be stored.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the public key package is successfully stored.
+    /// Returns `Err` in case of serialization or other errors.
+    pub fn set_pubkey_package_by_id(
+        &self,
+        multisig_id: u32,
+        pk_package: frost::keys::PublicKeyPackage,
+    ) -> Result<(), Error> {
+        let key = multisig_id.to_le_bytes();
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&pk_package, &mut bytes).expect("writing to buffer");
+
+        self.pubkey_packages.insert(&key, &bytes[..])?;
+        Ok(())
+    }
+
+    /// Lists all multisig_ids that have key packages stored.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Vec<u32>` containing all multisig_ids that have key packages.
+    /// Returns an empty vector if no key packages are found.
+    /// Returns `Err` in case of database errors.
+    pub fn list_multisig_ids(&self) -> Result<Vec<u32>, Error> {
+        let mut ids = Vec::new();
+        for res in self.key_packages.iter().keys() {
+            let key_bytes = res?;
+            if key_bytes.len() == 4 {
+                let id = u32::from_le_bytes(key_bytes.as_ref().try_into()?);
+                ids.push(id);
+            }
+        }
+        ids.sort();
+        Ok(ids)
+    }
+
     /// Exports the stored key packages as an encrypted, portable format.
     ///
     /// Creates an [`ExportedKeyPackage`] containing both the secret and public
@@ -2478,5 +2594,121 @@ mod tests {
         //
         assert_eq!(new_pk_package, origin_pk_package);
         assert_eq!(new_key_package, origin_key_package);
+    }
+
+    #[test]
+    fn test_set_and_get_key_package_by_id() {
+        let (db, _temp_dir) = setup_db();
+
+        // Generate key packages for multiple multisigs
+        let id = frost::Identifier::derive(0_u16.to_le_bytes().as_slice()).unwrap();
+        let (shares, pk_package) = trusted_dealer_setup(2, 3);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
+
+        // Store with multisig_id = 0
+        db.set_key_package_by_id(0, key_package.clone()).unwrap();
+        db.set_pubkey_package_by_id(0, pk_package.clone()).unwrap();
+
+        // Retrieve and verify
+        let retrieved_key = db.get_key_package_by_id(0).unwrap().unwrap();
+        let retrieved_pk = db.get_public_key_package_by_id(0).unwrap().unwrap();
+
+        assert_eq!(retrieved_key, key_package);
+        assert_eq!(retrieved_pk, pk_package);
+
+        // Non-existent multisig_id should return None
+        assert!(db.get_key_package_by_id(999).unwrap().is_none());
+        assert!(db.get_public_key_package_by_id(999).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_multiple_multisig_ids() {
+        let (db, _temp_dir) = setup_db();
+
+        // Generate key packages for multiple multisigs
+        let id = frost::Identifier::derive(0_u16.to_le_bytes().as_slice()).unwrap();
+        let (shares1, pk_package1) = trusted_dealer_setup(2, 3);
+        let key_package1 = frost::keys::KeyPackage::try_from(shares1[&id].clone()).unwrap();
+
+        let (shares2, pk_package2) = trusted_dealer_setup(3, 5);
+        let key_package2 = frost::keys::KeyPackage::try_from(shares2[&id].clone()).unwrap();
+
+        // Store with different multisig_ids
+        db.set_key_package_by_id(1, key_package1.clone()).unwrap();
+        db.set_pubkey_package_by_id(1, pk_package1.clone()).unwrap();
+
+        db.set_key_package_by_id(2, key_package2.clone()).unwrap();
+        db.set_pubkey_package_by_id(2, pk_package2.clone()).unwrap();
+
+        // Retrieve and verify both are correct
+        let retrieved_key1 = db.get_key_package_by_id(1).unwrap().unwrap();
+        let retrieved_pk1 = db.get_public_key_package_by_id(1).unwrap().unwrap();
+        assert_eq!(retrieved_key1, key_package1);
+        assert_eq!(retrieved_pk1, pk_package1);
+
+        let retrieved_key2 = db.get_key_package_by_id(2).unwrap().unwrap();
+        let retrieved_pk2 = db.get_public_key_package_by_id(2).unwrap().unwrap();
+        assert_eq!(retrieved_key2, key_package2);
+        assert_eq!(retrieved_pk2, pk_package2);
+    }
+
+    #[test]
+    fn test_list_multisig_ids() {
+        let (db, _temp_dir) = setup_db();
+
+        // Empty list initially
+        let ids = db.list_multisig_ids().unwrap();
+        assert!(ids.is_empty());
+
+        // Generate and store key packages with different multisig_ids
+        let id = frost::Identifier::derive(0_u16.to_le_bytes().as_slice()).unwrap();
+        let (shares, _pk_package) = trusted_dealer_setup(2, 3);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
+
+        // Add in non-sequential order
+        db.set_key_package_by_id(10, key_package.clone()).unwrap();
+        db.set_key_package_by_id(5, key_package.clone()).unwrap();
+        db.set_key_package_by_id(1, key_package.clone()).unwrap();
+
+        // List should be sorted
+        let ids = db.list_multisig_ids().unwrap();
+        assert_eq!(ids, vec![1, 5, 10]);
+    }
+
+    #[test]
+    fn test_old_and_new_methods_dont_interfere() {
+        let (db, _temp_dir) = setup_db();
+
+        // Generate key packages
+        let id = frost::Identifier::derive(0_u16.to_le_bytes().as_slice()).unwrap();
+        let (shares1, pk_package1) = trusted_dealer_setup(2, 3);
+        let key_package1 = frost::keys::KeyPackage::try_from(shares1[&id].clone()).unwrap();
+
+        let (shares2, pk_package2) = trusted_dealer_setup(3, 5);
+        let key_package2 = frost::keys::KeyPackage::try_from(shares2[&id].clone()).unwrap();
+
+        // Store using old methods (single key)
+        db.set_key_package(key_package1.clone()).unwrap();
+        db.set_pubkey_package(pk_package1.clone()).unwrap();
+
+        // Store using new methods (multi-key)
+        db.set_key_package_by_id(0, key_package2.clone()).unwrap();
+        db.set_pubkey_package_by_id(0, pk_package2.clone()).unwrap();
+
+        // Old methods should still return the old data
+        let old_key = db.get_key_package().unwrap().unwrap();
+        let old_pk = db.get_public_key_package().unwrap().unwrap();
+        assert_eq!(old_key, key_package1);
+        assert_eq!(old_pk, pk_package1);
+
+        // New methods should return the new data
+        let new_key = db.get_key_package_by_id(0).unwrap().unwrap();
+        let new_pk = db.get_public_key_package_by_id(0).unwrap().unwrap();
+        assert_eq!(new_key, key_package2);
+        assert_eq!(new_pk, pk_package2);
+
+        // They should be different
+        assert_ne!(old_key, new_key);
+        assert_ne!(old_pk, new_pk);
     }
 }
