@@ -37,6 +37,8 @@ const TREE_ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
 const TREE_ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const TREE_PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
+const TREE_KEY_PACKAGES: &[u8; 6] = b"keypks";
+const TREE_PUBKEY_PACKAGES: &[u8; 6] = b"pubpks";
 const TREE_PSBT: &[u8; 4] = b"psbt";
 const TREE_FINALIZED_PEGOUT_IDS: &[u8; 4] = b"pids";
 /// sled tree id for the pending txs
@@ -169,6 +171,16 @@ pub struct Db {
     ///
     /// Indexed by the [PegoutRequest::id] inspector.
     pending_pegouts: sled::Tree,
+
+    /// A tree of FROST secret key packages (multi-key format).
+    ///
+    /// Indexed by multisig_id (u32).
+    key_packages: sled::Tree,
+
+    /// A tree of FROST public key packages (multi-key format).
+    ///
+    /// Indexed by multisig_id (u32).
+    pubkey_packages: sled::Tree,
 }
 
 impl Db {
@@ -182,6 +194,8 @@ impl Db {
             tracked_txs: db.open_tree(TREE_TRACKED_TXS)?,
             pending_pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
             finalized_pegout_ids: db.open_tree(TREE_FINALIZED_PEGOUT_IDS)?,
+            key_packages: db.open_tree(TREE_KEY_PACKAGES)?,
+            pubkey_packages: db.open_tree(TREE_PUBKEY_PACKAGES)?,
             db,
         })
     }
@@ -195,6 +209,8 @@ impl Db {
         self.tracked_txs.flush()?;
         self.pending_pegouts.flush()?;
         self.finalized_pegout_ids.flush()?;
+        self.key_packages.flush()?;
+        self.pubkey_packages.flush()?;
         Ok(())
     }
 
