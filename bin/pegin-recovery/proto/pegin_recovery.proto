@@ -16,8 +16,8 @@ service PeginRecoveryService {
 message Empty {}
 
 message ImportKeyShareRequest {
-    // Identifier for the multisig (arbitrary bytes, e.g., "mainnet_v1")
-    bytes multisig_id = 1;
+    // Identifier for the multisig
+    uint32 multisig_id = 1;
     
     // FROST identifier serialized as 32 bytes (u16 index -> frost::Identifier::derive)
     bytes frost_identifier = 2;
@@ -43,7 +43,7 @@ message RecoverPeginRequest {
     uint32 vout = 3;
     string eth_address = 4;
     string signature = 5;
-    bytes multisig_id = 6;
+    uint32 multisig_id = 6;
 }
 
 message RecoverPeginResponse {

@@ -339,7 +339,7 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         request: Request<ImportKeyShareRequest>,
     ) -> Result<Response<Empty>, Status> {
         let req = request.into_inner();
-        info!("ImportKeyShare requested - multisig_id: {} bytes", req.multisig_id.len());
+        info!("ImportKeyShare requested - multisig_id: {}", req.multisig_id);
 
         // Deserialize the FROST identifier
         let frost_identifier = frost::Identifier::deserialize(
@@ -367,7 +367,7 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
         // Import the key
         self.db
             .import_from_btc_server(
-                &req.multisig_id,
+                req.multisig_id,
                 frost_identifier,
                 zeroize::Zeroizing::new(req.passphrase),
                 export,
@@ -384,30 +384,22 @@ impl PeginRecoveryService for PeginRecoveryServiceImpl {
     ) -> Result<Response<RecoverPeginResponse>, Status> {
         let req = request.into_inner();
         info!(
-            "RecoverPegin requested - destination: {}, txid: {}, vout: {}, multisig_id: {} bytes",
-            req.destination,
-            req.txid,
-            req.vout,
-            req.multisig_id.len()
+            "RecoverPegin requested - destination: {}, txid: {}, vout: {}, multisig_id: {}",
+            req.destination, req.txid, req.vout, req.multisig_id
         );
 
         let testnet = true; // TODO: get from config
-        let multisig_id = &req.multisig_id;
-
-        if multisig_id.is_empty() {
-            return Err(badarg!("multisig_id is required"));
-        }
 
         // Load key shares and public key package for this multisig
         let multisig_shares = self
             .db
-            .get_key_shares(multisig_id)
+            .get_key_shares(req.multisig_id)
             .map_err(|e| Status::internal(format!("Failed to get key shares: {}", e)))?
             .ok_or_else(|| badarg!("No key shares found for multisig_id"))?;
 
         let pk_package = self
             .db
-            .get_public_key_package(multisig_id)
+            .get_public_key_package(req.multisig_id)
             .map_err(|e| Status::internal(format!("Failed to get public key package: {}", e)))?
             .ok_or_else(|| badarg!("No public key package found for multisig_id"))?;
 

@@ -3,9 +3,9 @@
 pub struct Empty {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ImportKeyShareRequest {
-    /// Identifier for the multisig (arbitrary bytes, e.g., "mainnet_v1")
-    #[prost(bytes = "vec", tag = "1")]
-    pub multisig_id: ::prost::alloc::vec::Vec<u8>,
+    /// Identifier for the multisig
+    #[prost(uint32, tag = "1")]
+    pub multisig_id: u32,
     /// FROST identifier serialized as 32 bytes (u16 index -> frost::Identifier::derive)
     #[prost(bytes = "vec", tag = "2")]
     pub frost_identifier: ::prost::alloc::vec::Vec<u8>,
@@ -45,8 +45,8 @@ pub struct RecoverPeginRequest {
     pub eth_address: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
     pub signature: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "6")]
-    pub multisig_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "6")]
+    pub multisig_id: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecoverPeginResponse {
