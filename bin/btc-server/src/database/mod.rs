@@ -65,6 +65,9 @@ const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
 /// Sliding window duration in seconds (90 days)
 const RETENTION_WINDOW_SECONDS: u64 = 90 * 24 * 60 * 60;
 
+/// Multisig id reserved for the legacy (pre-dynafed) key package.
+const LEGACY_MULTISIG_ID: u32 = 0;
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
     // This is skipped during serialization because the db key is the outpoint so its redundant.
@@ -459,6 +462,46 @@ impl Db {
         }
         ids.sort();
         Ok(ids)
+    }
+
+    /// Migrates legacy single-key storage to new multi-key storage format.
+    ///
+    /// Checks if key packages exist in the old storage location and migrates them
+    /// to the new multi-key storage trees with `multisig_id = 0`. Skips if already
+    /// migrated or no legacy keys found.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(true)` if migration was performed.
+    /// Returns `Ok(false)` if migration was skipped.
+    /// Returns `Err` in case of database or serialization errors.
+    pub fn migrate_legacy_key_package(&self) -> Result<bool, Error> {
+        // Check if new format already has key at multisig_id = 0
+        if self.get_key_package_by_id(LEGACY_MULTISIG_ID)?.is_some() {
+            info!(
+                "Key migration skipped: key already exists in new multi-key format (multisig_id={})",
+                LEGACY_MULTISIG_ID
+            );
+            return Ok(false);
+        }
+
+        // Check if old format has keys using existing methods
+        let legacy_key_package = self.get_key_package()?;
+        let legacy_pubkey_package = self.get_public_key_package()?;
+
+        if let (Some(key_package), Some(pk_package)) = (legacy_key_package, legacy_pubkey_package) {
+            info!("Starting key package migration from legacy single-key to multi-key format...");
+
+            // Store in new format with multisig_id = 0
+            self.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package)?;
+            self.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)?;
+
+            info!("Key package migration completed successfully: legacy key migrated to multisig_id={}", LEGACY_MULTISIG_ID);
+            Ok(true)
+        } else {
+            warn!("Key migration skipped: legacy key package or public key package not found");
+            Ok(false)
+        }
     }
 
     /// Exports the stored key packages as an encrypted, portable format.
@@ -2710,5 +2753,71 @@ mod tests {
         // They should be different
         assert_ne!(old_key, new_key);
         assert_ne!(old_pk, new_pk);
+    }
+
+    #[test]
+    fn test_migrate_legacy_key_package() {
+        let (db, _temp_dir) = setup_db();
+
+        // Generate key packages
+        let id = frost::Identifier::derive(0_u16.to_le_bytes().as_slice()).unwrap();
+        let (shares, pk_package) = trusted_dealer_setup(2, 3);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
+
+        // Store using old methods (simulating legacy production data)
+        db.set_key_package(key_package.clone()).unwrap();
+        db.set_pubkey_package(pk_package.clone()).unwrap();
+
+        // Verify old storage has data
+        assert!(db.get_key_package().unwrap().is_some());
+        assert!(db.get_public_key_package().unwrap().is_some());
+
+        // Verify new storage is empty
+        assert!(db.get_key_package_by_id(0).unwrap().is_none());
+        assert!(db.get_public_key_package_by_id(0).unwrap().is_none());
+
+        // Run migration
+        let migrated = db.migrate_legacy_key_package().unwrap();
+        assert!(migrated, "Migration should have been performed");
+
+        // Verify new storage now has the data at multisig_id = 0
+        let migrated_key = db.get_key_package_by_id(0).unwrap().unwrap();
+        let migrated_pk = db.get_public_key_package_by_id(0).unwrap().unwrap();
+        assert_eq!(migrated_key, key_package);
+        assert_eq!(migrated_pk, pk_package);
+
+        // Old storage should still have data (non-destructive migration)
+        assert!(db.get_key_package().unwrap().is_some());
+        assert!(db.get_public_key_package().unwrap().is_some());
+
+        // Running migration again should skip (idempotent)
+        let migrated_again = db.migrate_legacy_key_package().unwrap();
+        assert!(!migrated_again, "Second migration should be skipped");
+    }
+
+    #[test]
+    fn test_migrate_legacy_key_package_no_legacy_data() {
+        let (db, _temp_dir) = setup_db();
+
+        // No legacy data, no new data - migration should be skipped
+        let migrated = db.migrate_legacy_key_package().unwrap();
+        assert!(!migrated, "Migration should be skipped when no legacy data exists");
+    }
+
+    #[test]
+    fn test_migrate_legacy_key_package_incomplete_legacy_data() {
+        let (db, _temp_dir) = setup_db();
+
+        // Generate only key package, not public key (incomplete legacy data)
+        let id = frost::Identifier::derive(0_u16.to_le_bytes().as_slice()).unwrap();
+        let (shares, _pk_package) = trusted_dealer_setup(2, 3);
+        let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
+
+        // Store only key package (incomplete)
+        db.set_key_package(key_package).unwrap();
+
+        // Migration should be skipped due to incomplete data
+        let migrated = db.migrate_legacy_key_package().unwrap();
+        assert!(!migrated, "Migration should be skipped when legacy data is incomplete");
     }
 }
