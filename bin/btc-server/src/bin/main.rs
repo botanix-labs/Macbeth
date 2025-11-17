@@ -356,6 +356,12 @@ where
         let config = config.clone();
         let db = database::Db::open(&config.db).expect("failed to open db");
 
+        // Migrate legacy single-key storage to multi-key format if needed, in preparation for
+        // dynafed.
+        if let Err(e) = db.migrate_legacy_key_package() {
+            warn!("Failed to migrate legacy key packages: {}", e);
+        }
+
         // Prepare our Frost Id.
         let frost_identifier =
             frost::Identifier::derive(config.identifier.to_le_bytes().as_slice())

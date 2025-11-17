@@ -477,7 +477,9 @@ impl Db {
     /// Returns `Err` in case of database or serialization errors.
     pub fn migrate_legacy_key_package(&self) -> Result<bool, Error> {
         // Check if new format already has key at multisig_id = 0
-        if self.get_key_package_by_id(LEGACY_MULTISIG_ID)?.is_some() {
+        if self.get_key_package_by_id(LEGACY_MULTISIG_ID)?.is_some() &&
+            self.get_public_key_package_by_id(LEGACY_MULTISIG_ID)?.is_some()
+        {
             info!(
                 "Key migration skipped: key already exists in new multi-key format (multisig_id={})",
                 LEGACY_MULTISIG_ID
