@@ -134,6 +134,8 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
     .await
     .map_err(Error::ServerConnect)?;
 
+    let test_multisig_id = 1u32;
+
     //import keyshare packcage for each exported federation member key package
     for (index, db_path) in fed_key_package_paths.iter().enumerate() {
         let frost_identifier = frost::Identifier::derive((index as u16).to_le_bytes().as_slice())
@@ -152,7 +154,7 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
         client
             .clone()
             .import_key_share(tonic::Request::new(pegin_recovery_client::ImportKeyShareRequest {
-                multisig_id: gateway_address_response.aggregate_public_key.as_bytes().to_vec(),
+                multisig_id: test_multisig_id,
                 frost_identifier,
                 passphrase: "test_passphrase".to_string(),
                 export: Some(pegin_recovery_client::ExportedKeyPackage {
@@ -178,7 +180,7 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
             vout: vout as u32,
             eth_address: format!("0x{:x}", eth_destination),
             signature: "test_signature".to_string(),
-            multisig_id: gateway_address_response.aggregate_public_key.as_bytes().to_vec(),
+            multisig_id: test_multisig_id,
         }))
         .await
         .map_err(Error::Request)?;

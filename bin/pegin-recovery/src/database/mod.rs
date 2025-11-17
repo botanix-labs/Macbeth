@@ -53,8 +53,9 @@ impl Db {
         Ok(())
     }
 
-    pub fn get_key_shares(&self, multisig_id: &[u8]) -> Result<Option<MultisigKeyShares>, Error> {
-        if let Some(b) = self.key_shares.get(multisig_id)? {
+    pub fn get_key_shares(&self, multisig_id: u32) -> Result<Option<MultisigKeyShares>, Error> {
+        let multisig_id_bytes = multisig_id.to_be_bytes();
+        if let Some(b) = self.key_shares.get(&multisig_id_bytes)? {
             let shares = ciborium::from_reader::<MultisigKeyShares, _>(b.as_ref())?;
             Ok(Some(shares))
         } else {
@@ -63,20 +64,17 @@ impl Db {
     }
 
     /// Overwrites any existing shares for this multisig.
-    pub fn set_key_shares(
-        &self,
-        multisig_id: &[u8],
-        shares: MultisigKeyShares,
-    ) -> Result<(), Error> {
+    pub fn set_key_shares(&self, multisig_id: u32, shares: MultisigKeyShares) -> Result<(), Error> {
+        let multisig_id_bytes = multisig_id.to_be_bytes();
         let mut bytes = Vec::new();
         ciborium::into_writer(&shares, &mut bytes).expect("writing to buffer");
-        self.key_shares.insert(multisig_id, &bytes[..])?;
+        self.key_shares.insert(&multisig_id_bytes, &bytes[..])?;
         Ok(())
     }
 
     pub fn add_key_share(
         &self,
-        multisig_id: &[u8],
+        multisig_id: u32,
         node_id: &[u8],
         key_package: frost::keys::KeyPackage,
     ) -> Result<(), Error> {
@@ -90,7 +88,7 @@ impl Db {
 
     pub fn get_key_share(
         &self,
-        multisig_id: &[u8],
+        multisig_id: u32,
         node_id: &[u8],
     ) -> Result<Option<frost::keys::KeyPackage>, Error> {
         if let Some(multisig_shares) = self.get_key_shares(multisig_id)? {
@@ -103,9 +101,10 @@ impl Db {
     /// Get the public key package for a given multisig.
     pub fn get_public_key_package(
         &self,
-        multisig_id: &[u8],
+        multisig_id: u32,
     ) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
-        if let Some(b) = self.public_key_packages.get(multisig_id)? {
+        let multisig_id_bytes = multisig_id.to_be_bytes();
+        if let Some(b) = self.public_key_packages.get(&multisig_id_bytes)? {
             let pk_package = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
             Ok(Some(pk_package))
         } else {
@@ -116,12 +115,13 @@ impl Db {
     /// Set the public key package for a given multisig.
     pub fn set_public_key_package(
         &self,
-        multisig_id: &[u8],
+        multisig_id: u32,
         pk_package: frost::keys::PublicKeyPackage,
     ) -> Result<(), Error> {
+        let multisig_id_bytes = multisig_id.to_be_bytes();
         let mut bytes = Vec::new();
         ciborium::into_writer(&pk_package, &mut bytes).expect("writing to buffer");
-        self.public_key_packages.insert(multisig_id, &bytes[..])?;
+        self.public_key_packages.insert(&multisig_id_bytes, &bytes[..])?;
         Ok(())
     }
 
@@ -129,7 +129,7 @@ impl Db {
     /// Uses the same crypto (Merlin + ChaCha20Poly1305) as btc-server for compatibility.
     pub fn import_from_btc_server(
         &self,
-        multisig_id: &[u8],
+        multisig_id: u32,
         node_identifier: frost::Identifier,
         passphrase: Zeroizing<String>,
         export: ExportedKeyPackage,
@@ -224,7 +224,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
 
-        let multisig_id = b"test_multisig_1";
+        let multisig_id = 1u32;
         let node_id = frost::Identifier::try_from(1u16).unwrap().serialize();
         let key_package = create_test_key_package(1);
 
@@ -242,7 +242,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
 
-        let multisig_id = b"test_multisig_2";
+        let multisig_id = 2u32;
         let node_id_1 = frost::Identifier::try_from(1u16).unwrap().serialize();
         let node_id_2 = frost::Identifier::try_from(2u16).unwrap().serialize();
         let node_id_3 = frost::Identifier::try_from(3u16).unwrap().serialize();
@@ -275,7 +275,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
 
-        let multisig_id = b"test_multisig_3";
+        let multisig_id = 3u32;
         let node_id = frost::Identifier::try_from(1u16).unwrap().serialize();
         let key_package_1 = create_test_key_package(1);
         let key_package_2 = create_test_key_package(2);
@@ -300,7 +300,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
 
-        let multisig_id = b"nonexistent_multisig";
+        let multisig_id = 999u32;
         let node_id = frost::Identifier::try_from(1u16).unwrap().serialize();
 
         // Try to get a key share that doesn't exist
@@ -313,7 +313,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
 
-        let multisig_id = b"test_multisig_7";
+        let multisig_id = 7u32;
         let node_id = frost::Identifier::try_from(1u16).unwrap().serialize();
         let key_package = create_test_key_package(1);
 
@@ -360,13 +360,13 @@ mod tests {
             btc_db.set_pubkey_package(pk_package.clone()).unwrap();
 
             // Export
-            let export = btc_db.export_key_package(passphrase.clone()).unwrap().unwrap();
+            let export = btc_db.export_key_package_by_id(multisig_id, passphrase.clone()).unwrap().unwrap();
             (export, pk_package)
         };
 
         // Import into pegin-recovery
         let recovery_db = Db::open(temp_dir_recovery.path()).unwrap();
-        let multisig_id = b"imported_multisig";
+        let multisig_id = 100u32;
         let node_identifier = frost::Identifier::try_from(1u16).unwrap();
 
         recovery_db
@@ -388,7 +388,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db = Db::open(temp_dir.path()).unwrap();
 
-        let multisig_id = b"test_multisig_pk";
+        let multisig_id = 200u32;
 
         // Create a test public key package
         use frost::rand_core::OsRng;
@@ -423,8 +423,8 @@ mod tests {
         let mut rng = OsRng;
 
         // Create two different multisigs with different public key packages
-        let multisig_id_1 = b"multisig_1";
-        let multisig_id_2 = b"multisig_2";
+        let multisig_id_1 = 300u32;
+        let multisig_id_2 = 301u32;
 
         let (_, pk_package_1) =
             frost::keys::generate_with_dealer(3, 2, frost::keys::IdentifierList::Default, &mut rng)
