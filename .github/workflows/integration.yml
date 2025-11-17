@@ -37,7 +37,7 @@ concurrency:
 jobs:
   build:
     name: build test binaries
-    runs-on: ubuntu-latest
+    runs-on: k8-runners
     env:
       RUST_BACKTRACE: 1
     timeout-minutes: 30
