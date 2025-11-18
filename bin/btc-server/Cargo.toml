@@ -21,6 +21,9 @@ path = "src/bin/utils.rs"
 [features]
 default = []
 
+[lints.rust]
+deprecated = "allow"
+
 [dependencies]
 actix-cors = "0.7.0"
 actix-server = "2.5.0"
