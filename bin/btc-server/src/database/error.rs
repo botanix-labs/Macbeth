@@ -42,6 +42,8 @@ pub enum Error {
     /// Related to [`super::ExportedKeyPackage`].
     #[error("Bad exported package format version")]
     BadExportedPackageFormatVersion,
+    #[error("Invalid multisig_id key length in database: expected 4 bytes, got {0} bytes")]
+    InvalidMultisigIdKeyLength(usize),
 }
 
 impl PartialEq for Error {

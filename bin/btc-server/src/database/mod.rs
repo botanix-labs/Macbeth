@@ -450,15 +450,16 @@ impl Db {
     ///
     /// Returns a `Vec<u32>` containing all multisig_ids that have key packages.
     /// Returns an empty vector if no key packages are found.
-    /// Returns `Err` in case of database errors.
+    /// Returns `Err` in case of database errors or invalid key lengths.
     pub fn list_multisig_ids(&self) -> Result<Vec<u32>, Error> {
         let mut ids = Vec::new();
         for res in self.key_packages.iter().keys() {
             let key_bytes = res?;
-            if key_bytes.len() == 4 {
-                let id = u32::from_le_bytes(key_bytes.as_ref().try_into()?);
-                ids.push(id);
+            if key_bytes.len() != 4 {
+                return Err(Error::InvalidMultisigIdKeyLength(key_bytes.len()));
             }
+            let id = u32::from_le_bytes(key_bytes.as_ref().try_into()?);
+            ids.push(id);
         }
         ids.sort();
         Ok(ids)
