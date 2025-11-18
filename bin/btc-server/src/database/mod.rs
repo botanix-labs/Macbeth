@@ -37,8 +37,8 @@ const TREE_ROUND1_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r1dkg";
 const TREE_ROUND2_DKG_PERSONAL_PACKAGE: &[u8; 5] = b"r2dkg";
 const TREE_PUBKEY_PACKAGE: &[u8; 5] = b"pubpk";
 const TREE_KEY_PACKAGE: &[u8; 5] = b"keypk";
-const TREE_KEY_PACKAGES: &[u8; 6] = b"keypks";
-const TREE_PUBKEY_PACKAGES: &[u8; 6] = b"pubpks";
+const TREE_MULTI_KEY_PACKAGES: &[u8; 6] = b"keypks";
+const TREE_MULTI_PUBKEY_PACKAGES: &[u8; 6] = b"pubpks";
 const TREE_PSBT: &[u8; 4] = b"psbt";
 const TREE_FINALIZED_PEGOUT_IDS: &[u8; 4] = b"pids";
 /// sled tree id for the pending txs
@@ -197,8 +197,8 @@ impl Db {
             tracked_txs: db.open_tree(TREE_TRACKED_TXS)?,
             pending_pegouts: db.open_tree(TREE_PENDING_PEGOUTS)?,
             finalized_pegout_ids: db.open_tree(TREE_FINALIZED_PEGOUT_IDS)?,
-            key_packages: db.open_tree(TREE_KEY_PACKAGES)?,
-            pubkey_packages: db.open_tree(TREE_PUBKEY_PACKAGES)?,
+            key_packages: db.open_tree(TREE_MULTI_KEY_PACKAGES)?,
+            pubkey_packages: db.open_tree(TREE_MULTI_PUBKEY_PACKAGES)?,
             db,
         })
     }
@@ -277,6 +277,28 @@ impl Db {
         }
     }
 
+    /// Retrieves the legacy (pre-DynaFed)public key package stored in the database, if available.
+    pub fn get_legacy_public_key_package(
+        &self,
+    ) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
+        if let Some(b) = self.db.get(TREE_PUBKEY_PACKAGE)? {
+            let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Retrieves the legacy (pre-DynaFed) key package stored in the database, if available.
+    pub fn get_legacy_key_package(&self) -> Result<Option<frost::keys::KeyPackage>, Error> {
+        if let Some(b) = self.db.get(TREE_KEY_PACKAGE)? {
+            let ret = ciborium::from_reader::<frost::keys::KeyPackage, _>(b.as_ref())?;
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Retrieves the public key package stored in the database, if available.
     ///
     /// # Returns
@@ -284,13 +306,9 @@ impl Db {
     /// Returns `Ok(Some(public_key_package))` if the public key package is found in the database.
     /// Returns `Ok(None)` if the public key package is not found.
     /// Returns `Err` in case of deserialization or other errors.
+    #[deprecated(note = "use fn get_public_key_package_by_id")]
     pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
-        if let Some(b) = self.db.get(TREE_PUBKEY_PACKAGE)? {
-            let ret = ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(b.as_ref())?;
-            Ok(Some(ret))
-        } else {
-            Ok(None)
-        }
+        self.get_public_key_package_by_id(LEGACY_MULTISIG_ID)
     }
 
     /// Retrieves the key package stored in the database, if available.
@@ -300,13 +318,9 @@ impl Db {
     /// Returns `Ok(Some(key_package))` if the key package is found in the database.
     /// Returns `Ok(None)` if the key package is not found.
     /// Returns `Err` in case of deserialization or other errors.
+    #[deprecated(note = "use fn get_key_package_by_id")]
     pub fn get_key_package(&self) -> Result<Option<frost::keys::KeyPackage>, Error> {
-        if let Some(b) = self.db.get(TREE_KEY_PACKAGE)? {
-            let ret = ciborium::from_reader::<frost::keys::KeyPackage, _>(b.as_ref())?;
-            Ok(Some(ret))
-        } else {
-            Ok(None)
-        }
+        self.get_key_package_by_id(LEGACY_MULTISIG_ID)
     }
 
     /// Sets the key package in the database.
@@ -319,12 +333,9 @@ impl Db {
     ///
     /// Returns `Ok(())` if the key package is successfully stored in the database.
     /// Returns `Err` in case of serialization or other errors.
+    #[deprecated(note = "use fn set_key_package_by_id")]
     pub fn set_key_package(&self, key_package: frost::keys::KeyPackage) -> Result<(), Error> {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&key_package, &mut bytes).expect("writing to buffer");
-
-        self.db.insert(TREE_KEY_PACKAGE, &bytes[..])?;
-        Ok(())
+        self.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package)
     }
 
     /// Sets the public key package in the database.
@@ -337,15 +348,12 @@ impl Db {
     ///
     /// Returns `Ok(())` if the public key package is successfully stored in the database.
     /// Returns `Err` in case of serialization or other errors.
+    #[deprecated(note = "use fn set_pubkey_package_by_id")]
     pub fn set_pubkey_package(
         &self,
         pk_package: frost::keys::PublicKeyPackage,
     ) -> Result<(), Error> {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&pk_package, &mut bytes).expect("writing to buffer");
-
-        self.db.insert(TREE_PUBKEY_PACKAGE, &bytes[..])?;
-        Ok(())
+        self.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
     }
 
     /// Retrieves a key package by multisig_id from the multi-key storage.
@@ -489,8 +497,8 @@ impl Db {
         }
 
         // Check if old format has keys using existing methods
-        let legacy_key_package = self.get_key_package()?;
-        let legacy_pubkey_package = self.get_public_key_package()?;
+        let legacy_key_package = self.get_legacy_key_package()?;
+        let legacy_pubkey_package = self.get_legacy_public_key_package()?;
 
         if let (Some(key_package), Some(pk_package)) = (legacy_key_package, legacy_pubkey_package) {
             info!("Starting key package migration from legacy single-key to multi-key format...");
