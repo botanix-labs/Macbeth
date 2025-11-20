@@ -8,6 +8,7 @@ pub mod test_e2e_peer_disconnect;
 pub mod test_frost_e2e;
 pub mod test_frost_e2e_signing_disconnect;
 pub mod test_mempool_gossip;
+pub mod test_pegin_recovery;
 pub mod test_pegin_v1;
 pub mod test_pending_pegouts;
 pub mod test_prevent_resigning_pegout;

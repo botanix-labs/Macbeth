@@ -15,6 +15,7 @@ members = [
     "bin/botanix-federation-utils",
     "bin/botanix-up",
     "bin/btc-server",
+    "bin/pegin-recovery",
     "bin/reth-bench/",
     "bin/reth/",
     "bin/test-suite",

@@ -30,4 +30,8 @@ pub enum Error {
     GatewayAddressNotAvailable,
     /// Latest Block Does Not Exist
     LatestBlockDoesNotExist,
+    /// Test Vector Export Error {0}
+    TestVectorExport(String),
+    /// Invalid Pegin Recovery Client port
+    InvalidPeginRecoveryClientPort,
 }
