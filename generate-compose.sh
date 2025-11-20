@@ -157,8 +157,6 @@ for i in $(seq 1 $NUM_NODES); do
     volumes:
       - $RELATIVE_CONFIG_PATH/$NODE_NAME/btc_server:/bitcoin-server/config
       - $RELATIVE_CONFIG_PATH/$NODE_NAME/btc_server/data:/bitcoin-server/data
-    ports:
-      - "$BTC_SERVER_PORT:8080"
     networks:
       botanix-local:
         ipv4_address: $BTC_SERVER_IP
