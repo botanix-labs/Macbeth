@@ -2607,8 +2607,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
 
         // Set key packages.
-        db.set_pubkey_package(pk_package.clone()).unwrap();
-        db.set_key_package(key_package.clone()).unwrap();
+        db.set_legacy_pubkey_package(pk_package.clone()).unwrap();
+        db.set_legacy_key_package(key_package.clone()).unwrap();
 
         let origin_pk_package = pk_package;
         let origin_key_package = key_package;
@@ -2729,41 +2729,29 @@ mod tests {
         assert_eq!(ids, vec![1, 5, 10]);
     }
 
-    #[test]
-    fn test_old_and_new_methods_dont_interfere() {
-        let (db, _temp_dir) = setup_db();
+    // Test-only helper methods to replicate the state of the database before dynafed.
+    impl Db {
+        pub fn set_legacy_key_package(
+            &self,
+            key_package: frost::keys::KeyPackage,
+        ) -> Result<(), Error> {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&key_package, &mut bytes).expect("writing to buffer");
 
-        // Generate key packages
-        let id = frost::Identifier::derive(0_u16.to_le_bytes().as_slice()).unwrap();
-        let (shares1, pk_package1) = trusted_dealer_setup(2, 3);
-        let key_package1 = frost::keys::KeyPackage::try_from(shares1[&id].clone()).unwrap();
+            self.db.insert(TREE_KEY_PACKAGE, &bytes[..])?;
+            Ok(())
+        }
 
-        let (shares2, pk_package2) = trusted_dealer_setup(3, 5);
-        let key_package2 = frost::keys::KeyPackage::try_from(shares2[&id].clone()).unwrap();
+        pub fn set_legacy_pubkey_package(
+            &self,
+            pk_package: frost::keys::PublicKeyPackage,
+        ) -> Result<(), Error> {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(&pk_package, &mut bytes).expect("writing to buffer");
 
-        // Store using old methods (single key)
-        db.set_key_package(key_package1.clone()).unwrap();
-        db.set_pubkey_package(pk_package1.clone()).unwrap();
-
-        // Store using new methods (multi-key)
-        db.set_key_package_by_id(0, key_package2.clone()).unwrap();
-        db.set_pubkey_package_by_id(0, pk_package2.clone()).unwrap();
-
-        // Old methods should still return the old data
-        let old_key = db.get_key_package().unwrap().unwrap();
-        let old_pk = db.get_public_key_package().unwrap().unwrap();
-        assert_eq!(old_key, key_package1);
-        assert_eq!(old_pk, pk_package1);
-
-        // New methods should return the new data
-        let new_key = db.get_key_package_by_id(0).unwrap().unwrap();
-        let new_pk = db.get_public_key_package_by_id(0).unwrap().unwrap();
-        assert_eq!(new_key, key_package2);
-        assert_eq!(new_pk, pk_package2);
-
-        // They should be different
-        assert_ne!(old_key, new_key);
-        assert_ne!(old_pk, new_pk);
+            self.db.insert(TREE_PUBKEY_PACKAGE, &bytes[..])?;
+            Ok(())
+        }
     }
 
     #[test]
@@ -2776,12 +2764,12 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
 
         // Store using old methods (simulating legacy production data)
-        db.set_key_package(key_package.clone()).unwrap();
-        db.set_pubkey_package(pk_package.clone()).unwrap();
+        db.set_legacy_key_package(key_package.clone()).unwrap();
+        db.set_legacy_pubkey_package(pk_package.clone()).unwrap();
 
         // Verify old storage has data
-        assert!(db.get_key_package().unwrap().is_some());
-        assert!(db.get_public_key_package().unwrap().is_some());
+        assert!(db.get_legacy_key_package().unwrap().is_some());
+        assert!(db.get_legacy_public_key_package().unwrap().is_some());
 
         // Verify new storage is empty
         assert!(db.get_key_package_by_id(0).unwrap().is_none());
@@ -2798,8 +2786,8 @@ mod tests {
         assert_eq!(migrated_pk, pk_package);
 
         // Old storage should still have data (non-destructive migration)
-        assert!(db.get_key_package().unwrap().is_some());
-        assert!(db.get_public_key_package().unwrap().is_some());
+        assert!(db.get_legacy_key_package().unwrap().is_some());
+        assert!(db.get_legacy_public_key_package().unwrap().is_some());
 
         // Running migration again should skip (idempotent)
         let migrated_again = db.migrate_legacy_key_package().unwrap();
@@ -2825,7 +2813,7 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
 
         // Store only key package (incomplete)
-        db.set_key_package(key_package).unwrap();
+        db.set_legacy_key_package(key_package).unwrap();
 
         // Migration should be skipped due to incomplete data
         let migrated = db.migrate_legacy_key_package().unwrap();
