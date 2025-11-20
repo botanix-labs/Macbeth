@@ -8,6 +8,7 @@ use bitcoin::Amount;
 use bitcoincore_rpc::RpcApi;
 use botanix_chainspec::constants::BOTANIX_TESTNET;
 use btcserverlib;
+use btcserverlib::database::LEGACY_MULTISIG_ID;
 use ethers::{prelude::Provider, providers::Http};
 use frost_secp256k1_tr as frost;
 use pegin_recovery_client;
@@ -253,6 +254,8 @@ fn export_key_packages_for_all_members(
                 &output_path.to_string_lossy(),
                 "--passphrase",
                 "test_passphrase",
+                "--multisig-id",
+                &LEGACY_MULTISIG_ID.to_string(),
             ])
             .output()
             .map_err(|e| {

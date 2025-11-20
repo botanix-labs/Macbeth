@@ -66,7 +66,7 @@ const TREE_PENDING_PEGOUTS: &[u8; 7] = b"pegouts";
 const RETENTION_WINDOW_SECONDS: u64 = 90 * 24 * 60 * 60;
 
 /// Multisig id reserved for the legacy (pre-dynafed) key package.
-const LEGACY_MULTISIG_ID: u32 = 0;
+pub const LEGACY_MULTISIG_ID: u32 = 0;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Utxo {
