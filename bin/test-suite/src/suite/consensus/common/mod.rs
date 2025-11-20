@@ -3,6 +3,7 @@ pub mod botanix_client;
 pub mod btc_server;
 pub mod comet_node;
 pub mod events;
+pub mod pegin_recovery_node;
 pub mod poa_node;
 pub mod rpc_node;
 
@@ -32,6 +33,7 @@ pub enum Scope {
     RpcNode(u16),
     PoaNode(u16),
     CometBFT(u16),
+    PeginRecovery(u16),
 }
 
 impl fmt::Display for Scope {
@@ -42,6 +44,7 @@ impl fmt::Display for Scope {
             Scope::RpcNode(id) => write!(f, "RpcNode-{}", id),
             Scope::PoaNode(id) => write!(f, "PoaNode-{}", id),
             Scope::CometBFT(id) => write!(f, "CometBFT-{}", id),
+            Scope::PeginRecovery(id) => write!(f, "PeginRecovery-{}", id),
         }
     }
 }
