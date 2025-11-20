@@ -1,10 +1,16 @@
 #!/bin/bash
 set -e
 
-NUM_NODES=${1:-3}
-OUTPUT_PATH=${2:-"docker-local"}
-CONFIG_PATH=${3:-"docker-local/configs"}
-PROJECT_PREFIX=${4:-"botanix"}
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
+
+NUM_NODES=${1:-${NUM_NODES:-3}}
+OUTPUT_PATH=${2:-${OUTPUT_PATH:-"docker-local"}}
+CONFIG_PATH=${3:-${CONFIG_PATH:-"docker-local/configs"}}
+PROJECT_PREFIX=${4:-${PROJECT_PREFIX:-"botanix"}}
 COMPOSE_FILE="$OUTPUT_PATH/docker-compose-generated.yml"
 
 
@@ -93,8 +99,8 @@ for i in $(seq 1 $NUM_NODES); do
     COMET_METRICS_PORT=$((26660 + NODE_INDEX * 100))
     COMET_P2P_PORT=$((26656 + NODE_INDEX * 100))
     ABCI_PORT=26658  # Fixed ABCI port for all nodes
-    FROST_MIN_SIGNERS=${FROST_MIN_SIGNERS:-2}
-    FROST_MAX_SIGNERS=${FROST_MAX_SIGNERS:-3}
+    MIN_SIGNERS=${MIN_SIGNERS:-2}
+    MAX_SIGNERS=${MAX_SIGNERS:-3}
     BLOCK_FEE_RECIPIENT_ADDRESS=${BLOCK_FEE_RECIPIENT_ADDRESS:-0xF27a6Ea4a1d5f7341Da7EDAaa47C5C933b738f4F}
 
     POA_IP="172.22.$i.1"
@@ -135,8 +141,8 @@ for i in $(seq 1 $NUM_NODES); do
       - --identifier=$NODE_INDEX
       - --address=0.0.0.0:8080
       - --db=/bitcoin-server/data/db
-      - --min-signers=$FROST_MIN_SIGNERS
-      - --max-signers=$FROST_MAX_SIGNERS
+      - --min-signers=$MIN_SIGNERS
+      - --max-signers=$MAX_SIGNERS
       - --toml=/bitcoin-server/config/config.toml
       - --fee-rate-diff-percentage=30
       - --bitcoind-url=http://bitcoin-core:18443
@@ -191,8 +197,8 @@ for i in $(seq 1 $NUM_NODES); do
       - --bitcoind.url=http://bitcoin-core:18443
       - --bitcoind.username=foo
       - --bitcoind.password=bar
-      - --frost.min_signers=$FROST_MIN_SIGNERS
-      - --frost.max_signers=$FROST_MAX_SIGNERS
+      - --frost.min_signers=$MIN_SIGNERS
+      - --frost.max_signers=$MAX_SIGNERS
       - --p2p-secret-key=/reth/botanix_testnet/config/discovery-secret
       - --port=30303
       - --btc-network=regtest
@@ -233,7 +239,6 @@ for i in $(seq 1 $NUM_NODES); do
       --p2p.persistent_peers='$NODE_PERSISTENT_PEERS'
       --p2p.laddr=tcp://0.0.0.0:26656
       --rpc.laddr=tcp://0.0.0.0:26657
-      --log_level="p2p:debug,state:debug,consensus:debug"
     volumes:
       - $RELATIVE_CONFIG_PATH/$NODE_NAME/cometbft:/cometbft:rw
     ports:

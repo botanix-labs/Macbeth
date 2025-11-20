@@ -1,16 +1,22 @@
 #!/bin/bash
 set -e
 
-# Default values
-NUM_NODES=3
-OUTPUT_PATH="docker-local"
-CONFIG_PATH="docker-local/configs"
-MIN_SIGNERS="2"
-MAX_SIGNERS="3"
-DOCKER_SUBNET="172.22.0.0/16"
-PROJECT_PREFIX="botanix"
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+    echo "Loading configuration from .env file..."
+    set -a
+    source .env
+    set +a
+fi
 
-# Parse arguments
+NUM_NODES=${NUM_NODES:-3}
+MIN_SIGNERS=${MIN_SIGNERS:-2}
+MAX_SIGNERS=${MAX_SIGNERS:-3}
+OUTPUT_PATH=${OUTPUT_PATH:-"docker-local"}
+CONFIG_PATH=${CONFIG_PATH:-"docker-local/configs"}
+DOCKER_SUBNET=${DOCKER_SUBNET:-"172.22.0.0/16"}
+PROJECT_PREFIX=${PROJECT_PREFIX:-"botanix"}
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         --num-nodes=*)
@@ -45,13 +51,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# defaults for min/max signers if not provided
-if [ -z "$MIN_SIGNERS" ]; then
-    MIN_SIGNERS=$NUM_NODES
-fi
-if [ -z "$MAX_SIGNERS" ]; then
-    MAX_SIGNERS=$NUM_NODES
-fi
 
 echo "Setting up local docker environment..."
 echo "  Nodes: $NUM_NODES"
@@ -62,16 +61,13 @@ echo "  Max Signers: $MAX_SIGNERS"
 echo "  Subnet: $DOCKER_SUBNET"
 echo ""
 
-# Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_PATH"
 
-# Clean up existing configs directory
 if [ -d "$CONFIG_PATH" ]; then
     echo "Cleaning existing config directory..."
     rm -rf "$CONFIG_PATH"
 fi
 
-# Run botanix-up to generate configs
 echo "Generating node configurations..."
 cargo run -p botanix-up -- \
     --num-nodes=$NUM_NODES \
@@ -84,7 +80,7 @@ cargo run -p botanix-up -- \
 echo ""
 echo "Configuration generated successfully in $CONFIG_PATH"
 
-# correct genesis.json mismatch (botanix-up generates different genesis files per node)
+
 echo "Fixing genesis.json files..."
 MASTER_GENESIS="$CONFIG_PATH/node-1/cometbft/config/genesis.json"
 if [ -f "$MASTER_GENESIS" ]; then
@@ -99,7 +95,6 @@ else
     echo "  Warning: Master genesis file not found"
 fi
 
-# correct persistent_peers in config.toml (botanix-up uses wrong hostnames)
 echo "Fixing persistent_peers in config.toml files..."
 for NODE_DIR in "$CONFIG_PATH"/node-*/cometbft/config; do
     if [ -f "$NODE_DIR/config.toml" ]; then
@@ -119,9 +114,9 @@ fi
 
 
 echo "Generating docker-compose.yml..."
-./generate-compose.sh $NUM_NODES $OUTPUT_PATH $CONFIG_PATH $PROJECT_PREFIX
+bash generate-compose.sh $NUM_NODES $OUTPUT_PATH $CONFIG_PATH $PROJECT_PREFIX
 
-# Generate bitcoin initialization script
+
 echo "Generating bitcoin initialization script..."
 cat > "$OUTPUT_PATH/init-bitcoin.sh" << 'INIT_SCRIPT'
 #!/bin/bash
