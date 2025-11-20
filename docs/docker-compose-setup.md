@@ -46,8 +46,8 @@ Before you begin, ensure you have the following installed on your system:
      brew install cometbft
 
      # Linux (download binary)
-     wget https://github.com/cometbft/cometbft/releases/download/v1.0.0/cometbft_1.0.0_linux_amd64.tar.gz
-     tar -xzf cometbft_1.0.0_linux_amd64.tar.gz
+     wget https://github.com/cometbft/cometbft/releases/download/v1.0.1/cometbft_1.0.1_linux_amd64.tar.gz
+     tar -xzf cometbft_1.0.1_linux_amd64.tar.gz
      sudo mv cometbft /usr/local/bin/
      ```
 
