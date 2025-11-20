@@ -529,6 +529,7 @@ impl Db {
     /// - Passphrase is combined with random salt (nonce) for key derivation resistance
     ///
     /// # Arguments
+    /// * `multisig_id` - The identifier for the multisig/federation (0 for pre-DynaFed).
     /// * `passphrase` - User-provided passphrase for encryption. Should be strong as it's the
     ///   primary protection for the exported keys.
     ///
@@ -536,27 +537,26 @@ impl Db {
     /// * `Ok(Some(export))` - Successfully created encrypted export
     /// * `Ok(None)` - No key packages available to export
     /// * `Err(_)` - Database error during key retrieval
-    pub fn export_key_package(
+    pub fn export_key_package_by_id(
         &self,
+        multisig_id: u32,
         passphrase: Zeroizing<String>,
     ) -> Result<Option<ExportedKeyPackage>, Error> {
-        let Some(key_package) = self.db.get(TREE_KEY_PACKAGE)? else {
+        let Some(key_package) = self.get_key_package_by_id(multisig_id)? else {
             return Ok(None);
         };
 
-        let Some(pk_package) = self.db.get(TREE_PUBKEY_PACKAGE)? else {
+        let Some(pk_package) = self.get_public_key_package_by_id(multisig_id)? else {
             return Ok(None);
         };
 
-        // Validate retrieved packages.
-        #[cfg(debug_assertions)]
-        {
-            ciborium::from_reader::<frost::keys::KeyPackage, _>(key_package.as_ref())
-                .expect("bad key package");
+        // Serialize the packages to bytes for encryption
+        let mut key_package_bytes = Vec::new();
+        ciborium::into_writer(&key_package, &mut key_package_bytes)
+            .expect("serialization to buffer");
 
-            ciborium::from_reader::<frost::keys::PublicKeyPackage, _>(pk_package.as_ref())
-                .expect("bad public key package");
-        }
+        let mut pk_package_bytes = Vec::new();
+        ciborium::into_writer(&pk_package, &mut pk_package_bytes).expect("serialization to buffer");
 
         // IMPORTANT: We randomly generate a single nonce, which is included in
         // the export and saved alongside the encrypted data in plaintext. Since
@@ -585,7 +585,7 @@ impl Db {
 
             ChaCha20Poly1305::new_from_slice(master.as_slice())
                 .expect("master key must be 32-bytes")
-                .encrypt(nonce, key_package.as_ref())
+                .encrypt(nonce, key_package_bytes.as_ref())
                 .expect("output buffer must be valid")
         };
 
@@ -599,7 +599,7 @@ impl Db {
 
             ChaCha20Poly1305::new_from_slice(master.as_mut_slice())
                 .expect("master key must be 32-bytes")
-                .encrypt(nonce, pk_package.as_ref())
+                .encrypt(nonce, pk_package_bytes.as_ref())
                 .expect("output buffer must be valid")
         };
 
@@ -613,6 +613,14 @@ impl Db {
         Ok(Some(export))
     }
 
+    #[deprecated(note = "use fn export_key_package_by_id")]
+    pub fn export_key_package(
+        &self,
+        passphrase: Zeroizing<String>,
+    ) -> Result<Option<ExportedKeyPackage>, Error> {
+        self.export_key_package_by_id(LEGACY_MULTISIG_ID, passphrase)
+    }
+
     /// Imports and validates an encrypted key package export.
     ///
     /// Decrypts an [`ExportedKeyPackage`] using the provided passphrase and
@@ -620,20 +628,23 @@ impl Db {
     /// validated by deserializing it into typed Rust structs, ensuring it's
     /// well-formed.
     ///
+    ///
     /// # Security Validation
     /// - Authenticated decryption prevents accepting tampered data
     /// - Deserialization validates the decrypted data structure
     /// - Wrong passphrase will cause decryption to fail
     ///
     /// # Arguments
+    /// * `multisig_id` - The u32 identifier for the multisig/federation.
     /// * `passphrase` - The same passphrase used during export
     /// * `export` - The encrypted key package export to import
     ///
     /// # Returns
     /// * `Ok(())` - Successfully imported and stored key packages
     /// * `Err(_)` - Decryption failed (wrong passphrase), malformed data, or database error
-    pub fn import_key_package(
+    pub fn import_key_package_by_id(
         &self,
+        multisig_id: u32,
         passphrase: Zeroizing<String>,
         export: ExportedKeyPackage,
     ) -> Result<(), Error> {
@@ -676,10 +687,19 @@ impl Db {
             ciborium::from_reader(b.as_slice())?
         };
 
-        self.set_key_package(key_package)?;
-        self.set_pubkey_package(pk_package)?;
+        self.set_key_package_by_id(multisig_id, key_package)?;
+        self.set_pubkey_package_by_id(multisig_id, pk_package)?;
 
         Ok(())
+    }
+
+    #[deprecated(note = "use fn import_key_package_by_id")]
+    pub fn import_key_package(
+        &self,
+        passphrase: Zeroizing<String>,
+        export: ExportedKeyPackage,
+    ) -> Result<(), Error> {
+        self.import_key_package_by_id(LEGACY_MULTISIG_ID, passphrase, export)
     }
 
     /// Adds a round 2 DKG package for a specific peer.
@@ -2598,7 +2618,7 @@ mod tests {
         let bad_pass = Zeroizing::new("bad_pass".to_string());
 
         // Key package does not exist yet.
-        let res = db.export_key_package(good_pass.clone()).unwrap();
+        let res = db.export_key_package_by_id(0, good_pass.clone()).unwrap();
         assert!(res.is_none());
 
         // Generate key packages.
@@ -2606,45 +2626,46 @@ mod tests {
         let (shares, pk_package) = trusted_dealer_setup(2, 3);
         let key_package = frost::keys::KeyPackage::try_from(shares[&id].clone()).unwrap();
 
-        // Set key packages.
-        db.set_legacy_pubkey_package(pk_package.clone()).unwrap();
-        db.set_legacy_key_package(key_package.clone()).unwrap();
+        // Set key packages using new storage format.
+        db.set_pubkey_package_by_id(0, pk_package.clone()).unwrap();
+        db.set_key_package_by_id(0, key_package.clone()).unwrap();
 
         let origin_pk_package = pk_package;
         let origin_key_package = key_package;
 
         // Each export creates a new nonce.
-        let mut export_1 = db.export_key_package(good_pass.clone()).unwrap().unwrap();
-        let export_2 = db.export_key_package(good_pass.clone()).unwrap().unwrap();
+        let mut export_1 = db.export_key_package_by_id(0, good_pass.clone()).unwrap().unwrap();
+        let export_2 = db.export_key_package_by_id(0, good_pass.clone()).unwrap().unwrap();
         //
         assert_ne!(export_1.iv, export_2.iv);
         assert_ne!(export_1, export_2);
 
-        let prev_key = db.db.remove(TREE_KEY_PACKAGE).unwrap();
-        let prev_pk = db.db.remove(TREE_PUBKEY_PACKAGE).unwrap();
-        assert!(prev_key.is_some());
-        assert!(prev_pk.is_some());
+        // Remove the key packages to test import.
+        db.key_packages.remove(&0u32.to_le_bytes()).unwrap();
+        db.pubkey_packages.remove(&0u32.to_le_bytes()).unwrap();
+        assert!(db.get_key_package_by_id(0).unwrap().is_none());
+        assert!(db.get_public_key_package_by_id(0).unwrap().is_none());
 
         // ERR: Bad password!
-        let err = db.import_key_package(bad_pass, export_1.clone()).unwrap_err();
+        let err = db.import_key_package_by_id(0, bad_pass, export_1.clone()).unwrap_err();
         assert_eq!(err, Error::BadDecryptionPassphrase);
 
         // ERR: Bad IV/nonce!
         export_1.iv = export_2.iv;
-        let err = db.import_key_package(good_pass.clone(), export_1.clone()).unwrap_err();
+        let err = db.import_key_package_by_id(0, good_pass.clone(), export_1.clone()).unwrap_err();
         assert_eq!(err, Error::BadDecryptionPassphrase);
 
         // ERR: Bad version indicator!
         export_1.version = u16::MAX;
-        let err = db.import_key_package(good_pass.clone(), export_1.clone()).unwrap_err();
+        let err = db.import_key_package_by_id(0, good_pass.clone(), export_1.clone()).unwrap_err();
         assert_eq!(err, Error::BadExportedPackageFormatVersion);
 
         // OK: Successful import with good passphrase and export package.
-        db.import_key_package(good_pass.clone(), export_2.clone()).unwrap();
+        db.import_key_package_by_id(0, good_pass.clone(), export_2.clone()).unwrap();
 
         // Sanity check.
-        let new_pk_package = db.get_public_key_package().unwrap().unwrap();
-        let new_key_package = db.get_key_package().unwrap().unwrap();
+        let new_pk_package = db.get_public_key_package_by_id(0).unwrap().unwrap();
+        let new_key_package = db.get_key_package_by_id(0).unwrap().unwrap();
         //
         assert_eq!(new_pk_package, origin_pk_package);
         assert_eq!(new_key_package, origin_key_package);
