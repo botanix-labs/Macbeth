@@ -41,6 +41,9 @@ pub struct ExportConfig {
     /// The path to the database containing key packages.
     #[arg(long)]
     pub db: PathBuf,
+    /// The multisig id to export the key package for.
+    #[arg(long)]
+    pub multisig_id: u32,
     /// Output file path for the encrypted export.
     #[arg(long)]
     pub output: PathBuf,
@@ -57,6 +60,9 @@ pub struct ImportConfig {
     /// The path to the database to store key packages.
     #[arg(long)]
     pub db: PathBuf,
+    /// The multisig id to import the key package for.
+    #[arg(long)]
+    pub multisig_id: u32,
     /// Input file path containing the encrypted export.
     #[arg(long)]
     pub input: PathBuf,
@@ -141,7 +147,7 @@ async fn main() -> anyhow::Result<(), anyhow::Error> {
             }
 
             // Create the encrypted export.
-            let Some(export) = db.export_key_package(passphrase)? else {
+            let Some(export) = db.export_key_package_by_id(c.multisig_id, passphrase)? else {
                 anyhow::bail!("No key package found - correct database path?");
             };
 
@@ -156,7 +162,7 @@ async fn main() -> anyhow::Result<(), anyhow::Error> {
             // NOTE: This creates a new database if it does not already exist...
             let db = database::Db::open(&c.db).expect("failed to open db");
 
-            if db.get_key_package()?.is_some() && !c.force_overwrite {
+            if db.get_key_package_by_id(c.multisig_id)?.is_some() && !c.force_overwrite {
                 anyhow::bail!(
                     "Existing key package may not be overwritten unless explicitly allowed"
                 )
@@ -173,7 +179,7 @@ async fn main() -> anyhow::Result<(), anyhow::Error> {
             // the database.
             let bytes = std::fs::read(&c.input)?;
             let import: database::ExportedKeyPackage = ciborium::from_reader(bytes.as_slice())?;
-            db.import_key_package(passphrase, import)?;
+            db.import_key_package_by_id(c.multisig_id, passphrase, import)?;
 
             println!("Successfully imported decrypted key package");
         }

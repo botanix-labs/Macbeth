@@ -7,7 +7,7 @@ use crate::{
 use bitcoin::Amount;
 use bitcoincore_rpc::RpcApi;
 use botanix_chainspec::constants::BOTANIX_TESTNET;
-use btcserverlib;
+use btcserverlib::{self, database::LEGACY_MULTISIG_ID};
 use ethers::{prelude::Provider, providers::Http};
 use frost_secp256k1_tr as frost;
 use pegin_recovery_client;
@@ -134,8 +134,6 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
     .await
     .map_err(Error::ServerConnect)?;
 
-    let test_multisig_id = 1u32;
-
     //import keyshare packcage for each exported federation member key package
     for (index, db_path) in fed_key_package_paths.iter().enumerate() {
         let frost_identifier = frost::Identifier::derive((index as u16).to_le_bytes().as_slice())
@@ -154,7 +152,7 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
         client
             .clone()
             .import_key_share(tonic::Request::new(pegin_recovery_client::ImportKeyShareRequest {
-                multisig_id: test_multisig_id,
+                multisig_id: LEGACY_MULTISIG_ID,
                 frost_identifier,
                 passphrase: "test_passphrase".to_string(),
                 export: Some(pegin_recovery_client::ExportedKeyPackage {
@@ -180,7 +178,7 @@ pub async fn test_pegin_recovery(suite: &mut ConsensusIntegrationTestSuite) -> a
             vout: vout as u32,
             eth_address: format!("0x{:x}", eth_destination),
             signature: "test_signature".to_string(),
-            multisig_id: test_multisig_id,
+            multisig_id: LEGACY_MULTISIG_ID,
         }))
         .await
         .map_err(Error::Request)?;
@@ -253,6 +251,8 @@ fn export_key_packages_for_all_members(
                 &output_path.to_string_lossy(),
                 "--passphrase",
                 "test_passphrase",
+                "--multisig-id",
+                &LEGACY_MULTISIG_ID.to_string(),
             ])
             .output()
             .map_err(|e| {
