@@ -51,7 +51,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -161,7 +161,7 @@ jobs:
       SCCACHE_GCS_KEY_PATH: "/tmp/gcs-key.json"
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: rui314/setup-mold@v1
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -304,7 +304,7 @@ jobs:
 #    #if: needs.semantic-release.outputs.new_release_published == 'true'
 #    steps:
 #      - name: Checkout
-#        uses: actions/checkout@v5
+#        uses: actions/checkout@v6
 #
 #      - name: Set up Docker Buildx
 #        uses: docker/setup-buildx-action@v3
@@ -390,7 +390,7 @@ jobs:
             package: reth
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -525,7 +525,7 @@ jobs:
     if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.PAT_TOKEN }}
           fetch-depth: 0
@@ -584,13 +584,13 @@ jobs:
     if: needs.semantic-release.outputs.new_release_published == 'true'
     steps:
       - name: Checkout Main Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout Public Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: botanix-labs/botanix-releases  # Replace with your public repo
           token: ${{ secrets.PAT_TOKEN }}
@@ -629,7 +629,7 @@ jobs:
     if: github.ref_name == 'main'
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.PAT_TOKEN }}
           fetch-depth: 0
