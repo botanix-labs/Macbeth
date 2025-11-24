@@ -110,3 +110,8 @@ ACT_TESTING.md
 
 # Botanix release files
 botanix/
+
+# Local development files
+docker-local/configs/
+docker-local/docker-compose-generated.yml
+docker-local/init-bitcoin.sh
