@@ -311,21 +311,6 @@ impl Db {
         self.get_public_key_package_by_id(LEGACY_MULTISIG_ID)
     }
 
-    /// Sets the key package in the database.
-    ///
-    /// # Arguments
-    ///
-    /// * `key_package` - The `frost::keys::KeyPackage` to be stored in the database.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if the key package is successfully stored in the database.
-    /// Returns `Err` in case of serialization or other errors.
-    #[deprecated(note = "use fn set_key_package_by_id")]
-    pub fn set_key_package(&self, key_package: frost::keys::KeyPackage) -> Result<(), Error> {
-        self.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package)
-    }
-
     /// Sets the public key package in the database.
     ///
     /// # Arguments

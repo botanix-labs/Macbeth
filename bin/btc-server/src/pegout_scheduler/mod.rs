@@ -1248,6 +1248,7 @@ mod tests {
     use std::sync::LazyLock;
 
     use crate::{
+        database::LEGACY_MULTISIG_ID,
         frost_id,
         test_utils::{
             create_block, create_random_pegout_id, create_tx, pegout_requests_from_tx,
@@ -1345,7 +1346,7 @@ mod tests {
             .expect("valid key package");
 
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let agg_pk =
             db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
@@ -1423,7 +1424,7 @@ mod tests {
             .expect("valid key package");
 
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let mut pegout_scheduler = PegoutScheduler::new(
             101,
@@ -1467,7 +1468,7 @@ mod tests {
             .expect("valid key package");
 
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let agg_pk =
             db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
@@ -1521,7 +1522,7 @@ mod tests {
             .expect("valid key package");
 
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let agg_pk =
             db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
@@ -1569,7 +1570,7 @@ mod tests {
             .expect("valid key package");
 
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let mut pegout_scheduler = PegoutScheduler::new(
             101,
@@ -1615,7 +1616,7 @@ mod tests {
             .expect("valid key package");
 
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
         let mut pegout_scheduler = PegoutScheduler::new(
             101,
             vec![],
@@ -1692,7 +1693,7 @@ mod tests {
             .expect("valid key package");
 
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
         let agg_pk =
             db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
         let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
@@ -1772,7 +1773,7 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let mut pegout_scheduler = PegoutScheduler::new(
             1,
@@ -1842,7 +1843,7 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
         db.set_pubkey_package(pk_package).expect("set public key package");
-        db.set_key_package(key_package).expect("set key package");
+        db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let mut pegout_scheduler = PegoutScheduler::new(
             101,

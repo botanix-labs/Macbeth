@@ -345,7 +345,7 @@ mod tests {
             let btc_db = BtcDb::open(temp_dir_btc.path()).unwrap();
 
             // Store key package in btc-server
-            btc_db.set_key_package(key_package.clone()).unwrap();
+            btc_db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).unwrap();
 
             // Create a dummy public key package (required for export)
             use frost::rand_core::OsRng;

@@ -2113,7 +2113,9 @@ where
         if let Some((sec_key, pub_key)) = dkg.machine.aggregate_key_packages() {
             if self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status()?.is_none() {
                 info!("DKG completed successfully, saving key packages...");
-                if let Err(e) = self.db.set_key_package(sec_key.clone()).to_status() {
+                if let Err(e) =
+                    self.db.set_key_package_by_id(LEGACY_MULTISIG_ID, sec_key.clone()).to_status()
+                {
                     if let Some(telemetry) = self.telemetry.as_ref() {
                         telemetry.update_dkg_error_metrics(
                             self.btc_network,
@@ -2871,7 +2873,9 @@ mod tests {
 
         // Add the key packages
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        app.db
+            .set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone())
+            .expect("set key package");
 
         // Add some pegin utxos
         let mut pegins = vec![];
@@ -2963,7 +2967,9 @@ mod tests {
 
         // Add the key packages
         app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        app.db
+            .set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone())
+            .expect("set key package");
 
         // Add some pegin utxos
         let mut pegins = vec![];
@@ -3248,7 +3254,9 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
             .expect("valid key package");
         app.db.set_pubkey_package(pk_package).expect("set public key package");
-        app.db.set_key_package(key_package.clone()).expect("set key package");
+        app.db
+            .set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone())
+            .expect("set key package");
         (app, key_package)
     }
 
