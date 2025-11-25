@@ -156,6 +156,19 @@ pub struct GetPublicKeyResponse {
     #[prost(string, tag = "1")]
     pub publickey: ::prost::alloc::string::String,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetPublicKeyByIdRequest {
+    #[prost(uint32, tag = "1")]
+    pub multisig_id: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPublicKeyByIdResponse {
+    /// hex encoded
+    #[prost(string, tag = "1")]
+    pub publickey: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub multisig_id: u32,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetGatewayAddressResponse {
     /// hex encoded
@@ -533,6 +546,30 @@ pub mod btc_server_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("btc_server.BtcServer", "GetPublicKey"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_public_key_by_id(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetPublicKeyByIdRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetPublicKeyByIdResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/btc_server.BtcServer/GetPublicKeyById",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("btc_server.BtcServer", "GetPublicKeyById"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_dkg_payloads(

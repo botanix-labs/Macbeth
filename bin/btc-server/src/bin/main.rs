@@ -23,7 +23,7 @@ use btcserverlib::{
     badarg,
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self},
-    database::{self},
+    database::{self, LEGACY_MULTISIG_ID},
     dkg,
     federation_args::FederationTomlConfig,
     frost_id, handle_signing_error,
@@ -671,6 +671,17 @@ where
     pub fn is_coordinator(&self) -> bool {
         let coordinator_id = self.config.coordinator.unwrap_or(DEFAULT_COORDINATOR_ID);
         self.config.identifier == coordinator_id
+    }
+
+    fn load_public_key(&self, multisig_id: u32) -> Result<String, tonic::Status> {
+        let key_package = self
+            .db
+            .get_public_key_package_by_id(multisig_id)
+            .to_status()?
+            .ok_or(badarg!("Missing key package"))?;
+
+        let pk = key_package.verifying_key();
+        Ok(hex::encode(pk.serialize().to_status()?))
     }
 }
 
@@ -1870,14 +1881,20 @@ where
         req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
-        // Ensure we have a key package
-        let key_package =
-            self.db.get_key_package().to_status()?.ok_or(badarg!("Missing key package"))?;
+        let publickey = self.load_public_key(LEGACY_MULTISIG_ID)?;
 
-        let pk = key_package.verifying_key();
-        let pk = hex::encode(pk.serialize().to_status()?);
+        Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey }))
+    }
 
-        return Ok(tonic::Response::new(rpc::GetPublicKeyResponse { publickey: pk }));
+    async fn get_public_key_by_id(
+        &self,
+        req: tonic::Request<rpc::GetPublicKeyByIdRequest>,
+    ) -> Result<tonic::Response<rpc::GetPublicKeyByIdResponse>, tonic::Status> {
+        self.validate_jwt(&req)?;
+        let multisig_id = req.into_inner().multisig_id;
+        let publickey = self.load_public_key(multisig_id)?;
+
+        Ok(tonic::Response::new(rpc::GetPublicKeyByIdResponse { publickey, multisig_id }))
     }
 
     async fn get_gateway_address(
@@ -2635,6 +2652,28 @@ mod tests {
         let res = app.get_public_key(req).await.unwrap_err();
         assert_eq!(res.code(), tonic::Code::InvalidArgument);
         assert_eq!(res.message(), "Missing key package");
+    }
+
+    #[tokio::test]
+    async fn test_get_public_key_by_id_success() {
+        let app = setup().await;
+
+        // Add the key package
+        let multisig_id = 1;
+        let (_, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
+        app.db
+            .set_pubkey_package_by_id(multisig_id, pk_package.clone())
+            .expect("set public key package");
+
+        // Test get_public_key_by_id
+        let req = tonic::Request::new(rpc::GetPublicKeyByIdRequest { multisig_id });
+        let response = app.get_public_key_by_id(req).await.expect("should succeed");
+        let inner = response.into_inner();
+
+        // Verify the returned key matches what we stored
+        assert_eq!(inner.multisig_id, multisig_id);
+        let expected_pk = hex::encode(pk_package.verifying_key().serialize().unwrap());
+        assert_eq!(inner.publickey, expected_pk);
     }
 
     #[tokio::test]
