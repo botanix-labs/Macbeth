@@ -598,7 +598,8 @@ mod tests {
             .expect("valid key package");
 
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -642,7 +643,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -697,7 +699,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -759,7 +762,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -792,7 +796,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -827,7 +832,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -865,7 +871,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -888,7 +895,8 @@ mod tests {
 
         let db = db_setup();
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         db.store_utxos(&[&utxo]).unwrap();
@@ -919,7 +927,8 @@ mod tests {
         // signatures
         let db = db_setup();
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         db.store_utxos(&[&utxo]).unwrap();
@@ -939,7 +948,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(0)].clone())
             .expect("valid key package");
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -984,7 +994,8 @@ mod tests {
         // Should fail with two signatures
         let db = db_setup();
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -1001,7 +1012,8 @@ mod tests {
         // Should fail ROUND2_TRANSITION since we haven't added other signers signing commit
         let db = db_setup();
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -1016,7 +1028,8 @@ mod tests {
         // Add other signing commit
         let db = db_setup();
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -1034,7 +1047,8 @@ mod tests {
         // than min_signers
         let db = db_setup();
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -1062,7 +1076,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1)].clone())
             .expect("valid key package");
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -1119,7 +1134,8 @@ mod tests {
             .expect("valid key package");
 
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         let pegout_id = store_pending_pegout(&db);
@@ -1163,7 +1179,8 @@ mod tests {
             .expect("valid key package");
 
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         // WARNING: Here we prepare a non-aggregated key package for the change output
@@ -1211,7 +1228,8 @@ mod tests {
             .expect("valid key package");
 
         // Add the key packages as they are needed by validate_outputs
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         // Create a base PSBT
@@ -1627,7 +1645,8 @@ mod tests {
             .expect("valid key package");
 
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         // store finalized pegout
@@ -1654,7 +1673,8 @@ mod tests {
             .expect("valid key package");
 
         // Add the key packages
-        db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone()).expect("set key package");
 
         // store finalized pegout

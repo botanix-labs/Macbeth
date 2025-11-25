@@ -1345,7 +1345,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
 
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let agg_pk =
@@ -1423,7 +1424,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
 
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let mut pegout_scheduler = PegoutScheduler::new(
@@ -1467,7 +1469,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
 
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let agg_pk =
@@ -1521,7 +1524,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
 
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let agg_pk =
@@ -1569,7 +1573,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
 
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let mut pegout_scheduler = PegoutScheduler::new(
@@ -1615,7 +1620,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
 
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
         let mut pegout_scheduler = PegoutScheduler::new(
             101,
@@ -1692,7 +1698,8 @@ mod tests {
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
 
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
         let agg_pk =
             db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
@@ -1772,7 +1779,8 @@ mod tests {
         let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let mut pegout_scheduler = PegoutScheduler::new(
@@ -1842,7 +1850,8 @@ mod tests {
         let (shares, pk_package) = trusted_dealer_setup(MIN_SIGNERS, MAX_SIGNERS);
         let key_package = frost::keys::KeyPackage::try_from(shares[&frost_id!(1u16)].clone())
             .expect("valid key package");
-        db.set_pubkey_package(pk_package).expect("set public key package");
+        db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
         let mut pegout_scheduler = PegoutScheduler::new(

@@ -2126,7 +2126,11 @@ where
                     return Err(e);
                 }
 
-                if let Err(e) = self.db.set_pubkey_package(pub_key.clone()).to_status() {
+                if let Err(e) = self
+                    .db
+                    .set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pub_key.clone())
+                    .to_status()
+                {
                     if let Some(telemetry) = self.telemetry.as_ref() {
                         telemetry.update_dkg_error_metrics(
                             self.btc_network,
@@ -2872,7 +2876,9 @@ mod tests {
             .expect("valid key package");
 
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db
+            .set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         app.db
             .set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone())
             .expect("set key package");
@@ -2966,7 +2972,9 @@ mod tests {
             .expect("valid key package");
 
         // Add the key packages
-        app.db.set_pubkey_package(pk_package.clone()).expect("set public key package");
+        app.db
+            .set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone())
+            .expect("set public key package");
         app.db
             .set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone())
             .expect("set key package");
@@ -3253,7 +3261,9 @@ mod tests {
         let (shares, pk_package) = trusted_dealer_setup(app.min_signers, app.max_signers);
         let key_package = frost::keys::KeyPackage::try_from(shares[&app.identifier].clone())
             .expect("valid key package");
-        app.db.set_pubkey_package(pk_package).expect("set public key package");
+        app.db
+            .set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
+            .expect("set public key package");
         app.db
             .set_key_package_by_id(LEGACY_MULTISIG_ID, key_package.clone())
             .expect("set key package");

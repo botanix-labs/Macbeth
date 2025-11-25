@@ -186,6 +186,8 @@ impl Db {
 
 #[cfg(test)]
 mod tests {
+    use btcserverlib::database::LEGACY_MULTISIG_ID;
+
     use super::*;
 
     // Helper function to create a dummy FROST key package for testing
@@ -357,7 +359,7 @@ mod tests {
                 &mut rng,
             )
             .unwrap();
-            btc_db.set_pubkey_package(pk_package.clone()).unwrap();
+            btc_db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package.clone()).unwrap();
 
             // Export
             let export = btc_db.export_key_package(passphrase.clone()).unwrap().unwrap();
