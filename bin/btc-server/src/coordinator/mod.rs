@@ -3,7 +3,7 @@ use log::{debug, error, info, warn};
 use crate::{
     config::Config,
     coordinator::error::CoordinatorError,
-    database::{Db, Error as DbError, Utxo},
+    database::{Db, Error as DbError, Utxo, LEGACY_MULTISIG_ID},
     pegout_id::PegoutId,
     pegout_scheduler::Tx,
     util::{validate_psbt, NO_FLAGS, ROUND1, ROUND1_TRANSITION, ROUND2},
@@ -289,7 +289,9 @@ pub async fn finalize_signing(
     // Lock here to prevent a make_tx that uses utxos that will be removed
     let mut psbt = db.get_psbt(signing_session_id)?.ok_or(CoordinatorError::CouldNotFindPsbt)?;
 
-    let pk_package = db.get_public_key_package()?.ok_or(CoordinatorError::MissingKeyPackage)?;
+    let pk_package = db
+        .get_public_key_package_by_id(LEGACY_MULTISIG_ID)?
+        .ok_or(CoordinatorError::MissingKeyPackage)?;
     // Get signing packages for this signing session
     let signing_packages =
         psbt.signing_packages().map_err(CoordinatorError::PsbtToSigningPackageConversionError)?;

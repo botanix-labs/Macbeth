@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    database::LEGACY_MULTISIG_ID,
     pegout_scheduler::{TX_NOT_FOUND_BITCOIND_ERROR, TX_NOT_IN_MEMPOOL_BITCOIND_ERROR},
     wallet::{address::generate_taproot_change_scriptpubkey, util::VerifyingKeyExt},
 };
@@ -403,7 +404,7 @@ pub fn create_psbt(num_inputs: usize, num_outputs: usize, change: Option<TxOut>)
 
 pub fn get_change(db: &database::Db) -> TxOut {
     let secp_pk = db
-        .get_public_key_package()
+        .get_public_key_package_by_id(LEGACY_MULTISIG_ID)
         .expect("valid key package")
         .expect("key package exists")
         .verifying_key()

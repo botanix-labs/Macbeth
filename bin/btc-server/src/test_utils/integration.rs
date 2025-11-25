@@ -384,7 +384,7 @@ mod integration_tests {
 
         let secp_pk = app
             .db
-            .get_public_key_package()
+            .get_public_key_package_by_id(LEGACY_MULTISIG_ID)
             .expect("valid key package")
             .expect("key package exists")
             .verifying_key()

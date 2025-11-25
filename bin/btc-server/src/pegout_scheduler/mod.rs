@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::{
-    database::FinalizedPegout,
+    database::{FinalizedPegout, LEGACY_MULTISIG_ID},
     measure_rpc_latency,
     pegout_id::PegoutId,
     telemetry::Telemetry,
@@ -272,7 +272,7 @@ impl PegoutScheduler {
     fn get_change_spk(&self) -> Result<ScriptBuf, ChangeOutputError> {
         let agg_pk = self
             .db
-            .get_public_key_package()?
+            .get_public_key_package_by_id(LEGACY_MULTISIG_ID)?
             .expect("pk key package should exist")
             .verifying_key()
             .to_secp_pk()?;
@@ -1349,8 +1349,13 @@ mod tests {
             .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
-        let agg_pk =
-            db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
+        let agg_pk = db
+            .get_public_key_package_by_id(LEGACY_MULTISIG_ID)
+            .unwrap()
+            .unwrap()
+            .verifying_key()
+            .to_secp_pk()
+            .unwrap();
         let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
         let change_output = TxOut { value: Amount::from_sat(1000), script_pubkey: change_spk };
         let tx = create_tx(3, 3, Some(change_output.clone()));
@@ -1473,8 +1478,13 @@ mod tests {
             .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
-        let agg_pk =
-            db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
+        let agg_pk = db
+            .get_public_key_package_by_id(LEGACY_MULTISIG_ID)
+            .unwrap()
+            .unwrap()
+            .verifying_key()
+            .to_secp_pk()
+            .unwrap();
         let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
         let change_output = TxOut { value: Amount::from_sat(1000), script_pubkey: change_spk };
 
@@ -1528,8 +1538,13 @@ mod tests {
             .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
 
-        let agg_pk =
-            db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
+        let agg_pk = db
+            .get_public_key_package_by_id(LEGACY_MULTISIG_ID)
+            .unwrap()
+            .unwrap()
+            .verifying_key()
+            .to_secp_pk()
+            .unwrap();
         let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
         let change_output = TxOut { value: Amount::from_sat(1000), script_pubkey: change_spk };
 
@@ -1701,8 +1716,13 @@ mod tests {
         db.set_pubkey_package_by_id(LEGACY_MULTISIG_ID, pk_package)
             .expect("set public key package");
         db.set_key_package_by_id(LEGACY_MULTISIG_ID, key_package).expect("set key package");
-        let agg_pk =
-            db.get_public_key_package().unwrap().unwrap().verifying_key().to_secp_pk().unwrap();
+        let agg_pk = db
+            .get_public_key_package_by_id(LEGACY_MULTISIG_ID)
+            .unwrap()
+            .unwrap()
+            .verifying_key()
+            .to_secp_pk()
+            .unwrap();
         let change_spk = generate_taproot_change_scriptpubkey(&agg_pk);
         let change_output = TxOut { value: Amount::from_sat(1000), script_pubkey: change_spk };
 

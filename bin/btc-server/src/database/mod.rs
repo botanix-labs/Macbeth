@@ -299,18 +299,6 @@ impl Db {
         }
     }
 
-    /// Retrieves the public key package stored in the database, if available.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(Some(public_key_package))` if the public key package is found in the database.
-    /// Returns `Ok(None)` if the public key package is not found.
-    /// Returns `Err` in case of deserialization or other errors.
-    #[deprecated(note = "use fn get_public_key_package_by_id")]
-    pub fn get_public_key_package(&self) -> Result<Option<frost::keys::PublicKeyPackage>, Error> {
-        self.get_public_key_package_by_id(LEGACY_MULTISIG_ID)
-    }
-
     /// Retrieves a key package by multisig_id from the multi-key storage.
     ///
     /// # Arguments

@@ -163,7 +163,8 @@ pub fn get_round2_signing_package(
 //     let _key_package =
 // self.db.get_key_package_by_id(LEGACY_MULTISIG_ID)?.
 // ok_or(SigningFinalizeError::MissingKeyPackage)?;     let pk_package =         self.db.
-// get_public_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
+// get_public_key_package_by_id(LEGACY_MULTISIG_ID)?.ok_or(SigningFinalizeError::MissingKeyPackage)?
+// ;
 
 //     let signing_packages = finalized_psbt
 //         .signing_packages()

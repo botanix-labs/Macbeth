@@ -1,5 +1,5 @@
 use crate::{
-    database::{self, Db, Utxo},
+    database::{self, Db, Utxo, LEGACY_MULTISIG_ID},
     pegout_id::PegoutId,
     wallet::{
         address::generate_taproot_change_scriptpubkey,
@@ -440,8 +440,9 @@ pub(crate) fn validate_outputs(psbt: &Psbt, db: &database::Db) -> Result<(), Val
     }
 
     // check aggregated public key exists
-    let public_key_package =
-        db.get_public_key_package()?.ok_or(ValidateOutputsError::MissingKeyPackage)?;
+    let public_key_package = db
+        .get_public_key_package_by_id(LEGACY_MULTISIG_ID)?
+        .ok_or(ValidateOutputsError::MissingKeyPackage)?;
 
     let mut psbt_pegout_ids: Vec<PegoutId> = Vec::with_capacity(psbt.outputs.len());
     let mut change_output: Option<usize> = None;
