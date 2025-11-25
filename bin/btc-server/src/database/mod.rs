@@ -311,18 +311,6 @@ impl Db {
         self.get_public_key_package_by_id(LEGACY_MULTISIG_ID)
     }
 
-    /// Retrieves the key package stored in the database, if available.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(Some(key_package))` if the key package is found in the database.
-    /// Returns `Ok(None)` if the key package is not found.
-    /// Returns `Err` in case of deserialization or other errors.
-    #[deprecated(note = "use fn get_key_package_by_id")]
-    pub fn get_key_package(&self) -> Result<Option<frost::keys::KeyPackage>, Error> {
-        self.get_key_package_by_id(LEGACY_MULTISIG_ID)
-    }
-
     /// Sets the key package in the database.
     ///
     /// # Arguments

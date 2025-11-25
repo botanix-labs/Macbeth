@@ -1,4 +1,5 @@
 use crate::{
+    database::LEGACY_MULTISIG_ID,
     util::ROUND2,
     wallet::psbt::{PsbtExt, PsbtInputExt},
 };
@@ -62,7 +63,9 @@ pub fn get_round1_signing_package(
 
     let num_inputs = psbt.inputs.len();
 
-    let key_package = db.get_key_package()?.ok_or(SigningRound1Error::MissingKeyPackage)?;
+    let key_package = db
+        .get_key_package_by_id(LEGACY_MULTISIG_ID)?
+        .ok_or(SigningRound1Error::MissingKeyPackage)?;
     // Get our secret package
     let secret = key_package.signing_share();
     let mut nonces = vec![];
@@ -122,7 +125,9 @@ pub fn get_round2_signing_package(
         }
     }
 
-    let key_package = db.get_key_package()?.ok_or(SigningRound2Error::MissingKeyPackage)?;
+    let key_package = db
+        .get_key_package_by_id(LEGACY_MULTISIG_ID)?
+        .ok_or(SigningRound2Error::MissingKeyPackage)?;
 
     // Get a partial signature for each input
     for (index, (signing_package, psbt_in)) in
@@ -156,8 +161,9 @@ pub fn get_round2_signing_package(
 // ) -> Result<Psbt, SigningFinalizeError> {
 //     let mut finalized_psbt = finalized_psbt.clone();
 //     let _key_package =
-// self.db.get_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;     let pk_package =
-//         self.db.get_public_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
+// self.db.get_key_package_by_id(LEGACY_MULTISIG_ID)?.
+// ok_or(SigningFinalizeError::MissingKeyPackage)?;     let pk_package =         self.db.
+// get_public_key_package()?.ok_or(SigningFinalizeError::MissingKeyPackage)?;
 
 //     let signing_packages = finalized_psbt
 //         .signing_packages()

@@ -23,7 +23,7 @@ use btcserverlib::{
     badarg,
     config::{Config, Error as ConfigError, GrpcConfig, TomlConfig},
     coordinator::{self},
-    database::{self},
+    database::{self, LEGACY_MULTISIG_ID},
     dkg,
     federation_args::FederationTomlConfig,
     frost_id, handle_signing_error,
@@ -480,7 +480,11 @@ where
         // key is found in the db. In the future, when we're dealing with
         // dynamic Fed members, multiple multisigs and rotations, we'll need a
         // mechanism to start/stop the DKG process arbitrarily.
-        let dkg = if db.get_key_package().expect("failed to interact with db").is_none() {
+        let dkg = if db
+            .get_key_package_by_id(LEGACY_MULTISIG_ID)
+            .expect("failed to interact with db")
+            .is_none()
+        {
             warn!("No key package found, starting DKG process...");
 
             let dkg_config = dkg::Config {
@@ -1089,7 +1093,7 @@ where
         &self,
         _req: tonic::Request<rpc::Empty>,
     ) -> Result<tonic::Response<rpc::Empty>, tonic::Status> {
-        self.db.get_key_package().to_status()?;
+        self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status()?;
 
         // Clear the signing nonces
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
@@ -1109,7 +1113,7 @@ where
     ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         // Ensure we have a key package
-        self.db.get_key_package().to_status()?;
+        self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status()?;
 
         let req = req.into_inner();
         info!(
@@ -1184,7 +1188,7 @@ where
     ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         // Ensure we have a key package
-        self.db.get_key_package().to_status()?;
+        self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status()?;
 
         // If we have no nonces, we are not in a signing session
         let mut nonces_lock = self.frost_round1_nonces.lock().await;
@@ -1462,11 +1466,11 @@ where
     ) -> Result<tonic::Response<rpc::SigningPackage>, tonic::Status> {
         self.validate_jwt(&req)?;
         // Ensure we have a key package
-        self.db.get_key_package().to_status()?;
+        self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status()?;
 
         let req = req.into_inner();
 
-        if let Err(e) = self.db.get_key_package().to_status() {
+        if let Err(e) = self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status() {
             if let Some(telemetry) = self.telemetry.as_ref() {
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
@@ -1578,7 +1582,7 @@ where
 
         let pk_package = self
             .db
-            .get_key_package()
+            .get_key_package_by_id(LEGACY_MULTISIG_ID)
             .to_status()?
             .ok_or_else(|| internal!("missing key package, run the dkg process first"))?;
 
@@ -1725,7 +1729,7 @@ where
         let req = req.into_inner();
 
         // Ensure we have a key package
-        if let Err(e) = self.db.get_key_package().to_status() {
+        if let Err(e) = self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status() {
             if let Some(telemetry) = self.telemetry.as_ref() {
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
@@ -1800,7 +1804,7 @@ where
 
         let req = req.into_inner();
         // Ensure we have a key package
-        if let Err(e) = self.db.get_key_package().to_status() {
+        if let Err(e) = self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status() {
             if let Some(telemetry) = self.telemetry.as_ref() {
                 telemetry.update_signing_error_metrics(
                     self.btc_network,
@@ -1871,8 +1875,11 @@ where
     ) -> Result<tonic::Response<rpc::GetPublicKeyResponse>, tonic::Status> {
         self.validate_jwt(&req)?;
         // Ensure we have a key package
-        let key_package =
-            self.db.get_key_package().to_status()?.ok_or(badarg!("Missing key package"))?;
+        let key_package = self
+            .db
+            .get_key_package_by_id(LEGACY_MULTISIG_ID)
+            .to_status()?
+            .ok_or(badarg!("Missing key package"))?;
 
         let pk = key_package.verifying_key();
         let pk = hex::encode(pk.serialize().to_status()?);
@@ -1889,7 +1896,7 @@ where
         // Ensure we have a key package
         let key_package = self
             .db
-            .get_key_package()
+            .get_key_package_by_id(LEGACY_MULTISIG_ID)
             .to_status()?
             .ok_or(tonic::Status::internal("Missing key package"))?;
 
@@ -1916,7 +1923,7 @@ where
     ) -> Result<tonic::Response<rpc::DkgPayloads>, tonic::Status> {
         self.validate_jwt(&req)?;
 
-        if self.db.get_key_package().to_status()?.is_some() {
+        if self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status()?.is_some() {
             return Err(already_exists!("already have key package"));
         }
 
@@ -2104,7 +2111,7 @@ where
         }
 
         if let Some((sec_key, pub_key)) = dkg.machine.aggregate_key_packages() {
-            if self.db.get_key_package().to_status()?.is_none() {
+            if self.db.get_key_package_by_id(LEGACY_MULTISIG_ID).to_status()?.is_none() {
                 info!("DKG completed successfully, saving key packages...");
                 if let Err(e) = self.db.set_key_package(sec_key.clone()).to_status() {
                     if let Some(telemetry) = self.telemetry.as_ref() {
@@ -2195,7 +2202,7 @@ where
         // Ensure we have a key package
         let key_package = self
             .db
-            .get_key_package()
+            .get_key_package_by_id(LEGACY_MULTISIG_ID)
             .to_status()?
             .ok_or(tonic::Status::internal("Missing key package"))?;
 
