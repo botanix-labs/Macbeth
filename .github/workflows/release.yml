@@ -102,7 +102,7 @@ jobs:
 
       - name: Determine semantic version
         id: semantic
-        uses: cycjimmy/semantic-release-action@v5
+        uses: cycjimmy/semantic-release-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -566,7 +566,7 @@ jobs:
 
       - name: Publish semantic release
         id: semantic
-        uses: cycjimmy/semantic-release-action@v5
+        uses: cycjimmy/semantic-release-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
