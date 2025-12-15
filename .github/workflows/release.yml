@@ -243,7 +243,7 @@ jobs:
 
 
       - name: Download Cargo files
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: cargo-files
           path: .
@@ -457,7 +457,7 @@ jobs:
           echo "reth-node-tags=$RETH_NODE_TAGS" >> $GITHUB_OUTPUT
 
       - name: Download Cargo files
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: cargo-files
           path: .
@@ -531,7 +531,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download Release Artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           path: ./binaries
 
@@ -550,7 +550,7 @@ jobs:
           done
 
       - name: Download Cargo files
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: cargo-files
           path: .
@@ -604,7 +604,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Download Release Artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           path: ./artifacts
 
