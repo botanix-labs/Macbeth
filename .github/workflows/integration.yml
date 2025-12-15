@@ -169,7 +169,7 @@ jobs:
             echo "No binaries found in $OUT/debug"; exit 1; }
 
       - name: Upload compiled binaries
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: compiled-binaries
           path: /tmp/binaries
