@@ -1,7 +1,7 @@
 #syntax=docker/dockerfile:1.7-labs
 
 # Build deps
-FROM rust:1.85 AS base
+FROM rust:1.91 AS base
 
 ARG TARGETARCH
 
