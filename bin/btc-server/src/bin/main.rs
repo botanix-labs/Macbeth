@@ -680,7 +680,8 @@ where
             .collect::<Result<Vec<PegoutRequest>, tonic::Status>>();
 
         let pegouts = pegouts?;
-        // Check pegouts are not in the finalized pegout ids list or are tracked by the Pegout Scheduler
+        // Check pegouts are not in the finalized pegout ids list or are tracked by the Pegout
+        // Scheduler
         let mut broadcasted_pegout_ids: HashSet<_> =
             self.db.get_finalized_pegout_ids().to_status()?.iter().map(|p| p.id).collect();
         // Get Pegout Scheduler txs and add to hashset
@@ -1177,6 +1178,11 @@ where
                     msg if msg.contains("bad-txns-inputs-missingorspent") => {
                         error!("Invalid input detected: {}", msg);
                         self.handle_invalid_inputs(&tx).to_status()?;
+                        Err(CoordinatorError::FailedToBroadcastTx(err))
+                    }
+                    msg if msg.contains("dust") => {
+                        error!("Dust output detected: {}", msg);
+                        self.handle_dust_outputs(&tx, &psbt).to_status()?;
                         Err(CoordinatorError::FailedToBroadcastTx(err))
                     }
                     _ => {
@@ -1790,6 +1796,51 @@ impl<BitcoindClient: bitcoincore_rpc::RpcApi> App<BitcoindClient> {
         }
         Ok(())
     }
+
+    /// Removes from pending_pegouts any pegouts that correspond to dust outputs in the failed tx.
+    fn handle_dust_outputs(
+        &self,
+        tx: &Transaction,
+        psbt: &Psbt,
+    ) -> Result<(), btcserverlib::database::Error> {
+        let mut dust_pegout_ids: Vec<PegoutId> = Vec::new();
+        for (vout, tx_out) in tx.output.iter().enumerate() {
+            if tx_out.value >= tx_out.script_pubkey.minimal_non_dust() {
+                info!(
+                    "Output is not a dust output, skipping: vout {}, value {}",
+                    vout, tx_out.value
+                );
+                continue;
+            }
+            let pegout_id: PegoutId = match psbt.outputs.get(vout).and_then(|o| o.pegout_id()) {
+                Some(bytes) => match PegoutId::from_bytes(&bytes) {
+                    Ok(id) => id,
+                    Err(()) => {
+                        error!("Failed to parse pegout id for dust output with vout {} and value {}, skipping", vout, tx_out.value);
+                        continue;
+                    }
+                },
+                None => {
+                    info!("Output is not a pegout output (may be a change output) with skipping: vout {}, value {}", vout, tx_out.value);
+                    continue;
+                }
+            };
+            dust_pegout_ids.push(pegout_id);
+        }
+        if dust_pegout_ids.is_empty() {
+            error!("No dust pegouts detected in the transaction");
+            return Err(btcserverlib::database::Error::NoDustPegoutsIdentified);
+        }
+
+        info!(
+            "Removing {} dust pegouts from pending_pegouts: {:?}",
+            dust_pegout_ids.len(),
+            dust_pegout_ids
+        );
+        self.db.remove_pending_pegout(&dust_pegout_ids)?;
+        self.db.flush()?;
+        Ok(())
+    }
 }
 
 #[tokio::main]
@@ -1886,8 +1937,8 @@ mod tests {
     use btcserverlib::{
         frost_id,
         test_utils::{
-            create_random_pegout_id, create_tx, random_p2wpkh_script, trusted_dealer_setup,
-            MockBitcoind,
+            create_random_pegout_id, create_tx, random_compute_txid, random_p2tr_keyspend_script,
+            random_p2wpkh_script, trusted_dealer_setup, MockBitcoind,
         },
     };
 
@@ -2651,5 +2702,202 @@ mod tests {
         let utxos = app.db.get_all_utxos().unwrap();
         assert_eq!(utxos.len(), 1);
         assert_eq!(utxos[0].outpoint, existing_outpoint);
+    }
+
+    #[tokio::test]
+    async fn test_handle_dust_outputs_single_dust_pegout() {
+        use crate::wallet::psbt::PsbtOutputExt;
+        use bitcoin::{
+            absolute::LockTime, psbt::Psbt, Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+        };
+
+        let app = setup().await;
+
+        // Create a transaction with a single dust output (< 330 sats)
+        let dust_value = Amount::from_sat(200); // Below 330 sat threshold
+        let pegout_id = create_random_pegout_id();
+
+        // Store the pegout in the database
+        let pegout_request = btcserverlib::pegout_scheduler::PegoutRequest {
+            id: pegout_id,
+            value: dust_value,
+            spk: random_p2wpkh_script(),
+            botanix_height: 0,
+        };
+        app.db.store_pending_pegout(&pegout_request).unwrap();
+
+        // Verify pegout is in the database
+        assert_eq!(app.db.get_pending_pegouts().unwrap().len(), 1);
+
+        // Create output with dust value
+        let output = TxOut { value: dust_value, script_pubkey: random_p2wpkh_script() };
+
+        // Create transaction manually
+        let tx = Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(random_compute_txid(), 0),
+                sequence: Sequence::MAX,
+                script_sig: ScriptBuf::new(),
+                witness: Default::default(),
+            }],
+            output: vec![output.clone()],
+        };
+
+        // Create PSBT and add pegout ID
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).expect("tx is unsigned");
+        psbt.inputs[0].witness_utxo =
+            Some(TxOut { value: Amount::from_sat(10000), script_pubkey: ScriptBuf::new() });
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+
+        // Call handle_dust_outputs
+        let result = app.handle_dust_outputs(&tx, &psbt);
+
+        // Should succeed
+        assert!(result.is_ok());
+
+        // Verify the dust pegout was removed from pending_pegouts
+        let remaining_pegouts = app.db.get_pending_pegouts().unwrap();
+        assert_eq!(remaining_pegouts.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_dust_outputs_multiple_outputs_some_dust() {
+        use crate::wallet::psbt::PsbtOutputExt;
+        use bitcoin::{
+            absolute::LockTime, psbt::Psbt, Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+        };
+
+        let app = setup().await;
+
+        let dust_value = Amount::from_sat(250); // Below 330 sat threshold
+        let non_dust_value = Amount::from_sat(1000); // Above 330 sat threshold
+
+        let dust_pegout_id = create_random_pegout_id();
+        let non_dust_pegout_id = create_random_pegout_id();
+
+        // Store both pegouts in the database
+        let dust_pegout_request = btcserverlib::pegout_scheduler::PegoutRequest {
+            id: dust_pegout_id,
+            value: dust_value,
+            spk: random_p2wpkh_script(),
+            botanix_height: 0,
+        };
+        app.db.store_pending_pegout(&dust_pegout_request).unwrap();
+
+        let non_dust_pegout_request = btcserverlib::pegout_scheduler::PegoutRequest {
+            id: non_dust_pegout_id,
+            value: non_dust_value,
+            spk: random_p2wpkh_script(),
+            botanix_height: 0,
+        };
+        app.db.store_pending_pegout(&non_dust_pegout_request).unwrap();
+
+        // Verify both pegouts are in the database
+        assert_eq!(app.db.get_pending_pegouts().unwrap().len(), 2);
+
+        // Create outputs - one dust, one non-dust
+        let dust_output = TxOut { value: dust_value, script_pubkey: random_p2wpkh_script() };
+
+        let non_dust_output =
+            TxOut { value: non_dust_value, script_pubkey: random_p2wpkh_script() };
+
+        // Create transaction manually
+        let tx = Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(random_compute_txid(), 0),
+                sequence: Sequence::MAX,
+                script_sig: ScriptBuf::new(),
+                witness: Default::default(),
+            }],
+            output: vec![dust_output.clone(), non_dust_output.clone()],
+        };
+
+        // Create PSBT and add pegout IDs
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).expect("tx is unsigned");
+        psbt.inputs[0].witness_utxo =
+            Some(TxOut { value: Amount::from_sat(20000), script_pubkey: ScriptBuf::new() });
+        psbt.outputs[0].set_pegout_id(dust_pegout_id.as_bytes());
+        psbt.outputs[1].set_pegout_id(non_dust_pegout_id.as_bytes());
+
+        // Call handle_dust_outputs
+        let result = app.handle_dust_outputs(&tx, &psbt);
+
+        // Should succeed
+        assert!(result.is_ok());
+
+        // Verify only the dust pegout was removed
+        let remaining_pegouts = app.db.get_pending_pegouts().unwrap();
+        assert_eq!(remaining_pegouts.len(), 1);
+        assert_eq!(remaining_pegouts[0].id, non_dust_pegout_id);
+    }
+
+    #[tokio::test]
+    async fn test_handle_dust_outputs_dust_change_output() {
+        use crate::wallet::psbt::PsbtOutputExt;
+        use bitcoin::{
+            absolute::LockTime, psbt::Psbt, Amount, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+        };
+
+        let app = setup().await;
+
+        let pegout_value = Amount::from_sat(1000); // Above dust threshold
+        let change_value = Amount::from_sat(200); // Below dust threshold - but it's change
+
+        let pegout_id = create_random_pegout_id();
+
+        // Store the pegout in the database
+        let pegout_request = btcserverlib::pegout_scheduler::PegoutRequest {
+            id: pegout_id,
+            value: pegout_value,
+            spk: random_p2wpkh_script(),
+            botanix_height: 0,
+        };
+        app.db.store_pending_pegout(&pegout_request).unwrap();
+
+        // Verify pegout is in the database
+        assert_eq!(app.db.get_pending_pegouts().unwrap().len(), 1);
+
+        // Create pegout output (non-dust)
+        let pegout_output = TxOut { value: pegout_value, script_pubkey: random_p2wpkh_script() };
+
+        // Create change output (dust, but has no pegout ID)
+        let change_output = TxOut { value: change_value, script_pubkey: random_p2wpkh_script() };
+
+        // Create transaction manually
+        let tx = Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(random_compute_txid(), 0),
+                sequence: Sequence::MAX,
+                script_sig: ScriptBuf::new(),
+                witness: Default::default(),
+            }],
+            output: vec![pegout_output.clone(), change_output.clone()],
+        };
+
+        // Create PSBT and add pegout ID only to first output (not to change)
+        let mut psbt = Psbt::from_unsigned_tx(tx.clone()).expect("tx is unsigned");
+        psbt.inputs[0].witness_utxo =
+            Some(TxOut { value: Amount::from_sat(20000), script_pubkey: ScriptBuf::new() });
+        psbt.outputs[0].set_pegout_id(pegout_id.as_bytes());
+        // Note: psbt.outputs[1] (change) has no pegout_id set
+
+        // Call handle_dust_outputs
+        let result = app.handle_dust_outputs(&tx, &psbt);
+
+        // Should fail because no dust pegouts were found (change doesn't have pegout ID)
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("NoDustPegoutsIdentified"));
+
+        // Verify the pegout was NOT removed (because it's not dust)
+        let remaining_pegouts = app.db.get_pending_pegouts().unwrap();
+        assert_eq!(remaining_pegouts.len(), 1);
+        assert_eq!(remaining_pegouts[0].id, pegout_id);
     }
 }
