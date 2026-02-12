@@ -40,6 +40,9 @@ pub enum Error {
     /// Related to [`super::ExportedKeyPackage`].
     #[error("Bad exported package format version")]
     BadExportedPackageFormatVersion,
+    /// Bitcoind rejected the tx as dust but no pegout outputs below dust threshold were found.
+    #[error("Dust rejection from bitcoind but no dust pegouts identified in transaction")]
+    NoDustPegoutsIdentified,
 }
 
 impl PartialEq for Error {
