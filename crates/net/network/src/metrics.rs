@@ -80,6 +80,18 @@ pub struct NetworkMetrics {
     pub(crate) acc_duration_poll_swarm: Gauge,
 }
 
+/// Metrics for the [`crate::frost::manager::FrostManager`].
+#[derive(Metrics)]
+#[metrics(scope = "network.frost")]
+pub struct FrostManagerMetrics {
+    /// Number of currently connected authority peers, excluding the local signer.
+    pub(crate) connected_peers: Gauge,
+    /// Number of authority peers currently disconnected, excluding the local signer.
+    pub(crate) disconnected_peers: Gauge,
+    /// Number of currently connected signers, including the local signer.
+    pub(crate) connected_signers_total: Gauge,
+}
+
 /// Metrics for `SessionManager`
 #[derive(Metrics)]
 #[metrics(scope = "network")]
