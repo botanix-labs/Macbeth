@@ -1,6 +1,7 @@
 use super::{FrostPeerCommand, FrostProtocolEvent, PeerMessageResponse, WalletStateResponse};
 use crate::{
     frost::{ConnectionEstablishedStatus, PeerMessageStatus},
+    metrics::FrostManagerMetrics,
     session::Direction,
     NetworkHandle,
 };
@@ -72,6 +73,8 @@ struct AuthorityContext {
     connections: HashSet<ConnIdx>,
     /// the frost identifier of the peer
     frost_identifier: frost::Identifier,
+    /// Pre-registered per-signer connectivity metric handle.
+    signer_connected_metric: metrics::Gauge,
 }
 
 type ConnIdx = u64;
@@ -104,10 +107,14 @@ pub struct FrostManager {
     connection_counter: ConnIdx,
     /// total authorities to connect to, including ourselves
     authorities: HashMap<PeerId, AuthorityContext>,
+    /// local peer id
+    local_peer_id: PeerId,
     /// All the connected peers.
     peer_connections: HashMap<ConnIdx, Connection>,
     /// Forwards for message to the frost task
     task_forwarder_txs: Vec<mpsc::UnboundedSender<PeerMessageContext>>,
+    /// Frost-specific connectivity metrics.
+    metrics: FrostManagerMetrics,
 }
 
 impl FrostManager {
@@ -118,6 +125,8 @@ impl FrostManager {
         from_network: mpsc::UnboundedReceiver<FrostProtocolEvent>,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
+        let local_peer_id = PeerId::from_slice(&config.authority_pk.serialize_uncompressed()[1..]);
+
         // Prepare the authorities with their respective FROST identifiers and
         // connection trackers.
         let authorities = config
@@ -125,15 +134,26 @@ impl FrostManager {
             .iter()
             .enumerate()
             .map(|(index, pk)| {
-                let frost_identifier = authority_index_to_frost_identifier(index as u16);
+                let authority_index = index as u16;
+                let frost_identifier = authority_index_to_frost_identifier(authority_index);
                 let peer_id = PeerId::from_slice(&pk.serialize_uncompressed()[1..]);
-                let authority = AuthorityContext { connections: HashSet::new(), frost_identifier };
+                let signer_connected_metric = metrics::gauge!(
+                    "network.frost.signer_connected",
+                    "authority_index" => authority_index.to_string(),
+                    "peer_id" => peer_id.to_string(),
+                    "frost_identifier" => Self::frost_identifier_label(&frost_identifier),
+                );
+                let authority = AuthorityContext {
+                    connections: HashSet::new(),
+                    frost_identifier,
+                    signer_connected_metric,
+                };
 
                 (peer_id, authority)
             })
             .collect();
 
-        Self {
+        let this = Self {
             command_tx,
             command_rx: UnboundedReceiverStream::new(command_rx),
             network,
@@ -141,8 +161,15 @@ impl FrostManager {
             connection_counter: 0,
             peer_connections: HashMap::default(),
             authorities,
+            local_peer_id,
             task_forwarder_txs: Vec::new(),
-        }
+            metrics: Default::default(),
+        };
+
+        // Initialize connectivity metrics with all remote signers disconnected.
+        this.update_connection_metrics();
+
+        this
     }
 
     /// Retrieve an arbitrary active connection to the given peer.
@@ -196,18 +223,65 @@ impl FrostManager {
         peer_data
     }
 
-    fn all_authority_peers_connected(&mut self) -> bool {
+    fn frost_identifier_label(identifier: &frost::Identifier) -> String {
+        use core::fmt::Write as _;
+
+        let bytes = identifier.serialize();
+        let mut label = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            let _ = write!(&mut label, "{byte:02x}");
+        }
+        label
+    }
+
+    fn connected_authority_peers(&mut self) -> HashMap<PeerId, PeerData> {
         let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
-        // filter all peers with active connections
-        let connected =
-            peer_ids.iter().filter_map(|peer_id| self.retrieve_peer_data(peer_id)).count();
+        let local_peer_id = self.local_peer_id;
+        peer_ids
+            .into_iter()
+            .filter(|peer_id| *peer_id != local_peer_id)
+            .filter_map(|peer_id| {
+                self.retrieve_peer_data(&peer_id).map(|peer_data| (peer_id, peer_data))
+            })
+            .collect()
+    }
 
-        info!(
-            target: "network::frost::all_authority_peers_connected",
-            "Number of peer connections: {:?}", connected
-        );
+    fn is_authority_connected(&self, authority: &AuthorityContext) -> bool {
+        authority.connections.iter().any(|idx| {
+            self.peer_connections.get(idx).is_some_and(|conn| !conn.peer_commands_tx.is_closed())
+        })
+    }
 
-        connected == self.authorities.len() - 1
+    fn all_authority_peers_connected(&self, connected_peers: usize) -> bool {
+        connected_peers == self.authorities.len().saturating_sub(1)
+    }
+
+    fn update_connection_metrics(&self) -> usize {
+        let mut connected_peers = 0usize;
+
+        for (peer_id, authority) in &self.authorities {
+            let connected = if *peer_id == self.local_peer_id {
+                true
+            } else {
+                let connected = self.is_authority_connected(authority);
+                if connected {
+                    connected_peers = connected_peers.saturating_add(1);
+                }
+                connected
+            };
+
+            authority.signer_connected_metric.set(if connected { 1.0 } else { 0.0 });
+        }
+
+        let remote_authorities = self.authorities.len().saturating_sub(1);
+        let disconnected_peers = remote_authorities.saturating_sub(connected_peers);
+        let connected_signers_total = connected_peers.saturating_add(1);
+
+        self.metrics.connected_peers.set(connected_peers as f64);
+        self.metrics.disconnected_peers.set(disconnected_peers as f64);
+        self.metrics.connected_signers_total.set(connected_signers_total as f64);
+
+        connected_peers
     }
 
     /// Returns a new [`FrostHandle`] that can send commands to this type.
@@ -322,9 +396,10 @@ impl FrostManager {
 
                 self.authorities.get_mut(&peer_id).expect("checked above").connections.insert(idx);
                 self.peer_connections.insert(idx, conn);
+                self.update_connection_metrics();
             }
             FrostProtocolEvent::ConnectionClosed { idx } => {
-                let Some(conn) = self.peer_connections.get(&idx) else {
+                let Some(conn) = self.peer_connections.remove(&idx) else {
                     warn!(
                         target: "network::frost::on_network_event",
                         "Received FrostProtocolEvent::ConnectionClosed event from an unknown connection, idx = {}",
@@ -341,6 +416,7 @@ impl FrostManager {
                     .remove(&idx);
 
                 debug_assert!(did_remove);
+                self.update_connection_metrics();
             }
             FrostProtocolEvent::PeerMessage { peer_id, response } => {
                 info!(
@@ -397,6 +473,7 @@ impl FrostManager {
                         );
                     }
                 }
+                self.update_connection_metrics();
             }
         }
     }
@@ -405,7 +482,12 @@ impl FrostManager {
     fn on_command(&mut self, cmd: FrostCommand) {
         match cmd {
             FrostCommand::CheckConnectedToAll(tx) => {
-                let all_connected = self.all_authority_peers_connected();
+                let connected_peers = self.update_connection_metrics();
+                info!(
+                    target: "network::frost::all_authority_peers_connected",
+                    "Number of peer connections: {:?}", connected_peers
+                );
+                let all_connected = self.all_authority_peers_connected(connected_peers);
 
                 // reply to caller
                 if let Err(e) = tx.send(all_connected) {
@@ -416,13 +498,8 @@ impl FrostManager {
                 }
             }
             FrostCommand::GetAllConnectedPeers(tx) => {
-                let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
-                let peer_connections: HashMap<PeerId, PeerData> = peer_ids
-                    .iter()
-                    .filter_map(|peer_id| {
-                        self.retrieve_peer_data(peer_id).map(|peer_data| (*peer_id, peer_data))
-                    })
-                    .collect();
+                let peer_connections = self.connected_authority_peers();
+                self.update_connection_metrics();
 
                 // reply to caller
                 if let Err(e) = tx.send(peer_connections) {
@@ -449,13 +526,11 @@ impl FrostManager {
                 }
             }
             FrostCommand::GetWalletStateFromPeer(uuid) => {
-                let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
-                // filter all peers with active connections
-                let connected_peers =
-                    peer_ids.iter().filter_map(|peer_id| self.retrieve_peer_data(peer_id));
+                let connected_peers = self.connected_authority_peers();
+                self.update_connection_metrics();
 
-                for peer in connected_peers {
-                    match peer.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
+                for (_peer_id, peer_data) in connected_peers {
+                    match peer_data.peer_commands_tx.send(FrostPeerCommand::PeerMessage(
                         PeerMessageResponse::WalletState(WalletStateResponse {
                             uuid: uuid.to_string(),
                             finalized_pegout_ids: vec![],
@@ -464,11 +539,12 @@ impl FrostManager {
                         Ok(_) => {
                             tracing::debug!(
                                 target: "network::frost::on_command",
-                                "Request for finalized pegout ids sent to peer {:?}", peer.peer_id
+                                "Request for finalized pegout ids sent to peer {:?}",
+                                peer_data.peer_id
                             );
                         }
                         Err(e) => {
-                            error!(target: "network::frost::on_command", "Failed to send finalized pegout ids request to peer {:?}, error: {:?}", peer.peer_id, e);
+                            error!(target: "network::frost::on_command", "Failed to send finalized pegout ids request to peer {:?}, error: {:?}", peer_data.peer_id, e);
                         }
                     }
                 }
