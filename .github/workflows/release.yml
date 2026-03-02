@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload Cargo.toml and Cargo.lock to artifacts
         if: steps.semantic.outputs.new_release_published == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: cargo-files
           path: |
@@ -257,13 +257,13 @@ jobs:
           mv ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum ..
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
           path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz
 
       - name: Upload Signature
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
           path: ${{ matrix.build.binary }}-${{ matrix.configs.target }}.tar.gz.sha256sum
