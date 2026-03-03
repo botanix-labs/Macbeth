@@ -63,4 +63,6 @@ pub enum CoordinatorError {
     NoConflictingInputs,
     #[error("Missing utxo for conflicting input")]
     MissingUtxoForConflictingInput,
+    #[error("All outputs are dust")]
+    AllOutputsAreDust,
 }
