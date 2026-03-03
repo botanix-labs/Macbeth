@@ -130,6 +130,7 @@ pub async fn make_tx(
     //     fee_rate = min_relay_fee_rate;
     // }
 
+    info!("dust_filtering: Outputs: {:?}", outputs);
     let outputs: Vec<(TxOut, PegoutId)> = outputs
         .into_iter()
         .filter(|(tx_out, pegout_id)| {
@@ -137,15 +138,17 @@ pub async fn make_tx(
             if !non_dust {
                 // TODO: we should also remove these from pending pegouts
                 warn!(
-                    "Excluding dust output for pegout {:?}: value {} < dust limit {}",
+                    "dust_filtering: Excluding dust output for pegout {:?}: value {} < dust limit {}",
                     pegout_id,
                     tx_out.value,
                     tx_out.script_pubkey.minimal_non_dust()
                 );
             }
+            info!("dust_filtering: Including pegout {:?}: value {} >= dust limit {}", pegout_id, tx_out.value, tx_out.script_pubkey.minimal_non_dust());
             non_dust
         })
         .collect();
+    info!("dust_filtering: Outputs after filtering: {:?}", outputs);
 
     if outputs.is_empty() {
         return Err(CoordinatorError::AllOutputsAreDust);
