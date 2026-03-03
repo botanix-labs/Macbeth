@@ -544,26 +544,18 @@ pub fn validate_psbt_by_output(
         )));
     };
 
-    let leeway_amount = Amount::from_sat(10);
-    let Some(diff) = expected_amount.checked_sub(tx_out.value) else {
-        info!(target: "consensus::authority::validate_psbt_by_output",
-            "tx_out.value ({}) exceeds expected_amount ({})",
-            tx_out.value, expected_amount
-        );
-        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "The output value exceeds the expected amount",
-        )));
-    };
+    let leeway_amount = Amount::from_sat(100);
+    let diff = Amount::from_sat(expected_amount.to_sat().abs_diff(tx_out.value.to_sat()));
 
     if diff < leeway_amount {
         Ok(())
     } else {
         info!(target: "consensus::authority::validate_psbt_by_output",
-            "Mismatch: tx_out.value={}, expected_amount={} (amount={} - fee_per_output={})",
-            tx_out.value, expected_amount, amount, fee_per_output
+            "Mismatch: tx_out.value={}, expected_amount={}, diff={} (amount={} - fee_per_output={})",
+            tx_out.value, expected_amount, diff, amount, fee_per_output
         );
         Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
-            "The output value does not match the expected amount",
+            "The output value does not match the expected amount (outside leeway)",
         )))
     }
 }
