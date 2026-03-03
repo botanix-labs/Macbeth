@@ -1,4 +1,4 @@
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 
 use crate::{
     config::Config,
@@ -137,7 +137,7 @@ pub async fn make_tx(
             let non_dust = tx_out.value >= tx_out.script_pubkey.minimal_non_dust();
             if !non_dust {
                 // TODO: we should also remove these from pending pegouts
-                warn!(
+                info!(
                     "dust_filtering: Excluding dust output for pegout {:?}: value {} < dust limit {}",
                     pegout_id,
                     tx_out.value,
