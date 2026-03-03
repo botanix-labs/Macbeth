@@ -529,7 +529,16 @@ pub fn validate_psbt_by_output(
         )));
     }
 
+    info!(target: "consensus::authority::validate_psbt_by_output",
+        "Validating output: tx_out.value={}, amount={}, fee_per_output={}, destination={}",
+        tx_out.value, amount, fee_per_output, destination
+    );
+
     let Some(expected_amount) = amount.checked_sub(fee_per_output) else {
+        info!(target: "consensus::authority::validate_psbt_by_output",
+            "Underflow: amount ({}) < fee_per_output ({})",
+            amount, fee_per_output
+        );
         return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
             "Calculating expected amount caused an underflow",
         )));
@@ -538,6 +547,10 @@ pub fn validate_psbt_by_output(
     if tx_out.value == expected_amount {
         Ok(())
     } else {
+        info!(target: "consensus::authority::validate_psbt_by_output",
+            "Mismatch: tx_out.value={}, expected_amount={} (amount={} - fee_per_output={})",
+            tx_out.value, expected_amount, amount, fee_per_output
+        );
         Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
             "The output value does not match the expected amount",
         )))
@@ -663,6 +676,10 @@ pub async fn validate_psbt_by_ids(
             )),
         )?;
 
+        info!(target: "consensus::authority::validate_psbt_by_ids",
+            "Validating pegout at pos={}: idx={}, destination={}, amount={}, fee_per_output={}, tx_out.value={}",
+            pegout_pos, idx, destination, amount, fee_per_output, tx_out.value
+        );
         validate_psbt_by_output(tx_out, &destination, amount, fee_per_output)?;
     }
 
