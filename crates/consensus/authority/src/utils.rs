@@ -544,7 +544,18 @@ pub fn validate_psbt_by_output(
         )));
     };
 
-    if tx_out.value == expected_amount {
+    let leeway_amount = Amount::from_sat(10);
+    let Some(diff) = expected_amount.checked_sub(tx_out.value) else {
+        info!(target: "consensus::authority::validate_psbt_by_output",
+            "tx_out.value ({}) exceeds expected_amount ({})",
+            tx_out.value, expected_amount
+        );
+        return Err(PsbtValidationError::FailedToValidatePsbtByIds(String::from(
+            "The output value exceeds the expected amount",
+        )));
+    };
+
+    if diff < leeway_amount {
         Ok(())
     } else {
         info!(target: "consensus::authority::validate_psbt_by_output",
@@ -630,7 +641,7 @@ pub async fn validate_psbt_by_ids(
             "Multiple change outputs (non-pegout IDs) found in PSBT outputs",
         )));
     }
-    
+
     // The preceding checks (output length equality, duplicate pegout ID, and change output count)
     // ensure that every entry in `psbt.unsigned_tx.output` (due to the length check)
     // is accounted for as either a pegout (validated in the main loop below)
