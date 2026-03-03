@@ -1,4 +1,4 @@
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 use crate::{
     config::Config,
@@ -130,29 +130,29 @@ pub async fn make_tx(
     //     fee_rate = min_relay_fee_rate;
     // }
 
-    // info!("dust_filtering: Outputs: {:?}", outputs);
-    // let outputs: Vec<(TxOut, PegoutId)> = outputs
-    //     .into_iter()
-    //     .filter(|(tx_out, pegout_id)| {
-    //         let non_dust = tx_out.value >= tx_out.script_pubkey.minimal_non_dust();
-    //         if !non_dust {
-    //             // TODO: we should also remove these from pending pegouts
-    //             info!(
-    //                 "dust_filtering: Excluding dust output for pegout {:?}: value {} < dust limit {}",
-    //                 pegout_id,
-    //                 tx_out.value,
-    //                 tx_out.script_pubkey.minimal_non_dust()
-    //             );
-    //         }
-    //         info!("dust_filtering: Including pegout {:?}: value {} >= dust limit {}", pegout_id, tx_out.value, tx_out.script_pubkey.minimal_non_dust());
-    //         non_dust
-    //     })
-    //     .collect();
-    // info!("dust_filtering: Outputs after filtering: {:?}", outputs);
+    info!("dust_filtering: Outputs: {:?}", outputs);
+    let outputs: Vec<(TxOut, PegoutId)> = outputs
+        .into_iter()
+        .filter(|(tx_out, pegout_id)| {
+            let non_dust = tx_out.value >= tx_out.script_pubkey.minimal_non_dust();
+            if !non_dust {
+                // TODO: we should also remove these from pending pegouts
+                warn!(
+                    "dust_filtering: Excluding dust output for pegout {:?}: value {} < dust limit {}",
+                    pegout_id,
+                    tx_out.value,
+                    tx_out.script_pubkey.minimal_non_dust()
+                );
+            }
+            info!("dust_filtering: Including pegout {:?}: value {} >= dust limit {}", pegout_id, tx_out.value, tx_out.script_pubkey.minimal_non_dust());
+            non_dust
+        })
+        .collect();
+    info!("dust_filtering: Outputs after filtering: {:?}", outputs);
 
-    // if outputs.is_empty() {
-    //     return Err(CoordinatorError::AllOutputsAreDust);
-    // }
+    if outputs.is_empty() {
+        return Err(CoordinatorError::AllOutputsAreDust);
+    }
 
     // collect all database utxos in a hashmap
     let utxos: HashMap<OutPoint, Utxo> =
