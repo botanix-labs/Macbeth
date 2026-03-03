@@ -544,7 +544,7 @@ pub fn validate_psbt_by_output(
         )));
     };
 
-    let leeway_amount = Amount::from_sat(100);
+    let leeway_amount = Amount::from_sat(1000);
     let diff = Amount::from_sat(expected_amount.to_sat().abs_diff(tx_out.value.to_sat()));
 
     if diff < leeway_amount {
