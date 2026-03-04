@@ -607,12 +607,7 @@ impl PegoutScheduler {
         checkpoint: bitcoincore_rpc::json::GetBlockHeaderResult,
     ) -> Result<(), SyncError> {
         // Determine the timestamp of the checkpoint block
-        // let cp_time = checkpoint.block_time();
-        // Note: This is a temp hotfix and will set back to previous logic
-        // Current time minus 10 minutes
-        let cp_time = SystemTime::now()
-            .checked_sub(Duration::from_secs(10 * 60))
-            .unwrap_or(SystemTime::now());
+        let cp_time = checkpoint.block_time();
         info!(
             "PegoutScheduler::track_mempool: Checking tracked txs older than checkpoint time {:?}",
             cp_time
