@@ -115,9 +115,7 @@ pub(crate) fn coin_selection(
     let estimated_output_fee =
         fee_rate.fee_wu(estimated_output_weight).ok_or(CoinSelectionError::FeeRateOverflow)?;
 
-    let coin_select =
-        bdk_wallet::coin_selection::BranchAndBoundCoinSelection::new(0, OldestFirstCoinSelection);
-
+    let coin_select = bdk_wallet::coin_selection::LargestFirstCoinSelection;
     let target_amount = outputs.iter().map(|o| o.0.value).sum::<Amount>();
 
     let mut rng = rand::thread_rng();
