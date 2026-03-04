@@ -1306,6 +1306,8 @@ where
         // Note: Standard PSBT doesn't explicitly track change_index in rust-bitcoin library easily.
         // We rely on our logic correctly identifying it later.
 
+        info!("number of inputs = {}", psbt.unsigned_tx.input.len());
+        info!("serialized unsigned tx = {}", bitcoin::consensus::encode::serialize_hex(&psbt.unsigned_tx));
         // Save psbt to db
         self.db.update_psbt(&signing_session_id, &psbt).to_status()?;
         self.db.flush().to_status()?;
