@@ -12,7 +12,7 @@ use crate::{
         psbt::{PsbtExt as BtcPsbtExt, PsbtInputExt},
     },
 };
-use bitcoin::{psbt::Psbt, FeeRate, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{Amount, FeeRate, OutPoint, ScriptBuf, TxOut, psbt::Psbt};
 use frost_secp256k1_tr::{self as frost, keys::Tweak, SigningParameters};
 use std::{
     collections::{HashMap, HashSet},
@@ -130,18 +130,23 @@ pub async fn make_tx(
     //     fee_rate = min_relay_fee_rate;
     // }
 
+    // This is a temporary workaround so that we dont end up with outputs that become dust once tx fees are deducted
+    // Our next release uses exact fee calculation.
+    let buffer_for_fees = Amount::from_sat(1000);
+
     info!("dust_filtering: Outputs: {:?}", outputs);
     let outputs: Vec<(TxOut, PegoutId)> = outputs
         .into_iter()
         .filter(|(tx_out, pegout_id)| {
-            let non_dust = tx_out.value >= tx_out.script_pubkey.minimal_non_dust();
+            let non_dust = tx_out.value >= (tx_out.script_pubkey.minimal_non_dust() + buffer_for_fees);
             if !non_dust {
                 // TODO: we should also remove these from pending pegouts
                 info!(
-                    "dust_filtering: Excluding dust output for pegout {:?}: value {} < dust limit {}",
+                    "dust_filtering: Excluding dust output for pegout {:?}: value {} < (dust limit {} + buffer_for_fees {})",
                     pegout_id,
                     tx_out.value,
-                    tx_out.script_pubkey.minimal_non_dust()
+                    tx_out.script_pubkey.minimal_non_dust(),
+                    buffer_for_fees
                 );
             }
             info!("dust_filtering: Including pegout {:?}: value {} >= dust limit {}", pegout_id, tx_out.value, tx_out.script_pubkey.minimal_non_dust());
@@ -161,7 +166,7 @@ pub async fn make_tx(
             map.insert(utxo.outpoint, utxo);
             Ok::<HashMap<bitcoin::OutPoint, Utxo>, DbError>(map)
         })?;
-    debug!("utxos len = {:?}", utxos.len());
+    info!("utxos len = {:?}", utxos.len());
     debug!("utxos = {:?}", utxos);
 
     // Exclude UTXOs that have been specifically requested to not be included in the coin selection
@@ -171,7 +176,7 @@ pub async fn make_tx(
         .iter()
         .flat_map(|tx| tx.inputs().collect::<Vec<OutPoint>>())
         .collect::<HashSet<OutPoint>>();
-    debug!("tracked_inputs len = {:?}", tracked_inputs.len());
+    info!("tracked_inputs len = {:?}", tracked_inputs.len());
     debug!("tracked_inputs = {:?}", tracked_inputs);
 
     // Filter utxos that are still pending and conflict with pending txs.
@@ -180,7 +185,7 @@ pub async fn make_tx(
         .into_iter()
         .filter(|(p, _u)| !tracked_inputs.contains(p))
         .collect::<HashMap<_, _>>();
-    debug!("available_utxos len = {:?}", available_utxos.len());
+    info!("available_utxos len = {:?}", available_utxos.len());
     debug!("available_utxos = {:?}", available_utxos);
 
     // if we are retrying pegouts, we need to add a conflicting input for each tracked tx
@@ -189,7 +194,7 @@ pub async fn make_tx(
         .iter()
         .flat_map(|tx| tx.pegout_requests.iter().map(|p| p.id))
         .collect::<HashSet<_>>();
-    debug!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
+    info!("tracked_pegout_request_ids = {:?}", tracked_pegout_request_ids);
 
     // Collect all pegout ids being retried.
     let matching_pegouts_ids: Vec<&PegoutId> = outputs
@@ -197,7 +202,7 @@ pub async fn make_tx(
         .filter(|(_, pegout_id)| tracked_pegout_request_ids.contains(pegout_id))
         .map(|(_, pegout_id)| pegout_id)
         .collect();
-    debug!("matching_pegouts_ids = {:?}", matching_pegouts_ids);
+    info!("matching_pegouts_ids = {:?}", matching_pegouts_ids);
 
     // get a tracked input for each matching pegout
     let matching_tracked_inputs: Result<Vec<OutPoint>, CoordinatorError> = tracked_txs
@@ -206,7 +211,7 @@ pub async fn make_tx(
         .map(|tx| tx.inputs().next().ok_or_else(|| CoordinatorError::NoConflictingInputs))
         .collect();
     let matching_tracked_inputs = matching_tracked_inputs?;
-    debug!("matching_tracked_inputs = {:?}", matching_tracked_inputs);
+    info!("matching_tracked_inputs = {:?}", matching_tracked_inputs);
 
     // get the utxo for each matching tracked input
     let mut conflicting_utxos: HashMap<OutPoint, Utxo> = HashMap::new();
@@ -225,7 +230,7 @@ pub async fn make_tx(
         .collect();
 
     let _ = conflicting_inputs?;
-    debug!("conflicting_utxos = {:?}", conflicting_utxos);
+    info!("conflicting_utxos = {:?}", conflicting_utxos);
 
     // include conflicting utxos when selecting from available utxos
     conflicting_utxos.iter().for_each(|(op, u)| {
