@@ -454,26 +454,21 @@ where
     }
 
     /// Handler for: `eth_getGatewayAddress`
-    async fn get_gateway_address(&self, eth_address: Address) -> RpcResult<Option<GatewayAddress>> {
-        trace!(target: "rpc::eth", ?eth_address, "Serving eth_getGateWayAddress");
-        let provider = EthBotanixApi::provider(self);
-        let address =
-            EthBotanixApi::get_gateway_address(self, eth_address, &provider).await?.map(|value| {
-                GatewayAddress {
-                    gateway_address: value.0.to_string(),
-                    aggregate_public_key: value.1.to_string(),
-                    eth_address,
-                }
-            });
-        Ok(address)
+    async fn get_gateway_address(&self, _eth_address: Address) -> RpcResult<Option<GatewayAddress>> {
+        Err(jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+            "eth_getGatewayAddress is disabled: chain is being sunsetted",
+            None::<()>,
+        ).into())
     }
 
     /// Handler from `eth_getMerkleProof`
-    async fn get_merkle_proof(&self, txid: String, block_hash: String) -> RpcResult<Bytes> {
-        trace!(target: "rpc::eth", ?txid, ?block_hash, "Serving eth_getMerkleProof");
-        let merkle_proof =
-            Bytes::from(EthBotanixApi::get_merkle_proof(self, txid, block_hash).await?);
-        Ok(merkle_proof)
+    async fn get_merkle_proof(&self, _txid: String, _block_hash: String) -> RpcResult<Bytes> {
+        Err(jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+            "eth_getMerkleProof is disabled: chain is being sunsetted",
+            None::<()>,
+        ).into())
     }
 
     /// Handler for: `eth_getBtcFeeRate`

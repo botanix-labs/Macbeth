@@ -115,13 +115,21 @@ where
     }
 
     /// Handler for `eth_getGatewayAddress`
-    async fn get_gateway_address(&self, eth_address: Address) -> Result<Option<GatewayAddress>> {
-        self.eth.get_gateway_address(eth_address).instrument(engine_span!()).await
+    async fn get_gateway_address(&self, _eth_address: Address) -> Result<Option<GatewayAddress>> {
+        Err(jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+            "eth_getGatewayAddress is disabled: chain is being sunsetted",
+            None::<()>,
+        ).into())
     }
 
     /// Handler for `eth_getMerkleProof`
-    async fn get_merkle_proof(&self, txid: String, block_hash: String) -> Result<Bytes> {
-        self.eth.get_merkle_proof(txid, block_hash).instrument(engine_span!()).await
+    async fn get_merkle_proof(&self, _txid: String, _block_hash: String) -> Result<Bytes> {
+        Err(jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::INTERNAL_ERROR_CODE,
+            "eth_getMerkleProof is disabled: chain is being sunsetted",
+            None::<()>,
+        ).into())
     }
 
     /// Handler for `eth_getBtcFeeRate`
